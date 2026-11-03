@@ -30,8 +30,8 @@ final class DataGatewayFormFailureCleared extends DataGatewayFormEvent {
   const DataGatewayFormFailureCleared();
 }
 
-/// The session's access changed under the form, because another screen
-/// learned something. Internal.
+/// The caller's access changed under the form: the session kept a new
+/// answer (#456). Internal.
 final class DataGatewayFormAccessChanged extends DataGatewayFormEvent {
   const DataGatewayFormAccessChanged();
 }

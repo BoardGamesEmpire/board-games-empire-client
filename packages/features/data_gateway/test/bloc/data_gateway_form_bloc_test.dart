@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +11,7 @@ import '../support/fake_data_gateway_remote.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
 
   final bgg = gateway(
     'dg_1',
@@ -27,12 +28,18 @@ void main() {
     description: 'The BGG bridge',
   );
 
+  /// A caller who may do anything to a DataGateway.
+  final everything = FakeCallerAccessRepository.dataGateway(
+    create: AccessExtent.all,
+    read: AccessExtent.all,
+    update: AccessExtent.all,
+    delete: AccessExtent.all,
+  );
+
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(everything);
   });
-
-  tearDown(() => access.dispose());
 
   DataGatewayFormBloc creating() =>
       DataGatewayFormBloc(remote: remote, access: access);
@@ -45,7 +52,9 @@ void main() {
       'opens an empty form',
       build: creating,
       act: (bloc) => bloc.add(const DataGatewayFormStarted()),
-      expect: () => [const DataGatewayFormEditing()],
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
@@ -61,7 +70,11 @@ void main() {
         ..add(const DataGatewayFormSubmitted(input)),
       skip: 1,
       expect: () => [
-        const DataGatewayFormEditing(submitting: true),
+        const DataGatewayFormEditing(
+          submitting: true,
+          maySave: true,
+          accessKnown: true,
+        ),
         DataGatewayFormSaved(
           result: changed(
             bgg,
@@ -83,7 +96,11 @@ void main() {
         ..add(const DataGatewayFormSubmitted(input)),
       skip: 2,
       expect: () => [
-        const DataGatewayFormEditing(failure: DataGatewayFormFailure.nameInUse),
+        const DataGatewayFormEditing(
+          maySave: true,
+          accessKnown: true,
+          failure: DataGatewayFormFailure.nameInUse,
+        ),
       ],
     );
 
@@ -96,7 +113,11 @@ void main() {
         ..add(const DataGatewayFormSubmitted(input)),
       skip: 2,
       expect: () => [
-        const DataGatewayFormEditing(failure: DataGatewayFormFailure.failed),
+        const DataGatewayFormEditing(
+          maySave: true,
+          accessKnown: true,
+          failure: DataGatewayFormFailure.failed,
+        ),
       ],
     );
 
@@ -129,7 +150,9 @@ void main() {
         bloc.add(const DataGatewayFormFailureCleared());
       },
       skip: 3,
-      expect: () => [const DataGatewayFormEditing()],
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
     );
   });
 
@@ -141,7 +164,7 @@ void main() {
       act: (bloc) => bloc.add(const DataGatewayFormStarted()),
       expect: () => [
         const DataGatewayFormLoading(),
-        DataGatewayFormEditing(original: bgg),
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
       ],
     );
 
@@ -213,6 +236,8 @@ void main() {
       expect: () => [
         DataGatewayFormEditing(
           original: bgg,
+          maySave: true,
+          accessKnown: true,
           failure: DataGatewayFormFailure.nothingChanged,
         ),
       ],
@@ -236,6 +261,8 @@ void main() {
       expect: () => [
         DataGatewayFormEditing(
           original: bgg,
+          maySave: true,
+          accessKnown: true,
           failure: DataGatewayFormFailure.gone,
         ),
       ],
@@ -266,11 +293,184 @@ void main() {
     );
   });
 
-  group('access (#41)', () {
+  group('what the caller may do (#456)', () {
     late Completer<DataGatewayChangeResult> pending;
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'a refused read opens as access-denied, and the session learns it',
+      "an edit's read that succeeds while access is unknown asks access "
+      'again',
+      // The first ask failed with the server up, and nothing else would ask
+      // again until a rehydrate trigger.
+      setUp: () {
+        remote.onFetchOne = (_) async => bgg;
+        access.current = const CallerAccess.unknown();
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      skip: 1,
+      expect: () => [DataGatewayFormEditing(original: bgg)],
+      verify: (_) => expect(access.refreshCount, 1),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      "an edit's read that succeeds while access is known asks nothing",
+      setUp: () => remote.onFetchOne = (_) async => bgg,
+      build: () => editing('dg_1'),
+      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      skip: 1,
+      expect: () => [
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
+      ],
+      verify: (_) => expect(access.refreshCount, 0),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add with create offers the save',
+      setUp: () => access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.some,
+      ),
+      build: creating,
+      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add while access is unknown shows read-only fields, then opens '
+      'when create arrives',
+      setUp: () => access.current = const CallerAccess.unknown(),
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        isA<DataGatewayFormEditing>()
+            .having((s) => s.maySave, 'maySave', isFalse)
+            .having((s) => s.accessKnown, 'accessKnown', isFalse),
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add without a session to ask shows read-only fields, and reads as '
+      'unknown',
+      build: () => DataGatewayFormBloc(remote: remote),
+      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      expect: () => [const DataGatewayFormEditing()],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an edit while access is unknown opens read-only and reads as unknown, '
+      'then says why once access answers without update',
+      setUp: () {
+        access.current = const CallerAccess.unknown();
+        remote.onFetchOne = (_) async => bgg;
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        isA<DataGatewayFormEditing>()
+            .having((s) => s.original, 'original', bgg)
+            .having((s) => s.maySave, 'maySave', isFalse)
+            .having((s) => s.accessKnown, 'accessKnown', isFalse),
+        DataGatewayFormEditing(original: bgg, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add without create is denied, and opens if create arrives',
+      setUp: () => access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+      ),
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = everything;
+      },
+      expect: () => [
+        const DataGatewayFormDenied(),
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an open add closes as access-denied when create falls',
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+        const DataGatewayFormDenied(),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an edit offers the save on update, not on create',
+      setUp: () {
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+        );
+        remote.onFetchOne = (_) async => bgg;
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+          update: AccessExtent.some,
+        );
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        DataGatewayFormEditing(original: bgg, accessKnown: true),
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an open edit stops offering the save when update falls',
+      setUp: () => remote.onFetchOne = (_) async => bgg,
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+          delete: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
+        DataGatewayFormEditing(original: bgg, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refused read opens as access-denied, and asks access again',
       setUp: () => remote.onFetchOne = (_) async => throw forbidden(),
       build: () => editing('dg_1'),
       act: (bloc) => bloc.add(const DataGatewayFormStarted()),
@@ -278,169 +478,200 @@ void main() {
         const DataGatewayFormLoading(),
         const DataGatewayFormDenied(),
       ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.denied),
+      verify: (_) => expect(access.refreshCount, 1),
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'a user the session knows may not read opens as access-denied',
-      setUp: () => access.readDenied(),
+      'a refused read reads again once a changed answer allows read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        remote.onFetchOne = (_) async => throw forbidden();
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        remote.onFetchOne = (_) async => bgg;
+        access.current = everything;
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        const DataGatewayFormDenied(),
+        const DataGatewayFormLoading(),
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refused read stays denied while a changed answer still refuses read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        remote.onFetchOne = (_) async => throw forbidden();
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        const DataGatewayFormDenied(),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchOne(dg_1)']),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refused save asks access again',
+      setUp: () {
+        remote.onFetchOne = (_) async => bgg;
+        remote.onUpdate = (_, _) async => throw forbidden();
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        bloc.add(DataGatewayFormSubmitted(input.copyWith(name: 'BGG 2')));
+        await pumpEventQueue();
+        expect(access.refreshCount, 1);
+        // What the ask found.
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+      },
+      skip: 3,
+      expect: () => [
+        // Says why, and still offers the save: access still allows it.
+        DataGatewayFormEditing(
+          original: bgg,
+          maySave: true,
+          accessKnown: true,
+          failure: DataGatewayFormFailure.refused,
+        ),
+        // Access now says no, so the save goes, and the form says why in its
+        // place.
+        DataGatewayFormEditing(original: bgg, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a save in flight is not interrupted by an access change',
+      setUp: () {
+        pending = Completer<DataGatewayChangeResult>();
+        remote.onCreate = (_) => pending.future;
+      },
       build: creating,
-      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      act: (bloc) async {
+        bloc
+          ..add(const DataGatewayFormStarted())
+          ..add(const DataGatewayFormSubmitted(input));
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+        await pumpEventQueue();
+        pending.complete(changed(bgg));
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+        const DataGatewayFormEditing(
+          submitting: true,
+          maySave: true,
+          accessKnown: true,
+        ),
+        const DataGatewayFormEditing(submitting: true, accessKnown: true),
+        DataGatewayFormSaved(result: changed(bgg), created: true),
+      ],
+      verify: (_) => expect(remote.calls, ['create(BGG)']),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add whose create fell during its save shows access-denied if the '
+      'save then fails, not the save again',
+      setUp: () {
+        pending = Completer<DataGatewayChangeResult>();
+        remote.onCreate = (_) => pending.future;
+      },
+      build: creating,
+      act: (bloc) async {
+        bloc
+          ..add(const DataGatewayFormStarted())
+          ..add(const DataGatewayFormSubmitted(input));
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+        await pumpEventQueue();
+        pending.completeError(unreachable());
+        await pumpEventQueue();
+      },
+      skip: 3,
       expect: () => [const DataGatewayFormDenied()],
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'an edit asks the server even after a refused read, so a role raised '
-      'since then gets the form',
+      'an edit whose update fell during its save does not offer the save '
+      'again if the save then fails',
       setUp: () {
-        access.readDenied();
-        remote.onFetchOne = (_) async => bgg;
+        pending = Completer<DataGatewayChangeResult>();
+        remote
+          ..onFetchOne = ((_) async => bgg)
+          ..onUpdate = ((_, _) => pending.future);
       },
       build: () => editing('dg_1'),
-      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
-      expect: () => [
-        const DataGatewayFormLoading(),
-        DataGatewayFormEditing(original: bgg),
-      ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.granted),
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'a refused save says the role may not change DataGateways, stops '
-      'offering the save, and tells the session',
-      setUp: () => remote.onCreate = (_) async => throw forbidden(),
-      build: creating,
-      act: (bloc) => bloc
-        ..add(const DataGatewayFormStarted())
-        ..add(const DataGatewayFormSubmitted(input)),
-      skip: 2,
-      expect: () => [const DataGatewayFormEditing(mayChange: false)],
-      verify: (_) => expect(access.value.mayChange, isFalse),
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'opens without the save once the session has learned it',
-      setUp: () => access.changeDenied(),
-      build: creating,
-      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
-      expect: () => [const DataGatewayFormEditing(mayChange: false)],
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'stops offering the save when a change is refused elsewhere while it '
-      'is open',
-      // An action the list started before the form opened can be refused
-      // after it has.
-      build: creating,
       act: (bloc) async {
         bloc.add(const DataGatewayFormStarted());
         await pumpEventQueue();
-        access.changeDenied();
+        bloc.add(DataGatewayFormSubmitted(input.copyWith(name: 'BGG 2')));
         await pumpEventQueue();
-      },
-      expect: () => [
-        const DataGatewayFormEditing(),
-        const DataGatewayFormEditing(mayChange: false),
-      ],
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'an add opened before the session heard shows access-denied when a '
-      'read is refused elsewhere',
-      // A deep link or a web reload on the add form can open it before the
-      // sign-in check or the list beneath has answered.
-      build: creating,
-      act: (bloc) async {
-        bloc.add(const DataGatewayFormStarted());
-        await pumpEventQueue();
-        access.readDenied();
-        await pumpEventQueue();
-      },
-      expect: () => [
-        const DataGatewayFormEditing(),
-        const DataGatewayFormDenied(),
-      ],
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'an add opened as access-denied opens the form when a read is granted '
-      'later, so a role raised since then gets it',
-      setUp: () => access.readDenied(),
-      build: creating,
-      act: (bloc) async {
-        bloc.add(const DataGatewayFormStarted());
-        await pumpEventQueue();
-        access.readGranted();
-        await pumpEventQueue();
-      },
-      expect: () => [
-        const DataGatewayFormDenied(),
-        const DataGatewayFormEditing(),
-      ],
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'a read refused elsewhere during an add leaves the save running, and a '
-      'save that then fails shows access-denied, not the save again',
-      setUp: () {
-        pending = Completer<DataGatewayChangeResult>();
-        remote.onCreate = (_) => pending.future;
-      },
-      build: creating,
-      act: (bloc) async {
-        bloc
-          ..add(const DataGatewayFormStarted())
-          ..add(const DataGatewayFormSubmitted(input));
-        await pumpEventQueue();
-        access.readDenied();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
         await pumpEventQueue();
         pending.completeError(unreachable());
         await pumpEventQueue();
       },
+      skip: 3,
       expect: () => [
-        const DataGatewayFormEditing(),
-        const DataGatewayFormEditing(submitting: true),
-        const DataGatewayFormDenied(),
-      ],
-    );
-
-    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'a refusal elsewhere during a save leaves the save running, and a save '
-      'that then fails does not offer the save again',
-      setUp: () {
-        pending = Completer<DataGatewayChangeResult>();
-        remote.onCreate = (_) => pending.future;
-      },
-      build: creating,
-      act: (bloc) async {
-        bloc
-          ..add(const DataGatewayFormStarted())
-          ..add(const DataGatewayFormSubmitted(input));
-        await pumpEventQueue();
-        access.changeDenied();
-        await pumpEventQueue();
-        pending.completeError(unreachable());
-        await pumpEventQueue();
-      },
-      expect: () => [
-        const DataGatewayFormEditing(),
-        const DataGatewayFormEditing(submitting: true),
-        const DataGatewayFormEditing(submitting: true, mayChange: false),
-        const DataGatewayFormEditing(
-          mayChange: false,
+        DataGatewayFormEditing(
+          original: bgg,
+          submitting: true,
+          accessKnown: true,
+        ),
+        DataGatewayFormEditing(
+          original: bgg,
+          accessKnown: true,
           failure: DataGatewayFormFailure.failed,
         ),
       ],
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
-      'sends nothing once it has stopped offering the save',
-      setUp: () => access.changeDenied(),
+      'sends nothing while it does not offer the save',
+      setUp: () => access.current = const CallerAccess.unknown(),
       build: creating,
       act: (bloc) => bloc
         ..add(const DataGatewayFormStarted())
         ..add(const DataGatewayFormSubmitted(input)),
       verify: (_) => expect(remote.calls, isEmpty),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'stops listening on close',
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        await bloc.close();
+        access.current = const CallerAccess.unknown();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(maySave: true, accessKnown: true),
+      ],
     );
   });
 }

@@ -238,7 +238,7 @@
   },
   "dataGatewayChangeRefused": "Your role can't change data gateways.",
   "@dataGatewayChangeRefused": {
-    "description": "Shown when the server refused a change to a data gateway, or to one of its language names, because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
+    "description": "Says the user's role on the server can't change data gateways. Shown in the outcome banner when the server refused a change to a data gateway, or to one of its language names, on the data gateway list and on a data gateway's own screen; above the submit on the add and edit form when the server refused a save; and in place of that submit when the server says the user's role can't save it. The user can still see data gateways."
   },
   "dataGatewayDismiss": "Dismiss",
   "@dataGatewayDismiss": {

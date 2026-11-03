@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../access/data_gateway_access.dart';
 import 'data_gateway_form_event.dart';
 import 'data_gateway_form_state.dart';
 
@@ -14,11 +16,34 @@ import 'data_gateway_form_state.dart';
 /// deep link and a web reload open the same form a tap does, and the fields
 /// it compares against are the server's current values.
 ///
-/// Refusals reach [access] the way the list's do: a refused read is
-/// [DataGatewayFormDenied], and a refused save stops offering the save here
-/// and hides the change actions everywhere else for the session. A change
-/// refused elsewhere while the form is open stops offering the save here too,
-/// and an open add follows the reads refused or granted elsewhere.
+/// ## Access
+///
+/// The save is offered while the caller's access, as the server answers it,
+/// says they may save (#456): create for an add, update for an edit. It
+/// follows [access] as its answer changes, up or down, while the form is
+/// open. While the answer is unknown, and with no [access] to ask, the form
+/// opens read-only and reads as unknown, so it says nothing yet about what
+/// the caller's role allows.
+///
+/// An add whose answer is known and doesn't allow create is
+/// [DataGatewayFormDenied], and opens once create is allowed. An edit reads
+/// its row whatever the answer, and the server's own answer to that read
+/// decides whether it opens.
+///
+/// A refused read is [DataGatewayFormDenied], and reads again once a changed
+/// answer allows read: a refusal can come before the server has written a
+/// new user's roles (backend#490). A refused save says why on the form, and
+/// does not withdraw the save. Both ask [access] again, and the form follows
+/// what it answers. The refusal is the server's word that the
+/// answer here may be out of date, as when the caller's role changed since
+/// it was asked. A save already in flight runs on, whatever access does
+/// meanwhile, and answers for itself.
+///
+/// An edit's read that succeeds while the answer is still unknown asks
+/// [access] again too. The first ask can fail with the server up, as on a
+/// 502 from a proxy, and nothing else asks again until a rehydrate trigger.
+/// The server has just answered this caller, so an ask now is likely to be
+/// answered too.
 class DataGatewayFormBloc
     extends Bloc<DataGatewayFormEvent, DataGatewayFormState> {
   DataGatewayFormBloc({
@@ -32,26 +57,43 @@ class DataGatewayFormBloc
     on<DataGatewayFormSubmitted>(_onSubmitted);
     on<DataGatewayFormFailureCleared>(_onFailureCleared);
     on<DataGatewayFormAccessChanged>(_onAccessChanged);
-    _access?.addListener(_accessListener);
+    _accessChanges = _access?.changes.listen((_) {
+      if (!isClosed) add(const DataGatewayFormAccessChanged());
+    });
   }
 
   final DataGatewayRemoteDataSource _remote;
-  final DataGatewayAccess? _access;
+  final CallerAccessRepository? _access;
   final String? _editingId;
   final BgeLogger _logger;
+  StreamSubscription<CallerAccess>? _accessChanges;
 
-  bool get _mayChange => _access?.value.mayChange ?? true;
+  /// The access a save needs: create for an add, update for an edit.
+  AccessAction get _saveNeeds =>
+      _editingId == null ? AccessAction.create : AccessAction.update;
 
-  /// Whether this is an add and the session has heard that the user may not
-  /// read DataGateways.
+  /// Whether the caller's access lets them save this form now. False while
+  /// the answer is unknown, and with no [_access] to ask.
+  bool get _maySave =>
+      _access?.current.allows(ResourceType.dataGateway, _saveNeeds) ?? false;
+
+  /// Whether the caller's access has answered. False with no [_access] to
+  /// ask.
+  bool get _accessKnown => _access?.current.isKnown ?? false;
+
+  /// Whether this is an add, and the caller's access is known and doesn't
+  /// allow create.
   ///
-  /// An add has no read of its own to ask, so it goes by what the session
-  /// hears, for as long as it is open. An edit reads its row, and that read
-  /// answers afresh for a user whose role was raised since.
-  bool get _addDenied =>
-      _editingId == null && _access?.value.read == DataGatewayRead.denied;
-
-  void _accessListener() => add(const DataGatewayFormAccessChanged());
+  /// An add has no read of its own to ask, so it goes by the session's
+  /// answer, for as long as it is open. An unknown answer is no refusal: the
+  /// add opens read-only until it arrives.
+  bool get _addDenied {
+    final current = _access?.current;
+    return _editingId == null &&
+        current != null &&
+        current.isKnown &&
+        !current.allows(ResourceType.dataGateway, AccessAction.create);
+  }
 
   Future<void> _onStarted(
     DataGatewayFormStarted event,
@@ -60,16 +102,25 @@ class DataGatewayFormBloc
     final id = _editingId;
     if (id == null) {
       if (_addDenied) return emit(const DataGatewayFormDenied());
-      return emit(DataGatewayFormEditing(mayChange: _mayChange));
+      return emit(
+        DataGatewayFormEditing(maySave: _maySave, accessKnown: _accessKnown),
+      );
     }
 
     emit(const DataGatewayFormLoading());
     try {
       final original = await _remote.fetchOne(id);
-      _access?.readGranted();
-      emit(DataGatewayFormEditing(original: original, mayChange: _mayChange));
+      emit(
+        DataGatewayFormEditing(
+          original: original,
+          maySave: _maySave,
+          accessKnown: _accessKnown,
+        ),
+      );
+      // The server answered this caller: see Access in the class doc.
+      if (_access?.current.isKnown == false) unawaited(_access?.refresh());
     } on DataGatewayForbiddenException {
-      _access?.readDenied();
+      unawaited(_access?.refresh());
       emit(const DataGatewayFormDenied());
     } on DataGatewayNotFoundException {
       emit(const DataGatewayFormMissing());
@@ -88,9 +139,9 @@ class DataGatewayFormBloc
     Emitter<DataGatewayFormState> emit,
   ) async {
     final editing = state;
-    if (editing is! DataGatewayFormEditing ||
-        editing.submitting ||
-        !editing.mayChange) {
+    // Access as it is now, not as the form last showed it: a save it no
+    // longer allows is dropped, as from a form built before it fell.
+    if (editing is! DataGatewayFormEditing || editing.submitting || !_maySave) {
       return;
     }
 
@@ -110,12 +161,8 @@ class DataGatewayFormBloc
           : await _remote.update(original.id, changes!);
       emit(DataGatewayFormSaved(result: result, created: original == null));
     } on DataGatewayForbiddenException {
-      _access?.changeDenied();
-      emit(
-        _addDenied
-            ? const DataGatewayFormDenied()
-            : editing.next(mayChange: false),
-      );
+      unawaited(_access?.refresh());
+      emit(_unsaved(editing, DataGatewayFormFailure.refused));
     } on DataGatewayNameInUseException {
       emit(_unsaved(editing, DataGatewayFormFailure.nameInUse));
     } on DataGatewayNotFoundException {
@@ -131,15 +178,18 @@ class DataGatewayFormBloc
   }
 
   /// [editing] after a save that did not happen. It offers the save again
-  /// only if the session still allows it: a change refused elsewhere while
-  /// this one was in flight has withdrawn it, and a read refused elsewhere
-  /// has closed an add.
+  /// only if the caller's access still allows it: access that fell while
+  /// the save was in flight has withdrawn it, and has closed an add.
   DataGatewayFormState _unsaved(
     DataGatewayFormEditing editing,
     DataGatewayFormFailure failure,
   ) => _addDenied
       ? const DataGatewayFormDenied()
-      : editing.next(mayChange: _mayChange, failure: failure);
+      : editing.next(
+          maySave: _maySave,
+          accessKnown: _accessKnown,
+          failure: failure,
+        );
 
   void _onFailureCleared(
     DataGatewayFormFailureCleared event,
@@ -150,19 +200,31 @@ class DataGatewayFormBloc
     emit(editing.next());
   }
 
-  /// Keeps the open form in step with what the session learns elsewhere.
+  /// Keeps the open form in step with the caller's access (#456).
   ///
-  /// An add shows access-denied once a read is refused, and opens again once
-  /// one is granted. Any form withdraws the save once a change is refused. A
-  /// save already in flight runs on and answers for itself.
+  /// An add shows access-denied once its answer is known not to allow
+  /// create, and opens again once it does. Any form offers the save as its
+  /// answer rises and withdraws it as it falls, and says why it has none once
+  /// the answer is known. A save already in flight runs on and answers for
+  /// itself.
   void _onAccessChanged(
     DataGatewayFormAccessChanged event,
     Emitter<DataGatewayFormState> emit,
   ) {
     final editing = state;
+    if (_editingId != null &&
+        editing is DataGatewayFormDenied &&
+        (_access?.current.allows(ResourceType.dataGateway, AccessAction.read) ??
+            false)) {
+      // A refused read tries again: see Access in the class doc.
+      if (!isClosed) add(const DataGatewayFormStarted());
+      return;
+    }
     if (_editingId == null) {
       if (editing is DataGatewayFormDenied && !_addDenied) {
-        return emit(DataGatewayFormEditing(mayChange: _mayChange));
+        return emit(
+          DataGatewayFormEditing(maySave: _maySave, accessKnown: _accessKnown),
+        );
       }
       if (editing is DataGatewayFormEditing &&
           !editing.submitting &&
@@ -170,24 +232,32 @@ class DataGatewayFormBloc
         return emit(const DataGatewayFormDenied());
       }
     }
+    final maySave = _maySave;
+    final accessKnown = _accessKnown;
     if (editing is! DataGatewayFormEditing ||
-        !editing.mayChange ||
-        _mayChange) {
+        (editing.maySave == maySave && editing.accessKnown == accessKnown)) {
       return;
     }
+    // A refused save is answered once access changes: by the form's own
+    // reason when the save goes, and by the save itself when it comes back.
+    final failure = editing.failure == DataGatewayFormFailure.refused
+        ? null
+        : editing.failure;
     emit(
-      DataGatewayFormEditing(
-        original: editing.original,
+      editing.next(
         submitting: editing.submitting,
-        mayChange: false,
-        failure: editing.failure,
+        maySave: maySave,
+        accessKnown: accessKnown,
+        failure: failure,
       ),
     );
   }
 
   @override
   Future<void> close() {
-    _access?.removeListener(_accessListener);
+    // Not awaited first, so that the bloc reads as closed from the turn this
+    // starts in, as the other DataGateway blocs do.
+    unawaited(_accessChanges?.cancel());
     return super.close();
   }
 }

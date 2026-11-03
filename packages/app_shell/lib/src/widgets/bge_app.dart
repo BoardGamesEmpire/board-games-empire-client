@@ -2006,7 +2006,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayFormScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       editingId: dataGatewayId,
       onDone: (ctx) => ctx.pop(),
     );

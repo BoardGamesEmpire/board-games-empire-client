@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -12,7 +14,7 @@ import '../support/fake_data_gateway_remote.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
   late int doneCount;
 
   final bgg = gateway(
@@ -25,11 +27,16 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      ),
+    );
     doneCount = 0;
   });
-
-  tearDown(() => access.dispose());
 
   Future<void> pumpForm(WidgetTester tester, {String? editingId}) async {
     await tester.pumpWidget(
@@ -393,10 +400,19 @@ void main() {
     });
   });
 
-  group('access (#41)', () {
-    testWidgets('a deep link by a user who may not read shows access-denied', (
-      tester,
-    ) async {
+  group('what the caller may do (#456)', () {
+    /// Whether the field [key] finds takes no typing.
+    bool readOnly(WidgetTester tester, Key key) => tester
+        .widget<TextField>(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(TextField),
+          ),
+        )
+        .readOnly;
+
+    testWidgets('a deep link by a user who may not read shows access-denied, '
+        'and asks access again', (tester) async {
       remote.onFetchOne = (_) async => throw forbidden();
 
       await pumpForm(tester, editingId: 'dg_1');
@@ -406,23 +422,311 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(access.refreshCount, 1);
     });
 
-    testWidgets('a refused save says why and stops offering the save', (
-      tester,
-    ) async {
-      remote.onCreate = (_) async => throw forbidden();
+    testWidgets('an add while access is unknown shows read-only fields, then '
+        'opens when create arrives', (tester) async {
+      access.current = const CallerAccess.unknown();
       await pumpForm(tester);
 
-      await fillValid(tester);
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayForm.refusedKey), findsNothing);
+      expect(readOnly(tester, DataGatewayForm.nameFieldKey), isTrue);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+      expect(readOnly(tester, DataGatewayForm.nameFieldKey), isFalse);
+    });
+
+    testWidgets('while access is unknown an edit says nothing about the role, '
+        'and says why once access answers without update', (tester) async {
+      access.current = const CallerAccess.unknown();
+      remote.onFetchOne = (_) async => bgg;
+      await pumpForm(tester, editingId: 'dg_1');
+
+      expect(readOnly(tester, DataGatewayForm.addressFieldKey), isTrue);
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayForm.refusedKey), findsNothing);
+      expect(find.text("Your role can't change data gateways."), findsNothing);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(DataGatewayForm.refusedKey),
+          matching: find.text("Your role can't change data gateways."),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('without a session to ask, an edit says nothing about the '
+        'role', (tester) async {
+      remote.onFetchOne = (_) async => bgg;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          home: DataGatewayFormScreen(
+            remote: remote,
+            editingId: 'dg_1',
+            onDone: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('bgg.internal'), findsOneWidget);
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayForm.refusedKey), findsNothing);
+    });
+
+    testWidgets('an add without create shows access-denied', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+      );
+
+      await pumpForm(tester);
+
+      expect(
+        find.text("You don't have access to data gateways"),
+        findsOneWidget,
+      );
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('an edit without update shows the fields read-only and says '
+        'why instead of the save', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+      );
+      remote.onFetchOne = (_) async => bgg;
+
+      await pumpForm(tester, editingId: 'dg_1');
+
+      expect(find.text('bgg.internal'), findsOneWidget);
+      expect(readOnly(tester, DataGatewayForm.addressFieldKey), isTrue);
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayForm.refusedKey), findsOneWidget);
+    });
+
+    testWidgets('a refused save says why and asks access again, and the save '
+        'goes once access says no', (tester) async {
+      remote.onFetchOne = (_) async => bgg;
+      remote.onUpdate = (_, _) async => throw forbidden();
+      await pumpForm(tester, editingId: 'dg_1');
+
+      await enter(tester, DataGatewayForm.portFieldKey, '50060');
       await submit(tester);
 
+      expect(
+        find.descendant(
+          of: find.byKey(DataGatewayFormScreen.errorBannerKey),
+          matching: find.text("Your role can't change data gateways."),
+        ),
+        findsOneWidget,
+      );
+      expect(access.refreshCount, 1);
+      expect(doneCount, 0);
+      // Access has not said no yet.
+      expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayFormScreen.errorBannerKey), findsNothing);
       expect(
         find.text("Your role can't change data gateways."),
         findsOneWidget,
       );
+      // What the user typed stays.
+      expect(find.text('50060'), findsOneWidget);
+    });
+  });
+
+  group('keeping keyboard focus when access takes a control away (#456)', () {
+    /// Puts keyboard focus on the button [button] finds, as a click or a Tab
+    /// would: on its own node, with nothing before it in the page's history
+    /// to fall back to.
+    Future<void> focusButton(WidgetTester tester, Finder button) async {
+      await tester.ensureVisible(button);
+      Focus.of(
+        tester.element(
+          find.descendant(of: button, matching: find.byType(Text)).first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+    }
+
+    /// The node of the field [key] finds.
+    FocusNode fieldNode(WidgetTester tester, Key key) => tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .focusNode;
+
+    /// The node of the [Focus] nearest above the text [label]: the heading,
+    /// or a button by its label.
+    FocusNode nodeAbove(WidgetTester tester, String label) =>
+        Focus.of(tester.element(find.text(label)), createDependency: false);
+
+    /// Expects keyboard focus on [node], not on the page's scope, which is
+    /// above every control and where focus falls when the one that had it
+    /// goes.
+    void expectFocusOn(FocusNode node) {
+      final focused = FocusManager.instance.primaryFocus;
+      expect(focused, isNot(isA<FocusScopeNode>()));
+      expect(focused, same(node));
+    }
+
+    final mayOnlyRead = FakeCallerAccessRepository.dataGateway(
+      read: AccessExtent.all,
+    );
+
+    testWidgets('the save with focus hands it to the last field when update '
+        'falls', (tester) async {
+      remote.onFetchOne = (_) async => bgg;
+      await pumpForm(tester, editingId: 'dg_1');
+      await focusButton(tester, find.byKey(DataGatewayForm.submitKey));
+      expectFocusOn(nodeAbove(tester, 'Save'));
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
       expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
-      expect(doneCount, 0);
+      expectFocusOn(fieldNode(tester, DataGatewayForm.descriptionFieldKey));
+    });
+
+    testWidgets('a field with focus keeps it as the fields turn read-only', (
+      tester,
+    ) async {
+      remote.onFetchOne = (_) async => bgg;
+      await pumpForm(tester, editingId: 'dg_1');
+      final name = fieldNode(tester, DataGatewayForm.nameFieldKey)
+        ..requestFocus();
+      await tester.pump();
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
+      expectFocusOn(name);
+    });
+
+    testWidgets('a field with focus keeps it when access answers without the '
+        'save, which only adds the reason', (tester) async {
+      access.current = const CallerAccess.unknown();
+      remote.onFetchOne = (_) async => bgg;
+      await pumpForm(tester, editingId: 'dg_1');
+      final port = fieldNode(tester, DataGatewayForm.portFieldKey)
+        ..requestFocus();
+      await tester.pump();
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.refusedKey), findsOneWidget);
+      expectFocusOn(port);
+    });
+
+    testWidgets('the reason that arrives with access does not scroll the '
+        'page, so a focused field stays in view', (tester) async {
+      // A phone at 200% text, where the reason sits far below the fold.
+      tester.view
+        ..physicalSize = const Size(320, 480)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      access.current = const CallerAccess.unknown();
+      remote.onFetchOne = (_) async => bgg;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: DataGatewayFormScreen(
+            remote: remote,
+            access: access,
+            editingId: 'dg_1',
+            onDone: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final name = fieldNode(tester, DataGatewayForm.nameFieldKey)
+        ..requestFocus();
+      await tester.pump();
+      final page = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      expect(page.pixels, 0);
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.refusedKey), findsOneWidget);
+      expect(page.pixels, 0);
+      expectFocusOn(name);
+    });
+
+    testWidgets('an add whose field has focus hands it to the heading when '
+        'create falls and the form closes', (tester) async {
+      await pumpForm(tester);
+      fieldNode(tester, DataGatewayForm.nameFieldKey).requestFocus();
+      await tester.pump();
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("You don't have access to data gateways"),
+        findsOneWidget,
+      );
+      expectFocusOn(nodeAbove(tester, 'Add data gateway'));
+    });
+
+    testWidgets('an add whose save has focus hands it to the heading when '
+        'create falls and the form closes', (tester) async {
+      await pumpForm(tester);
+      await focusButton(tester, find.byKey(DataGatewayForm.submitKey));
+
+      access.current = mayOnlyRead;
+      await tester.pumpAndSettle();
+
+      expectFocusOn(nodeAbove(tester, 'Add data gateway'));
+    });
+
+    testWidgets('the heading is not a Tab stop', (tester) async {
+      await pumpForm(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      expectFocusOn(fieldNode(tester, DataGatewayForm.nameFieldKey));
     });
   });
 }
