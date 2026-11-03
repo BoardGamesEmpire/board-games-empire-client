@@ -11,6 +11,7 @@ import '../bloc/data_gateway_form_event.dart';
 import '../bloc/data_gateway_form_state.dart';
 import '../widgets/data_gateway_form.dart';
 import '../widgets/data_gateway_message.dart';
+import '../widgets/focus_is_free.dart';
 
 /// The add form, or the edit form when [editingId] is set (#41).
 ///
@@ -125,11 +126,18 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
   /// page.
   ///
   /// Runs before the frame that takes the form away, while it still has
-  /// focus.
+  /// focus, and hands it on after that frame. Not if the user has moved focus
+  /// meanwhile, and not if access has opened the form again by then.
   void _onFormClosed(BuildContext context, DataGatewayFormState state) {
     if (!_form.hasFocus) return;
+    final focused = FocusManager.instance.primaryFocus;
+    final bloc = context.read<DataGatewayFormBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _heading.requestFocus();
+      if (mounted &&
+          focusIsFree(this.context, untouched: focused) &&
+          bloc.state is DataGatewayFormDenied) {
+        _heading.requestFocus();
+      }
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }

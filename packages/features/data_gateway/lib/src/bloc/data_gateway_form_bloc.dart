@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import '../access/read_allowed_since.dart';
 import 'data_gateway_form_event.dart';
 import 'data_gateway_form_state.dart';
 
@@ -32,7 +33,9 @@ import 'data_gateway_form_state.dart';
 ///
 /// A refused read is [DataGatewayFormDenied], and reads again once a changed
 /// answer allows read: a refusal can come before the server has written a
-/// new user's roles (backend#490). A refused save says why on the form, and
+/// new user's roles (backend#490). A refused read that comes after such an
+/// answer, while the read was out, reads again too, once: no change is left
+/// to say so by then. A refused save says why on the form, and
 /// does not withdraw the save. Both ask [access] again, and the form follows
 /// what it answers. The refusal is the server's word that the
 /// answer here may be out of date, as when the caller's role changed since
@@ -107,6 +110,7 @@ class DataGatewayFormBloc
       );
     }
 
+    final sentUnder = _access?.current;
     emit(const DataGatewayFormLoading());
     try {
       final original = await _remote.fetchOne(id);
@@ -122,6 +126,10 @@ class DataGatewayFormBloc
     } on DataGatewayForbiddenException {
       unawaited(_access?.refresh());
       emit(const DataGatewayFormDenied());
+      // See Access in the class doc.
+      if (readAllowedSince(_access, sentUnder) && !isClosed) {
+        add(const DataGatewayFormStarted());
+      }
     } on DataGatewayNotFoundException {
       emit(const DataGatewayFormMissing());
     } on Object catch (error, stackTrace) {

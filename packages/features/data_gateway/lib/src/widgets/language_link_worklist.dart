@@ -13,6 +13,7 @@ import '../bloc/language_link_list_bloc.dart';
 import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
 import 'data_gateway_status.dart';
+import 'focus_is_free.dart';
 import 'language_tag_picker_dialog.dart';
 
 /// A DataGateway's language worklist (#457): the values it uses for languages
@@ -300,8 +301,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
     required bool inView,
     FocusNode? untouched,
   }) {
-    final focused = FocusManager.instance.primaryFocus;
-    if (!_focusIsFree() && (untouched == null || focused != untouched)) return;
+    if (!focusIsFree(context, untouched: untouched)) return;
     final target = rowId == null
         ? _chips[filter]
         : _menus[rowId]?.descendants
@@ -315,18 +315,6 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
         FocusManager.instance.highlightMode == FocusHighlightMode.traditional) {
       control.findRenderObject()?.showOnScreen();
     }
-  }
-
-  /// Whether keyboard focus is on no control: on nothing, on the page holding
-  /// this worklist, or on a scope that page sits inside. A scope anywhere else
-  /// belongs to another route, such as a menu or a dialog that has just opened,
-  /// and isn't this worklist's to take focus from.
-  bool _focusIsFree() {
-    final focused = FocusManager.instance.primaryFocus;
-    if (focused == null) return true;
-    if (focused is! FocusScopeNode) return false;
-    final page = FocusScope.of(context, createDependency: false);
-    return focused == page || page.ancestors.contains(focused);
   }
 
   @override

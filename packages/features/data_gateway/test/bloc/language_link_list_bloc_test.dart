@@ -463,6 +463,94 @@ void main() {
       verify: (_) => expect(remote.calls, [fetchCall()]),
     );
 
+    late Completer<PaginatedResult<LanguageLink>> refusal;
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([
+          refusal.future,
+          linksPage([a]),
+        ]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a]),
+      ],
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, forbidden()]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall(), fetchCall()]),
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused more reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        refusal = Completer();
+        reads([
+          linksPage([a], hasMore: true),
+          refusal.future,
+          linksPage([a, b]),
+        ]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        await send(bloc, more);
+        // A changed answer that still allows read.
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      skip: 4,
+      expect: () => [
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a, b], mayUpdate: false),
+      ],
+      // The read, the More on the same short page, and the read again.
+      verify: (_) =>
+          expect(remote.calls, [fetchCall(), fetchCall(), fetchCall()]),
+    );
+
     late Completer<PaginatedResult<LanguageLink>> pendingRead;
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(

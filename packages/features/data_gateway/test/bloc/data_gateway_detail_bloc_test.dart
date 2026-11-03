@@ -170,6 +170,57 @@ void main() {
       verify: (_) => expect(remote.calls, [fetchCall]),
     );
 
+    late Completer<DataGateway> refusal;
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, row]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+        const DataGatewayDetailLoading(),
+        ready(gateway: row),
+      ],
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, forbidden()]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall, fetchCall]),
+    );
+
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
       'a missing row is gone',
       setUp: () => reads([notFound]),

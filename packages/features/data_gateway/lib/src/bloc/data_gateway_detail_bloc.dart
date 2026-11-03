@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import '../access/read_allowed_since.dart';
 import 'data_gateway_detail_event.dart';
 import 'data_gateway_detail_state.dart';
 
@@ -103,7 +104,9 @@ import 'data_gateway_detail_state.dart';
 /// [DataGatewayDetailDenied] reads the row again once a changed answer
 /// allows read. A refusal can come before the server has written a new
 /// user's roles (backend#490), and the answer that follows them is the one
-/// that says the read would now go through.
+/// that says the read would now go through. A refusal that comes after such
+/// an answer, while its read was out, reads again too, once: no change is
+/// left to say so by then.
 ///
 /// A read that succeeds while the answer is still unknown asks [access]
 /// again too. The first ask can fail with the server up, as on a 502 from a
@@ -191,6 +194,7 @@ class DataGatewayDetailBloc
     Emitter<DataGatewayDetailState> emit,
   ) async {
     final read = ++_readSequence;
+    final sentUnder = _access?.current;
     if (_row == null) emit(const DataGatewayDetailLoading());
     try {
       final row = await _remote.fetchOne(_id);
@@ -205,6 +209,10 @@ class DataGatewayDetailBloc
       if (_drops(read)) return;
       _row = null;
       emit(const DataGatewayDetailDenied());
+      // See Access in the class doc.
+      if (readAllowedSince(_access, sentUnder) && !isClosed) {
+        add(const DataGatewayDetailLoadRequested());
+      }
     } on DataGatewayNotFoundException {
       if (_drops(read)) return;
       _row = null;

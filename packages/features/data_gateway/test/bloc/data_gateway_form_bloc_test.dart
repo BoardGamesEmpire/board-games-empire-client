@@ -523,6 +523,61 @@ void main() {
       verify: (_) => expect(remote.calls, ['fetchOne(dg_1)']),
     );
 
+    late Completer<DataGateway> refusal;
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        remote.onFetchOne = (_) => refusal.future;
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = everything;
+        await pumpEventQueue();
+        remote.onFetchOne = (_) async => bgg;
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        const DataGatewayFormDenied(),
+        const DataGatewayFormLoading(),
+        DataGatewayFormEditing(original: bgg, maySave: true, accessKnown: true),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        remote.onFetchOne = (_) => refusal.future;
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.current = everything;
+        await pumpEventQueue();
+        remote.onFetchOne = (_) async => throw forbidden();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayFormLoading(),
+        const DataGatewayFormDenied(),
+        const DataGatewayFormLoading(),
+        const DataGatewayFormDenied(),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchOne(dg_1)', 'fetchOne(dg_1)']),
+    );
+
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a refused save asks access again',
       setUp: () {

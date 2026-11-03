@@ -709,6 +709,25 @@ void main() {
       expectFocusOn(nodeAbove(tester, 'Add data gateway'));
     });
 
+    testWidgets('an add whose field has focus keeps it when create falls and '
+        'comes back before the next frame', (tester) async {
+      final mayDoAnything = access.current;
+      await pumpForm(tester);
+      final name = fieldNode(tester, DataGatewayForm.nameFieldKey)
+        ..requestFocus();
+      await tester.pump();
+
+      // Each answer reaches the form, but no frame is drawn between them.
+      access.current = mayOnlyRead;
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayDoAnything;
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayForm.nameFieldKey), findsOneWidget);
+      expectFocusOn(name);
+    });
+
     testWidgets('an add whose save has focus hands it to the heading when '
         'create falls and the form closes', (tester) async {
       await pumpForm(tester);

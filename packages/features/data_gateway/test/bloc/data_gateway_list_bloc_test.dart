@@ -415,6 +415,63 @@ void main() {
       verify: (_) => expect(remote.calls, ['fetchPage(1, 100)']),
     );
 
+    late Completer<PaginatedResult<DataGateway>> refusal;
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        remote.onFetchPage = (_, _) => refusal.future;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = everything;
+        await pumpEventQueue();
+        remote.listing([bgg]);
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+        const DataGatewayListLoading(),
+        ready([bgg]),
+      ],
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        var reads = 0;
+        remote.onFetchPage = (_, _) =>
+            ++reads == 1 ? refusal.future : Future.error(forbidden());
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        access.current = everything;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['fetchPage(1, 100)', 'fetchPage(1, 100)']),
+    );
+
     blocTest<DataGatewayListBloc, DataGatewayListState>(
       'a refused read asks access again even when a newer read has '
       'superseded it',

@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import '../access/read_allowed_since.dart';
 import 'language_link_list_event.dart';
 import 'language_link_list_state.dart';
 
@@ -147,7 +148,9 @@ import 'language_link_list_state.dart';
 /// [LanguageLinkListDenied] reads the list again once a changed answer
 /// allows read. A refusal can come before the server has written a new
 /// user's roles (backend#490), and the answer that follows them is the one
-/// that says the read would now go through.
+/// that says the read would now go through. A refusal that comes after such
+/// an answer, while its read or More was out, reads again too, once: no
+/// change is left to say so by then.
 ///
 /// A read that succeeds while the answer is still unknown asks [access]
 /// again too. The first ask can fail with the server up, as on a 502 from a
@@ -261,6 +264,7 @@ class LanguageLinkListBloc
   Future<void> _read(Emitter<LanguageLinkListState> emit) async {
     final read = ++_readSequence;
     final filter = _filter;
+    final sentUnder = _access?.current;
     // A More still out answers for rows this read replaces. Its answer is
     // dropped when it lands, and it stops showing now.
     final droppedMore = _loadingMore;
@@ -290,6 +294,7 @@ class LanguageLinkListBloc
       unawaited(_access?.refresh());
       if (read != _readSequence) return;
       _takeDown(emit, LanguageLinkListDenied(filter));
+      _readAgainIfAllowedSince(sentUnder);
     } on DataGatewayNotFoundException {
       if (read != _readSequence) return;
       _takeDown(emit, LanguageLinkListGone(filter));
@@ -335,6 +340,7 @@ class LanguageLinkListBloc
     final more = ++_moreSequence;
     bool dropped() => read != _readSequence || more != _moreSequence;
     final filter = _filter;
+    final sentUnder = _access?.current;
     final page = _readThrough ~/ _pageSize + 1;
     _moreWaiting = false;
     _loadingMore = true;
@@ -365,6 +371,7 @@ class LanguageLinkListBloc
       unawaited(_access?.refresh());
       if (dropped()) return;
       _takeDown(emit, LanguageLinkListDenied(filter));
+      _readAgainIfAllowedSince(sentUnder);
     } on DataGatewayNotFoundException {
       if (dropped()) return;
       _takeDown(emit, LanguageLinkListGone(filter));
@@ -561,6 +568,14 @@ class LanguageLinkListBloc
       return;
     }
     _emitReady(emit);
+  }
+
+  /// Reads the list again after a refusal, when an answer that allows read
+  /// landed while the refused read was out: see Access in the class doc.
+  void _readAgainIfAllowedSince(CallerAccess? sentUnder) {
+    if (readAllowedSince(_access, sentUnder) && !isClosed) {
+      add(const LanguageLinkListLoadRequested());
+    }
   }
 
   /// Takes the rows down, and shows [state] in their place.

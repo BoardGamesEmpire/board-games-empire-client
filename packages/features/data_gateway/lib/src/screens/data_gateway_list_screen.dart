@@ -15,6 +15,7 @@ import '../bloc/data_gateway_list_event.dart';
 import '../bloc/data_gateway_list_state.dart';
 import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
+import '../widgets/focus_is_free.dart';
 
 /// The DataGateway admin screen (#41): every DataGateway on the active
 /// server, with add, edit, delete, connect and disconnect.
@@ -215,7 +216,8 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
   ///   the page, to whatever control is left.
   ///
   /// Runs before the frame that takes the control away, while it still has
-  /// focus.
+  /// focus, and hands it on after that frame. Not if the user has moved focus
+  /// meanwhile, and not if access has given the control back by then.
   void _onControlTakenAway(BuildContext context, DataGatewayListState state) {
     if (state is! DataGatewayListReady) return;
     final addGoes = !state.mayCreate && _add.hasFocus;
@@ -228,8 +230,15 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
         ? _rows[menuGoes.key]
         : null;
     final target = state.outcome != null ? _dismiss : ownRow ?? _heading;
+    final focused = FocusManager.instance.primaryFocus;
+    final bloc = context.read<DataGatewayListBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
+      final now = bloc.state;
+      final stillGone =
+          now is DataGatewayListReady &&
+          (addGoes ? !now.mayCreate : !_offersMenus(now));
+      if (!stillGone) return;
       target.requestFocus();
       if (FocusManager.instance.highlightMode ==
           FocusHighlightMode.traditional) {

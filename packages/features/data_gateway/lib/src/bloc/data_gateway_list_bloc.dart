@@ -7,6 +7,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 import '../access/data_gateway_names.dart';
+import '../access/read_allowed_since.dart';
 import 'data_gateway_list_event.dart';
 import 'data_gateway_list_state.dart';
 
@@ -57,7 +58,9 @@ import 'data_gateway_list_state.dart';
 /// [DataGatewayListDenied] reads the list again once a changed answer allows
 /// read. A refusal can come before the server has written a new user's
 /// roles, as for a fresh server's first owner (backend#490), and the answer
-/// that follows them is the one that says the read would now go through.
+/// that follows them is the one that says the read would now go through. A
+/// refusal that comes after such an answer, while its read was out, reads
+/// again too, once: no change is left to say so by then.
 ///
 /// A read that succeeds while the answer is still unknown asks [access]
 /// again too. The first ask can fail with the server up, as on a 502 from a
@@ -131,6 +134,7 @@ class DataGatewayListBloc
     Emitter<DataGatewayListState> emit,
   ) async {
     final read = ++_readSequence;
+    final sentUnder = _access?.current;
     if (_rows == null) emit(const DataGatewayListLoading());
     try {
       final rows = <DataGateway>[];
@@ -153,6 +157,10 @@ class DataGatewayListBloc
       if (read != _readSequence) return;
       _rows = null;
       emit(const DataGatewayListDenied());
+      // See Access in the class doc.
+      if (readAllowedSince(_access, sentUnder) && !isClosed) {
+        add(const DataGatewayListLoadRequested());
+      }
     } on Object catch (error, stackTrace) {
       if (read != _readSequence) return;
       _logger.warn(

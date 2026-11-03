@@ -351,6 +351,51 @@ void main() {
       expectFocusOn(tester, 'Data gateways');
     });
 
+    testWidgets('focus the user moves before the Add button goes stays where '
+        'they put it', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.addKey));
+      await tester.pump();
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      // The answer reaches the screen, and the user moves on before the
+      // frame that takes the button away.
+      await tester.binding.delayed(Duration.zero);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowKey('dg_1')));
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+      expectFocusOn(tester, 'BGG');
+    });
+
+    testWidgets('the Add button with focus keeps it when create falls and '
+        'comes back before the next frame', (tester) async {
+      final mayDoAnything = access.current;
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.addKey));
+      await tester.pump();
+
+      // Each answer reaches the screen, but no frame is drawn between them.
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayDoAnything;
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'Add data gateway');
+    });
+
     testWidgets('a row menu with focus hands it to its own row when update '
         'and delete fall', (tester) async {
       remote.listing([bgg, steam]);
