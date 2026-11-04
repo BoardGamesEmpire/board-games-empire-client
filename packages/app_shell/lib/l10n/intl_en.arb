@@ -312,6 +312,18 @@
   "@shellUnverifiedSessionDismiss": {
     "description": "Tooltip and accessibility label for the control that hides the unverified-session banner until the next offline episode (#98)"
   },
+  "shellOfflineMessage": "You're offline. Changes will sync when you reconnect.",
+  "@shellOfflineMessage": {
+    "description": "Shown in a thin strip at the top of the window once the device has had no connection for two seconds, on every screen (#49). Assistive technology reads it once, when it appears. Keep it to one short sentence pair: the strip sits above every screen and grows with the text."
+  },
+  "shellBackOnlineMessage": "Back online",
+  "@shellBackOnlineMessage": {
+    "description": "Replaces shellOfflineMessage in the same strip when the connection returns; shown for two seconds, then the strip closes (#49). Assistive technology reads it once, when it replaces the offline message."
+  },
+  "shellOnlineOnlyReason": "Available when you're online",
+  "@shellOnlineOnlyReason": {
+    "description": "Why a control that needs the server is disabled while the device is offline (#49). Assistive technology reads it as the control's hint; it is also shown as a small note under the control."
+  },
   "shellInviteSendLoading": "Loading the invite form\u2026",
   "@shellInviteSendLoading": {
     "description": "Announced and shown while the send-invite form works out who is looking, from the household's cached members, before it can show the form or the not-allowed note."

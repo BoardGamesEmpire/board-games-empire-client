@@ -31,7 +31,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/l10n/user_search_localizations.dart';
 
 import 'package:ui/ui.dart'
-    show BgeLoadingState, BgePage, UnverifiedSessionBanner;
+    show
+        BgeConnectivityScope,
+        BgeLoadingState,
+        BgePage,
+        UnverifiedSessionBanner;
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -53,6 +57,7 @@ import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
 import 'database_recovery_notice.dart';
 import 'feedback_review_screen.dart';
+import 'offline_strip_host.dart';
 import 'router_back_interceptor.dart';
 import 'detached_rehydrate.dart';
 import 'session_rehydrate_trigger.dart';
@@ -2473,7 +2478,17 @@ class _BgeAppState extends State<BgeApp> {
       locale: locale,
       routerConfig: _router,
       builder: (context, child) {
-        final content = _selectable(context, child ?? const SizedBox.shrink());
+        // #49: the offline strip, and the connectivity scope every screen's
+        // controls read. Above the Navigator, so both reach every route,
+        // those outside the auth shell included. Part of `content`, so a
+        // pending crash draft's barrier covers the strip like the rest of
+        // the app. Outside the selection region, whose first-frame swap
+        // would otherwise remount the host. Unconditional, as
+        // `SessionRehydrateTrigger` is: the host handles a null service.
+        final content = OfflineStripHost(
+          connectivity: _rootConnectivity(),
+          child: _selectable(context, child ?? const SizedBox.shrink()),
+        );
         final reporter = widget.feedbackReporter;
         // #302: mounted here, above the Navigator, so it survives every
         // route change. The screens that read a re-hydrated cache (the
@@ -3367,6 +3382,20 @@ class _UnsentChanges {
 /// the banner hides itself while the host, unaware, keeps the inset
 /// removed, and content underlaps the status bar. Both decisions live
 /// here so they cannot diverge.
+///
+/// The banner also steps aside while the offline strip (#49) is on screen,
+/// its "Back online" included, so one notice at a time talks about the
+/// connection. It returns once the strip collapses if the session is still
+/// unverified. Stepping aside is not a dismissal: the episode's dismissal
+/// state is untouched.
+///
+/// The content below the banner sits in its own semantics container. Every
+/// route carries a modal barrier whose [BlockSemantics] drops the semantics
+/// of whatever was painted before it, up to the nearest container. Without
+/// one here the banner, painted before the shell's routes, never reached a
+/// screen reader: neither its message nor its dismiss control (#98). The
+/// offline strip's host carries the same container for the same reason
+/// (#49).
 class _UnverifiedSessionBannerHost extends StatefulWidget {
   const _UnverifiedSessionBannerHost({required this.child});
 
@@ -3396,7 +3425,10 @@ class _UnverifiedSessionBannerHostState
           _isUnverified(previous) != _isUnverified(current),
       builder: (context, state) {
         final shellL10n = ShellLocalizations.of(context);
-        final showBanner = _isUnverified(state) && !_dismissedThisEpisode;
+        final showBanner =
+            _isUnverified(state) &&
+            !_dismissedThisEpisode &&
+            !BgeConnectivityScope.noticeShowingOf(context);
         return Column(
           children: [
             UnverifiedSessionBanner(
@@ -3406,15 +3438,21 @@ class _UnverifiedSessionBannerHostState
               onDismiss: () => setState(() => _dismissedThisEpisode = true),
             ),
             Expanded(
-              // The banner consumed the top inset while it shows; strip it
-              // from the content or app bars below inset a second time.
-              child: showBanner
-                  ? MediaQuery.removePadding(
-                      context: context,
-                      removeTop: true,
-                      child: widget.child,
-                    )
-                  : widget.child,
+              // Present whether or not the banner shows; see the class docs.
+              child: Semantics(
+                container: true,
+                explicitChildNodes: true,
+                // The banner consumed the top inset while it shows; strip
+                // it from the content or app bars below inset a second time.
+                // Always wrapped, so showing or hiding the banner only
+                // switches `removeTop` and never reshapes the tree above
+                // the shell's routes.
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: showBanner,
+                  child: widget.child,
+                ),
+              ),
             ),
           ],
         );
