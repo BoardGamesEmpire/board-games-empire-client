@@ -56,12 +56,12 @@ class CatalogMessageSliver extends StatelessWidget {
 /// The banner over what a screen shows from this device's cache because
 /// the server's answer failed, with a retry that asks the server again.
 ///
-/// Furniture for as long as the screen shows the cache, so it does not
-/// scroll itself into view.
+/// The catalog's [BgeRefreshBanner]: furniture for as long as the screen
+/// shows the cache, so it does not scroll itself into view.
 ///
 /// A screen that keeps the cache up while it retries passes [retrying]: the
-/// button keeps its place, disabled and relabelled, and the new label is
-/// announced, as the browse list's "more" button does.
+/// banner says so, and the retry keeps its place and its focus, relabelled
+/// and inert until the answer comes (#607).
 class CatalogFromCacheBanner extends StatelessWidget {
   const CatalogFromCacheBanner({
     required this.message,
@@ -77,17 +77,13 @@ class CatalogFromCacheBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
-    return BgeInlineBanner(
-      tone: BgeBannerTone.warning,
-      message: message,
-      reveal: false,
-      action: Semantics(
-        liveRegion: retrying,
-        child: TextButton(
-          onPressed: retrying ? null : onRetry,
-          child: Text(retrying ? l10n.catalogRetrying : l10n.catalogRetry),
-        ),
-      ),
+    return BgeRefreshBanner(
+      failedMessage: message,
+      inProgressLabel: l10n.catalogRetrying,
+      retryLabel: l10n.catalogRetry,
+      retryKey: const ValueKey('catalogFromCacheRetry'),
+      refreshing: retrying,
+      onRetry: onRetry,
     );
   }
 }

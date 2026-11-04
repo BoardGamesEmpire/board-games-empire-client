@@ -182,26 +182,42 @@ void main() {
     },
   );
 
-  testWidgets('while a retry asks the server, the banner says so, and the '
-      'saved games stay up whatever it answers', (tester) async {
+  testWidgets('while a retry asks the server, the banner says so, the retry '
+      'keeps focus and asks once, and the saved games stay up whatever it '
+      'answers (#607)', (tester) async {
     remote.onFetchPage = (_, _) async => throw unreachable();
     await show(tester, cache: FakeGamesCache([azul]));
 
+    var asks = 0;
     final answer = Completer<PaginatedResult<Game>>();
-    remote.onFetchPage = (_, _) => answer.future;
-    await tester.tap(find.text('Try again'));
+    remote.onFetchPage = (_, _) {
+      asks++;
+      return answer.future;
+    };
+    final retry = find.descendant(
+      of: find.byKey(GameBrowseScreen.fromCacheBannerKey),
+      matching: find.byType(TextButton),
+    );
+    final focus = tester.widget<TextButton>(retry).focusNode!;
+    focus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
 
-    final retrying = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, 'Trying again…'),
-    );
-    expect(retrying.onPressed, isNull);
+    // The banner's message and the retry's label.
+    expect(find.text('Trying again…'), findsNWidgets(2));
+    expect(focus.hasPrimaryFocus, isTrue);
     expect(find.text('Azul'), findsOneWidget);
+
+    await tester.tap(retry);
+    await tester.pump();
+    expect(asks, 1);
 
     answer.completeError(unreachable());
     await tester.pumpAndSettle();
 
     expect(find.text('Try again'), findsOneWidget);
+    expect(focus.hasPrimaryFocus, isTrue);
     expect(find.text('Azul'), findsOneWidget);
   });
 

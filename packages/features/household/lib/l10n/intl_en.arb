@@ -742,6 +742,20 @@
       }
     }
   },
+  "householdMemberBusy": "Updating this member…",
+  "@householdMemberBusy": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, when the app does not know the member's name yet. The button stays focusable but does nothing until the request answers."
+  },
+  "householdMemberBusyFor": "Updating {name}…",
+  "@householdMemberBusyFor": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, by the member's display name or username. The button stays focusable but does nothing until the request answers.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
   "householdMemberChangeRole": "Change role",
   "@householdMemberChangeRole": {
     "description": "Menu item on a member's row on the household screen. Opens a dialog to give the member another role."

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../buttons/bge_inert_button.dart';
 import 'bge_inline_banner.dart';
 
 /// The stale-data banner and the retry that shares it (#269, #300, #573).
@@ -29,11 +30,23 @@ import 'bge_inline_banner.dart';
 ///
 /// ## The button keeps its place and its name
 ///
-/// While the pass runs the button is **disabled, not removed**, and its
-/// label swaps to the in-progress string rather than leaving a bare
-/// spinner — `BgeSubmitButton`'s contract (#163), which exists because a
-/// control that vanishes mid-interaction moves focus, and an unlabelled
-/// one announces as "button, disabled" with no reason given.
+/// While the pass runs the button is **enabled and inert, not removed and
+/// not disabled**, and its label swaps to the in-progress string rather than
+/// leaving a bare spinner. That is the place-and-name half of
+/// `BgeSubmitButton`'s "Disabled, never hidden" contract (#163), which exists
+/// because a control that vanishes mid-interaction moves focus, and an
+/// unlabelled one announces as "button, disabled" with no reason given. The
+/// disabled half is left out on purpose, below.
+///
+/// It is not disabled because `ButtonStyleButton` passes
+/// `canRequestFocus: enabled`: a disabled button gives up focus, so a
+/// keyboard or screen-reader user who pressed it lost their place on every
+/// pass (#607). Instead it is a [BgeInertButton]: a press while [refreshing]
+/// does nothing, and the retry has its own semantics node: it reads as in
+/// progress (focusable, not enabled, with no tap action) and is the same node
+/// at rest and busy, so a screen reader's cursor is not moved when the pass
+/// starts or ends. A held Enter or Space starts one pass, not one per key
+/// repeat.
 ///
 /// [refreshing] is only ever true for a pass the **user asked for**
 /// (#300). A pass a background trigger started is not narrated: the banner
@@ -84,14 +97,48 @@ class BgeRefreshBanner extends StatelessWidget {
       reveal: false,
       action: retry == null
           ? null
-          : TextButton.icon(
-              key: retryKey,
-              onPressed: refreshing ? null : retry,
-              icon: refreshing
-                  ? const _RetrySpinner()
-                  : const Icon(Icons.refresh),
-              label: Text(refreshing ? inProgressLabel : retryLabel),
+          : _Retry(
+              retryKey: retryKey,
+              refreshing: refreshing,
+              inProgressLabel: inProgressLabel,
+              retryLabel: retryLabel,
+              onRetry: retry,
             ),
+    );
+  }
+}
+
+/// The retry button, enabled through a pass so it keeps focus (#607).
+class _Retry extends StatelessWidget {
+  const _Retry({
+    required this.retryKey,
+    required this.refreshing,
+    required this.inProgressLabel,
+    required this.retryLabel,
+    required this.onRetry,
+  });
+
+  final Key retryKey;
+  final bool refreshing;
+  final String inProgressLabel;
+  final String retryLabel;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = refreshing ? inProgressLabel : retryLabel;
+
+    return BgeInertButton(
+      inert: refreshing,
+      label: label,
+      onPressed: onRetry,
+      builder: (context, focusNode, onPressed) => TextButton.icon(
+        key: retryKey,
+        focusNode: focusNode,
+        onPressed: onPressed,
+        icon: refreshing ? const _RetrySpinner() : const Icon(Icons.refresh),
+        label: Text(label),
+      ),
     );
   }
 }

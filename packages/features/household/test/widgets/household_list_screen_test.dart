@@ -679,12 +679,12 @@ void main() {
       expect(find.text(_refreshFailedCopy), findsOneWidget);
     });
 
-    testWidgets('the retry keeps an accessible name while it is disabled', (
+    testWidgets('the retry keeps an accessible name while it is busy', (
       tester,
     ) async {
       // `BgeSubmitButton`'s contract, applied to this button: a control
       // that keeps its place must also keep saying what it is doing, or a
-      // screen reader announces "Try again, disabled" with no reason.
+      // screen reader announces a bare "Try again" with no sign it is busy.
       final pass = Completer<void>();
       await tester.pumpWidget(harness(onRetry: () => pass.future));
       households.add([_household('h-1')]);
@@ -707,7 +707,8 @@ void main() {
         tester
             .widget<TextButton>(find.byKey(HouseholdListScreen.refreshRetryKey))
             .onPressed,
-        isNull,
+        // Enabled and inert, so it keeps focus (#607).
+        isNotNull,
       );
 
       pass.complete();

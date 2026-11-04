@@ -12,6 +12,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../buttons/bge_inert_button.dart';
+
 /// A headed row that moves side to side by swipe or by click (#615).
 ///
 /// The row is a [SingleChildScrollView] holding a [Row] rather than a
@@ -337,10 +339,11 @@ class _BgeShelfState extends State<BgeShelf> {
 /// A material button opens its own semantics node and sets the enabled flag
 /// from `onPressed`, which has to stay set for focus to stay. An enclosing
 /// `Semantics(enabled: false)` never reaches that node, and merging one in
-/// doesn't change what it says or take away its tap. So this replaces the node:
-/// the button's semantics are excluded, and the one here says what the button's
-/// would, with what it should say at an end. A screen reader lands on a button
-/// that reads as disabled and has no tap to offer.
+/// doesn't change what it says or take away its tap. So this is a
+/// [BgeInertButton], which replaces the node: the button's semantics are
+/// excluded, and its own says what the button's would, with what it should
+/// say at an end. A screen reader lands on a button that reads as disabled and
+/// has no tap to offer.
 ///
 /// Its name is a label where a material button has a tooltip. VoiceOver only
 /// lands on a node with a label, value, hint or action that doesn't scroll, and
@@ -349,7 +352,7 @@ class _BgeShelfState extends State<BgeShelf> {
 /// under a user who pressed it up to the end. Not both: iOS joins the two and
 /// would read the name twice. The tooltip on the [IconButton] is still what
 /// hover and long press show.
-class _ShelfButton extends StatefulWidget {
+class _ShelfButton extends StatelessWidget {
   const _ShelfButton({
     required this.buttonKey,
     required this.icon,
@@ -365,46 +368,20 @@ class _ShelfButton extends StatefulWidget {
   final VoidCallback onMove;
 
   @override
-  State<_ShelfButton> createState() => _ShelfButtonState();
-}
-
-class _ShelfButtonState extends State<_ShelfButton> {
-  // Owned here to say whether it has focus, which the node here has to report
-  // now that the one `Focus` builds is excluded.
-  final FocusNode _focusNode = FocusNode(debugLabel: 'BgeShelf button');
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _focusNode,
-    builder: (context, button) => Semantics(
-      container: true,
-      button: true,
-      enabled: !widget.atEnd,
-      focused: _focusNode.hasPrimaryFocus,
-      label: widget.label,
-      onTap: widget.atEnd ? null : widget.onMove,
-      // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-      onFocus: defaultTargetPlatform == TargetPlatform.iOS
-          ? null
-          : _focusNode.requestFocus,
-      excludeSemantics: true,
-      child: button,
-    ),
-    child: IconButton(
-      key: widget.buttonKey,
-      focusNode: _focusNode,
-      tooltip: widget.label,
-      icon: Icon(widget.icon),
-      style: widget.atEnd ? _atEndStyle(context) : null,
-      // Set even at an end, or focus would go. The move stops at the row's
-      // ends, so a press there goes nowhere.
-      onPressed: widget.onMove,
+  Widget build(BuildContext context) => BgeInertButton(
+    // Inert, not disabled, at an end, or focus would go.
+    inert: atEnd,
+    label: label,
+    onPressed: onMove,
+    // Holding Enter or Space down moves along the row, a step per repeat.
+    ignoreKeyRepeats: false,
+    builder: (context, focusNode, onPressed) => IconButton(
+      key: buttonKey,
+      focusNode: focusNode,
+      tooltip: label,
+      icon: Icon(icon),
+      style: atEnd ? _atEndStyle(context) : null,
+      onPressed: onPressed,
     ),
   );
 

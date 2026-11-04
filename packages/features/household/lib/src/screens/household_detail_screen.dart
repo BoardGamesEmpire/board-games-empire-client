@@ -725,6 +725,14 @@ class _MemberRow extends StatelessWidget {
 }
 
 /// A member's menu: change their role, remove them, or both (#480).
+///
+/// While a request for the member is on its way the button stays **enabled
+/// and inert** rather than disabled: `ButtonStyleButton` passes
+/// `canRequestFocus: enabled`, so a disabled button drops focus and a
+/// keyboard or screen-reader user loses their place when they confirm an
+/// action (#607). Staying enabled takes away the greyed look that was its
+/// only busy cue, so it shows a spinner instead of the icon and its
+/// accessible name says what is happening.
 class _MemberMenu extends StatelessWidget {
   const _MemberMenu({
     required this.member,
@@ -742,13 +750,19 @@ class _MemberMenu extends StatelessWidget {
   final List<HouseholdRole> roles;
 
   /// A request for this member is on its way. The menu stays shut until it
-  /// answers.
+  /// answers, and the button stays enabled so it keeps focus (#607).
   final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
     final name = member.name;
+    final actionsLabel = name == null
+        ? l10n.householdMemberActions
+        : l10n.householdMemberActionsFor(name);
+    final busyLabel = name == null
+        ? l10n.householdMemberBusy
+        : l10n.householdMemberBusyFor(name);
 
     return MenuAnchor(
       // Left unconstrained, the panel sits in a hard-clipped box as wide as
@@ -771,23 +785,22 @@ class _MemberMenu extends StatelessWidget {
             child: Text(l10n.householdMemberRemove),
           ),
       ],
-      builder: (context, controller, _) => MergeSemantics(
-        child: Semantics(
-          expanded: controller.isOpen,
-          child: IconButton(
-            key: HouseholdDetailScreen.memberActionsKey(member.userId),
-            icon: const Icon(Icons.more_vert),
-            // Every row has one, so the name says whose it is to a screen
-            // reader moving from button to button.
-            tooltip: name == null
-                ? l10n.householdMemberActions
-                : l10n.householdMemberActionsFor(name),
-            onPressed: busy
-                ? null
-                : controller.isOpen
-                ? controller.close
-                : controller.open,
-          ),
+      builder: (context, controller, _) => BgeInertButton(
+        // Inert while busy, so it keeps focus through a write (#607). The
+        // name is a label because VoiceOver skips a node named only by its
+        // tooltip.
+        inert: busy,
+        label: busy ? busyLabel : actionsLabel,
+        expanded: controller.isOpen,
+        onPressed: controller.isOpen ? controller.close : controller.open,
+        builder: (context, focusNode, onPressed) => IconButton(
+          key: HouseholdDetailScreen.memberActionsKey(member.userId),
+          focusNode: focusNode,
+          icon: busy ? const _MemberMenuSpinner() : const Icon(Icons.more_vert),
+          // Every row has one, so the name says whose it is to a pointer
+          // user hovering one after another.
+          tooltip: busy ? busyLabel : actionsLabel,
+          onPressed: onPressed,
         ),
       ),
     );
@@ -843,6 +856,21 @@ class _MemberMenu extends StatelessWidget {
     );
     return confirmed ?? false;
   }
+}
+
+/// The member menu's busy icon: a spinner the size of the icon it replaces,
+/// silent to a screen reader because the button's label says what is running
+/// (#607).
+class _MemberMenuSpinner extends StatelessWidget {
+  const _MemberMenuSpinner();
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: SizedBox.square(
+      dimension: IconTheme.of(context).size,
+      child: const CircularProgressIndicator(strokeWidth: 2),
+    ),
+  );
 }
 
 /// Picks a member's new role from the ones the viewer may give (#480), and

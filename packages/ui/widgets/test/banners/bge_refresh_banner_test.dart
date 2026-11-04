@@ -1,5 +1,6 @@
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -58,10 +59,178 @@ void main() {
       expect(find.text(_retry), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(find.byIcon(Icons.refresh), findsNothing);
+      // Enabled but inert: a disabled button cannot hold focus (#607).
       expect(
         tester.widget<TextButton>(find.byKey(_retryKey)).onPressed,
-        isNull,
+        isNotNull,
       );
+    });
+
+    FocusNode retryFocus(WidgetTester tester) =>
+        tester.widget<TextButton>(find.byKey(_retryKey)).focusNode!;
+
+    testWidgets('a focused retry keeps focus through a pass', (tester) async {
+      var retries = 0;
+      Widget at({required bool refreshing}) =>
+          _host(_banner(refreshing: refreshing, onRetry: () => retries++));
+      await tester.pumpWidget(at(refreshing: false));
+
+      retryFocus(tester).requestFocus();
+      await tester.pump();
+      await tester.tap(find.byKey(_retryKey));
+      await tester.pumpWidget(at(refreshing: true));
+
+      expect(retryFocus(tester).hasFocus, isTrue);
+
+      await tester.pumpWidget(at(refreshing: false));
+
+      expect(retryFocus(tester).hasFocus, isTrue);
+      expect(retries, 1);
+    });
+
+    testWidgets('a press while refreshing does nothing', (tester) async {
+      var retries = 0;
+      await tester.pumpWidget(_host(_banner(onRetry: () => retries++)));
+      await tester.tap(find.byKey(_retryKey));
+      await tester.pumpWidget(
+        _host(_banner(refreshing: true, onRetry: () => retries++)),
+      );
+
+      await tester.tap(find.byKey(_retryKey));
+      await tester.pump();
+
+      expect(retries, 1);
+    });
+
+    testWidgets('holding Enter on a busy retry starts one pass', (
+      tester,
+    ) async {
+      var retries = 0;
+      Widget at({required bool refreshing}) =>
+          _host(_banner(refreshing: refreshing, onRetry: () => retries++));
+      await tester.pumpWidget(at(refreshing: false));
+      retryFocus(tester).requestFocus();
+      await tester.pump();
+
+      // The key goes down at rest: pass 1.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(retries, 1);
+
+      // Held through the pass.
+      await tester.pumpWidget(at(refreshing: true));
+      for (var i = 0; i < 5; i++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      }
+      expect(retries, 1);
+
+      // The pass ends with the key still held: its repeats are not a press.
+      await tester.pumpWidget(at(refreshing: false));
+      for (var i = 0; i < 5; i++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      }
+      expect(retries, 1);
+
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(retryFocus(tester).hasFocus, isTrue);
+
+      // A fresh press is the retry again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(retries, 2);
+    });
+
+    testWidgets('the retry keeps one semantics node through a pass', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      Widget at({required bool refreshing}) =>
+          _host(_banner(refreshing: refreshing, onRetry: () {}));
+      await tester.pumpWidget(at(refreshing: false));
+      final rest = tester.getSemantics(find.byKey(_retryKey)).id;
+
+      await tester.pumpWidget(at(refreshing: true));
+      expect(tester.getSemantics(find.byKey(_retryKey)).id, rest);
+
+      await tester.pumpWidget(at(refreshing: false));
+      expect(tester.getSemantics(find.byKey(_retryKey)).id, rest);
+      handle.dispose();
+    });
+
+    testWidgets('on iOS the busy retry offers no focus action', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(_host(_banner(refreshing: true, onRetry: () {})));
+      retryFocus(tester).requestFocus();
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.byKey(_retryKey)),
+        matchesSemantics(
+          label: _inProgress,
+          isButton: true,
+          isFocusable: true,
+          isFocused: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets('while refreshing it reads as in progress, not as an '
+        'action', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(_host(_banner(refreshing: true, onRetry: () {})));
+
+      // Never focused: focusable, with a focus action and no tap.
+      expect(
+        tester.getSemantics(find.byKey(_retryKey)),
+        matchesSemantics(
+          label: _inProgress,
+          isButton: true,
+          isFocusable: true,
+          hasEnabledState: true,
+          hasFocusAction: true,
+        ),
+      );
+
+      retryFocus(tester).requestFocus();
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.byKey(_retryKey)),
+        matchesSemantics(
+          label: _inProgress,
+          isButton: true,
+          isFocusable: true,
+          isFocused: true,
+          hasEnabledState: true,
+          hasFocusAction: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('at rest the retry reads as an enabled button', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(_host(_banner(onRetry: () {})));
+      retryFocus(tester).requestFocus();
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(find.byKey(_retryKey)),
+        matchesSemantics(
+          label: _retry,
+          isButton: true,
+          isFocusable: true,
+          isFocused: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+        ),
+      );
+      handle.dispose();
     });
 
     testWidgets('no action without onRetry', (tester) async {

@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
@@ -349,15 +349,9 @@ class DatePollBlock extends StatelessWidget {
 ///
 /// A disabled button can't hold focus, so a retry that disabled itself on
 /// press would drop a keyboard or screen-reader user's place (#607). This
-/// one stays enabled and ignores presses while [busy], showing the read
-/// under way. To a screen reader it is one node of its own in place of the
-/// button's, which says it isn't available then, and carries the button's
-/// focus as `Focus` would.
-///
-/// `BgeRefreshBanner` keeps the disabling retry for now: #607 settles the
-/// refresh banner's, now that #573 made the three copies one. This is the
-/// first direction #607 names, so it is what to lift there.
-class PollRetryButton extends StatefulWidget {
+/// one is a [BgeInertButton], as `BgeRefreshBanner`'s retry is: enabled,
+/// and inert while [busy], showing the read under way.
+class PollRetryButton extends StatelessWidget {
   const PollRetryButton({required this.busy, required this.onRetry, super.key});
 
   /// Whether the read a press started is still under way.
@@ -367,51 +361,19 @@ class PollRetryButton extends StatefulWidget {
   final VoidCallback onRetry;
 
   @override
-  State<PollRetryButton> createState() => _PollRetryButtonState();
-}
-
-class _PollRetryButtonState extends State<PollRetryButton> {
-  final FocusNode _focus = FocusNode(debugLabel: 'PollRetryButton');
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  void _press() {
-    if (!widget.busy) widget.onRetry();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    final busy = widget.busy;
     final label = busy ? l10n.eventsRefreshInProgress : l10n.eventsRefreshRetry;
 
-    return ListenableBuilder(
-      listenable: _focus,
-      builder: (context, button) => Semantics(
-        container: true,
-        button: true,
-        enabled: !busy,
-        label: label,
-        onTap: busy ? null : _press,
-        focusable: true,
-        focused: _focus.hasPrimaryFocus,
-        // As `Focus` offers it, which leaves it out on iOS.
-        onFocus: defaultTargetPlatform == TargetPlatform.iOS
-            ? null
-            : _focus.requestFocus,
-        child: button,
-      ),
-      child: ExcludeSemantics(
-        child: TextButton.icon(
-          focusNode: _focus,
-          onPressed: _press,
-          icon: busy ? const _RetrySpinner() : const Icon(Icons.refresh),
-          label: Text(label),
-        ),
+    return BgeInertButton(
+      inert: busy,
+      label: label,
+      onPressed: onRetry,
+      builder: (context, focusNode, onPressed) => TextButton.icon(
+        focusNode: focusNode,
+        onPressed: onPressed,
+        icon: busy ? const _RetrySpinner() : const Icon(Icons.refresh),
+        label: Text(label),
       ),
     );
   }

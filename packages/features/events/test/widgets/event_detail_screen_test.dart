@@ -3351,6 +3351,39 @@ void main() {
       expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
     });
 
+    testWidgets("Enter held on the poll's retry reads once, even after the "
+        'read ends', (tester) async {
+      // Every read fails at once, so the key is still down when it ends.
+      final remote = serving(summary: (_) => throw _offline);
+      await show(
+        tester,
+        poll([date('o-1')], attendees: [me(), _member('att-2')]),
+        remote: remote,
+        onBack: back,
+      );
+      final retry = find.byKey(EventDetailScreen.pollRetryKey);
+      await reveal(tester, retry);
+      Focus.of(
+        tester.element(
+          find.descendant(of: retry, matching: find.byType(Text)).first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      final asked = remote.summaryRequests.length;
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await settle(tester);
+      for (var i = 0; i < 3; i++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+        await settle(tester);
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await settle(tester);
+
+      expect(remote.summaryRequests, hasLength(asked + 1));
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+    });
+
     testWidgets("the poll's retry keeps focus, and its banner, while its read "
         'runs', (tester) async {
       Object? fails = _offline;

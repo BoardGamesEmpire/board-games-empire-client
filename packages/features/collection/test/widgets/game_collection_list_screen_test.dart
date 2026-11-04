@@ -673,8 +673,8 @@ void main() {
       await tester.pump();
 
       expect(calls, 1);
-      // The banner's message, and the disabled button's own label: it keeps
-      // a name rather than becoming a bare spinner.
+      // The banner's message, and the busy button's own label: it keeps a
+      // name rather than becoming a bare spinner.
       expect(find.text(_refreshingCopy), findsNWidgets(2));
       expect(
         tester
@@ -682,7 +682,8 @@ void main() {
               find.byKey(GameCollectionListScreen.refreshRetryKey),
             )
             .onPressed,
-        isNull,
+        // Enabled and inert, so it keeps focus (#607).
+        isNotNull,
       );
 
       pass.complete();

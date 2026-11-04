@@ -833,9 +833,8 @@ void main() {
         'the layout', (tester) async {
       // #452's focus trap. A label change flips the layout, and the button's
       // element, its state and its focus all survive it. The button stays
-      // enabled throughout. Pressing a refresh banner's retry disables it,
-      // and a disabled button drops focus whatever the layout does: that
-      // loss belongs to the call site, not to the banner.
+      // enabled throughout. A refresh banner's retry stays enabled too while
+      // it reads again (#607), so a press does not take its focus.
       final label = ValueNotifier<String>('Go');
       addTearDown(label.dispose);
       final node = FocusNode();
