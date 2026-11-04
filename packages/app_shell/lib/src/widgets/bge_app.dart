@@ -2752,6 +2752,13 @@ class _AuthScopeState extends State<_AuthScope> {
           // bloc restores its own server's session.
           key: ValueKey('auth_bloc_${active.serverId}'),
           create: (_) => AuthBloc(
+            // Required, so unguarded: every active server has one, and both
+            // compositions register it unconditionally (native through its
+            // network scope installer, web in registerServerNetworkWeb), as
+            // network_scope_installer_test and
+            // bootstrap_web_server_scope_test pin.
+            // A throw here is the first visible symptom of #174's race, and
+            // degrading it to a placeholder would hide that (#219).
             authRepository: active.container.get<AuthRepository>(),
             connectivity: widget.connectivity,
           )..add(const AuthSessionCheckRequested()),
