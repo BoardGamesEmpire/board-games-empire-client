@@ -53,10 +53,12 @@
 ///   per-server scope is untouched, and the error propagates; a later
 ///   [activate] retries from clean state.
 /// - [deactivate] is idempotent and never throws for "nothing to do";
-///   disposing the scope runs every `dispose:` callback its installers
-///   registered, which must close vended streams (**close**, not error — the
-///   locked #135 contract) so live subscriptions stop delivering the
-///   departing user's data without injecting errors into UI being unmounted.
+///   disposing the scope closes everything its installers registered (each
+///   through its `dispose:` callback or, when it had none, a `Disposable`
+///   through `onDispose`), which must close vended streams (**close**, not
+///   error — the locked #135 contract) so live subscriptions stop delivering
+///   the departing user's data without injecting errors into UI being
+///   unmounted.
 /// - Implementations serialize [activate]/[deactivate]; overlapping calls
 ///   cannot interleave scope mutations.
 abstract interface class UserSessionScope {

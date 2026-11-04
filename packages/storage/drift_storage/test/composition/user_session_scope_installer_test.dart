@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
@@ -156,8 +158,89 @@ Future<({DependencyContainer a, DependencyContainer b})> _siblingScopes(
   return (a: scopeA, b: scopeB);
 }
 
+/// A [DependencyContainer] over a real one that records what an installer
+/// registers: each singleton instance under the type it was registered as,
+/// and the type of anything registered lazily or as a factory, whose
+/// instance does not exist yet to be checked.
+class _RecordingContainer implements DependencyContainer {
+  _RecordingContainer(this._inner);
+
+  final DependencyContainer _inner;
+  final registered = <Type, Object>{};
+  final withCallback = <Type>[];
+  final unrecorded = <Type>[];
+
+  @override
+  T get<T extends Object>() => _inner.get<T>();
+
+  @override
+  bool isRegistered<T extends Object>() => _inner.isRegistered<T>();
+
+  @override
+  void registerSingleton<T extends Object>(
+    T instance, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) {
+    registered[T] = instance;
+    if (dispose != null) withCallback.add(T);
+    _inner.registerSingleton<T>(instance, dispose: dispose);
+  }
+
+  @override
+  void registerLazySingleton<T extends Object>(
+    T Function() factory, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) {
+    unrecorded.add(T);
+    _inner.registerLazySingleton<T>(factory, dispose: dispose);
+  }
+
+  @override
+  void registerFactory<T extends Object>(T Function() factory) {
+    unrecorded.add(T);
+    _inner.registerFactory<T>(factory);
+  }
+
+  @override
+  Future<void> dispose() => _inner.dispose();
+}
+
 void main() {
   const installer = UserSessionScopeInstaller();
+
+  // #254: the container closes a Disposable registration itself, so a
+  // user's streams leak past sign-out only if a repository is not
+  // Disposable (it forgot WatchDisposal), or if its registration passes a
+  // callback, which replaces the default. One instance registered under two
+  // types would be closed twice. A new registration fails the key-set check
+  // whatever it is, so adding it to the set is the moment to check the rest
+  // still hold for it.
+  test('every instance the installer registers is a distinct Disposable '
+      'with no callback, so scope teardown closes it once', () async {
+    final container = _RecordingContainer(
+      _scopeContainer(
+        _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await installer.install(container, _server(), _kUserId);
+
+    expect(container.registered.keys.toSet(), {
+      SyncQueueRepository,
+      HouseholdRepository,
+      GameCollectionRepository,
+      GameRepository,
+      EventRepository,
+    });
+    expect(container.registered.values, everyElement(isA<Disposable>()));
+    expect(container.withCallback, isEmpty);
+    expect(
+      container.registered.values.toSet(),
+      hasLength(container.registered.length),
+    );
+    expect(container.unrecorded, isEmpty);
+  });
 
   test('install never reads the auth state itself — resolution stays lazy '
       '(#128), so it succeeds under an unknown state', () async {

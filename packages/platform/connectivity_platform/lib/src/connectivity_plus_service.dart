@@ -29,8 +29,8 @@ import 'package:rxdart/rxdart.dart';
 ///   completes [watch] streams; idempotent. Deliberately *not* on the
 ///   [ConnectivityService] interface (ISP); this class implements the
 ///   container's [Disposable] marker instead, so the root modules
-///   register it with a dispose callback and the composition root's
-///   container teardown drives cleanup.
+///   register it with no callback and the composition root's container
+///   teardown closes it.
 ///
 /// [connectivityChanges] and [connectivityCheck] are the injectable
 /// source seams for tests (same constructor-injection shape as
@@ -83,8 +83,8 @@ class ConnectivityPlusService implements ConnectivityService, Disposable {
     await _subject.close();
   }
 
-  /// [Disposable] conformance: the container's dispose callback lands
-  /// here and delegates to [dispose].
+  /// [Disposable] conformance: the container's teardown lands here and
+  /// delegates to [dispose].
   @override
   Future<void> onDispose() => dispose();
 

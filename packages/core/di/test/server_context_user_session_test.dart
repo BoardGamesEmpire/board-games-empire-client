@@ -1,4 +1,5 @@
 import 'package:di/di.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
@@ -87,6 +88,50 @@ class FailingUserInstaller implements UserScopeInstaller {
   ) async {
     calls++;
     throw StateError('user installer boom');
+  }
+}
+
+/// A [Disposable] probe that counts its closes.
+class DisposableUserProbe implements Disposable {
+  var closes = 0;
+
+  @override
+  Future<void> onDispose() async {
+    closes++;
+  }
+}
+
+/// User installer registering a [DisposableUserProbe] with no `dispose:`,
+/// relying on the container to close it (#254).
+class NoCallbackUserInstaller implements UserScopeInstaller {
+  final probes = <DisposableUserProbe>[];
+
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ScopedServer server,
+    String userId,
+  ) async {
+    final probe = DisposableUserProbe();
+    probes.add(probe);
+    container.registerSingleton<DisposableUserProbe>(probe);
+  }
+}
+
+/// User installer that registers a probe whose teardown throws, then fails,
+/// so discarding the partial scope throws too.
+class TeardownThrowingFailingUserInstaller implements UserScopeInstaller {
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ScopedServer server,
+    String userId,
+  ) async {
+    container.registerSingleton<UserProbe>(
+      UserProbe('x'),
+      dispose: (_) => throw StateError('teardown'),
+    );
+    throw StateError('install');
   }
 }
 
@@ -269,6 +314,34 @@ void main() {
       );
       expect(failing.calls, 2);
     });
+
+    test('a failed activation whose reset throws is reported under the '
+        'ServerContext tag', () async {
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [TeardownThrowingFailingUserInstaller()],
+      );
+      addTearDown(context.dispose);
+      final printed = <String>[];
+      final previousPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
+      addTearDown(() => debugPrint = previousPrint);
+      await context.activate();
+
+      await expectLater(
+        context.activateUserSession('user-a'),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'install'),
+        ),
+      );
+
+      expect(printed, [
+        startsWith(
+          'ServerContext(server-local-1): user-scope reset after a failed '
+          'session activation threw',
+        ),
+      ]);
+    });
   });
 
   group('deactivateUserSession', () {
@@ -291,6 +364,22 @@ void main() {
       expect(context.activeUserId, isNull);
       expect(base.probes.single.disposed, isFalse);
       expect(context.container.get<BaseProbe>(), same(base.probes.single));
+    });
+
+    test('a Disposable the user installer registers without a callback is '
+        'closed when the session ends', () async {
+      final installer = NoCallbackUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      addTearDown(context.dispose);
+      await context.activate();
+      await context.activateUserSession('user-a');
+
+      await context.deactivateUserSession();
+
+      expect(installer.probes.single.closes, 1);
     });
 
     test('is a no-op without an active session and is idempotent', () async {

@@ -67,8 +67,9 @@ import 'watch_disposal.dart';
 /// `Future`-returning methods throw [StateError], while
 /// [watchCollection] and [watchEntry] **close** rather than error — a
 /// live subscription ends with `onDone` on the scope pop, and a call made
-/// after disposal returns an already-closed stream. `UserSessionScopeInstaller`
-/// wires `onDispose` as the registration's dispose callback.
+/// after disposal returns an already-closed stream. The container calls
+/// `onDispose` when the user scope pops, because the repository is
+/// `Disposable`.
 ///
 /// ## Quantity validation
 ///

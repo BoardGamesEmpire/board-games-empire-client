@@ -1,6 +1,8 @@
 import 'dart:async';
 
-import 'package:get_it/get_it.dart';
+// get_it exports a Disposable of its own, which BGE services do not
+// implement. Every Disposable named in this file is the interfaces one.
+import 'package:get_it/get_it.dart' show GetIt;
 import 'package:interfaces/orchestration.dart';
 
 /// GetIt-based implementation of [DependencyContainer].
@@ -23,7 +25,10 @@ class DependencyContainerImpl implements DependencyContainer {
   ///
   /// The wrapper is the instance's lifecycle owner, not a view: [dispose]
   /// resets the wrapped instance, firing every dispose callback supplied
-  /// at registration.
+  /// at registration. Only registrations made through this wrapper get the
+  /// [Disposable] default: a [Disposable] registered directly on [getIt],
+  /// as injectable's generated code registers, is closed only through a
+  /// callback it supplies itself (#61).
   ///
   /// Throws [ArgumentError] if [getIt] is the global `GetIt.instance`.
   /// This is a runtime check in **all** build modes, not an assert:
@@ -52,7 +57,17 @@ class DependencyContainerImpl implements DependencyContainer {
     FutureOr<void> Function(T instance)? dispose,
   }) {
     _assertNotDisposed();
-    _getIt.registerSingleton<T>(instance, dispose: dispose);
+    _getIt.registerSingleton<T>(
+      instance,
+      // An explicit callback wins. Otherwise the instance is known here,
+      // so only a Disposable one gets the default (#254), and one that is
+      // not is registered with no callback, exactly as before. That also
+      // keeps get_it's assertion against a callback on its own Disposable
+      // type out of reach for third-party instances.
+      dispose:
+          dispose ??
+          (instance is Disposable ? (_) => instance.onDispose() : null),
+    );
   }
 
   @override
@@ -61,7 +76,22 @@ class DependencyContainerImpl implements DependencyContainer {
     FutureOr<void> Function(T instance)? dispose,
   }) {
     _assertNotDisposed();
-    _getIt.registerLazySingleton<T>(factory, dispose: dispose);
+    _getIt.registerLazySingleton<T>(
+      factory,
+      dispose: dispose ?? _closeIfDisposable,
+    );
+  }
+
+  /// The lazy singleton's default when no callback was given (#254):
+  /// closes the instance through [Disposable.onDispose] if it is
+  /// [Disposable].
+  ///
+  /// The check runs on the instance, not on the registered type, so a
+  /// service registered under an interface that is not itself [Disposable]
+  /// is still closed. GetIt calls it only for an instance that exists: a
+  /// lazy singleton nobody resolved is not built in order to be closed.
+  static Future<void> _closeIfDisposable(Object instance) async {
+    if (instance is Disposable) await instance.onDispose();
   }
 
   @override
@@ -90,11 +120,11 @@ class DependencyContainerImpl implements DependencyContainer {
     if (_disposed) return;
     _disposed = true;
 
-    // GetIt.reset(dispose: true) invokes the dispose callback supplied at
-    // registration for every singleton (and every instantiated lazy
-    // singleton), then removes all registrations. Services should be
-    // registered with `dispose: (s) => s.onDispose()`; shared third-party
-    // resources (e.g. Dio) with their own teardown callback.
+    // GetIt.reset(dispose: true) runs the dispose callback of every
+    // singleton and every created lazy singleton, in reverse registration
+    // order, then removes all registrations. A registration that came
+    // without a callback was given the Disposable default when it was
+    // made, so a Disposable service needs nothing from its installer.
     await _getIt.reset(dispose: true);
   }
 

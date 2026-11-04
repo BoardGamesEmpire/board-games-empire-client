@@ -18,9 +18,11 @@ import 'dependency_container.dart';
 ///   `monitoring` — i.e. on a container with no per-scope registrations. It
 ///   is *not* called on `backgrounding → active` re-activation, where
 ///   resources were retained.
-/// - Teardown is expressed at registration time via the container's
-///   `dispose:` callbacks, never through a matching "uninstall" — suspend
-///   and dispose tear the whole scope down by disposing the container.
+/// - Teardown is expressed at registration time, never through a matching
+///   "uninstall": the container closes each registration through the
+///   `dispose:` callback it was given or, when it had none, a [Disposable]
+///   through [Disposable.onDispose]. Suspend and dispose tear the whole scope
+///   down by disposing the container.
 /// - Implementations should acquire real resources (open the database,
 ///   build the HTTP client) inside [install] so activation failures surface
 ///   in `activate()` where the caller can handle them, rather than at an

@@ -14,8 +14,9 @@ import 'dependency_container.dart';
 /// - [identity] and [displayName] for auth UI (`AuthScreen` renders the
 ///   strategies the server advertises and attributes the form to the
 ///   server by name);
-/// - [serverId] for per-server bookkeeping (e.g. tagging queued feedback
-///   reports in #97, keying widget rebuilds on server switches).
+/// - [serverId] as an opaque key: keying widget rebuilds on a server
+///   switch, and same-server checks. Anything that needs a stable server
+///   identity reads [identity] instead.
 ///
 /// Values are snapshots taken when the server was connected (sourced from
 /// the active [ServerContext]'s `config` on native); a rename-server flow
@@ -28,7 +29,18 @@ class ActiveServer {
     required this.container,
   });
 
-  /// Client-local server id ([ServerConfig.id] on native).
+  /// An opaque key for this server, whose value each platform defines:
+  /// [ServerConfig.id] on native (client-local, one per registration, so a
+  /// server added again gets a new key) and the server-vended id on web.
+  ///
+  /// Safe for keying rebuilds and for same-server checks within one run.
+  /// Never parse it, compare it across platforms, or send it to a server
+  /// as an identifier: no server can resolve it. Diagnostic log context
+  /// may carry it, and so the breadcrumbs a feedback report uploads, but
+  /// only as a client-side label. Anything that needs a stable server
+  /// identity reads [identity]'s
+  /// [ServerIdentity.serverId], as `ActiveServerFeedbackTargetResolver`
+  /// does.
   final String serverId;
 
   /// Human-readable server name, shown by auth UI for attribution.

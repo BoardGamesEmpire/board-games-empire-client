@@ -146,10 +146,10 @@ class HouseholdRepositoryImpl
   final ClockService _clock;
 
   /// Close-on-dispose machinery lives in the shared [WatchDisposal]
-  /// mixin (#135, one fix surface with `SyncQueueRepositoryImpl`):
-  /// `UserSessionScopeInstaller` wires [onDispose] as the registration's
-  /// `dispose:` callback, every public method opens with
-  /// [checkNotDisposed], and both `watch*` methods route through
+  /// mixin (#135, one fix surface with `SyncQueueRepositoryImpl`): the
+  /// container calls [onDispose] when the user scope pops, because the
+  /// mixin makes the repository `Disposable`; every public method opens
+  /// with [checkNotDisposed], and both `watch*` methods route through
   /// [untilDisposed].
   @override
   String get disposedRepositoryName => 'HouseholdRepository';

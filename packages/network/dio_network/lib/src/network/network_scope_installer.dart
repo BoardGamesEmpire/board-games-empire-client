@@ -13,9 +13,9 @@ import 'register_server_network.dart';
 /// depending on this package; the platform app composes it into the
 /// context's installer list alongside `StorageScopeInstaller`.
 ///
-/// Teardown is already expressed inside [registerServerNetwork] via the
-/// container's `dispose:` callbacks (the container owns and closes the
-/// shared Dio; the auth repository disposes only its own resources), so
+/// Teardown is already expressed inside [registerServerNetwork]: the shared
+/// Dio's `dispose:` callback closes it, and the container closes the
+/// `Disposable` auth repository, which disposes only its own resources. So
 /// suspend/dispose need nothing further from this class.
 ///
 /// The web variant (httpOnly-cookie transport, `web_network`) gets its own

@@ -28,11 +28,12 @@ import 'streams/replay_then_forward.dart';
 ///   `activate()` retries from a clean container.
 /// - `activate()` from `backgrounding` re-runs **nothing**: backgrounding
 ///   retains open resources by design.
-/// - `suspend()` disposes the current scope — every `dispose:` callback
-///   supplied at registration runs (DB close, Dio close, repository
-///   teardown) — and swaps in a fresh, empty container for the next
-///   activation. Per-server resources only; the app-global meta database is
-///   owned by the app bootstrap and is never touched here.
+/// - `suspend()` disposes the current scope — every registration is closed
+///   through its `dispose:` callback, or [Disposable.onDispose] when it had
+///   none (DB close, Dio close, repository teardown) — and swaps in a
+///   fresh, empty container for the next activation. Per-server resources
+///   only; the app-global meta database is owned by the app bootstrap and
+///   is never touched here.
 /// - `dispose()` tears the scope down for good.
 ///
 /// ## Stable container identity
@@ -78,13 +79,18 @@ class ServerContextImpl implements ServerContext {
        _config = config,
        _container = _SwappableContainer(
          containerFactory ?? DependencyContainerImpl.new,
-         label: 'ServerContext(${config.id})',
+         label: _diagnosticTagFor(config.id),
        ),
        _state = ServerContextState.initializing,
        _stateController = StreamController<ServerContextState>.broadcast();
 
   @override
   final String serverId;
+
+  /// The prefix of every line this context reports, and of the ones its
+  /// user-scope host reports on its behalf. Static so the constructor's
+  /// initializer list can pass it to the host (#327).
+  static String _diagnosticTagFor(String id) => 'ServerContext($id)';
 
   @override
   ServerConfig get config => _config;
@@ -170,7 +176,7 @@ class ServerContextImpl implements ServerContext {
             await _container.replaceInner();
           } catch (teardownError) {
             debugReportSwallowed(
-              'ServerContext($serverId): scope reset after a failed '
+              '${_diagnosticTagFor(serverId)}: scope reset after a failed '
               'activation threw (suppressed in favor of the original '
               'installer error)',
               teardownError,
@@ -223,11 +229,11 @@ class ServerContextImpl implements ServerContext {
     }
 
     await _transition(() async {
-      // Dispose the scope: every dispose callback registered by the
-      // installers runs here (per-server DB close, Dio close, repository
-      // teardown), then a fresh container takes its place for the next
-      // activation. The app-global meta database is not a per-server
-      // resource and is untouched.
+      // Dispose the scope: everything the installers registered is closed
+      // here, through its dispose callback or as a Disposable (per-server
+      // DB close, Dio close, repository teardown), then a fresh container
+      // takes its place for the next activation. The app-global meta
+      // database is not a per-server resource and is untouched.
       //
       // A throwing dispose callback must not abort the transition: that
       // would roll back to `backgrounding`, and on the orchestrator's
@@ -246,7 +252,8 @@ class ServerContextImpl implements ServerContext {
         await _container.replaceInner();
       } catch (e) {
         debugReportSwallowed(
-          'ServerContext($serverId): scope disposal threw during suspend()',
+          '${_diagnosticTagFor(serverId)}: scope disposal threw during '
+          'suspend()',
           e,
         );
       }
@@ -289,7 +296,8 @@ class ServerContextImpl implements ServerContext {
       // stream must still close so disposal is reliably idempotent and the
       // orchestrator's teardown isn't left brittle.
       debugReportSwallowed(
-        'ServerContext($serverId): container disposal threw during dispose()',
+        '${_diagnosticTagFor(serverId)}: container disposal threw during '
+        'dispose()',
         e,
       );
     }
@@ -370,8 +378,9 @@ class ServerContextImpl implements ServerContext {
   }
 
   /// Tears the active user-session scope down, disposing every service its
-  /// installers registered (their `dispose:` callbacks run — the seam
-  /// through which per-user repositories close their vended streams).
+  /// installers registered (each through its `dispose:` callback, or
+  /// [Disposable.onDispose] when it had none — the seam through which
+  /// per-user repositories close their vended streams).
   ///
   /// Best-effort and idempotent: a no-op when the context is disposed or
   /// no user scope is active. Never skipped: the shared [_scopeOps] chain
@@ -410,7 +419,7 @@ class ServerContextImpl implements ServerContext {
       await _container.endUserScope();
     } catch (e) {
       debugReportSwallowed(
-        'ServerContext($serverId): user-scope disposal threw during '
+        '${_diagnosticTagFor(serverId)}: user-scope disposal threw during '
         'session deactivation',
         e,
       );
@@ -552,15 +561,17 @@ class _SwappableContainer implements DependencyContainer {
     return _userScope.open(install);
   }
 
-  /// Disposes the current user scope (running every registration's dispose
-  /// callback) and detaches it. No-op when none is active (#135).
+  /// Disposes the current user scope (closing every registration, through
+  /// its dispose callback or as a [Disposable]) and detaches it. No-op when
+  /// none is active (#135).
   Future<void> endUserScope() => _userScope.close();
 
-  /// Disposes the current inner container (running every registration's
-  /// dispose callback) and prepares a fresh one for subsequent use. The
-  /// user-session scope, being a child of the inner container's lifetime,
-  /// is torn down first (#135) — per-user services may hold resources from
-  /// the base scope (the per-server DB), so they must release before it.
+  /// Disposes the current inner container (closing every registration,
+  /// through its dispose callback or as a [Disposable]) and prepares a fresh
+  /// one for subsequent use. The user-session scope, being a child of the
+  /// inner container's lifetime, is torn down first (#135) — per-user
+  /// services may hold resources from the base scope (the per-server DB), so
+  /// they must release before it.
   /// Both disposals always run; the first error, if any, is rethrown.
   Future<void> replaceInner() async {
     final old = _inner;

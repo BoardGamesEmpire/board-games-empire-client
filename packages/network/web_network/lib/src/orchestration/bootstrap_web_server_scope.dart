@@ -53,10 +53,11 @@ typedef WebServerScopeInstall = Future<void> Function(
 ///    there are any (#137);
 /// 6. returns a [WebActiveServerScope] holding the single origin
 ///    [ActiveServer], with [ActiveServer.serverId] and
-///    [ActiveServer.displayName] sourced from the fetched identity
-///    (`serverId` is the server-vended UUID; native instead uses the
-///    client-local `ServerConfig.id` — both are opaque keying values, and
-///    the divergence is #334).
+///    [ActiveServer.displayName] sourced from the fetched identity. Web
+///    fills `serverId` with the server-vended UUID where native uses the
+///    client-local `ServerConfig.id`. Either is an opaque key, never a
+///    stable identity: a reader that needs one uses
+///    [ActiveServer.identity] (#334).
 ///
 /// The container handed out is a [WebServerScopeContainer], not the raw
 /// origin container: resolution checks the open user-session scope before

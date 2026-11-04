@@ -114,10 +114,8 @@ void registerServerNetwork({
     dio: dio,
     clock: clock,
   );
-  container.registerSingleton<AuthRepository>(
-    authRepository,
-    dispose: (_) => authRepository.onDispose(),
-  );
+  // Disposable, so the container closes it with the scope.
+  container.registerSingleton<AuthRepository>(authRepository);
 
   // #97: the per-server feedback transport. Registered here — not in its
   // own installer — per the registration convention: services sharing a

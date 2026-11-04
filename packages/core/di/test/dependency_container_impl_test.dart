@@ -2,11 +2,34 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:di/di.dart';
-import 'package:get_it/get_it.dart';
+import 'package:get_it/get_it.dart' show GetIt;
+import 'package:interfaces/orchestration.dart';
 
 class _FakeService {}
 
 class _OtherService {}
+
+/// A BGE [Disposable] that counts its closes, and throws [error] from
+/// [onDispose] when given one.
+class _Closeable implements Disposable {
+  _Closeable({this.error});
+
+  final Object? error;
+  var closes = 0;
+
+  @override
+  Future<void> onDispose() async {
+    closes++;
+    if (error case final error?) throw error;
+  }
+}
+
+/// An interface that is not itself [Disposable].
+abstract class _Port {}
+
+/// A [_Port] whose instance is [Disposable], as `ConnectivityService` and
+/// `ConnectivityPlusService` are.
+class _CloseablePort extends _Closeable implements _Port {}
 
 void main() {
   late DependencyContainerImpl container;
@@ -114,6 +137,113 @@ void main() {
         release.complete();
         await disposing;
       });
+    });
+
+    // #254: a registration that omits `dispose:` used to leak a Disposable's
+    // resources silently. The container closes it instead, and an explicit
+    // callback still replaces that.
+    group('Disposable default', () {
+      test('a Disposable singleton registered without a callback is closed on '
+          'dispose', () async {
+        final service = _Closeable();
+        container.registerSingleton<_Closeable>(service);
+
+        await container.dispose();
+
+        expect(service.closes, 1);
+      });
+
+      test(
+        'a resolved Disposable lazy singleton is closed on dispose',
+        () async {
+          container.registerLazySingleton<_Closeable>(_Closeable.new);
+          final service = container.get<_Closeable>();
+
+          await container.dispose();
+
+          expect(service.closes, 1);
+        },
+      );
+
+      test(
+        'an unresolved lazy singleton is not constructed just to be closed',
+        () async {
+          var created = 0;
+          container.registerLazySingleton<_Closeable>(() {
+            created++;
+            return _Closeable();
+          });
+
+          await container.dispose();
+
+          expect(created, 0);
+        },
+      );
+
+      test(
+        'a lazy singleton registered by interface type is closed through its '
+        'instance',
+        () async {
+          container.registerLazySingleton<_Port>(_CloseablePort.new);
+          final service = container.get<_Port>() as _CloseablePort;
+
+          await container.dispose();
+
+          expect(service.closes, 1);
+        },
+      );
+
+      test(
+        'an explicit callback wins over the default, for a singleton',
+        () async {
+          final service = _Closeable();
+          var callbacks = 0;
+          container.registerSingleton<_Closeable>(
+            service,
+            dispose: (_) => callbacks++,
+          );
+
+          await container.dispose();
+
+          expect(callbacks, 1);
+          expect(service.closes, 0);
+        },
+      );
+
+      test(
+        'an explicit callback wins over the default, for a lazy singleton',
+        () async {
+          var callbacks = 0;
+          container.registerLazySingleton<_Closeable>(
+            _Closeable.new,
+            dispose: (_) => callbacks++,
+          );
+          final service = container.get<_Closeable>();
+
+          await container.dispose();
+
+          expect(callbacks, 1);
+          expect(service.closes, 0);
+        },
+      );
+
+      test('a throwing onDispose surfaces from dispose', () async {
+        final error = StateError('close failed');
+        container.registerSingleton<_Closeable>(_Closeable(error: error));
+
+        // The shared tearDown's second dispose returns early: the container
+        // is marked disposed before the reset runs.
+        await expectLater(container.dispose(), throwsA(same(error)));
+      });
+
+      test(
+        'a non-Disposable singleton without a callback disposes quietly',
+        () async {
+          container.registerSingleton<_FakeService>(_FakeService());
+
+          await expectLater(container.dispose(), completes);
+        },
+      );
     });
 
     group('isolation', () {

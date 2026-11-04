@@ -120,10 +120,8 @@ void registerServerNetworkWeb({
   container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());
 
   final authRepository = WebAuthRepositoryImpl(identity: identity, dio: dio);
-  container.registerSingleton<AuthRepository>(
-    authRepository,
-    dispose: (_) => authRepository.onDispose(),
-  );
+  // Disposable, so the container closes it with the scope.
+  container.registerSingleton<AuthRepository>(authRepository);
 
   // #432: keeps this tab's session in step with the cookie the other tabs
   // share. Built now rather than on first use: a tab on the sign-in screen
@@ -137,10 +135,8 @@ void registerServerNetworkWeb({
       channel: sessionBindings.openChannel('bge.session.${identity.serverId}'),
       attention: sessionBindings.attention(),
     );
-    container.registerSingleton<SessionIdentityGuard>(
-      monitor,
-      dispose: (_) => monitor.onDispose(),
-    );
+    // Disposable, so the container closes it with the scope.
+    container.registerSingleton<SessionIdentityGuard>(monitor);
   }
 
   // #97: the per-server feedback transport, sharing this origin's Dio —
