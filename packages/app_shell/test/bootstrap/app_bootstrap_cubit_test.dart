@@ -1,15 +1,24 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
+
+class _MockActiveServerScope extends Mock implements ActiveServerScope {}
+
+class _MockWellKnownClient extends Mock implements WellKnownClient {}
+
+class _MockConnectivityService extends Mock implements ConnectivityService {}
 
 final _rebuiltServer = ServerConfig(
   id: 'server-local-1',
@@ -471,6 +480,216 @@ void main() {
           expect(bootstrap.initializeCallCount, 1);
         },
       );
+    });
+  });
+
+  group('server-add composition check (#218)', () {
+    const noServer = BootstrapResult(hasServer: false);
+
+    ServerOnboardingDeps deps() => ServerOnboardingDeps(
+      wellKnownClient: _MockWellKnownClient(),
+      versionNegotiator: VersionNegotiatorImpl(),
+      connectivityService: _MockConnectivityService(),
+      buildInfo: BuildInfo.unknown,
+    );
+
+    DependencyContainerImpl rootContainer() {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    AppBootstrapCubit cubitOver(
+      FakePlatformBootstrap bootstrap,
+      DependencyContainer? root, {
+      int resetOfferThreshold = 3,
+    }) {
+      final cubit = AppBootstrapCubit(
+        platformBootstrap: bootstrap,
+        hydratedStorageInitializer: _HydratedSpy().call,
+        resetOfferThreshold: resetOfferThreshold,
+        rootContainer: root,
+      );
+      addTearDown(cubit.close);
+      return cubit;
+    }
+
+    Matcher compositionFailure(Object causeMatcher) => isA<AppBootstrapFailed>()
+        .having((s) => s.canOfferReset, 'canOfferReset', isFalse)
+        .having(
+          (s) => s.error,
+          'error',
+          isA<ServerAddCompositionError>().having(
+            (e) => e.cause,
+            'cause',
+            causeMatcher,
+          ),
+        );
+
+    test('emits NeedsServer when the bundle resolves', () async {
+      final root = rootContainer()
+        ..registerLazySingleton<ServerOnboardingDeps>(deps);
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        root,
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, const AppBootstrapNeedsServer());
+    });
+
+    test('emits Failed with ServerAddCompositionError when the bundle is not '
+        'registered', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        rootContainer(),
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, compositionFailure(isStateError));
+    });
+
+    test("emits Failed with the factory's error as cause when the bundle "
+        'factory throws', () async {
+      final boom = Exception('boom');
+      final root = rootContainer()
+        ..registerLazySingleton<ServerOnboardingDeps>(() => throw boom);
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        root,
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, compositionFailure(same(boom)));
+    });
+
+    test('never offers reset for a composition failure', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        rootContainer(),
+        resetOfferThreshold: 1,
+      );
+
+      await cubit.initialize();
+      expect(cubit.state, compositionFailure(isStateError));
+      await cubit.retry();
+
+      final failed = cubit.state as AppBootstrapFailed;
+      expect(failed.attemptCount, 2);
+      expect(failed.canOfferReset, isFalse);
+    });
+
+    test('composition failures do not count toward the reset offer', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(
+          outcomes: [
+            noServer,
+            noServer,
+            StateError('meta db'),
+            StateError('meta db'),
+            StateError('meta db'),
+          ],
+        ),
+        rootContainer(),
+      );
+
+      await cubit.initialize();
+      await cubit.retry();
+      await cubit.retry();
+      final firstStorageFailure = cubit.state as AppBootstrapFailed;
+      await cubit.retry();
+      final secondStorageFailure = cubit.state as AppBootstrapFailed;
+      await cubit.retry();
+      final thirdStorageFailure = cubit.state as AppBootstrapFailed;
+
+      expect(firstStorageFailure.attemptCount, 3);
+      expect(firstStorageFailure.canOfferReset, isFalse);
+      expect(secondStorageFailure.canOfferReset, isFalse);
+      expect(thirdStorageFailure.attemptCount, 5);
+      expect(thirdStorageFailure.canOfferReset, isTrue);
+    });
+
+    test(
+      'control: any other failure at the same threshold offers reset',
+      () async {
+        final cubit = cubitOver(
+          FakePlatformBootstrap(outcomes: [StateError('meta db')]),
+          rootContainer(),
+          resetOfferThreshold: 1,
+        );
+
+        await cubit.initialize();
+
+        expect((cubit.state as AppBootstrapFailed).canOfferReset, isTrue);
+      },
+    );
+
+    test('publishes no orchestrator or scope when the check fails', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(
+          outcomes: [
+            BootstrapResult(
+              hasServer: false,
+              orchestrator: _MockServerOrchestrator(),
+              activeServerScope: _MockActiveServerScope(),
+            ),
+          ],
+        ),
+        rootContainer(),
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, compositionFailure(isStateError));
+      expect(cubit.orchestrator, isNull);
+      expect(cubit.activeServerScope, isNull);
+    });
+
+    test('retry reaches NeedsServer once the factory stops throwing', () async {
+      var calls = 0;
+      final root = rootContainer()
+        ..registerLazySingleton<ServerOnboardingDeps>(() {
+          calls++;
+          if (calls == 1) throw StateError('transient');
+          return deps();
+        });
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        root,
+      );
+
+      await cubit.initialize();
+      expect(cubit.state, isA<AppBootstrapFailed>());
+      await cubit.retry();
+
+      expect(cubit.state, const AppBootstrapNeedsServer());
+    });
+
+    test('skips the check when initialize reports a server', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(
+          outcomes: const [BootstrapResult(hasServer: true)],
+        ),
+        rootContainer(),
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, const AppBootstrapNeedsAuth());
+    });
+
+    test('skips the check with no root container', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        null,
+      );
+
+      await cubit.initialize();
+
+      expect(cubit.state, const AppBootstrapNeedsServer());
     });
   });
 

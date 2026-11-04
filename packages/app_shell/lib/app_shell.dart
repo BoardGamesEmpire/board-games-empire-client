@@ -20,6 +20,7 @@ export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
 export 'src/bootstrap/run_bge_app.dart';
+export 'src/bootstrap/server_add_composition_error.dart';
 export 'src/deep_links/deep_link_handler.dart';
 export 'src/deep_links/deep_link_normalizer.dart';
 export 'src/deep_links/deep_link_redaction.dart';

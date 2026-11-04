@@ -2060,11 +2060,11 @@ class _BgeAppState extends State<BgeApp> {
   /// that with the container's error, which names the member. The
   /// orchestrator stays a separate check because it is late-bound.
   ///
-  /// Null (→ the server-add [ShellPlaceholderScreen]) covers a composition
-  /// that cannot back the flow: no container at all (tests; the empty
-  /// fallback container `runBgeApp` boots on when `createRootContainer`
-  /// fails), a bundle that is not registered (web) or cannot resolve, or
-  /// no orchestrator.
+  /// Bootstrap resolves the same bundle before it pins the app here, and
+  /// fails boot when it cannot (#218), so this route is normally reached
+  /// with the set in hand. Null (→ the server-add [ShellPlaceholderScreen])
+  /// is the backstop: no container at all (tests), a bundle that cannot
+  /// resolve on a cubit built without the check, or no orchestrator.
   Widget? _buildServerAddRoute(BuildContext context) {
     final deps = _rootService<ServerOnboardingDeps>();
     final orchestrator = widget.bootstrapCubit.orchestrator;

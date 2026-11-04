@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 import 'app_bootstrap_state.dart';
 import 'platform_bootstrap.dart';
+import 'server_add_composition_error.dart';
 
 /// Drives the application bootstrap sequence over a platform-supplied
 /// [PlatformBootstrap] and exposes the outcome as [AppBootstrapState]s that
@@ -42,6 +44,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     HydratedStorageInitializer? hydratedStorageInitializer,
     this._feedbackService,
     this._resetOfferThreshold = 3,
+    this._rootContainer,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.shell.bootstrap'),
        _initializeHydratedStorage =
@@ -59,9 +62,31 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   final HydratedStorageInitializer _initializeHydratedStorage;
   final int _resetOfferThreshold;
 
+  /// The root container [ServerOnboardingDeps] is checked in before
+  /// [AppBootstrapNeedsServer] is emitted (#218). That state pins the app
+  /// to the server-add route, and a set that cannot resolve there leaves
+  /// the user on a placeholder with no way out. Failing boot instead puts
+  /// them on the failed-boot screen, with a retry, and logs the error with
+  /// the other boot failures.
+  ///
+  /// Checked only when bootstrap reports no server, so on every other boot
+  /// the set's lazy members, the onboarding Dio among them, are never
+  /// built. Null skips the check, for tests that don't drive it. On the
+  /// empty fallback container `runBgeApp` boots on when
+  /// `createRootContainer` throws, the check fails on every retry, since
+  /// that container lasts for the process.
+  final DependencyContainer? _rootContainer;
+
   bool _started = false;
   bool _hydratedStorageReady = false;
   int _consecutiveFailures = 0;
+
+  /// The consecutive failures that count toward the reset offer: every
+  /// failure but a [ServerAddCompositionError], which zeroes it. That
+  /// error is raised only after `initialize` returned, so the meta
+  /// database opened on that attempt, and the failures before it say
+  /// nothing about the database any more (#218).
+  int _failuresTowardReset = 0;
   ServerOrchestrator? _orchestrator;
   ActiveServerScope? _activeServerScope;
 
@@ -126,6 +151,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // window as _attempt, and the same reason to record nothing (#177).
       if (isClosed) return;
       _consecutiveFailures += 1;
+      _failuresTowardReset += 1;
       _logger.error(
         'Destructive reset failed',
         error: error,
@@ -135,6 +161,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       return;
     }
     _consecutiveFailures = 0;
+    _failuresTowardReset = 0;
     await _attempt();
   }
 
@@ -269,9 +296,11 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // from recording anything — an emit here would throw, and the catch
       // below would read that as a bootstrap failure (#177).
       if (isClosed) return;
+      if (!result.hasServer) _checkServerAddComposition();
       _orchestrator = result.orchestrator;
       _activeServerScope = result.activeServerScope;
       _consecutiveFailures = 0;
+      _failuresTowardReset = 0;
       _logger.info(
         'Bootstrap succeeded',
         context: {'hasServer': result.hasServer},
@@ -290,6 +319,9 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // failure nobody can see or retry (#177).
       if (isClosed) return;
       _consecutiveFailures += 1;
+      _failuresTowardReset = error is ServerAddCompositionError
+          ? 0
+          : _failuresTowardReset + 1;
       _logger.error(
         'Bootstrap attempt failed',
         error: error,
@@ -300,11 +332,34 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     }
   }
 
+  /// Resolves [ServerOnboardingDeps] from [_rootContainer], throwing
+  /// [ServerAddCompositionError] with the original stack trace when it
+  /// cannot. Called ahead of publishing the attempt's orchestrator and
+  /// scope, so a failure publishes neither. What the attempt opened is not
+  /// leaked: the native bootstrap's next `initialize` releases it before
+  /// starting, and its `dispose` releases it at teardown.
+  ///
+  /// `get`, not `tryGet`: the set is required here, and a null would be
+  /// the dead end this check exists to prevent.
+  void _checkServerAddComposition() {
+    final root = _rootContainer;
+    if (root == null) return;
+    try {
+      root.get<ServerOnboardingDeps>();
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(ServerAddCompositionError(error), stackTrace);
+    }
+  }
+
+  /// A [ServerAddCompositionError] never offers the reset, whatever the
+  /// count: deleting the meta database cannot fix a wiring defect (#218).
+  /// Nor does it count toward the offer; see [_failuresTowardReset].
   AppBootstrapFailed _failedState(Object error) => AppBootstrapFailed(
     error: error,
     attemptCount: _consecutiveFailures,
     canOfferReset:
-        _consecutiveFailures >= _resetOfferThreshold &&
+        error is! ServerAddCompositionError &&
+        _failuresTowardReset >= _resetOfferThreshold &&
         _platformBootstrap.supportsReset,
   );
 

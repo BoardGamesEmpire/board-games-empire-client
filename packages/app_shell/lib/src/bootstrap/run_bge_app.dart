@@ -307,6 +307,9 @@ Future<void> runBgeApp({
     // (sign-in, session restore, server-switch re-auth) drains the
     // queued feedback for the then-active server, fire-and-forget.
     feedbackService: registeredFeedbackService,
+    // #218: the server-add set is checked here before the app is pinned to
+    // /server-add, so a composition that cannot back it fails boot.
+    rootContainer: rootContainer,
   );
   bootstrapCubitRef = bootstrapCubit;
 
