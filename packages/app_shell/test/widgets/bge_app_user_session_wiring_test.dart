@@ -775,6 +775,33 @@ void main() {
     expect(find.byType(AuthScreen), findsOneWidget);
   });
 
+  testWidgets('a registered UserSessionScope whose factory throws fails '
+      'activation, rather than reading as a composition without one '
+      '(#219)', (tester) async {
+    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final active = buildActiveServer(repo);
+    active.container.registerLazySingleton<UserSessionScope>(
+      () => throw StateError('scope factory boom'),
+    );
+    final cubit = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(
+        activeServerScope: FakeActiveServerScope(active),
+      ),
+      hydratedStorageInitializer: noopHydrated,
+    );
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    await tester.pumpAndSettle();
+
+    // Read as absent, the session would go live with none of its per-user
+    // services. As a failed activation, the shell signs out to recover.
+    expect(tester.takeException(), isNull);
+    expect(find.byType(HomeScreen), findsNothing);
+    expect(find.byType(AuthScreen), findsOneWidget);
+  });
+
   testWidgets('sign-out routes away before the scope pop completes — no '
       'live home widget over disposed repositories', (tester) async {
     final repo = FakeAuthRepository(initialSession: sampleSession());

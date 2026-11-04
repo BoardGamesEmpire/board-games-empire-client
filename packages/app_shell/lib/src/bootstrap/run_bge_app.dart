@@ -206,21 +206,20 @@ Future<void> runBgeApp({
   // fallback, so feedback works on a failed boot (that failure is
   // exactly what the first report will be about). Resolve-or-default
   // throughout, per the createRootContainer contract: BuildInfo degrades
-  // to unknown, a missing platform sink degrades to the RAM stand-in.
-  final buildInfo = rootContainer.isRegistered<BuildInfo>()
-      ? rootContainer.get<BuildInfo>()
-      : BuildInfo.unknown;
+  // to unknown, a missing platform sink degrades to the RAM stand-in. Each
+  // is optional, so tryGet also reads a throwing factory as absent (#218).
+  final buildInfo = rootContainer.tryGet<BuildInfo>() ?? BuildInfo.unknown;
   // #324: the device entries come from the platform module's reader — the
   // real OS, its version on native, the browser on web — read once here,
   // since none of them change while the app runs. With no reader registered
   // (the empty fallback, or a web root module given none), native names the
   // OS the way `platform` does; web cannot tell, so it reads `unknown`, the
   // reader's own value for that.
-  final deviceInfo = rootContainer.isRegistered<DeviceInfoReader>()
-      ? rootContainer.get<DeviceInfoReader>().read()
-      : <String, String>{
-          'operatingSystem': kIsWeb ? 'unknown' : defaultTargetPlatform.name,
-        };
+  final deviceInfo =
+      rootContainer.tryGet<DeviceInfoReader>()?.read() ??
+      <String, String>{
+        'operatingSystem': kIsWeb ? 'unknown' : defaultTargetPlatform.name,
+      };
   // #97: the feedback target resolver. The production adapter reads the
   // ActiveServerScope *through the cubit at resolve time* — the scope is
   // replaced on every bootstrap retry, so nothing may capture a scope
@@ -231,15 +230,15 @@ Future<void> runBgeApp({
   // submit/drain can run (both are user- or auth-driven, post-runApp),
   // and a null read simply means "no active server" — the untagged-queue
   // path. Resolve-or-default: a platform module / test seam that
-  // pre-registered a resolver stays authoritative.
+  // pre-registered a resolver stays authoritative. One whose factory throws
+  // is still registered, so the default is used without registering over it.
   AppBootstrapCubit? bootstrapCubitRef;
-  final FeedbackTargetResolver targetResolver;
-  if (rootContainer.isRegistered<FeedbackTargetResolver>()) {
-    targetResolver = rootContainer.get<FeedbackTargetResolver>();
-  } else {
-    targetResolver = ActiveServerFeedbackTargetResolver(
-      scopeSource: () => bootstrapCubitRef?.activeServerScope,
-    );
+  final targetResolver =
+      rootContainer.tryGet<FeedbackTargetResolver>() ??
+      ActiveServerFeedbackTargetResolver(
+        scopeSource: () => bootstrapCubitRef?.activeServerScope,
+      );
+  if (!rootContainer.isRegistered<FeedbackTargetResolver>()) {
     rootContainer.registerSingleton<FeedbackTargetResolver>(targetResolver);
   }
 
@@ -259,9 +258,7 @@ Future<void> runBgeApp({
     // bgeServerId always, its transport only when authenticated. Every
     // approved report that can't send goes to the durable sink, tagged.
     targetResolver: targetResolver,
-    sink: rootContainer.isRegistered<FeedbackSink>()
-        ? rootContainer.get<FeedbackSink>()
-        : MemoryFeedbackSink(),
+    sink: rootContainer.tryGet<FeedbackSink>() ?? MemoryFeedbackSink(),
   );
   if (!rootContainer.isRegistered<FeedbackService>()) {
     rootContainer.registerSingleton<FeedbackService>(feedbackService);

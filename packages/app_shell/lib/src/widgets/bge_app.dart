@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:di/di.dart' show DependencyContainerLookups;
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:feedback/feedback.dart';
@@ -579,23 +580,26 @@ class _BgeAppState extends State<BgeApp> {
     child: child,
   );
 
-  /// Resolves a device-global service from [BgeApp.rootContainer], or null
-  /// when there is no container or [T] is not registered in it.
+  /// Resolves an **optional** device-global service from
+  /// [BgeApp.rootContainer], or null when there is no container, [T] is not
+  /// registered in it, or its factory throws. A throwing factory is logged
+  /// by `tryGet` and reads as absent, so the caller's degraded path runs
+  /// instead of an `ErrorWidget` (#218). A service the shell cannot do
+  /// without is resolved with `get` where it is used, so a broken
+  /// composition surfaces instead of degrading (#219). The server-add set
+  /// comes through here because its route keeps a placeholder as a
+  /// backstop (#189).
   ///
-  /// The one place the check-then-resolve pair lives. Route builders that
-  /// need several services get a nullable local per service, so a missing
-  /// one is a `null` the type system carries into the constructor call
-  /// rather than a check that can be forgotten (#189: the `/server-add`
-  /// guard verified one of the five collaborators it went on to resolve).
+  /// Route builders that need several services get a nullable local per
+  /// service, so a missing one is a `null` the type system carries into
+  /// the constructor call rather than a check that can be forgotten (#189:
+  /// the `/server-add` guard verified one of the five collaborators it went
+  /// on to resolve).
   ///
   /// Never from a per-server container, whose contract forbids
   /// parent-scope lookup (#38) — these are device-global concerns
   /// registered once at the root.
-  T? _rootService<T extends Object>() {
-    final container = widget.rootContainer;
-    if (container == null || !container.isRegistered<T>()) return null;
-    return container.get<T>();
-  }
+  T? _rootService<T extends Object>() => widget.rootContainer?.tryGet<T>();
 
   /// Root-scoped [ConnectivityService] for the auth bloc's offline fast
   /// path and reconnect revalidation (#98). Null (no container, or a
@@ -2886,12 +2890,17 @@ class _AuthScopeState extends State<_AuthScope> {
     );
   }
 
-  /// Resolves the per-server [UserSessionScope], or null where the
-  /// platform composition hasn't registered one. Both platforms register one
-  /// now (#135 native, #137 web); a composition without per-user services
-  /// still legitimately has none.
-  UserSessionScope? _userSessionScopeOf(ActiveServer active) =>
-      _serverService<UserSessionScope>(active);
+  /// Whether [active]'s composition registers a [UserSessionScope]. Both
+  /// platforms register one now (#135 native, #137 web); a composition
+  /// without per-user services still legitimately has none.
+  ///
+  /// Presence only, not `tryGet`: once registered the scope is required, so
+  /// callers resolve it with `get` inside their own failure handling. A
+  /// factory that throws is then a failed activation, recovered by signing
+  /// out, rather than a session going live without its per-user services
+  /// (#219).
+  bool _hasUserSessionScope(ActiveServer active) =>
+      active.container.isRegistered<UserSessionScope>();
 
   /// Whether [active] is still the server the app is living in.
   ///
@@ -2930,9 +2939,10 @@ class _AuthScopeState extends State<_AuthScope> {
     int epoch, {
     VoidCallback? onLive,
   }) async {
-    final sessionScope = _userSessionScopeOf(active);
-    if (sessionScope != null) {
+    UserSessionScope? sessionScope;
+    if (_hasUserSessionScope(active)) {
       try {
+        sessionScope = active.container.get<UserSessionScope>();
         await sessionScope.activate(userId);
       } on Object catch (error, stackTrace) {
         // Recovery is this handler's to dispatch only while it still owns
@@ -3101,10 +3111,9 @@ class _AuthScopeState extends State<_AuthScope> {
   /// user is already signed out; a scope bug must not resurface as an
   /// unhandled zone error.
   Future<void> _deactivateSessionScope(ActiveServer active) async {
-    final sessionScope = _userSessionScopeOf(active);
-    if (sessionScope == null) return;
+    if (!_hasUserSessionScope(active)) return;
     try {
-      await sessionScope.deactivate();
+      await active.container.get<UserSessionScope>().deactivate();
     } on Object catch (error, stackTrace) {
       _log.error(
         'User-session scope deactivation failed',
@@ -3120,11 +3129,12 @@ class _AuthScopeState extends State<_AuthScope> {
 /// under way (#432).
 typedef _HomeSession = ({String? userId, bool switching});
 
-/// Resolves [T] from [active]'s per-server container, or null where the
-/// composition registers none. The per-server counterpart of
-/// `_BgeAppState._rootService`.
+/// Resolves an **optional** service from [active]'s per-server container,
+/// or null where the composition registers none or its factory throws. A
+/// throwing factory is logged by `tryGet` and reads as absent (#218). The
+/// per-server counterpart of `_BgeAppState._rootService`.
 T? _serverService<T extends Object>(ActiveServer active) =>
-    active.container.isRegistered<T>() ? active.container.get<T>() : null;
+    active.container.tryGet<T>();
 
 /// The shell's half of the unsent-changes notice (#142).
 ///

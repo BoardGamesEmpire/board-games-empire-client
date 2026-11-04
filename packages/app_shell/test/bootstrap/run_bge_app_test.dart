@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
+import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
 import '../support/fake_platform_bootstrap.dart';
@@ -364,6 +365,33 @@ void main() {
       expect(report.deviceInfo, {
         'operatingSystem': 'linux',
         'browser': 'Firefox 130',
+      });
+    });
+
+    testWidgets('optional root services whose factories throw degrade to '
+        'their defaults instead of failing boot (#218)', (tester) async {
+      final container = SpyRootContainer()
+        ..registerLazySingleton<BuildInfo>(() => throw StateError('boom'))
+        ..registerLazySingleton<DeviceInfoReader>(
+          () => throw StateError('boom'),
+        )
+        ..registerLazySingleton<FeedbackTargetResolver>(
+          () => throw StateError('boom'),
+        )
+        ..registerLazySingleton<FeedbackSink>(() => throw StateError('boom'));
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
+
+      await boot(tester, bootstrap);
+
+      expect(find.byType(BgeApp), findsOneWidget);
+      final report = container.get<FeedbackService>().buildReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        userComment: 'x',
+      );
+      expect(report.appVersion, BuildInfo.unknown.version);
+      expect(report.deviceInfo, {
+        'operatingSystem': defaultTargetPlatform.name,
       });
     });
 

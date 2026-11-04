@@ -404,6 +404,24 @@ void main() {
       );
     });
 
+    testWidgets('renders the placeholder, not an ErrorWidget, when a lazy '
+        'factory throws (#218)', (tester) async {
+      final container = composeContainer(connectivityService: false)
+        ..registerLazySingleton<ConnectivityService>(
+          () => throw StateError('boom'),
+        );
+
+      await pumpServerAdd(tester, rootContainer: container);
+
+      expectPlaceholder(tester);
+      expect(find.byType(ErrorWidget), findsNothing);
+      expect(errors(), hasLength(1));
+      expect(
+        (errors().single.object! as ContextLogMessage).context,
+        containsPair('missing', ['ConnectivityService']),
+      );
+    });
+
     group('once per entry (#225)', () {
       late StreamController<AppBootstrapState> controller;
       late AppBootstrapState current;
