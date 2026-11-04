@@ -313,6 +313,22 @@ abstract class EventRepository {
   /// (#589): a detail read in flight may still write the event over it.
   Future<bool> cacheOccurrence(EventOccurrence occurrence);
 
+  /// Writes [event], the row a status write returned (cancel, reopen,
+  /// archive or unarchive), over the cached one with its id (#502).
+  ///
+  /// It writes the event's own columns, its cancel reason and time among
+  /// them, so a reopen's null clears a cached reason. It leaves the dates,
+  /// policy, roster and access alone: the answer carries none of them.
+  ///
+  /// Returns false, writing nothing, when the event isn't cached, or is
+  /// `isDirty` or `isLocalOnly`: the sync queue owns those, as
+  /// [cacheOccurrence] leaves them. Stamps the event's generation, as every
+  /// event write does, and [watchEvent] emits.
+  ///
+  /// Like the other writes of a server answer, this is last-write-wins
+  /// (#589): a detail read in flight may still write the event over it.
+  Future<bool> cacheEventRow(Event event);
+
   /// Removes the cached date [occurrenceId] of [eventId], which the server
   /// removed (#506).
   ///
