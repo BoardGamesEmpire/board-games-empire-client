@@ -179,6 +179,20 @@ void main() {
       expect(find.text(_emptyTitleCopy), findsOneWidget);
     });
 
+    testWidgets('the empty state is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      status.finished(HydrateOutcome.complete);
+      await tester.pumpWidget(harness(onCreate: (_) {}));
+      households.add(const []);
+      await tester.pump();
+
+      final title = tester.getSemantics(find.text(_emptyTitleCopy));
+      expect(title, isSemantics(isLiveRegion: true));
+      expect(title.label, contains(_emptyTitleCopy));
+      expect(title.label, contains('A household is the group you share'));
+      handle.dispose();
+    });
+
     testWidgets('offers create from the empty state itself', (tester) async {
       // The FAB alone is a weak call to action on a first-run screen, and
       // the empty state is where the user is looking.

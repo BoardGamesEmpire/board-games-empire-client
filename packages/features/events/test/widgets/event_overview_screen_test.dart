@@ -362,6 +362,17 @@ void main() {
     expect(find.text(_emptyTitleCopy), findsOneWidget);
   });
 
+  testWidgets('the empty state is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    await show(tester, const []);
+
+    final title = tester.getSemantics(find.text(_emptyTitleCopy));
+    expect(title, isSemantics(isLiveRegion: true));
+    expect(title.label, contains(_emptyTitleCopy));
+    expect(title.label, contains(_emptyBodyCopy));
+    handle.dispose();
+  });
+
   group('the empty state', () {
     testWidgets('offers New event when onCreate is given, and calls it', (
       tester,

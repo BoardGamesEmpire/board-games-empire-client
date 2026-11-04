@@ -14,7 +14,6 @@ import '../bloc/event_overview_bloc.dart';
 import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
-import '../widgets/event_loading_indicator.dart';
 import '../widgets/event_card.dart';
 import 'upcoming_fallback_cubit.dart';
 
@@ -326,7 +325,11 @@ class _Spinner extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     key: UpcomingEventsSection.loadingKey,
     padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceLg),
-    child: const Center(child: EventLoadingIndicator()),
+    child: Center(
+      child: BgeLoadingState(
+        label: EventsLocalizations.of(context).eventsLoading,
+      ),
+    ),
   );
 }
 

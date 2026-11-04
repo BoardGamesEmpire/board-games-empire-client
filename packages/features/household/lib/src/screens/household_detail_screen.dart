@@ -336,7 +336,10 @@ class _HouseholdDetailView extends StatelessWidget {
         return switch (state) {
           HouseholdDetailLoading() => _MessagePage(
             title: l10n.householdListTitle,
-            child: _Loading(message: l10n.householdDetailLoading),
+            child: BgeLoadingState(
+              key: HouseholdDetailScreen.loadingKey,
+              label: l10n.householdDetailLoading,
+            ),
           ),
           HouseholdDetailError() => _MessagePage(
             title: l10n.householdListTitle,
@@ -1152,23 +1155,5 @@ class _MessagePage extends StatelessWidget {
     width: BgePageWidth.pane,
     centerVertically: true,
     child: child,
-  );
-}
-
-class _Loading extends StatelessWidget {
-  const _Loading({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    key: HouseholdDetailScreen.loadingKey,
-    child: Semantics(
-      liveRegion: true,
-      label: message,
-      // The label carries the announcement; the spinner has nothing to say
-      // to a screen reader.
-      child: const ExcludeSemantics(child: CircularProgressIndicator()),
-    ),
   );
 }

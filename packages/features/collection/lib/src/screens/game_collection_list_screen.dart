@@ -207,8 +207,11 @@ class GameCollectionListSliver extends StatelessWidget {
               ),
             ),
           switch (state) {
-            GameCollectionListLoading() => _LoadingSliver(
-              message: l10n.collectionListLoading,
+            GameCollectionListLoading() => BgeStateSliver(
+              child: BgeLoadingState(
+                key: GameCollectionListScreen.loadingKey,
+                label: l10n.collectionListLoading,
+              ),
             ),
             GameCollectionListError() => _ErrorSliver(
               message: l10n.collectionListError,
@@ -305,25 +308,6 @@ class _CollectionRow extends StatelessWidget {
       (shown: text, spoken: text);
 }
 
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      key: GameCollectionListScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
-}
-
 /// No games. Games are added from a game's detail, so it offers [onBrowse],
 /// which opens the catalog (#45), and nothing to press without one.
 class _EmptySliver extends StatelessWidget {
@@ -334,37 +318,20 @@ class _EmptySliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
-    final theme = Theme.of(context);
     final browse = onBrowse;
 
-    return SliverFillRemaining(
-      hasScrollBody: false,
-      child: Center(
+    return BgeStateSliver(
+      child: BgeEmptyState(
         key: GameCollectionListScreen.emptyKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              l10n.collectionListEmptyTitle,
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const BgeGap.sm(),
-            Text(
-              l10n.collectionListEmptyBody,
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            if (browse != null) ...[
-              const BgeGap.md(),
-              FilledButton.tonal(
+        title: l10n.collectionListEmptyTitle,
+        body: l10n.collectionListEmptyBody,
+        action: browse == null
+            ? null
+            : FilledButton.tonal(
                 key: GameCollectionListScreen.browseKey,
                 onPressed: () => browse(context),
                 child: Text(l10n.collectionListBrowse),
               ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -376,14 +343,11 @@ class _ErrorSliver extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      child: BgeInlineBanner(
-        key: GameCollectionListScreen.errorKey,
-        tone: BgeBannerTone.error,
-        message: message,
-      ),
+  Widget build(BuildContext context) => BgeStateSliver(
+    child: BgeInlineBanner(
+      key: GameCollectionListScreen.errorKey,
+      tone: BgeBannerTone.error,
+      message: message,
     ),
   );
 }

@@ -120,7 +120,7 @@ class _EditHouseholdReadsState extends State<_EditHouseholdReads> {
           return BgePage(
             title: Text(l10n.editHouseholdTitle),
             centerVertically: true,
-            child: const Center(child: CircularProgressIndicator()),
+            child: BgeLoadingState(label: l10n.householdDetailLoading),
           );
         }
         final household = read.household;

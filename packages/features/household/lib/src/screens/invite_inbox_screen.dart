@@ -129,60 +129,35 @@ class _InviteInboxView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              InviteInboxLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
+              InviteInboxLoading() => BgeStateSliver(
+                child: BgeLoadingState(
                   key: InviteInboxScreen.loadingKey,
-                  child: Semantics(
-                    liveRegion: true,
-                    label: l10n.inviteInboxLoading,
-                    child: const ExcludeSemantics(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  label: l10n.inviteInboxLoading,
                 ),
               ),
-              InviteInboxFailed() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: BgeErrorState(
-                    key: InviteInboxScreen.failedKey,
-                    icon: Icons.cloud_off_outlined,
-                    title: l10n.inviteInboxFailed,
-                    body: l10n.householdInvitesFailedBody,
-                    retryLabel: l10n.householdInvitesRetry,
-                    onRetry: () => bloc.add(const InviteInboxLoadRequested()),
-                  ),
+              InviteInboxFailed() => BgeStateSliver(
+                child: BgeErrorState(
+                  key: InviteInboxScreen.failedKey,
+                  icon: Icons.cloud_off_outlined,
+                  title: l10n.inviteInboxFailed,
+                  body: l10n.householdInvitesFailedBody,
+                  retryLabel: l10n.householdInvitesRetry,
+                  onRetry: () => bloc.add(const InviteInboxLoadRequested()),
                 ),
               ),
               InviteInboxReady(:final invites) when invites.isEmpty =>
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Column(
-                      key: InviteInboxScreen.emptyKey,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.mail_outline,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const BgeGap.sm(),
-                        Text(
-                          l10n.inviteInboxEmpty,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                        if (openSent != null) ...[
-                          const BgeGap.sm(),
-                          TextButton(
+                BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: InviteInboxScreen.emptyKey,
+                    icon: Icons.mail_outline,
+                    title: l10n.inviteInboxEmpty,
+                    action: openSent == null
+                        ? null
+                        : TextButton(
                             key: InviteInboxScreen.sentLinkKey,
                             onPressed: () => openSent(context),
                             child: Text(l10n.inviteInboxSentLink),
                           ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
               final InviteInboxReady ready =>

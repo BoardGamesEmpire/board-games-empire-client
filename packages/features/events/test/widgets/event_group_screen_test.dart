@@ -144,6 +144,18 @@ void main() {
     expect(find.text('Nothing here right now.'), findsOneWidget);
   });
 
+  testWidgets('the empty state is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpGroup(tester, EventGroup.past);
+    items.add(const []);
+    await tester.pump();
+
+    final empty = tester.getSemantics(find.text('Nothing here right now.'));
+    expect(empty, isSemantics(isLiveRegion: true));
+    expect(empty.label, contains('Nothing here right now.'));
+    handle.dispose();
+  });
+
   testWidgets('shows the refresh banner over its rows', (tester) async {
     await pumpGroup(tester, EventGroup.past, onRetry: () async {});
     status.finished(EventHydrateOutcome.failed);

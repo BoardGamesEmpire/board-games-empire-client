@@ -1182,13 +1182,9 @@ class _LoadingPage extends StatelessWidget {
 
     return _MessagePage(
       child: Center(
-        key: EventDetailScreen.loadingKey,
-        child: Semantics(
-          liveRegion: true,
+        child: BgeLoadingState(
+          key: EventDetailScreen.loadingKey,
           label: l10n.eventsDetailLoading,
-          // The label carries the announcement; the spinner has nothing to
-          // say to a screen reader.
-          child: const ExcludeSemantics(child: CircularProgressIndicator()),
         ),
       ),
     );

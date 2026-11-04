@@ -254,8 +254,11 @@ class _HouseholdListView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              HouseholdListLoading() => _LoadingSliver(
-                message: l10n.householdListLoading,
+              HouseholdListLoading() => BgeStateSliver(
+                child: BgeLoadingState(
+                  key: HouseholdListScreen.loadingKey,
+                  label: l10n.householdListLoading,
+                ),
               ),
               HouseholdListError() => _ErrorSliver(
                 message: l10n.householdListError,
@@ -393,27 +396,6 @@ class _PendingBadge extends StatelessWidget {
   }
 }
 
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      key: HouseholdListScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        // The label carries the announcement; the spinner itself has
-        // nothing to say to a screen reader.
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
-}
-
 class _EmptySliver extends StatelessWidget {
   const _EmptySliver({this.onCreate});
 
@@ -422,38 +404,21 @@ class _EmptySliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
-    final theme = Theme.of(context);
     final create = onCreate;
 
-    return SliverFillRemaining(
-      hasScrollBody: false,
-      child: Center(
+    return BgeStateSliver(
+      child: BgeEmptyState(
         key: HouseholdListScreen.emptyKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              l10n.householdListEmptyTitle,
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const BgeGap.sm(),
-            Text(
-              l10n.householdListEmptyBody,
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            if (create != null) ...[
-              const BgeGap.lg(),
-              FilledButton.icon(
+        title: l10n.householdListEmptyTitle,
+        body: l10n.householdListEmptyBody,
+        action: create == null
+            ? null
+            : FilledButton.icon(
                 key: HouseholdListScreen.emptyCreateKey,
                 onPressed: () => create(context),
                 icon: const Icon(Icons.group_add_outlined),
                 label: Text(l10n.createHouseholdTitle),
               ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -465,14 +430,11 @@ class _ErrorSliver extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      child: BgeInlineBanner(
-        key: HouseholdListScreen.errorKey,
-        tone: BgeBannerTone.error,
-        message: message,
-      ),
+  Widget build(BuildContext context) => BgeStateSliver(
+    child: BgeInlineBanner(
+      key: HouseholdListScreen.errorKey,
+      tone: BgeBannerTone.error,
+      message: message,
     ),
   );
 }

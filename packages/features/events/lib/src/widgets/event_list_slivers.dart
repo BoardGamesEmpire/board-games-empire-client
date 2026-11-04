@@ -10,7 +10,6 @@ import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../screens/event_overview_screen.dart';
-import 'event_loading_indicator.dart';
 
 /// What the overview and every group's page show around their rows (#497):
 /// the couldn't-refresh banner over whatever the cache holds, the
@@ -51,14 +50,13 @@ class EventListStatesSliver extends StatelessWidget {
               ),
             ),
           switch (state) {
-            EventOverviewLoading() => SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
+            EventOverviewLoading() => BgeStateSliver(
+              child: BgeLoadingState(
                 key: EventOverviewScreen.loadingKey,
-                child: const EventLoadingIndicator(),
+                label: l10n.eventsLoading,
               ),
             ),
-            EventOverviewError(:final retrying) => EventMessageSliver(
+            EventOverviewError(:final retrying) => BgeStateSliver(
               child: bloc.canRetry
                   // #49's error-with-retry. The pass writes to the tables the
                   // failed read watches, which is what makes drift run it
@@ -95,14 +93,3 @@ String eventGroupName(EventsLocalizations l10n, EventGroup group) =>
       EventGroup.planning => l10n.eventsGroupPlanning,
       EventGroup.past => l10n.eventsGroupPast,
     };
-
-/// A short message filling the rest of the page, centered.
-class EventMessageSliver extends StatelessWidget {
-  const EventMessageSliver({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) =>
-      SliverFillRemaining(hasScrollBody: false, child: Center(child: child));
-}

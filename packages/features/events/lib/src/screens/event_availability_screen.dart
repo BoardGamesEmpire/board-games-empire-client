@@ -891,13 +891,9 @@ class _LoadingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _MessagePage(
     child: Center(
-      key: EventAvailabilityScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
+      child: BgeLoadingState(
+        key: EventAvailabilityScreen.loadingKey,
         label: EventsLocalizations.of(context).eventsDetailLoading,
-        // The label carries the announcement; the spinner has nothing to
-        // say to a screen reader.
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
       ),
     ),
   );

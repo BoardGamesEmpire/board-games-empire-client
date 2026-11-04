@@ -149,6 +149,20 @@ void main() {
       expect(find.text(_emptyTitleCopy), findsOneWidget);
     });
 
+    testWidgets('the empty state is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, const []);
+
+      final title = tester.getSemantics(find.text(_emptyTitleCopy));
+      expect(title, isSemantics(isLiveRegion: true));
+      expect(title.label, contains(_emptyTitleCopy));
+      expect(
+        title.label,
+        contains('Games you add from the catalog will appear here.'),
+      );
+      handle.dispose();
+    });
+
     testWidgets('offers browsing, which calls onBrowse', (tester) async {
       var browsed = 0;
       await show(tester, const [], onBrowse: (_) => browsed++);
