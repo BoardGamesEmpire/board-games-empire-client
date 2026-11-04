@@ -29,7 +29,10 @@ class WellKnownClientImpl implements WellKnownClient {
       headers: const {'Accept': 'application/json'},
       // Never follow redirects silently — URL changes require user confirmation
       followRedirects: false,
-      validateStatus: (_) => true, // We handle status ourselves
+      // Every status resolves as a `Response`, so `fetchIdentity` classifies
+      // by status, and takes the body as `Response<String>` with
+      // `responseType` pinned: `decodeJsonBody` says why.
+      validateStatus: (_) => true,
     ),
   );
 
@@ -38,28 +41,15 @@ class WellKnownClientImpl implements WellKnownClient {
     final url = _buildWellKnownUrl(serverUrl);
 
     // `Response<String>` **and a pinned `responseType`** are what keeps Dio
-    // out of the body — together, not either alone (#182, #360).
-    // `DioMixin.fetch` forces `responseType` from `T` — `String` gives
-    // `plain`, and **anything else, `Object?` included, gives `json`**
-    // (`dio_mixin.dart:417-427`) — but it skips that forcing entirely for an
-    // instance already set to `bytes` or `stream` (`:419-421`), and this
-    // class accepts an arbitrary injected `Dio` via `.withDio`. Each of the
-    // following loses the answer the same way:
+    // out of the body — together, not either alone (#182, #360). This class
+    // accepts an arbitrary injected `Dio` via `.withDio`, so the pin is not
+    // optional: an injected Dio already set to `bytes` or `stream` skips the
+    // forcing `Response<String>` relies on. `decodeJsonBody` says how each of
+    // Dio's ways of handling the body loses the answer.
     //
-    // * an injected Dio already set to `bytes`/`stream` skips the forcing
-    //   above, so `assureResponse` casts a `Uint8List` to `String` and the
-    //   cast throws;
-    // * asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
-    //   body before this method sees it, so an HTML page throws a `TypeError`;
-    // * asking for anything non-`String` makes Dio `jsonDecode` any body whose
-    //   **content type** claims JSON, so an HTML page served as
-    //   `application/json`, or a truncated JSON document, throws a
-    //   `FormatException`.
-    //
-    // All three escape as `DioException(type: unknown)` with **no response
-    // attached**, land in the catch below, and are reported as *unreachable* —
-    // telling the user to check their connection about a server that answered
-    // perfectly well.
+    // Here the loss lands in the catch below, with no response attached, and
+    // is reported as *unreachable* — telling the user to check their
+    // connection about a server that answered perfectly well.
     //
     // This is the single most likely first-run mistake: point the app at an
     // ordinary website and it answers `/.well-known/bge-identity` with an HTML
@@ -159,7 +149,7 @@ class WellKnownClientImpl implements WellKnownClient {
     // an interceptor rejecting with an already-decoded body it built itself;
     // an `onRequest` interceptor writing `responseType` back, since `fetch`
     // forces it BEFORE the interceptor chain runs
-    // (`dio-5.11.0/lib/src/dio_mixin.dart:418-427`); and a custom
+    // (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`); and a custom
     // `transformer`, which need not consult `responseType` at all. Pin every
     // request, and still narrow wherever the body arrives untyped (#360).
     final Object? decoded;

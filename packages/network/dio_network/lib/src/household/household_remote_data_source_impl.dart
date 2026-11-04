@@ -414,19 +414,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// Decodes a response body the transport was told not to touch, and
   /// requires it to be a JSON object.
   ///
-  /// Every request method asks Dio for `Response<String>` and pins
-  /// `responseType` per call (see `_plainBody` above) — together, not either
-  /// alone. `DioMixin.fetch` forces `responseType` from `T` — `String` gives
-  /// `plain`, and **anything else, `Object?` included, gives `json`**
-  /// (`dio_mixin.dart:417-427`).
-  ///
-  /// That matters because either half of Dio's own handling loses the status.
-  /// Asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
-  /// body; asking for anything non-`String` makes it `jsonDecode` a body whose
-  /// **content type** claims JSON. A cast failure or a `FormatException` both
-  /// escape as `DioException(type: unknown)` with **no response attached**, so
-  /// `_classifyDioException` sees a null status and returns transient — for a
-  /// server that answered, and whatever it answered with.
+  /// Every request method takes the body as `Response<String>` with
+  /// `_plainBody` pinned, which keeps Dio out of it: see `decodeJsonBody` for
+  /// how either half of Dio's own handling would lose the status, and
+  /// `_plainBody` for why the pin is per request. Lost here, the status reads
+  /// as null to `_classifyDioException`, which returns transient — for a server
+  /// that answered, and whatever it answered with.
   ///
   /// The per-server Dio sets `validateStatus: (_) => true` (`DioFactory`), so
   /// every status reached that path: an HTML 400 from a proxy retried forever,

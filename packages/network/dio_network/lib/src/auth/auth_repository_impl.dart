@@ -883,7 +883,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// `responseType` per request** — together, not either alone.
   /// `DioMixin.fetch` forces `responseType` from `T`, so `String` gives
   /// `plain` and anything else gives `json`
-  /// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`) — but it skips that forcing
+  /// (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`) — but it skips that forcing
   /// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
   /// and this class takes an arbitrary `Dio` by constructor. The pin is what
   /// makes the rule true here rather than only for the Dio the factories build

@@ -10,21 +10,25 @@ import 'package:flutter/foundation.dart';
 /// either alone, keeps Dio out of the body. `DioMixin.fetch` forces
 /// `responseType` from `T` — `String` gives `plain`, and **anything else,
 /// `Object?` included, gives `json`**
-/// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`) — but it skips that forcing
+/// (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`) — but it skips that forcing
 /// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
 /// so a caller that takes an arbitrary injected `Dio` has to pin it itself
 /// rather than rely on the type argument alone.
 ///
-/// Either half of Dio's own handling destroys the status. Asking for
-/// `Response<Map<String, dynamic>>` makes Dio cast the decoded body; asking for
-/// anything non-`String` makes it `jsonDecode` a body whose *content type*
-/// claims JSON. A cast failure or a `FormatException` both escape as
+/// Each way Dio can handle the body itself destroys the status. Unpinned on a
+/// `bytes` or `stream` instance, `assureResponse` casts the bytes or the
+/// stream to `String`, and the cast throws. Asking for
+/// `Response<Map<String, dynamic>>` makes Dio cast the decoded body; asking
+/// for anything non-`String` makes it `jsonDecode` a body whose *content type*
+/// claims JSON. A cast failure or a `FormatException` each escape as
 /// `DioException(type: unknown)` with **no response attached**, so a
 /// status-based classifier sees null and calls a permanent failure transient —
 /// which the drain then retries forever (#265, #182).
 ///
-/// Shared rather than copied so the threshold below lives in one place; a third
-/// caller is expected on #351.
+/// This is the canonical statement of that rule: every permissive `Dio` points
+/// here from its `validateStatus` line, in both factories and in
+/// `WellKnownClientImpl` (#276). The function is shared rather than copied so
+/// the threshold below lives in one place.
 ///
 /// ## Threshold
 ///

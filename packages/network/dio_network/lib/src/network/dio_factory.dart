@@ -41,7 +41,10 @@ class DefaultDioFactory implements DioFactory {
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
         headers: const {'Accept': 'application/json'},
-        // We inspect status codes ourselves rather than letting Dio throw.
+        // Every status resolves as a `Response`, so callers classify by
+        // status. A caller that does must also take the body as
+        // `Response<String>` with `responseType` pinned per request:
+        // `decodeJsonBody` (`package:dio_network`) says why.
         validateStatus: (_) => true,
       ),
     );
