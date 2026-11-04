@@ -107,7 +107,9 @@ import '../widgets/event_labels.dart';
 /// all if that event was cancelled or archived meanwhile, which the server
 /// would still let a date be edited or removed on (backend#956), or if the
 /// viewer's role no longer allows it, which for a confirm, decline or
-/// cancel the server doesn't check (backend#979). Removing a
+/// cancel the server doesn't check (backend#979). Nor if the date no longer
+/// offers it then, as one that passed while its confirm's dialog was open,
+/// which the server would still confirm (backend#1005, #655). Removing a
 /// Confirmed date asks once, and is a cancel and then a remove (#446).
 ///
 /// Every end shows a banner, done included, since the screen stays, and
@@ -141,6 +143,13 @@ import '../widgets/event_labels.dart';
 /// (#589), and isn't made once the event is deleted (#501). *Who answered*
 /// opens a page of everyone's answers, through [onWhoAnswered], where the
 /// roster can be read.
+///
+/// ## The clock
+///
+/// Nothing writes to the cache as time passes, so the page is built again at
+/// its next time boundary: the event's start or end, or a proposed date
+/// passing (#502, #655). The status line, the menu and the dates' controls
+/// move on with the clock while the screen is open, with no read.
 ///
 /// ## Not found is an answer
 ///
@@ -309,9 +318,10 @@ class EventDetailScreen extends StatelessWidget {
   /// visible.
   final void Function(BuildContext context)? onWhoAnswered;
 
-  /// The clock that decides whether a date is this year's, and where the
-  /// event stands as its dates pass, which picks the menu's status changes
-  /// (#502). Defaults to the device's.
+  /// The clock that decides whether a date is this year's, whether a
+  /// proposed one has passed, and where the event stands as its dates pass,
+  /// which picks the menu's status changes (#502, #655). Defaults to the
+  /// device's.
   final DateTime Function()? now;
 
   @override
@@ -578,14 +588,23 @@ class _ReadyPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!hasActions) return _build(context, null, null);
+    final snapshot = state.detail.snapshot;
 
-    return BlocBuilder<EventActionsBloc, EventActionsState>(
-      builder: (context, actionsState) =>
-          BlocBuilder<EventPollBloc, EventPollState>(
-            builder: (context, pollState) =>
-                _build(context, actionsState, pollState),
-          ),
+    return _ClockedPage(
+      event: snapshot.event,
+      occurrences: snapshot.occurrences,
+      now: now,
+      builder: (context) {
+        if (!hasActions) return _build(context, null, null);
+
+        return BlocBuilder<EventActionsBloc, EventActionsState>(
+          builder: (context, actionsState) =>
+              BlocBuilder<EventPollBloc, EventPollState>(
+                builder: (context, pollState) =>
+                    _build(context, actionsState, pollState),
+              ),
+        );
+      },
     );
   }
 
@@ -703,6 +722,83 @@ class _ReadyPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Builds the page again at its next time boundary (#502, #655): the
+/// event's start or end, or a proposed date passing ([nextDetailBoundary]).
+///
+/// Nothing writes to the cache as time passes, and the page reads the clock
+/// only as it builds, so without this its status line, its menu and the
+/// dates' controls would stay as they were while the screen is open.
+///
+/// The timer is set again whenever the event or its dates may have changed,
+/// and each time it fires. It waits a day at most, as the overview's does: a
+/// browser fires a timeout longer than about 24.8 days at once.
+class _ClockedPage extends StatefulWidget {
+  const _ClockedPage({
+    required this.event,
+    required this.occurrences,
+    required this.now,
+    required this.builder,
+  });
+
+  final Event event;
+  final List<EventOccurrence> occurrences;
+  final DateTime Function() now;
+
+  /// The page, built again each time the timer fires.
+  final WidgetBuilder builder;
+
+  @override
+  State<_ClockedPage> createState() => _ClockedPageState();
+}
+
+class _ClockedPageState extends State<_ClockedPage> {
+  /// The longest [_timer] waits before it is set again.
+  static const _maxWait = Duration(days: 1);
+
+  /// Fires when the page next moves on with the clock, if it will.
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void didUpdateWidget(_ClockedPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A read or a sync can have moved the dates, and the boundary with them.
+    _arm();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _arm() {
+    _timer?.cancel();
+    _timer = null;
+    final now = widget.now();
+    final next = nextDetailBoundary(widget.event, widget.occurrences, now: now);
+    if (next == null) return;
+
+    // Never negative: the boundary lies after now.
+    final wait = next.difference(now);
+    _timer = Timer(wait < _maxWait ? wait : _maxWait, _tick);
+  }
+
+  void _tick() {
+    _arm();
+    // The page reads the clock again as it builds.
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 /// The app bar's More actions menu (#501): the event's status changes the
@@ -1033,7 +1129,12 @@ class _Dates extends StatelessWidget {
           : null,
       onAction: hasActions
           ? (occurrence, action) => unawaited(
-              _send(context, action, () => _ask(context, occurrence, action)),
+              _send(
+                context,
+                action,
+                () => _ask(context, occurrence, action),
+                occurrenceId: occurrence.id,
+              ),
             )
           : null,
       poll: _pollView(context),
@@ -1069,12 +1170,13 @@ class _Dates extends StatelessWidget {
   }
 
   /// Asks through [ask]'s dialog, then sends the request it answers for
-  /// [action], as Delete does.
+  /// [action], as Delete does: on date [occurrenceId], or null for an add.
   Future<void> _send(
     BuildContext context,
     EventAction action,
-    Future<_DateRequest?> Function() ask,
-  ) async {
+    Future<_DateRequest?> Function() ask, {
+    String? occurrenceId,
+  }) async {
     // Read before the dialog opens: the page under it can rebuild without
     // these dates, and take the context they were asked from with it.
     final actions = context.read<EventActionsBloc>();
@@ -1092,11 +1194,34 @@ class _Dates extends StatelessWidget {
     // the server still takes an edit or a removal on a cancelled event
     // (backend#956). Or taken the action from the viewer, and the server
     // still takes a confirm, decline or cancel from an organizer
-    // (backend#979). The page already shows either, without the control.
-    // A date's own change goes on to the server, whose 400 says so.
+    // (backend#979). The page already shows either, without the control,
+    // and its banner says the write was dropped, or a screen reader would
+    // hear nothing happen (#655).
     final shown = state.detail.snapshot;
     if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
+      actions.add(EventWriteDropped(action));
       return;
+    }
+
+    // Or the date can have passed while the dialog was open, and the server
+    // still takes a confirm on a passed date (backend#1005), so the clock is
+    // read again (#655). The page moved on as it passed, without the
+    // control. A date that changed meanwhile is checked the same way, and
+    // one gone meanwhile goes on to the server, whose answer says so.
+    final occurrence = occurrenceId == null
+        ? null
+        : shown.occurrences.where((o) => o.id == occurrenceId).firstOrNull;
+    if (occurrence != null) {
+      final offered = dateActionsFor(
+        shown.event,
+        occurrence,
+        state.actions,
+        now: now(),
+      );
+      if (!offered.contains(action)) {
+        actions.add(EventWriteDropped(action));
+        return;
+      }
     }
     actions.add(request(shown));
   }

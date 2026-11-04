@@ -179,7 +179,8 @@ EventOccurrence _ahead() =>
 /// header, the dates, who's coming and the games, and the refresh banner it
 /// shares with the overview. Then Delete (#501), from the menu to the screen
 /// leaving, the event's status writes (#502), the dates' menus and dialogs
-/// (#506), and the poll on the dates (#507).
+/// (#506), the poll on the dates (#507), and the page moving on with the
+/// clock (#502, #655).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -220,6 +221,7 @@ void main() {
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
     ValueListenable<bool>? offline,
+    DateTime Function()? clock,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     locale: const Locale('en', 'US'),
@@ -253,7 +255,7 @@ void main() {
       onBack: onBack,
       onWhoAnswered: onWhoAnswered,
       confirmSession: confirmSession,
-      now: () => now,
+      now: clock ?? () => now,
     ),
   );
 
@@ -264,7 +266,8 @@ void main() {
   }
 
   /// Shows [detail] as the cache's answer. No server, unless [remote] says,
-  /// and no way back, unless [onBack] does.
+  /// and no way back, unless [onBack] does. The clock stands at `now`,
+  /// unless [clock] says otherwise.
   Future<void> show(
     WidgetTester tester,
     EventDetail detail, {
@@ -276,6 +279,7 @@ void main() {
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
     ValueListenable<bool>? offline,
+    DateTime Function()? clock,
   }) async {
     await tester.pumpWidget(
       harness(
@@ -287,6 +291,7 @@ void main() {
         confirmSession: confirmSession,
         textScaler: textScaler,
         offline: offline,
+        clock: clock,
       ),
     );
     cache.add(detail);
@@ -2943,7 +2948,7 @@ void main() {
 
     for (final action in [EventAction.editDate, EventAction.removeDate]) {
       testWidgets('${action.name} is not sent for an event cancelled while '
-          'its dialog was open', (tester) async {
+          'its dialog was open, and the banner says so', (tester) async {
         // The server still takes both on a cancelled event (backend#956).
         final remote = answering();
         await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
@@ -2972,6 +2977,7 @@ void main() {
 
         expect(remote.dateRequests, isEmpty);
         expect(menuOf('o-1'), findsNothing);
+        expect(inOutcome(_dateChangedCopy), findsOneWidget);
       });
     }
 
@@ -2981,7 +2987,7 @@ void main() {
       EventAction.cancelDate,
     ]) {
       testWidgets('${action.name} is not sent for a host made an organizer '
-          'while its dialog was open', (tester) async {
+          'while its dialog was open, and the banner says so', (tester) async {
         // The server still takes all three from an organizer
         // (backend#979).
         final status = action == EventAction.cancelDate
@@ -3004,6 +3010,7 @@ void main() {
         await submit(tester);
 
         expect(remote.dateRequests, isEmpty);
+        expect(inOutcome(_dateChangedCopy), findsOneWidget);
       });
     }
 
@@ -4643,6 +4650,286 @@ void main() {
         findsOneWidget,
       );
       await expectReachable(tester, retry);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('the clock (#502, #655)', () {
+    /// What the screen's clock reads, which each test moves on.
+    late DateTime clock;
+
+    setUpAll(() {
+      registerFallbackValue(confirmed('o-fallback', kItemInstant));
+    });
+
+    setUp(() {
+      clock = now;
+      when(() => repository.cacheOccurrence(any()))
+          .thenAnswer((_) async => true);
+    });
+
+    void back(BuildContext _) {}
+
+    /// Date `o-1` of `e-1`, [status], from [start] to [end] after the clock
+    /// as it stands when the test begins.
+    EventOccurrence date({
+      required Duration start,
+      required Duration end,
+      OccurrenceStatus status = OccurrenceStatus.proposed,
+    }) => confirmed(
+      'o-1',
+      now.add(start),
+      end: now.add(end),
+    ).copyWith(eventId: 'e-1', status: status);
+
+    /// Event `e-1`, a Scheduled [schedulingMode] event the viewer hosts,
+    /// holding [occurrence].
+    EventDetail hosted(
+      EventOccurrence occurrence, {
+      EventSchedulingMode schedulingMode = EventSchedulingMode.poll,
+    }) => _detail(
+      event: _event(schedulingMode: schedulingMode),
+      occurrences: [occurrence],
+      attendance: _attending(EventRole.host),
+    );
+
+    /// A server whose reads serve [detail], whose poll reads answer that
+    /// nobody has answered, and whose date writes answer with the date they
+    /// named.
+    FakeEventRemote serving(EventDetail detail) => FakeEventRemote.detail(
+      (_) => detail.snapshot,
+      deleted: (_) {},
+      summary: (_) => const AvailabilitySummary(occurrences: []),
+      dateWritten: (_) => detail.snapshot.occurrences.single,
+    );
+
+    /// Shows [detail] from [remote], on the test's clock.
+    Future<void> showClocked(
+      WidgetTester tester,
+      EventDetail detail,
+      FakeEventRemote remote,
+    ) async {
+      await show(
+        tester,
+        detail,
+        remote: remote,
+        onBack: back,
+        clock: () => clock,
+      );
+      // The poll's read.
+      await settle(tester);
+    }
+
+    /// Moves the clock on by [by], and lets the time pass for the screen's
+    /// timer too.
+    Future<void> elapse(WidgetTester tester, Duration by) async {
+      clock = clock.add(by);
+      await tester.pump(by);
+    }
+
+    Future<void> toggle(WidgetTester tester, Finder button) async {
+      await tester.tap(button);
+      await animate(tester);
+    }
+
+    Finder dateMenu() => find.byKey(EventDetailScreen.dateMenuKey('o-1'));
+
+    /// The open menu's items, by label, in order.
+    List<String> offered(WidgetTester tester) => [
+      for (final item in tester.widgetList<MenuItemButton>(
+        find.byType(MenuItemButton),
+      ))
+        (item.child! as BgeOnlineOnlyLabel).label,
+    ];
+
+    testWidgets('a scheduled event reads Ongoing at its start and Completed '
+        'at its end, with no read', (tester) async {
+      final detail = hosted(
+        date(
+          start: const Duration(hours: 1),
+          end: const Duration(hours: 3),
+          status: OccurrenceStatus.confirmed,
+        ),
+        schedulingMode: EventSchedulingMode.fixed,
+      );
+      final remote = serving(detail);
+      await showClocked(tester, detail, remote);
+
+      expect(find.text('Strategy night · Scheduled'), findsOneWidget);
+      await toggle(tester, find.byKey(EventDetailScreen.moreActionsKey));
+      expect(offered(tester), ['Cancel event', 'Delete event']);
+      await toggle(tester, find.byKey(EventDetailScreen.moreActionsKey));
+
+      await elapse(tester, const Duration(hours: 1));
+      expect(find.text('Strategy night · Happening now'), findsOneWidget);
+      expect(find.text('Strategy night · Scheduled'), findsNothing);
+
+      await elapse(tester, const Duration(hours: 2));
+      expect(find.text('Strategy night · Completed'), findsOneWidget);
+      // A host may archive an event that has ended (#502).
+      await toggle(tester, find.byKey(EventDetailScreen.moreActionsKey));
+      expect(offered(tester), [
+        'Cancel event',
+        'Archive event',
+        'Delete event',
+      ]);
+      expect(
+        tester
+            .widget<MenuItemButton>(find.byKey(EventDetailScreen.archiveKey))
+            .onPressed,
+        isNotNull,
+      );
+      // The open's read alone: the clock moved the page on.
+      expect(remote.detailRequests, ['e-1']);
+    });
+
+    testWidgets('a date a sync brings while open moves the page on at its '
+        'start', (tester) async {
+      final undated = _detail(
+        event: _event(schedulingMode: EventSchedulingMode.fixed),
+        attendance: _attending(EventRole.host),
+      );
+      await showClocked(tester, undated, serving(undated));
+      // Nothing to wait for.
+      expect(find.text('Strategy night · Planning'), findsOneWidget);
+
+      cache.add(
+        hosted(
+          date(
+            start: const Duration(hours: 1),
+            end: const Duration(hours: 3),
+            status: OccurrenceStatus.confirmed,
+          ),
+          schedulingMode: EventSchedulingMode.fixed,
+        ),
+      );
+      await settle(tester);
+      expect(find.text('Strategy night · Scheduled'), findsOneWidget);
+
+      await elapse(tester, const Duration(hours: 1));
+      expect(find.text('Strategy night · Happening now'), findsOneWidget);
+    });
+
+    testWidgets('a Proposed date that passes while open stops offering '
+        'Confirm and Decline', (tester) async {
+      final detail = hosted(
+        date(start: const Duration(hours: 1), end: const Duration(hours: 2)),
+      );
+      final remote = serving(detail);
+      await showClocked(tester, detail, remote);
+
+      expect(inSection(EventDetailScreen.datesKey, 'Proposed'), findsOneWidget);
+      await toggle(tester, dateMenu());
+      expect(offered(tester), ['Confirm', 'Edit', 'Decline', 'Remove']);
+      await toggle(tester, dateMenu());
+
+      // Just past its end: a date ending at an instant hasn't passed at it.
+      await elapse(tester, const Duration(hours: 2, microseconds: 1));
+
+      expect(
+        inSection(EventDetailScreen.datesKey, 'Date passed'),
+        findsOneWidget,
+      );
+      expect(inSection(EventDetailScreen.datesKey, 'Proposed'), findsNothing);
+      await toggle(tester, dateMenu());
+      expect(offered(tester), ['Edit', 'Remove']);
+      expect(remote.detailRequests, ['e-1']);
+    });
+
+    testWidgets('a confirm whose date passed while its dialog was open sends '
+        'nothing, and says the date changed', (tester) async {
+      // The server still takes a confirm on a passed date (backend#1005).
+      final detail = hosted(
+        date(start: const Duration(hours: 1), end: const Duration(hours: 2)),
+      );
+      final remote = serving(detail);
+      await showClocked(tester, detail, remote);
+      await toggle(tester, dateMenu());
+      await tester.tap(
+        find.byKey(
+          EventDetailScreen.dateActionKey('o-1', EventAction.confirmDate),
+        ),
+      );
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await elapse(tester, const Duration(hours: 3));
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.dateRequests, isEmpty);
+      expect(inOutcome(_dateChangedCopy), findsOneWidget);
+    });
+
+    testWidgets('a confirm whose date a sync confirmed while its dialog was '
+        'open sends nothing, and says the date changed', (tester) async {
+      // Its dialog checks the date again before it sends, so the confirm is
+      // dropped rather than sent to come back 400.
+      final proposed = hosted(
+        date(start: const Duration(hours: 1), end: const Duration(hours: 2)),
+      );
+      final confirmedElsewhere = hosted(
+        date(
+          start: const Duration(hours: 1),
+          end: const Duration(hours: 2),
+          status: OccurrenceStatus.confirmed,
+        ),
+      );
+      var served = proposed;
+      final remote = FakeEventRemote.detail(
+        (_) => served.snapshot,
+        deleted: (_) {},
+        summary: (_) => const AvailabilitySummary(occurrences: []),
+        dateWritten: (_) => served.snapshot.occurrences.single,
+      );
+      await showClocked(tester, proposed, remote);
+      await toggle(tester, dateMenu());
+      await tester.tap(
+        find.byKey(
+          EventDetailScreen.dateActionKey('o-1', EventAction.confirmDate),
+        ),
+      );
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      // Confirmed on another device. The server now serves it so, and a
+      // read or a sync caches it under the dialog.
+      served = confirmedElsewhere;
+      cache.add(confirmedElsewhere);
+      await settle(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.dateRequests, isEmpty);
+      expect(inOutcome(_dateChangedCopy), findsOneWidget);
+      expect(
+        inSection(EventDetailScreen.datesKey, 'Confirmed'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the timer stops when the screen goes', (tester) async {
+      final detail = hosted(
+        date(
+          start: const Duration(hours: 1),
+          end: const Duration(hours: 3),
+          status: OccurrenceStatus.confirmed,
+        ),
+        schedulingMode: EventSchedulingMode.fixed,
+      );
+      await showClocked(tester, detail, serving(detail));
+      expect(find.text('Strategy night · Scheduled'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      // Past both of the event's boundaries. A timer left running would
+      // build a page that has gone, and the binding fails a test that ends
+      // with one pending.
+      await elapse(tester, const Duration(hours: 4));
+
+      expect(find.byType(EventDetailScreen), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

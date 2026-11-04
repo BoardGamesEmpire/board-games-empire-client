@@ -408,7 +408,7 @@
   },
   "eventsDateChanged": "This date changed meanwhile. Check it below before trying again.",
   "@eventsDateChanged": {
-    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the date below is up to date: the refresh banner says whether the read went through. A warning, not an error."
+    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the date below is up to date: the refresh banner says whether the read went through. It also shows, with no read, when the screen didn't send the change at all: by the time its dialog closed the date no longer offered it, because a sync changed the date, cancelled the event or changed the user's role on it, or a proposed date passed. A warning, not an error."
   },
   "eventsDateCancelledRemoveUnconfirmed": "The date was cancelled. If it's still below, you can remove it now.",
   "@eventsDateCancelledRemoveUnconfirmed": {
