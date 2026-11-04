@@ -98,6 +98,32 @@ void main() {
                   ),
                 ),
               ),
+              GoldenTestScenario(
+                name: 'state · loading · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: const Center(
+                    child: BgeLoadingState(label: 'Loading your events'),
+                  ),
+                ),
+              ),
+              GoldenTestScenario(
+                name: 'state · empty · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: BgeEmptyState(
+                    icon: Icons.event_busy_outlined,
+                    title: 'No upcoming events',
+                    body: 'Plan one, or wait for an invitation.',
+                    action: FilledButton(
+                      onPressed: _noop,
+                      child: const Text('Plan an event'),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ],
         ),
