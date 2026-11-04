@@ -15,8 +15,8 @@
 /// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
-/// its events (#615, #669), and `BgeFocusRing` by the game covers and the event
-/// cards on them (#669).
+/// its events (#615, #669), `BgeFocusRing` by the game covers and the event
+/// cards on them (#669), and `BgeRefreshBanner` by all 3 cached lists (#573).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -28,6 +28,7 @@
 library;
 
 export 'src/banners/bge_inline_banner.dart';
+export 'src/banners/bge_refresh_banner.dart';
 export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_submit_button.dart';
 export 'src/focus/bge_focus_ring.dart';

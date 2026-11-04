@@ -26,7 +26,6 @@ import '../widgets/event_date_dialogs.dart';
 import '../widgets/event_date_poll.dart';
 import '../widgets/event_detail_sections.dart';
 import '../widgets/event_labels.dart';
-import '../widgets/event_refresh_banner.dart';
 
 /// One event (#498): its header, its dates, who's coming and its games, read
 /// reactively from the local cache and from the server once per open.
@@ -572,10 +571,12 @@ class _ReadyPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (state.refreshFailed || state.refreshing) ...[
-            EventRefreshBanner(
+            BgeRefreshBanner(
               key: EventDetailScreen.refreshBannerKey,
               retryKey: EventDetailScreen.refreshRetryKey,
               failedMessage: l10n.eventsDetailRefreshFailed,
+              inProgressLabel: l10n.eventsRefreshInProgress,
+              retryLabel: l10n.eventsRefreshRetry,
               refreshing: state.refreshing,
               // No read while the delete is out or done: its answer could land
               // after the removal and cache the event again (#501).

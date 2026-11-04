@@ -11,7 +11,6 @@ import 'package:household/l10n/household_localizations.dart';
 import '../bloc/household_list_bloc.dart';
 import '../bloc/household_list_event.dart';
 import '../bloc/household_list_state.dart';
-import '../widgets/household_refresh_banner.dart';
 import '../sync/household_hydration_status.dart';
 
 /// The household list (#269): every household the signed-in user belongs
@@ -239,10 +238,12 @@ class _HouseholdListView extends StatelessWidget {
                   padding: EdgeInsets.only(
                     bottom: BgeTokens.of(context).spaceMd,
                   ),
-                  child: HouseholdRefreshBanner(
+                  child: BgeRefreshBanner(
                     key: HouseholdListScreen.refreshBannerKey,
                     retryKey: HouseholdListScreen.refreshRetryKey,
                     failedMessage: l10n.householdListRefreshFailed,
+                    inProgressLabel: l10n.householdRefreshInProgress,
+                    retryLabel: l10n.householdRefreshRetry,
                     refreshing: refreshing,
                     onRetry: canRetry
                         ? () => context.read<HouseholdListBloc>().add(

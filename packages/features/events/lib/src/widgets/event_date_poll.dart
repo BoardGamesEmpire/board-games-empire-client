@@ -354,8 +354,8 @@ class DatePollBlock extends StatelessWidget {
 /// button's, which says it isn't available then, and carries the button's
 /// focus as `Focus` would.
 ///
-/// `EventRefreshBanner` keeps the disabling retry for now: #607 settles all
-/// three refresh banners at once, and #573 would make them one. This is the
+/// `BgeRefreshBanner` keeps the disabling retry for now: #607 settles the
+/// refresh banner's, now that #573 made the three copies one. This is the
 /// first direction #607 names, so it is what to lift there.
 class PollRetryButton extends StatefulWidget {
   const PollRetryButton({required this.busy, required this.onRetry, super.key});

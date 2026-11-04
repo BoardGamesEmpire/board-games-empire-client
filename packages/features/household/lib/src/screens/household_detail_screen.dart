@@ -20,7 +20,6 @@ import '../bloc/household_member_actions_event.dart';
 import '../bloc/household_member_actions_state.dart';
 import '../members/member_action_message.dart';
 import '../permissions/household_actions.dart';
-import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
 
@@ -1097,10 +1096,12 @@ Widget _refreshBanner(
   bool refreshing = false,
 }) {
   final l10n = HouseholdLocalizations.of(context);
-  return HouseholdRefreshBanner(
+  return BgeRefreshBanner(
     key: HouseholdDetailScreen.refreshBannerKey,
     retryKey: HouseholdDetailScreen.refreshRetryKey,
     failedMessage: l10n.householdDetailRefreshFailed,
+    inProgressLabel: l10n.householdRefreshInProgress,
+    retryLabel: l10n.householdRefreshRetry,
     refreshing: refreshing,
     onRetry: canRetry
         ? () => context.read<HouseholdDetailBloc>().add(

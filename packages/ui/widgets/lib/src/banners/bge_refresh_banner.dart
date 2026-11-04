@@ -1,29 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-import 'package:household/l10n/household_localizations.dart';
+import 'bge_inline_banner.dart';
 
-/// The stale-data banner and the retry that shares it (#269 D2, #300).
+/// The stale-data banner and the retry that shares it (#269, #300, #573).
 ///
-/// One widget for both household screens and for both of the states each
-/// of them can be in. The list's banner and the detail's are the same
-/// control over the same pass and the same status: two copies drifted
-/// apart once already (#165 is what that costs), and a fix to the retry's
-/// wording or its accessible name should not have to be made twice.
+/// One widget for every cached list and detail screen, and for both of the
+/// states each of them can be in. Their banners are the same control over
+/// the same kind of pass and the same status: copies drifted apart once
+/// already (#165 is what that costs), and a fix to the retry's wording or
+/// its accessible name should not have to be made more than once.
 ///
 /// What the callers own is what genuinely differs: the failed copy (a list
-/// "may be out of date", one household "may be"), the key their tests
-/// address, and how a press reaches their own bloc.
+/// "may be out of date", one record "may be"), the key their tests address,
+/// and how a press reaches their own bloc. The strings arrive localized.
 ///
 /// ## What it says, and what it will not say
 ///
-/// The failed copy names **no cause**. `HydrateOutcome.failed` collapses
-/// every failure the drain can hit — an unreachable host, a 4xx, an
-/// unparseable body — and the first real one in the wild was a reachable
-/// server answering 400. Naming a cause the screen cannot know sends
-/// people to check their network while the fault is in the response. That
-/// is also why the button offers another attempt and promises nothing.
+/// The failed copy names **no cause**. A hydrate's outcome collapses every
+/// failure the drain can hit — an unreachable server, a 4xx, an unparseable
+/// body — and the first real one in the wild was a reachable server
+/// answering 400. Naming a cause the screen cannot know sends people to
+/// check their network while the fault is in the response. That is also why
+/// the button offers another attempt and promises nothing.
 ///
 /// Warning tone at rest, info while refreshing: at rest something is
 /// wrong, and mid-refresh something is being done about it.
@@ -37,11 +36,13 @@ import 'package:household/l10n/household_localizations.dart';
 /// one announces as "button, disabled" with no reason given.
 ///
 /// [refreshing] is only ever true for a pass the **user asked for**
-/// (#300 D6). A pass a #302 trigger started is not narrated: the banner
+/// (#300). A pass a background trigger started is not narrated: the banner
 /// clears when it succeeds, and nothing announces it while it runs.
-class HouseholdRefreshBanner extends StatelessWidget {
-  const HouseholdRefreshBanner({
+class BgeRefreshBanner extends StatelessWidget {
+  const BgeRefreshBanner({
     required this.failedMessage,
+    required this.inProgressLabel,
+    required this.retryLabel,
     required this.retryKey,
     this.refreshing = false,
     this.onRetry,
@@ -49,9 +50,16 @@ class HouseholdRefreshBanner extends StatelessWidget {
   });
 
   /// What to say when the last pass failed. Screen-specific; the
-  /// refreshing copy is not, because "Refreshing…" is the same fact
+  /// in-progress copy is not, because "Refreshing…" is the same fact
   /// wherever it is shown.
   final String failedMessage;
+
+  /// Says a pass is running, as the banner's message and as the retry's
+  /// label while it runs.
+  final String inProgressLabel;
+
+  /// The retry button's label at rest.
+  final String retryLabel;
 
   /// Key on the retry button, so each screen's tests can address it.
   final Key retryKey;
@@ -60,19 +68,17 @@ class HouseholdRefreshBanner extends StatelessWidget {
   final bool refreshing;
 
   /// Dispatches the retry, or null where this composition cannot run a
-  /// pass at all (a container with no household client) — in which case the
-  /// banner still reports the stale data and simply offers nothing to
-  /// press.
+  /// pass at all — in which case the banner still reports the stale data
+  /// and simply offers nothing to press.
   final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = HouseholdLocalizations.of(context);
     final retry = onRetry;
 
     return BgeInlineBanner(
       tone: refreshing ? BgeBannerTone.info : BgeBannerTone.warning,
-      message: refreshing ? l10n.householdRefreshInProgress : failedMessage,
+      message: refreshing ? inProgressLabel : failedMessage,
       // Furniture for as long as the data stays stale, and it already sits
       // at the top of the viewport.
       reveal: false,
@@ -84,11 +90,7 @@ class HouseholdRefreshBanner extends StatelessWidget {
               icon: refreshing
                   ? const _RetrySpinner()
                   : const Icon(Icons.refresh),
-              label: Text(
-                refreshing
-                    ? l10n.householdRefreshInProgress
-                    : l10n.householdRefreshRetry,
-              ),
+              label: Text(refreshing ? inProgressLabel : retryLabel),
             ),
     );
   }

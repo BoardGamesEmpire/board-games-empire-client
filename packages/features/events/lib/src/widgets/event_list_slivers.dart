@@ -11,7 +11,6 @@ import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../screens/event_overview_screen.dart';
 import 'event_loading_indicator.dart';
-import 'event_refresh_banner.dart';
 
 /// What the overview and every group's page show around their rows (#497):
 /// the couldn't-refresh banner over whatever the cache holds, the
@@ -40,10 +39,12 @@ class EventListStatesSliver extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-                child: EventRefreshBanner(
+                child: BgeRefreshBanner(
                   key: EventOverviewScreen.refreshBannerKey,
                   retryKey: EventOverviewScreen.refreshRetryKey,
                   failedMessage: l10n.eventsRefreshFailed,
+                  inProgressLabel: l10n.eventsRefreshInProgress,
+                  retryLabel: l10n.eventsRefreshRetry,
                   refreshing: refreshing,
                   onRetry: bloc.canRetry ? retry : null,
                 ),
