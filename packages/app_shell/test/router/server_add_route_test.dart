@@ -138,6 +138,12 @@ void main() {
   void expectPlaceholder(WidgetTester tester) {
     expect(tester.takeException(), isNull);
     expect(find.byType(ShellPlaceholderScreen), findsOneWidget);
+    expect(
+      tester
+          .widget<ShellPlaceholderScreen>(find.byType(ShellPlaceholderScreen))
+          .kind,
+      ShellPlaceholderKind.serverAdd,
+    );
     expect(find.byType(ServerAddScreen), findsNothing);
   }
 
