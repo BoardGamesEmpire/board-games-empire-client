@@ -37,6 +37,14 @@ class EventsTable extends Table {
   /// `EventStatus`, stored as [type] is.
   TextColumn get status => text()();
 
+  /// Why the host cancelled the event (#502). Null for an event that isn't
+  /// cancelled, and for one cancelled without a reason.
+  TextColumn get cancelReason => text().nullable()();
+
+  /// The instant the event was cancelled (#502). Null for an event that
+  /// isn't cancelled.
+  DateTimeColumn get cancelledAt => dateTime().nullable()();
+
   /// `EventSchedulingMode`, stored as [type] is.
   TextColumn get schedulingMode => text()();
 

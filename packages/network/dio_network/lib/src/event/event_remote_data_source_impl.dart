@@ -561,6 +561,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     schedulingMode: EventSchedulingMode.fromWire(
       json['schedulingMode'] as String,
     ),
+    cancelReason: json['cancelReason'] as String?,
+    cancelledAt: _dateOrNull(json['cancelledAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );

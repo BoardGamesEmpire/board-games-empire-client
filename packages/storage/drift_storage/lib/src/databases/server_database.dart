@@ -55,7 +55,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **12**.
+/// `schemaVersion` is **13**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -134,6 +134,11 @@ part 'server_database.g.dart';
 ///   why the host cancelled a date. Additive: one `addColumn`, no table
 ///   rebuilt. A row cached before it holds null, which is also what a date
 ///   cancelled without a reason holds.
+/// - **v12 → v13 (#502):** adds a nullable `events.cancel_reason` and
+///   `events.cancelled_at`, why and when the host cancelled the event.
+///   Additive: two `addColumn` calls, no table rebuilt. A row cached before
+///   it holds null for both, which is also what an event that isn't
+///   cancelled holds.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -150,7 +155,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v12.json`, and
+/// `drift_schemas/server/drift_schema_v13.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -196,7 +201,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -288,6 +293,11 @@ class ServerDatabase extends _$ServerDatabase {
         //
         // `events` goes first because four of the others reference it.
         await m.createTable(eventsTable);
+        // The live table has the columns v13 adds (#502), and adding them
+        // again would fail, so they go here and v13 puts them back. Dropped
+        // in place from a table that is empty.
+        await m.dropColumn(eventsTable, 'cancel_reason');
+        await m.dropColumn(eventsTable, 'cancelled_at');
         await m.createTable(eventOccurrencesTable);
         // The live table has the column v12 adds (#506), and adding it again
         // would fail, so it goes here and v12 puts it back. Dropped in place
@@ -359,6 +369,13 @@ class ServerDatabase extends _$ServerDatabase {
           eventOccurrencesTable,
           eventOccurrencesTable.cancelReason,
         );
+      }
+      if (from < 13 && to >= 13) {
+        // v12 → v13 (#502): why and when an event was cancelled. Additive and
+        // nullable: every existing row holds null until the next read writes
+        // it, so there is nothing to backfill.
+        await m.addColumn(eventsTable, eventsTable.cancelReason);
+        await m.addColumn(eventsTable, eventsTable.cancelledAt);
       }
     },
   );

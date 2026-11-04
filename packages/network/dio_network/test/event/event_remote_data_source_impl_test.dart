@@ -138,12 +138,15 @@ Map<String, dynamic> _eventRow({
   String? url = 'https://example.com/brass',
   List<Map<String, dynamic>>? occurrences,
   List<Map<String, dynamic>>? attendees,
+  String? cancelReason,
+  String? cancelledAt,
 }) => {
   'id': id,
   'householdId': householdId,
   'createdById': 'user_ada',
   'cancelledById': null,
-  'cancelReason': null,
+  'cancelReason': cancelReason,
+  'cancelledAt': cancelledAt,
   'deletedById': null,
   'title': title,
   'status': status,
@@ -427,6 +430,38 @@ void main() {
         );
       },
     );
+
+    test('a cancelled event\'s reason and time are read', () async {
+      final remote = answering(
+        _listBody([
+          _eventRow(
+            status: 'Cancelled',
+            cancelReason: 'Rain',
+            cancelledAt: '2026-11-04T10:00:00.000Z',
+          ),
+        ]),
+      );
+
+      final event = (await remote.fetchEvents()).items.single.event;
+
+      expect(event.cancelReason, 'Rain');
+      expect(event.cancelledAt, DateTime.utc(2026, 11, 4, 10));
+    });
+
+    test('an event that isn\'t cancelled reads null for both', () async {
+      final present = answering(_listBody([_eventRow()]));
+      final presentEvent = (await present.fetchEvents()).items.single.event;
+      expect(presentEvent.cancelReason, isNull);
+      expect(presentEvent.cancelledAt, isNull);
+
+      final row = _eventRow()
+        ..remove('cancelReason')
+        ..remove('cancelledAt');
+      final absent = answering(_listBody([row]));
+      final absentEvent = (await absent.fetchEvents()).items.single.event;
+      expect(absentEvent.cancelReason, isNull);
+      expect(absentEvent.cancelledAt, isNull);
+    });
 
     test('reads each policy flag from its own key', () async {
       // Two flags with the same value cannot show a swap in one fixture, so

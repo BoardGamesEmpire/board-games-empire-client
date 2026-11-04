@@ -1142,6 +1142,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     reach: Reach.fromWire(row.reach),
     status: EventStatus.fromWire(row.status),
     schedulingMode: EventSchedulingMode.fromWire(row.schedulingMode),
+    cancelReason: row.cancelReason,
+    cancelledAt: row.cancelledAt,
     isDirty: row.isDirty,
     isLocalOnly: row.isLocalOnly,
     createdAt: row.createdAt,
@@ -1175,6 +1177,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           EventSchedulingMode.unknown,
           (v) => v.toWire(),
         ),
+        cancelReason: Value(e.cancelReason),
+        cancelledAt: Value(e.cancelledAt),
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       );
