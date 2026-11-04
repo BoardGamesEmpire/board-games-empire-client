@@ -10,6 +10,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/spy_root_container.dart';
 
@@ -327,6 +328,22 @@ void main() {
       final container = bootstrap.lastRootContainer!;
       expect(container.isRegistered<FeedbackService>(), isTrue);
       expect(container.get<FeedbackService>(), isA<FeedbackService>());
+    });
+
+    testWidgets('the default FeedbackTargetResolver tags reports with the '
+        'server the cubit published (#97)', (tester) async {
+      final active = buildActiveServer(FakeAuthRepository());
+      addTearDown(active.container.dispose);
+      final bootstrap = FakePlatformBootstrap(
+        activeServerScope: FakeActiveServerScope(active),
+      );
+
+      await boot(tester, bootstrap);
+
+      final target = bootstrap.lastRootContainer!
+          .get<FeedbackTargetResolver>()
+          .resolve();
+      expect(target?.serverId, serverIdentity().serverId);
     });
 
     testWidgets('the service is available even on the empty fallback '

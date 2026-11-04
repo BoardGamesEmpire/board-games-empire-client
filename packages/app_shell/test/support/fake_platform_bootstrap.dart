@@ -66,6 +66,9 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   /// Runs inside [dispose], after the call is recorded.
   Future<void> Function()? onDispose;
 
+  /// When non-null, [reset] throws it after the call is recorded.
+  Object? resetError;
+
   /// The last container returned from [createRootContainer], if any.
   DependencyContainer? lastRootContainer;
 
@@ -131,6 +134,10 @@ class FakePlatformBootstrap implements PlatformBootstrap {
       throw UnsupportedError('reset() is not supported on this platform');
     }
     calls.add('reset');
+    final error = resetError;
+    // Scripted to be thrown, like the initialize outcomes.
+    // ignore: only_throw_errors
+    if (error != null) throw error;
   }
 
   @override

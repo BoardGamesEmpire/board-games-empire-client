@@ -480,6 +480,28 @@ void main() {
           expect(bootstrap.initializeCallCount, 1);
         },
       );
+
+      test('a failed reset is a failed attempt that keeps the reset offer '
+          'open, and runs no initialize', () async {
+        final resetFailure = Exception('meta db delete failed');
+        final bootstrap = FakePlatformBootstrap(
+          outcomes: [bootFailure, bootFailure],
+        )..resetError = resetFailure;
+        final cubit = buildCubit(bootstrap: bootstrap, resetOfferThreshold: 2);
+        addTearDown(cubit.close);
+
+        await cubit.initialize();
+        await cubit.retry(); // attempt 2 → reset offered
+        await cubit.resetAndRetry();
+
+        final state = cubit.state;
+        expect(state, isA<AppBootstrapFailed>());
+        state as AppBootstrapFailed;
+        expect(state.error, same(resetFailure));
+        expect(state.attemptCount, 3);
+        expect(state.canOfferReset, isTrue);
+        expect(bootstrap.calls, ['initialize', 'initialize', 'reset']);
+      });
     });
   });
 
@@ -564,6 +586,25 @@ void main() {
       await cubit.initialize();
 
       expect(cubit.state, compositionFailure(same(boom)));
+    });
+
+    test('the error names its cause, so the log line carries the absent '
+        'member', () async {
+      final cubit = cubitOver(
+        FakePlatformBootstrap(outcomes: [noServer]),
+        rootContainer(),
+      );
+
+      await cubit.initialize();
+
+      final error = (cubit.state as AppBootstrapFailed).error;
+      expect(
+        error.toString(),
+        allOf(
+          startsWith('ServerAddCompositionError: '),
+          contains('ServerOnboardingDeps'),
+        ),
+      );
     });
 
     test('never offers reset for a composition failure', () async {
