@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 import '../support/screen_input.dart';
 
@@ -129,30 +131,38 @@ void main() {
     Widget home, {
     TextScaler textScaler = TextScaler.noScaling,
     bool alwaysUse24HourFormat = false,
-  }) => MaterialApp(
-    theme: BgeTheme.light(),
-    localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
-    supportedLocales: DataGatewayLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
+    ValueListenable<bool>? offline,
+  }) {
+    Widget scaled(BuildContext context, Widget? child) => MediaQuery(
       data: MediaQuery.of(context).copyWith(
         textScaler: textScaler,
         alwaysUse24HourFormat: alwaysUse24HourFormat,
       ),
       child: child!,
-    ),
-    home: home,
-  );
+    );
+    return MaterialApp(
+      theme: BgeTheme.light(),
+      localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
+      supportedLocales: DataGatewayLocalizations.supportedLocales,
+      builder: offline == null
+          ? scaled
+          : connectivityBuilder(offline, inner: scaled),
+      home: home,
+    );
+  }
 
   Future<void> pumpScreen(
     WidgetTester tester, {
     TextScaler textScaler = TextScaler.noScaling,
     bool alwaysUse24HourFormat = false,
+    ValueListenable<bool>? offline,
   }) async {
     await tester.pumpWidget(
       app(
         DataGatewayDetailScreen(remote: remote, id: 'dg_1', access: access),
         textScaler: textScaler,
         alwaysUse24HourFormat: alwaysUse24HourFormat,
+        offline: offline,
       ),
     );
     await tester.pumpAndSettle();
@@ -2283,5 +2293,139 @@ void main() {
         expect(find.byKey(surface), findsOneWidget);
       });
     }
+  });
+
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+
+    setUp(() => offline = ValueNotifier(true));
+    tearDown(() => offline.dispose());
+
+    Finder reason() => find.text(onlineOnlyCopy, skipOffstage: false);
+
+    testWidgets('the interview and the switches are disabled and say why', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchOne = (_) async => row();
+      await pumpScreen(tester, offline: offline);
+
+      await tester.ensureVisible(interviewButton);
+      await tester.pump();
+      expect(
+        tester.widget<ButtonStyleButton>(interviewButton).onPressed,
+        isNull,
+      );
+      expect(
+        tester.getSemantics(interviewButton),
+        matchesSemantics(
+          label: 'Interview again',
+          hint: onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      for (final (name, label) in [
+        (search, 'Search'),
+        (languages, 'List languages'),
+      ]) {
+        await tester.ensureVisible(capability(name));
+        await tester.pump();
+        expect(tile(tester, name).onChanged, isNull, reason: label);
+        expect(
+          tester.getSemantics(capability(name)),
+          matchesSemantics(
+            label: '$label\n$onlineOnlyCopy',
+            hasSelectedState: true,
+            hasEnabledState: true,
+            hasToggledState: true,
+            isToggled: true,
+          ),
+          reason: label,
+        );
+      }
+      // The button's note, and one line in each of the two switches.
+      expect(reason(), findsNWidgets(3));
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(reason(), findsNothing);
+      expect(
+        tester.widget<ButtonStyleButton>(interviewButton).onPressed,
+        isNotNull,
+      );
+      expect(tile(tester, search).onChanged, isNotNull);
+      expect(tile(tester, languages).onChanged, isNotNull);
+      handle.dispose();
+    });
+
+    testWidgets('a press while offline sends nothing', (tester) async {
+      remote.onFetchOne = (_) async => row();
+      await pumpScreen(tester, offline: offline);
+
+      await tester.ensureVisible(interviewButton);
+      await tester.pump();
+      await tester.tap(interviewButton, warnIfMissed: false);
+      await tester.tap(capability(search), warnIfMissed: false);
+      await pumpEvent(tester);
+
+      expect(remote.calls.where((c) => c == interviewCall), isEmpty);
+      expect(writes(), isEmpty);
+    });
+
+    testWidgets('an online scope lays the section out as no scope does', (
+      tester,
+    ) async {
+      remote.onFetchOne = (_) async => row();
+      await pumpScreen(tester);
+      await tester.ensureVisible(capability(languages));
+      await tester.pump();
+      final before = [
+        tester.getRect(interviewButton),
+        tester.getRect(capability(search)),
+        tester.getRect(capability(languages)),
+      ];
+
+      final flipping = ValueNotifier(true);
+      addTearDown(flipping.dispose);
+      await pumpScreen(tester, offline: flipping);
+      flipping.value = false;
+      await tester.pump();
+      await tester.ensureVisible(capability(languages));
+      await tester.pump();
+
+      expect([
+        tester.getRect(interviewButton),
+        tester.getRect(capability(search)),
+        tester.getRect(capability(languages)),
+      ], before);
+    });
+
+    testWidgets('going offline in an interview does not take focus to the '
+        'banner when it ends', (tester) async {
+      offline.value = false;
+      final interview = Completer<DataGatewayInterviewResult>();
+      remote.onFetchOne = (_) async => row();
+      remote.onInterview = (_) => interview.future;
+      await pumpScreen(tester, offline: offline);
+      await focusOn(tester, textIn(interviewButton, 'Interview again'));
+      await pressKey(tester);
+      expect(focusIsIn(tester, interviewButton), isTrue);
+
+      // The button goes disabled under focus, which is accepted; the app must
+      // not throw, and a disabled button is not a finished action.
+      offline.value = true;
+      await pumpEvent(tester);
+      expect(tester.takeException(), isNull);
+      expect(focusIsIn(tester, interviewButton), isFalse);
+
+      interview.complete(answered(row()));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(banner, findsOneWidget);
+      expect(focusIsIn(tester, banner), isFalse);
+    });
   });
 }

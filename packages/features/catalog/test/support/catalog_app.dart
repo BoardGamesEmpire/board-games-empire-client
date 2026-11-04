@@ -1,15 +1,35 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+/// The reason the shell gives a control that waits for a connection.
+const onlineOnlyCopy = "Available when you're online";
+
 /// [home] inside an app carrying this feature's localizations and theme.
-Widget catalogApp(Widget home) => MaterialApp(
+///
+/// With [offline], the app is under a [BgeConnectivityScope] that follows it,
+/// above the navigator as the shell hosts it, so dialogs read it too.
+Widget catalogApp(Widget home, {ValueListenable<bool>? offline}) => MaterialApp(
   theme: BgeTheme.light(),
   localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
   supportedLocales: GameCatalogLocalizations.supportedLocales,
+  builder: offline == null
+      ? null
+      : (context, child) => ValueListenableBuilder<bool>(
+          valueListenable: offline,
+          child: child,
+          builder: (context, isOffline, child) => BgeConnectivityScope(
+            offline: isOffline,
+            noticeShowing: isOffline,
+            onlineOnlyReason: onlineOnlyCopy,
+            child: child!,
+          ),
+        ),
   home: home,
 );
 

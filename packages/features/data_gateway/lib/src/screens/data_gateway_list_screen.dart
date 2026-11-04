@@ -571,6 +571,10 @@ class _RowMenu extends StatelessWidget {
       tooltip: l10n.dataGatewayRowActions(gateway.name),
       onSelected: (item) => switch (item) {
         _MenuItem.edit => edit?.call(),
+        // A menu opened online can outlast the connection (#49).
+        _MenuItem.connect ||
+        _MenuItem.disconnect ||
+        _MenuItem.delete when BgeConnectivityScope.offlineOf(context) => null,
         _MenuItem.connect => _request(context, DataGatewayRowAction.connect),
         _MenuItem.disconnect => _request(
           context,
@@ -578,36 +582,41 @@ class _RowMenu extends StatelessWidget {
         ),
         _MenuItem.delete => unawaited(_confirmDelete(context)),
       },
-      itemBuilder: (_) => [
-        if (mayUpdate) ...[
-          if (edit != null)
-            PopupMenuItem(
-              key: DataGatewayListScreen.editKey,
-              value: _MenuItem.edit,
-              child: Text(l10n.dataGatewayEdit),
+      itemBuilder: (_) {
+        // Connect, Disconnect and Delete are direct writes (#49). Their items
+        // follow the connection while the menu is open; a press that lands
+        // as it drops is guarded in onSelected.
+        return [
+          if (mayUpdate) ...[
+            if (edit != null)
+              PopupMenuItem(
+                key: DataGatewayListScreen.editKey,
+                value: _MenuItem.edit,
+                child: Text(l10n.dataGatewayEdit),
+              ),
+            // Offered on an enabled DataGateway too: the server keeps no
+            // record of whether it is connected, so trying again is the only
+            // way back from a connect that failed.
+            BgeOnlineOnlyPopupMenuItem(
+              key: DataGatewayListScreen.connectKey,
+              value: _MenuItem.connect,
+              label: l10n.dataGatewayConnect,
             ),
-          // Offered on an enabled DataGateway too: the server keeps no record
-          // of whether it is connected, so trying again is the only way back
-          // from a connect that failed.
-          PopupMenuItem(
-            key: DataGatewayListScreen.connectKey,
-            value: _MenuItem.connect,
-            child: Text(l10n.dataGatewayConnect),
-          ),
-          if (gateway.enabled)
-            PopupMenuItem(
-              key: DataGatewayListScreen.disconnectKey,
-              value: _MenuItem.disconnect,
-              child: Text(l10n.dataGatewayDisconnect),
+            if (gateway.enabled)
+              BgeOnlineOnlyPopupMenuItem(
+                key: DataGatewayListScreen.disconnectKey,
+                value: _MenuItem.disconnect,
+                label: l10n.dataGatewayDisconnect,
+              ),
+          ],
+          if (mayDelete)
+            BgeOnlineOnlyPopupMenuItem(
+              key: DataGatewayListScreen.deleteKey,
+              value: _MenuItem.delete,
+              label: l10n.dataGatewayDelete,
             ),
-        ],
-        if (mayDelete)
-          PopupMenuItem(
-            key: DataGatewayListScreen.deleteKey,
-            value: _MenuItem.delete,
-            child: Text(l10n.dataGatewayDelete),
-          ),
-      ],
+        ];
+      },
     );
   }
 }

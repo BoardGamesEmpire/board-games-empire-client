@@ -6,6 +6,8 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart'
     show
         FlutterMemoryAllocations,
+        ValueListenable,
+        ValueNotifier,
         ObjectCreated,
         ObjectDisposed,
         ObjectEvent,
@@ -20,6 +22,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 import '../support/screen_input.dart';
 
@@ -163,17 +166,25 @@ void main() {
     remote.onFetchLanguageTags = (_, _, _) async => tagPageOf([czech, slovak]);
   });
 
-  Widget app(Widget home, {TextScaler textScaler = TextScaler.noScaling}) =>
-      MaterialApp(
-        theme: BgeTheme.light(),
-        localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
-        supportedLocales: DataGatewayLocalizations.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
-        home: home,
-      );
+  Widget app(
+    Widget home, {
+    TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
+  }) {
+    Widget scaled(BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    );
+    return MaterialApp(
+      theme: BgeTheme.light(),
+      localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
+      supportedLocales: DataGatewayLocalizations.supportedLocales,
+      builder: offline == null
+          ? scaled
+          : connectivityBuilder(offline, inner: scaled),
+      home: home,
+    );
+  }
 
   /// Opens the screen on a view tall enough to show the whole worklist,
   /// unless the test gives a [size].
@@ -182,6 +193,7 @@ void main() {
     Size size = const Size(800, 2400),
     TextScaler textScaler = TextScaler.noScaling,
     bool settle = true,
+    ValueListenable<bool>? offline,
   }) async {
     tester.view
       ..devicePixelRatio = 1
@@ -191,6 +203,7 @@ void main() {
       app(
         DataGatewayDetailScreen(remote: remote, id: 'dg_1', access: access),
         textScaler: textScaler,
+        offline: offline,
       ),
     );
     if (settle) {
@@ -2891,6 +2904,191 @@ void main() {
       final list = tester.getRect(find.byType(Scrollable).first);
       final inset = BgeTokens.of(tester.element(row('b'))).spaceLg;
       expect(list.bottom - tester.getRect(row('b')).bottom, inset);
+    });
+  });
+
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+
+    setUp(() => offline = ValueNotifier(true));
+
+    /// Whether the popup item under [entry] is enabled.
+    bool itemEnabled(WidgetTester tester, Finder entry) => tester
+        .widget<PopupMenuItem<dynamic>>(
+          find.descendant(
+            of: entry,
+            matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
+          ),
+        )
+        .enabled;
+
+    tearDown(() => offline.dispose());
+
+    // Pending, so the menu offers all three.
+    final pending = languageLink(
+      'p',
+      status: LanguageLinkStatus.pending,
+      tag: czech,
+    );
+
+    Future<void> openMenu(WidgetTester tester, String id) async {
+      await tester.ensureVisible(menu(id));
+      await tester.pumpAndSettle();
+      await tester.tap(menu(id));
+      await tester.pumpAndSettle();
+    }
+
+    /// A popup menu item's one node: both lines in its label, a button that
+    /// is not enabled, with no actions.
+    Matcher gatedItem(String label) => matchesSemantics(
+      label: '$label\n$onlineOnlyCopy',
+      isButton: true,
+      hasEnabledState: true,
+    );
+
+    testWidgets('Link, Ignore and Accept are disabled and say why', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      listing({
+        waiting: [pending],
+      });
+      await pumpScreen(tester, offline: offline);
+
+      await openMenu(tester, 'p');
+
+      for (final (key, label) in [
+        (LanguageLinkWorklist.linkKey, 'Link to a language\u{2026}'),
+        (LanguageLinkWorklist.ignoreKey, 'Ignore'),
+        (LanguageLinkWorklist.acceptKey, 'Add this language'),
+      ]) {
+        final item = find.byKey(key);
+        expect(itemEnabled(tester, item), isFalse);
+        expect(tester.getSemantics(item), gatedItem(label), reason: label);
+      }
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<LanguageLinkAction>),
+          matching: find.text(onlineOnlyCopy),
+        ),
+        findsNWidgets(3),
+      );
+      // The anchor stays enabled, so the menu can be opened to read this.
+      expect(
+        tester.widget<PopupMenuButton<Object?>>(menu('p')).enabled,
+        isTrue,
+      );
+
+      await tester.tap(
+        find.byKey(LanguageLinkWorklist.ignoreKey),
+        warnIfMissed: false,
+      );
+      await letMenuClose(tester);
+      expect(
+        remote.calls.where((c) => c.startsWith('ignoreLanguageLink')),
+        isEmpty,
+      );
+      expect(row('p'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('online, the same menu is enabled and unannotated', (
+      tester,
+    ) async {
+      offline.value = false;
+      listing({
+        waiting: [pending],
+      });
+      await pumpScreen(tester, offline: offline);
+
+      await openMenu(tester, 'p');
+
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      for (final key in [
+        LanguageLinkWorklist.linkKey,
+        LanguageLinkWorklist.ignoreKey,
+        LanguageLinkWorklist.acceptKey,
+      ]) {
+        expect(itemEnabled(tester, find.byKey(key)), isTrue);
+      }
+    });
+
+    testWidgets('a menu open when the connection drops goes disabled and says '
+        'why, and a press sends nothing', (tester) async {
+      final handle = tester.ensureSemantics();
+      offline.value = false;
+      listing({
+        waiting: [pending],
+      });
+      await pumpScreen(tester, offline: offline);
+      await openMenu(tester, 'p');
+
+      offline.value = true;
+      await tester.pump();
+      await tester.pump();
+
+      for (final (key, label) in [
+        (LanguageLinkWorklist.acceptKey, 'Add this language'),
+        (LanguageLinkWorklist.linkKey, 'Link to a language\u{2026}'),
+        (LanguageLinkWorklist.ignoreKey, 'Ignore'),
+      ]) {
+        expect(
+          tester.getSemantics(find.byKey(key)),
+          gatedItem(label),
+          reason: label,
+        );
+      }
+      await tester.tap(
+        find.byKey(LanguageLinkWorklist.ignoreKey),
+        warnIfMissed: false,
+      );
+      await letMenuClose(tester);
+
+      expect(
+        remote.calls.where((c) => c.startsWith('ignoreLanguageLink')),
+        isEmpty,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a menu open when the connection returns goes enabled, loses '
+        'the reason, and a press selects', (tester) async {
+      final handle = tester.ensureSemantics();
+      listing({
+        waiting: [pending],
+      });
+      remote.onIgnoreLanguageLink = (_, _) async => ignoredOf(pending);
+      await pumpScreen(tester, offline: offline);
+      await openMenu(tester, 'p');
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<LanguageLinkAction>),
+          matching: find.text(onlineOnlyCopy),
+        ),
+        findsNothing,
+      );
+      expect(
+        tester.getSemantics(find.byKey(LanguageLinkWorklist.ignoreKey)),
+        matchesSemantics(
+          label: 'Ignore',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+      await tester.tap(find.byKey(LanguageLinkWorklist.ignoreKey));
+      await letMenuClose(tester);
+
+      expect(
+        remote.calls.where((c) => c.startsWith('ignoreLanguageLink')),
+        hasLength(1),
+      );
+      handle.dispose();
     });
   });
 }

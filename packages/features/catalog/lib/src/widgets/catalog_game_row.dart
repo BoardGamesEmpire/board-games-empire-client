@@ -14,6 +14,7 @@ class CatalogGameRow extends StatelessWidget {
     this.thumbnailUrl,
     this.facts = const [],
     this.onTap,
+    this.onlineOnly = false,
     super.key,
   });
 
@@ -27,6 +28,10 @@ class CatalogGameRow extends StatelessWidget {
   final List<CatalogFact> facts;
   final VoidCallback? onTap;
 
+  /// Whether a tap is a write to the server (#49), such as an import. Offline
+  /// the row is disabled and says why, in its own label.
+  final bool onlineOnly;
+
   @override
   Widget build(BuildContext context) {
     // MergeSemantics rather than a Semantics container: a tappable ListTile
@@ -35,12 +40,15 @@ class CatalogGameRow extends StatelessWidget {
     return MergeSemantics(
       child: ListTile(
         onTap: onTap,
+        enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
         leading: BgeThumbnail(
           url: thumbnailUrl,
           placeholderIcon: Icons.casino_outlined,
           placeholderKey: thumbnailPlaceholderKey,
         ),
-        title: Text(title),
+        // The reason is a line of the title, so it stays in the row's one
+        // node, ahead of the facts.
+        title: onlineOnly ? BgeOnlineOnlyLabel(title) : Text(title),
         subtitle: facts.isEmpty ? null : CatalogFactsText(facts),
       ),
     );

@@ -544,13 +544,19 @@ class _LinkRow extends StatelessWidget {
               child: PopupMenuButton<LanguageLinkAction>(
                 key: LanguageLinkWorklist.menuKey(link.id),
                 tooltip: l10n.dataGatewayLanguageLinkActions(name),
-                onSelected: onAction,
+                onSelected: (action) {
+                  // A menu opened online can outlast the connection (#49).
+                  if (BgeConnectivityScope.offlineOf(context)) return;
+                  onAction(action);
+                },
+                // Every action here is a write (#49). The items follow the
+                // connection while the menu is open.
                 itemBuilder: (_) => [
                   for (final action in languageLinkActions(link.status))
-                    PopupMenuItem(
+                    BgeOnlineOnlyPopupMenuItem(
                       key: _actionKey(action),
                       value: action,
-                      child: Text(_actionLabel(l10n, action)),
+                      label: _actionLabel(l10n, action),
                     ),
                 ],
               ),

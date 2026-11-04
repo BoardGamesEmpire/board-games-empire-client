@@ -473,6 +473,8 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         if (sourceName != null) sameFact(sourceName),
       ],
       onTap: onTap,
+      // Only an import writes; opening a game the server holds does not.
+      onlineOnly: gameId == null && import != null,
     );
   }
 

@@ -16,10 +16,16 @@
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
-/// cards on them (#669), `BgeRefreshBanner` by all 3 cached lists (#573), and
+/// cards on them (#669), `BgeRefreshBanner` by the 7 stale-data banners, on
+/// 3 lists, 2 detail screens, the home events section and the catalog's
+/// from-cache screens (#573, #607), `BgeInertButton` by the 4 buttons that
+/// keep focus while they can do nothing (#607), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
-/// empty and denied surfaces of the feature screens, at 21, 20 and 31 call
-/// sites in `lib/` (#49).
+/// empty and denied surfaces of the feature screens, at 22, 23 and 38 call
+/// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
+/// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
+/// are on the controls that write straight to the server, at 14, 6, 4, 3 and
+/// 4 call sites in `lib/` (#49).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -39,6 +45,7 @@ export 'src/buttons/bge_submit_button.dart';
 export 'src/connectivity/bge_connectivity_scope.dart';
 export 'src/connectivity/bge_online_only.dart';
 export 'src/connectivity/bge_online_only_menu.dart';
+export 'src/connectivity/bge_online_only_popup_menu_item.dart';
 export 'src/focus/bge_focus_ring.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';

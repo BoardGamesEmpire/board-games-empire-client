@@ -84,6 +84,9 @@ import '../widgets/language_link_worklist.dart';
 /// - The banner takes room from the foot of the view as it arrives. A switch
 ///   with focus that it covers is brought back into view, as Tab would, for a
 ///   user who can see focus.
+/// - Offline the interview button and the switches are disabled, each saying
+///   why (#49). That is not a finished action, so none of the above moves
+///   focus; the control just gives it up, as any disabled control does.
 ///
 /// A control also loses focus when the tree under it is rebuilt, so what comes
 /// and goes keeps the rest in place: the bar has a slot of its own whether it
@@ -270,7 +273,12 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                 slivers: [
                   ...switch (state) {
                     DataGatewayDetailLoading() => [
-                      _LoadingSliver(message: l10n.dataGatewayDetailLoading),
+                      BgeStateSliver(
+                        child: BgeLoadingState(
+                          key: DataGatewayDetailScreen.loadingKey,
+                          label: l10n.dataGatewayDetailLoading,
+                        ),
+                      ),
                     ],
                     DataGatewayDetailDenied() => [
                       BgeStateSliver(
@@ -293,17 +301,14 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                       ),
                     ],
                     DataGatewayDetailFailed() => [
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: BgeErrorState(
-                            key: DataGatewayDetailScreen.errorKey,
-                            icon: Icons.cloud_off_outlined,
-                            title: l10n.dataGatewayDetailErrorTitle,
-                            body: l10n.dataGatewayDetailErrorBody,
-                            retryLabel: l10n.dataGatewayRetry,
-                            onRetry: () => _readAgain(context),
-                          ),
+                      BgeStateSliver(
+                        child: BgeErrorState(
+                          key: DataGatewayDetailScreen.errorKey,
+                          icon: Icons.cloud_off_outlined,
+                          title: l10n.dataGatewayDetailErrorTitle,
+                          body: l10n.dataGatewayDetailErrorBody,
+                          retryLabel: l10n.dataGatewayRetry,
+                          onRetry: () => _readAgain(context),
                         ),
                       ),
                     ],
@@ -488,20 +493,25 @@ class _InterviewSection extends StatelessWidget {
           ),
         if (gateway.enabled && mayUpdate) ...[
           const BgeGap.md(),
-          OutlinedButton(
-            key: DataGatewayDetailScreen.interviewKey,
-            focusNode: focusNode,
-            // Enabled while its own interview runs, and the bloc settles a press
-            // made meanwhile: see the screen's doc.
-            onPressed: () => context.read<DataGatewayDetailBloc>().add(
-              const DataGatewayDetailInterviewRequested(),
-            ),
-            child: Semantics(
-              liveRegion: interviewing,
-              child: Text(
-                interviewing
-                    ? l10n.dataGatewayInterviewing
-                    : l10n.dataGatewayInterviewAgain,
+          BgeOnlineOnly(
+            child: OutlinedButton(
+              key: DataGatewayDetailScreen.interviewKey,
+              focusNode: focusNode,
+              // Enabled while its own interview runs, and the bloc settles a
+              // press made meanwhile: see the screen's doc. Disabled offline,
+              // where the press would be a write that cannot go (#49).
+              onPressed: BgeConnectivityScope.offlineOf(context)
+                  ? null
+                  : () => context.read<DataGatewayDetailBloc>().add(
+                      const DataGatewayDetailInterviewRequested(),
+                    ),
+              child: Semantics(
+                liveRegion: interviewing,
+                child: Text(
+                  interviewing
+                      ? l10n.dataGatewayInterviewing
+                      : l10n.dataGatewayInterviewAgain,
+                ),
               ),
             ),
           ),
@@ -620,10 +630,11 @@ class _CapabilitiesSection extends StatelessWidget {
     final names = dataGatewayCapabilityRows(gateway);
     // Not stopped by a write of their own, and the bloc settles a press made
     // meanwhile: see the screen's doc.
-    final maySwitch =
+    final mayAsk =
         mayUpdate &&
         busy != DataGatewayDetailBusy.interview &&
         !interviewWaiting;
+    final maySwitch = mayAsk && !BgeConnectivityScope.offlineOf(context);
 
     return _Section(
       heading: l10n.dataGatewayCapabilitiesHeading,
@@ -634,7 +645,13 @@ class _CapabilitiesSection extends StatelessWidget {
           SwitchListTile(
             key: DataGatewayDetailScreen.capabilityKey(name),
             contentPadding: EdgeInsets.zero,
-            title: Text(_capabilityLabel(l10n, name)),
+            // Offline the reason is a second line of the title, so the tile's
+            // one node carries it (#49).
+            // Only where being online is what is missing: a refusal or an
+            // interview in flight has its own reason.
+            title: mayAsk
+                ? BgeOnlineOnlyLabel(_capabilityLabel(l10n, name))
+                : Text(_capabilityLabel(l10n, name)),
             // What the server last answered, not what was last pressed: the
             // bar says a write is on its way.
             value: !gateway.disabledCapabilities.contains(name),
@@ -1002,20 +1019,6 @@ class _OwnOutcomeBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => BgeStateSliver(
-    child: BgeLoadingState(
-      key: DataGatewayDetailScreen.loadingKey,
-      label: message,
-    ),
-  );
 }
 
 /// When [instant] was, as `eventWhenLabel` says an event's date: the day in
