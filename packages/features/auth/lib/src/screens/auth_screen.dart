@@ -338,16 +338,8 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildNoStrategiesMessage(BuildContext context) {
-    return Semantics(
-      liveRegion: true,
-      child: Padding(
-        padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
-        child: Text(
-          AuthLocalizations.of(context).authNoStrategiesMessage,
-          style: Theme.of(context).textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-      ),
+    return BgeEmptyState(
+      title: AuthLocalizations.of(context).authNoStrategiesMessage,
     );
   }
 

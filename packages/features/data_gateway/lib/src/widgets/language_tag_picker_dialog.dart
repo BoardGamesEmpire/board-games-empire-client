@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
@@ -182,15 +183,9 @@ class _Results extends StatelessWidget {
               ),
             ],
             if (empty)
-              MergeSemantics(
+              BgeEmptyState(
                 key: LanguageTagPickerDialog.emptyKey,
-                child: Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    l10n.dataGatewayLanguagePickerEmpty,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+                title: l10n.dataGatewayLanguagePickerEmpty,
               ),
             for (final tag in state.tags)
               _TagRow(key: LanguageTagPickerDialog.rowKey(tag.id), tag: tag),
@@ -261,18 +256,16 @@ class _MoreFooter extends StatelessWidget {
   }
 }
 
-/// A spinner that is said, not only drawn: a live region labelled with what
-/// is loading, as the list screen's loading surface is.
+/// A spinner that is said, not only drawn: [BgeLoadingState], labelled with
+/// what is loading.
 class _Loading extends StatelessWidget {
   const _Loading({super.key});
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Semantics(
-      liveRegion: true,
+    child: BgeLoadingState(
       label: DataGatewayLocalizations.of(context)
           .dataGatewayLanguagePickerLoading,
-      child: const ExcludeSemantics(child: CircularProgressIndicator()),
     ),
   );
 }

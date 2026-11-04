@@ -215,6 +215,33 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
+| `BgeInertButton` | a busy control's own semantics node, focus node and press guard, copied per control with the copies drifting (#607) | Enabled while inert, so it keeps focus; a press does nothing; one semantics node, the same inert or not, that reads as not enabled and offers no tap while inert; a held Enter or Space presses once |
+| `BgeRefreshBanner` | the stale-data banner and its retry, hand-built per cached list and detail screen, and the catalog's from-cache banner, with copies that had drifted (#269, #300) | Warning tone at rest, info while refreshing; the failed copy names no cause; the retry stays enabled and focused while busy — a press does nothing, the label swaps to the in-progress string, and a held Enter or Space starts one pass (#573, #607); one semantics node, the same at rest and busy |
+| `BgeLoadingState` | a bare `CircularProgressIndicator` on each screen that waited | A spinner with no skeleton; its label is one live region read once on appearance; the spinner itself says nothing; content, not a page (#49) |
+| `BgeEmptyState` | ad hoc "nothing here" text, which drew and announced differently per screen | An optional icon, a title, an optional body and an optional action; title and body are one live region; the icon says nothing; the action is not autofocused, because an empty list is an answer, not a failure (#49) |
+| `BgeStateSliver` | a hand-wrapped `SliverFillRemaining` around a state on a sliver page | Fills the rest of the page and centres the state; `hasScrollBody: false`, so a state taller than the room, at 200% text, scrolls with the page instead of overflowing it (#49) |
+| `BgeOfflineStrip` | nothing: the app showed no sign that it was offline, and an offline banner per page would have scrolled away and been rebuilt on every route | One strip at the top of the window, hosted by the shell, so it reaches every route; it takes the status-bar inset while it shows and no height while hidden; one merged live region whose label change announces; not focusable; motion through `BgeMotion.durationOf` (#49) |
+| `BgeOnlineOnly` (with `BgeOnlineOnlyLabel`, `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu`, `BgeOnlineOnlyPopupMenuItem`, and the `BgeConnectivityScope` they read) | a direct-write control that was live offline and failed on press, with only the failure banner to say why | Offline, the control is disabled and says why: the reason is its accessible hint, once, and drawn once per row or group; the same tree online and offline, so the control keeps its state; with no scope everything reads as online (#49) |
+
+### Empty and loading states
+
+Each of the three things a surface can say instead of its content has one widget:
+
+| The surface is | Use |
+| --- | --- |
+| Waiting, with nothing to show yet | `BgeLoadingState` |
+| Answered, and there is nothing to show | `BgeEmptyState` |
+| Failed, and there is nothing else to show | `BgeErrorState` |
+
+All three are content, not pages: the caller supplies the `BgePage`. A whole-surface
+wait is a `BgeLoadingState`; a paged list's loading tail is not one, and keeps
+its own row. On a sliver page, wrap the state in `BgeStateSliver`, which fills
+the rest of the page and centres it.
+
+A state inside a *section* of a page is the exception: the DataGateway language
+worklist, and the search's no-results line under its count. There the state
+sits in a `SliverToBoxAdapter`, because `BgeStateSliver` fills the rest of the
+viewport and would take the room of everything after the section.
 
 ### List surfaces
 
@@ -228,8 +255,7 @@ the page one real viewport, so a `SliverList` keeps both.
 
 **`slivers:` takes any sliver.** It is a `List<Widget>` and a sliver is a
 widget, so a paginated list goes straight through — including the shape a
-search screen actually has, with a query field above the results and a loading
-tail below them.
+search screen actually has, with a query field above the results.
 
 **A list whose rows can leave or move while the user is on it** — rows from a
 cache, a purge, a discard — uses **`BgeKeyedSliverList`**, with the row's id as
@@ -249,7 +275,6 @@ BgePage.slivers(
       keyOf: (result) => ValueKey(result.id),
       itemBuilder: (context, result) => ResultRow(result),
     ),
-    if (loadingMore) const SliverToBoxAdapter(child: LoadingRow()),
   ],
 )
 ```
@@ -322,6 +347,67 @@ from the page's `padding`, not from insets inside each row. Review once put its
 16dp inside the column, which lined up with compose on a phone and was 16dp
 narrower a side on a desktop window — no padding compose could pass would have
 closed that.
+
+### Online-only controls
+
+A **direct write** is a request that goes to the server and does nothing
+without it. While the app is offline its control is disabled, through the
+`BgeOnlineOnly` family, and says why. A **queued write** is stored on the device
+and sent when the connection returns, so its control stays enabled. Offline
+is the state the app is built to work in, and a queued write is the work.
+
+Five operations are queued today (`SyncOperation`): add, update and remove a
+collection entry; create a household; create an event. Every other write is
+direct. A new direct-write control takes the gate; a new queued operation
+leaves its control alone.
+
+The failure banner stays as the fallback. The gate follows a debounced flag
+(the strip's 2 s wait), so a write can still start in the moments before the
+flag turns, or fail for a server that is down while the device is online, and
+the screen's outcome banner answers it as before. A confirm dialog that is
+already open when the connection drops is not gated either; the banner covers
+it.
+
+The pieces, and the rules the build proved:
+
+- **The shell publishes the state.** `OfflineStripHost` draws the
+  `BgeOfflineStrip` and puts a `BgeConnectivityScope` over the app. A control
+  reads `BgeConnectivityScope.offlineOf(context)` for `onPressed: null`; the
+  widgets below explain. The caller still disables the control; the wrapper
+  does not.
+- **The strip waits 2 s, then holds "Back online" for 2 s.** A connection that
+  drops and returns inside the wait changes nothing on screen. Controls come
+  back the moment the connection does, while the strip is still saying it. The
+  host removes the top inset from the content below for as long as the strip
+  shows, so no app bar insets the status bar twice. The content sits in a
+  semantics container of its own, because every route's modal barrier drops the
+  semantics painted before it, and the strip would otherwise never reach a
+  screen reader.
+- **The reason shows once per row or group, and each control still carries it
+  as its hint.** Wrap each control in `BgeOnlineOnly(showNote: false)` and put one
+  `BgeOnlineOnlyNote` under the group. Never wrap a group in one `BgeOnlineOnly`:
+  its `MergeSemantics` folds a row of chips into a single node.
+- **Add the note only while offline.** A zero-size child still takes a
+  `Column`'s `spacing`, so a note that is always in the tree leaves a gap
+  online. Build it under `if (offline)`.
+- **A tile carries the reason in its own merged label.** Use
+  `BgeOnlineOnlyLabel` as the tile's title or a menu item's label: it adds the
+  reason as a second line while offline, and the item merges both lines, so the
+  reason is read once, with the item.
+- **A menu that is open when the connection drops closes.** With every item
+  disabled, Tab cannot leave the menu's panel (Escape can; measured). Own the
+  menu's controller with `BgeOnlineOnlyMenu`, which closes it on the drop. One
+  opened while already offline stays open, so its items can be read.
+- **Popup menu items follow the scope while open.** A `PopupMenuItem` fixes
+  `enabled` when the menu opens, so use `BgeOnlineOnlyPopupMenuItem`, which
+  builds from the live scope. `onSelected` still guards a press that lands as
+  the connection drops.
+- **One tree shape, online and offline.** `BgeOnlineOnly` builds the same
+  widgets either way, so the control under it keeps its element, its state and
+  its semantics node when the connection flips; online its hint is empty and it
+  draws nothing more. Keep the call site to one shape too: add a note with `if`
+  after the content it follows, never by moving that content between parents,
+  or a live region in it is announced again on every flip.
 
 ### Error and outcome surfaces
 
@@ -418,9 +504,11 @@ bar, reading as clipped. Three consequences worth knowing:
   wrapped sentence. (It may be that tall on purpose: it sits inside the
   page's scroll view, which scrolls past a tall banner like any other
   content, so #228 decided against a height cap.)
-- **Pass `reveal: false` for a *persistent* banner** — an offline indicator is
-  furniture, not news, and one that scrolls itself into view on every mount
-  fights a restored scroll position. A banner built **lazily inside a list**
+- **Pass `reveal: false` for a *persistent* banner** — one that stays on a
+  screen as furniture, not news. It scrolls itself into view on every mount,
+  which fights a restored scroll position. The offline indicator is not one:
+  it is `BgeOfflineStrip`, hosted by the shell at the top of the window, outside
+  any page's scroll view. A banner built **lazily inside a list**
   needs no flag: a row is never treated as an arriving outcome, because a
   forgotten flag there would make the list unusable rather than merely
   unhelpful.
@@ -476,6 +564,13 @@ These are not aspirations; each is enforced somewhere.
   deprecated on Android because they force TalkBack to clear its speech queue.
 - **Disable, don't hide**, in-flight controls, and keep their accessible name. A
   control that vanishes mid-interaction moves focus and loses the user's place.
+  One that must keep focus through its own action — the refresh banner's retry,
+  the household member menu, the poll's retry — stays enabled and ignores
+  presses instead, because a disabled Material button cannot hold focus (#607).
+  A button builds that from `BgeInertButton`. Those named are examples of the
+  rule, not a complete list: the data gateway detail's interview button and
+  capability switches (#457, #660) stay enabled and inert the same way. A
+  control with no focus to keep is disabled as before.
 
 ---
 
@@ -516,6 +611,11 @@ legible body text on every surface role.
       holds, grown as pages arrive, never left null on a known list
 - [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by
       the row's id; the row itself does not carry the key (#549)
+- [ ] Loading, empty and failure states use the shared widgets
+      (`BgeLoadingState`, `BgeEmptyState`, `BgeErrorState`), in a
+      `BgeStateSliver` on a sliver page
+- [ ] Direct-write controls are gated offline through `BgeOnlineOnly`; queued
+      writes are not
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`

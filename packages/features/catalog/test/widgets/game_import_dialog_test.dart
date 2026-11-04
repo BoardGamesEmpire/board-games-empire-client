@@ -211,6 +211,103 @@ void main() {
     await poll(tester);
   });
 
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+
+    setUp(() => offline = ValueNotifier(true));
+    tearDown(() => offline.dispose());
+
+    Future<void> failed(WidgetTester tester) async {
+      queues();
+      polls([
+        _batch(ImportJobStatus.failed, errorCode: ImportErrorCode.gatewayError),
+      ]);
+      await tester.pumpWidget(catalogApp(host(), offline: offline));
+      await open(tester);
+      await poll(tester);
+    }
+
+    testWidgets('try again is disabled and says why', (tester) async {
+      final handle = tester.ensureSemantics();
+      await failed(tester);
+      final tryAgain = find.byKey(GameImportDialog.tryAgainKey);
+
+      expect(tester.widget<TextButton>(tryAgain).onPressed, isNull);
+      expect(
+        tester.getSemantics(tryAgain),
+        matchesSemantics(
+          label: 'Try again',
+          hint: onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(find.text(onlineOnlyCopy), findsOneWidget);
+      await tester.tap(tryAgain, warnIfMissed: false);
+      await tester.pump();
+      expect(sent('startImport'), 1);
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      await tester.tap(tryAgain);
+      await tester.pump();
+      expect(sent('startImport'), 2);
+
+      await tester.tap(find.byKey(GameImportDialog.closeKey));
+      await poll(tester);
+      handle.dispose();
+    });
+
+    testWidgets('the failure keeps its live node when the connection comes '
+        'and goes, so it is not read out again', (tester) async {
+      final handle = tester.ensureSemantics();
+      await failed(tester);
+      final failure = find.byKey(GameImportDialog.failedKey);
+      final node = tester.getSemantics(failure).id;
+
+      offline.value = false;
+      await tester.pump();
+      expect(tester.getSemantics(failure).id, node);
+
+      offline.value = true;
+      await tester.pump();
+      expect(tester.getSemantics(failure).id, node);
+
+      await tester.tap(find.byKey(GameImportDialog.closeKey));
+      await poll(tester);
+      handle.dispose();
+    });
+
+    testWidgets('check again only reads, so it stays enabled', (tester) async {
+      queues();
+      polls([
+        for (var i = 0; i < 45; i++) _batch(ImportJobStatus.running),
+        _batch(ImportJobStatus.completed, gameId: 'g_seafarers'),
+      ]);
+      await tester.pumpWidget(catalogApp(host(), offline: offline));
+      await open(tester);
+      for (var i = 0; i < 45; i++) {
+        await poll(tester);
+      }
+
+      final again = find.byKey(GameImportDialog.checkAgainKey);
+      expect(tester.widget<TextButton>(again).onPressed, isNotNull);
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      expect(sent('fetchImport'), 45);
+
+      // Pressed offline, it reads again.
+      await tester.tap(again);
+      await tester.pump();
+      await poll(tester);
+      await tester.pumpAndSettle();
+
+      expect(sent('fetchImport'), 46);
+      expect(results, ['g_seafarers']);
+    });
+  });
+
   testWidgets('a refusal offers no try again', (tester) async {
     remote.onStartImport = (_, _, _) async =>
         throw const GamesForbiddenException('403');

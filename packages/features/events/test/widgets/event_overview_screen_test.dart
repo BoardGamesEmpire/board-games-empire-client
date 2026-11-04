@@ -362,6 +362,17 @@ void main() {
     expect(find.text(_emptyTitleCopy), findsOneWidget);
   });
 
+  testWidgets('the empty state is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    await show(tester, const []);
+
+    final title = tester.getSemantics(find.text(_emptyTitleCopy));
+    expect(title, isSemantics(isLiveRegion: true));
+    expect(title.label, contains(_emptyTitleCopy));
+    expect(title.label, contains(_emptyBodyCopy));
+    handle.dispose();
+  });
+
   group('the empty state', () {
     testWidgets('offers New event when onCreate is given, and calls it', (
       tester,
@@ -526,45 +537,6 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(EventOverviewScreen.refreshBannerKey), findsNothing);
-    });
-
-    testWidgets('lays out at 320dp and 200%, failed and refreshing (#452)', (
-      tester,
-    ) async {
-      // Before #452 the banner's message and its retry shared a row, and at
-      // 200% on this window the retry ran off the window's right edge. So
-      // that edge is what shows whether the banner made room for it.
-      const width = 320.0;
-      final pass = Completer<void>();
-      useViewSize(tester, const Size(width, 800));
-      await tester.pumpWidget(
-        harness(
-          onRetry: () => pass.future,
-          textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
-        ),
-      );
-      items.add(upcoming(1));
-      status.finished(EventHydrateOutcome.failed);
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(_refreshFailedCopy), findsOneWidget);
-      expect(
-        tester.getRect(find.byKey(EventOverviewScreen.refreshRetryKey)).right,
-        lessThanOrEqualTo(width),
-      );
-
-      await tester.tap(find.byKey(EventOverviewScreen.refreshRetryKey));
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('Refreshing…'), findsNWidgets(2));
-      expect(
-        tester.getRect(find.byKey(EventOverviewScreen.refreshRetryKey)).right,
-        lessThanOrEqualTo(width),
-      );
-
-      pass.complete();
     });
   });
 

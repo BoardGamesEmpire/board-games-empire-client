@@ -13,7 +13,6 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import '../bloc/data_gateway_list_bloc.dart';
 import '../bloc/data_gateway_list_event.dart';
 import '../bloc/data_gateway_list_state.dart';
-import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
 import '../widgets/focus_is_free.dart';
 
@@ -352,44 +351,38 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
                   ),
                 ),
               switch (state) {
-                DataGatewayListLoading() => _LoadingSliver(
-                  message: l10n.dataGatewayListLoading,
-                ),
-                DataGatewayListDenied() => SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: DataGatewayMessage(
-                      key: DataGatewayListScreen.deniedKey,
-                      icon: Icons.lock_outline,
-                      title: l10n.dataGatewayDeniedTitle,
-                      body: l10n.dataGatewayDeniedBody,
-                    ),
+                DataGatewayListLoading() => BgeStateSliver(
+                  child: BgeLoadingState(
+                    key: DataGatewayListScreen.loadingKey,
+                    label: l10n.dataGatewayListLoading,
                   ),
                 ),
-                DataGatewayListFailed() => SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: BgeErrorState(
-                      key: DataGatewayListScreen.errorKey,
-                      icon: Icons.cloud_off_outlined,
-                      title: l10n.dataGatewayListErrorTitle,
-                      body: l10n.dataGatewayListErrorBody,
-                      retryLabel: l10n.dataGatewayRetry,
-                      onRetry: () => context.read<DataGatewayListBloc>().add(
-                        const DataGatewayListLoadRequested(),
-                      ),
+                DataGatewayListDenied() => BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: DataGatewayListScreen.deniedKey,
+                    icon: Icons.lock_outline,
+                    title: l10n.dataGatewayDeniedTitle,
+                    body: l10n.dataGatewayDeniedBody,
+                  ),
+                ),
+                DataGatewayListFailed() => BgeStateSliver(
+                  child: BgeErrorState(
+                    key: DataGatewayListScreen.errorKey,
+                    icon: Icons.cloud_off_outlined,
+                    title: l10n.dataGatewayListErrorTitle,
+                    body: l10n.dataGatewayListErrorBody,
+                    retryLabel: l10n.dataGatewayRetry,
+                    onRetry: () => context.read<DataGatewayListBloc>().add(
+                      const DataGatewayListLoadRequested(),
                     ),
                   ),
                 ),
                 DataGatewayListReady(:final gateways) when gateways.isEmpty =>
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: DataGatewayMessage(
-                        key: DataGatewayListScreen.emptyKey,
-                        title: l10n.dataGatewayListEmptyTitle,
-                        body: l10n.dataGatewayListEmptyBody,
-                      ),
+                  BgeStateSliver(
+                    child: BgeEmptyState(
+                      key: DataGatewayListScreen.emptyKey,
+                      title: l10n.dataGatewayListEmptyTitle,
+                      body: l10n.dataGatewayListEmptyBody,
                     ),
                   ),
                 DataGatewayListReady(:final gateways, :final busy) =>
@@ -578,6 +571,10 @@ class _RowMenu extends StatelessWidget {
       tooltip: l10n.dataGatewayRowActions(gateway.name),
       onSelected: (item) => switch (item) {
         _MenuItem.edit => edit?.call(),
+        // A menu opened online can outlast the connection (#49).
+        _MenuItem.connect ||
+        _MenuItem.disconnect ||
+        _MenuItem.delete when BgeConnectivityScope.offlineOf(context) => null,
         _MenuItem.connect => _request(context, DataGatewayRowAction.connect),
         _MenuItem.disconnect => _request(
           context,
@@ -585,36 +582,41 @@ class _RowMenu extends StatelessWidget {
         ),
         _MenuItem.delete => unawaited(_confirmDelete(context)),
       },
-      itemBuilder: (_) => [
-        if (mayUpdate) ...[
-          if (edit != null)
-            PopupMenuItem(
-              key: DataGatewayListScreen.editKey,
-              value: _MenuItem.edit,
-              child: Text(l10n.dataGatewayEdit),
+      itemBuilder: (_) {
+        // Connect, Disconnect and Delete are direct writes (#49). Their items
+        // follow the connection while the menu is open; a press that lands
+        // as it drops is guarded in onSelected.
+        return [
+          if (mayUpdate) ...[
+            if (edit != null)
+              PopupMenuItem(
+                key: DataGatewayListScreen.editKey,
+                value: _MenuItem.edit,
+                child: Text(l10n.dataGatewayEdit),
+              ),
+            // Offered on an enabled DataGateway too: the server keeps no
+            // record of whether it is connected, so trying again is the only
+            // way back from a connect that failed.
+            BgeOnlineOnlyPopupMenuItem(
+              key: DataGatewayListScreen.connectKey,
+              value: _MenuItem.connect,
+              label: l10n.dataGatewayConnect,
             ),
-          // Offered on an enabled DataGateway too: the server keeps no record
-          // of whether it is connected, so trying again is the only way back
-          // from a connect that failed.
-          PopupMenuItem(
-            key: DataGatewayListScreen.connectKey,
-            value: _MenuItem.connect,
-            child: Text(l10n.dataGatewayConnect),
-          ),
-          if (gateway.enabled)
-            PopupMenuItem(
-              key: DataGatewayListScreen.disconnectKey,
-              value: _MenuItem.disconnect,
-              child: Text(l10n.dataGatewayDisconnect),
+            if (gateway.enabled)
+              BgeOnlineOnlyPopupMenuItem(
+                key: DataGatewayListScreen.disconnectKey,
+                value: _MenuItem.disconnect,
+                label: l10n.dataGatewayDisconnect,
+              ),
+          ],
+          if (mayDelete)
+            BgeOnlineOnlyPopupMenuItem(
+              key: DataGatewayListScreen.deleteKey,
+              value: _MenuItem.delete,
+              label: l10n.dataGatewayDelete,
             ),
-        ],
-        if (mayDelete)
-          PopupMenuItem(
-            key: DataGatewayListScreen.deleteKey,
-            value: _MenuItem.delete,
-            child: Text(l10n.dataGatewayDelete),
-          ),
-      ],
+        ];
+      },
     );
   }
 }
@@ -693,23 +695,4 @@ class _OutcomeBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      key: DataGatewayListScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
 }

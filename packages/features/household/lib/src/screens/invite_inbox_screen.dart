@@ -129,60 +129,35 @@ class _InviteInboxView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              InviteInboxLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
+              InviteInboxLoading() => BgeStateSliver(
+                child: BgeLoadingState(
                   key: InviteInboxScreen.loadingKey,
-                  child: Semantics(
-                    liveRegion: true,
-                    label: l10n.inviteInboxLoading,
-                    child: const ExcludeSemantics(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  label: l10n.inviteInboxLoading,
                 ),
               ),
-              InviteInboxFailed() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: BgeErrorState(
-                    key: InviteInboxScreen.failedKey,
-                    icon: Icons.cloud_off_outlined,
-                    title: l10n.inviteInboxFailed,
-                    body: l10n.householdInvitesFailedBody,
-                    retryLabel: l10n.householdInvitesRetry,
-                    onRetry: () => bloc.add(const InviteInboxLoadRequested()),
-                  ),
+              InviteInboxFailed() => BgeStateSliver(
+                child: BgeErrorState(
+                  key: InviteInboxScreen.failedKey,
+                  icon: Icons.cloud_off_outlined,
+                  title: l10n.inviteInboxFailed,
+                  body: l10n.householdInvitesFailedBody,
+                  retryLabel: l10n.householdInvitesRetry,
+                  onRetry: () => bloc.add(const InviteInboxLoadRequested()),
                 ),
               ),
               InviteInboxReady(:final invites) when invites.isEmpty =>
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Column(
-                      key: InviteInboxScreen.emptyKey,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.mail_outline,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const BgeGap.sm(),
-                        Text(
-                          l10n.inviteInboxEmpty,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                        if (openSent != null) ...[
-                          const BgeGap.sm(),
-                          TextButton(
+                BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: InviteInboxScreen.emptyKey,
+                    icon: Icons.mail_outline,
+                    title: l10n.inviteInboxEmpty,
+                    action: openSent == null
+                        ? null
+                        : TextButton(
                             key: InviteInboxScreen.sentLinkKey,
                             onPressed: () => openSent(context),
                             child: Text(l10n.inviteInboxSentLink),
                           ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
               final InviteInboxReady ready =>
@@ -266,6 +241,7 @@ class _InboxRow extends StatelessWidget {
     final role = invite.role;
     final message = invite.message;
     final expiry = inviteExpiryLine(l10n, invite);
+    final offline = BgeConnectivityScope.offlineOf(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -298,27 +274,45 @@ class _InboxRow extends StatelessWidget {
             end: tokens.spaceMd,
             bottom: tokens.spaceSm,
           ),
-          child: Wrap(
-            spacing: tokens.spaceSm,
-            runSpacing: tokens.spaceSm,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spaceXs,
             children: [
-              FilledButton(
-                key: InviteInboxScreen.acceptKey(invite.id),
-                onPressed: busy
-                    ? null
-                    : () => context.read<InviteInboxBloc>().add(
-                        InviteInboxAnswerRequested(
-                          HouseholdInviteAction.accept,
-                          invite.id,
-                        ),
-                      ),
-                child: Text(l10n.inviteInboxAccept),
+              Wrap(
+                spacing: tokens.spaceSm,
+                runSpacing: tokens.spaceSm,
+                children: [
+                  // Both are direct writes, so they wait for a connection
+                  // (#49). Each carries the reason; the pair shows it once.
+                  BgeOnlineOnly(
+                    showNote: false,
+                    child: FilledButton(
+                      key: InviteInboxScreen.acceptKey(invite.id),
+                      onPressed: busy || offline
+                          ? null
+                          : () => context.read<InviteInboxBloc>().add(
+                              InviteInboxAnswerRequested(
+                                HouseholdInviteAction.accept,
+                                invite.id,
+                              ),
+                            ),
+                      child: Text(l10n.inviteInboxAccept),
+                    ),
+                  ),
+                  BgeOnlineOnly(
+                    showNote: false,
+                    child: TextButton(
+                      key: InviteInboxScreen.declineKey(invite.id),
+                      onPressed: busy || offline
+                          ? null
+                          : () => unawaited(_decline(context)),
+                      child: Text(l10n.inviteInboxDecline),
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
-                key: InviteInboxScreen.declineKey(invite.id),
-                onPressed: busy ? null : () => unawaited(_decline(context)),
-                child: Text(l10n.inviteInboxDecline),
-              ),
+              // Only offline: online it would still take the Column's gap.
+              if (offline) const BgeOnlineOnlyNote(),
             ],
           ),
         ),

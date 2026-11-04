@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
@@ -153,9 +154,24 @@ class _GameImportView extends StatelessWidget {
               l10n.catalogImportStillRunning,
               contentKey: GameImportDialog.stillRunningKey,
             ),
-            GameImportFailed(:final failure) => _Status(
-              _failureCopy(l10n, failure),
-              contentKey: GameImportDialog.failedKey,
+            // One shape online and offline, so the live status keeps its
+            // node and is not read out again when the connection flips.
+            GameImportFailed(:final failure) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Status(
+                  _failureCopy(l10n, failure),
+                  contentKey: GameImportDialog.failedKey,
+                ),
+                // One note for Try again, under the words it answers; the
+                // button itself carries the reason as its hint (#49).
+                if (_mayTryAgain(failure) &&
+                    BgeConnectivityScope.offlineOf(context)) ...[
+                  const BgeGap.sm(),
+                  const BgeOnlineOnlyNote(),
+                ],
+              ],
             ),
           },
           actions: [
@@ -173,10 +189,16 @@ class _GameImportView extends StatelessWidget {
               ),
             if (state case GameImportFailed(:final failure)
                 when _mayTryAgain(failure))
-              TextButton(
-                key: GameImportDialog.tryAgainKey,
-                onPressed: () => bloc.add(const GameImportRequested()),
-                child: Text(l10n.catalogImportTryAgain),
+              // A new import is a write (#49). Check again only reads.
+              BgeOnlineOnly(
+                showNote: false,
+                child: TextButton(
+                  key: GameImportDialog.tryAgainKey,
+                  onPressed: BgeConnectivityScope.offlineOf(context)
+                      ? null
+                      : () => bloc.add(const GameImportRequested()),
+                  child: Text(l10n.catalogImportTryAgain),
+                ),
               ),
           ],
         );

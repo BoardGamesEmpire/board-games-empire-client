@@ -167,7 +167,13 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
       (_form.control(name).value as String?)?.trim() ?? '';
 
   void _submit() {
-    if (widget.submitting || !widget.maySave) return;
+    // Saving is a direct write (#49). Returning before the validity check
+    // keeps an offline press from marking the form touched.
+    if (widget.submitting ||
+        !widget.maySave ||
+        BgeConnectivityScope.offlineOf(context)) {
+      return;
+    }
     if (!_form.valid) {
       _form.rejectSubmit();
       return;
@@ -266,12 +272,16 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
               focusNode: _actions,
               child: BgeFormActions(
                 failure: widget.failure,
-                action: BgeSubmitButton(
-                  key: DataGatewayForm.submitKey,
-                  label: widget.submitLabel,
-                  progressLabel: l10n.dataGatewayFormInProgress,
-                  submitting: widget.submitting,
-                  onPressed: _submit,
+                action: BgeOnlineOnly(
+                  child: BgeSubmitButton(
+                    key: DataGatewayForm.submitKey,
+                    label: widget.submitLabel,
+                    progressLabel: l10n.dataGatewayFormInProgress,
+                    submitting: widget.submitting,
+                    onPressed: BgeConnectivityScope.offlineOf(context)
+                        ? null
+                        : _submit,
+                  ),
                 ),
               ),
             )

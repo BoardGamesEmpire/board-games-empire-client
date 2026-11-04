@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
@@ -235,6 +235,9 @@ class DatePollBlock extends StatelessWidget {
     final alone = leads && poll.leaders.length == 1;
     final awaiting = poll.awaiting[id];
     final onConfirm = alone ? this.onConfirm : null;
+    // Votes and the confirmation are direct writes, which wait for a
+    // connection (#49).
+    final online = !BgeConnectivityScope.offlineOf(context);
     if (!votes && tally == null && onConfirm == null) {
       return const SizedBox.shrink();
     }
@@ -246,48 +249,69 @@ class DatePollBlock extends StatelessWidget {
         spacing: tokens.spaceXs,
         children: [
           if (votes)
-            Semantics(
-              container: true,
-              explicitChildNodes: true,
-              label: l10n.eventsPollYourAnswer(name),
-              child: Wrap(
-                spacing: tokens.spaceSm,
-                runSpacing: tokens.spaceSm,
-                children: [
-                  for (final response in const [
-                    AvailabilityResponse.available,
-                    AvailabilityResponse.maybe,
-                    AvailabilityResponse.unavailable,
-                  ])
-                    if (availabilityResponseLabel(l10n, response)
-                        case final label?)
-                      ChoiceChip(
-                        key: EventDetailScreen.pollAnswerKey(id, response),
-                        // A chip can't wrap its label, so one too long for
-                        // the width at large text scales down instead.
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            label,
-                            semanticsLabel: l10n.eventsPollAnswerFor(
-                              label,
-                              name,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: tokens.spaceXs,
+              children: [
+                Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  label: l10n.eventsPollYourAnswer(name),
+                  child: Wrap(
+                    spacing: tokens.spaceSm,
+                    runSpacing: tokens.spaceSm,
+                    children: [
+                      for (final response in const [
+                        AvailabilityResponse.available,
+                        AvailabilityResponse.maybe,
+                        AvailabilityResponse.unavailable,
+                      ])
+                        if (availabilityResponseLabel(l10n, response)
+                            case final label?)
+                          // Each chip carries the reason; the group is not
+                          // wrapped, which would merge its chips into one
+                          // node, and shows it once below.
+                          BgeOnlineOnly(
+                            showNote: false,
+                            child: ChoiceChip(
+                              key: EventDetailScreen.pollAnswerKey(
+                                id,
+                                response,
+                              ),
+                              // A chip can't wrap its label, so one too long
+                              // for the width at large text scales down
+                              // instead.
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  label,
+                                  semanticsLabel: l10n.eventsPollAnswerFor(
+                                    label,
+                                    name,
+                                  ),
+                                ),
+                              ),
+                              selected: poll.answers[id] == response,
+                              // The chosen answer pressed again changes
+                              // nothing: the server keeps one answer a date,
+                              // and has no way to take it back. A vote is a
+                              // direct write (#49).
+                              onSelected: poll.answersOpen && online
+                                  ? (selected) {
+                                      if (selected) {
+                                        onVote(occurrence, response);
+                                      }
+                                    }
+                                  : null,
                             ),
                           ),
-                        ),
-                        selected: poll.answers[id] == response,
-                        // The chosen answer pressed again changes nothing: the
-                        // server keeps one answer a date, and has no way to
-                        // take it back.
-                        onSelected: poll.answersOpen
-                            ? (selected) {
-                                if (selected) onVote(occurrence, response);
-                              }
-                            : null,
-                      ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                // Only offline: online it would still take the Column's gap.
+                if (!online) const BgeOnlineOnlyNote(),
+              ],
             ),
           if (tally != null)
             MergeSemantics(
@@ -327,13 +351,15 @@ class DatePollBlock extends StatelessWidget {
           if (onConfirm != null)
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                key: EventDetailScreen.confirmLeaderKey(id),
-                onPressed: enabled ? onConfirm : null,
-                icon: const Icon(Icons.event_available),
-                label: Text(
-                  l10n.eventsPollConfirmLeader,
-                  semanticsLabel: l10n.eventsPollConfirmLeaderFor(name),
+              child: BgeOnlineOnly(
+                child: TextButton.icon(
+                  key: EventDetailScreen.confirmLeaderKey(id),
+                  onPressed: enabled && online ? onConfirm : null,
+                  icon: const Icon(Icons.event_available),
+                  label: Text(
+                    l10n.eventsPollConfirmLeader,
+                    semanticsLabel: l10n.eventsPollConfirmLeaderFor(name),
+                  ),
                 ),
               ),
             ),
@@ -349,15 +375,9 @@ class DatePollBlock extends StatelessWidget {
 ///
 /// A disabled button can't hold focus, so a retry that disabled itself on
 /// press would drop a keyboard or screen-reader user's place (#607). This
-/// one stays enabled and ignores presses while [busy], showing the read
-/// under way. To a screen reader it is one node of its own in place of the
-/// button's, which says it isn't available then, and carries the button's
-/// focus as `Focus` would.
-///
-/// `EventRefreshBanner` keeps the disabling retry for now: #607 settles all
-/// three refresh banners at once, and #573 would make them one. This is the
-/// first direction #607 names, so it is what to lift there.
-class PollRetryButton extends StatefulWidget {
+/// one is a [BgeInertButton], as `BgeRefreshBanner`'s retry is: enabled,
+/// and inert while [busy], showing the read under way.
+class PollRetryButton extends StatelessWidget {
   const PollRetryButton({required this.busy, required this.onRetry, super.key});
 
   /// Whether the read a press started is still under way.
@@ -367,51 +387,19 @@ class PollRetryButton extends StatefulWidget {
   final VoidCallback onRetry;
 
   @override
-  State<PollRetryButton> createState() => _PollRetryButtonState();
-}
-
-class _PollRetryButtonState extends State<PollRetryButton> {
-  final FocusNode _focus = FocusNode(debugLabel: 'PollRetryButton');
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  void _press() {
-    if (!widget.busy) widget.onRetry();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    final busy = widget.busy;
     final label = busy ? l10n.eventsRefreshInProgress : l10n.eventsRefreshRetry;
 
-    return ListenableBuilder(
-      listenable: _focus,
-      builder: (context, button) => Semantics(
-        container: true,
-        button: true,
-        enabled: !busy,
-        label: label,
-        onTap: busy ? null : _press,
-        focusable: true,
-        focused: _focus.hasPrimaryFocus,
-        // As `Focus` offers it, which leaves it out on iOS.
-        onFocus: defaultTargetPlatform == TargetPlatform.iOS
-            ? null
-            : _focus.requestFocus,
-        child: button,
-      ),
-      child: ExcludeSemantics(
-        child: TextButton.icon(
-          focusNode: _focus,
-          onPressed: _press,
-          icon: busy ? const _RetrySpinner() : const Icon(Icons.refresh),
-          label: Text(label),
-        ),
+    return BgeInertButton(
+      inert: busy,
+      label: label,
+      onPressed: onRetry,
+      builder: (context, focusNode, onPressed) => TextButton.icon(
+        focusNode: focusNode,
+        onPressed: onPressed,
+        icon: busy ? const _RetrySpinner() : const Icon(Icons.refresh),
+        label: Text(label),
       ),
     );
   }

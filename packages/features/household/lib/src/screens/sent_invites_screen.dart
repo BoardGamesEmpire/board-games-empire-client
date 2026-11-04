@@ -90,55 +90,31 @@ class _SentInvitesView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              SentInvitesLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
+              SentInvitesLoading() => BgeStateSliver(
+                child: BgeLoadingState(
                   key: SentInvitesScreen.loadingKey,
-                  child: Semantics(
-                    liveRegion: true,
-                    label: l10n.sentInvitesLoading,
-                    child: const ExcludeSemantics(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  label: l10n.sentInvitesLoading,
                 ),
               ),
-              SentInvitesFailed() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: BgeErrorState(
-                    key: SentInvitesScreen.failedKey,
-                    icon: Icons.cloud_off_outlined,
-                    title: l10n.sentInvitesFailed,
-                    body: l10n.householdInvitesFailedBody,
-                    retryLabel: l10n.householdInvitesRetry,
-                    onRetry: () => bloc.add(const SentInvitesLoadRequested()),
-                  ),
+              SentInvitesFailed() => BgeStateSliver(
+                child: BgeErrorState(
+                  key: SentInvitesScreen.failedKey,
+                  icon: Icons.cloud_off_outlined,
+                  title: l10n.sentInvitesFailed,
+                  body: l10n.householdInvitesFailedBody,
+                  retryLabel: l10n.householdInvitesRetry,
+                  onRetry: () => bloc.add(const SentInvitesLoadRequested()),
                 ),
               ),
               SentInvitesReady(:final invites, :final filter)
                   when invites.isEmpty =>
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Column(
-                      key: SentInvitesScreen.emptyKey,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.outbox_outlined,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const BgeGap.sm(),
-                        Text(
-                          filter == SentInviteFilter.openAndExpired
-                              ? l10n.sentInvitesEmpty
-                              : l10n.sentInvitesEmptyFiltered,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+                BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: SentInvitesScreen.emptyKey,
+                    icon: Icons.outbox_outlined,
+                    title: filter == SentInviteFilter.openAndExpired
+                        ? l10n.sentInvitesEmpty
+                        : l10n.sentInvitesEmptyFiltered,
                   ),
                 ),
               final SentInvitesReady ready =>
@@ -320,14 +296,17 @@ class _SentRow extends StatelessWidget {
               end: tokens.spaceMd,
               bottom: tokens.spaceSm,
             ),
-            child: OutlinedButton(
-              key: SentInvitesScreen.withdrawKey(invite.id),
-              onPressed: busy
-                  ? null
-                  : () => context.read<SentInvitesBloc>().add(
-                      SentInvitesWithdrawRequested(invite.id),
-                    ),
-              child: Text(l10n.householdInviteWithdraw),
+            // A direct write, so it waits for a connection (#49).
+            child: BgeOnlineOnly(
+              child: OutlinedButton(
+                key: SentInvitesScreen.withdrawKey(invite.id),
+                onPressed: busy || BgeConnectivityScope.offlineOf(context)
+                    ? null
+                    : () => context.read<SentInvitesBloc>().add(
+                        SentInvitesWithdrawRequested(invite.id),
+                      ),
+                child: Text(l10n.householdInviteWithdraw),
+              ),
             ),
           ),
       ],

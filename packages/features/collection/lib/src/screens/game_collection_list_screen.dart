@@ -191,8 +191,12 @@ class GameCollectionListSliver extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-                child: _RefreshBanner(
+                child: BgeRefreshBanner(
                   key: GameCollectionListScreen.refreshBannerKey,
+                  retryKey: GameCollectionListScreen.refreshRetryKey,
+                  failedMessage: l10n.collectionListRefreshFailed,
+                  inProgressLabel: l10n.collectionRefreshInProgress,
+                  retryLabel: l10n.collectionRefreshRetry,
                   refreshing: refreshing,
                   onRetry: canRetry
                       ? () => context.read<GameCollectionListBloc>().add(
@@ -203,8 +207,11 @@ class GameCollectionListSliver extends StatelessWidget {
               ),
             ),
           switch (state) {
-            GameCollectionListLoading() => _LoadingSliver(
-              message: l10n.collectionListLoading,
+            GameCollectionListLoading() => BgeStateSliver(
+              child: BgeLoadingState(
+                key: GameCollectionListScreen.loadingKey,
+                label: l10n.collectionListLoading,
+              ),
             ),
             GameCollectionListError() => _ErrorSliver(
               message: l10n.collectionListError,
@@ -301,84 +308,6 @@ class _CollectionRow extends StatelessWidget {
       (shown: text, spoken: text);
 }
 
-/// The stale-data banner and its retry: the household list's
-/// (`HouseholdRefreshBanner`), with this feature's copy.
-///
-/// The failed copy names no cause, because the hydrate reports one
-/// undifferentiated failure. While a pass the user asked for runs, the
-/// button stays in place, disabled, with the in-progress label rather than
-/// a bare spinner: a control that disappears mid-interaction moves focus.
-class _RefreshBanner extends StatelessWidget {
-  const _RefreshBanner({required this.refreshing, this.onRetry, super.key});
-
-  final bool refreshing;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = GameCollectionLocalizations.of(context);
-    final retry = onRetry;
-
-    return BgeInlineBanner(
-      tone: refreshing ? BgeBannerTone.info : BgeBannerTone.warning,
-      message: refreshing
-          ? l10n.collectionRefreshInProgress
-          : l10n.collectionListRefreshFailed,
-      // Furniture for as long as the data stays stale, already at the top
-      // of the viewport.
-      reveal: false,
-      action: retry == null
-          ? null
-          : TextButton.icon(
-              key: GameCollectionListScreen.refreshRetryKey,
-              onPressed: refreshing ? null : retry,
-              icon: refreshing
-                  ? const _RetrySpinner()
-                  : const Icon(Icons.refresh),
-              label: Text(
-                refreshing
-                    ? l10n.collectionRefreshInProgress
-                    : l10n.collectionRefreshRetry,
-              ),
-            ),
-    );
-  }
-}
-
-/// The retry button's in-flight icon, scaled with the label beside it and
-/// silent to a screen reader: the label announces the state.
-class _RetrySpinner extends StatelessWidget {
-  const _RetrySpinner();
-
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-    child: SizedBox.square(
-      dimension: BgeTextScale.clampedOf(context)
-          .scale(BgeTokens.of(context).spaceMd),
-      child: const CircularProgressIndicator(strokeWidth: 2),
-    ),
-  );
-}
-
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      key: GameCollectionListScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
-}
-
 /// No games. Games are added from a game's detail, so it offers [onBrowse],
 /// which opens the catalog (#45), and nothing to press without one.
 class _EmptySliver extends StatelessWidget {
@@ -389,37 +318,20 @@ class _EmptySliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
-    final theme = Theme.of(context);
     final browse = onBrowse;
 
-    return SliverFillRemaining(
-      hasScrollBody: false,
-      child: Center(
+    return BgeStateSliver(
+      child: BgeEmptyState(
         key: GameCollectionListScreen.emptyKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              l10n.collectionListEmptyTitle,
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const BgeGap.sm(),
-            Text(
-              l10n.collectionListEmptyBody,
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            if (browse != null) ...[
-              const BgeGap.md(),
-              FilledButton.tonal(
+        title: l10n.collectionListEmptyTitle,
+        body: l10n.collectionListEmptyBody,
+        action: browse == null
+            ? null
+            : FilledButton.tonal(
                 key: GameCollectionListScreen.browseKey,
                 onPressed: () => browse(context),
                 child: Text(l10n.collectionListBrowse),
               ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -431,14 +343,11 @@ class _ErrorSliver extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      child: BgeInlineBanner(
-        key: GameCollectionListScreen.errorKey,
-        tone: BgeBannerTone.error,
-        message: message,
-      ),
+  Widget build(BuildContext context) => BgeStateSliver(
+    child: BgeInlineBanner(
+      key: GameCollectionListScreen.errorKey,
+      tone: BgeBannerTone.error,
+      message: message,
     ),
   );
 }

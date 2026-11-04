@@ -401,9 +401,9 @@ class CollectionEntryDetail extends StatelessWidget {
           previous.view != current.view || previous.item != current.item,
       builder: (context, state) => switch (state.view) {
         CollectionEntryView.loading => Center(
-          key: CollectionEntryScreen.loadingKey,
-          child: CircularProgressIndicator(
-            semanticsLabel: l10n.collectionEntryLoading,
+          child: BgeLoadingState(
+            key: CollectionEntryScreen.loadingKey,
+            label: l10n.collectionEntryLoading,
           ),
         ),
         CollectionEntryView.gone => _Gone(title: state.item?.title),
@@ -458,25 +458,9 @@ class _Gone extends StatelessWidget {
         ],
         // One announcement, heard as it appears, rather than a heading and
         // then a fragment.
-        MergeSemantics(
-          child: Semantics(
-            liveRegion: true,
-            child: Column(
-              children: [
-                Text(
-                  l10n.collectionEntryGoneTitle,
-                  style: theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const BgeGap.sm(),
-                Text(
-                  l10n.collectionEntryGoneBody,
-                  style: theme.textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        BgeEmptyState(
+          title: l10n.collectionEntryGoneTitle,
+          body: l10n.collectionEntryGoneBody,
         ),
       ],
     );

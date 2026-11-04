@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -15,6 +16,8 @@ import '../support/fake_user_remote.dart';
 
 const _unknownCopy =
     "Can't tell yet whether you can invite people to this household.";
+
+const _onlineOnlyCopy = "Available when you're online";
 
 void main() {
   late FakeHouseholdInviteRemote remote;
@@ -35,8 +38,21 @@ void main() {
     HouseholdRole? viewerRole = HouseholdRole.householdOwner,
     MemberInvitePolicy? policy,
     Future<void> Function()? onRefresh,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
+    builder: offline == null
+        ? null
+        : (context, child) => ValueListenableBuilder<bool>(
+            valueListenable: offline,
+            child: child,
+            builder: (context, isOffline, child) => BgeConnectivityScope(
+              offline: isOffline,
+              noticeShowing: isOffline,
+              onlineOnlyReason: _onlineOnlyCopy,
+              child: child!,
+            ),
+          ),
     localizationsDelegates: [
       ...HouseholdLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
@@ -573,6 +589,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(remote.sentDrafts, isEmpty);
+    expect(find.text('Enter a valid email address.'), findsOneWidget);
+  });
+
+  testWidgets('Send is disabled offline and says why, and offline leaves the '
+      'form untouched', (tester) async {
+    final offline = ValueNotifier(true);
+    addTearDown(offline.dispose);
+    await tester.pumpWidget(harness(offline: offline));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(SendHouseholdInviteScreen.emailKey),
+      'not an address',
+    );
+    await tester.pump();
+
+    final send = find.byKey(SendHouseholdInviteScreen.submitKey);
+    await tester.ensureVisible(send);
+    await tester.pump();
+    expect(tester.widget<BgeSubmitButton>(send).onPressed, isNull);
+    expect(
+      tester.getSemantics(send),
+      matchesSemantics(
+        label: 'Send invite',
+        hint: _onlineOnlyCopy,
+        isButton: true,
+        hasEnabledState: true,
+      ),
+    );
+    expect(find.text(_onlineOnlyCopy), findsOneWidget);
+
+    // A press sends nothing, and marks nothing touched, which would show
+    // the address's error.
+    await tester.tap(send, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(remote.sentDrafts, isEmpty);
+    expect(find.text('Enter a valid email address.'), findsNothing);
+
+    offline.value = false;
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<BgeSubmitButton>(send).onPressed, isNotNull);
+    expect(find.text(_onlineOnlyCopy), findsNothing);
+    expect(find.text('Enter a valid email address.'), findsNothing);
+    await submit(tester);
+    await tester.pumpAndSettle();
     expect(find.text('Enter a valid email address.'), findsOneWidget);
   });
 

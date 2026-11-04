@@ -140,12 +140,10 @@ class _EventGroupPage extends StatelessWidget {
           ready: (context, groups) {
             final rows = groups.of(group);
             if (rows.isEmpty) {
-              return EventMessageSliver(
-                child: Text(
-                  l10n.eventsGroupEmpty,
+              return BgeStateSliver(
+                child: BgeEmptyState(
                   key: EventGroupScreen.emptyKey,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  textAlign: TextAlign.center,
+                  title: l10n.eventsGroupEmpty,
                 ),
               );
             }

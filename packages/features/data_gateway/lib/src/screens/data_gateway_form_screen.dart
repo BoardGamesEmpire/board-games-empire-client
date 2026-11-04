@@ -10,7 +10,6 @@ import '../bloc/data_gateway_form_bloc.dart';
 import '../bloc/data_gateway_form_event.dart';
 import '../bloc/data_gateway_form_state.dart';
 import '../widgets/data_gateway_form.dart';
-import '../widgets/data_gateway_message.dart';
 import '../widgets/focus_is_free.dart';
 
 /// The add form, or the edit form when [editingId] is set (#41).
@@ -196,20 +195,16 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
             title: title,
             centerVertically: true,
             child: Center(
-              key: DataGatewayFormScreen.loadingKey,
-              child: Semantics(
-                liveRegion: true,
+              child: BgeLoadingState(
+                key: DataGatewayFormScreen.loadingKey,
                 label: l10n.dataGatewayFormLoading,
-                child: const ExcludeSemantics(
-                  child: CircularProgressIndicator(),
-                ),
               ),
             ),
           ),
           DataGatewayFormDenied() => BgePage(
             title: title,
             centerVertically: true,
-            child: DataGatewayMessage(
+            child: BgeEmptyState(
               icon: Icons.lock_outline,
               title: l10n.dataGatewayDeniedTitle,
               body: l10n.dataGatewayDeniedBody,
@@ -218,7 +213,7 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
           DataGatewayFormMissing() => BgePage(
             title: title,
             centerVertically: true,
-            child: DataGatewayMessage(
+            child: BgeEmptyState(
               icon: Icons.search_off_outlined,
               title: l10n.dataGatewayFormMissingTitle,
               body: l10n.dataGatewayFormMissingBody,

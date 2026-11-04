@@ -148,13 +148,9 @@ class _GameDetailPage extends StatelessWidget {
             title: Text(l10n.catalogDetailTitle),
             centerVertically: true,
             child: Center(
-              key: GameDetailScreen.loadingKey,
-              child: Semantics(
-                liveRegion: true,
+              child: BgeLoadingState(
+                key: GameDetailScreen.loadingKey,
                 label: l10n.catalogDetailLoading,
-                child: const ExcludeSemantics(
-                  child: CircularProgressIndicator(),
-                ),
               ),
             ),
           ),

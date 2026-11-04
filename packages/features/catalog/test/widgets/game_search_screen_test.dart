@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -37,6 +38,7 @@ void main() {
     void Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context, String sourceId, GameSearchHit hit)?
     onImport,
+    ValueListenable<bool>? offline,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -48,6 +50,7 @@ void main() {
           onOpen: onOpen,
           onImport: onImport,
         ),
+        offline: offline,
       ),
     );
     await tester.pump();
@@ -145,6 +148,33 @@ void main() {
     await show(tester);
 
     expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
+  });
+
+  testWidgets('search idle is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    await show(tester);
+
+    final message = tester.getSemantics(
+      find.text('Search this server and its data sources for a game.'),
+    );
+    expect(message, isSemantics(isLiveRegion: true));
+    expect(
+      message.label,
+      contains('Search this server and its data sources for a game.'),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('search no-results is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    remote.onSearch = (_, _) async => const GameSearchResults();
+    await show(tester);
+    await search(tester, 'zzz');
+
+    final message = tester.getSemantics(find.text('No games match “zzz”.'));
+    expect(message, isSemantics(isLiveRegion: true));
+    expect(message.label, contains('No games match “zzz”.'));
+    handle.dispose();
   });
 
   testWidgets('shows this server first, then what data sources found', (
@@ -248,6 +278,106 @@ void main() {
     );
 
     expect(imported, ['dg_bgg/926']);
+  });
+
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+    final importRow = find.byKey(
+      GameSearchScreen.sourceRowKey('dg_bgg', '926'),
+    );
+
+    setUp(() => offline = ValueNotifier(true));
+    tearDown(() => offline.dispose());
+
+    testWidgets('the import row is disabled and says why', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.onSearch = (_, _) async => const GameSearchResults(
+        byDataGateway: {
+          'dg_bgg': [
+            GameSearchHit(
+              externalId: '926',
+              title: 'Catan: Seafarers',
+              contentType: ContentType.expansion,
+              yearPublished: 1997,
+              minPlayers: 3,
+              maxPlayers: 4,
+            ),
+          ],
+        },
+      );
+      final imported = <String>[];
+
+      await show(
+        tester,
+        offline: offline,
+        onOpen: (_, _) {},
+        onImport: (_, sourceId, hit) => imported.add(sourceId),
+      );
+      await search(tester, 'catan');
+      await tester.tap(importRow, warnIfMissed: false);
+
+      expect(imported, isEmpty);
+      expect(
+        tester.getSemantics(importRow),
+        matchesSemantics(
+          label:
+              'Catan: Seafarers\n$onlineOnlyCopy\n'
+              '1997, 3 to 4 players, Expansion',
+          isButton: true,
+          hasSelectedState: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(find.text(onlineOnlyCopy), findsOneWidget);
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      await tester.tap(importRow);
+      expect(imported, ['dg_bgg']);
+      handle.dispose();
+    });
+
+    testWidgets('a game the server holds still opens', (tester) async {
+      remote.onSearch = (_, _) async => results;
+      final opened = <String>[];
+
+      await show(
+        tester,
+        offline: offline,
+        onOpen: (_, gameId) => opened.add(gameId),
+        onImport: (_, _, _) {},
+      );
+      await search(tester, 'catan');
+      await tester.tap(
+        find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')),
+      );
+
+      expect(opened, ['g_imported']);
+    });
+
+    testWidgets('an online scope lays the rows out as no scope does', (
+      tester,
+    ) async {
+      remote.onSearch = (_, _) async => results;
+      await show(tester, onOpen: (_, _) {}, onImport: (_, _, _) {});
+      await search(tester, 'catan');
+      final before = tester.getSize(importRow);
+
+      await tester.pumpWidget(const SizedBox());
+      final online = ValueNotifier(false);
+      addTearDown(online.dispose);
+      await show(
+        tester,
+        offline: online,
+        onOpen: (_, _) {},
+        onImport: (_, _, _) {},
+      );
+      await search(tester, 'catan');
+
+      expect(tester.getSize(importRow), before);
+    });
   });
 
   // An import runs while its dialog is open, and the results can change

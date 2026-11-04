@@ -14,9 +14,7 @@ import '../bloc/event_overview_bloc.dart';
 import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
-import '../widgets/event_loading_indicator.dart';
 import '../widgets/event_card.dart';
-import '../widgets/event_refresh_banner.dart';
 import 'upcoming_fallback_cubit.dart';
 
 /// The home page's upcoming events (#613): the user's next few events, or, with
@@ -327,7 +325,11 @@ class _Spinner extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     key: UpcomingEventsSection.loadingKey,
     padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceLg),
-    child: const Center(child: EventLoadingIndicator()),
+    child: Center(
+      child: BgeLoadingState(
+        label: EventsLocalizations.of(context).eventsLoading,
+      ),
+    ),
   );
 }
 
@@ -340,10 +342,13 @@ class _FailedRead extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bloc = context.read<EventOverviewBloc>();
-    return EventRefreshBanner(
+    final l10n = EventsLocalizations.of(context);
+    return BgeRefreshBanner(
       key: UpcomingEventsSection.errorKey,
       retryKey: UpcomingEventsSection.retryKey,
-      failedMessage: EventsLocalizations.of(context).eventsError,
+      failedMessage: l10n.eventsError,
+      inProgressLabel: l10n.eventsRefreshInProgress,
+      retryLabel: l10n.eventsRefreshRetry,
       refreshing: retrying,
       onRetry: bloc.canRetry
           ? () => bloc.add(const EventOverviewRetryRequested())

@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 typedef _Submitted = ({
@@ -26,19 +28,38 @@ Household _household({
   updatedAt: DateTime.utc(2026, 10, 1),
 );
 
+const _onlineOnlyCopy = "Available when you're online";
+
 void main() {
   late List<_Submitted> submitted;
 
   setUp(() => submitted = []);
 
-  Widget wrap(Widget child) => MaterialApp(
+  Widget wrap(Widget child, {ValueListenable<bool>? offline}) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
+    builder: offline == null
+        ? null
+        : (context, child) => ValueListenableBuilder<bool>(
+            valueListenable: offline,
+            child: child,
+            builder: (context, isOffline, child) => BgeConnectivityScope(
+              offline: isOffline,
+              noticeShowing: isOffline,
+              onlineOnlyReason: _onlineOnlyCopy,
+              child: child!,
+            ),
+          ),
     home: Scaffold(body: SingleChildScrollView(child: child)),
   );
 
-  Widget form(Household initial, {bool submitting = false}) => wrap(
+  Widget form(
+    Household initial, {
+    bool submitting = false,
+    ValueListenable<bool>? offline,
+  }) => wrap(
+    offline: offline,
     EditHouseholdForm(
       initial: initial,
       submitting: submitting,
@@ -225,6 +246,68 @@ void main() {
       await submit(tester);
 
       expect(submitted.single.memberInvitePolicy, MemberInvitePolicy.direct);
+    });
+
+    testWidgets('Save is disabled offline and says why, and offline leaves '
+        'the form untouched', (tester) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      await tester.pumpWidget(form(_household(), offline: offline));
+      await tester.enterText(find.byKey(EditHouseholdForm.nameFieldKey), '  ');
+      await tester.pump();
+
+      final save = find.byKey(EditHouseholdForm.submitButtonKey);
+      await tester.ensureVisible(save);
+      await tester.pump();
+      expect(tester.widget<BgeSubmitButton>(save).onPressed, isNull);
+      expect(
+        tester.getSemantics(save),
+        matchesSemantics(
+          label: 'Save changes',
+          hint: _onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(find.text(_onlineOnlyCopy), findsOneWidget);
+
+      // The press neither submits nor marks the form touched, which would
+      // show the blank name's error.
+      await tester.tap(save, warnIfMissed: false);
+      await tester.pump();
+      expect(submitted, isEmpty);
+      expect(find.text('Enter a name for your household.'), findsNothing);
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(tester.widget<BgeSubmitButton>(save).onPressed, isNotNull);
+      expect(find.text(_onlineOnlyCopy), findsNothing);
+      expect(find.text('Enter a name for your household.'), findsNothing);
+      await submit(tester);
+      expect(find.text('Enter a name for your household.'), findsOneWidget);
+    });
+
+    testWidgets('Enter in the last field submits only while online', (
+      tester,
+    ) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      await tester.pumpWidget(form(_household(), offline: offline));
+      await tester.tap(find.byKey(EditHouseholdForm.descriptionFieldKey));
+      await tester.pump();
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(submitted, isEmpty);
+
+      // Done closes the keyboard, so the field is entered again.
+      offline.value = false;
+      await tester.tap(find.byKey(EditHouseholdForm.descriptionFieldKey));
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(submitted, hasLength(1));
     });
 
     testWidgets('each option says what it means', (tester) async {

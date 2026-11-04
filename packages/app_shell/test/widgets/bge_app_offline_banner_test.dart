@@ -1,15 +1,45 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:ui/ui.dart' show BgeOfflineStrip;
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_connectivity.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
+
+class _MockStorage extends Mock implements Storage {}
+
+/// Every label a screen reader can reach, merged nodes included.
+List<String> _semanticsLabels(WidgetTester tester) {
+  final labels = <String>[];
+  void visit(SemanticsNode node) {
+    labels.add(node.getSemanticsData().label);
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  visit(
+    tester.binding.renderViews.first.owner!.semanticsOwner!.rootSemanticsNode!,
+  );
+  return labels;
+}
 
 /// #98 shell wiring: a session restored offline reaches home with the
 /// unverified-session banner, and a confirming revalidation clears the
-/// banner without re-running the session-start machinery.
+/// banner without re-running the session-start machinery. #49 puts the
+/// offline strip above every route: the banner steps aside for it, and the
+/// crash flow's barrier covers it.
 void main() {
   Future<void> noopHydrated(PlatformBootstrap _) async {}
 
@@ -24,16 +54,43 @@ void main() {
       "Can't reach the server — using your saved sign-in. Changes will "
       'sync when the connection returns.';
 
+  const offlineMessage =
+      "You're offline. Changes will sync when you reconnect.";
+  const backOnlineMessage = 'Back online';
+
+  /// Pumps the app signed in through [repo]. With [connectivity], the root
+  /// container carries it, as both platforms register it.
   Future<AppBootstrapCubit> pumpApp(
     WidgetTester tester,
-    FakeAuthRepository repo,
-  ) async {
+    FakeAuthRepository repo, {
+    FakeConnectivity? connectivity,
+    FeedbackUncaughtErrorReporter? feedbackReporter,
+  }) async {
     final cubit = buildCubit(repo);
     addTearDown(cubit.close);
-    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await tester.pumpWidget(
+      BgeApp(
+        bootstrapCubit: cubit,
+        rootContainer: connectivity == null
+            ? null
+            : (DependencyContainerImpl()
+                ..registerSingleton<ConnectivityService>(connectivity)),
+        feedbackReporter: feedbackReporter,
+      ),
+    );
     await cubit.initialize();
     await tester.pumpAndSettle();
     return cubit;
+  }
+
+  /// Moves [connectivity] to [state] and draws the frame the app asks for.
+  Future<void> go(
+    WidgetTester tester,
+    FakeConnectivity connectivity,
+    ConnectivityState state,
+  ) async {
+    connectivity.change(state);
+    await tester.pump(Duration.zero);
   }
 
   testWidgets('an indeterminate session check with restorable material '
@@ -191,5 +248,164 @@ void main() {
 
     expect(find.text(bannerMessage), findsNothing);
     expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('the banner reaches a screen reader over the shell routes', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    // Online but the server is unreachable: the banner shows on its own,
+    // with the strip hidden.
+    final connectivity = FakeConnectivity();
+    addTearDown(connectivity.close);
+    await pumpApp(
+      tester,
+      FakeAuthRepository(
+        sessionCheckError: const AuthNetworkException(message: 'offline'),
+        restorableSession: sampleSession(),
+      ),
+      connectivity: connectivity,
+    );
+    expect(find.text(bannerMessage), findsOneWidget);
+    expect(find.text(offlineMessage), findsNothing);
+
+    expect(
+      tester.getSemantics(find.text(bannerMessage)),
+      matchesSemantics(label: bannerMessage, isLiveRegion: true),
+    );
+    expect(
+      _semanticsLabels(tester).where((l) => l.contains(bannerMessage)),
+      hasLength(1),
+      reason: 'one node, read once',
+    );
+    expect(
+      _semanticsLabels(tester),
+      contains('Dismiss'),
+      reason: 'its only action is reachable too',
+    );
+    handle.dispose();
+  });
+
+  testWidgets('the strip shows on a route outside the auth shell', (
+    tester,
+  ) async {
+    // Settings builds once the app-level settings controllers exist, and
+    // those need hydrated storage.
+    final storage = _MockStorage();
+    when(() => storage.read(any())).thenReturn(null);
+    when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
+    HydratedBloc.storage = storage;
+    addTearDown(() => HydratedBloc.storage = null);
+    final connectivity = FakeConnectivity();
+    addTearDown(connectivity.close);
+
+    await pumpApp(
+      tester,
+      FakeAuthRepository(initialSession: sampleSession()),
+      connectivity: connectivity,
+    );
+    (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+            as GoRouter)
+        .go(AppRoutes.settings);
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    await go(tester, connectivity, ConnectivityState.offline);
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.text(offlineMessage), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
+  testWidgets('the unverified banner steps aside while the strip shows, and '
+      'returns after the hold if still unverified', (tester) async {
+    final connectivity = FakeConnectivity();
+    addTearDown(connectivity.close);
+    await pumpApp(
+      tester,
+      FakeAuthRepository(
+        sessionCheckError: const AuthNetworkException(message: 'offline'),
+        restorableSession: sampleSession(),
+      ),
+      connectivity: connectivity,
+    );
+    expect(find.text(bannerMessage), findsOneWidget);
+    final home = tester.element(find.byType(HomeScreen));
+
+    await go(tester, connectivity, ConnectivityState.offline);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text(offlineMessage), findsOneWidget);
+    expect(find.text(bannerMessage), findsNothing);
+
+    // Reconnecting asks the server again; it is still unreachable, so the
+    // session stays unverified.
+    await go(tester, connectivity, ConnectivityState.online);
+    await tester.pump();
+    expect(find.text(backOnlineMessage), findsOneWidget);
+    expect(find.text(bannerMessage), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text(backOnlineMessage), findsNothing);
+    expect(find.text(bannerMessage), findsOneWidget);
+    expect(
+      identical(tester.element(find.byType(HomeScreen)), home),
+      isTrue,
+      reason: 'neither notice remounts the screen below it',
+    );
+  });
+
+  testWidgets('the crash barrier covers the strip', (tester) async {
+    final handle = tester.ensureSemantics();
+    final connectivity = FakeConnectivity();
+    addTearDown(connectivity.close);
+    final reporter = FeedbackUncaughtErrorReporter(
+      service: StubFeedbackService(),
+    );
+
+    await pumpApp(
+      tester,
+      FakeAuthRepository(initialSession: sampleSession()),
+      connectivity: connectivity,
+      feedbackReporter: reporter,
+    );
+    await go(tester, connectivity, ConnectivityState.offline);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(
+      _semanticsLabels(tester).where((l) => l.contains(offlineMessage)),
+      hasLength(1),
+      reason: 'read out before the crash',
+    );
+
+    reporter.report(
+      UncaughtErrorRecord.capture(
+        StateError('bad state'),
+        StackTrace.fromString('#0 main (file.dart:1)'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CrashReportPrompt), findsOneWidget);
+    final blocker = find.byKey(BgeApp.contentSemanticsBlockerKey);
+    expect(tester.widget<BlockSemantics>(blocker).blocking, isTrue);
+    expect(
+      find.descendant(of: blocker, matching: find.byType(BgeOfflineStrip)),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.byType(BgeOfflineStrip),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is ExcludeFocus && widget.excluding,
+        ),
+      ),
+      findsOneWidget,
+      reason: "outside the crash flow's focus scope",
+    );
+    expect(
+      _semanticsLabels(tester).where((l) => l.contains(offlineMessage)),
+      isEmpty,
+    );
+    handle.dispose();
   });
 }

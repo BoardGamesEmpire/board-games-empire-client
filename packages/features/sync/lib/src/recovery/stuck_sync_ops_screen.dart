@@ -87,17 +87,10 @@ class _StuckSyncOpsView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              StuckSyncOpsLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
+              StuckSyncOpsLoading() => BgeStateSliver(
+                child: BgeLoadingState(
                   key: StuckSyncOpsScreen.loadingKey,
-                  child: Semantics(
-                    liveRegion: true,
-                    label: l10n.syncStuckLoading,
-                    child: const ExcludeSemantics(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  label: l10n.syncStuckLoading,
                 ),
               ),
               StuckSyncOpsError() => SliverToBoxAdapter(
@@ -107,21 +100,12 @@ class _StuckSyncOpsView extends StatelessWidget {
                   message: l10n.syncStuckError,
                 ),
               ),
-              StuckSyncOpsReady(:final ops) when ops.isEmpty =>
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    key: StuckSyncOpsScreen.emptyKey,
-                    child: Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        l10n.syncStuckEmpty,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
+              StuckSyncOpsReady(:final ops) when ops.isEmpty => BgeStateSliver(
+                child: BgeEmptyState(
+                  key: StuckSyncOpsScreen.emptyKey,
+                  title: l10n.syncStuckEmpty,
                 ),
+              ),
               StuckSyncOpsReady() => SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(bottom: tokens.spaceSm),

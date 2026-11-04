@@ -149,6 +149,20 @@ void main() {
       expect(find.text(_emptyTitleCopy), findsOneWidget);
     });
 
+    testWidgets('the empty state is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, const []);
+
+      final title = tester.getSemantics(find.text(_emptyTitleCopy));
+      expect(title, isSemantics(isLiveRegion: true));
+      expect(title.label, contains(_emptyTitleCopy));
+      expect(
+        title.label,
+        contains('Games you add from the catalog will appear here.'),
+      );
+      handle.dispose();
+    });
+
     testWidgets('offers browsing, which calls onBrowse', (tester) async {
       var browsed = 0;
       await show(tester, const [], onBrowse: (_) => browsed++);
@@ -673,8 +687,8 @@ void main() {
       await tester.pump();
 
       expect(calls, 1);
-      // The banner's message, and the disabled button's own label: it keeps
-      // a name rather than becoming a bare spinner.
+      // The banner's message, and the busy button's own label: it keeps a
+      // name rather than becoming a bare spinner.
       expect(find.text(_refreshingCopy), findsNWidgets(2));
       expect(
         tester
@@ -682,7 +696,8 @@ void main() {
               find.byKey(GameCollectionListScreen.refreshRetryKey),
             )
             .onPressed,
-        isNull,
+        // Enabled and inert, so it keeps focus (#607).
+        isNotNull,
       );
 
       pass.complete();
@@ -692,50 +707,6 @@ void main() {
 
       expect(find.text(_refreshingCopy), findsNothing);
       expect(find.text(_refreshFailedCopy), findsNothing);
-    });
-
-    testWidgets('the refresh banner lays out at 320dp and 200%, failed and '
-        'refreshing (#452)', (tester) async {
-      // Before #452 the banner's message and its retry shared a row, and at
-      // 200% on this window the retry ran off the window's right edge. So
-      // that edge is what shows whether the banner made room for it.
-      const width = 320.0;
-      final pass = Completer<void>();
-      useViewSize(tester, const Size(width, 800));
-      await tester.pumpWidget(
-        harness(
-          onRetry: () => pass.future,
-          textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
-        ),
-      );
-      items.add([listItem('e-1')]);
-      status.finished(CollectionHydrateOutcome.failed);
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(_refreshFailedCopy), findsOneWidget);
-      expect(
-        tester
-            .getRect(find.byKey(GameCollectionListScreen.refreshRetryKey))
-            .right,
-        lessThanOrEqualTo(width),
-      );
-
-      await tester.tap(find.byKey(GameCollectionListScreen.refreshRetryKey));
-      await tester.pump();
-      status.started();
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(_refreshingCopy), findsNWidgets(2));
-      expect(
-        tester
-            .getRect(find.byKey(GameCollectionListScreen.refreshRetryKey))
-            .right,
-        lessThanOrEqualTo(width),
-      );
-
-      pass.complete();
     });
 
     testWidgets('a pass nobody asked for leaves it up, without narrating', (

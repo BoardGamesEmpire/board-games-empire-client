@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 
 void main() {
@@ -38,12 +41,17 @@ void main() {
     doneCount = 0;
   });
 
-  Future<void> pumpForm(WidgetTester tester, {String? editingId}) async {
+  Future<void> pumpForm(
+    WidgetTester tester, {
+    String? editingId,
+    ValueListenable<bool>? offline,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
         localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
         supportedLocales: DataGatewayLocalizations.supportedLocales,
+        builder: offline == null ? null : connectivityBuilder(offline),
         home: DataGatewayFormScreen(
           remote: remote,
           access: access,
@@ -746,6 +754,84 @@ void main() {
       await tester.pump();
 
       expectFocusOn(fieldNode(tester, DataGatewayForm.nameFieldKey));
+    });
+  });
+
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+
+    setUp(() => offline = ValueNotifier(true));
+    tearDown(() => offline.dispose());
+
+    Matcher gatedSubmit(String label) => matchesSemantics(
+      label: label,
+      hint: onlineOnlyCopy,
+      isButton: true,
+      hasEnabledState: true,
+    );
+
+    testWidgets('Add is disabled and says why, and offline leaves the form '
+        'untouched', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpForm(tester, offline: offline);
+
+      final create = find.byKey(DataGatewayForm.submitKey);
+      await tester.ensureVisible(create);
+      await tester.pump();
+      expect(tester.widget<BgeSubmitButton>(create).onPressed, isNull);
+      expect(tester.getSemantics(create), gatedSubmit('Add'));
+      expect(find.text(onlineOnlyCopy), findsOneWidget);
+
+      // Neither a press nor Enter in the last field submits, or marks the
+      // blank form touched, which would show its errors.
+      await tester.tap(create, warnIfMissed: false);
+      await tester.pump();
+      await tester.tap(find.byKey(DataGatewayForm.descriptionFieldKey));
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('Enter a name.'), findsNothing);
+      expect(remote.calls, isEmpty);
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(tester.widget<BgeSubmitButton>(create).onPressed, isNotNull);
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      expect(find.text('Enter a name.'), findsNothing);
+      await submit(tester);
+      expect(find.text('Enter a name.'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('Save is disabled and says why, and sends nothing', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      DataGatewayChanges? sent;
+      remote.onFetchOne = (_) async => bgg;
+      remote.onUpdate = (_, changes) async {
+        sent = changes;
+        return changed(bgg.copyWith(connectionPort: 50060));
+      };
+      await pumpForm(tester, editingId: 'dg_1', offline: offline);
+      await enter(tester, DataGatewayForm.portFieldKey, '50060');
+
+      final save = find.byKey(DataGatewayForm.submitKey);
+      await tester.ensureVisible(save);
+      await tester.pump();
+      expect(tester.widget<BgeSubmitButton>(save).onPressed, isNull);
+      expect(tester.getSemantics(save), gatedSubmit('Save'));
+
+      await tester.tap(save, warnIfMissed: false);
+      await tester.pump();
+      expect(sent, isNull);
+
+      offline.value = false;
+      await tester.pump();
+      await submit(tester);
+
+      expect(sent, const DataGatewayChanges(connectionPort: 50060));
+      handle.dispose();
     });
   });
 }

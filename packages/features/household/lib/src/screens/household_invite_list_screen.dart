@@ -133,58 +133,41 @@ class _HouseholdInviteListView extends StatelessWidget {
                 ),
               ),
             switch (state) {
-              HouseholdInviteListLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
+              HouseholdInviteListLoading() => BgeStateSliver(
+                child: BgeLoadingState(
                   key: HouseholdInviteListScreen.loadingKey,
-                  child: Semantics(
-                    liveRegion: true,
-                    label: l10n.householdInvitesLoading,
-                    child: const ExcludeSemantics(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  label: l10n.householdInvitesLoading,
                 ),
               ),
-              HouseholdInviteListDenied() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: _Message(
-                    key: HouseholdInviteListScreen.deniedKey,
-                    icon: Icons.lock_outline,
-                    text: l10n.householdInvitesDenied,
-                  ),
+              HouseholdInviteListDenied() => BgeStateSliver(
+                child: BgeEmptyState(
+                  key: HouseholdInviteListScreen.deniedKey,
+                  icon: Icons.lock_outline,
+                  title: l10n.householdInvitesDenied,
                 ),
               ),
-              HouseholdInviteListFailed() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: BgeErrorState(
-                    key: HouseholdInviteListScreen.failedKey,
-                    icon: Icons.cloud_off_outlined,
-                    title: l10n.householdInvitesFailed,
-                    body: l10n.householdInvitesFailedBody,
-                    retryLabel: l10n.householdInvitesRetry,
-                    onRetry: () =>
-                        bloc.add(const HouseholdInviteListLoadRequested()),
-                  ),
+              HouseholdInviteListFailed() => BgeStateSliver(
+                child: BgeErrorState(
+                  key: HouseholdInviteListScreen.failedKey,
+                  icon: Icons.cloud_off_outlined,
+                  title: l10n.householdInvitesFailed,
+                  body: l10n.householdInvitesFailedBody,
+                  retryLabel: l10n.householdInvitesRetry,
+                  onRetry: () =>
+                      bloc.add(const HouseholdInviteListLoadRequested()),
                 ),
               ),
               HouseholdInviteListReady(:final invites, :final filter)
                   when invites.isEmpty =>
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: _Message(
-                      key: HouseholdInviteListScreen.emptyKey,
-                      icon: Icons.mail_outline,
-                      text: switch (filter) {
-                        HouseholdInviteFilter.open =>
-                          l10n.householdInvitesEmpty,
-                        HouseholdInviteFilter.awaitingApproval =>
-                          l10n.householdInvitesEmptyAwaiting,
-                      },
-                    ),
+                BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: HouseholdInviteListScreen.emptyKey,
+                    icon: Icons.mail_outline,
+                    title: switch (filter) {
+                      HouseholdInviteFilter.open => l10n.householdInvitesEmpty,
+                      HouseholdInviteFilter.awaitingApproval =>
+                        l10n.householdInvitesEmptyAwaiting,
+                    },
                   ),
                 ),
               final HouseholdInviteListReady ready =>
@@ -357,32 +340,6 @@ class _OutcomeBanner extends StatelessWidget {
         ),
         child: Text(l10n.householdInvitesDismiss),
       ),
-    );
-  }
-}
-
-/// A centred icon over one line of text, for the empty and denied states.
-class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text, super.key});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-        const BgeGap.sm(),
-        Text(
-          text,
-          style: theme.textTheme.bodyLarge,
-          textAlign: TextAlign.center,
-        ),
-      ],
     );
   }
 }

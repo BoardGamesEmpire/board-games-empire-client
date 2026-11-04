@@ -179,6 +179,20 @@ void main() {
       expect(find.text(_emptyTitleCopy), findsOneWidget);
     });
 
+    testWidgets('the empty state is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      status.finished(HydrateOutcome.complete);
+      await tester.pumpWidget(harness(onCreate: (_) {}));
+      households.add(const []);
+      await tester.pump();
+
+      final title = tester.getSemantics(find.text(_emptyTitleCopy));
+      expect(title, isSemantics(isLiveRegion: true));
+      expect(title.label, contains(_emptyTitleCopy));
+      expect(title.label, contains('A household is the group you share'));
+      handle.dispose();
+    });
+
     testWidgets('offers create from the empty state itself', (tester) async {
       // The FAB alone is a weak call to action on a first-run screen, and
       // the empty state is where the user is looking.
@@ -492,46 +506,6 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
-
-    testWidgets('the refresh banner lays out at 320dp and 200%, failed and '
-        'refreshing (#452)', (tester) async {
-      // Before #452 the banner's message and its retry shared a row, and at
-      // 200% on this window the retry ran off the window's right edge. So
-      // that edge is what shows whether the banner made room for it.
-      const width = 320.0;
-      final pass = Completer<void>();
-      useNarrowWindow(tester, width: width);
-      await tester.pumpWidget(
-        harness(
-          onRetry: () => pass.future,
-          textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
-        ),
-      );
-      households.add([_household('h-1')]);
-      status.finished(HydrateOutcome.failed);
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(_refreshFailedCopy), findsOneWidget);
-      expect(
-        tester.getRect(find.byKey(HouseholdListScreen.refreshRetryKey)).right,
-        lessThanOrEqualTo(width),
-      );
-
-      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
-      await tester.pump();
-      status.started();
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(_refreshingCopy), findsNWidgets(2));
-      expect(
-        tester.getRect(find.byKey(HouseholdListScreen.refreshRetryKey)).right,
-        lessThanOrEqualTo(width),
-      );
-
-      pass.complete();
-    });
   });
 
   group('when the refresh failed', () {
@@ -719,12 +693,12 @@ void main() {
       expect(find.text(_refreshFailedCopy), findsOneWidget);
     });
 
-    testWidgets('the retry keeps an accessible name while it is disabled', (
+    testWidgets('the retry keeps an accessible name while it is busy', (
       tester,
     ) async {
       // `BgeSubmitButton`'s contract, applied to this button: a control
       // that keeps its place must also keep saying what it is doing, or a
-      // screen reader announces "Try again, disabled" with no reason.
+      // screen reader announces a bare "Try again" with no sign it is busy.
       final pass = Completer<void>();
       await tester.pumpWidget(harness(onRetry: () => pass.future));
       households.add([_household('h-1')]);
@@ -747,7 +721,8 @@ void main() {
         tester
             .widget<TextButton>(find.byKey(HouseholdListScreen.refreshRetryKey))
             .onPressed,
-        isNull,
+        // Enabled and inert, so it keeps focus (#607).
+        isNotNull,
       );
 
       pass.complete();

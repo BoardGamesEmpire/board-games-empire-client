@@ -15,8 +15,17 @@
 /// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
-/// its events (#615, #669), and `BgeFocusRing` by the game covers and the event
-/// cards on them (#669).
+/// its events (#615, #669), `BgeFocusRing` by the game covers and the event
+/// cards on them (#669), `BgeRefreshBanner` by the 7 stale-data banners, on
+/// 3 lists, 2 detail screens, the home events section and the catalog's
+/// from-cache screens (#573, #607), `BgeInertButton` by the 4 buttons that
+/// keep focus while they can do nothing (#607), and
+/// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
+/// empty and denied surfaces of the feature screens, at 22, 23 and 38 call
+/// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
+/// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
+/// are on the controls that write straight to the server, at 14, 6, 4, 3 and
+/// 4 call sites in `lib/` (#49).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -28,8 +37,15 @@
 library;
 
 export 'src/banners/bge_inline_banner.dart';
+export 'src/banners/bge_offline_strip.dart';
+export 'src/banners/bge_refresh_banner.dart';
 export 'src/banners/unverified_session_banner.dart';
+export 'src/buttons/bge_inert_button.dart';
 export 'src/buttons/bge_submit_button.dart';
+export 'src/connectivity/bge_connectivity_scope.dart';
+export 'src/connectivity/bge_online_only.dart';
+export 'src/connectivity/bge_online_only_menu.dart';
+export 'src/connectivity/bge_online_only_popup_menu_item.dart';
 export 'src/focus/bge_focus_ring.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
@@ -40,4 +56,7 @@ export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/routes/read_again_when_uncovered.dart';
+export 'src/states/bge_empty_state.dart';
 export 'src/states/bge_error_state.dart';
+export 'src/states/bge_loading_state.dart';
+export 'src/states/bge_state_sliver.dart';

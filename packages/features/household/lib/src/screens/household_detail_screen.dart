@@ -20,7 +20,6 @@ import '../bloc/household_member_actions_event.dart';
 import '../bloc/household_member_actions_state.dart';
 import '../members/member_action_message.dart';
 import '../permissions/household_actions.dart';
-import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
 
@@ -337,7 +336,10 @@ class _HouseholdDetailView extends StatelessWidget {
         return switch (state) {
           HouseholdDetailLoading() => _MessagePage(
             title: l10n.householdListTitle,
-            child: _Loading(message: l10n.householdDetailLoading),
+            child: BgeLoadingState(
+              key: HouseholdDetailScreen.loadingKey,
+              label: l10n.householdDetailLoading,
+            ),
           ),
           HouseholdDetailError() => _MessagePage(
             title: l10n.householdListTitle,
@@ -726,6 +728,14 @@ class _MemberRow extends StatelessWidget {
 }
 
 /// A member's menu: change their role, remove them, or both (#480).
+///
+/// While a request for the member is on its way the button stays **enabled
+/// and inert** rather than disabled: `ButtonStyleButton` passes
+/// `canRequestFocus: enabled`, so a disabled button drops focus and a
+/// keyboard or screen-reader user loses their place when they confirm an
+/// action (#607). Staying enabled takes away the greyed look that was its
+/// only busy cue, so it shows a spinner instead of the icon and its
+/// accessible name says what is happening.
 class _MemberMenu extends StatelessWidget {
   const _MemberMenu({
     required this.member,
@@ -743,51 +753,64 @@ class _MemberMenu extends StatelessWidget {
   final List<HouseholdRole> roles;
 
   /// A request for this member is on its way. The menu stays shut until it
-  /// answers.
+  /// answers, and the button stays enabled so it keeps focus (#607).
   final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
     final name = member.name;
+    final actionsLabel = name == null
+        ? l10n.householdMemberActions
+        : l10n.householdMemberActionsFor(name);
+    final busyLabel = name == null
+        ? l10n.householdMemberBusy
+        : l10n.householdMemberBusyFor(name);
+    // Both items are direct writes, so they wait for a connection (#49). The
+    // button stays enabled, so the menu can be opened to read why.
+    final online = !BgeConnectivityScope.offlineOf(context);
 
-    return MenuAnchor(
-      // Left unconstrained, the panel sits in a hard-clipped box as wide as
-      // its widest entry, which at 2.0 text runs past a phone's edge. Held
-      // to the screen, the entries wrap instead.
-      crossAxisUnconstrained: false,
-      menuChildren: [
-        if (actions.contains(HouseholdMemberAction.changeRole))
-          MenuItemButton(
-            key: HouseholdDetailScreen.changeRoleKey,
-            overflowAxis: Axis.vertical,
-            onPressed: () => unawaited(_changeRole(context)),
-            child: Text(l10n.householdMemberChangeRole),
-          ),
-        if (actions.contains(HouseholdMemberAction.remove))
-          MenuItemButton(
-            key: HouseholdDetailScreen.removeKey,
-            overflowAxis: Axis.vertical,
-            onPressed: () => unawaited(_remove(context)),
-            child: Text(l10n.householdMemberRemove),
-          ),
-      ],
-      builder: (context, controller, _) => MergeSemantics(
-        child: Semantics(
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          if (actions.contains(HouseholdMemberAction.changeRole))
+            MenuItemButton(
+              key: HouseholdDetailScreen.changeRoleKey,
+              overflowAxis: Axis.vertical,
+              onPressed: online ? () => unawaited(_changeRole(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.householdMemberChangeRole),
+            ),
+          if (actions.contains(HouseholdMemberAction.remove))
+            MenuItemButton(
+              key: HouseholdDetailScreen.removeKey,
+              overflowAxis: Axis.vertical,
+              onPressed: online ? () => unawaited(_remove(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.householdMemberRemove),
+            ),
+        ],
+        builder: (context, controller, _) => BgeInertButton(
+          // Inert while busy, so it keeps focus through a write (#607). The
+          // name is a label because VoiceOver skips a node named only by its
+          // tooltip.
+          inert: busy,
+          label: busy ? busyLabel : actionsLabel,
           expanded: controller.isOpen,
-          child: IconButton(
+          onPressed: controller.isOpen ? controller.close : controller.open,
+          builder: (context, focusNode, onPressed) => IconButton(
             key: HouseholdDetailScreen.memberActionsKey(member.userId),
-            icon: const Icon(Icons.more_vert),
-            // Every row has one, so the name says whose it is to a screen
-            // reader moving from button to button.
-            tooltip: name == null
-                ? l10n.householdMemberActions
-                : l10n.householdMemberActionsFor(name),
-            onPressed: busy
-                ? null
-                : controller.isOpen
-                ? controller.close
-                : controller.open,
+            focusNode: focusNode,
+            icon: busy
+                ? const _MemberMenuSpinner()
+                : const Icon(Icons.more_vert),
+            // Every row has one, so the name says whose it is to a pointer
+            // user hovering one after another.
+            tooltip: busy ? busyLabel : actionsLabel,
+            onPressed: onPressed,
           ),
         ),
       ),
@@ -844,6 +867,21 @@ class _MemberMenu extends StatelessWidget {
     );
     return confirmed ?? false;
   }
+}
+
+/// The member menu's busy icon: a spinner the size of the icon it replaces,
+/// silent to a screen reader because the button's label says what is running
+/// (#607).
+class _MemberMenuSpinner extends StatelessWidget {
+  const _MemberMenuSpinner();
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: SizedBox.square(
+      dimension: IconTheme.of(context).size,
+      child: const CircularProgressIndicator(strokeWidth: 2),
+    ),
+  );
 }
 
 /// Picks a member's new role from the ones the viewer may give (#480), and
@@ -1097,10 +1135,12 @@ Widget _refreshBanner(
   bool refreshing = false,
 }) {
   final l10n = HouseholdLocalizations.of(context);
-  return HouseholdRefreshBanner(
+  return BgeRefreshBanner(
     key: HouseholdDetailScreen.refreshBannerKey,
     retryKey: HouseholdDetailScreen.refreshRetryKey,
     failedMessage: l10n.householdDetailRefreshFailed,
+    inProgressLabel: l10n.householdRefreshInProgress,
+    retryLabel: l10n.householdRefreshRetry,
     refreshing: refreshing,
     onRetry: canRetry
         ? () => context.read<HouseholdDetailBloc>().add(
@@ -1123,23 +1163,5 @@ class _MessagePage extends StatelessWidget {
     width: BgePageWidth.pane,
     centerVertically: true,
     child: child,
-  );
-}
-
-class _Loading extends StatelessWidget {
-  const _Loading({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    key: HouseholdDetailScreen.loadingKey,
-    child: Semantics(
-      liveRegion: true,
-      label: message,
-      // The label carries the announcement; the spinner has nothing to say
-      // to a screen reader.
-      child: const ExcludeSemantics(child: CircularProgressIndicator()),
-    ),
   );
 }

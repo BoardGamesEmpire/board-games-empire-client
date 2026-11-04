@@ -151,6 +151,25 @@ void main() {
     expect(find.byType(EditHouseholdForm), findsOneWidget);
   });
 
+  testWidgets('the edit-household loading state is labelled', (tester) async {
+    final handle = tester.ensureSemantics();
+    final read = Completer<Household?>();
+    when(() => repository.getHousehold(_id)).thenAnswer((_) => read.future);
+
+    await tester.pumpWidget(harness());
+    await tester.pump();
+
+    expect(
+      tester.getSemantics(
+        find.bySemanticsLabel('Loading this household\u{2026}'),
+      ),
+      isSemantics(isLiveRegion: true, label: 'Loading this household\u{2026}'),
+    );
+    handle.dispose();
+    read.complete(_household());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('an owner gets the form', (tester) async {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();

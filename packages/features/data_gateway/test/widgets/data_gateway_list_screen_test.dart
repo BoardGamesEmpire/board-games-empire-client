@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,6 +12,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 
 void main() {
@@ -45,16 +47,20 @@ void main() {
     void Function(BuildContext context, String id)? onEdit,
     void Function(BuildContext context, String id)? onOpen,
     TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
   }) async {
+    Widget scaled(BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
         localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
         supportedLocales: DataGatewayLocalizations.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
+        builder: offline == null
+            ? scaled
+            : connectivityBuilder(offline, inner: scaled),
         home: DataGatewayListScreen(
           remote: remote,
           access: access,
@@ -968,4 +974,165 @@ void main() {
       expect(find.byKey(DataGatewayListScreen.editKey), findsOneWidget);
     });
   }
+
+  group('offline (#49)', () {
+    late ValueNotifier<bool> offline;
+
+    setUp(() => offline = ValueNotifier(true));
+
+    /// Whether the popup item under [entry] is enabled.
+    bool itemEnabled(WidgetTester tester, Finder entry) => tester
+        .widget<PopupMenuItem<dynamic>>(
+          find.descendant(
+            of: entry,
+            matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
+          ),
+        )
+        .enabled;
+
+    tearDown(() => offline.dispose());
+
+    Future<void> open(WidgetTester tester, String id) async {
+      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey(id)));
+      await tester.pumpAndSettle();
+    }
+
+    /// A popup menu item's one node: both lines in its label, a button that
+    /// is not enabled, with no actions.
+    Matcher gatedItem(String label) => matchesSemantics(
+      label: '$label\n$onlineOnlyCopy',
+      isButton: true,
+      hasEnabledState: true,
+    );
+
+    testWidgets('Connect, Disconnect and Delete are disabled and say why', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, offline: offline);
+
+      // BGG is enabled, so it offers Disconnect as well.
+      await open(tester, 'dg_1');
+      for (final (key, label) in [
+        (DataGatewayListScreen.connectKey, 'Connect'),
+        (DataGatewayListScreen.disconnectKey, 'Disconnect'),
+        (DataGatewayListScreen.deleteKey, 'Delete'),
+      ]) {
+        final item = find.byKey(key);
+        expect(itemEnabled(tester, item), isFalse);
+        expect(tester.getSemantics(item), gatedItem(label), reason: label);
+      }
+      // Edit writes nothing here: it opens the form.
+      expect(
+        tester
+            .widget<PopupMenuItem<Object?>>(
+              find.byKey(DataGatewayListScreen.editKey),
+            )
+            .enabled,
+        isTrue,
+      );
+      expect(find.text(onlineOnlyCopy), findsNWidgets(3));
+      // The anchor stays enabled, so the menu can be opened to read this.
+      expect(
+        tester
+            .widget<PopupMenuButton<Object?>>(
+              find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')),
+            )
+            .enabled,
+        isTrue,
+      );
+
+      await tester.tap(
+        find.byKey(DataGatewayListScreen.deleteKey),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(DataGatewayListScreen.deleteConfirmKey), findsNothing);
+      expect(remote.calls.where((c) => c.startsWith('delete')), isEmpty);
+      handle.dispose();
+    });
+
+    testWidgets('online, the same menu is enabled and unannotated', (
+      tester,
+    ) async {
+      offline.value = false;
+      remote.listing([bgg]);
+      await pumpScreen(tester, offline: offline);
+
+      await open(tester, 'dg_1');
+
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      for (final key in [
+        DataGatewayListScreen.connectKey,
+        DataGatewayListScreen.disconnectKey,
+        DataGatewayListScreen.deleteKey,
+      ]) {
+        expect(itemEnabled(tester, find.byKey(key)), isTrue);
+      }
+    });
+
+    testWidgets('a menu open when the connection drops goes disabled and says '
+        'why, and a press does nothing', (tester) async {
+      final handle = tester.ensureSemantics();
+      offline.value = false;
+      remote.listing([bgg]);
+      await pumpScreen(tester, offline: offline);
+      await open(tester, 'dg_1');
+
+      offline.value = true;
+      await tester.pump();
+      await tester.pump();
+
+      for (final (key, label) in [
+        (DataGatewayListScreen.connectKey, 'Connect'),
+        (DataGatewayListScreen.disconnectKey, 'Disconnect'),
+        (DataGatewayListScreen.deleteKey, 'Delete'),
+      ]) {
+        expect(
+          tester.getSemantics(find.byKey(key)),
+          gatedItem(label),
+          reason: label,
+        );
+      }
+      await tester.tap(
+        find.byKey(DataGatewayListScreen.connectKey),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.where((c) => c.startsWith('connect')), isEmpty);
+      handle.dispose();
+    });
+
+    testWidgets('a menu open when the connection returns goes enabled, loses '
+        'the reason, and a press selects', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.listing([bgg]);
+      remote.onConnect = (_) async => changed(bgg);
+      await pumpScreen(tester, offline: offline);
+      await open(tester, 'dg_1');
+      expect(find.text(onlineOnlyCopy), findsNWidgets(3));
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(find.text(onlineOnlyCopy), findsNothing);
+      expect(
+        tester.getSemantics(find.byKey(DataGatewayListScreen.connectKey)),
+        matchesSemantics(
+          label: 'Connect',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+      await tester.tap(find.byKey(DataGatewayListScreen.connectKey));
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.where((c) => c.startsWith('connect')), hasLength(1));
+      handle.dispose();
+    });
+  });
 }

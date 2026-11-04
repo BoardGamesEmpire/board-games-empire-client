@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -54,6 +56,7 @@ const _refreshFailedCopy = "This may be out of date — we couldn't refresh it."
 const _retryCopy = 'Try again';
 const _refreshingCopy = 'Refreshing\u2026';
 const _errorCopy = "We couldn't open this household.";
+const _onlineOnlyCopy = "Available when you're online";
 const _unknownRoleCopy = "A role this app doesn't recognise";
 
 /// Pins the #270 detail screen against a mocked repository and hand-driven
@@ -105,14 +108,30 @@ void main() {
     void Function(BuildContext context, String householdId)? onNewEvent,
     HouseholdMemberRemoteDataSource? members,
     Future<void> Function()? onMembershipChanged,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: (context, child) {
+      final app = MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+      if (offline == null) return app;
+      // As the shell hosts it, above the navigator, so menus and dialogs
+      // read it too.
+      return ValueListenableBuilder<bool>(
+        valueListenable: offline,
+        child: app,
+        builder: (context, isOffline, app) => BgeConnectivityScope(
+          offline: isOffline,
+          noticeShowing: isOffline,
+          onlineOnlyReason: _onlineOnlyCopy,
+          child: app!,
+        ),
+      );
+    },
     home: HouseholdDetailScreen(
       householdId: householdId,
       repository: repository,
@@ -799,10 +818,11 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
     expect(find.text(_notFoundCopy), findsOneWidget);
-    // The banner's message and the disabled button's own label.
+    // The banner's message and the busy button's own label.
     expect(find.text(_refreshingCopy), findsNWidgets(2));
     final retry = find.byKey(HouseholdDetailScreen.refreshRetryKey);
-    expect(tester.widget<TextButton>(retry).onPressed, isNull);
+    // Enabled and inert, so it keeps focus (#607).
+    expect(tester.widget<TextButton>(retry).onPressed, isNotNull);
     // Both wholly on screen, not merely built somewhere down the scroll.
     const window = Rect.fromLTWH(0, 0, 320, 640);
     for (final finder in [retry, find.text(_refreshingCopy).first]) {
@@ -934,7 +954,7 @@ void main() {
         find.byKey(HouseholdDetailScreen.refreshBannerKey),
         findsOneWidget,
       );
-      // The banner's message and the disabled button's own label.
+      // The banner's message and the busy button's own label.
       expect(find.text(_refreshingCopy), findsNWidgets(2));
       expect(find.text(_refreshFailedCopy), findsNothing);
       expect(
@@ -943,7 +963,8 @@ void main() {
               find.byKey(HouseholdDetailScreen.refreshRetryKey),
             )
             .onPressed,
-        isNull,
+        // Enabled and inert, so it keeps focus (#607).
+        isNotNull,
       );
 
       pass.complete();
@@ -1490,6 +1511,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// [removeZed] against a request that has not answered. It cannot settle:
+    /// the busy button's spinner animates until the reply lands.
+    Future<void> removeZedPending(WidgetTester tester) async {
+      await choose(tester, 'u-2', HouseholdDetailScreen.removeKey);
+      await tester.tap(find.byKey(HouseholdDetailScreen.removeConfirmKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
     TextButton saveButton(WidgetTester tester) =>
         tester.widget(find.byKey(HouseholdDetailScreen.roleSaveKey));
 
@@ -1583,7 +1613,7 @@ void main() {
         final button = tester.semantics.find(menuOf('u-2'));
 
         // The row reads as the member's name and role alone. The button's
-        // name is its tooltip, so neither the label nor the tooltip of the
+        // name is its own label, so neither the label nor the tooltip of the
         // row's merged node may carry it.
         final merged = row.getSemanticsData();
         expect(merged.label, contains('Zed'));
@@ -1592,7 +1622,7 @@ void main() {
         // The button is a node beside it, a button named for whose menu it
         // opens.
         expect(button.id, isNot(row.id));
-        expect(button, isSemantics(tooltip: 'Actions for Zed', isButton: true));
+        expect(button, isSemantics(label: 'Actions for Zed', isButton: true));
       },
     );
 
@@ -1604,7 +1634,7 @@ void main() {
 
       expect(
         tester.semantics.find(menuOf('u-2')),
-        isSemantics(tooltip: 'Member actions', isButton: true),
+        isSemantics(label: 'Member actions', isButton: true),
       );
     });
 
@@ -1789,21 +1819,223 @@ void main() {
       expect(find.text('1 awaiting approval'), findsOneWidget);
     });
 
-    testWidgets("a busy member's menu is disabled", (tester) async {
+    FocusNode menuFocus(WidgetTester tester, String userId) =>
+        tester.widget<IconButton>(menuOf(userId)).focusNode!;
+
+    testWidgets("a busy member's menu is enabled but inert", (tester) async {
       final reply = Completer<HouseholdMember>();
       when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
       await tester.pumpWidget(withMembers());
       await settleAsOwner(tester);
 
-      await removeZed(tester);
+      await removeZedPending(tester);
 
-      expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNull);
+      // Enabled so it can hold focus (#607); a press does nothing.
+      expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
 
       reply.complete(_member('u-2'));
       await tester.pumpAndSettle();
 
       expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
     });
+
+    testWidgets('the member menu keeps focus while its write runs', (
+      tester,
+    ) async {
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await removeZedPending(tester);
+
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+    });
+
+    testWidgets('from the keyboard alone, focus is on the member menu while '
+        'its write runs and after', (tester) async {
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      Future<void> key(LogicalKeyboardKey k) async {
+        await tester.sendKeyEvent(k);
+        // A menu item's onPressed runs after the frame, so two pumps.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await key(LogicalKeyboardKey.enter);
+      // The first arrow lands on Change role, the second on Remove.
+      await key(LogicalKeyboardKey.arrowDown);
+      await key(LogicalKeyboardKey.arrowDown);
+      await key(LogicalKeyboardKey.enter);
+      expect(
+        find.byKey(HouseholdDetailScreen.removeConfirmKey),
+        findsOneWidget,
+      );
+      // The first Tab lands on Cancel, the second on the confirm button.
+      await key(LogicalKeyboardKey.tab);
+      await key(LogicalKeyboardKey.tab);
+      await key(LogicalKeyboardKey.enter);
+
+      expect(find.byKey(HouseholdDetailScreen.removeConfirmKey), findsNothing);
+      // The write is running: the menu shows its busy spinner.
+      expect(
+        find.descendant(
+          of: menuOf('u-2'),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+    });
+
+    testWidgets('Enter held through a member write opens nothing when the '
+        'write ends', (tester) async {
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await removeZedPending(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+      // Each repeat would open or close the menu.
+      for (var i = 0; i < 3; i++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.removeKey), findsNothing);
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+    });
+
+    testWidgets('a press on a busy member menu opens nothing', (tester) async {
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await removeZedPending(tester);
+
+      await tester.tap(menuOf('u-2'));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byKey(HouseholdDetailScreen.removeKey), findsNothing);
+      expect(menuFocus(tester, 'u-2').hasFocus, isTrue);
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a busy member menu reads as in progress, then as the '
+        'menu again', (tester) async {
+      final handle = tester.ensureSemantics();
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final restMatcher = matchesSemantics(
+        label: 'Actions for Zed',
+        isButton: true,
+        isFocusable: true,
+        isFocused: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasExpandedState: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+      );
+      final rest = tester.getSemantics(menuOf('u-2'));
+      expect(rest, restMatcher);
+
+      await removeZedPending(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final busy = tester.getSemantics(menuOf('u-2'));
+      expect(
+        busy,
+        matchesSemantics(
+          label: 'Updating Zed\u{2026}',
+          isButton: true,
+          isFocusable: true,
+          isFocused: true,
+          hasEnabledState: true,
+          hasExpandedState: true,
+          hasFocusAction: true,
+        ),
+      );
+      // One node through the write, so a screen reader's cursor stays put.
+      expect(busy.id, rest.id);
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+
+      final after = tester.getSemantics(menuOf('u-2'));
+      expect(after, restMatcher);
+      expect(after.id, rest.id);
+      handle.dispose();
+    });
+
+    testWidgets('on iOS the busy member menu offers no focus action', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+      menuFocus(tester, 'u-2').requestFocus();
+      await tester.pump();
+      await removeZedPending(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        tester.getSemantics(menuOf('u-2')),
+        matchesSemantics(
+          label: 'Updating Zed\u{2026}',
+          isButton: true,
+          isFocusable: true,
+          isFocused: true,
+          hasEnabledState: true,
+          hasExpandedState: true,
+        ),
+      );
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+      handle.dispose();
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
     testWidgets('a member already gone: a removal holds, so it reads as done; '
         'a role change did not happen, so it warns', (tester) async {
@@ -1850,6 +2082,79 @@ void main() {
         findsOneWidget,
       );
       expect(toneOf(tester), BgeBannerTone.error);
+    });
+
+    group('offline (#49)', () {
+      late ValueNotifier<bool> offline;
+
+      setUp(() => offline = ValueNotifier(true));
+
+      tearDown(() => offline.dispose());
+
+      Widget whileOffline() => harness(
+        members: remote,
+        onMembershipChanged: () async => refreshes++,
+        offline: offline,
+      );
+
+      testWidgets('Change role and Remove are disabled and say why', (
+        tester,
+      ) async {
+        await tester.pumpWidget(whileOffline());
+        await settleAsOwner(tester);
+
+        // The menu opens offline, so its items can be read.
+        await tester.tap(menuOf('u-2'));
+        await tester.pumpAndSettle();
+
+        for (final (key, label) in [
+          (HouseholdDetailScreen.changeRoleKey, 'Change role'),
+          (HouseholdDetailScreen.removeKey, 'Remove from household'),
+        ]) {
+          expect(
+            tester.widget<MenuItemButton>(find.byKey(key)).onPressed,
+            isNull,
+          );
+          expect(
+            tester.getSemantics(find.byKey(key)),
+            matchesSemantics(
+              label: '$label\n$_onlineOnlyCopy',
+              hasEnabledState: true,
+            ),
+          );
+        }
+
+        offline.value = false;
+        await tester.pumpAndSettle();
+
+        for (final key in [
+          HouseholdDetailScreen.changeRoleKey,
+          HouseholdDetailScreen.removeKey,
+        ]) {
+          expect(
+            tester.widget<MenuItemButton>(find.byKey(key)).onPressed,
+            isNotNull,
+          );
+        }
+        expect(find.text(_onlineOnlyCopy), findsNothing);
+      });
+
+      testWidgets('the menu button stays enabled, and a menu open as the '
+          'connection drops closes', (tester) async {
+        offline.value = false;
+        await tester.pumpWidget(whileOffline());
+        await settleAsOwner(tester);
+        await tester.tap(menuOf('u-2'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdDetailScreen.removeKey), findsOneWidget);
+
+        offline.value = true;
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(HouseholdDetailScreen.removeKey), findsNothing);
+        expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
+      });
     });
   });
 }

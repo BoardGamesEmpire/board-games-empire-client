@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
@@ -26,19 +28,37 @@ HouseholdInvite _sent(
   householdName: householdName,
 );
 
+const _onlineOnlyCopy = "Available when you're online";
+
 void main() {
   late FakeHouseholdInviteRemote remote;
 
   setUp(() => remote = FakeHouseholdInviteRemote());
 
-  Widget harness({TextScaler textScaler = TextScaler.noScaling}) => MaterialApp(
+  Widget harness({
+    TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
+  }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: (context, child) {
+      final app = MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+      if (offline == null) return app;
+      return ValueListenableBuilder<bool>(
+        valueListenable: offline,
+        child: app,
+        builder: (context, isOffline, app) => BgeConnectivityScope(
+          offline: isOffline,
+          noticeShowing: isOffline,
+          onlineOnlyReason: _onlineOnlyCopy,
+          child: app!,
+        ),
+      );
+    },
     home: SentInvitesScreen(remote: remote),
   );
 
@@ -109,6 +129,41 @@ void main() {
     expect(inRow('i_2', find.text('Awaiting approval')), findsOneWidget);
     expect(inRow('i_2', find.text('Expires Oct 26, 2026')), findsOneWidget);
     expect(inRow('i_1', find.text('Awaiting approval')), findsNothing);
+  });
+
+  testWidgets('Withdraw is disabled offline and says why, and the filter '
+      'button stays enabled', (tester) async {
+    final offline = ValueNotifier(true);
+    addTearDown(offline.dispose);
+    listing([_sent('i_1')]);
+    await tester.pumpWidget(harness(offline: offline));
+    await tester.pumpAndSettle();
+
+    final withdraw = find.byKey(SentInvitesScreen.withdrawKey('i_1'));
+    expect(tester.widget<ButtonStyleButton>(withdraw).onPressed, isNull);
+    expect(
+      tester.getSemantics(withdraw),
+      matchesSemantics(
+        label: 'Withdraw',
+        hint: _onlineOnlyCopy,
+        isButton: true,
+        hasEnabledState: true,
+      ),
+    );
+    expect(find.text(_onlineOnlyCopy), findsOneWidget);
+    // Choosing what to list is no write.
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(SentInvitesScreen.filterKey))
+          .onPressed,
+      isNotNull,
+    );
+
+    offline.value = false;
+    await tester.pumpAndSettle();
+
+    expect(find.text(_onlineOnlyCopy), findsNothing);
+    expect(tester.widget<ButtonStyleButton>(withdraw).onPressed, isNotNull);
   });
 
   testWidgets('an expired row offers no withdraw', (tester) async {

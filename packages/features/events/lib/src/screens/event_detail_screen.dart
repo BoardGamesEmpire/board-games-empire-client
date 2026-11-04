@@ -26,7 +26,6 @@ import '../widgets/event_date_dialogs.dart';
 import '../widgets/event_date_poll.dart';
 import '../widgets/event_detail_sections.dart';
 import '../widgets/event_labels.dart';
-import '../widgets/event_refresh_banner.dart';
 
 /// One event (#498): its header, its dates, who's coming and its games, read
 /// reactively from the local cache and from the server once per open.
@@ -572,10 +571,12 @@ class _ReadyPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (state.refreshFailed || state.refreshing) ...[
-            EventRefreshBanner(
+            BgeRefreshBanner(
               key: EventDetailScreen.refreshBannerKey,
               retryKey: EventDetailScreen.refreshRetryKey,
               failedMessage: l10n.eventsDetailRefreshFailed,
+              inProgressLabel: l10n.eventsRefreshInProgress,
+              retryLabel: l10n.eventsRefreshRetry,
               refreshing: state.refreshing,
               // No read while the delete is out or done: its answer could land
               // after the removal and cache the event again (#501).
@@ -651,28 +652,36 @@ class _ActionsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    // The delete is a direct write, so it waits for a connection (#49). The
+    // anchor button stays enabled, so the menu can be opened to read why.
+    final online = !BgeConnectivityScope.offlineOf(context);
 
-    return MenuAnchor(
-      // Left unconstrained, the panel sits in a hard-clipped box as wide as
-      // its widest entry, which at 2.0 text runs past a phone's edge. Held
-      // to the screen, the entries wrap instead.
-      crossAxisUnconstrained: false,
-      menuChildren: [
-        MenuItemButton(
-          key: EventDetailScreen.deleteKey,
-          overflowAxis: Axis.vertical,
-          onPressed: canDelete ? () => unawaited(_delete(context)) : null,
-          child: Text(l10n.eventsDetailDelete),
-        ),
-      ],
-      builder: (context, controller, _) => MergeSemantics(
-        child: Semantics(
-          expanded: controller.isOpen,
-          child: IconButton(
-            key: EventDetailScreen.moreActionsKey,
-            icon: const Icon(Icons.more_vert),
-            tooltip: l10n.eventsDetailMoreActions,
-            onPressed: controller.isOpen ? controller.close : controller.open,
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          MenuItemButton(
+            key: EventDetailScreen.deleteKey,
+            overflowAxis: Axis.vertical,
+            onPressed: canDelete && online
+                ? () => unawaited(_delete(context))
+                : null,
+            child: BgeOnlineOnlyLabel(l10n.eventsDetailDelete),
+          ),
+        ],
+        builder: (context, controller, _) => MergeSemantics(
+          child: Semantics(
+            expanded: controller.isOpen,
+            child: IconButton(
+              key: EventDetailScreen.moreActionsKey,
+              icon: const Icon(Icons.more_vert),
+              tooltip: l10n.eventsDetailMoreActions,
+              onPressed: controller.isOpen ? controller.close : controller.open,
+            ),
           ),
         ),
       ),
@@ -1181,13 +1190,9 @@ class _LoadingPage extends StatelessWidget {
 
     return _MessagePage(
       child: Center(
-        key: EventDetailScreen.loadingKey,
-        child: Semantics(
-          liveRegion: true,
+        child: BgeLoadingState(
+          key: EventDetailScreen.loadingKey,
           label: l10n.eventsDetailLoading,
-          // The label carries the announcement; the spinner has nothing to
-          // say to a screen reader.
-          child: const ExcludeSemantics(child: CircularProgressIndicator()),
         ),
       ),
     );

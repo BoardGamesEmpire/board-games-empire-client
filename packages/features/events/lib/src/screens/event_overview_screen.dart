@@ -419,35 +419,21 @@ class _EmptySliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    final theme = Theme.of(context);
     final create = onCreate;
 
-    return EventMessageSliver(
-      child: Column(
+    return BgeStateSliver(
+      child: BgeEmptyState(
         key: EventOverviewScreen.emptyKey,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            l10n.eventsEmptyTitle,
-            style: theme.textTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
-          const BgeGap.sm(),
-          Text(
-            l10n.eventsEmptyBody,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          if (create != null) ...[
-            const BgeGap.lg(),
-            FilledButton.icon(
-              key: EventOverviewScreen.emptyCreateKey,
-              onPressed: () => create(context),
-              icon: const Icon(Icons.add),
-              label: Text(l10n.eventsCreate),
-            ),
-          ],
-        ],
+        title: l10n.eventsEmptyTitle,
+        body: l10n.eventsEmptyBody,
+        action: create == null
+            ? null
+            : FilledButton.icon(
+                key: EventOverviewScreen.emptyCreateKey,
+                onPressed: () => create(context),
+                icon: const Icon(Icons.add),
+                label: Text(l10n.eventsCreate),
+              ),
       ),
     );
   }
