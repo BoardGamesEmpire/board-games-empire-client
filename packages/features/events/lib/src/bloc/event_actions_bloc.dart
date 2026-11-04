@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
@@ -129,6 +130,21 @@ typedef _Write = Future<void> Function();
 /// Closing works as for the delete: a request is sent, and an answer that
 /// lands once [close] has started is still written, but emits nothing.
 ///
+/// ### The event's status
+///
+/// Cancel, reopen, archive and unarchive (#502) run through the same runner
+/// as a date write, and end as one does: the same answers, the same read
+/// after. The returned row is the server's, the same for everyone who can
+/// read the event, so [EventRepository.cacheEventRow] writes it beside the
+/// cached dates, before the outcome, and not at all when the event isn't
+/// cached or the sync queue owns it. The outcome carries which
+/// [EventStatusWrite] it was.
+///
+/// A 400 is changed: the cached status was stale, since the screen offers
+/// only what the status allows. A cancel retried after its answer was lost
+/// is answered 200 with the event already cancelled and the first reason
+/// kept, so it is done and caches that row.
+///
 /// ### Cancel, then remove
 ///
 /// The server removes a Confirmed date only once it is cancelled (#446), so
@@ -211,6 +227,10 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     on<EventDateDeclineRequested>(_onDateDeclineRequested);
     on<EventDateCancelRequested>(_onDateCancelRequested);
     on<EventDateRemoveRequested>(_onDateRemoveRequested);
+    on<EventCancelRequested>(_onCancelRequested);
+    on<EventReopenRequested>(_onReopenRequested);
+    on<EventArchiveRequested>(_onArchiveRequested);
+    on<EventUnarchiveRequested>(_onUnarchiveRequested);
     on<EventActionOutcomeDismissed>(_onOutcomeDismissed);
   }
 
@@ -324,9 +344,9 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateAddRequested(
     EventDateAddRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
+  ) => _runWrite(
     emit,
-    () => _sendDate(
+    () => _sendWrite(
       EventAction.addDate,
       'Date add',
       () => _remote.addOccurrence(
@@ -341,9 +361,9 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateEditRequested(
     EventDateEditRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
+  ) => _runWrite(
     emit,
-    () => _sendDate(
+    () => _sendWrite(
       EventAction.editDate,
       'Date edit',
       () => _remote.updateOccurrence(
@@ -358,14 +378,14 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateConfirmRequested(
     EventDateConfirmRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(emit, () => _confirmThenDecline(event));
+  ) => _runWrite(emit, () => _confirmThenDecline(event));
 
   Future<void> _onDateDeclineRequested(
     EventDateDeclineRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
+  ) => _runWrite(
     emit,
-    () => _sendDate(
+    () => _sendWrite(
       EventAction.declineDate,
       'Date decline',
       () => _remote.declineOccurrence(event.eventId, event.occurrenceId),
@@ -376,9 +396,9 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateCancelRequested(
     EventDateCancelRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
+  ) => _runWrite(
     emit,
-    () => _sendDate(
+    () => _sendWrite(
       EventAction.cancelDate,
       'Date cancel',
       () => _remote.cancelOccurrence(
@@ -393,15 +413,77 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateRemoveRequested(
     EventDateRemoveRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
+  ) => _runWrite(
     emit,
     () => event.cancelFirst ? _cancelThenRemove(event) : _removeDate(event),
   );
 
-  /// Runs [write], which sends a date's requests and never throws, and
-  /// emits the outcome it answers. The busy check and closing work as for
-  /// the delete.
-  Future<void> _runDate(
+  Future<void> _onCancelRequested(
+    EventCancelRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendStatus(
+      EventStatusWrite.cancel,
+      'Event cancel',
+      () => _remote.cancelEvent(event.eventId, reason: event.reason),
+    ),
+  );
+
+  Future<void> _onReopenRequested(
+    EventReopenRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendStatus(
+      EventStatusWrite.reopen,
+      'Event reopen',
+      () => _remote.reopenEvent(event.eventId),
+    ),
+  );
+
+  Future<void> _onArchiveRequested(
+    EventArchiveRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendStatus(
+      EventStatusWrite.archive,
+      'Event archive',
+      () => _remote.archiveEvent(event.eventId),
+    ),
+  );
+
+  Future<void> _onUnarchiveRequested(
+    EventUnarchiveRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendStatus(
+      EventStatusWrite.unarchive,
+      'Event unarchive',
+      () => _remote.unarchiveEvent(event.eventId),
+    ),
+  );
+
+  /// Sends one status write with [send] and caches the row it answers.
+  Future<EventActionOutcome> _sendStatus(
+    EventStatusWrite write,
+    String request,
+    Future<Event> Function() send,
+  ) => _sendWrite(
+    write.action,
+    request,
+    send,
+    _repository.cacheEventRow,
+    statusWrite: write,
+  );
+
+  /// Runs [write], which sends a write's requests and never throws, and
+  /// emits the outcome it answers. A write is a date's (#506) or the
+  /// event's status (#502). The busy check and closing work as for the
+  /// delete.
+  Future<void> _runWrite(
     Emitter<EventActionsState> emit,
     Future<EventActionOutcome> Function() write,
   ) async {
@@ -421,7 +503,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<EventActionOutcome> _cancelThenRemove(
     EventDateRemoveRequested event,
   ) async {
-    final cancelled = await _sendDate(
+    final cancelled = await _sendWrite(
       EventAction.removeDate,
       'Date cancel before its remove',
       () => _remote.cancelOccurrence(
@@ -456,7 +538,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<EventActionOutcome> _confirmThenDecline(
     EventDateConfirmRequested event,
   ) async {
-    final confirmed = await _sendDate(
+    final confirmed = await _sendWrite(
       EventAction.confirmDate,
       'Date confirm',
       () => _remote.confirmOccurrence(event.eventId, event.occurrenceId),
@@ -469,7 +551,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     var missed = false;
     Object? firstError;
     for (final occurrenceId in event.decline) {
-      final declined = await _sendDate(
+      final declined = await _sendWrite(
         EventAction.declineDate,
         'Date decline after its confirm',
         () => _remote.declineOccurrence(event.eventId, occurrenceId),
@@ -498,7 +580,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
 
   /// Removes the date [event] names, as it stands. Never throws.
   Future<EventActionOutcome> _removeDate(EventDateRemoveRequested event) =>
-      _sendDate(
+      _sendWrite(
         EventAction.removeDate,
         'Date remove',
         () => _remote.removeOccurrence(event.eventId, event.occurrenceId),
@@ -508,17 +590,24 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         ),
       );
 
-  /// Sends one date write with [send], once the session says yes, and
-  /// writes what it answered to the cache with [cache]. Answers how it
-  /// ended, as [action], and logs it under [request]. Never throws.
-  Future<EventActionOutcome> _sendDate<T>(
+  /// Sends one write with [send], once the session says yes, and writes
+  /// what it answered to the cache with [cache]. Answers how it ended, as
+  /// [action], and logs it under [request]. A status write also names
+  /// itself as [statusWrite], for the outcome. Never throws.
+  Future<EventActionOutcome> _sendWrite<T>(
     EventAction action,
     String request,
     Future<T> Function() send,
-    Future<bool> Function(T answer) cache,
-  ) async {
+    Future<bool> Function(T answer) cache, {
+    EventStatusWrite? statusWrite,
+  }) async {
     EventActionOutcome ended(EventActionResult result, [Object? error]) =>
-        EventActionOutcome(action: action, result: result, error: error);
+        EventActionOutcome(
+          action: action,
+          result: result,
+          error: error,
+          statusWrite: statusWrite,
+        );
 
     if (!await _confirmed('$request not sent')) {
       return ended(EventActionResult.failed);
@@ -528,10 +617,13 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     try {
       answer = await send();
     } on EventWriteConflictException catch (error) {
-      _logger.info('$request refused for the date as it is now', error: error);
+      _logger.info(
+        '$request refused for the event or date as it is now',
+        error: error,
+      );
       return ended(EventActionResult.changed, error);
     } on EventRemoteNotFoundException catch (error) {
-      _logger.info('$request found the date or its event gone', error: error);
+      _logger.info('$request found its event or date gone', error: error);
       return ended(EventActionResult.gone, error);
     } on EventWriteRefusedException catch (error) {
       _logger.info('$request refused', error: error);
@@ -541,16 +633,19 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
       return ended(EventActionResult.failed, error);
     }
 
-    // Before the outcome, and without asking the session again: the date is
-    // the server's for everyone who can read the event (above).
-    await _cacheDate(request, () => cache(answer));
+    // Before the outcome, and without asking the session again: the answer
+    // is the server's for everyone who can read the event (above).
+    await _cacheAnswer(request, () => cache(answer));
     return ended(EventActionResult.done);
   }
 
-  /// Runs [write], the cache write a date write's answer calls for. One that
+  /// Runs [write], the cache write a write's answer calls for. One that
   /// declines or throws is logged, and the outcome stands: the server has
   /// answered.
-  Future<void> _cacheDate(String request, Future<bool> Function() write) async {
+  Future<void> _cacheAnswer(
+    String request,
+    Future<bool> Function() write,
+  ) async {
     try {
       if (!await write()) {
         _logger.info(

@@ -63,10 +63,10 @@ const _offline = EventRemoteTransientException('offline');
 const _rejected = EventRemotePermanentException('bad', statusCode: 400);
 const _conflict = EventWriteConflictException('moved', statusCode: 400);
 
-/// The actions on the event detail screen: the delete (#501) and the date
-/// writes (#506). Each is sent online, never queued, and reported as how it
-/// ended. The delete writes the cache after its outcome is out, and a date
-/// write before.
+/// The actions on the event detail screen: the delete (#501), the date
+/// writes (#506) and the event's status writes (#502). Each is sent online,
+/// never queued, and reported as how it ended. The delete writes the cache
+/// after its outcome is out, and a date write or a status write before.
 void main() {
   late _MockEventRepository repository;
   late _MockBgeLogger logger;
@@ -1457,5 +1457,224 @@ void main() {
         verifyWarnings(1);
       },
     );
+  });
+
+  group('status actions (#502)', () {
+    final base = item('e-1').event;
+
+    /// The event `e-1` as the server holds it with [status].
+    Event held(EventStatus status, {String? reason}) => base.copyWith(
+      status: status,
+      cancelReason: reason,
+      cancelledAt: status == EventStatus.cancelled
+          ? DateTime.utc(2026, 11, 4, 9)
+          : null,
+    );
+
+    setUpAll(() => registerFallbackValue(base));
+
+    setUp(() {
+      when(() => repository.cacheEventRow(any())).thenAnswer((_) async {
+        calls.add('cache');
+        return true;
+      });
+    });
+
+    /// A server whose status writes answer as [answer] does.
+    FakeEventRemote statusServing(
+      FutureOr<Event> Function(EventStatusRequest request) answer,
+    ) => FakeEventRemote.detail(
+      (_) => throw UnimplementedError('the actions read nothing'),
+      statusWritten: (request) {
+        calls.add(request.call);
+        return answer(request);
+      },
+    );
+
+    EventActionsState ended(
+      EventStatusWrite write,
+      EventActionResult result, {
+      Object? error,
+    }) => EventActionsState(
+      outcome: EventActionOutcome(
+        action: write.action,
+        result: result,
+        error: error,
+        statusWrite: write,
+      ),
+    );
+
+    final cases = <(String, EventActionsEvent, EventStatusWrite, EventStatus)>[
+      (
+        'cancel',
+        const EventCancelRequested('e-1'),
+        EventStatusWrite.cancel,
+        EventStatus.cancelled,
+      ),
+      (
+        'reopen',
+        const EventReopenRequested('e-1'),
+        EventStatusWrite.reopen,
+        EventStatus.planning,
+      ),
+      (
+        'archive',
+        const EventArchiveRequested('e-1'),
+        EventStatusWrite.archive,
+        EventStatus.archived,
+      ),
+      (
+        'unarchive',
+        const EventUnarchiveRequested('e-1'),
+        EventStatusWrite.unarchive,
+        EventStatus.completed,
+      ),
+    ];
+
+    test('a write names the action its grant belongs to', () {
+      expect(EventStatusWrite.cancel.action, EventAction.cancel);
+      expect(EventStatusWrite.reopen.action, EventAction.cancel);
+      expect(EventStatusWrite.archive.action, EventAction.archive);
+      expect(EventStatusWrite.unarchive.action, EventAction.archive);
+    });
+
+    for (final (name, request, write, status) in cases) {
+      group('a $name', () {
+        test(
+          'done caches the returned row, then the outcome rereads',
+          () async {
+            final returned = held(status);
+            final remote = statusServing((_) => returned);
+            final bloc = build(remote);
+            addTearDown(bloc.close);
+            bloc.stream.listen((s) {
+              if (s.outcome != null) calls.add('outcome');
+            });
+
+            bloc.add(request);
+            final state = await bloc.stream.firstWhere(
+              (s) => s.outcome != null,
+            );
+
+            expect(state, ended(write, EventActionResult.done));
+            expect(state.outcome!.rereads, isTrue);
+            expect(remote.statusRequests.single.call, name);
+            expect(remote.statusRequests.single.id, 'e-1');
+            verify(() => repository.cacheEventRow(returned)).called(1);
+            await pumpEventQueue();
+            expect(calls, [name, 'cache', 'outcome']);
+          },
+        );
+
+        test('a 400 ends changed and rereads', () async {
+          final bloc = build(statusServing((_) => throw _conflict));
+          addTearDown(bloc.close);
+
+          bloc.add(request);
+          final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(
+            state,
+            ended(write, EventActionResult.changed, error: _conflict),
+          );
+          expect(state.outcome!.rereads, isTrue);
+          verifyNever(() => repository.cacheEventRow(any()));
+        });
+
+        test('a 404 ends gone', () async {
+          final bloc = build(statusServing((_) => throw _gone));
+          addTearDown(bloc.close);
+
+          bloc.add(request);
+          final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(state, ended(write, EventActionResult.gone, error: _gone));
+          verifyNever(() => repository.cacheEventRow(any()));
+        });
+
+        test('a 403 envelope ends refused', () async {
+          final bloc = build(statusServing((_) => throw _refused));
+          addTearDown(bloc.close);
+
+          bloc.add(request);
+          final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(
+            state,
+            ended(write, EventActionResult.refused, error: _refused),
+          );
+          expect(state.outcome!.rereads, isTrue);
+        });
+
+        test("a transient failure ends failed and doesn't reread", () async {
+          final bloc = build(statusServing((_) => throw _offline));
+          addTearDown(bloc.close);
+
+          bloc.add(request);
+          final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(
+            state,
+            ended(write, EventActionResult.failed, error: _offline),
+          );
+          expect(state.outcome!.rereads, isFalse);
+        });
+
+        test('a second request while busy is dropped', () async {
+          final release = Completer<Event>();
+          final remote = statusServing((_) => release.future);
+          final bloc = build(remote);
+          addTearDown(bloc.close);
+
+          bloc
+            ..add(request)
+            ..add(const EventArchiveRequested('e-2'));
+          await pumpEventQueue();
+          expect(remote.statusRequests, hasLength(1));
+          release.complete(held(status));
+          await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(remote.statusRequests, hasLength(1));
+        });
+
+        test('a session that says no sends nothing and ends failed with no '
+            'error', () async {
+          final remote = statusServing((_) => held(status));
+          final bloc = build(remote, confirmSession: () async => false);
+          addTearDown(bloc.close);
+
+          bloc.add(request);
+          final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+          expect(state, ended(write, EventActionResult.failed));
+          expect(remote.statusRequests, isEmpty);
+          verifyNever(() => repository.cacheEventRow(any()));
+        });
+      });
+    }
+
+    test('a cancel sends its reason', () async {
+      final remote = statusServing((_) => held(EventStatus.cancelled));
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(const EventCancelRequested('e-1', reason: 'Rain'));
+      await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(remote.statusRequests.single.reason, 'Rain');
+    });
+
+    test('a cancel retried after a lost answer is done, and caches the first '
+        'reason', () async {
+      final first = held(EventStatus.cancelled, reason: 'first');
+      final bloc = build(statusServing((_) => first));
+      addTearDown(bloc.close);
+
+      bloc.add(const EventCancelRequested('e-1', reason: 'second'));
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(state, ended(EventStatusWrite.cancel, EventActionResult.done));
+      verify(() => repository.cacheEventRow(first)).called(1);
+    });
   });
 }
