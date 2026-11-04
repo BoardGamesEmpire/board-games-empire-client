@@ -312,6 +312,10 @@
   "@shellUnverifiedSessionDismiss": {
     "description": "Tooltip and accessibility label for the control that hides the unverified-session banner until the next offline episode (#98)"
   },
+  "shellInviteSendLoading": "Loading the invite form\u2026",
+  "@shellInviteSendLoading": {
+    "description": "Announced and shown while the send-invite form works out who is looking, from the household's cached members, before it can show the form or the not-allowed note."
+  },
   "shellDatabaseRecoveredTitle": "Reloading server data",
   "@shellDatabaseRecoveredTitle": {
     "description": "Title of the notice shown once after startup when the data saved on this device for one or more servers could not be opened and was rebuilt empty (#428). Also the name assistive technology announces for the notice. Must not read as the user's fault."

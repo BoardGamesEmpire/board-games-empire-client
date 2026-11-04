@@ -360,6 +360,29 @@ void main() {
     );
   });
 
+  testWidgets("the send-invite resolver's spinner is labelled", (tester) async {
+    final handle = tester.ensureSemantics();
+    final role = Completer<HouseholdMember?>();
+    final router = await pumpApp(
+      tester,
+      stub: (repository) {
+        when(() => repository.getCurrentUserMember('hh_a'))
+            .thenAnswer((_) => role.future);
+      },
+    );
+
+    router.go(AppRoutes.householdInviteSendOf('hh_a'));
+    // The spinner never settles, so pump instead.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      tester.getSemantics(find.byType(CircularProgressIndicator)),
+      isSemantics(label: 'Loading the invite form\u{2026}', isLiveRegion: true),
+    );
+    handle.dispose();
+  });
+
   testWidgets('a send form opened before the cache knows who is looking '
       'opens once it does', (tester) async {
     final roster = StreamController<List<HouseholdMember>>.broadcast();

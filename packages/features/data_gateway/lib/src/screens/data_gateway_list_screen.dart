@@ -13,7 +13,6 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import '../bloc/data_gateway_list_bloc.dart';
 import '../bloc/data_gateway_list_event.dart';
 import '../bloc/data_gateway_list_state.dart';
-import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
 import '../widgets/focus_is_free.dart';
 
@@ -352,44 +351,38 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
                   ),
                 ),
               switch (state) {
-                DataGatewayListLoading() => _LoadingSliver(
-                  message: l10n.dataGatewayListLoading,
-                ),
-                DataGatewayListDenied() => SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: DataGatewayMessage(
-                      key: DataGatewayListScreen.deniedKey,
-                      icon: Icons.lock_outline,
-                      title: l10n.dataGatewayDeniedTitle,
-                      body: l10n.dataGatewayDeniedBody,
-                    ),
+                DataGatewayListLoading() => BgeStateSliver(
+                  child: BgeLoadingState(
+                    key: DataGatewayListScreen.loadingKey,
+                    label: l10n.dataGatewayListLoading,
                   ),
                 ),
-                DataGatewayListFailed() => SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: BgeErrorState(
-                      key: DataGatewayListScreen.errorKey,
-                      icon: Icons.cloud_off_outlined,
-                      title: l10n.dataGatewayListErrorTitle,
-                      body: l10n.dataGatewayListErrorBody,
-                      retryLabel: l10n.dataGatewayRetry,
-                      onRetry: () => context.read<DataGatewayListBloc>().add(
-                        const DataGatewayListLoadRequested(),
-                      ),
+                DataGatewayListDenied() => BgeStateSliver(
+                  child: BgeEmptyState(
+                    key: DataGatewayListScreen.deniedKey,
+                    icon: Icons.lock_outline,
+                    title: l10n.dataGatewayDeniedTitle,
+                    body: l10n.dataGatewayDeniedBody,
+                  ),
+                ),
+                DataGatewayListFailed() => BgeStateSliver(
+                  child: BgeErrorState(
+                    key: DataGatewayListScreen.errorKey,
+                    icon: Icons.cloud_off_outlined,
+                    title: l10n.dataGatewayListErrorTitle,
+                    body: l10n.dataGatewayListErrorBody,
+                    retryLabel: l10n.dataGatewayRetry,
+                    onRetry: () => context.read<DataGatewayListBloc>().add(
+                      const DataGatewayListLoadRequested(),
                     ),
                   ),
                 ),
                 DataGatewayListReady(:final gateways) when gateways.isEmpty =>
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: DataGatewayMessage(
-                        key: DataGatewayListScreen.emptyKey,
-                        title: l10n.dataGatewayListEmptyTitle,
-                        body: l10n.dataGatewayListEmptyBody,
-                      ),
+                  BgeStateSliver(
+                    child: BgeEmptyState(
+                      key: DataGatewayListScreen.emptyKey,
+                      title: l10n.dataGatewayListEmptyTitle,
+                      body: l10n.dataGatewayListEmptyBody,
                     ),
                   ),
                 DataGatewayListReady(:final gateways, :final busy) =>
@@ -693,23 +686,4 @@ class _OutcomeBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LoadingSliver extends StatelessWidget {
-  const _LoadingSliver({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      key: DataGatewayListScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
 }

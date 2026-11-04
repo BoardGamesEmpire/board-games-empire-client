@@ -686,10 +686,8 @@ class _LoadingSliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SliverToBoxAdapter(
     child: Center(
-      child: Semantics(
-        liveRegion: true,
+      child: BgeLoadingState(
         label: DataGatewayLocalizations.of(context).dataGatewayWorklistLoading,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
       ),
     ),
   );
@@ -756,17 +754,13 @@ class _EmptySliver extends StatelessWidget {
     final l10n = DataGatewayLocalizations.of(context);
 
     return SliverToBoxAdapter(
-      child: MergeSemantics(
+      child: BgeEmptyState(
         key: LanguageLinkWorklist.emptyKey,
-        child: Semantics(
-          liveRegion: true,
-          child: Text(switch (filter) {
-            LanguageLinkFilter.waiting => l10n.dataGatewayWorklistEmptyWaiting,
-            LanguageLinkFilter.ignored => l10n.dataGatewayWorklistEmptyIgnored,
-            LanguageLinkFilter.resolved =>
-              l10n.dataGatewayWorklistEmptyResolved,
-          }),
-        ),
+        title: switch (filter) {
+          LanguageLinkFilter.waiting => l10n.dataGatewayWorklistEmptyWaiting,
+          LanguageLinkFilter.ignored => l10n.dataGatewayWorklistEmptyIgnored,
+          LanguageLinkFilter.resolved => l10n.dataGatewayWorklistEmptyResolved,
+        },
       ),
     );
   }

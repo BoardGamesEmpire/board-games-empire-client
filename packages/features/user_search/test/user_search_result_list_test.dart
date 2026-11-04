@@ -82,6 +82,18 @@ void main() {
     expect(find.byType(ListTile), findsNothing);
   });
 
+  testWidgets('the user-search progress is labelled', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpList(tester, const UserSearchLoading());
+
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byType(LinearProgressIndicator)),
+      isSemantics(label: 'Searching\u{2026}', isLiveRegion: true),
+    );
+    handle.dispose();
+  });
+
   testWidgets('no match says No one found.', (tester) async {
     await pumpList(tester, const UserSearchResults([]));
 

@@ -299,22 +299,23 @@ class _GameSearchPageState extends State<_GameSearchPage> {
 
     return switch (state) {
       GameSearchIdle() => [
-        CatalogMessageSliver(
-          child: Text(
-            l10n.catalogSearchIdle,
+        BgeStateSliver(
+          child: BgeEmptyState(
             key: GameSearchScreen.idleKey,
-            textAlign: TextAlign.center,
+            title: l10n.catalogSearchIdle,
           ),
         ),
       ],
       GameSearchLoading() => [
-        CatalogLoadingSliver(
-          key: GameSearchScreen.loadingKey,
-          message: l10n.catalogSearchLoading,
+        BgeStateSliver(
+          child: BgeLoadingState(
+            key: GameSearchScreen.loadingKey,
+            label: l10n.catalogSearchLoading,
+          ),
         ),
       ],
       GameSearchFailed() => [
-        CatalogMessageSliver(
+        BgeStateSliver(
           child: CatalogErrorState(
             key: GameSearchScreen.errorKey,
             title: l10n.catalogSearchFailedTitle,
@@ -324,7 +325,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         ),
       ],
       GameSearchDenied() => [
-        CatalogMessageSliver(
+        BgeStateSliver(
           child: CatalogErrorState(
             key: GameSearchScreen.deniedKey,
             icon: Icons.lock_outline,
@@ -375,9 +376,9 @@ class _GameSearchPageState extends State<_GameSearchPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.only(top: tokens.spaceMd),
-              child: Text(
-                l10n.catalogSearchNoResults(ready.query),
+              child: BgeEmptyState(
                 key: GameSearchScreen.noResultsKey,
+                title: l10n.catalogSearchNoResults(ready.query),
               ),
             ),
           ),

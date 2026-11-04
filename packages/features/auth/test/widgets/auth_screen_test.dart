@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:auth/l10n/auth_localizations.dart';
@@ -117,6 +118,23 @@ void main() {
           find.textContaining('no authentication methods configured'),
           findsOneWidget,
         );
+        expect(find.byType(BgeEmptyState), findsOneWidget);
+      });
+
+      testWidgets('announces the no-strategies message as a live region', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _wrap(_screen(testServerIdentity(hasEmailPassword: false)), mockBloc),
+        );
+
+        final node = tester.getSemantics(
+          find.textContaining('no authentication methods configured'),
+        );
+        expect(node.flagsCollection.isLiveRegion, isTrue);
+        expect(node.label, contains('no authentication methods configured'));
+        handle.dispose();
       });
     });
 

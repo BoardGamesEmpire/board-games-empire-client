@@ -16,7 +16,10 @@
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
-/// cards on them (#669), and `BgeRefreshBanner` by all 3 cached lists (#573).
+/// cards on them (#669), `BgeRefreshBanner` by all 3 cached lists (#573), and
+/// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
+/// empty and denied surfaces of the feature screens, at 21, 20 and 31 call
+/// sites in `lib/` (#49).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their

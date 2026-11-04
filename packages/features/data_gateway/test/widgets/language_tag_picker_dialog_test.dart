@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_data_gateway_remote.dart';
@@ -386,6 +387,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(emptyText, findsOneWidget);
+      expect(tester.widget(emptyText), isA<BgeEmptyState>());
       expect(find.text('No languages match'), findsOneWidget);
       expect(moreButton, findsNothing);
       expect(retryButton, findsNothing);

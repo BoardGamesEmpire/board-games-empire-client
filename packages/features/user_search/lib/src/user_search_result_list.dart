@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 
 import 'package:user_search/l10n/user_search_localizations.dart';
 
@@ -48,14 +49,17 @@ class UserSearchResultList extends StatelessWidget {
     return BlocBuilder<UserSearchBloc, UserSearchState>(
       builder: (context, state) => switch (state) {
         UserSearchIdle() => const SizedBox.shrink(),
-        UserSearchLoading() => const LinearProgressIndicator(),
+        UserSearchLoading() => Semantics(
+          liveRegion: true,
+          label: l10n.userSearchLoading,
+          child: const ExcludeSemantics(child: LinearProgressIndicator()),
+        ),
         UserSearchFailed() => Text(
           l10n.userSearchFailed,
           style: theme.textTheme.bodyMedium,
         ),
-        UserSearchResults(:final users) when users.isEmpty => Text(
-          l10n.userSearchEmpty,
-          style: theme.textTheme.bodyMedium,
+        UserSearchResults(:final users) when users.isEmpty => BgeEmptyState(
+          title: l10n.userSearchEmpty,
         ),
         UserSearchResults(:final users) => Column(
           mainAxisSize: MainAxisSize.min,

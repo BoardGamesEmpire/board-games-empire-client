@@ -20,6 +20,10 @@ dependencies:
   observability:
     path: ../../core/observability
 
+  # The shared empty state (#49).
+  ui:
+    path: ../../ui/widgets
+
   flutter_bloc: ^9.1.1
   # restartable() for user search (#455): a newer query replaces the one
   # still waiting out its debounce.

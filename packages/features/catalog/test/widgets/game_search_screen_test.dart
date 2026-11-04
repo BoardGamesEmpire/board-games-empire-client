@@ -147,6 +147,33 @@ void main() {
     expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
   });
 
+  testWidgets('search idle is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    await show(tester);
+
+    final message = tester.getSemantics(
+      find.text('Search this server and its data sources for a game.'),
+    );
+    expect(message, isSemantics(isLiveRegion: true));
+    expect(
+      message.label,
+      contains('Search this server and its data sources for a game.'),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('search no-results is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    remote.onSearch = (_, _) async => const GameSearchResults();
+    await show(tester);
+    await search(tester, 'zzz');
+
+    final message = tester.getSemantics(find.text('No games match “zzz”.'));
+    expect(message, isSemantics(isLiveRegion: true));
+    expect(message.label, contains('No games match “zzz”.'));
+    handle.dispose();
+  });
+
   testWidgets('shows this server first, then what data sources found', (
     tester,
   ) async {

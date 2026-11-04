@@ -16,7 +16,6 @@ import '../bloc/data_gateway_detail_state.dart';
 import '../bloc/language_link_list_bloc.dart';
 import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
-import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
 import '../widgets/focus_is_free.dart';
 import '../widgets/language_link_worklist.dart';
@@ -274,28 +273,22 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                       _LoadingSliver(message: l10n.dataGatewayDetailLoading),
                     ],
                     DataGatewayDetailDenied() => [
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: DataGatewayMessage(
-                            key: DataGatewayDetailScreen.deniedKey,
-                            icon: Icons.lock_outline,
-                            title: l10n.dataGatewayDeniedTitle,
-                            body: l10n.dataGatewayDeniedBody,
-                          ),
+                      BgeStateSliver(
+                        child: BgeEmptyState(
+                          key: DataGatewayDetailScreen.deniedKey,
+                          icon: Icons.lock_outline,
+                          title: l10n.dataGatewayDeniedTitle,
+                          body: l10n.dataGatewayDeniedBody,
                         ),
                       ),
                     ],
                     DataGatewayDetailGone() => [
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: DataGatewayMessage(
-                            key: DataGatewayDetailScreen.goneKey,
-                            icon: Icons.search_off_outlined,
-                            title: l10n.dataGatewayDetailGoneTitle,
-                            body: l10n.dataGatewayDetailGoneBody,
-                          ),
+                      BgeStateSliver(
+                        child: BgeEmptyState(
+                          key: DataGatewayDetailScreen.goneKey,
+                          icon: Icons.search_off_outlined,
+                          title: l10n.dataGatewayDetailGoneTitle,
+                          body: l10n.dataGatewayDetailGoneBody,
                         ),
                       ),
                     ],
@@ -1017,15 +1010,10 @@ class _LoadingSliver extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
+  Widget build(BuildContext context) => BgeStateSliver(
+    child: BgeLoadingState(
       key: DataGatewayDetailScreen.loadingKey,
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
+      label: message,
     ),
   );
 }

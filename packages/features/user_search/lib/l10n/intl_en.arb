@@ -8,6 +8,10 @@
   "@userSearchHint": {
     "description": "Hint under the search field: the server searches only on 2 or more characters."
   },
+  "userSearchLoading": "Searching\u2026",
+  "@userSearchLoading": {
+    "description": "Announced while a search for people waits on the server. The bar draws no text; this is what a screen reader says."
+  },
   "userSearchEmpty": "No one found.",
   "@userSearchEmpty": {
     "description": "Shown when a search for people matched no one."

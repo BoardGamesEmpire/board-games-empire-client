@@ -250,6 +250,20 @@ void main() {
     expect(find.byKey(GameBrowseScreen.emptyKey), findsOneWidget);
   });
 
+  testWidgets('browse empty is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    remote.onFetchPage = (_, _) async => pageOf([]);
+
+    await show(tester);
+
+    final message = tester.getSemantics(
+      find.text('There are no games on this server yet.'),
+    );
+    expect(message, isSemantics(isLiveRegion: true));
+    expect(message.label, contains('There are no games on this server yet.'));
+    handle.dispose();
+  });
+
   group('sort', () {
     // The order each read comes back in is the test's: the title read lists
     // Azul, the newest one Catan first.

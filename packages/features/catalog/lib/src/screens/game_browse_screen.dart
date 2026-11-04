@@ -130,13 +130,15 @@ class _GameBrowsePage extends StatelessWidget {
           ],
           slivers: switch (state) {
             GameBrowseLoading() => [
-              CatalogLoadingSliver(
-                key: GameBrowseScreen.loadingKey,
-                message: l10n.catalogBrowseLoading,
+              BgeStateSliver(
+                child: BgeLoadingState(
+                  key: GameBrowseScreen.loadingKey,
+                  label: l10n.catalogBrowseLoading,
+                ),
               ),
             ],
             GameBrowseFailed() => [
-              CatalogMessageSliver(
+              BgeStateSliver(
                 child: CatalogErrorState(
                   key: GameBrowseScreen.errorKey,
                   title: l10n.catalogBrowseFailedTitle,
@@ -146,7 +148,7 @@ class _GameBrowsePage extends StatelessWidget {
               ),
             ],
             GameBrowseDenied() => [
-              CatalogMessageSliver(
+              BgeStateSliver(
                 child: CatalogErrorState(
                   key: GameBrowseScreen.deniedKey,
                   icon: Icons.lock_outline,
@@ -177,11 +179,10 @@ class _GameBrowsePage extends StatelessWidget {
                   ),
                 // Games found gone can empty a list that has more to load.
                 if (games.isEmpty && !hasMore)
-                  CatalogMessageSliver(
-                    child: Text(
-                      l10n.catalogBrowseEmpty,
+                  BgeStateSliver(
+                    child: BgeEmptyState(
                       key: GameBrowseScreen.emptyKey,
-                      textAlign: TextAlign.center,
+                      title: l10n.catalogBrowseEmpty,
                     ),
                   )
                 else ...[

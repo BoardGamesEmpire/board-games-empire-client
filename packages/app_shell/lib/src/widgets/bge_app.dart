@@ -30,7 +30,8 @@ import 'package:sync_queue/sync_queue.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/l10n/user_search_localizations.dart';
 
-import 'package:ui/ui.dart' show BgePage, UnverifiedSessionBanner;
+import 'package:ui/ui.dart'
+    show BgeLoadingState, BgePage, UnverifiedSessionBanner;
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -3547,7 +3548,11 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
         title: Text(HouseholdLocalizations.of(context).inviteSendTitle),
         width: BgePageWidth.pane,
         centerVertically: true,
-        child: const Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: BgeLoadingState(
+            label: ShellLocalizations.of(context).shellInviteSendLoading,
+          ),
+        ),
       );
     }
     return SendHouseholdInviteScreen(

@@ -23,36 +23,6 @@ class CatalogSectionHeading extends StatelessWidget {
   }
 }
 
-/// The spinner a screen shows before its first answer, announced once.
-class CatalogLoadingSliver extends StatelessWidget {
-  const CatalogLoadingSliver({required this.message, super.key});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => SliverFillRemaining(
-    hasScrollBody: false,
-    child: Center(
-      child: Semantics(
-        liveRegion: true,
-        label: message,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
-}
-
-/// A short message filling the rest of the page.
-class CatalogMessageSliver extends StatelessWidget {
-  const CatalogMessageSliver({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) =>
-      SliverFillRemaining(hasScrollBody: false, child: Center(child: child));
-}
-
 /// The banner over what a screen shows from this device's cache because
 /// the server's answer failed, with a retry that asks the server again.
 ///
