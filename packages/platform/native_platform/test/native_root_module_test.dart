@@ -215,6 +215,43 @@ void main() {
     });
   });
 
+  group('ServerOnboardingDeps registration (#216)', () {
+    Future<DependencyContainerImpl> register() async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        connectivityFactory: _FakeConnectivityService.new,
+      );
+      return container;
+    }
+
+    test('registers ServerOnboardingDeps composed from the individual '
+        'registrations', () async {
+      final container = await register();
+
+      final deps = container.get<ServerOnboardingDeps>();
+
+      expect(deps.wellKnownClient, same(container.get<WellKnownClient>()));
+      expect(deps.versionNegotiator, same(container.get<VersionNegotiator>()));
+      expect(
+        deps.connectivityService,
+        same(container.get<ConnectivityService>()),
+      );
+      expect(deps.buildInfo, same(container.get<BuildInfo>()));
+    });
+
+    test('resolves the bundle once', () async {
+      final container = await register();
+
+      expect(
+        container.get<ServerOnboardingDeps>(),
+        same(container.get<ServerOnboardingDeps>()),
+      );
+    });
+  });
+
   test('registers the PushNotificationService null object (#15) — '
       'replaced per platform by #111/#112', () async {
     final container = DependencyContainerImpl();

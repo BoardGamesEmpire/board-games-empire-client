@@ -2054,45 +2054,33 @@ class _BgeAppState extends State<BgeApp> {
   /// so an availability check in `initState` would capture null forever
   /// (the same reason the auth/home builders resolve late).
   ///
-  /// Every collaborator is a nullable local, and the guard is one
-  /// all-or-nothing check over the whole set. That is deliberate: adding a
-  /// required dependency to [ServerOnboardingBloc] forces a new
-  /// [_rootService] local, and passing a nullable local to a non-nullable
-  /// parameter is a compile error — so the guard cannot fall behind the
-  /// resolution the way it did before #189, when one checked service stood
-  /// in for five.
+  /// The root-scope collaborators are one registered unit,
+  /// [ServerOnboardingDeps] (#216), resolved in one lookup. A member that
+  /// cannot resolve makes the bundle's factory throw, and `tryGet` logs
+  /// that with the container's error, which names the member. The
+  /// orchestrator stays a separate check because it is late-bound.
   ///
   /// Null (→ the server-add [ShellPlaceholderScreen]) covers a composition
   /// that cannot back the flow: no container at all (tests; the empty
   /// fallback container `runBgeApp` boots on when `createRootContainer`
-  /// fails), a partial registration set, or a platform with no
-  /// orchestrator.
+  /// fails), a bundle that is not registered (web) or cannot resolve, or
+  /// no orchestrator.
   Widget? _buildServerAddRoute(BuildContext context) {
-    final wellKnownClient = _rootService<WellKnownClient>();
-    final versionNegotiator = _rootService<VersionNegotiator>();
-    final connectivityService = _rootService<ConnectivityService>();
-    final buildInfo = _rootService<BuildInfo>();
+    final deps = _rootService<ServerOnboardingDeps>();
     final orchestrator = widget.bootstrapCubit.orchestrator;
-    if (wellKnownClient == null ||
-        versionNegotiator == null ||
-        connectivityService == null ||
-        buildInfo == null ||
-        orchestrator == null) {
+    if (deps == null || orchestrator == null) {
       _logServerAddUnavailable([
-        if (wellKnownClient == null) 'WellKnownClient',
-        if (versionNegotiator == null) 'VersionNegotiator',
-        if (connectivityService == null) 'ConnectivityService',
-        if (buildInfo == null) 'BuildInfo',
+        if (deps == null) 'ServerOnboardingDeps',
         if (orchestrator == null) 'ServerOrchestrator',
       ]);
       return null;
     }
     return BlocProvider<ServerOnboardingBloc>(
       create: (_) => ServerOnboardingBloc(
-        wellKnownClient: wellKnownClient,
-        versionNegotiator: versionNegotiator,
-        connectivityService: connectivityService,
-        buildInfo: buildInfo,
+        wellKnownClient: deps.wellKnownClient,
+        versionNegotiator: deps.versionNegotiator,
+        connectivityService: deps.connectivityService,
+        buildInfo: deps.buildInfo,
         orchestrator: orchestrator,
       ),
       child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
@@ -2104,8 +2092,10 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Reports a server-add composition that cannot back the route (#189),
-  /// naming every absent member — the diagnostic exists to spare whoever
-  /// reads it from bisecting the composition by hand.
+  /// naming each absent piece: the [ServerOnboardingDeps] bundle, the
+  /// orchestrator, or both. Which bundle member failed is in `tryGet`'s
+  /// record (#216). The diagnostic exists to spare whoever reads it from
+  /// bisecting the composition by hand.
   ///
   /// Error, not warning, and unconditional: this route is reachable in
   /// exactly one bootstrap state. [AppBootstrapNeedsServer] pins every
@@ -2118,7 +2108,7 @@ class _BgeAppState extends State<BgeApp> {
   /// drive the state deliberately are the one caller that reaches the
   /// fallback on purpose, and they assert on this record.
   void _logServerAddUnavailable(List<String> missing) => _log.error(
-    'Server-add is unavailable: the composition is missing '
+    'Server-add is unavailable: the composition could not supply '
     '${missing.join(', ')}.',
     context: {'missing': missing},
   );

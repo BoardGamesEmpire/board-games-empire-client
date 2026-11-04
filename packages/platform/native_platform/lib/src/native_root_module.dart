@@ -45,9 +45,15 @@ import 'feedback/file_feedback_sink.dart';
 /// per-platform implementations replace this registration in #111/#112),
 /// and the #36 server-onboarding pair:
 /// [WellKnownClient] (lazy; its dedicated unauthenticated [Dio] is not
-/// built until discovery actually runs) and [VersionNegotiator]
+/// built until a boot with no server needs server-add) and
+/// [VersionNegotiator]
 /// (stateless, const). Both are **root**-scope by necessity: server-add
-/// runs before any [ServerContext] exists. The [FeedbackService] itself
+/// runs before any [ServerContext] exists. Last, [ServerOnboardingDeps]
+/// (#216): those two plus [ConnectivityService] and [BuildInfo] as the one
+/// unit server-add resolves. It is lazy, so registering it runs no
+/// member's factory early, and the four individual registrations stay for
+/// their other consumers. Web registers none, as it registers no
+/// [WellKnownClient]. The [FeedbackService] itself
 /// is composed and registered by `runBgeApp` — it needs shell-side
 /// collaborators (breadcrumb ring, locale, the transport resolver) that
 /// don't exist at this altitude.
@@ -82,8 +88,12 @@ Future<void> registerNativeRootModule(
       const UnsupportedPushNotificationService(),
     )
     // #36 server onboarding. Lazy: WellKnownClientImpl constructs its
-    // dedicated unauthenticated Dio, which should not exist until
-    // discovery actually runs.
+    // dedicated unauthenticated Dio, which a boot that finds a server
+    // never needs.
     ..registerLazySingleton<WellKnownClient>(WellKnownClientImpl.new)
-    ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new);
+    ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new)
+    // #216: the server-add set as one unit, over the registrations above.
+    ..registerLazySingleton<ServerOnboardingDeps>(
+      () => ServerOnboardingDeps.from(container),
+    );
 }

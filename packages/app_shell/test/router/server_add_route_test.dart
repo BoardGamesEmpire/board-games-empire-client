@@ -75,12 +75,14 @@ void main() {
 
   /// Builds a root container holding the server-add dependency set, minus
   /// whichever members are switched off — the shape of a partial
-  /// composition.
+  /// composition. [bundle] registers [ServerOnboardingDeps] over the
+  /// members the way native does (#216); off, it is web's shape.
   DependencyContainerImpl composeContainer({
     bool wellKnownClient = true,
     bool versionNegotiator = true,
     bool connectivityService = true,
     bool buildInfo = true,
+    bool bundle = true,
   }) {
     final container = DependencyContainerImpl();
     addTearDown(container.dispose);
@@ -111,6 +113,13 @@ void main() {
     }
     if (buildInfo) {
       container.registerSingleton<BuildInfo>(BuildInfo.unknown);
+    }
+    if (bundle) {
+      // Lazy over the members, as in native_root_module.dart: a member
+      // switched off above surfaces as this factory throwing.
+      container.registerLazySingleton<ServerOnboardingDeps>(
+        () => ServerOnboardingDeps.from(container),
+      );
     }
     return container;
   }
@@ -208,6 +217,16 @@ void main() {
         tester,
         rootContainer: composeContainer(),
         withOrchestrator: false,
+      );
+
+      expectPlaceholder(tester);
+    });
+
+    testWidgets('renders the placeholder when the bundle is not registered, '
+        'even with every member present', (tester) async {
+      await pumpServerAdd(
+        tester,
+        rootContainer: composeContainer(bundle: false),
       );
 
       expectPlaceholder(tester);
@@ -313,6 +332,21 @@ void main() {
         )
         .toList();
 
+    /// `tryGet`'s records for the bundle: where a member that failed to
+    /// resolve is named, now that the route resolves the set as one unit
+    /// (#216). Scoped to the bundle's type, because the shell also resolves
+    /// [ConnectivityService] on its own on every build.
+    List<LogRecord> bundleLookupErrors() => records
+        .where(
+          (r) =>
+              r.level >= Level.SEVERE &&
+              r.loggerName == 'bge.di.lookup' &&
+              r.object is ContextLogMessage &&
+              (r.object! as ContextLogMessage).context['type'] ==
+                  'ServerOnboardingDeps',
+        )
+        .toList();
+
     testWidgets('logs an error naming the missing service — reaching this '
         'builder at all means the app is pinned to /server-add', (
       tester,
@@ -323,8 +357,11 @@ void main() {
       );
 
       expect(errors(), hasLength(1));
-      expect(errors().single.message, contains('ConnectivityService'));
-      expect(errors().single.message, isNot(contains('WellKnownClient')));
+      expect(errors().single.message, contains('ServerOnboardingDeps'));
+      // The route names the bundle; the bundle's lookup names the member.
+      final lookup = bundleLookupErrors().single.error.toString();
+      expect(lookup, contains('ConnectivityService'));
+      expect(lookup, isNot(contains('WellKnownClient')));
     });
 
     testWidgets('names the orchestrator when bootstrap published none', (
@@ -348,8 +385,8 @@ void main() {
       expect(errors(), isEmpty);
     });
 
-    testWidgets('names every absent member, not just the first — services '
-        'and the orchestrator together', (tester) async {
+    testWidgets('names the bundle and the orchestrator together, not just '
+        'the first', (tester) async {
       await pumpServerAdd(
         tester,
         rootContainer: composeContainer(
@@ -361,29 +398,26 @@ void main() {
 
       expect(errors(), hasLength(1));
       final message = errors().single.message;
-      expect(message, contains('WellKnownClient'));
-      expect(message, contains('BuildInfo'));
+      expect(message, contains('ServerOnboardingDeps'));
       expect(message, contains('ServerOrchestrator'));
-      expect(message, isNot(contains('VersionNegotiator')));
-      expect(message, isNot(contains('ConnectivityService')));
+      // The bundle resolves member by member and stops at the first that
+      // fails, so its record names that one.
+      expect(
+        bundleLookupErrors().single.error.toString(),
+        contains('WellKnownClient'),
+      );
     });
 
-    testWidgets('names every absent member when there is no container at all', (
-      tester,
-    ) async {
+    testWidgets('names the bundle and the orchestrator when there is no '
+        'container at all', (tester) async {
       await pumpServerAdd(tester, withOrchestrator: false);
 
       expect(errors(), hasLength(1));
-      final message = errors().single.message;
-      for (final member in const [
-        'WellKnownClient',
-        'VersionNegotiator',
-        'ConnectivityService',
-        'BuildInfo',
-        'ServerOrchestrator',
-      ]) {
-        expect(message, contains(member));
-      }
+      expect(
+        (errors().single.object! as ContextLogMessage).context,
+        containsPair('missing', ['ServerOnboardingDeps', 'ServerOrchestrator']),
+      );
+      expect(bundleLookupErrors(), isEmpty);
     });
 
     testWidgets('carries the absent members as structured context, not only '
@@ -400,7 +434,7 @@ void main() {
       expect(record.object, isA<ContextLogMessage>());
       expect(
         (record.object! as ContextLogMessage).context,
-        containsPair('missing', ['ConnectivityService']),
+        containsPair('missing', ['ServerOnboardingDeps']),
       );
     });
 
@@ -418,8 +452,9 @@ void main() {
       expect(errors(), hasLength(1));
       expect(
         (errors().single.object! as ContextLogMessage).context,
-        containsPair('missing', ['ConnectivityService']),
+        containsPair('missing', ['ServerOnboardingDeps']),
       );
+      expect(bundleLookupErrors().single.error.toString(), contains('boom'));
     });
 
     group('once per entry (#225)', () {
