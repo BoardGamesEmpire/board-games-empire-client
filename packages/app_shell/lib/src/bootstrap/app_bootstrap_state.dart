@@ -42,10 +42,12 @@ final class AppBootstrapFailed extends AppBootstrapState {
   final int attemptCount;
 
   /// Whether the UI may offer the delete-local-data recovery action:
-  /// `attemptCount` has reached the configured threshold **and** the
-  /// platform supports reset. Deletion itself still requires explicit
-  /// user confirmation — the shell never destroys the meta database on
-  /// its own.
+  /// the failures that count toward it have reached the configured
+  /// threshold **and** the platform supports reset. A failure to compose
+  /// server-add neither offers it nor counts toward it (#218), so this can
+  /// stay false at an `attemptCount` past the threshold. Deletion itself
+  /// still requires explicit user confirmation — the shell never destroys
+  /// the meta database on its own.
   final bool canOfferReset;
 
   @override

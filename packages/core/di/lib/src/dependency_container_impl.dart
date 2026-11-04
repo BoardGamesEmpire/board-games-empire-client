@@ -76,8 +76,14 @@ class DependencyContainerImpl implements DependencyContainer {
     return _getIt.get<T>();
   }
 
+  /// False from the moment [dispose] starts. GetIt keeps every
+  /// registration until the last dispose callback returns, while [get]
+  /// already refuses, and a caller that checks first must not be told
+  /// otherwise: a user-scope view falls through to its parent on false
+  /// (#218).
   @override
-  bool isRegistered<T extends Object>() => _getIt.isRegistered<T>();
+  bool isRegistered<T extends Object>() =>
+      !_disposed && _getIt.isRegistered<T>();
 
   @override
   Future<void> dispose() async {

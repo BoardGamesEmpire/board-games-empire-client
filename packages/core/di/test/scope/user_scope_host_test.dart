@@ -233,6 +233,31 @@ void main() {
       expect(parent.get<Probe>(), same(base));
     });
 
+    test('a captured view falls through to the parent while the user scope '
+        'is disposing', () async {
+      final base = Probe('base');
+      parent.registerSingleton<Probe>(base);
+      final release = Completer<void>();
+      late DependencyContainer capturedView;
+      await host.open((v) async {
+        capturedView = v;
+        // A user-scope override of the parent's Probe, registered before
+        // the slow one so it is still registered while that one disposes.
+        v
+          ..registerSingleton<Probe>(Probe('user'))
+          ..registerSingleton<int>(1, dispose: (_) => release.future);
+      });
+
+      final closing = host.close();
+
+      // In-flight work holding the view past sign-out degrades to the
+      // per-server scope instead of throwing (#218).
+      expect(capturedView.get<Probe>(), same(base));
+
+      release.complete();
+      await closing;
+    });
+
     test('a failing install discards the partial scope and rethrows', () async {
       final base = Probe('base');
       parent.registerSingleton<Probe>(base, dispose: (p) => p.disposed = true);

@@ -2,6 +2,7 @@ library;
 
 export 'src/clock/local_clock_service.dart';
 export 'src/clock/server_skew_clock_service.dart';
+export 'src/container_lookups.dart';
 export 'src/dependency_container_impl.dart';
 export 'src/orchestrator_active_server_scope.dart';
 export 'src/scope/container_user_session_scope.dart';

@@ -49,6 +49,9 @@ abstract class DependencyContainer {
   void registerFactory<T extends Object>(T Function() factory);
 
   /// Whether [T] has been registered in this container.
+  ///
+  /// Never true once [dispose] has started, even while it is still running,
+  /// since [get] throws from then on.
   bool isRegistered<T extends Object>();
 
   /// Disposes all singleton and instantiated lazy singleton instances,

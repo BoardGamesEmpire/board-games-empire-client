@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
+import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/spy_root_container.dart';
 
@@ -328,6 +330,22 @@ void main() {
       expect(container.get<FeedbackService>(), isA<FeedbackService>());
     });
 
+    testWidgets('the default FeedbackTargetResolver tags reports with the '
+        'server the cubit published (#97)', (tester) async {
+      final active = buildActiveServer(FakeAuthRepository());
+      addTearDown(active.container.dispose);
+      final bootstrap = FakePlatformBootstrap(
+        activeServerScope: FakeActiveServerScope(active),
+      );
+
+      await boot(tester, bootstrap);
+
+      final target = bootstrap.lastRootContainer!
+          .get<FeedbackTargetResolver>()
+          .resolve();
+      expect(target?.serverId, serverIdentity().serverId);
+    });
+
     testWidgets('the service is available even on the empty fallback '
         'container — resolve-or-default, feedback works on a failed '
         'boot', (tester) async {
@@ -364,6 +382,33 @@ void main() {
       expect(report.deviceInfo, {
         'operatingSystem': 'linux',
         'browser': 'Firefox 130',
+      });
+    });
+
+    testWidgets('optional root services whose factories throw degrade to '
+        'their defaults instead of failing boot (#218)', (tester) async {
+      final container = SpyRootContainer()
+        ..registerLazySingleton<BuildInfo>(() => throw StateError('boom'))
+        ..registerLazySingleton<DeviceInfoReader>(
+          () => throw StateError('boom'),
+        )
+        ..registerLazySingleton<FeedbackTargetResolver>(
+          () => throw StateError('boom'),
+        )
+        ..registerLazySingleton<FeedbackSink>(() => throw StateError('boom'));
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
+
+      await boot(tester, bootstrap);
+
+      expect(find.byType(BgeApp), findsOneWidget);
+      final report = container.get<FeedbackService>().buildReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        userComment: 'x',
+      );
+      expect(report.appVersion, BuildInfo.unknown.version);
+      expect(report.deviceInfo, {
+        'operatingSystem': defaultTargetPlatform.name,
       });
     });
 

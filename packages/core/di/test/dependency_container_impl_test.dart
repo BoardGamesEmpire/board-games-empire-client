@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:di/di.dart';
 import 'package:get_it/get_it.dart';
@@ -93,6 +95,24 @@ void main() {
           () => container.registerSingleton<_FakeService>(_FakeService()),
           throwsStateError,
         );
+      });
+
+      test('isRegistered is false from the moment dispose starts', () async {
+        final release = Completer<void>();
+        container.registerSingleton<_FakeService>(
+          _FakeService(),
+          dispose: (_) => release.future,
+        );
+
+        final disposing = container.dispose();
+
+        // GetIt keeps every registration until the last dispose callback
+        // returns; get already refuses, so isRegistered must agree.
+        expect(container.isRegistered<_FakeService>(), isFalse);
+        expect(() => container.get<_FakeService>(), throwsStateError);
+
+        release.complete();
+        await disposing;
       });
     });
 

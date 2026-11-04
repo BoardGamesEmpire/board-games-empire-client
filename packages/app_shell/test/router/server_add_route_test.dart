@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
@@ -72,12 +75,14 @@ void main() {
 
   /// Builds a root container holding the server-add dependency set, minus
   /// whichever members are switched off — the shape of a partial
-  /// composition.
+  /// composition. [bundle] registers [ServerOnboardingDeps] over the
+  /// members the way native does (#216); off, it is web's shape.
   DependencyContainerImpl composeContainer({
     bool wellKnownClient = true,
     bool versionNegotiator = true,
     bool connectivityService = true,
     bool buildInfo = true,
+    bool bundle = true,
   }) {
     final container = DependencyContainerImpl();
     addTearDown(container.dispose);
@@ -109,6 +114,13 @@ void main() {
     if (buildInfo) {
       container.registerSingleton<BuildInfo>(BuildInfo.unknown);
     }
+    if (bundle) {
+      // Lazy over the members, as in native_root_module.dart: a member
+      // switched off above surfaces as this factory throwing.
+      container.registerLazySingleton<ServerOnboardingDeps>(
+        () => ServerOnboardingDeps.from(container),
+      );
+    }
     return container;
   }
 
@@ -138,6 +150,12 @@ void main() {
   void expectPlaceholder(WidgetTester tester) {
     expect(tester.takeException(), isNull);
     expect(find.byType(ShellPlaceholderScreen), findsOneWidget);
+    expect(
+      tester
+          .widget<ShellPlaceholderScreen>(find.byType(ShellPlaceholderScreen))
+          .kind,
+      ShellPlaceholderKind.serverAdd,
+    );
     expect(find.byType(ServerAddScreen), findsNothing);
   }
 
@@ -199,6 +217,16 @@ void main() {
         tester,
         rootContainer: composeContainer(),
         withOrchestrator: false,
+      );
+
+      expectPlaceholder(tester);
+    });
+
+    testWidgets('renders the placeholder when the bundle is not registered, '
+        'even with every member present', (tester) async {
+      await pumpServerAdd(
+        tester,
+        rootContainer: composeContainer(bundle: false),
       );
 
       expectPlaceholder(tester);
@@ -304,6 +332,21 @@ void main() {
         )
         .toList();
 
+    /// `tryGet`'s records for the bundle: where a member that failed to
+    /// resolve is named, now that the route resolves the set as one unit
+    /// (#216). Scoped to the bundle's type, because the shell also resolves
+    /// [ConnectivityService] on its own on every build.
+    List<LogRecord> bundleLookupErrors() => records
+        .where(
+          (r) =>
+              r.level >= Level.SEVERE &&
+              r.loggerName == 'bge.di.lookup' &&
+              r.object is ContextLogMessage &&
+              (r.object! as ContextLogMessage).context['type'] ==
+                  'ServerOnboardingDeps',
+        )
+        .toList();
+
     testWidgets('logs an error naming the missing service — reaching this '
         'builder at all means the app is pinned to /server-add', (
       tester,
@@ -314,8 +357,11 @@ void main() {
       );
 
       expect(errors(), hasLength(1));
-      expect(errors().single.message, contains('ConnectivityService'));
-      expect(errors().single.message, isNot(contains('WellKnownClient')));
+      expect(errors().single.message, contains('ServerOnboardingDeps'));
+      // The route names the bundle; the bundle's lookup names the member.
+      final lookup = bundleLookupErrors().single.error.toString();
+      expect(lookup, contains('ConnectivityService'));
+      expect(lookup, isNot(contains('WellKnownClient')));
     });
 
     testWidgets('names the orchestrator when bootstrap published none', (
@@ -339,8 +385,8 @@ void main() {
       expect(errors(), isEmpty);
     });
 
-    testWidgets('names every absent member, not just the first — services '
-        'and the orchestrator together', (tester) async {
+    testWidgets('names the bundle and the orchestrator together, not just '
+        'the first', (tester) async {
       await pumpServerAdd(
         tester,
         rootContainer: composeContainer(
@@ -352,29 +398,26 @@ void main() {
 
       expect(errors(), hasLength(1));
       final message = errors().single.message;
-      expect(message, contains('WellKnownClient'));
-      expect(message, contains('BuildInfo'));
+      expect(message, contains('ServerOnboardingDeps'));
       expect(message, contains('ServerOrchestrator'));
-      expect(message, isNot(contains('VersionNegotiator')));
-      expect(message, isNot(contains('ConnectivityService')));
+      // The bundle resolves member by member and stops at the first that
+      // fails, so its record names that one.
+      expect(
+        bundleLookupErrors().single.error.toString(),
+        contains('WellKnownClient'),
+      );
     });
 
-    testWidgets('names every absent member when there is no container at all', (
-      tester,
-    ) async {
+    testWidgets('names the bundle and the orchestrator when there is no '
+        'container at all', (tester) async {
       await pumpServerAdd(tester, withOrchestrator: false);
 
       expect(errors(), hasLength(1));
-      final message = errors().single.message;
-      for (final member in const [
-        'WellKnownClient',
-        'VersionNegotiator',
-        'ConnectivityService',
-        'BuildInfo',
-        'ServerOrchestrator',
-      ]) {
-        expect(message, contains(member));
-      }
+      expect(
+        (errors().single.object! as ContextLogMessage).context,
+        containsPair('missing', ['ServerOnboardingDeps', 'ServerOrchestrator']),
+      );
+      expect(bundleLookupErrors(), isEmpty);
     });
 
     testWidgets('carries the absent members as structured context, not only '
@@ -391,8 +434,106 @@ void main() {
       expect(record.object, isA<ContextLogMessage>());
       expect(
         (record.object! as ContextLogMessage).context,
-        containsPair('missing', ['ConnectivityService']),
+        containsPair('missing', ['ServerOnboardingDeps']),
       );
+    });
+
+    testWidgets('renders the placeholder, not an ErrorWidget, when a lazy '
+        'factory throws (#218)', (tester) async {
+      final container = composeContainer(connectivityService: false)
+        ..registerLazySingleton<ConnectivityService>(
+          () => throw StateError('boom'),
+        );
+
+      await pumpServerAdd(tester, rootContainer: container);
+
+      expectPlaceholder(tester);
+      expect(find.byType(ErrorWidget), findsNothing);
+      expect(errors(), hasLength(1));
+      expect(
+        (errors().single.object! as ContextLogMessage).context,
+        containsPair('missing', ['ServerOnboardingDeps']),
+      );
+      expect(bundleLookupErrors().single.error.toString(), contains('boom'));
+    });
+
+    group('once per entry (#225)', () {
+      late StreamController<AppBootstrapState> controller;
+      late AppBootstrapState current;
+
+      /// Feeds the bootstrap stream by hand: `whenListen` emits before the
+      /// router's refresh listenable subscribes, so its states never reach
+      /// the redirect.
+      Future<void> pumpDriven(WidgetTester tester) async {
+        controller = StreamController<AppBootstrapState>.broadcast();
+        addTearDown(controller.close);
+        current = const AppBootstrapNeedsServer();
+        when(() => cubit.stream).thenAnswer((_) => controller.stream);
+        when(() => cubit.state).thenAnswer((_) => current);
+        when(() => cubit.orchestrator).thenReturn(_FakeServerOrchestrator());
+        when(() => cubit.activeServerScope).thenReturn(null);
+
+        await tester.pumpWidget(
+          BgeApp(
+            bootstrapCubit: cubit,
+            rootContainer: composeContainer(connectivityService: false),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> emit(WidgetTester tester, AppBootstrapState state) async {
+        current = state;
+        controller.add(state);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('reports once per entry: same-state emissions add no '
+          'record', (tester) async {
+        await pumpDriven(tester);
+
+        for (var i = 0; i < 3; i++) {
+          await emit(tester, current);
+        }
+
+        expect(errors(), hasLength(1));
+      });
+
+      testWidgets('reports once per entry: MediaQuery changes add no record', (
+        tester,
+      ) async {
+        await pumpDriven(tester);
+
+        tester.view.physicalSize = const Size(1200, 900);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpAndSettle();
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpAndSettle();
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        await tester.pumpAndSettle();
+
+        expect(errors(), hasLength(1));
+      });
+
+      testWidgets('reports again on re-entry', (tester) async {
+        await pumpDriven(tester);
+
+        await emit(
+          tester,
+          AppBootstrapFailed(
+            error: StateError('x'),
+            attemptCount: 1,
+            canOfferReset: false,
+          ),
+        );
+        expect(find.byType(ShellPlaceholderScreen), findsNothing);
+
+        await emit(tester, const AppBootstrapNeedsServer());
+
+        expect(errors(), hasLength(2));
+      });
     });
   });
 }
