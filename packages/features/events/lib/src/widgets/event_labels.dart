@@ -152,10 +152,14 @@ String eventRowWhenLabel(
   return eventWhenLabel(context, start, now: now);
 }
 
-/// Where [row]'s event is, whose it is and whether the user is going, in that
-/// order, as its row and its card list them (#497, #669). Each is left out
-/// when it isn't known, so an empty list means there is no line to draw.
+/// Whether [row]'s event is cancelled, where it is, whose it is and whether
+/// the user is going, in that order, as its row and its card list them
+/// (#497, #669). Each is left out when it isn't known, so an empty list means
+/// there is no line to draw. A cancelled event says so in words, first, so
+/// the status is never colour alone and a screen reader reads it before the
+/// rest (#502).
 List<String> eventRowDetails(EventsLocalizations l10n, EventRow row) => [
+  if (row.cancelled) l10n.eventsStatusCancelled,
   ?row.venue,
   ?row.householdName,
   // An answer this client can't read is not a guess at one.

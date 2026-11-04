@@ -19,6 +19,7 @@ void main() {
     WidgetTester tester,
     EventRow row, {
     bool alwaysUse24HourFormat = false,
+    TextScaler textScaler = TextScaler.noScaling,
   }) => tester.pumpWidget(
     MaterialApp(
       theme: BgeTheme.light(),
@@ -26,8 +27,10 @@ void main() {
       localizationsDelegates: EventsLocalizations.localizationsDelegates,
       supportedLocales: EventsLocalizations.supportedLocales,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context)
-            .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+        data: MediaQuery.of(context).copyWith(
+          alwaysUse24HourFormat: alwaysUse24HourFormat,
+          textScaler: textScaler,
+        ),
         child: child!,
       ),
       home: Scaffold(
@@ -216,6 +219,51 @@ void main() {
     for (final part in ['Catan night', 'Fri, Nov 6', '7:30 PM', 'Back room']) {
       expect(label, contains(part));
     }
+  });
+
+  testWidgets('a cancelled row shows "Cancelled" as text and in its semantics '
+      'label', (tester) async {
+    await pumpRow(
+      tester,
+      EventRow(
+        event: item('e-1', title: 'Catan night').event,
+        group: EventGroup.upcoming,
+        date: confirmed('o-1', DateTime(2026, 11, 6, 19, 30)),
+        cancelled: true,
+        venue: 'Back room',
+      ),
+    );
+
+    expect(find.text('Cancelled · Back room'), findsOneWidget);
+    expect(semanticsLabel(tester), contains('Cancelled, Back room'));
+  });
+
+  testWidgets('a cancelled row holds at 320dp and 2.0 text', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpRow(
+      tester,
+      EventRow(
+        event: item('e-1', title: 'Catan night').event,
+        group: EventGroup.upcoming,
+        date: confirmed('o-1', DateTime(2026, 11, 6, 19, 30)),
+        cancelled: true,
+        venue: 'Back room',
+        householdName: 'The Smiths',
+        rsvp: EventParticipationStatus.attending,
+      ),
+      textScaler: const TextScaler.linear(2),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Cancelled'), findsOneWidget);
+  });
+
+  testWidgets('a row that is not cancelled says nothing of it', (tester) async {
+    await pumpRow(tester, dated(DateTime(2026, 11, 6, 19, 30)));
+
+    expect(find.textContaining('Cancelled'), findsNothing);
   });
 
   testWidgets('is inert without onOpen, and opens with it', (tester) async {

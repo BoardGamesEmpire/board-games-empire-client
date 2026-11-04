@@ -162,10 +162,15 @@ abstract final class AppRoutes {
   /// name, which is how the shell maps one back to its group.
   ///
   /// These and the `:eventId` detail beneath [events] (#498, [eventDetail])
-  /// **overlap**: `upcoming` is a legal event id, so the group pages are
-  /// declared first and the detail after them, as game search is before the
-  /// game detail.
-  static const eventGroupSegments = <String>['upcoming', 'planning', 'past'];
+  /// **overlap**: `upcoming` and `archived` are legal event ids, so the group
+  /// pages are declared first and the detail after them, as game search is
+  /// before the game detail.
+  static const eventGroupSegments = <String>[
+    'upcoming',
+    'planning',
+    'past',
+    'archived',
+  ];
 
   /// The location of the group page named [segment], one of
   /// [eventGroupSegments].
