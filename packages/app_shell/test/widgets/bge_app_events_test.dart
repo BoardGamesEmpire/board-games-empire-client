@@ -933,28 +933,29 @@ void main() {
         expect(find.text('Event deleted'), findsOneWidget);
       });
 
-      testWidgets('the session guard is asked around the delete too', (
-        tester,
-      ) async {
-        final guard = _RecordingGuard(SessionConfirmation.confirmed);
-        await pumpHome(
-          tester,
-          remote: deletable(),
-          attendance: _hosting('e-0'),
-          guard: guard,
-        );
-        await openTheOverview(tester);
-        await openRow(tester, 'e-0');
+      testWidgets(
+        'the session guard is asked before the delete request goes out',
+        (tester) async {
+          final guard = _RecordingGuard(SessionConfirmation.confirmed);
+          await pumpHome(
+            tester,
+            remote: deletable(),
+            attendance: _hosting('e-0'),
+            guard: guard,
+          );
+          await openTheOverview(tester);
+          await openRow(tester, 'e-0');
 
-        // The read's two: before the request, and before its write.
-        expect(guard.asked, ['u1', 'u1']);
+          // The read's two: before the request, and before its write.
+          expect(guard.asked, ['u1', 'u1']);
 
-        await deleteIt(tester);
+          await deleteIt(tester);
 
-        // The delete's one, before the request: its removal is every
-        // user's, so nothing is asked before it.
-        expect(guard.asked, ['u1', 'u1', 'u1']);
-      });
+          // The delete's one, before the request: its removal is every
+          // user's, so nothing is asked before it.
+          expect(guard.asked, ['u1', 'u1', 'u1']);
+        },
+      );
     });
 
     group('confirming a date (#506)', () {

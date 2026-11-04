@@ -1459,8 +1459,8 @@ class _ActionOutcomeBanner extends StatelessWidget {
     EventActionResult.changed => l10n.eventsDateChanged,
     EventActionResult.partlyDone => l10n.eventsDateCancelledRemoveUnconfirmed,
     // Only a transient failure is worth pressing again (#501). A session
-    // that moved and a cache that couldn't be read sent nothing, and a 4xx
-    // was refused: the same press would end the same way.
+    // that moved sent nothing, and a permanent failure (a 4xx) stays one: the
+    // same press would end the same way.
     EventActionResult.failed =>
       outcome.error is EventRemoteTransientException
           ? l10n.eventsDeleteFailed

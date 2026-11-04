@@ -602,7 +602,12 @@ sealed class EventRemoteException implements Exception {
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 
-/// The event is gone, or the caller may not read it: a 404 from the API itself.
+/// A 404 from the API itself.
+///
+/// From a read (`fetchEvent`) it means the event is gone or the caller may not
+/// read it. From `deleteEvent` and the status writes (`cancelEvent`,
+/// `reopenEvent`, `archiveEvent`, `unarchiveEvent`) it means no live event has
+/// that id, for any user.
 final class EventRemoteNotFoundException extends EventRemoteException {
   const EventRemoteNotFoundException(
     super.message, {

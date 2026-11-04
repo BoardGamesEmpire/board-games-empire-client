@@ -111,8 +111,8 @@ final class EventActionOutcome extends Equatable {
   /// against is the event as the cache now holds it.
   ///
   /// A failure before the request went out, from a session that no longer
-  /// matches or a cache that could not be read, has no error and isn't read
-  /// again: nothing reached the server, and a read would ask the same
+  /// matches (no write reads a cache before it sends), has no error and isn't
+  /// read again: nothing reached the server, and a read would ask the same
   /// session.
   ///
   /// For a vote (#507), only changed, gone and refused: the date moved, went,
