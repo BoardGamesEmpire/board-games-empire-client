@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:di/di.dart' show replayThenForward;
 import 'package:dio/dio.dart';
-// Shared rather than copied, so dio's 50 KB isolate threshold and the
-// probe's 4 KiB bound each live in one place (#352, #278).
+// Shared rather than copied, so dio's 50 KB isolate threshold, the probe's
+// 4 KiB bound and the session-read rules each live in one place (#352,
+// #278).
 import 'package:dio_network/dio_network.dart'
-    show decodeJsonBody, probeJsonBody;
+    show decodeJsonBody, probeJsonBody, readSessionStatus, SessionReadStatus;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -450,8 +451,6 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // already set to `bytes` or `stream` let Dio's own cast throw here
       // instead of ever resolving a Response — the #352 mechanism, closed by
       // the pin rather than by asking for `Response<String>` alone.
-      final mapped = _mapDioException(e, credentialGrant: false);
-
       if (superseded()) {
         _log.warn(
           'Discarding a failed session request that was superseded while in '
@@ -461,12 +460,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         return null;
       }
 
-      if (mapped is AuthInvalidCredentialsException) {
+      // The same rules as the response path below, so a thrown 401 or 403
+      // settles exactly as a resolved one does.
+      final status = e.response?.statusCode;
+      if (readSessionStatus(status) == SessionReadStatus.noSession) {
         _setState(const AuthStateUnauthenticated());
         return null;
       }
 
-      throw mapped;
+      throw _mapDioException(e, credentialGrant: false);
     }
 
     // The user signed out — or signed back in — while this request was in
@@ -484,41 +486,23 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     final status = response.statusCode;
 
-    // Three shapes of "definitively no session": an explicit 401, a 403, and
-    // BetterAuth's 200-with-null-body — which is how it reports an absent or
-    // expired session rather than using a status code. All three mean the
-    // browser's cookie is dead: settle on unauthenticated.
-    //
-    // 403 belongs here, not in the indeterminate bucket below. Because
-    // validateStatus is permissive it resolves as a Response and never
-    // reaches `_mapDioException` — the path that maps 403 to
-    // `AuthInvalidCredentialsException`. Classifying it as indeterminate
-    // stranded a genuinely revoked session on the retry-forever view with no
-    // way out. A false positive from an intermediary costs one re-sign-in,
-    // which is the cheaper failure. Native locked the same call (#180).
-    // Two of the three are decidable from the status alone and are taken
-    // here. The third needs the body and waits until after the decode below —
-    // a reordering #352 forced, not a change of rule: the body no longer
-    // arrives pre-decoded, and reading "no session" off an undecoded string
-    // would call a captive portal's HTML page a rejected session.
-    if (status == HttpStatusCode.unauthorized ||
-        status == HttpStatusCode.forbidden) {
-      _setState(const AuthStateUnauthenticated());
-      return null;
-    }
-
-    // Anything else is INDETERMINATE and must throw, not return null (#98).
-    // This check MUST come after the definitive cases and before any body
-    // inspection: an earlier `response.data == null` test that ignored the
-    // status turned a bodiless 502 — a proxy fault — into a definitive "no
-    // session", signing the user out for a server hiccup and implying their
-    // session had been rejected (#180). A 2xx that is not the documented 200
-    // shape lands here too: it carries no session and no rejection.
-    if (status != HttpStatusCode.ok) {
-      throw AuthServerException(
-        message: 'Unexpected $status from the session endpoint.',
-        statusCode: status,
-      );
+    // The status decides first, by the rules `readSessionStatus` holds with
+    // their reasons. What is local is the reaction: a definitive "no
+    // session" means the browser's cookie is dead, and there is no stored
+    // material here to clear, so this settles on unauthenticated.
+    // BetterAuth's 200-with-null-body settles the same way, after the decode
+    // below.
+    switch (readSessionStatus(status)) {
+      case SessionReadStatus.noSession:
+        _setState(const AuthStateUnauthenticated());
+        return null;
+      case SessionReadStatus.undecided:
+        throw AuthServerException(
+          message: 'Unexpected $status from the session endpoint.',
+          statusCode: status,
+        );
+      case SessionReadStatus.readBody:
+        break;
     }
 
     final decoded = await _decodeBody(
@@ -548,9 +532,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     final failure = decoded.failure;
     if (failure != null) throw failure;
 
-    // The third "definitively no session" shape, now that the body is
-    // readable: BetterAuth answers 200 with no session payload. An empty body
-    // and a literal JSON `null` both land here as null, which is exactly what
+    // The "no session" answer the status could not give, which
+    // `SessionReadStatus.readBody` left to the body: BetterAuth answers 200
+    // with no session payload. An empty body and a literal JSON `null` both
+    // land here as null, which is exactly what
     // `Response<Map<String, dynamic>>` used to hand over as `data == null`.
     final body = decoded.value;
     if (body == null) {
@@ -1561,8 +1546,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// four call sites is a shared mutable default waiting to be edited.
   ///
   /// Deliberately a twin of `AuthRepositoryImpl._plainBody` rather than a
-  /// shared helper: #278 owns what gets extracted out of these two classes,
-  /// and #360 rejected a shared request-shaping seam.
+  /// shared helper: #278 shared the probe and the session-read rules but not
+  /// this, and #360 rejected a shared request-shaping seam.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
   /// Whether a rejected auth response means "this email is already
@@ -1640,8 +1625,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       return const AuthInvalidCredentialsException();
     }
 
-    // A session 403 is the definitive negative `getSession` settles on,
-    // whatever its body says, so only a grant's body is read.
+    // `getSession` settles a session 403 before it gets here, whatever its
+    // body says, so only a grant's body is read.
     if (status == HttpStatusCode.forbidden) {
       return credentialGrant
           ? _forbidden(e.response?.data)

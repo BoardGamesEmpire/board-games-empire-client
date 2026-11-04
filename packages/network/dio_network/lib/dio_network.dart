@@ -1,6 +1,7 @@
 library;
 
 export 'src/auth/auth_repository_impl.dart';
+export 'src/auth/session_read_status.dart';
 export 'src/auth/token_storage_service.dart';
 
 export 'src/data_gateway/data_gateway_remote_data_source_impl.dart';
