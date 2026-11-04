@@ -1,16 +1,17 @@
-// The list is platform-neutral by construction — both entries come from
-// packages that compile for the VM — which is exactly why its membership can
+// The list is platform-neutral by construction — every entry comes from a
+// package that compiles for the VM — which is exactly why its membership can
 // be asserted here rather than only in a browser suite (#137).
 @TestOn('vm')
 library;
 
-import 'package:data_gateway/data_gateway.dart';
+import 'package:access/access.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
+import 'package:models/domain.dart';
 import 'package:sync_queue/sync_queue.dart';
 import 'package:web_platform/web.dart';
 
@@ -28,21 +29,27 @@ void main() {
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
       expect(installers[4], isA<EventHydrateInstaller>());
-      expect(installers[5], isA<DataGatewayAccessInstaller>());
+      expect(installers[5], isA<CallerAccessInstaller>());
       expect(installers[6], isA<SyncSenderInstaller>());
       expect(installers[7], isA<SyncQueueDrainInstaller>());
     });
 
-    test('runs the same DataGateway access installer native does, after the '
-        'rehydrator it registers with (#41)', () {
+    test('has one CallerAccessInstaller, after the rehydrator, asking for the '
+        'DataGateway types (#456)', () {
       final installers = buildWebUserScopeInstallers();
 
-      expect(installers.whereType<DataGatewayAccessInstaller>(), hasLength(1));
+      final callerAccess = installers.whereType<CallerAccessInstaller>();
+
+      expect(callerAccess, hasLength(1));
       expect(
-        installers.indexWhere((i) => i is DataGatewayAccessInstaller),
+        installers.indexWhere((i) => i is CallerAccessInstaller),
         greaterThan(
           installers.indexWhere((i) => i is SessionRehydratorInstaller),
         ),
+      );
+      expect(
+        callerAccess.single.resourceTypes,
+        contains(ResourceType.dataGateway),
       );
     });
 

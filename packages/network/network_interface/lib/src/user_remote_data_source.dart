@@ -2,10 +2,11 @@ import 'package:models/domain.dart';
 
 import 'paginated_result.dart';
 
-/// Remote data source for finding other users by name (#455, #499).
+/// Remote data source for the users routes: finding other users by name
+/// (#455, #499) and reading what the caller may do (#456).
 ///
 /// Online-only, like [HouseholdInviteRemoteDataSource]: nothing here is stored
-/// on the device, and every search goes straight to the server.
+/// on the device, and every call goes straight to the server.
 ///
 /// It is a separate interface from [HouseholdInviteRemoteDataSource] on
 /// purpose. More than one feature picks people by searching: the household
@@ -22,6 +23,7 @@ import 'paginated_result.dart';
 /// | Method | Path | Answer |
 /// |---|---|---|
 /// | [searchUsers] | `GET /api/users/search` | `{ users, pagination }` |
+/// | [fetchAccess] | `GET /api/users/me/access` | `{ access: { <Type>: { create, read, update, delete, manage } } }` |
 ///
 /// ## Failure classification
 ///
@@ -43,7 +45,7 @@ import 'paginated_result.dart';
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a search shorter than [minSearchLength] after trimming, a page
-/// below 1, or a limit out of range.
+/// below 1, a limit out of range, or an access question about no types.
 abstract class UserRemoteDataSource {
   /// The backend's `limit` ceiling for user search. A larger limit is a 400,
   /// not clamped.
@@ -61,6 +63,18 @@ abstract class UserRemoteDataSource {
     int page = 1,
     int limit = maxSearchPageSize,
   });
+
+  /// What the caller may do with each of [resourceTypes], one entry per asked
+  /// type.
+  ///
+  /// [resourceTypes] must not be empty: the server answers that with a 400. A
+  /// type the server answers without being asked about is ignored, and an
+  /// asked type missing from the answer is a [UserRemotePermanentException]
+  /// like any other body that breaks the contract. An enveloped 404 is
+  /// transient, as for search: it may be a server without the route.
+  Future<Map<ResourceType, ResourceAccess>> fetchAccess(
+    Set<ResourceType> resourceTypes,
+  );
 }
 
 /// Base class for every user remote failure.

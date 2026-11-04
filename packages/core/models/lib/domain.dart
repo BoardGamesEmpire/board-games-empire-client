@@ -1,5 +1,10 @@
 library;
 
+export 'src/domain/access/access_extent.dart';
+export 'src/domain/access/caller_access.dart';
+export 'src/domain/access/resource_access.dart';
+export 'src/domain/access/resource_type.dart';
+
 export 'src/domain/achievement/achievement_type.dart';
 export 'src/domain/achievement/achievement.dart';
 export 'src/domain/achievement/user_achievement.dart';

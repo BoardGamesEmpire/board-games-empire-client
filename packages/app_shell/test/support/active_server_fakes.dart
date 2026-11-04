@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:events/events.dart';
 import 'package:game_collection/game_collection.dart';
@@ -207,7 +206,7 @@ ActiveServer buildActiveServer(
   SyncQueueRepository? syncQueueRepository,
   SyncQueueDrain? syncQueueDrain,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
-  DataGatewayAccess? dataGatewayAccess,
+  CallerAccessRepository? callerAccess,
   GamesRemoteDataSource? gamesRemoteDataSource,
   GameRepository? gameRepository,
   String serverId = 'server-uuid-1',
@@ -298,8 +297,8 @@ ActiveServer buildActiveServer(
       dataGatewayRemoteDataSource,
     );
   }
-  if (dataGatewayAccess != null) {
-    container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
+  if (callerAccess != null) {
+    container.registerSingleton<CallerAccessRepository>(callerAccess);
   }
   if (gamesRemoteDataSource != null) {
     container.registerSingleton<GamesRemoteDataSource>(gamesRemoteDataSource);

@@ -13,6 +13,7 @@ import '../bloc/language_link_list_bloc.dart';
 import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
 import 'data_gateway_status.dart';
+import 'focus_is_free.dart';
 import 'language_tag_picker_dialog.dart';
 
 /// A DataGateway's language worklist (#457): the values it uses for languages
@@ -44,10 +45,13 @@ import 'language_tag_picker_dialog.dart';
 ///   app bar's Back, and that isn't the user's choice either.
 /// - The same order holds whenever a row goes while its menu has focus, for
 ///   whatever reason: a read can take it, as when a link was settled elsewhere.
+///   It holds too when every menu goes, because the caller's access stopped
+///   allowing update (#456), which can happen whenever the session asks again.
 /// - The selected filter takes focus only when no menu can: no row is listed,
-///   or the user may not change anything. A row that is listed and not built
-///   leaves focus alone. The page keeps the rows its footer covers built (see
-///   [BgePage.footer]), so that is a row the user has scrolled well away from.
+///   or the caller's access doesn't allow update. A row that is listed and not
+///   built leaves focus alone. The page keeps the rows its footer covers built
+///   (see [BgePage.footer]), so that is a row the user has scrolled well away
+///   from.
 /// - The page stays too. What takes focus is brought into view, as Tab does, for
 ///   a user who can see focus, unless they moved the page on during the action.
 ///
@@ -196,8 +200,8 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
   }
 
   /// When a menu with focus is about to go, because its row is leaving or the
-  /// user may not change anything now, takes focus where it would go after an
-  /// action on that row.
+  /// caller's access no longer allows update, takes focus where it would go
+  /// after an action on that row.
   ///
   /// Left to go with the menu, focus would land on whatever had it before. A
   /// read can do this at any time, as when a link was settled elsewhere, which
@@ -213,7 +217,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
     final id = _listed[place].id;
     final menuStays =
         state is LanguageLinkListReady &&
-        state.mayChange &&
+        state.mayUpdate &&
         links.any((link) => link.id == id);
     if (menuStays) return;
     _letGoOfMenu(id);
@@ -240,7 +244,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
       final state = context.read<LanguageLinkListBloc>().state;
       final menuToBeHad =
           state is LanguageLinkListReady &&
-          state.mayChange &&
+          state.mayUpdate &&
           state.filter == filter;
       final row = menuToBeHad ? _rowAfter(id, place, _linksOf(state)) : null;
       _giveFocusBack(
@@ -297,8 +301,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
     required bool inView,
     FocusNode? untouched,
   }) {
-    final focused = FocusManager.instance.primaryFocus;
-    if (!_focusIsFree() && (untouched == null || focused != untouched)) return;
+    if (!focusIsFree(context, untouched: untouched)) return;
     final target = rowId == null
         ? _chips[filter]
         : _menus[rowId]?.descendants
@@ -312,18 +315,6 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
         FocusManager.instance.highlightMode == FocusHighlightMode.traditional) {
       control.findRenderObject()?.showOnScreen();
     }
-  }
-
-  /// Whether keyboard focus is on no control: on nothing, on the page holding
-  /// this worklist, or on a scope that page sits inside. A scope anywhere else
-  /// belongs to another route, such as a menu or a dialog that has just opened,
-  /// and isn't this worklist's to take focus from.
-  bool _focusIsFree() {
-    final focused = FocusManager.instance.primaryFocus;
-    if (focused == null) return true;
-    if (focused is! FocusScopeNode) return false;
-    final page = FocusScope.of(context, createDependency: false);
-    return focused == page || page.ancestors.contains(focused);
   }
 
   @override
@@ -362,7 +353,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
                 :final filter,
                 :final links,
                 :final busy,
-                :final mayChange,
+                :final mayUpdate,
                 :final hasMore,
                 :final loadingMore,
                 :final moreFailed,
@@ -374,7 +365,7 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
                     itemBuilder: (context, link) => _LinkRow(
                       link: link,
                       busy: busy.contains(link.id),
-                      menuFocus: mayChange ? _menuNode(link.id) : null,
+                      menuFocus: mayUpdate ? _menuNode(link.id) : null,
                       onAction: (action) => unawaited(_act(link, action)),
                     ),
                   ),
@@ -480,8 +471,8 @@ class _LinkRow extends StatelessWidget {
   final LanguageLink link;
   final bool busy;
 
-  /// The node to hold the row's menu with. Null hides the menu: the user may
-  /// not change anything.
+  /// The node to hold the row's menu with. Null hides the menu: the caller's
+  /// access doesn't allow update.
   final FocusNode? menuFocus;
   final ValueChanged<LanguageLinkAction> onAction;
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -93,6 +94,88 @@ class _HomeScreenState extends State<HomeScreen> {
     // against this context — under the auth scope + router.
     _scaffoldKey.currentState?.closeDrawer();
     entry.onSelected(context);
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _keepDrawerFocus(oldWidget.entries);
+  }
+
+  /// Keeps keyboard focus in the drawer on a deliberate entry when the
+  /// entries change under it (#456).
+  ///
+  /// The Admin entry goes whenever the session's access stops allowing read,
+  /// and the session asks again on every resume and connectivity edge, so
+  /// that can happen with the drawer open. The drawer rebuilds every entry
+  /// below one that goes, because it matches them by position. Focus on any
+  /// of those would fall to the drawer itself, which shows none, and the next
+  /// Tab would start again from the top.
+  ///
+  /// So an entry the drawer rebuilt gets focus back. An entry that went hands
+  /// it to the entry that takes its place, or with none below it to the one
+  /// above. Each looks only in its own group, so a navigational entry never
+  /// hands focus to a destructive action such as sign out. Focus anywhere
+  /// else, including on an entry the change didn't rebuild, is left alone.
+  ///
+  /// Runs before the frame that changes the entries, while the entry still
+  /// has focus.
+  void _keepDrawerFocus(List<HomeMenuEntry> previous) {
+    final before = _displayed(previous);
+    final after = _displayed(widget.entries);
+    if (listEquals(before, after)) return;
+
+    final focused = FocusManager.instance.primaryFocus;
+    final scope = focused?.enclosingScope;
+    if (focused == null || scope == null) return;
+    final had = _entryOf(focused, before);
+    if (had == null) return;
+
+    final destructive = {
+      for (final entry in previous)
+        if (entry.isDestructive) entry.id,
+    };
+    final group = [
+      for (final id in before)
+        if (destructive.contains(id) == destructive.contains(had)) id,
+    ];
+    final at = group.indexOf(had);
+    final target = after.contains(had)
+        ? had
+        : [
+            ...group.skip(at + 1),
+            ...group.take(at).toList().reversed,
+          ].where(after.contains).firstOrNull;
+    if (target == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Still built: the change didn't take this entry's focus away.
+      if (!mounted || (focused.context?.mounted ?? false)) return;
+      scope.traversalDescendants
+          .where((node) => _entryOf(node, [target]) == target)
+          .firstOrNull
+          ?.requestFocus();
+    });
+  }
+
+  /// The ids of [entries] in the order the drawer shows them: destinations,
+  /// then actions.
+  static List<String> _displayed(List<HomeMenuEntry> entries) => [
+    for (final entry in entries)
+      if (!entry.isDestructive) entry.id,
+    for (final entry in entries)
+      if (entry.isDestructive) entry.id,
+  ];
+
+  /// The id, of [ids], of the entry [node] is in, or null for none.
+  static String? _entryOf(FocusNode node, List<String> ids) {
+    final keys = {for (final id in ids) HomeScreen.entryKey(id): id};
+    String? found;
+    node.context?.visitAncestorElements((element) {
+      found = keys[element.widget.key];
+      return found == null;
+    });
+    return found;
   }
 
   @override

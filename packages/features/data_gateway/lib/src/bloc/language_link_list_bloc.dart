@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../access/data_gateway_access.dart';
+import '../access/read_allowed_since.dart';
 import 'language_link_list_event.dart';
 import 'language_link_list_state.dart';
 
@@ -125,29 +128,47 @@ import 'language_link_list_state.dart';
 ///
 /// A handler waiting on the server outlives [close], and asking for a read then
 /// would throw, so it asks for none once [close] has started. A refusal that
-/// lands after that still reaches [access], which outlasts the screen.
+/// lands after that still asks [access] again, which outlasts the screen.
 ///
 /// ## Access
 ///
-/// A refused read is [LanguageLinkListDenied]. A refused change hides every
-/// action for the rest of the session, here and on every other screen, through
-/// [DataGatewayAccess]: Moderators may read DataGateways and their links and
-/// not change them, and nothing tells the client which role it has until a
-/// change is refused (#41). Both are reported to [access], so the home drawer
-/// agrees with what this screen found.
+/// Link, ignore and accept are offered while the caller's access, as the
+/// server answers it, allows update on DataGateways (#456). They follow
+/// [access] as its answer changes, up or down, without reading the list
+/// again. An action it no longer allows is dropped, as from a menu opened
+/// before it fell. One already sent runs on, and answers for itself.
 ///
-/// A null [access] is a composition with no session to report to. The screen
-/// still works; what it learns lasts as long as the bloc.
+/// A refused read or More is [LanguageLinkListDenied], and a refused action is
+/// reported in the outcome. Neither takes anything away: each asks [access]
+/// again, and the actions follow what it answers. The refusal is the server's
+/// word that the answer here may be out of date, as when the caller's role
+/// changed since it was asked. A refused read asks even when its answer is
+/// dropped: what it says is about the caller, not the rows.
+///
+/// [LanguageLinkListDenied] reads the list again once a changed answer
+/// allows read. A refusal can come before the server has written a new
+/// user's roles (backend#490), and the answer that follows them is the one
+/// that says the read would now go through. A refusal that comes after such
+/// an answer, while its read or More was out, reads again too, once: no
+/// change is left to say so by then.
+///
+/// A read that succeeds while the answer is still unknown asks [access]
+/// again too. The first ask can fail with the server up, as on a 502 from a
+/// proxy, and nothing else asks again until a rehydrate trigger. The server
+/// has just answered this caller, so an ask now is likely to be answered
+/// too.
+///
+/// A null [access] is a composition with no session to ask. The rows still
+/// show, and nothing is offered, as while the answer is unknown.
 class LanguageLinkListBloc
     extends Bloc<LanguageLinkListEvent, LanguageLinkListState> {
   LanguageLinkListBloc({
     required this._remote,
     required this._gatewayId,
-    DataGatewayAccess? access,
+    CallerAccessRepository? access,
     BgeLogger? logger,
   }) : _access = access,
        _logger = logger ?? BgeLogger('bge.data_gateway.language_links'),
-       _mayChange = access?.value.mayChange ?? true,
        super(const LanguageLinkListLoading(LanguageLinkFilter.waiting)) {
     on<LanguageLinkListLoadRequested>((_, emit) => _read(emit));
     on<LanguageLinkListFilterChanged>(_onFilterChanged);
@@ -155,7 +176,9 @@ class LanguageLinkListBloc
     on<LanguageLinkListActionRequested>(_onActionRequested);
     on<LanguageLinkListOutcomeDismissed>(_onOutcomeDismissed);
     on<LanguageLinkListAccessChanged>(_onAccessChanged);
-    access?.addListener(_accessListener);
+    _accessChanges = access?.changes.listen((_) {
+      if (!isClosed) add(const LanguageLinkListAccessChanged());
+    });
   }
 
   /// The page size every read asks for, which More's arithmetic counts in.
@@ -163,10 +186,16 @@ class LanguageLinkListBloc
 
   final DataGatewayRemoteDataSource _remote;
   final String _gatewayId;
-  final DataGatewayAccess? _access;
+  final CallerAccessRepository? _access;
   final BgeLogger _logger;
+  StreamSubscription<CallerAccess>? _accessChanges;
 
-  bool _mayChange;
+  /// Whether the caller's access lets them link, ignore and accept: update on
+  /// DataGateways. False while the answer is unknown, and with no [_access] to
+  /// ask.
+  bool get _mayUpdate =>
+      _access?.current.allows(ResourceType.dataGateway, AccessAction.update) ??
+      false;
 
   LanguageLinkFilter _filter = LanguageLinkFilter.waiting;
 
@@ -219,8 +248,6 @@ class LanguageLinkListBloc
   /// A read has been asked for and hasn't answered.
   bool get _reading => _readAnswered != _readSequence;
 
-  void _accessListener() => add(const LanguageLinkListAccessChanged());
-
   Future<void> _onFilterChanged(
     LanguageLinkListFilterChanged event,
     Emitter<LanguageLinkListState> emit,
@@ -237,6 +264,7 @@ class LanguageLinkListBloc
   Future<void> _read(Emitter<LanguageLinkListState> emit) async {
     final read = ++_readSequence;
     final filter = _filter;
+    final sentUnder = _access?.current;
     // A More still out answers for rows this read replaces. Its answer is
     // dropped when it lands, and it stops showing now.
     final droppedMore = _loadingMore;
@@ -254,17 +282,19 @@ class LanguageLinkListBloc
         limit: _pageSize,
       );
       if (read != _readSequence) return;
-      _access?.readGranted();
       _rows = result.items;
       _readThrough = result.items.length;
       _hasMore = result.meta.hasMore;
       _moreWaiting = _moreWaiting && _hasMore;
       _moreFailed = false;
       _emitReady(emit);
+      // The server answered this caller: see Access in the class doc.
+      if (_access?.current.isKnown == false) unawaited(_access?.refresh());
     } on DataGatewayForbiddenException {
+      unawaited(_access?.refresh());
       if (read != _readSequence) return;
-      _access?.readDenied();
       _takeDown(emit, LanguageLinkListDenied(filter));
+      _readAgainIfAllowedSince(sentUnder);
     } on DataGatewayNotFoundException {
       if (read != _readSequence) return;
       _takeDown(emit, LanguageLinkListGone(filter));
@@ -310,6 +340,7 @@ class LanguageLinkListBloc
     final more = ++_moreSequence;
     bool dropped() => read != _readSequence || more != _moreSequence;
     final filter = _filter;
+    final sentUnder = _access?.current;
     final page = _readThrough ~/ _pageSize + 1;
     _moreWaiting = false;
     _loadingMore = true;
@@ -323,7 +354,6 @@ class LanguageLinkListBloc
         limit: _pageSize,
       );
       if (dropped()) return;
-      _access?.readGranted();
       // Nothing else changes the rows while this is out: an action, a read or a
       // filter change drops it.
       final known = {for (final link in shown) link.id};
@@ -338,9 +368,10 @@ class LanguageLinkListBloc
       _loadingMore = false;
       _emitReady(emit);
     } on DataGatewayForbiddenException {
+      unawaited(_access?.refresh());
       if (dropped()) return;
-      _access?.readDenied();
       _takeDown(emit, LanguageLinkListDenied(filter));
+      _readAgainIfAllowedSince(sentUnder);
     } on DataGatewayNotFoundException {
       if (dropped()) return;
       _takeDown(emit, LanguageLinkListGone(filter));
@@ -362,7 +393,7 @@ class LanguageLinkListBloc
     Emitter<LanguageLinkListState> emit,
   ) async {
     final row = _rows?.where((link) => link.id == event.linkId).firstOrNull;
-    if (row == null || !_mayChange || _busy.contains(row.id)) return;
+    if (row == null || !_mayUpdate || _busy.contains(row.id)) return;
     final request = _request(event.action, row.id, event.tagId);
     if (request == null) return;
 
@@ -439,8 +470,8 @@ class LanguageLinkListBloc
         LanguageLinkAction.accept => LanguageLinkOutcomeKind.accepted,
       }, link);
     } on DataGatewayForbiddenException {
-      _mayChange = false;
-      _access?.changeDenied();
+      // Takes nothing away here: the actions follow what access answers.
+      unawaited(_access?.refresh());
       return const _ActionEnd(LanguageLinkOutcomeKind.refused);
     } on DataGatewayNotFoundException {
       return const _ActionEnd(LanguageLinkOutcomeKind.gone);
@@ -523,14 +554,28 @@ class LanguageLinkListBloc
     _emitReady(emit);
   }
 
+  /// Offers the actions as update rises and withdraws them as it falls. The
+  /// actions in flight and the last outcome stay as they were.
   void _onAccessChanged(
     LanguageLinkListAccessChanged event,
     Emitter<LanguageLinkListState> emit,
   ) {
-    final access = _access;
-    if (access == null || access.value.mayChange || !_mayChange) return;
-    _mayChange = false;
+    // A refused read tries again: see Access in the class doc.
+    if (state is LanguageLinkListDenied &&
+        (_access?.current.allows(ResourceType.dataGateway, AccessAction.read) ??
+            false)) {
+      if (!isClosed) add(const LanguageLinkListLoadRequested());
+      return;
+    }
     _emitReady(emit);
+  }
+
+  /// Reads the list again after a refusal, when an answer that allows read
+  /// landed while the refused read was out: see Access in the class doc.
+  void _readAgainIfAllowedSince(CallerAccess? sentUnder) {
+    if (readAllowedSince(_access, sentUnder) && !isClosed) {
+      add(const LanguageLinkListLoadRequested());
+    }
   }
 
   /// Takes the rows down, and shows [state] in their place.
@@ -544,7 +589,8 @@ class LanguageLinkListBloc
     emit(state);
   }
 
-  /// Shows the rows, when there are rows to show.
+  /// Shows the rows, when there are rows to show, with the actions the
+  /// caller's access allows now.
   void _emitReady(Emitter<LanguageLinkListState> emit) {
     final rows = _rows;
     if (rows == null) return;
@@ -555,7 +601,7 @@ class LanguageLinkListBloc
         hasMore: _hasMore,
         loadingMore: _loadingMore || _moreWaiting,
         moreFailed: _moreFailed,
-        mayChange: _mayChange,
+        mayUpdate: _mayUpdate,
         busy: {..._busy},
         outcome: _outcome,
       ),
@@ -583,7 +629,9 @@ class LanguageLinkListBloc
 
   @override
   Future<void> close() {
-    _access?.removeListener(_accessListener);
+    // Not awaited first, so that the bloc reads as closed from the turn this
+    // starts in, as Leaving during an action says.
+    unawaited(_accessChanges?.cancel());
     return super.close();
   }
 }

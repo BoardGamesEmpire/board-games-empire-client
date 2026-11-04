@@ -725,118 +725,150 @@ class _BgeAppState extends State<BgeApp> {
         canReadHouseholds &&
         container.isRegistered<HouseholdInviteRemoteDataSource>();
 
-    HomeScreen home({
-      required bool admin,
-      bool canConnect = false,
-    }) => HomeScreen(
-      activeServerName: active.displayName,
-      // #190: shown while anything is stuck, under the same gate as the
-      // screen it opens, so it never leads to one that can't appear.
-      notice: _canRecoverStuckChanges(container)
-          ? StuckSyncOpsNotice(
-              queue: container.get<SyncQueueRepository>(),
-              padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceLg),
-              onReview: (ctx) => ctx.push(AppRoutes.stuckChanges),
-            )
-          : null,
-      upcomingEvents: canReadEvents ? _buildUpcomingEvents(container) : null,
-      stats: canReadCollection ? _buildStats(container) : null,
-      newestGames: canBrowseGames
-          ? _buildNewestGames(container, canConnect: canConnect)
-          : null,
-      somethingToPlay: canBrowseGames ? _buildSomethingToPlay(container) : null,
-      entries: [
-        if (canReadCollection)
-          HomeMenuEntry(
-            id: 'collection',
-            icon: Icons.casino_outlined,
-            label: collectionL10n.collectionListTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.collection),
-          ),
-        if (canBrowseGames)
-          HomeMenuEntry(
-            id: 'games',
-            icon: Icons.explore_outlined,
-            label: catalogL10n.catalogBrowseTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.games),
-          ),
-        if (canReadEvents)
-          HomeMenuEntry(
-            id: 'events',
-            icon: Icons.event_outlined,
-            label: eventsL10n.eventsTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.events),
-          ),
-        if (canReadHouseholds)
-          HomeMenuEntry(
-            id: 'households',
-            icon: Icons.groups_outlined,
-            label: householdL10n.householdListTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.household),
-          ),
-        if (canReadInvites)
-          HomeMenuEntry(
-            id: 'invites',
-            icon: Icons.mail_outline,
-            label: householdL10n.inviteInboxTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.invites),
-          ),
-        HomeMenuEntry(
-          id: 'send_feedback',
-          icon: Icons.feedback_outlined,
-          label: feedbackL10n.feedbackComposeTitle,
-          onSelected: (ctx) => ctx.push(AppRoutes.feedback),
-        ),
-        if (admin)
-          HomeMenuEntry(
-            id: 'admin',
-            icon: Icons.admin_panel_settings_outlined,
-            label: shellL10n.homeMenuAdmin,
-            // Straight to the DataGateway list: it is the only admin screen
-            // so far. #274's dashboard takes the entry over and keeps the
-            // route.
-            onSelected: (ctx) => ctx.push(AppRoutes.adminDataGateways),
-          ),
-        HomeMenuEntry(
-          id: 'settings',
-          icon: Icons.settings_outlined,
-          label: shellL10n.settingsTitle,
-          onSelected: (ctx) => ctx.push(AppRoutes.settings),
-        ),
-        HomeMenuEntry(
-          id: 'sign_out',
-          icon: Icons.logout,
-          label: authL10n.authSignOutButton,
-          isDestructive: true,
-          onSelected: (ctx) =>
-              ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
-        ),
-      ],
-    );
+    // Everything home shows is resolved here, once, and not in the access
+    // builder below (#456). The session's access closes its changes when the
+    // user scope pops, while home is still on its way out, and a StreamBuilder
+    // rebuilds on that. By then the user's services are gone, so a builder
+    // that resolved them threw on every sign-out. Ignoring the close alone
+    // would leave an answer that lands in the frame before the pop, which
+    // rebuilds after it.
+    //
+    // #190: shown while anything is stuck, under the same gate as the screen
+    // it opens, so it never leads to one that can't appear.
+    final notice = _canRecoverStuckChanges(container)
+        ? StuckSyncOpsNotice(
+            queue: container.get<SyncQueueRepository>(),
+            padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceLg),
+            onReview: (ctx) => ctx.push(AppRoutes.stuckChanges),
+          )
+        : null;
+    final upcomingEvents = canReadEvents
+        ? _buildUpcomingEvents(container)
+        : null;
+    final stats = canReadCollection ? _buildStats(container) : null;
+    final newestGames = canBrowseGames ? _buildNewestGames(container) : null;
+    final somethingToPlay = canBrowseGames
+        ? _buildSomethingToPlay(container)
+        : null;
 
-    // #41: the Admin entry shows only once the session's one-row read of
-    // DataGateways has succeeded. A refused read, and one that has not
-    // answered yet, both leave it hidden; it appears when the read lands,
-    // and goes when a screen later finds the read refused. Moderators can
-    // read DataGateways too, so the entry says nothing about changing them:
-    // the screen hides its change actions on the first refusal.
+    HomeScreen home({required bool admin, bool canConnect = false}) =>
+        HomeScreen(
+          activeServerName: active.displayName,
+          notice: notice,
+          upcomingEvents: upcomingEvents,
+          stats: stats,
+          newestGames: newestGames?.call(canConnect: canConnect),
+          somethingToPlay: somethingToPlay,
+          entries: [
+            if (canReadCollection)
+              HomeMenuEntry(
+                id: 'collection',
+                icon: Icons.casino_outlined,
+                label: collectionL10n.collectionListTitle,
+                onSelected: (ctx) => ctx.push(AppRoutes.collection),
+              ),
+            if (canBrowseGames)
+              HomeMenuEntry(
+                id: 'games',
+                icon: Icons.explore_outlined,
+                label: catalogL10n.catalogBrowseTitle,
+                onSelected: (ctx) => ctx.push(AppRoutes.games),
+              ),
+            if (canReadEvents)
+              HomeMenuEntry(
+                id: 'events',
+                icon: Icons.event_outlined,
+                label: eventsL10n.eventsTitle,
+                onSelected: (ctx) => ctx.push(AppRoutes.events),
+              ),
+            if (canReadHouseholds)
+              HomeMenuEntry(
+                id: 'households',
+                icon: Icons.groups_outlined,
+                label: householdL10n.householdListTitle,
+                onSelected: (ctx) => ctx.push(AppRoutes.household),
+              ),
+            if (canReadInvites)
+              HomeMenuEntry(
+                id: 'invites',
+                icon: Icons.mail_outline,
+                label: householdL10n.inviteInboxTitle,
+                onSelected: (ctx) => ctx.push(AppRoutes.invites),
+              ),
+            HomeMenuEntry(
+              id: 'send_feedback',
+              icon: Icons.feedback_outlined,
+              label: feedbackL10n.feedbackComposeTitle,
+              onSelected: (ctx) => ctx.push(AppRoutes.feedback),
+            ),
+            if (admin)
+              HomeMenuEntry(
+                id: 'admin',
+                icon: Icons.admin_panel_settings_outlined,
+                label: shellL10n.homeMenuAdmin,
+                // Straight to the DataGateway list: it is the only admin screen
+                // so far. #274's dashboard takes the entry over and keeps the
+                // route.
+                onSelected: (ctx) => ctx.push(AppRoutes.adminDataGateways),
+              ),
+            HomeMenuEntry(
+              id: 'settings',
+              icon: Icons.settings_outlined,
+              label: shellL10n.settingsTitle,
+              onSelected: (ctx) => ctx.push(AppRoutes.settings),
+            ),
+            HomeMenuEntry(
+              id: 'sign_out',
+              icon: Icons.logout,
+              label: authL10n.authSignOutButton,
+              isDestructive: true,
+              onSelected: (ctx) =>
+                  ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
+            ),
+          ],
+        );
+
+    // #41, #456: the Admin entry shows while the session's access allows
+    // read on DataGateways, and is hidden while the answer is unknown. It
+    // comes and goes as the answer changes: a sign-up's first answer lands
+    // after home is up, and a refusal on any DataGateway screen asks again.
+    // Moderators may read DataGateways too, so the entry says nothing about
+    // changing them: each screen offers what the answer allows.
     //
-    // No access check registered (no DataGateway client, or no user
-    // session) is no entry.
+    // No access registered (no user session, or no user client to ask
+    // through) is no entry.
     //
-    // #617: a server with no games offers the connect card on the same read,
-    // and only until a change has been refused. The read never goes back to
-    // unknown once answered, as a failed re-check leaves it standing, so the
-    // card doesn't come and go over a blip. The sections keep their keys
-    // through this rebuild, so that an answer landing reads nothing again.
-    final access = _dataGatewayAccess(container);
+    // #617: a server with no games offers the connect card while the access
+    // allows read and create: the card opens the DataGateway list, which
+    // needs read, to add one there, which needs create. A failed ask
+    // keeps the last answer, so the card doesn't come and go over a blip. The
+    // sections keep their keys through this rebuild, so that an answer
+    // landing reads nothing again.
+    //
+    // The builder reads the repository, not the snapshot. A user switched in
+    // place goes through the splash (#432, see [_homeSession]), so home's
+    // elements survive the switch only when it completes within a frame. When
+    // they do, a StreamBuilder handed another stream keeps the last stream's
+    // value until the new one emits: the departing user's access, which the
+    // arriving user's may never replace. Reading the repository holds either
+    // way.
+    final access = _callerAccess(container);
     if (access == null) return home(admin: false);
-    return ValueListenableBuilder<DataGatewayAccessState>(
-      valueListenable: access,
-      builder: (_, access, _) => home(
-        admin: access.read == DataGatewayRead.granted,
-        canConnect: access.read == DataGatewayRead.granted && access.mayChange,
-      ),
+    return StreamBuilder<CallerAccess>(
+      stream: access.changes,
+      builder: (_, _) {
+        final current = access.current;
+        final mayRead = current.allows(
+          ResourceType.dataGateway,
+          AccessAction.read,
+        );
+        return home(
+          admin: mayRead,
+          canConnect:
+              mayRead &&
+              current.allows(ResourceType.dataGateway, AccessAction.create),
+        );
+      },
     );
   }
 
@@ -892,21 +924,26 @@ class _BgeAppState extends State<BgeApp> {
   /// Home's "Recently added" row (#615), for a [container] holding the
   /// [GamesRemoteDataSource]. The remote is the server's and outlives a user,
   /// so the row is keyed on the session's games cache: another user's session
-  /// is a new row. [canConnect] offers the #617 card on a server with no games.
+  /// is a new row. `canConnect` offers the #617 card on a server with no
+  /// games.
+  ///
+  /// Resolves what the row reads now, and returns it for a `canConnect`. That
+  /// follows the session's access, so home builds the row again as the answer
+  /// changes, and by then the user scope may have popped (#456).
   ///
   /// "See all" is a push, because the browse screen reads its sort once, when
   /// it mounts.
-  Widget _buildNewestGames(
-    DependencyContainer container, {
-    required bool canConnect,
-  }) {
+  Widget Function({required bool canConnect}) _buildNewestGames(
+    DependencyContainer container,
+  ) {
     final remote = container.get<GamesRemoteDataSource>();
     final cache = _gamesCache(container);
-    return NewestGamesSection(
+    final connectivity = _rootConnectivity();
+    return ({required canConnect}) => NewestGamesSection(
       key: ObjectKey(cache ?? remote),
       remote: remote,
       cache: cache,
-      connectivity: _rootConnectivity(),
+      connectivity: connectivity,
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSeeAll: (ctx) =>
@@ -1887,23 +1924,34 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Reads every DataGateway's name, by id, for the search screen (#42), or
-  /// null where the session has not learned that the user may read
-  /// DataGateways. Ordinary users may not (`read:data_gateway` is
-  /// staff-only), and their search results then carry no DataGateway name.
+  /// null where the session's access doesn't allow read on DataGateways
+  /// (#456), including while it is unknown. Ordinary users may not read them,
+  /// and their search results then carry no DataGateway name.
   ///
-  /// Decided when the route is built. A user whose access check answers
-  /// after they opened search sees names the next time they open it.
+  /// Decided when the route is built. A user whose access answers after they
+  /// opened search sees names the next time they open it.
+  ///
+  /// A refused read asks the session's access again, as every DataGateway
+  /// screen's does: the answer that allowed it is out of date. The refusal
+  /// still goes to the search, which shows its results unnamed.
   static Future<Map<String, String>> Function()? _dataGatewayNames(
     DependencyContainer container,
   ) {
-    final access = _dataGatewayAccess(container);
+    final access = _callerAccess(container);
     if (access == null ||
-        access.value.read != DataGatewayRead.granted ||
+        !access.current.allows(ResourceType.dataGateway, AccessAction.read) ||
         !container.isRegistered<DataGatewayRemoteDataSource>()) {
       return null;
     }
     final remote = container.get<DataGatewayRemoteDataSource>();
-    return () => readDataGatewayNames(remote);
+    return () async {
+      try {
+        return await readDataGatewayNames(remote);
+      } on DataGatewayForbiddenException {
+        unawaited(access.refresh());
+        rethrow;
+      }
+    };
   }
 
   /// Whether [container] holds what the #190 retry-or-discard screen needs:
@@ -1950,15 +1998,15 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// The session's [DataGatewayAccess], or null where the session runs no
-  /// access check (#41).
-  static DataGatewayAccess? _dataGatewayAccess(DependencyContainer container) =>
-      container.isRegistered<DataGatewayAccess>()
-      ? container.get<DataGatewayAccess>()
+  /// The session's [CallerAccessRepository] (#456), or null where the session
+  /// has none to ask, which offers no action that needs it.
+  static CallerAccessRepository? _callerAccess(DependencyContainer container) =>
+      container.isRegistered<CallerAccessRepository>()
+      ? container.get<CallerAccessRepository>()
       : null;
 
   /// The #41 DataGateway list: the per-server [DataGatewayRemoteDataSource]
-  /// and the session's [DataGatewayAccess] from the active server's
+  /// and the session's [CallerAccessRepository] from the active server's
   /// container. Null (→ [NotYetAvailableScreen]) when no active server is
   /// resolvable or it has no DataGateway client.
   ///
@@ -1977,7 +2025,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayListScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       onAdd: (ctx) => unawaited(ctx.push<void>(AppRoutes.dataGatewayAdd)),
       onEdit: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.dataGatewayEditOf(id))),
@@ -2003,7 +2051,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayFormScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       editingId: dataGatewayId,
       onDone: (ctx) => ctx.pop(),
     );
@@ -2023,7 +2071,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayDetailScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       id: dataGatewayId,
     );
   }

@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -71,7 +71,21 @@ final class _Server {
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
+
+  /// A caller who may read and update DataGateways: everything the worklist
+  /// offers.
+  final updating = FakeCallerAccessRepository.dataGateway(
+    read: AccessExtent.all,
+    update: AccessExtent.all,
+  );
+
+  /// A caller who may do anything to a DataGateway but update it.
+  final allButUpdate = FakeCallerAccessRepository.dataGateway(
+    create: AccessExtent.all,
+    read: AccessExtent.all,
+    delete: AccessExtent.all,
+  );
 
   final a = _link('a');
   final b = _link('b');
@@ -128,10 +142,8 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(updating);
   });
-
-  tearDown(() => access.dispose());
 
   LanguageLinkListBloc build() =>
       LanguageLinkListBloc(remote: remote, gatewayId: 'dg_1', access: access);
@@ -185,7 +197,7 @@ void main() {
     bool hasMore = false,
     bool loadingMore = false,
     bool moreFailed = false,
-    bool mayChange = true,
+    bool mayUpdate = true,
     Set<String> busy = const {},
     LanguageLinkOutcome? outcome,
   }) => LanguageLinkListReady(
@@ -194,7 +206,7 @@ void main() {
     hasMore: hasMore,
     loadingMore: loadingMore,
     moreFailed: moreFailed,
-    mayChange: mayChange,
+    mayUpdate: mayUpdate,
     busy: busy,
     outcome: outcome,
   );
@@ -229,7 +241,7 @@ void main() {
       ],
       verify: (_) {
         expect(remote.calls, ['fetchLanguageLinks(dg_1, null, 1)']);
-        expect(access.value.read, DataGatewayRead.granted);
+        expect(access.refreshCount, 0);
       },
     );
 
@@ -372,25 +384,25 @@ void main() {
   group('reading', () {
     group('a refused read is denied; a 404 is gone; another failure is '
         'failed', () {
-      for (final (name, error, down, read)
-          in <(String, Object, LanguageLinkListState, DataGatewayRead)>[
+      for (final (name, error, down, asks)
+          in <(String, Object, LanguageLinkListState, int)>[
             (
-              'a refused read is denied, and the session learns it',
+              'a refused read asks access again',
               forbidden(),
               const LanguageLinkListDenied(LanguageLinkFilter.waiting),
-              DataGatewayRead.denied,
+              1,
             ),
             (
               'a 404 is gone',
               notFound,
               const LanguageLinkListGone(LanguageLinkFilter.waiting),
-              DataGatewayRead.unknown,
+              0,
             ),
             (
               'another failure is failed',
               unreachable(),
               const LanguageLinkListFailed(LanguageLinkFilter.waiting),
-              DataGatewayRead.unknown,
+              0,
             ),
           ]) {
         blocTest<LanguageLinkListBloc, LanguageLinkListState>(
@@ -402,10 +414,142 @@ void main() {
             const LanguageLinkListLoading(LanguageLinkFilter.waiting),
             down,
           ],
-          verify: (_) => expect(access.value.read, read),
+          verify: (_) => expect(access.refreshCount, asks),
         );
       }
     });
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read reads again once a changed answer allows read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        reads([
+          forbidden(),
+          linksPage([a]),
+        ]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a]),
+      ],
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read stays denied while a changed answer still refuses read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        reads([forbidden()]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.all,
+        );
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall()]),
+    );
+
+    late Completer<PaginatedResult<LanguageLink>> refusal;
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([
+          refusal.future,
+          linksPage([a]),
+        ]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a]),
+      ],
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, forbidden()]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall(), fetchCall()]),
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a refused more reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        refusal = Completer();
+        reads([
+          linksPage([a], hasMore: true),
+          refusal.future,
+          linksPage([a, b]),
+        ]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        await send(bloc, more);
+        // A changed answer that still allows read.
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+        await pumpEventQueue();
+      },
+      skip: 4,
+      expect: () => [
+        const LanguageLinkListDenied(LanguageLinkFilter.waiting),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a, b], mayUpdate: false),
+      ],
+      // The read, the More on the same short page, and the read again.
+      verify: (_) =>
+          expect(remote.calls, [fetchCall(), fetchCall(), fetchCall()]),
+    );
 
     late Completer<PaginatedResult<LanguageLink>> pendingRead;
 
@@ -939,19 +1083,19 @@ void main() {
     );
 
     group('a refused more is denied, and a 404 more is gone', () {
-      for (final (name, error, down, read)
-          in <(String, Object, LanguageLinkListState, DataGatewayRead)>[
+      for (final (name, error, down, asks)
+          in <(String, Object, LanguageLinkListState, int)>[
             (
-              'refused',
+              'refused, and asks access again',
               forbidden(),
               const LanguageLinkListDenied(LanguageLinkFilter.waiting),
-              DataGatewayRead.denied,
+              1,
             ),
             (
               '404',
               notFound,
               const LanguageLinkListGone(LanguageLinkFilter.waiting),
-              DataGatewayRead.granted,
+              0,
             ),
           ]) {
         blocTest<LanguageLinkListBloc, LanguageLinkListState>(
@@ -970,7 +1114,7 @@ void main() {
           },
           skip: 3,
           expect: () => [down],
-          verify: (_) => expect(access.value.read, read),
+          verify: (_) => expect(access.refreshCount, asks),
         );
       }
     });
@@ -1213,32 +1357,36 @@ void main() {
     );
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'a 403 hides actions everywhere',
+      'a refused link asks access again, and the actions go once it answers '
+      'that they may not',
       setUp: () {
         reads([
           linksPage([a, b]),
         ]);
-        remote.onIgnoreLanguageLink = (_, _) async => throw forbidden();
+        remote.onLinkLanguageLink = (_, _, _) async => throw forbidden();
       },
       build: build,
       act: (bloc) async {
         await send(bloc, load);
-        await send(bloc, ignore('a'));
+        await send(bloc, linkTo('a', czech));
+        expect(access.refreshCount, 1);
+        // What the ask found.
+        access.current = allButUpdate;
+        await pumpEventQueue();
         await send(bloc, ignore('b'));
       },
       skip: 2,
       expect: () => [
         ready([a, b], busy: {'a'}),
+        // The refusal alone takes nothing away: access does.
+        ready([a, b], outcome: told(LanguageLinkOutcomeKind.refused, a)),
         ready(
           [a, b],
-          mayChange: false,
+          mayUpdate: false,
           outcome: told(LanguageLinkOutcomeKind.refused, a),
         ),
       ],
-      verify: (_) {
-        expect(access.value.mayChange, isFalse);
-        expect(remote.calls, [fetchCall(), ignoreCall('a')]);
-      },
+      verify: (_) => expect(remote.calls, [fetchCall(), linkCall('a', czech)]),
     );
 
     group('no answer keeps the row', () {
@@ -1779,7 +1927,7 @@ void main() {
     );
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'and a refusal that lands after the close still tells the session',
+      'and a refusal that lands after the close still asks access again',
       setUp: holdingTheAccept,
       build: build,
       act: (bloc) async {
@@ -1789,90 +1937,159 @@ void main() {
         pending.completeError(forbidden());
         await pumpEventQueue();
       },
-      verify: (_) => expect(access.value.mayChange, isFalse),
+      verify: (_) => expect(access.refreshCount, 1),
     );
   });
 
-  test('closing stops listening to the session', () async {
-    final errors = <FlutterErrorDetails>[];
-    final previous = FlutterError.onError;
-    FlutterError.onError = errors.add;
-    addTearDown(() => FlutterError.onError = previous);
-
-    final bloc = build();
-    await bloc.close();
-    access.changeDenied();
-
-    expect(errors, isEmpty);
-  });
-
-  group('a reader who may not change DataGateways', () {
+  group('what the caller may do (#456)', () {
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'opens with actions hidden once the session has learned it, and sends '
-      'nothing',
+      'a read that succeeds while access is unknown asks access again',
+      // The first ask failed with the server up, and nothing else would ask
+      // again until a rehydrate trigger.
+      setUp: () {
+        reads([
+          linksPage([b]),
+        ]);
+        access.current = const CallerAccess.unknown();
+      },
+      build: build,
+      act: (bloc) => bloc.add(load),
+      skip: 1,
+      expect: () => [
+        ready([b], mayUpdate: false),
+      ],
+      verify: (_) => expect(access.refreshCount, 1),
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'a read that succeeds while access is known asks nothing',
+      setUp: () => reads([
+        linksPage([b]),
+      ]),
+      build: build,
+      act: (bloc) => bloc.add(load),
+      skip: 1,
+      expect: () => [
+        ready([b]),
+      ],
+      verify: (_) => expect(access.refreshCount, 0),
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'link, ignore and accept follow update',
+      setUp: () {
+        reads([
+          linksPage([pendingA, b]),
+        ]);
+        access.current = const CallerAccess.unknown();
+        remote.onIgnoreLanguageLink = (_, _) async => ignoredOf(b);
+      },
+      build: build,
+      act: (bloc) async {
+        Future<void> askEach() async {
+          await send(bloc, accept('a'));
+          await send(bloc, linkTo('a', czech));
+          await send(bloc, ignore('b'));
+        }
+
+        await send(bloc, load);
+        await askEach();
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        await askEach();
+        expect(remote.calls, [fetchCall()]);
+
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.some,
+        );
+        await pumpEventQueue();
+        await send(bloc, ignore('b'));
+
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        await askEach();
+      },
+      expect: () => [
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        // Unknown, then known without update: the same, and nothing sent.
+        ready([pendingA, b], mayUpdate: false),
+        ready([pendingA, b]),
+        ready([pendingA, b], busy: {'b'}),
+        ready([pendingA], outcome: told(LanguageLinkOutcomeKind.ignored, b)),
+        ready(
+          [pendingA],
+          mayUpdate: false,
+          outcome: told(LanguageLinkOutcomeKind.ignored, b),
+        ),
+      ],
+      // Without reading the list again as access changes.
+      verify: (_) => expect(remote.calls, [fetchCall(), ignoreCall('b')]),
+    );
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'offers nothing without a session to ask',
+      setUp: () => reads([
+        linksPage([a, b]),
+      ]),
+      build: () => LanguageLinkListBloc(remote: remote, gatewayId: 'dg_1'),
+      act: (bloc) async {
+        await send(bloc, load);
+        await send(bloc, ignore('a'));
+      },
+      skip: 1,
+      expect: () => [
+        ready([a, b], mayUpdate: false),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall()]),
+    );
+
+    late Completer<LanguageLink> held;
+
+    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+      'update falling during an action lets it answer',
       setUp: () {
         reads([
           linksPage([a, b]),
         ]);
-        access.changeDenied();
+        held = Completer();
+        remote.onIgnoreLanguageLink = (_, _) => held.future;
       },
       build: build,
       act: (bloc) async {
         await send(bloc, load);
         await send(bloc, ignore('a'));
-        await send(bloc, linkTo('b', czech));
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        held.complete(ignoredOf(a));
+        await pumpEventQueue();
       },
-      skip: 1,
+      skip: 3,
       expect: () => [
-        ready([a, b], mayChange: false),
+        ready([a, b], mayUpdate: false, busy: {'a'}),
+        ready(
+          [b],
+          mayUpdate: false,
+          outcome: told(LanguageLinkOutcomeKind.ignored, a),
+        ),
       ],
-      verify: (_) => expect(remote.calls, [fetchCall()]),
     );
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'access changing elsewhere hides actions',
+      'stops listening on close',
       setUp: () => reads([
         linksPage([a, b]),
       ]),
       build: build,
       act: (bloc) async {
         await send(bloc, load);
-        access.changeDenied();
+        await bloc.close();
+        access.current = allButUpdate;
         await pumpEventQueue();
-        await send(bloc, ignore('a'));
       },
-      skip: 2,
       expect: () => [
-        ready([a, b], mayChange: false),
+        const LanguageLinkListLoading(LanguageLinkFilter.waiting),
+        ready([a, b]),
       ],
-      verify: (_) => expect(remote.calls, [fetchCall()]),
-    );
-
-    blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'with no session to tell, a refusal still hides actions here',
-      setUp: () {
-        reads([
-          linksPage([a, b]),
-        ]);
-        remote.onIgnoreLanguageLink = (_, _) async => throw forbidden();
-      },
-      build: () => LanguageLinkListBloc(remote: remote, gatewayId: 'dg_1'),
-      act: (bloc) async {
-        await send(bloc, load);
-        await send(bloc, ignore('a'));
-        await send(bloc, ignore('b'));
-      },
-      verify: (bloc) {
-        expect(
-          bloc.state,
-          ready(
-            [a, b],
-            mayChange: false,
-            outcome: told(LanguageLinkOutcomeKind.refused, a),
-          ),
-        );
-        expect(remote.calls, [fetchCall(), ignoreCall('a')]);
-      },
     );
   });
 

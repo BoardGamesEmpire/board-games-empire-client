@@ -27,6 +27,21 @@ class FakeUserRemote implements UserRemoteDataSource {
         onSearchUsers ?? (throw StateError('searchUsers was not scripted'));
     return handler(query, page, limit);
   }
+
+  Future<Map<ResourceType, ResourceAccess>> Function(
+    Set<ResourceType> resourceTypes,
+  )?
+  onFetchAccess;
+
+  @override
+  Future<Map<ResourceType, ResourceAccess>> fetchAccess(
+    Set<ResourceType> resourceTypes,
+  ) {
+    calls.add('fetchAccess');
+    final handler =
+        onFetchAccess ?? (throw StateError('fetchAccess was not scripted'));
+    return handler(resourceTypes);
+  }
 }
 
 /// One page holding [items].

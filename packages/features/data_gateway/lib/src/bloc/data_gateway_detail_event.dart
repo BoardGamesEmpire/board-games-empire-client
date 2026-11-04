@@ -41,8 +41,8 @@ final class DataGatewayDetailOutcomeDismissed extends DataGatewayDetailEvent {
   const DataGatewayDetailOutcomeDismissed();
 }
 
-/// The session's access changed under the screen, because another screen
-/// learned something. Internal.
+/// The caller's access changed under the screen: the session kept a new
+/// answer (#456). Internal.
 final class DataGatewayDetailAccessChanged extends DataGatewayDetailEvent {
   const DataGatewayDetailAccessChanged();
 }

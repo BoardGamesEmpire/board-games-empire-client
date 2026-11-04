@@ -459,4 +459,127 @@ void main() {
       });
     }
   });
+
+  // The Admin entry comes and goes with the session's access, which can
+  // change with the drawer open (#456).
+  group('entries changing under keyboard focus (#456)', () {
+    /// [_entries] with an Admin entry after Send feedback, as the shell puts
+    /// it, or without it.
+    List<HomeMenuEntry> withAdmin({required bool admin}) {
+      final entries = _entries([]);
+      return [
+        ...entries.take(2),
+        if (admin)
+          HomeMenuEntry(
+            id: 'admin',
+            icon: Icons.admin_panel_settings_outlined,
+            label: 'Admin',
+            onSelected: (_) {},
+          ),
+        ...entries.skip(2),
+      ];
+    }
+
+    void focusEntry(WidgetTester tester, String id) {
+      final label = find.descendant(
+        of: find.byKey(HomeScreen.entryKey(id)),
+        matching: find.byType(Text),
+      );
+      Focus.of(tester.element(label.first)).requestFocus();
+    }
+
+    /// The id of the entry holding focus, or null for none.
+    String? focusedEntry() {
+      String? found;
+      FocusManager.instance.primaryFocus?.context?.visitAncestorElements((e) {
+        final key = e.widget.key;
+        if (key is ValueKey<String> &&
+            key.value.startsWith('home_menu_entry_')) {
+          found = key.value.substring('home_menu_entry_'.length);
+        }
+        return found == null;
+      });
+      return found;
+    }
+
+    Future<void> openWithFocusOn(WidgetTester tester, String id) async {
+      await _pump(tester, entries: withAdmin(admin: true));
+      await _openDrawer(tester);
+      focusEntry(tester, id);
+      await tester.pump();
+      expect(focusedEntry(), id);
+    }
+
+    testWidgets('an entry that goes with focus hands it to the one that takes '
+        'its place', (tester) async {
+      await openWithFocusOn(tester, 'admin');
+
+      await _pump(tester, entries: withAdmin(admin: false));
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
+      expect(focusedEntry(), 'settings');
+    });
+
+    for (final below in ['settings', 'sign_out']) {
+      testWidgets('an entry below one that goes keeps focus ($below)', (
+        tester,
+      ) async {
+        await openWithFocusOn(tester, below);
+
+        await _pump(tester, entries: withAdmin(admin: false));
+        await tester.pumpAndSettle();
+
+        expect(
+          FocusManager.instance.primaryFocus,
+          isNot(isA<FocusScopeNode>()),
+        );
+        expect(focusedEntry(), below);
+      });
+    }
+
+    testWidgets('the last destination going hands focus to the one above, not '
+        'to sign out', (tester) async {
+      await _pump(tester, entries: _entries([]));
+      await _openDrawer(tester);
+      focusEntry(tester, 'settings');
+      await tester.pump();
+
+      await _pump(
+        tester,
+        entries: [
+          for (final entry in _entries([]))
+            if (entry.id != 'settings') entry,
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      expect(focusedEntry(), 'send_feedback');
+    });
+
+    testWidgets('focus on an entry above the change is left alone', (
+      tester,
+    ) async {
+      await openWithFocusOn(tester, 'send_feedback');
+      final focused = FocusManager.instance.primaryFocus;
+
+      await _pump(tester, entries: withAdmin(admin: false));
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(focused));
+    });
+
+    testWidgets('focus outside the drawer is left alone', (tester) async {
+      await _pump(tester, entries: withAdmin(admin: true));
+      final menu = find.byIcon(Icons.menu);
+      Focus.of(tester.element(menu)).requestFocus();
+      await tester.pump();
+      final focused = FocusManager.instance.primaryFocus;
+
+      await _pump(tester, entries: withAdmin(admin: false));
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(focused));
+    });
+  });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
@@ -260,13 +261,16 @@ class _Connectivity implements ConnectivityService {
 /// Holds whoever the shell last activated, serialized like every real
 /// [UserSessionScope], and runs [onActivate] where its installers would run.
 class _UserSessionScope implements UserSessionScope {
-  _UserSessionScope(this.onActivate, {this.holdActivation});
+  _UserSessionScope(this.onActivate, {this.holdActivation, this.onDeactivate});
 
   final void Function(String userId) onActivate;
 
   /// What [activate] waits on for a user, as a real scope waits on its
   /// installers. Null for no wait.
   final Future<void>? Function(String userId)? holdActivation;
+
+  /// Runs inside [deactivate], where a real scope pops the user's services.
+  final Future<void> Function()? onDeactivate;
 
   String? _activeUserId;
   Future<void> _ops = Future<void>.value();
@@ -282,12 +286,64 @@ class _UserSessionScope implements UserSessionScope {
   });
 
   @override
-  Future<void> deactivate() => _enqueue(() async => _activeUserId = null);
+  Future<void> deactivate() => _enqueue(() async {
+    _activeUserId = null;
+    await onDeactivate?.call();
+  });
 
   Future<void> _enqueue(Future<void> Function() op) {
     final result = _ops.then((_) => op());
     _ops = result.then<void>((_) {}, onError: (Object _) {});
     return result;
+  }
+}
+
+/// A server's container with a user session's tier over it, as both
+/// platforms compose theirs: what the user tier doesn't hold falls through to
+/// the server's. Everything registered here goes into the user tier.
+///
+/// [popUser] ends the session as a sign-out does. The user's services are
+/// gone at once, and then disposed, which closes what they hold open.
+class _TieredContainer implements DependencyContainer {
+  _TieredContainer(this._server);
+
+  final DependencyContainer _server;
+  DependencyContainerImpl _user = DependencyContainerImpl();
+
+  Future<void> popUser() async {
+    final popped = _user;
+    _user = DependencyContainerImpl();
+    await popped.dispose();
+  }
+
+  @override
+  T get<T extends Object>() =>
+      _user.isRegistered<T>() ? _user.get<T>() : _server.get<T>();
+
+  @override
+  bool isRegistered<T extends Object>() =>
+      _user.isRegistered<T>() || _server.isRegistered<T>();
+
+  @override
+  void registerSingleton<T extends Object>(
+    T instance, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _user.registerSingleton<T>(instance, dispose: dispose);
+
+  @override
+  void registerLazySingleton<T extends Object>(
+    T Function() factory, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _user.registerLazySingleton<T>(factory, dispose: dispose);
+
+  @override
+  void registerFactory<T extends Object>(T Function() factory) =>
+      _user.registerFactory<T>(factory);
+
+  @override
+  Future<void> dispose() async {
+    await _user.dispose();
+    await _server.dispose();
   }
 }
 
@@ -340,7 +396,7 @@ void main() {
     HouseholdRepository? households,
     HouseholdHydrationStatus? householdHydration,
     EventRepository? events,
-    DataGatewayAccess? access,
+    FakeCallerAccessRepository? access,
     ConnectivityService? connectivity,
     bool settle = true,
   }) async {
@@ -358,7 +414,7 @@ void main() {
           householdHydrationStatus: householdHydration,
           eventRepository: events,
           dataGatewayRemoteDataSource: access == null ? null : _DataGateways(),
-          dataGatewayAccess: access,
+          callerAccess: access,
         ),
       ),
     );
@@ -387,12 +443,6 @@ void main() {
   GoRouter routerOf(WidgetTester tester) =>
       tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
           as GoRouter;
-
-  DataGatewayAccess accessFor() {
-    final access = DataGatewayAccess(remote: _DataGateways());
-    addTearDown(access.dispose);
-    return access;
-  }
 
   group('the slots', () {
     testWidgets('every slot filled, in order, for a full session', (
@@ -603,12 +653,17 @@ void main() {
     final card = find.byKey(NewestGamesSection.emptyActionKey);
     final message = find.byKey(NewestGamesSection.emptyKey);
 
-    testWidgets('read granted, mayChange true: the card, and its action opens '
-        'the DataGateway list', (tester) async {
+    testWidgets('read and create: the card, and its action opens the '
+        'DataGateway list', (tester) async {
       await pumpHome(
         tester,
         games: _GamesRemote(const []),
-        access: accessFor()..readGranted(),
+        access: FakeCallerAccessRepository(
+          FakeCallerAccessRepository.dataGateway(
+            create: AccessExtent.all,
+            read: AccessExtent.all,
+          ),
+        ),
       );
 
       expect(card, findsOneWidget);
@@ -623,48 +678,81 @@ void main() {
       );
     });
 
-    testWidgets('read denied: the plain message', (tester) async {
+    // The card opens the list, which a caller who may not read would find
+    // refused.
+    testWidgets('create alone: the plain message', (tester) async {
       await pumpHome(
         tester,
         games: _GamesRemote(const []),
-        access: accessFor()..readDenied(),
+        access: FakeCallerAccessRepository(
+          FakeCallerAccessRepository.dataGateway(create: AccessExtent.all),
+        ),
       );
 
       expect(message, findsOneWidget);
       expect(card, findsNothing);
     });
 
-    testWidgets('read unknown: the plain message', (tester) async {
+    testWidgets('read alone: the plain message', (tester) async {
       await pumpHome(
         tester,
         games: _GamesRemote(const []),
-        access: accessFor(),
+        access: FakeCallerAccessRepository(
+          FakeCallerAccessRepository.dataGateway(read: AccessExtent.all),
+        ),
       );
 
       expect(message, findsOneWidget);
       expect(card, findsNothing);
     });
 
-    testWidgets('no access check registered: the plain message', (
-      tester,
-    ) async {
+    testWidgets('access unknown: the plain message', (tester) async {
+      await pumpHome(
+        tester,
+        games: _GamesRemote(const []),
+        access: FakeCallerAccessRepository(),
+      );
+
+      expect(message, findsOneWidget);
+      expect(card, findsNothing);
+    });
+
+    testWidgets('no access to ask: the plain message', (tester) async {
       await pumpHome(tester, games: _GamesRemote(const []));
 
       expect(message, findsOneWidget);
       expect(card, findsNothing);
     });
 
-    testWidgets('mayChange false: the plain message', (tester) async {
-      await pumpHome(
-        tester,
-        games: _GamesRemote(const []),
-        access: accessFor()
-          ..readGranted()
-          ..changeDenied(),
+    testWidgets('create falling with focus on the card hands focus to the '
+        'message (#456)', (tester) async {
+      final access = FakeCallerAccessRepository(
+        FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+        ),
       );
+      await pumpHome(tester, games: _GamesRemote(const []), access: access);
+      Focus.of(
+        tester.element(find.descendant(of: card, matching: find.byType(Text))),
+      ).requestFocus();
+      await tester.pump();
 
-      expect(message, findsOneWidget);
+      access.current = FakeCallerAccessRepository.dataGateway();
+      await tester.pumpAndSettle();
+
+      final focus = FocusManager.instance.primaryFocus;
       expect(card, findsNothing);
+      expect(focus, isNot(isA<FocusScopeNode>()));
+      expect(
+        find.ancestor(
+          of: message,
+          matching: find.byElementPredicate(
+            (element) => element == focus!.context,
+          ),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('access landing swaps message for card with no new read', (
@@ -674,7 +762,7 @@ void main() {
       final pool = _Pool(gameCount: 3);
       final collection = _Collection();
       final events = _Events();
-      final access = accessFor();
+      final access = FakeCallerAccessRepository();
       await pumpHome(
         tester,
         games: games,
@@ -697,7 +785,10 @@ void main() {
           .element(find.byKey(StatsCard.headingKey))
           .read<StatsCubit>();
 
-      access.readGranted();
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+      );
       await tester.pumpAndSettle();
 
       expect(card, findsOneWidget);
@@ -752,6 +843,67 @@ void main() {
   // sections' cubits are made once per mount. A session that goes live before
   // the next frame never shows the splash, so home keeps its elements, and
   // only the keys on the session's own caches make the sections new.
+  // The user scope pops while home is still on its way out, and the
+  // session's access closes its changes as it goes.
+  testWidgets('signing out resolves nothing from the popped scope as the '
+      "session's access closes (#456)", (tester) async {
+    useViewSize(tester, const Size(800, 2000));
+    final access = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+      ),
+    );
+    late final _TieredContainer container;
+    final scope = _UserSessionScope(
+      (userId) => container
+        ..registerSingleton<EventRepository>(_Events())
+        ..registerSingleton<GameCollectionRepository>(_Collection())
+        ..registerSingleton<HouseholdRepository>(_Households())
+        ..registerSingleton<GameRepository>(_GameCache())
+        ..registerSingleton<CallerAccessRepository>(
+          access,
+          dispose: (_) => access.dispose(),
+        ),
+      onDeactivate: () => container.popUser(),
+    );
+    final server = buildActiveServer(
+      FakeAuthRepository(initialSession: sampleSession()),
+      userSessionScope: scope,
+      gamesRemoteDataSource: _GamesRemote(const []),
+      householdRemoteDataSource: _Pool(),
+      dataGatewayRemoteDataSource: _DataGateways(),
+    );
+    container = _TieredContainer(server.container);
+    final app = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(
+        activeServerScope: FakeActiveServerScope(
+          ActiveServer(
+            serverId: server.serverId,
+            displayName: server.displayName,
+            identity: server.identity,
+            container: container,
+          ),
+        ),
+      ),
+      hydratedStorageInitializer: (_) async {},
+    );
+    addTearDown(app.close);
+    await tester.pumpWidget(BgeApp(bootstrapCubit: app));
+    await app.initialize();
+    await tester.pumpAndSettle();
+    // Home is built from the session's access.
+    expect(find.byKey(NewestGamesSection.emptyActionKey), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(HomeScreen.entryKey('sign_out')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(HomeScreen), findsNothing);
+  });
+
   group('another user on the same server', () {
     final cover = NewestGamesSection.coverKey;
     final toPlay = SomethingToPlaySection.coverKey;

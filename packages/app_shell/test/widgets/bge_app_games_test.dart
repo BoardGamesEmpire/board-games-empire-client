@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
-import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -204,40 +204,55 @@ class _GamesRemote implements GamesRemoteDataSource {
 
 /// Lists one DataGateway, named.
 class _DataGatewayRemote implements DataGatewayRemoteDataSource {
+  /// How many pages of the list were asked for.
+  int reads = 0;
+
+  /// Thrown by every list read, when set.
+  Object? error;
+
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
     int page = 1,
     int limit = DataGatewayRemoteDataSource.maxPageSize,
-  }) async => const PaginatedResult(
-    items: [
-      DataGateway(
-        id: 'dg_bgg',
-        name: 'BoardGameGeek',
-        connectionUrl: 'bgg.internal',
-        connectionPort: 50051,
-        enabled: true,
-        authType: DataGatewayAuthType.none,
-      ),
-    ],
-    meta: PaginationMeta(
-      page: 1,
-      limit: 100,
-      total: 1,
-      totalPages: 1,
-      hasMore: false,
-    ),
-  );
+  }) async {
+    reads++;
+    if (error case final error?) throw error;
+    return _oneDataGateway;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
 }
 
+const _oneDataGateway = PaginatedResult<DataGateway>(
+  items: [
+    DataGateway(
+      id: 'dg_bgg',
+      name: 'BoardGameGeek',
+      connectionUrl: 'bgg.internal',
+      connectionPort: 50051,
+      enabled: true,
+      authType: DataGatewayAuthType.none,
+    ),
+  ],
+  meta: PaginationMeta(
+    page: 1,
+    limit: 100,
+    total: 1,
+    totalPages: 1,
+    hasMore: false,
+  ),
+);
+
+/// The answer of a caller who may read DataGateways.
+final _mayRead = FakeCallerAccessRepository.dataGateway(read: AccessExtent.all);
+
 /// The Games entry in the home drawer and the screens behind it (#42).
 void main() {
   late _MockAppBootstrapCubit cubit;
   late _DataGatewayRemote dataGateways;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
   late _GamesRemote games;
 
   setUpAll(() {
@@ -262,10 +277,8 @@ void main() {
 
     dataGateways = _DataGatewayRemote();
     games = _GamesRemote();
-    access = DataGatewayAccess(remote: dataGateways);
+    access = FakeCallerAccessRepository();
   });
-
-  tearDown(() => access.dispose());
 
   /// The active server [pumpHome] builds, with [collection] as its user
   /// session's collection repository.
@@ -278,7 +291,7 @@ void main() {
       FakeAuthRepository(initialSession: sampleSession()),
       gamesRemoteDataSource: withGames ? games : null,
       dataGatewayRemoteDataSource: dataGateways,
-      dataGatewayAccess: access,
+      callerAccess: access,
       gameCollectionRepository: collection,
       syncOperationSender: sender,
     ),
@@ -427,7 +440,7 @@ void main() {
             repo,
             gamesRemoteDataSource: games,
             dataGatewayRemoteDataSource: dataGateways,
-            dataGatewayAccess: access,
+            callerAccess: access,
           ),
         ),
       ),
@@ -482,7 +495,7 @@ void main() {
   testWidgets('search names a DataGateway for a user who may read them', (
     tester,
   ) async {
-    access.readGranted();
+    access.current = _mayRead;
     await pumpHome(tester);
     await openGames(tester);
     await searchFor(tester, 'catan');
@@ -490,10 +503,13 @@ void main() {
     expect(find.textContaining('BoardGameGeek'), findsOneWidget);
   });
 
-  testWidgets('search names no DataGateway for a user who may not', (
-    tester,
-  ) async {
-    access.readDenied();
+  testWidgets('search names are read only with read (#456)', (tester) async {
+    // Every other DataGateway action, and not read.
+    access.current = FakeCallerAccessRepository.dataGateway(
+      create: AccessExtent.all,
+      update: AccessExtent.all,
+      delete: AccessExtent.all,
+    );
     await pumpHome(tester);
     await openGames(tester);
     await searchFor(tester, 'catan');
@@ -503,12 +519,34 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('BoardGameGeek'), findsNothing);
+    expect(dataGateways.reads, 0);
+  });
+
+  testWidgets('a refused name read asks access again (#456)', (tester) async {
+    access.current = _mayRead;
+    dataGateways.error = const DataGatewayForbiddenException(
+      'refused',
+      statusCode: 403,
+    );
+    await pumpHome(tester);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    expect(dataGateways.reads, 1);
+    expect(access.refreshCount, 1);
+    // The results stand, unnamed.
+    expect(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('BoardGameGeek'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a DataGateway result imports and opens the game', (
     tester,
   ) async {
-    access.readGranted();
+    access.current = _mayRead;
     await pumpHome(tester);
     await openGames(tester);
     await searchFor(tester, 'catan');
@@ -526,7 +564,7 @@ void main() {
 
   testWidgets('closing the import opens nothing', (tester) async {
     games.importStatus = ImportJobStatus.running;
-    access.readGranted();
+    access.current = _mayRead;
     await pumpHome(tester);
     await openGames(tester);
     await searchFor(tester, 'catan');

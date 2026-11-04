@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../access/data_gateway_access.dart';
 import '../access/data_gateway_names.dart';
+import '../access/read_allowed_since.dart';
 import 'data_gateway_list_event.dart';
 import 'data_gateway_list_state.dart';
 
@@ -38,37 +41,57 @@ import 'data_gateway_list_state.dart';
 ///
 /// ## Access
 ///
-/// A refused read is [DataGatewayListDenied]. A refused change hides every
-/// change action for the rest of the session, here and on every other screen,
-/// through [DataGatewayAccess]: Moderators may read DataGateways and not
-/// change them, and nothing tells the client which role it has until a change
-/// is refused (#41). Both are reported to [access], so the home drawer agrees
-/// with what this screen found.
+/// Each action is offered while the caller's access, as the server answers
+/// it, says they may take it (#456): add needs create, connect and disconnect
+/// need update, and delete needs delete. The switches follow [access] as its
+/// answer changes, up or down, without reading the list again. An action
+/// they no longer allow is dropped, as from a menu opened before they fell.
 ///
-/// A null [access] is a composition with no session to report to. The screen
-/// still works; what it learns lasts as long as the bloc.
+/// A refused read is [DataGatewayListDenied], and a refused change is
+/// reported in the banner. Neither turns a switch off: each asks [access]
+/// again, and the switches follow what it answers. The refusal is the
+/// server's word that the answer here may be out of date, as when the
+/// caller's role changed since it was asked. A refused read asks even when a
+/// newer read has superseded it: what it says is about the caller, not the
+/// rows.
+///
+/// [DataGatewayListDenied] reads the list again once a changed answer allows
+/// read. A refusal can come before the server has written a new user's
+/// roles, as for a fresh server's first owner (backend#490), and the answer
+/// that follows them is the one that says the read would now go through. A
+/// refusal that comes after such an answer, while its read was out, reads
+/// again too, once: no change is left to say so by then.
+///
+/// A read that succeeds while the answer is still unknown asks [access]
+/// again too. The first ask can fail with the server up, as on a 502 from a
+/// proxy, and nothing else asks again until a rehydrate trigger. The server
+/// has just answered this caller, so an ask now is likely to be answered
+/// too.
+///
+/// A null [access] is a composition with no session to ask. The rows still
+/// show, and nothing is offered, as while the answer is unknown.
 class DataGatewayListBloc
     extends Bloc<DataGatewayListEvent, DataGatewayListState> {
   DataGatewayListBloc({
     required this._remote,
-    DataGatewayAccess? access,
+    CallerAccessRepository? access,
     BgeLogger? logger,
   }) : _access = access,
        _logger = logger ?? BgeLogger('bge.data_gateway.list'),
-       _mayChange = access?.value.mayChange ?? true,
        super(const DataGatewayListLoading()) {
     on<DataGatewayListLoadRequested>(_onLoadRequested);
     on<DataGatewayListActionRequested>(_onActionRequested);
     on<DataGatewayListOutcomeDismissed>(_onOutcomeDismissed);
     on<DataGatewayListAccessChanged>(_onAccessChanged);
-    access?.addListener(_accessListener);
+    _accessChanges = access?.changes.listen((_) {
+      if (!isClosed) add(const DataGatewayListAccessChanged());
+    });
   }
 
   final DataGatewayRemoteDataSource _remote;
-  final DataGatewayAccess? _access;
+  final CallerAccessRepository? _access;
   final BgeLogger _logger;
-
-  bool _mayChange;
+  StreamSubscription<CallerAccess>? _accessChanges;
 
   /// The rows on screen. Null until a read succeeds, and again after one
   /// fails or is refused.
@@ -94,13 +117,24 @@ class DataGatewayListBloc
   /// list shown as the whole of it.
   static const int _maxPages = dataGatewayListMaxPages;
 
-  void _accessListener() => add(const DataGatewayListAccessChanged());
+  /// Whether the caller's access lets them take [action] on DataGateways.
+  /// False while the answer is unknown, and with no [_access] to ask.
+  bool _may(AccessAction action) =>
+      _access?.current.allows(ResourceType.dataGateway, action) ?? false;
+
+  /// The access a row [action] needs.
+  static AccessAction _needs(DataGatewayRowAction action) => switch (action) {
+    DataGatewayRowAction.connect ||
+    DataGatewayRowAction.disconnect => AccessAction.update,
+    DataGatewayRowAction.delete => AccessAction.delete,
+  };
 
   Future<void> _onLoadRequested(
     DataGatewayListLoadRequested event,
     Emitter<DataGatewayListState> emit,
   ) async {
     final read = ++_readSequence;
+    final sentUnder = _access?.current;
     if (_rows == null) emit(const DataGatewayListLoading());
     try {
       final rows = <DataGateway>[];
@@ -111,17 +145,22 @@ class DataGatewayListBloc
         rows.addAll(result.items);
         whole = !result.meta.hasMore;
       }
-      _access?.readGranted();
       if (!whole) {
         throw StateError('the list still had more after $_maxPages pages');
       }
       _rows = rows;
       _emitReady(emit);
+      // The server answered this caller: see Access in the class doc.
+      if (_access?.current.isKnown == false) unawaited(_access?.refresh());
     } on DataGatewayForbiddenException {
+      unawaited(_access?.refresh());
       if (read != _readSequence) return;
       _rows = null;
-      _access?.readDenied();
       emit(const DataGatewayListDenied());
+      // See Access in the class doc.
+      if (readAllowedSince(_access, sentUnder) && !isClosed) {
+        add(const DataGatewayListLoadRequested());
+      }
     } on Object catch (error, stackTrace) {
       if (read != _readSequence) return;
       _logger.warn(
@@ -141,7 +180,11 @@ class DataGatewayListBloc
     Emitter<DataGatewayListState> emit,
   ) async {
     final row = _rows?.where((g) => g.id == event.id).firstOrNull;
-    if (row == null || !_mayChange || _busy.contains(event.id)) return;
+    if (row == null ||
+        !_may(_needs(event.action)) ||
+        _busy.contains(event.id)) {
+      return;
+    }
 
     _busy.add(event.id);
     _outcome = null;
@@ -213,8 +256,7 @@ class DataGatewayListBloc
         ),
       };
     } on DataGatewayForbiddenException {
-      _mayChange = false;
-      _access?.changeDenied();
+      unawaited(_access?.refresh());
       return (null, DataGatewayActionResult.refused);
     } on DataGatewayNotFoundException {
       return (null, DataGatewayActionResult.gone);
@@ -241,20 +283,25 @@ class DataGatewayListBloc
     DataGatewayListAccessChanged event,
     Emitter<DataGatewayListState> emit,
   ) {
-    final access = _access;
-    if (access == null || access.value.mayChange || !_mayChange) return;
-    _mayChange = false;
+    // A refused read tries again: see Access in the class doc.
+    if (state is DataGatewayListDenied && _may(AccessAction.read)) {
+      if (!isClosed) add(const DataGatewayListLoadRequested());
+      return;
+    }
     _emitReady(emit);
   }
 
-  /// Shows the rows, when there are rows to show.
+  /// Shows the rows, when there are rows to show, with the actions the
+  /// caller's access allows now.
   void _emitReady(Emitter<DataGatewayListState> emit) {
     final rows = _rows;
     if (rows == null) return;
     emit(
       DataGatewayListReady(
         gateways: rows,
-        mayChange: _mayChange,
+        mayCreate: _may(AccessAction.create),
+        mayUpdate: _may(AccessAction.update),
+        mayDelete: _may(AccessAction.delete),
         busy: {..._busy},
         outcome: _outcome,
       ),
@@ -263,7 +310,9 @@ class DataGatewayListBloc
 
   @override
   Future<void> close() {
-    _access?.removeListener(_accessListener);
+    // Not awaited first, so that the bloc reads as closed from the turn this
+    // starts in: an action that lands then asks for no read.
+    unawaited(_accessChanges?.cancel());
     return super.close();
   }
 }

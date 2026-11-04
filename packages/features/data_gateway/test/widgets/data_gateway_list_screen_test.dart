@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
@@ -7,13 +8,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_data_gateway_remote.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
 
   final bgg = gateway(
     'dg_1',
@@ -25,10 +27,15 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      ),
+    );
   });
-
-  tearDown(() => access.dispose());
 
   /// [onOpen] is null unless a test gives one, which leaves the rows
   /// untappable, as a composition with no detail route does.
@@ -153,19 +160,107 @@ void main() {
     });
   });
 
-  group('a caller who may read but not change DataGateways (#41)', () {
-    testWidgets('sees the change actions until the first change is refused, '
-        'then not at all', (tester) async {
+  group('what the caller may do (#456)', () {
+    final menuItems = [
+      DataGatewayListScreen.editKey,
+      DataGatewayListScreen.connectKey,
+      DataGatewayListScreen.disconnectKey,
+      DataGatewayListScreen.deleteKey,
+    ];
+
+    /// Which of the row menu's items [id]'s menu offers.
+    Future<List<Key>> offered(WidgetTester tester, String id) async {
+      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey(id)));
+      await tester.pumpAndSettle();
+      return [
+        for (final item in menuItems)
+          if (find.byKey(item).evaluate().isNotEmpty) item,
+      ];
+    }
+
+    testWidgets('no Add button without create', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      remote.listing([bgg]);
+
+      await pumpScreen(tester);
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the row menu offers delete only with delete', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      remote.listing([bgg]);
+      await pumpScreen(tester);
+
+      expect(await offered(tester, 'dg_1'), [DataGatewayListScreen.deleteKey]);
+    });
+
+    testWidgets('the row menu offers edit, connect and disconnect only with '
+        'update', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.some,
+      );
+      remote.listing([bgg]);
+      await pumpScreen(tester);
+
+      expect(await offered(tester, 'dg_1'), [
+        DataGatewayListScreen.editKey,
+        DataGatewayListScreen.connectKey,
+        DataGatewayListScreen.disconnectKey,
+      ]);
+    });
+
+    testWidgets('no row menu while access is unknown', (tester) async {
+      access.current = const CallerAccess.unknown();
+      remote.listing([bgg, steam]);
+
+      await pumpScreen(tester);
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')),
+        findsNothing,
+      );
+      // Still a reader's list: the rows show.
+      expect(find.text('BGG'), findsOneWidget);
+    });
+
+    testWidgets('the Add button appears when access arrives', (tester) async {
+      access.current = const CallerAccess.unknown();
+      remote.listing([bgg]);
+      await pumpScreen(tester);
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsOneWidget);
+    });
+
+    testWidgets('a refused change says so and asks access again, and the '
+        'actions follow the answer', (tester) async {
       remote
         ..listing([bgg, steam])
         ..onConnect = (_) async => throw forbidden();
       await pumpScreen(tester);
-
-      expect(find.byKey(DataGatewayListScreen.addKey), findsOneWidget);
-      expect(
-        find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')),
-        findsOneWidget,
-      );
 
       await choose(tester, 'dg_2', DataGatewayListScreen.connectKey);
 
@@ -173,6 +268,19 @@ void main() {
         find.text("Your role can't change data gateways."),
         findsOneWidget,
       );
+      expect(access.refreshCount, 1);
+      // The refusal alone takes nothing away.
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')),
+        findsOneWidget,
+      );
+
+      // What the ask found: a reader.
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
       expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
       expect(
         find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')),
@@ -184,6 +292,294 @@ void main() {
       );
       // Still a reader: the rows stay.
       expect(find.text('BGG'), findsOneWidget);
+    });
+  });
+
+  group('keeping keyboard focus when access takes a control away (#456)', () {
+    /// Puts keyboard focus on the control [control] finds, as a click or a
+    /// Tab would: on its own node, with nothing before it in the page's
+    /// history to fall back to.
+    void focusOn(WidgetTester tester, Finder control) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: control,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Icon || widget is Text,
+              ),
+            )
+            .first,
+      ),
+    ).requestFocus();
+
+    /// Expects keyboard focus on the nearest node above the text [label]:
+    /// the heading, a row by its name, or a button by its label. Not on the
+    /// page's scope, which is above every text and where focus falls when
+    /// the control that had it goes.
+    void expectFocusOn(WidgetTester tester, String label) {
+      final focused = FocusManager.instance.primaryFocus;
+      expect(focused, isNot(isA<FocusScopeNode>()));
+      expect(
+        focused,
+        same(
+          Focus.of(tester.element(find.text(label)), createDependency: false),
+        ),
+      );
+    }
+
+    /// May read DataGateways and add one, and nothing else.
+    final mayOnlyAdd = FakeCallerAccessRepository.dataGateway(
+      create: AccessExtent.all,
+      read: AccessExtent.all,
+    );
+
+    testWidgets('the Add button with focus hands it to the heading when '
+        'create falls', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.addKey));
+      await tester.pump();
+      expectFocusOn(tester, 'Add data gateway');
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets('focus the user moves before the Add button goes stays where '
+        'they put it', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.addKey));
+      await tester.pump();
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      // The answer reaches the screen, and the user moves on before the
+      // frame that takes the button away.
+      await tester.binding.delayed(Duration.zero);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowKey('dg_1')));
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+      expectFocusOn(tester, 'BGG');
+    });
+
+    testWidgets('the Add button with focus keeps it when create falls and '
+        'comes back before the next frame', (tester) async {
+      final mayDoAnything = access.current;
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.addKey));
+      await tester.pump();
+
+      // Each answer reaches the screen, but no frame is drawn between them.
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayDoAnything;
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'Add data gateway');
+    });
+
+    testWidgets('a row menu with focus hands it to its own row when update '
+        'and delete fall', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      access.current = mayOnlyAdd;
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')),
+        findsNothing,
+      );
+      expectFocusOn(tester, 'Steam');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when its row '
+        'goes as update and delete fall', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // A read lands without Steam under access that has just fallen: one
+      // state drops the row and takes every menu away.
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      reread.complete(pageOf([bgg]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Steam'), findsNothing);
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets('with rows that do not open, a row menu with focus hands it '
+        'to the heading', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      access.current = mayOnlyAdd;
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets("with an outcome showing, focus goes to the banner's Dismiss", (
+      tester,
+    ) async {
+      remote
+        ..listing([bgg, steam])
+        ..onDisconnect = (_) async => throw unreachable();
+      await pumpScreen(tester, onOpen: (_, _) {});
+      await choose(tester, 'dg_1', DataGatewayListScreen.disconnectKey);
+      expect(find.byKey(DataGatewayListScreen.outcomeKey), findsOneWidget);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      access.current = mayOnlyAdd;
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'Dismiss');
+    });
+
+    testWidgets('with the outcome dismissed before the next frame, focus goes '
+        'to the row, not the Dismiss that frame takes away', (tester) async {
+      remote
+        ..listing([bgg, steam])
+        ..onDisconnect = (_) async => throw unreachable();
+      await pumpScreen(tester, onOpen: (_, _) {});
+      await choose(tester, 'dg_1', DataGatewayListScreen.disconnectKey);
+      expect(find.byKey(DataGatewayListScreen.outcomeKey), findsOneWidget);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // The answer reaches the screen, and a click dismisses the banner
+      // before the frame that takes the menus away. A click focuses nothing.
+      access.current = mayOnlyAdd;
+      await tester.binding.delayed(Duration.zero);
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListOutcomeDismissed());
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.outcomeKey), findsNothing);
+      expectFocusOn(tester, 'Steam');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when a read '
+        'refused under access that has just fallen takes the list away', (
+      tester,
+    ) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // The answer that takes the menus away lands, and the read out at the
+      // time is refused before the next frame.
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      await tester.binding.delayed(Duration.zero);
+      remote.refusingReads();
+      reread.completeError(forbidden());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.deniedKey), findsOneWidget);
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when the read '
+        'that takes the menus away moves its row out of view', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // A read lands under access that has just fallen, with rows enough
+      // above Steam to take it out of the built range.
+      final above = [
+        for (var i = 0; i < 40; i++) gateway('dg_new_$i', name: 'New $i'),
+      ];
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      reread.complete(pageOf([bgg, ...above, steam]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Steam', skipOffstage: false), findsNothing);
+      expectFocusOn(tester, 'Data gateways');
+
+      // Steam coming back into view doesn't take focus either.
+      await tester.scrollUntilVisible(find.text('Steam'), 200);
+      await tester.pumpAndSettle();
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets('focus on a control that stays is left where it is', (
+      tester,
+    ) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowKey('dg_1')));
+      await tester.pump();
+      expectFocusOn(tester, 'BGG');
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'BGG');
+    });
+
+    testWidgets('the heading is not a Tab stop', (tester) async {
+      remote.listing([bgg]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, 'BGG');
     });
   });
 

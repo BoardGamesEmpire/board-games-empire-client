@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -11,10 +11,38 @@ import '../support/fake_data_gateway_remote.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
   late Completer<DataGateway> pendingRead;
 
+  /// A caller who may read and update DataGateways: everything this screen
+  /// offers.
+  final updating = FakeCallerAccessRepository.dataGateway(
+    read: AccessExtent.all,
+    update: AccessExtent.all,
+  );
+
+  /// A caller who may do anything to a DataGateway but update it.
+  final allButUpdate = FakeCallerAccessRepository.dataGateway(
+    create: AccessExtent.all,
+    read: AccessExtent.all,
+    delete: AccessExtent.all,
+  );
+
   final row = gateway('dg_1', name: 'BGG');
+
+  /// The row on screen, as a caller who may update it sees it.
+  DataGatewayDetailReady ready({
+    required DataGateway gateway,
+    DataGatewayDetailBusy? busy,
+    bool interviewWaiting = false,
+    DataGatewayDetailOutcome? outcome,
+  }) => DataGatewayDetailReady(
+    gateway: gateway,
+    mayUpdate: true,
+    busy: busy,
+    interviewWaiting: interviewWaiting,
+    outcome: outcome,
+  );
 
   const load = DataGatewayDetailLoadRequested();
   const interview = DataGatewayDetailInterviewRequested();
@@ -35,10 +63,8 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(updating);
   });
-
-  tearDown(() => access.dispose());
 
   DataGatewayDetailBloc build() =>
       DataGatewayDetailBloc(remote: remote, id: 'dg_1', access: access);
@@ -84,18 +110,15 @@ void main() {
       setUp: () => reads([row]),
       build: build,
       act: (bloc) => bloc.add(load),
-      expect: () => [
-        const DataGatewayDetailLoading(),
-        DataGatewayDetailReady(gateway: row),
-      ],
+      expect: () => [const DataGatewayDetailLoading(), ready(gateway: row)],
       verify: (_) {
         expect(remote.calls, [fetchCall]);
-        expect(access.value.read, DataGatewayRead.granted);
+        expect(access.refreshCount, 0);
       },
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'a refused read is denied',
+      'a refused read is denied, and asks access again',
       setUp: () => reads([forbidden()]),
       build: build,
       act: (bloc) => bloc.add(load),
@@ -103,7 +126,99 @@ void main() {
         const DataGatewayDetailLoading(),
         const DataGatewayDetailDenied(),
       ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.denied),
+      verify: (_) => expect(access.refreshCount, 1),
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read reads again once a changed answer allows read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        reads([forbidden(), row]);
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(load);
+        await pumpEventQueue();
+        access.current = updating;
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+        const DataGatewayDetailLoading(),
+        ready(gateway: row),
+      ],
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read stays denied while a changed answer still refuses read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        reads([forbidden(), row]);
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(load);
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall]),
+    );
+
+    late Completer<DataGateway> refusal;
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read reads again when an answer that allows read landed '
+      'while it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, row]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        // The ask the refusal sets off finds this same answer, so it never
+        // says anything changed.
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+        const DataGatewayDetailLoading(),
+        ready(gateway: row),
+      ],
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused read reads again only once for the answer that landed while '
+      'it was out',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        refusal = Completer();
+        reads([refusal.future, forbidden()]);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+        const DataGatewayDetailLoading(),
+        const DataGatewayDetailDenied(),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall, fetchCall]),
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
@@ -115,7 +230,7 @@ void main() {
         const DataGatewayDetailLoading(),
         const DataGatewayDetailGone(),
       ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.unknown),
+      verify: (_) => expect(access.refreshCount, 0),
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
@@ -130,7 +245,7 @@ void main() {
         const DataGatewayDetailLoading(),
         const DataGatewayDetailFailed(),
         const DataGatewayDetailLoading(),
-        DataGatewayDetailReady(gateway: row),
+        ready(gateway: row),
       ],
     );
 
@@ -146,14 +261,14 @@ void main() {
       act: (bloc) async {
         await send(bloc, load);
         await send(bloc, load);
-        expect(bloc.state, DataGatewayDetailReady(gateway: row));
+        expect(bloc.state, ready(gateway: row));
         pendingRead.complete(newer);
         await pumpEventQueue();
       },
       expect: () => [
         const DataGatewayDetailLoading(),
-        DataGatewayDetailReady(gateway: row),
-        DataGatewayDetailReady(gateway: newer),
+        ready(gateway: row),
+        ready(gateway: newer),
       ],
     );
 
@@ -173,10 +288,7 @@ void main() {
         pendingRead.complete(row);
         await pumpEventQueue();
       },
-      expect: () => [
-        const DataGatewayDetailLoading(),
-        DataGatewayDetailReady(gateway: newer),
-      ],
+      expect: () => [const DataGatewayDetailLoading(), ready(gateway: newer)],
     );
 
     for (final (answered, error, down)
@@ -205,7 +317,7 @@ void main() {
         expect: () => [
           down,
           const DataGatewayDetailLoading(),
-          DataGatewayDetailReady(
+          ready(
             gateway: row,
             outcome: DataGatewayDetailOutcome.interviewFailed,
           ),
@@ -224,7 +336,7 @@ void main() {
     interview: const DataGatewayInterviewStatus(interviewed: true),
   );
   final disabled = row.copyWith(enabled: false);
-  final interviewing = DataGatewayDetailReady(
+  final interviewing = ready(
     gateway: row,
     busy: DataGatewayDetailBusy.interview,
   );
@@ -242,10 +354,7 @@ void main() {
     skip: 2,
     expect: () => [
       interviewing,
-      DataGatewayDetailReady(
-        gateway: after,
-        outcome: DataGatewayDetailOutcome.interviewDone,
-      ),
+      ready(gateway: after, outcome: DataGatewayDetailOutcome.interviewDone),
     ],
     verify: (_) => expect(remote.calls, [fetchCall, interviewCall]),
   );
@@ -264,10 +373,7 @@ void main() {
     skip: 2,
     expect: () => [
       interviewing,
-      DataGatewayDetailReady(
-        gateway: after,
-        outcome: DataGatewayDetailOutcome.interviewFailed,
-      ),
+      ready(gateway: after, outcome: DataGatewayDetailOutcome.interviewFailed),
     ],
     verify: (_) => expect(remote.calls, [fetchCall, interviewCall]),
   );
@@ -286,14 +392,8 @@ void main() {
     skip: 2,
     expect: () => [
       interviewing,
-      DataGatewayDetailReady(
-        gateway: row,
-        outcome: DataGatewayDetailOutcome.interviewUnknown,
-      ),
-      DataGatewayDetailReady(
-        gateway: after,
-        outcome: DataGatewayDetailOutcome.interviewUnknown,
-      ),
+      ready(gateway: row, outcome: DataGatewayDetailOutcome.interviewUnknown),
+      ready(gateway: after, outcome: DataGatewayDetailOutcome.interviewUnknown),
     ],
     verify: (_) => expect(remote.calls, [fetchCall, interviewCall, fetchCall]),
   );
@@ -312,11 +412,8 @@ void main() {
     skip: 2,
     expect: () => [
       interviewing,
-      DataGatewayDetailReady(
-        gateway: row,
-        outcome: DataGatewayDetailOutcome.interviewDisabled,
-      ),
-      DataGatewayDetailReady(
+      ready(gateway: row, outcome: DataGatewayDetailOutcome.interviewDisabled),
+      ready(
         gateway: disabled,
         outcome: DataGatewayDetailOutcome.interviewDisabled,
       ),
@@ -341,32 +438,6 @@ void main() {
   );
 
   blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-    're-interview: a 403 refuses and hides changes',
-    setUp: () {
-      reads([row]);
-      remote.onInterview = (_) async => throw forbidden();
-    },
-    build: build,
-    act: (bloc) async {
-      await send(bloc, load);
-      await send(bloc, interview);
-    },
-    skip: 2,
-    expect: () => [
-      interviewing,
-      DataGatewayDetailReady(
-        gateway: row,
-        mayChange: false,
-        outcome: DataGatewayDetailOutcome.refused,
-      ),
-    ],
-    verify: (_) {
-      expect(access.value.mayChange, isFalse);
-      expect(remote.calls, [fetchCall, interviewCall]);
-    },
-  );
-
-  blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
     're-interview: another failure reports no answer and reads the row, which '
     'may have changed',
     setUp: () {
@@ -381,11 +452,8 @@ void main() {
     skip: 2,
     expect: () => [
       interviewing,
-      DataGatewayDetailReady(
-        gateway: row,
-        outcome: DataGatewayDetailOutcome.interviewNoAnswer,
-      ),
-      DataGatewayDetailReady(
+      ready(gateway: row, outcome: DataGatewayDetailOutcome.interviewNoAnswer),
+      ready(
         gateway: after,
         outcome: DataGatewayDetailOutcome.interviewNoAnswer,
       ),
@@ -463,15 +531,12 @@ void main() {
     },
     skip: 4,
     expect: () => [
-      DataGatewayDetailReady(
+      ready(
         gateway: after,
         busy: DataGatewayDetailBusy.interview,
         outcome: DataGatewayDetailOutcome.interviewFailed,
       ),
-      DataGatewayDetailReady(
-        gateway: after,
-        outcome: DataGatewayDetailOutcome.interviewDone,
-      ),
+      ready(gateway: after, outcome: DataGatewayDetailOutcome.interviewDone),
     ],
   );
 
@@ -493,8 +558,7 @@ void main() {
       await send(bloc, interview);
       await send(bloc, load);
     },
-    verify: (bloc) =>
-        expect(bloc.state, DataGatewayDetailReady(gateway: after)),
+    verify: (bloc) => expect(bloc.state, ready(gateway: after)),
   );
 
   blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
@@ -532,10 +596,7 @@ void main() {
         row.copyWith(disabledCapabilities: names);
 
     DataGatewayDetailReady writing(List<String> names) =>
-        DataGatewayDetailReady(
-          gateway: off(names),
-          busy: DataGatewayDetailBusy.capabilities,
-        );
+        ready(gateway: off(names), busy: DataGatewayDetailBusy.capabilities);
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
       'switching off appends to the server list',
@@ -554,7 +615,7 @@ void main() {
       expect: () => [
         writing(['A']),
         // A write that works has nothing to report: the switch has moved.
-        DataGatewayDetailReady(gateway: off(['A', 'B'])),
+        ready(gateway: off(['A', 'B'])),
       ],
       verify: (_) => expect(remote.calls, [
         fetchCall,
@@ -577,7 +638,7 @@ void main() {
       },
       skip: 3,
       expect: () => [
-        DataGatewayDetailReady(gateway: off(['FutureThing'])),
+        ready(gateway: off(['FutureThing'])),
       ],
       verify: (_) => expect(remote.calls, [
         fetchCall,
@@ -656,10 +717,7 @@ void main() {
       skip: 2,
       expect: () => [
         writing([]),
-        DataGatewayDetailReady(
-          gateway: row,
-          outcome: DataGatewayDetailOutcome.capabilityFailed,
-        ),
+        ready(gateway: row, outcome: DataGatewayDetailOutcome.capabilityFailed),
       ],
       verify: (_) => expect(remote.calls, [
         fetchCall,
@@ -687,12 +745,12 @@ void main() {
       },
       skip: 4,
       expect: () => [
-        DataGatewayDetailReady(
+        ready(
           gateway: off(const []),
           busy: DataGatewayDetailBusy.capabilities,
           outcome: DataGatewayDetailOutcome.capabilityFailed,
         ),
-        DataGatewayDetailReady(gateway: off(['B'])),
+        ready(gateway: off(['B'])),
       ],
     );
 
@@ -785,7 +843,7 @@ void main() {
           await send(bloc, switchOff('A'));
           expect(
             bloc.state,
-            DataGatewayDetailReady(
+            ready(
               gateway: row,
               busy: DataGatewayDetailBusy.capabilities,
               interviewWaiting: true,
@@ -803,7 +861,7 @@ void main() {
           ]);
           expect(
             bloc.state,
-            DataGatewayDetailReady(
+            ready(
               gateway: off(['B', 'A']),
               outcome: DataGatewayDetailOutcome.interviewDone,
             ),
@@ -830,9 +888,7 @@ void main() {
           ]);
           expect(
             bloc.state,
-            DataGatewayDetailReady(
-              gateway: off(['B']).copyWith(enabled: false),
-            ),
+            ready(gateway: off(['B']).copyWith(enabled: false)),
           );
         },
       );
@@ -882,7 +938,7 @@ void main() {
           expect(bloc.state, const DataGatewayDetailGone());
 
           await send(bloc, load);
-          expect(bloc.state, DataGatewayDetailReady(gateway: row));
+          expect(bloc.state, ready(gateway: row));
           await send(bloc, switchOff('C'));
         },
         verify: (bloc) {
@@ -892,7 +948,7 @@ void main() {
             fetchCall,
             writeCall(['C']),
           ]);
-          expect(bloc.state, DataGatewayDetailReady(gateway: off(['C'])));
+          expect(bloc.state, ready(gateway: off(['C'])));
         },
       );
     });
@@ -917,7 +973,7 @@ void main() {
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'a 403 on a write refuses and hides changes',
+      'a refused write says so, and asks access again',
       setUp: () {
         reads([row]);
         remote.onSetDisabledCapabilities = (_, _) async => throw forbidden();
@@ -930,14 +986,10 @@ void main() {
       skip: 2,
       expect: () => [
         writing([]),
-        DataGatewayDetailReady(
-          gateway: row,
-          mayChange: false,
-          outcome: DataGatewayDetailOutcome.refused,
-        ),
+        ready(gateway: row, outcome: DataGatewayDetailOutcome.refused),
       ],
       verify: (_) {
-        expect(access.value.mayChange, isFalse);
+        expect(access.refreshCount, 1);
         expect(remote.calls, [
           fetchCall,
           writeCall(['B']),
@@ -976,7 +1028,7 @@ void main() {
             fetchCall,
             writeCall(['B', 'C']),
           ]);
-          expect(bloc.state, DataGatewayDetailReady(gateway: off(['B', 'C'])));
+          expect(bloc.state, ready(gateway: off(['B', 'C'])));
         },
       );
 
@@ -1038,7 +1090,7 @@ void main() {
           ]);
           expect(
             bloc.state,
-            DataGatewayDetailReady(
+            ready(
               gateway: off(['B']),
               outcome: DataGatewayDetailOutcome.capabilityFailed,
             ),
@@ -1107,7 +1159,7 @@ void main() {
           await send(bloc, asking(second, capability: 'Fetch'));
         },
         skip: 2,
-        expect: () => [DataGatewayDetailReady(gateway: row, busy: first)],
+        expect: () => [ready(gateway: row, busy: first)],
         verify: (_) => expect(remote.calls, [fetchCall, callOf(first)]),
       );
     }
@@ -1127,18 +1179,15 @@ void main() {
           await send(bloc, load);
           await send(bloc, asking(action));
           await send(bloc, load);
-          expect(
-            bloc.state,
-            DataGatewayDetailReady(gateway: row, busy: action),
-          );
+          expect(bloc.state, ready(gateway: row, busy: action));
           endAction();
           await pumpEventQueue();
         },
         skip: 2,
         expect: () => [
-          DataGatewayDetailReady(gateway: row, busy: action),
-          DataGatewayDetailReady(gateway: answer, outcome: outcomeOf(action)),
-          DataGatewayDetailReady(gateway: reread, outcome: outcomeOf(action)),
+          ready(gateway: row, busy: action),
+          ready(gateway: answer, outcome: outcomeOf(action)),
+          ready(gateway: reread, outcome: outcomeOf(action)),
         ],
         verify: (_) => expect(remote.calls, [
           fetchCall,
@@ -1168,9 +1217,9 @@ void main() {
         },
         skip: 2,
         expect: () => [
-          DataGatewayDetailReady(gateway: row, busy: action),
-          DataGatewayDetailReady(gateway: answer, outcome: outcomeOf(action)),
-          DataGatewayDetailReady(gateway: reread, outcome: outcomeOf(action)),
+          ready(gateway: row, busy: action),
+          ready(gateway: answer, outcome: outcomeOf(action)),
+          ready(gateway: reread, outcome: outcomeOf(action)),
         ],
         verify: (_) => expect(remote.calls, [
           fetchCall,
@@ -1202,9 +1251,9 @@ void main() {
         },
         skip: 2,
         expect: () => [
-          DataGatewayDetailReady(gateway: row, busy: action),
-          DataGatewayDetailReady(gateway: answer, outcome: outcomeOf(action)),
-          DataGatewayDetailReady(gateway: reread, outcome: outcomeOf(action)),
+          ready(gateway: row, busy: action),
+          ready(gateway: answer, outcome: outcomeOf(action)),
+          ready(gateway: reread, outcome: outcomeOf(action)),
         ],
       );
 
@@ -1228,9 +1277,9 @@ void main() {
         },
         skip: 2,
         expect: () => [
-          DataGatewayDetailReady(gateway: row, busy: action),
-          DataGatewayDetailReady(gateway: answer, outcome: outcomeOf(action)),
-          DataGatewayDetailReady(gateway: reread, outcome: outcomeOf(action)),
+          ready(gateway: row, busy: action),
+          ready(gateway: answer, outcome: outcomeOf(action)),
+          ready(gateway: reread, outcome: outcomeOf(action)),
         ],
       );
     }
@@ -1254,21 +1303,23 @@ void main() {
           await send(bloc, load);
           await send(bloc, interview);
           await send(bloc, load);
-          expect(access.value.read, DataGatewayRead.granted);
+          // A refusal is the server's word on access, whatever happens to the
+          // row it came with, so it asks again even when dropped.
+          expect(
+            access.refreshCount,
+            error is DataGatewayForbiddenException ? 1 : 0,
+          );
           endAction();
           await pumpEventQueue();
         },
         skip: 2,
         expect: () => [
-          DataGatewayDetailReady(
-            gateway: row,
-            busy: DataGatewayDetailBusy.interview,
-          ),
-          DataGatewayDetailReady(
+          ready(gateway: row, busy: DataGatewayDetailBusy.interview),
+          ready(
             gateway: answer,
             outcome: DataGatewayDetailOutcome.interviewDone,
           ),
-          DataGatewayDetailReady(
+          ready(
             gateway: reread,
             outcome: DataGatewayDetailOutcome.interviewDone,
           ),
@@ -1328,10 +1379,7 @@ void main() {
       },
       skip: 2,
       expect: () => [
-        DataGatewayDetailReady(
-          gateway: row,
-          busy: DataGatewayDetailBusy.interview,
-        ),
+        ready(gateway: row, busy: DataGatewayDetailBusy.interview),
         const DataGatewayDetailGone(),
       ],
       verify: (_) =>
@@ -1404,7 +1452,7 @@ void main() {
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'and a refusal that lands after the close still tells the session',
+      'and a refusal that lands after the close still asks access again',
       setUp: holdingTheInterview,
       build: build,
       act: (bloc) async {
@@ -1414,93 +1462,205 @@ void main() {
         pending.completeError(forbidden());
         await pumpEventQueue();
       },
-      verify: (_) => expect(access.value.mayChange, isFalse),
+      verify: (_) => expect(access.refreshCount, 1),
     );
   });
 
-  test('closing stops listening to the session', () async {
-    final errors = <FlutterErrorDetails>[];
-    final previous = FlutterError.onError;
-    FlutterError.onError = errors.add;
-    addTearDown(() => FlutterError.onError = previous);
-
-    final bloc = build();
-    await bloc.close();
-    access.changeDenied();
-
-    expect(errors, isEmpty);
-  });
-
-  group('a reader who may not change DataGateways', () {
+  group('what the caller may do (#456)', () {
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'opens with changes hidden once the session has learned it, and sends '
-      'nothing',
+      'a read that succeeds while access is unknown asks access again',
+      // The first ask failed with the server up, and nothing else would ask
+      // again until a rehydrate trigger.
       setUp: () {
         reads([row]);
-        access.changeDenied();
+        access.current = const CallerAccess.unknown();
       },
       build: build,
-      act: (bloc) async {
-        await send(bloc, load);
-        await send(bloc, interview);
-        await send(bloc, switchOff('B'));
-      },
+      act: (bloc) => bloc.add(load),
       skip: 1,
-      expect: () => [DataGatewayDetailReady(gateway: row, mayChange: false)],
-      verify: (_) => expect(remote.calls, [fetchCall]),
+      expect: () => [DataGatewayDetailReady(gateway: row)],
+      verify: (_) => expect(access.refreshCount, 1),
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'hides changes when another screen learns it',
+      'a read that succeeds while access is known asks nothing',
       setUp: () => reads([row]),
       build: build,
-      act: (bloc) async {
-        await send(bloc, load);
-        access.changeDenied();
-      },
-      skip: 2,
-      expect: () => [DataGatewayDetailReady(gateway: row, mayChange: false)],
+      act: (bloc) => bloc.add(load),
+      skip: 1,
+      expect: () => [ready(gateway: row)],
+      verify: (_) => expect(access.refreshCount, 0),
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'a refused change stops the next one being sent',
+      'offers interview and switches on update',
       setUp: () {
         reads([row]);
-        remote.onInterview = (_) async => throw forbidden();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.some,
+        );
+        remote.onInterview = (_) async => interviewed(row);
+        echoingWrites(row);
       },
       build: build,
       act: (bloc) async {
         await send(bloc, load);
-        await send(bloc, interview);
+        expect(bloc.state, ready(gateway: row));
         await send(bloc, interview);
         await send(bloc, switchOff('B'));
       },
-      verify: (_) => expect(remote.calls, [fetchCall, interviewCall]),
+      verify: (_) => expect(remote.calls, [
+        fetchCall,
+        interviewCall,
+        writeCall(['B']),
+      ]),
     );
 
+    for (final (who, answer) in [
+      ('a caller who may do all but update', allButUpdate),
+      ('while access is unknown', const CallerAccess.unknown()),
+    ]) {
+      blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+        'offers nothing $who, and sends nothing',
+        setUp: () {
+          reads([row]);
+          access.current = answer;
+        },
+        build: build,
+        act: (bloc) async {
+          await send(bloc, load);
+          await send(bloc, interview);
+          await send(bloc, switchOff('B'));
+        },
+        expect: () => [
+          const DataGatewayDetailLoading(),
+          DataGatewayDetailReady(gateway: row),
+        ],
+        verify: (_) => expect(remote.calls, [fetchCall]),
+      );
+    }
+
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'with no session to tell, a refusal still hides changes on this screen',
-      setUp: () {
-        reads([row]);
-        remote.onInterview = (_) async => throw forbidden();
-      },
+      'offers nothing without a session to ask',
+      setUp: () => reads([row]),
       build: () => DataGatewayDetailBloc(remote: remote, id: 'dg_1'),
       act: (bloc) async {
         await send(bloc, load);
         await send(bloc, interview);
-        await send(bloc, switchOff('B'));
       },
-      verify: (bloc) {
-        expect(
-          bloc.state,
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        DataGatewayDetailReady(gateway: row),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall]),
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'a refused interview asks access again, and the controls go once it '
+      'answers that they may not',
+      setUp: () {
+        reads([row]);
+        remote.onInterview = (_) async => throw forbidden();
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        await send(bloc, interview);
+        expect(access.refreshCount, 1);
+        // What the ask found.
+        access.current = allButUpdate;
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [
+        interviewing,
+        // The refusal alone takes nothing away: access does.
+        ready(gateway: row, outcome: DataGatewayDetailOutcome.refused),
+        DataGatewayDetailReady(
+          gateway: row,
+          outcome: DataGatewayDetailOutcome.refused,
+        ),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall, interviewCall]),
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'controls appear when update arrives on an open screen, without reading '
+      'the row again',
+      setUp: () {
+        reads([row]);
+        access.current = const CallerAccess.unknown();
+        remote.onInterview = (_) async => interviewed(row);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        access.current = updating;
+        await pumpEventQueue();
+        await send(bloc, interview);
+      },
+      expect: () => [
+        const DataGatewayDetailLoading(),
+        DataGatewayDetailReady(gateway: row),
+        ready(gateway: row),
+        interviewing,
+        ready(gateway: row, outcome: DataGatewayDetailOutcome.interviewDone),
+      ],
+      verify: (_) => expect(remote.calls, [fetchCall, interviewCall]),
+    );
+
+    late Completer<DataGatewayChangeResult> write;
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'update falling during a write lets the write answer, and drops the '
+      'presses waiting for it',
+      setUp: () {
+        reads([row]);
+        write = Completer();
+        remote.onSetDisabledCapabilities = (_, _) => write.future;
+        remote.onInterview = (_) async => interviewed(row);
+      },
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        await send(bloc, switchOff('B'));
+        await send(bloc, switchOff('A'));
+        await send(bloc, interview);
+        access.current = allButUpdate;
+        await pumpEventQueue();
+        write.complete(changed(row.copyWith(disabledCapabilities: ['B'])));
+        await pumpEventQueue();
+      },
+      skip: 4,
+      expect: () {
+        final off = row.copyWith(disabledCapabilities: ['B']);
+        return [
           DataGatewayDetailReady(
             gateway: row,
-            mayChange: false,
-            outcome: DataGatewayDetailOutcome.refused,
+            busy: DataGatewayDetailBusy.capabilities,
+            interviewWaiting: true,
           ),
-        );
-        expect(remote.calls, [fetchCall, interviewCall]);
+          DataGatewayDetailReady(gateway: off, interviewWaiting: true),
+          DataGatewayDetailReady(gateway: off),
+        ];
       },
+      verify: (_) => expect(remote.calls, [
+        fetchCall,
+        writeCall(['B']),
+      ]),
+    );
+
+    blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+      'stops listening on close',
+      setUp: () => reads([row]),
+      build: build,
+      act: (bloc) async {
+        await send(bloc, load);
+        await bloc.close();
+        access.current = allButUpdate;
+        await pumpEventQueue();
+      },
+      expect: () => [const DataGatewayDetailLoading(), ready(gateway: row)],
     );
   });
 
@@ -1517,7 +1677,7 @@ void main() {
       await send(bloc, dismiss);
     },
     skip: 4,
-    expect: () => [DataGatewayDetailReady(gateway: row)],
+    expect: () => [ready(gateway: row)],
   );
 
   group('helpers', () {

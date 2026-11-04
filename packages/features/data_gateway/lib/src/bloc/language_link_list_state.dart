@@ -93,7 +93,7 @@ final class LanguageLinkListReady extends LanguageLinkListState {
     required this.hasMore,
     this.loadingMore = false,
     this.moreFailed = false,
-    this.mayChange = true,
+    this.mayUpdate = false,
     this.busy = const {},
     this.outcome,
   }) : super(filter);
@@ -113,9 +113,9 @@ final class LanguageLinkListReady extends LanguageLinkListState {
   /// tried again.
   final bool moreFailed;
 
-  /// Whether to offer link, ignore and accept. False once the session has
-  /// seen a change refused (#41).
-  final bool mayChange;
+  /// Whether to offer link, ignore and accept: what the caller's access says
+  /// of update now (#456), and false while that is unknown.
+  final bool mayUpdate;
 
   /// Ids of the links with an action in flight.
   final Set<String> busy;
@@ -131,7 +131,7 @@ final class LanguageLinkListReady extends LanguageLinkListState {
     hasMore,
     loadingMore,
     moreFailed,
-    mayChange,
+    mayUpdate,
     busy,
     outcome,
   ];
@@ -159,7 +159,10 @@ enum LanguageLinkOutcomeKind {
   /// changed.
   unknownTag,
 
-  /// The user's role may not change DataGateways.
+  /// The server refused the action because of the user's role.
+  ///
+  /// Since #456 a refusal takes nothing away by itself: it asks the caller's
+  /// access again, and the actions follow that answer.
   refused,
 
   /// The link, or the DataGateway, is gone. The list is read again.

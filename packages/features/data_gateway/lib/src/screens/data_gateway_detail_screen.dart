@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
@@ -9,7 +10,6 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 
-import '../access/data_gateway_access.dart';
 import '../bloc/data_gateway_detail_bloc.dart';
 import '../bloc/data_gateway_detail_event.dart';
 import '../bloc/data_gateway_detail_state.dart';
@@ -18,6 +18,7 @@ import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
 import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
+import '../widgets/focus_is_free.dart';
 import '../widgets/language_link_worklist.dart';
 
 /// One DataGateway's own page (#457): its name, whether the server uses it and
@@ -25,8 +26,8 @@ import '../widgets/language_link_worklist.dart';
 /// do, and the language names it uses that are left to review.
 ///
 /// Decoupled from DI like the list screen: the caller resolves the per-server
-/// [DataGatewayRemoteDataSource] and the session's [DataGatewayAccess]. The
-/// screen takes an id rather than a row, and reads the row itself.
+/// [DataGatewayRemoteDataSource] and the session's [CallerAccessRepository].
+/// The screen takes an id rather than a row, and reads the row itself.
 ///
 /// The row and the worklist are read again whenever the screen comes back into
 /// view, and from the refresh control. [DataGatewayDetailBloc] and
@@ -73,12 +74,14 @@ import '../widgets/language_link_worklist.dart';
 ///   switches do stop taking presses: an interview starts from the button, so
 ///   focus is not on a switch, and up to a minute of presses that go nowhere
 ///   would mislead.
-/// - A refusal takes the interview button away and stops the switches, and a
-///   row found disabled takes the button away, whichever read or action found
-///   it. Left to go with the control, focus would land on whatever had it
-///   before. So if that control had focus, it goes to the banner's Dismiss, or
-///   with no banner to the first switch still taking presses, or else to
-///   refresh.
+/// - Access falling takes the interview button away and stops the switches,
+///   whenever the session's answer changes, and a row found disabled takes the
+///   button away, whichever read or action found it. Left to go with the
+///   control, focus would land on whatever had it before. So if that control
+///   had focus, it goes to the banner's Dismiss, or with no banner to the first
+///   switch still taking presses, or else to refresh. A refusal takes nothing
+///   away by itself, so the control keeps focus through it, as through any
+///   other answer, until access answers.
 /// - The banner takes room from the foot of the view as it arrives. A switch
 ///   with focus that it covers is brought back into view, as Tab would, for a
 ///   user who can see focus.
@@ -89,9 +92,14 @@ import '../widgets/language_link_worklist.dart';
 ///
 /// ## Access
 ///
+/// The interview button shows, and the switches take presses, while the
+/// caller's access allows update (#456). While the answer is unknown they
+/// don't, and nothing is said about the role. They come and go as the answer
+/// changes, without reading the row again.
+///
 /// A refused read is the access-denied surface, with nothing to act on. A
-/// refused change hides the interview button and stops the switches for the
-/// rest of the session, and the banner says why (#41).
+/// refused change says why in the banner. Both ask the session's access
+/// again, and the controls follow its answer.
 class DataGatewayDetailScreen extends StatelessWidget {
   const DataGatewayDetailScreen({
     required this.remote,
@@ -126,8 +134,9 @@ class DataGatewayDetailScreen extends StatelessWidget {
   /// The DataGateway to show.
   final String id;
 
-  /// The session's access, or null for a composition without one.
-  final DataGatewayAccess? access;
+  /// The session's access, or null for a composition without one, which
+  /// offers no change.
+  final CallerAccessRepository? access;
 
   @override
   Widget build(BuildContext context) => MultiBlocProvider(
@@ -307,7 +316,7 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                     ],
                     DataGatewayDetailReady(
                       :final gateway,
-                      :final mayChange,
+                      :final mayUpdate,
                       :final busy,
                       :final interviewWaiting,
                     ) =>
@@ -323,7 +332,7 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                             slivers: [
                               _InterviewSection(
                                 gateway: gateway,
-                                mayChange: mayChange,
+                                mayUpdate: mayUpdate,
                                 focusNode: _interview,
                                 interviewing:
                                     busy == DataGatewayDetailBusy.interview ||
@@ -332,7 +341,7 @@ class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
                               _ListsSection(gateway: gateway),
                               _CapabilitiesSection(
                                 gateway: gateway,
-                                mayChange: mayChange,
+                                mayUpdate: mayUpdate,
                                 busy: busy,
                                 interviewWaiting: interviewWaiting,
                               ),
@@ -442,13 +451,15 @@ class _StatusSection extends StatelessWidget {
 class _InterviewSection extends StatelessWidget {
   const _InterviewSection({
     required this.gateway,
-    required this.mayChange,
+    required this.mayUpdate,
     required this.focusNode,
     required this.interviewing,
   });
 
   final DataGateway gateway;
-  final bool mayChange;
+
+  /// Whether the caller's access allows update, which the button needs.
+  final bool mayUpdate;
   final FocusNode focusNode;
   final bool interviewing;
 
@@ -482,7 +493,7 @@ class _InterviewSection extends StatelessWidget {
               dataGatewayInterviewFailureLabel(l10n, failure.code),
             ),
           ),
-        if (gateway.enabled && mayChange) ...[
+        if (gateway.enabled && mayUpdate) ...[
           const BgeGap.md(),
           OutlinedButton(
             key: DataGatewayDetailScreen.interviewKey,
@@ -597,13 +608,16 @@ class _SectionRow extends StatelessWidget {
 class _CapabilitiesSection extends StatelessWidget {
   const _CapabilitiesSection({
     required this.gateway,
-    required this.mayChange,
+    required this.mayUpdate,
     required this.busy,
     required this.interviewWaiting,
   });
 
   final DataGateway gateway;
-  final bool mayChange;
+
+  /// Whether the caller's access allows update. Without it the switches show
+  /// where each capability stands, and take no presses.
+  final bool mayUpdate;
   final DataGatewayDetailBusy? busy;
   final bool interviewWaiting;
 
@@ -614,7 +628,7 @@ class _CapabilitiesSection extends StatelessWidget {
     // Not stopped by a write of their own, and the bloc settles a press made
     // meanwhile: see the screen's doc.
     final maySwitch =
-        mayChange &&
+        mayUpdate &&
         busy != DataGatewayDetailBusy.interview &&
         !interviewWaiting;
 
@@ -753,29 +767,47 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
       !(previous is DataGatewayDetailReady &&
           previous.outcome == current.outcome);
 
-  /// Whether [current] takes away a control [previous] showed: the permission
-  /// went, or the row is now disabled.
+  /// Whether [current] takes away a control [previous] showed: the caller's
+  /// access no longer allows update (#456), or the row is now disabled.
   static bool _takesControlAway(
     DataGatewayDetailState previous,
     DataGatewayDetailState current,
   ) =>
       previous is DataGatewayDetailReady &&
       current is DataGatewayDetailReady &&
-      ((previous.mayChange && !current.mayChange) ||
+      ((previous.mayUpdate && !current.mayUpdate) ||
           (previous.gateway.enabled && !current.gateway.enabled));
 
   /// Runs before the frame that takes the control away, while it still has
-  /// focus.
+  /// focus, and hands it on after that frame. Not if the user has moved focus
+  /// meanwhile, and not if access has given the control back by then.
   void _onControlTakenAway(BuildContext context, DataGatewayDetailState state) {
     if (state is! DataGatewayDetailReady) return;
-    final hadFocus = state.mayChange
+    // Without update every control goes or stops. With it, only the button
+    // can have gone, with the row now disabled.
+    final hadFocus = state.mayUpdate
         ? widget.interview.hasFocus
         : widget.controls.hasFocus;
     if (!hadFocus) return;
-    final banner = state.outcome != null;
+    final onInterview = widget.interview.hasFocus;
+    final focused = FocusManager.instance.primaryFocus;
+    final bloc = context.read<DataGatewayDetailBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (banner) {
+      if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
+      // What that frame built: the control may be offered again, and the
+      // banner may have been dismissed.
+      final now = bloc.state;
+      // A switch is back only taking presses, as [_CapabilitiesSection] has
+      // it: an interview stops it, and it gives up focus.
+      final back =
+          now is DataGatewayDetailReady &&
+          now.mayUpdate &&
+          (onInterview
+              ? now.gateway.enabled
+              : now.busy != DataGatewayDetailBusy.interview &&
+                    !now.interviewWaiting);
+      if (back) return;
+      if (now is DataGatewayDetailReady && now.outcome != null) {
         _focusDismiss();
       } else {
         final next = widget.controls.traversalDescendants.firstOrNull;
@@ -800,8 +832,8 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
   /// focus still has it.
   void _onArrival(BuildContext context, DataGatewayDetailState state) {
     if (!widget.controls.hasFocus) return;
-    // A control a refusal takes away is [_onControlTakenAway]'s.
-    if (state is DataGatewayDetailReady && !state.mayChange) return;
+    // A control access takes away is [_onControlTakenAway]'s.
+    if (state is DataGatewayDetailReady && !state.mayUpdate) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (widget.controls.hasFocus &&
@@ -925,7 +957,8 @@ class _OwnOutcomeBanner extends StatelessWidget {
 
   final DataGatewayDetailOutcome outcome;
 
-  /// For the Dismiss, which a refusal gives focus to.
+  /// For the Dismiss, which takes focus from a control that goes while the
+  /// banner shows.
   final FocusNode dismissFocus;
 
   @override

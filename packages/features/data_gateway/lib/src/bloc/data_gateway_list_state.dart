@@ -30,16 +30,24 @@ final class DataGatewayListFailed extends DataGatewayListState {
 final class DataGatewayListReady extends DataGatewayListState {
   const DataGatewayListReady({
     required this.gateways,
-    this.mayChange = true,
+    this.mayCreate = false,
+    this.mayUpdate = false,
+    this.mayDelete = false,
     this.busy = const {},
     this.outcome,
   });
 
   final List<DataGateway> gateways;
 
-  /// Whether to offer add, edit, delete, connect and disconnect. False once
-  /// the session has seen a change refused (#41).
-  final bool mayChange;
+  /// Whether to offer add. Each switch is what the caller's access says now
+  /// (#456), and false while that is unknown.
+  final bool mayCreate;
+
+  /// Whether to offer edit, connect and disconnect.
+  final bool mayUpdate;
+
+  /// Whether to offer delete.
+  final bool mayDelete;
 
   /// Ids of the rows with an action in flight.
   final Set<String> busy;
@@ -49,7 +57,14 @@ final class DataGatewayListReady extends DataGatewayListState {
   final DataGatewayListOutcome? outcome;
 
   @override
-  List<Object?> get props => [gateways, mayChange, busy, outcome];
+  List<Object?> get props => [
+    gateways,
+    mayCreate,
+    mayUpdate,
+    mayDelete,
+    busy,
+    outcome,
+  ];
 }
 
 /// How an action on a row ended.

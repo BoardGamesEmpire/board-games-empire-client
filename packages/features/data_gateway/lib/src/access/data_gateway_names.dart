@@ -10,9 +10,9 @@ const int dataGatewayListMaxPages = 50;
 /// Reads every live DataGateway's name, by id (#42).
 ///
 /// For a screen that names DataGateways without managing them, such as the
-/// game search, which shows which DataGateway found a result. Only a user who
-/// may read DataGateways can call it: anyone else gets a
-/// [DataGatewayForbiddenException], like any other read.
+/// game search, which shows which DataGateway found a result. Only a caller
+/// whose access allows `read` on DataGateway can call it (#456): anyone else
+/// gets a [DataGatewayForbiddenException], like any other read.
 ///
 /// Throws [StateError] when the list still has more after
 /// [dataGatewayListMaxPages] pages, as `DataGatewayListBloc` treats that

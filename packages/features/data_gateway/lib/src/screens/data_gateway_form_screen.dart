@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 
-import '../access/data_gateway_access.dart';
 import '../bloc/data_gateway_form_bloc.dart';
 import '../bloc/data_gateway_form_event.dart';
 import '../bloc/data_gateway_form_state.dart';
 import '../widgets/data_gateway_form.dart';
 import '../widgets/data_gateway_message.dart';
+import '../widgets/focus_is_free.dart';
 
 /// The add form, or the edit form when [editingId] is set (#41).
 ///
@@ -18,6 +19,19 @@ import '../widgets/data_gateway_message.dart';
 /// SnackBar and then calls [onDone], because the confirmation has to outlive
 /// the route the way the household create flow's does (#191). Every failure
 /// stays on the form, above the submit it answers.
+///
+/// ## Access
+///
+/// The save is offered while the caller's access allows it: create for an
+/// add, update for an edit (#456). Without it the fields are read-only, and
+/// once access has answered the form says why in its place. While it has
+/// not, the form says nothing about the role. An add the caller may not make
+/// shows access-denied instead, and opens if that changes.
+///
+/// A save that access takes away with keyboard focus on it hands focus to the
+/// last field ([DataGatewayForm]). An open add that access closes with focus
+/// inside it hands focus to the page's heading, which is no Tab stop but is
+/// always there.
 class DataGatewayFormScreen extends StatelessWidget {
   const DataGatewayFormScreen({
     required this.remote,
@@ -31,7 +45,10 @@ class DataGatewayFormScreen extends StatelessWidget {
   static const Key errorBannerKey = Key('data_gateway_form.error_banner');
 
   final DataGatewayRemoteDataSource remote;
-  final DataGatewayAccess? access;
+
+  /// The session's access, or null for a composition without one, which
+  /// opens the form read-only.
+  final CallerAccessRepository? access;
 
   /// The DataGateway to edit, or null to add one.
   final String? editingId;
@@ -60,11 +77,70 @@ class DataGatewayFormScreen extends StatelessWidget {
   );
 }
 
-class _DataGatewayFormView extends StatelessWidget {
+class _DataGatewayFormView extends StatefulWidget {
   const _DataGatewayFormView({required this.editing, required this.onDone});
 
   final bool editing;
   final void Function(BuildContext context) onDone;
+
+  @override
+  State<_DataGatewayFormView> createState() => _DataGatewayFormViewState();
+}
+
+class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
+  /// On the page's heading, which takes focus only when sent there: it is no
+  /// Tab stop.
+  final FocusNode _heading = FocusNode(
+    debugLabel: 'data gateway form heading',
+    skipTraversal: true,
+  );
+
+  /// The node of the [Focus] around the form. It can't take focus itself:
+  /// focus goes to the fields and the submit inside.
+  final FocusNode _form = FocusNode(
+    debugLabel: 'data gateway form',
+    canRequestFocus: false,
+  );
+
+  @override
+  void dispose() {
+    _heading.dispose();
+    _form.dispose();
+    super.dispose();
+  }
+
+  /// Whether [current] takes the open form away because the caller's access
+  /// no longer allows an add (#456).
+  static bool _closesForm(
+    DataGatewayFormState previous,
+    DataGatewayFormState current,
+  ) => previous is DataGatewayFormEditing && current is DataGatewayFormDenied;
+
+  /// When the form goes with keyboard focus inside it, hands focus to the
+  /// page's heading (#456).
+  ///
+  /// Access can fall at any time, whenever the session asks again. Left to go
+  /// with the form, focus would fall on the page with nothing to show for it.
+  /// The access-denied message that replaces the form has no control, and
+  /// the heading is always there. The next Tab goes on from the top of the
+  /// page.
+  ///
+  /// Runs before the frame that takes the form away, while it still has
+  /// focus, and hands it on after that frame. Not if the user has moved focus
+  /// meanwhile, and not if access has opened the form again by then.
+  void _onFormClosed(BuildContext context, DataGatewayFormState state) {
+    if (!_form.hasFocus) return;
+    final focused = FocusManager.instance.primaryFocus;
+    final bloc = context.read<DataGatewayFormBloc>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          focusIsFree(this.context, untouched: focused) &&
+          bloc.state is DataGatewayFormDenied) {
+        _heading.requestFocus();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   static String _savedMessage(
     DataGatewayLocalizations l10n,
@@ -86,108 +162,125 @@ class _DataGatewayFormView extends StatelessWidget {
     DataGatewayFormFailure.nothingChanged => l10n.dataGatewayFormNothingChanged,
     DataGatewayFormFailure.nameInUse => l10n.dataGatewayFormNameInUse,
     DataGatewayFormFailure.gone => l10n.dataGatewayFormGone,
+    DataGatewayFormFailure.refused => l10n.dataGatewayChangeRefused,
     DataGatewayFormFailure.failed => l10n.dataGatewayFormFailed,
   };
 
   @override
   Widget build(BuildContext context) {
     final l10n = DataGatewayLocalizations.of(context);
-    final title = Text(
-      editing ? l10n.dataGatewayFormEditTitle : l10n.dataGatewayAdd,
+    final editing = widget.editing;
+    final title = Focus(
+      focusNode: _heading,
+      child: Text(
+        editing ? l10n.dataGatewayFormEditTitle : l10n.dataGatewayAdd,
+      ),
     );
 
-    return BlocConsumer<DataGatewayFormBloc, DataGatewayFormState>(
-      listenWhen: (_, state) => state is DataGatewayFormSaved,
-      listener: (context, state) {
-        if (state is! DataGatewayFormSaved) return;
-        // Shown before leaving, while this route's context is still mounted;
-        // the messenger outlives the route. Shown however the save finds the
-        // form, because the save happened either way.
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_savedMessage(l10n, state))));
-      },
-      builder: (context, state) => switch (state) {
-        DataGatewayFormLoading() => BgePage(
-          title: title,
-          centerVertically: true,
-          child: Center(
-            key: DataGatewayFormScreen.loadingKey,
-            child: Semantics(
-              liveRegion: true,
-              label: l10n.dataGatewayFormLoading,
-              child: const ExcludeSemantics(child: CircularProgressIndicator()),
-            ),
-          ),
-        ),
-        DataGatewayFormDenied() => BgePage(
-          title: title,
-          centerVertically: true,
-          child: DataGatewayMessage(
-            icon: Icons.lock_outline,
-            title: l10n.dataGatewayDeniedTitle,
-            body: l10n.dataGatewayDeniedBody,
-          ),
-        ),
-        DataGatewayFormMissing() => BgePage(
-          title: title,
-          centerVertically: true,
-          child: DataGatewayMessage(
-            icon: Icons.search_off_outlined,
-            title: l10n.dataGatewayFormMissingTitle,
-            body: l10n.dataGatewayFormMissingBody,
-          ),
-        ),
-        DataGatewayFormLoadFailed() => BgePage(
-          title: title,
-          centerVertically: true,
-          child: BgeErrorState(
-            icon: Icons.cloud_off_outlined,
-            title: l10n.dataGatewayFormLoadFailedTitle,
-            body: l10n.dataGatewayListErrorBody,
-            retryLabel: l10n.dataGatewayRetry,
-            onRetry: () => context.read<DataGatewayFormBloc>().add(
-              const DataGatewayFormStarted(),
-            ),
-          ),
-        ),
-        DataGatewayFormEditing(
-          :final original,
-          :final submitting,
-          :final mayChange,
-          :final failure,
-        ) =>
-          BgePage(
+    return BlocListener<DataGatewayFormBloc, DataGatewayFormState>(
+      listenWhen: _closesForm,
+      listener: _onFormClosed,
+      child: BlocConsumer<DataGatewayFormBloc, DataGatewayFormState>(
+        listenWhen: (_, state) => state is DataGatewayFormSaved,
+        listener: (context, state) {
+          if (state is! DataGatewayFormSaved) return;
+          // Shown before leaving, while this route's context is still mounted;
+          // the messenger outlives the route. Shown however the save finds the
+          // form, because the save happened either way.
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_savedMessage(l10n, state))));
+        },
+        builder: (context, state) => switch (state) {
+          DataGatewayFormLoading() => BgePage(
             title: title,
-            child: DataGatewayForm(
-              initial: original,
-              submitLabel: editing
-                  ? l10n.dataGatewayFormSubmitEdit
-                  : l10n.dataGatewayFormSubmitAdd,
-              submitting: submitting,
-              mayChange: mayChange,
-              failure: failure == null
-                  ? null
-                  : BgeFormFailure(
-                      key: DataGatewayFormScreen.errorBannerKey,
-                      // Each message names what happened on its own.
-                      title: null,
-                      message: _failureMessage(l10n, failure),
-                    ),
-              onEdited: () => context.read<DataGatewayFormBloc>().add(
-                const DataGatewayFormFailureCleared(),
-              ),
-              onSubmit: (input) => context.read<DataGatewayFormBloc>().add(
-                DataGatewayFormSubmitted(input),
+            centerVertically: true,
+            child: Center(
+              key: DataGatewayFormScreen.loadingKey,
+              child: Semantics(
+                liveRegion: true,
+                label: l10n.dataGatewayFormLoading,
+                child: const ExcludeSemantics(
+                  child: CircularProgressIndicator(),
+                ),
               ),
             ),
           ),
-        // Until the route is gone, keep the form's shape rather than flashing
-        // an empty page.
-        DataGatewayFormSaved() => BgePage(
-          title: title,
-          child: _LeaveWhenCurrent(onDone: onDone),
-        ),
-      },
+          DataGatewayFormDenied() => BgePage(
+            title: title,
+            centerVertically: true,
+            child: DataGatewayMessage(
+              icon: Icons.lock_outline,
+              title: l10n.dataGatewayDeniedTitle,
+              body: l10n.dataGatewayDeniedBody,
+            ),
+          ),
+          DataGatewayFormMissing() => BgePage(
+            title: title,
+            centerVertically: true,
+            child: DataGatewayMessage(
+              icon: Icons.search_off_outlined,
+              title: l10n.dataGatewayFormMissingTitle,
+              body: l10n.dataGatewayFormMissingBody,
+            ),
+          ),
+          DataGatewayFormLoadFailed() => BgePage(
+            title: title,
+            centerVertically: true,
+            child: BgeErrorState(
+              icon: Icons.cloud_off_outlined,
+              title: l10n.dataGatewayFormLoadFailedTitle,
+              body: l10n.dataGatewayListErrorBody,
+              retryLabel: l10n.dataGatewayRetry,
+              onRetry: () => context.read<DataGatewayFormBloc>().add(
+                const DataGatewayFormStarted(),
+              ),
+            ),
+          ),
+          DataGatewayFormEditing(
+            :final original,
+            :final submitting,
+            :final maySave,
+            :final accessKnown,
+            :final failure,
+          ) =>
+            BgePage(
+              title: title,
+              child: Focus(
+                focusNode: _form,
+                child: DataGatewayForm(
+                  initial: original,
+                  submitLabel: editing
+                      ? l10n.dataGatewayFormSubmitEdit
+                      : l10n.dataGatewayFormSubmitAdd,
+                  submitting: submitting,
+                  maySave: maySave,
+                  accessKnown: accessKnown,
+                  failure: failure == null
+                      ? null
+                      : BgeFormFailure(
+                          key: DataGatewayFormScreen.errorBannerKey,
+                          // Each message names what happened on its own.
+                          title: null,
+                          message: _failureMessage(l10n, failure),
+                        ),
+                  onEdited: () => context.read<DataGatewayFormBloc>().add(
+                    const DataGatewayFormFailureCleared(),
+                  ),
+                  onSubmit: (input) => context.read<DataGatewayFormBloc>().add(
+                    DataGatewayFormSubmitted(input),
+                  ),
+                ),
+              ),
+            ),
+          // Until the route is gone, keep the form's shape rather than flashing
+          // an empty page.
+          DataGatewayFormSaved() => BgePage(
+            title: title,
+            child: _LeaveWhenCurrent(onDone: widget.onDone),
+          ),
+        },
+      ),
     );
   }
 }

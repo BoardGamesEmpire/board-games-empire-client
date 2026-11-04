@@ -20,15 +20,20 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 /// trimmed, validated values. For an edit, [initial] fills the fields; which
 /// of them changed is the caller's question, not the form's.
 ///
-/// When [mayChange] is false the fields are read-only and the submit is
-/// replaced by the reason: the user's role may not change DataGateways.
+/// When [maySave] is false the fields are read-only and the submit goes. Once
+/// [accessKnown] says the caller's access has answered, the reason takes its
+/// place: the user's role may not change DataGateways. While it has not,
+/// nothing does, because nothing about the role is known yet (#456). A
+/// submit that goes with keyboard focus hands it to the last field, the stop
+/// just before it, which stays as a read-only field.
 class DataGatewayForm extends StatefulWidget {
   const DataGatewayForm({
     required this.onSubmit,
     required this.submitLabel,
     this.initial,
+    required this.maySave,
+    required this.accessKnown,
     this.submitting = false,
-    this.mayChange = true,
     this.failure,
     this.onEdited,
     super.key,
@@ -45,7 +50,12 @@ class DataGatewayForm extends StatefulWidget {
   final String submitLabel;
   final DataGateway? initial;
   final bool submitting;
-  final bool mayChange;
+  final bool maySave;
+
+  /// Whether the caller's access has answered, so that a [maySave] of false
+  /// is a refusal to say, not an answer still to come.
+  final bool accessKnown;
+
   final BgeFormFailure? failure;
 
   /// Called on every edit, so the caller can retire a failure that describes
@@ -76,6 +86,15 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
   });
 
   StreamSubscription<Object?>? _editSubscription;
+
+  /// The node of the [Focus] around the submit and the failure above it,
+  /// which go when [DataGatewayForm.maySave] falls. `BgeSubmitButton` takes
+  /// no focus node of its own, so this is the handle on it. It can't take
+  /// focus itself: focus goes to the button inside.
+  final FocusNode _actions = FocusNode(
+    debugLabel: 'data gateway form actions',
+    canRequestFocus: false,
+  );
 
   /// Required after trimming, as `CreateHouseholdForm` does it, so a value of
   /// spaces fails here rather than on the server.
@@ -112,9 +131,35 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
   }
 
   @override
+  void didUpdateWidget(DataGatewayForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.maySave && !widget.maySave && _actions.hasFocus) {
+      _handOnFocus();
+    }
+  }
+
+  /// Hands keyboard focus from the submit, which this build takes away, to
+  /// the last field (#456).
+  ///
+  /// The caller's access can fall at any time, whenever the session asks
+  /// again. Left to go with the submit, focus would fall back on whatever had
+  /// it before, or on the page with nothing to show for it. The last field is
+  /// the stop just before the submit, so the user keeps their place, and the
+  /// reason that replaces the submit is the next thing below it.
+  ///
+  /// Runs while building the frame that takes the submit away, while it
+  /// still has focus.
+  void _handOnFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _form.control('description').focus();
+    });
+  }
+
+  @override
   void dispose() {
     _editSubscription?.cancel();
     _form.dispose();
+    _actions.dispose();
     super.dispose();
   }
 
@@ -122,7 +167,7 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
       (_form.control(name).value as String?)?.trim() ?? '';
 
   void _submit() {
-    if (widget.submitting || !widget.mayChange) return;
+    if (widget.submitting || !widget.maySave) return;
     if (!_form.valid) {
       _form.rejectSubmit();
       return;
@@ -141,7 +186,7 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
   @override
   Widget build(BuildContext context) {
     final l10n = DataGatewayLocalizations.of(context);
-    final readOnly = widget.submitting || !widget.mayChange;
+    final readOnly = widget.submitting || !widget.maySave;
 
     return ReactiveForm(
       formGroup: _form,
@@ -216,21 +261,29 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
             reveal: false,
           ),
           const BgeGap.lg(),
-          if (widget.mayChange)
-            BgeFormActions(
-              failure: widget.failure,
-              action: BgeSubmitButton(
-                key: DataGatewayForm.submitKey,
-                label: widget.submitLabel,
-                progressLabel: l10n.dataGatewayFormInProgress,
-                submitting: widget.submitting,
-                onPressed: _submit,
+          if (widget.maySave)
+            Focus(
+              focusNode: _actions,
+              child: BgeFormActions(
+                failure: widget.failure,
+                action: BgeSubmitButton(
+                  key: DataGatewayForm.submitKey,
+                  label: widget.submitLabel,
+                  progressLabel: l10n.dataGatewayFormInProgress,
+                  submitting: widget.submitting,
+                  onPressed: _submit,
+                ),
               ),
             )
-          else
+          else if (widget.accessKnown)
             BgeInlineBanner(
               key: DataGatewayForm.refusedKey,
               message: l10n.dataGatewayChangeRefused,
+              // What access says, not the answer to a press (#456): it can
+              // arrive while the user is anywhere on the form, and scrolling
+              // to it would take them, and a focused field, away from where
+              // they are. It is still announced.
+              reveal: false,
             ),
         ],
       ),

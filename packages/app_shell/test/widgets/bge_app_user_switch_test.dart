@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
-import 'package:data_gateway/data_gateway.dart';
+import 'package:bge_test_support/access.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,8 +11,6 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
-import 'package:network_interface/network_interface.dart'
-    show DataGatewayRemoteDataSource;
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -214,15 +212,22 @@ void main() {
 
   testWidgets('builds home from the second user\'s services', (tester) async {
     // The second user may read DataGateways and the first may not, so the
-    // Admin entry is what tells the two homes apart.
-    final access = DataGatewayAccess(remote: _UnusedDataGatewayRemote())
-      ..readGranted();
-    addTearDown(access.dispose);
+    // Admin entry is what tells the two homes apart. Each session has its own
+    // access, as a real scope registers anew (#456).
+    final first = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(),
+    );
+    final second = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(read: AccessExtent.all),
+    );
+    var current = first;
     await signedInAsFirstUser(
       tester,
       onActivate: (container, userId) {
-        if (userId == 'u2') {
-          container.registerSingleton<DataGatewayAccess>(access);
+        if (userId == 'u1') {
+          container.registerFactory<CallerAccessRepository>(() => current);
+        } else {
+          current = second;
         }
       },
     );
@@ -383,11 +388,4 @@ class _SignsInAsSecondUser extends FakeAuthRepository {
     emitAuthState(AuthStateAuthenticated(session: session));
     return session;
   }
-}
-
-/// A remote the Admin test never reaches: its access is settled by hand.
-class _UnusedDataGatewayRemote implements DataGatewayRemoteDataSource {
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('${invocation.memberName}');
 }

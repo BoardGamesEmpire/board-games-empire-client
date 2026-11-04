@@ -26,6 +26,8 @@ dependencies:
   # web runs each drain pass under a Web Lock (#447), native under none.
   sync_queue:
     path: ../../features/sync
+  access:
+    path: ../../core/access
   interfaces:
     path: ../../core/interfaces
   models:

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:access/access.dart';
 import 'package:app_shell/app_shell.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
@@ -85,10 +86,14 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// the bootstrap gate, and a throw here signs the user out, so an unreachable
 /// server must not reach this list's caller.
 ///
-/// [DataGatewayAccessInstaller] runs after the rehydrator too, which it
-/// registers its re-check with (#41). It reads one DataGateway row, unawaited,
-/// to learn whether the home drawer offers the Admin entry; it needs nothing
-/// the storage tier registers.
+/// [CallerAccessInstaller] runs after the rehydrator and
+/// [UserSessionScopeInstaller] too (#456). It asks the server once, unawaited,
+/// what the caller may do with the DataGateway types and registers the
+/// `CallerAccessRepository` that the DataGateway screens, home's Admin entry
+/// and connect card, and the search's DataGateway names read; it registers
+/// its re-ask with the rehydrator. It needs the `UserRemoteDataSource` the
+/// network installer registers per server, which the user scope falls
+/// through to, and nothing the storage tier registers.
 ///
 /// The sync queue's installers run **last** (#121). [SyncSenderInstaller]
 /// registers the one sender the create screen and the drain share, over the
@@ -103,7 +108,7 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
   EventHydrateInstaller(),
-  DataGatewayAccessInstaller(),
+  CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];
