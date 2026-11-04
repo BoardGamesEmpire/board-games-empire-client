@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
@@ -399,6 +402,85 @@ void main() {
         (record.object! as ContextLogMessage).context,
         containsPair('missing', ['ConnectivityService']),
       );
+    });
+
+    group('once per entry (#225)', () {
+      late StreamController<AppBootstrapState> controller;
+      late AppBootstrapState current;
+
+      /// Feeds the bootstrap stream by hand: `whenListen` emits before the
+      /// router's refresh listenable subscribes, so its states never reach
+      /// the redirect.
+      Future<void> pumpDriven(WidgetTester tester) async {
+        controller = StreamController<AppBootstrapState>.broadcast();
+        addTearDown(controller.close);
+        current = const AppBootstrapNeedsServer();
+        when(() => cubit.stream).thenAnswer((_) => controller.stream);
+        when(() => cubit.state).thenAnswer((_) => current);
+        when(() => cubit.orchestrator).thenReturn(_FakeServerOrchestrator());
+        when(() => cubit.activeServerScope).thenReturn(null);
+
+        await tester.pumpWidget(
+          BgeApp(
+            bootstrapCubit: cubit,
+            rootContainer: composeContainer(connectivityService: false),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> emit(WidgetTester tester, AppBootstrapState state) async {
+        current = state;
+        controller.add(state);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('reports once per entry: same-state emissions add no '
+          'record', (tester) async {
+        await pumpDriven(tester);
+
+        for (var i = 0; i < 3; i++) {
+          await emit(tester, current);
+        }
+
+        expect(errors(), hasLength(1));
+      });
+
+      testWidgets('reports once per entry: MediaQuery changes add no record', (
+        tester,
+      ) async {
+        await pumpDriven(tester);
+
+        tester.view.physicalSize = const Size(1200, 900);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpAndSettle();
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpAndSettle();
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        await tester.pumpAndSettle();
+
+        expect(errors(), hasLength(1));
+      });
+
+      testWidgets('reports again on re-entry', (tester) async {
+        await pumpDriven(tester);
+
+        await emit(
+          tester,
+          AppBootstrapFailed(
+            error: StateError('x'),
+            attemptCount: 1,
+            canOfferReset: false,
+          ),
+        );
+        expect(find.byType(ShellPlaceholderScreen), findsNothing);
+
+        await emit(tester, const AppBootstrapNeedsServer());
+
+        expect(errors(), hasLength(2));
+      });
     });
   });
 }
