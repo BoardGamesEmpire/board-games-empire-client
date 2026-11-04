@@ -393,6 +393,7 @@ class _BgeAppState extends State<BgeApp> {
       sentInvitesBuilder: _buildSentInvitesRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
+      collectionEntryBuilder: _buildCollectionEntryRoute,
       gameBrowseBuilder: _buildGameBrowseRoute,
       gameSearchBuilder: _buildGameSearchRoute,
       gameDetailBuilder: _buildGameDetailRoute,
@@ -1497,10 +1498,12 @@ class _BgeAppState extends State<BgeApp> {
   /// build gave it, and a session ending under it closes the list's stream
   /// while the auth redirect pops the route.
   ///
-  /// No `onOpen` yet: rows stay inert content until #46 gives them a
-  /// detail route (#44). The empty state browses to the catalog (#45) where
-  /// the active container has one, [_catalogContainer]'s gate, and offers
-  /// nothing to press where it doesn't.
+  /// Rows open the entry (#46) where the container also has a
+  /// [SyncOperationSender], which the entry's edit and removal send
+  /// through; without one they stay inert content. The empty state browses
+  /// to the catalog (#45) where the active container has one,
+  /// [_catalogContainer]'s gate, and offers nothing to press where it
+  /// doesn't.
   Widget? _buildCollectionListRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -1515,11 +1518,46 @@ class _BgeAppState extends State<BgeApp> {
     return GameCollectionListScreen(
       repository: container.get<GameCollectionRepository>(),
       hydration: hydration,
+      onOpen: _canWriteCollection(container)
+          ? (ctx, id) =>
+                unawaited(ctx.push<void>(AppRoutes.collectionEntryOf(id)))
+          : null,
       onBrowse: _catalogContainer() == null
           ? null
           : (ctx) => unawaited(ctx.push<void>(AppRoutes.games)),
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
+    );
+  }
+
+  /// One collection entry's detail (#46): the user-session
+  /// [GameCollectionRepository] and [SyncOperationSender] from the active
+  /// server's container, plus the optional [GameCollectionHydrationStatus],
+  /// so an entry the cache doesn't hold yet loads rather than reads as
+  /// removed. Null (→ [NotYetAvailableScreen]) when no active server is
+  /// resolvable or its container lacks the repository or the sender.
+  ///
+  /// Both are resolved at each build, as [_buildCollectionListRoute] does:
+  /// a reference held across a session change is disposed and throws
+  /// `StateError`. "Game details" is offered only where [_catalogContainer]
+  /// has a catalog to open it in.
+  Widget? _buildCollectionEntryRoute(BuildContext context, String entryId) {
+    final container =
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    if (container == null || !_canWriteCollection(container)) return null;
+
+    return CollectionEntryScreen(
+      // A new entry is a new bloc, which watches and writes the entry it was
+      // made for. Without the key, a `go` between two entries keeps the
+      // first one's screen, still showing, editing and removing it.
+      key: ValueKey<String>(entryId),
+      repository: container.get<GameCollectionRepository>(),
+      sender: container.get<SyncOperationSender>(),
+      entryId: entryId,
+      hydration: container.isRegistered<GameCollectionHydrationStatus>()
+          ? container.get<GameCollectionHydrationStatus>().watch()
+          : null,
+      onOpenGame: _catalogContainer() == null ? null : _openGame,
     );
   }
 
@@ -1535,10 +1573,10 @@ class _BgeAppState extends State<BgeApp> {
   /// container lacks either does nothing.
   void Function(BuildContext context, Game game, PlatformGame platformGame)?
   _collectionAdd(DependencyContainer container) {
-    if (!_canAddToCollection(container)) return null;
+    if (!_canWriteCollection(container)) return null;
     return (context, game, platformGame) {
       final active = widget.bootstrapCubit.activeServerScope?.active?.container;
-      if (active == null || !_canAddToCollection(active)) return;
+      if (active == null || !_canWriteCollection(active)) return;
       unawaited(
         showAddToCollectionSheet(
           context,
@@ -1551,7 +1589,12 @@ class _BgeAppState extends State<BgeApp> {
     };
   }
 
-  static bool _canAddToCollection(DependencyContainer container) =>
+  /// Whether [container] can write the collection and send what it writes
+  /// at once: it has the user-session [GameCollectionRepository] and a
+  /// [SyncOperationSender]. Gates every collection write the shell offers:
+  /// the detail's add (#45), and opening, editing and removing an entry
+  /// (#46). Both platforms register both in a user session.
+  static bool _canWriteCollection(DependencyContainer container) =>
       container.isRegistered<GameCollectionRepository>() &&
       container.isRegistered<SyncOperationSender>();
 

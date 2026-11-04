@@ -259,4 +259,104 @@ void main() {
       await done;
     });
   });
+
+  group('watchCollectionListItem (#46)', () {
+    test('emits the entry with its title, platform and thumbnail', () async {
+      await hydrate(
+        _summary(
+          id: 'pg-1',
+          gameId: 'g-1',
+          title: 'Brass',
+          gameThumbnail: 'g_thumb.png',
+        ),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final item = await collection.watchCollectionListItem('gc-1').first;
+
+      expect(item, isNotNull);
+      expect(item!.entry.id, 'gc-1');
+      expect(item.title, 'Brass');
+      expect(item.platformName, 'Tabletop');
+      expect(item.thumbnail, 'g_thumb.png');
+    });
+
+    test('emits null once the entry is removed', () async {
+      await hydrate(
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final expectation = expectLater(
+        collection.watchCollectionListItem('gc-1'),
+        emitsInOrder([isA<GameCollectionListItem>(), isNull]),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      await collection.removeFromCollection('gc-1');
+
+      await expectation;
+    });
+
+    test('emits null for an id that is not there', () async {
+      expect(await collection.watchCollectionListItem('nope').first, isNull);
+    });
+
+    test('emits null for another user\'s entry id', () async {
+      await games.cachePlatformGameSummaries([
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+      ]);
+      await db
+          .into(db.gameCollectionsTable)
+          .insert(
+            GameCollectionsTableCompanion.insert(
+              id: 'gc-foreign',
+              userId: 'someone-else',
+              platformGameId: 'pg-1',
+              medium: 'Physical',
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          );
+
+      expect(
+        await collection.watchCollectionListItem('gc-foreign').first,
+        isNull,
+      );
+    });
+
+    test('re-emits when the game\'s title changes', () async {
+      await hydrate(
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final titles = collection
+          .watchCollectionListItem('gc-1')
+          .map((item) => item!.title);
+      final expectation = expectLater(
+        titles,
+        emitsInOrder(['Brass', 'Brass: Birmingham']),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      await games.cachePlatformGameSummaries([
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass: Birmingham'),
+      ]);
+
+      await expectation;
+    });
+
+    test('closes when the repository is disposed', () async {
+      final done = expectLater(
+        collection.watchCollectionListItem('gc-1'),
+        emitsThrough(emitsDone),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      await collection.onDispose();
+
+      await done;
+    });
+  });
 }

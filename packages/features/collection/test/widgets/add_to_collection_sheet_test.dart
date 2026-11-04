@@ -39,7 +39,7 @@ void main() {
   late _MockSyncOperationSender sender;
 
   /// What the sheet resolved to, once it has.
-  late AddToCollectionSync? result;
+  late CollectionSync? result;
   late bool resolved;
 
   final wingspan = Game(
@@ -245,24 +245,24 @@ void main() {
     expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
     expect(find.text('Added Wingspan to your collection.'), findsOneWidget);
     expect(resolved, isTrue);
-    expect(result, AddToCollectionSync.synced);
+    expect(result, CollectionSync.synced);
   });
 
   for (final (outcome, answer, said, sync)
-      in <(String, SyncDelivery, String, AddToCollectionSync)>[
+      in <(String, SyncDelivery, String, CollectionSync)>[
         (
           'not sent yet',
           const SyncFailed(SyncFailure.unreachable, 'offline'),
           'Added Wingspan to your collection on this device. It hasn\'t '
               'reached the server yet.',
-          AddToCollectionSync.queued,
+          CollectionSync.queued,
         ),
         (
           'refused by the server',
           const SyncParked('400'),
           "The server didn't accept Wingspan. It's saved on this device: "
               'review it from the home screen to try again or discard it.',
-          AddToCollectionSync.refused,
+          CollectionSync.refused,
         ),
       ]) {
     testWidgets('an add $outcome still closes, and says so', (tester) async {
@@ -309,7 +309,7 @@ void main() {
       findsOneWidget,
     );
     expect(resolved, isTrue);
-    expect(result, AddToCollectionSync.queued);
+    expect(result, CollectionSync.queued);
   });
 
   testWidgets('an add that lands while a dismissed sheet is still leaving '
@@ -336,7 +336,7 @@ void main() {
     expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
     expect(find.byKey(_openKey), findsOneWidget);
     expect(find.text('Added Wingspan to your collection.'), findsOneWidget);
-    expect(result, AddToCollectionSync.synced);
+    expect(result, CollectionSync.synced);
   });
 
   testWidgets('a sheet dismissed while its add is written says so when the '

@@ -1,12 +1,15 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -20,6 +23,8 @@ class _MockStorage extends Mock implements Storage {}
 
 class _MockGameCollectionRepository extends Mock
     implements GameCollectionRepository {}
+
+class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
 
 /// A catalog with no games in it: enough for the browse screen to open.
 class _EmptyCatalog implements GamesRemoteDataSource {
@@ -106,11 +111,17 @@ void main() {
     SessionRehydrator? rehydrator,
     List<GameCollectionListItem>? items,
     GamesRemoteDataSource? games,
+    bool withSender = false,
   }) async {
     final repository = _MockGameCollectionRepository();
     when(repository.watchCollectionListItems).thenAnswer(
       (_) =>
           Stream<List<GameCollectionListItem>>.value(items ?? [_item('e-1')]),
+    );
+    when(() => repository.watchCollectionListItem(any())).thenAnswer(
+      (invocation) => Stream<GameCollectionListItem?>.value(
+        _item(invocation.positionalArguments.single as String),
+      ),
     );
 
     GameCollectionHydrationStatus? status;
@@ -126,6 +137,7 @@ void main() {
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           gameCollectionRepository: withRepository ? repository : null,
+          syncOperationSender: withSender ? _MockSyncOperationSender() : null,
           gameCollectionHydrationStatus: status,
           gameCollectionRefresher: refresher,
           sessionRehydrator: rehydrator,
@@ -299,6 +311,153 @@ void main() {
 
       expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
       expect(find.byKey(GameCollectionListScreen.browseKey), findsNothing);
+    });
+  });
+
+  group('the entry (#46)', () {
+    testWidgets('tapping a row opens that entry', (tester) async {
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CollectionEntryScreen), findsOneWidget);
+    });
+
+    testWidgets('back returns to the list', (tester) async {
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameCollectionListScreen), findsOneWidget);
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+    });
+
+    testWidgets('an id that needs encoding reaches the screen whole', (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true, items: [_item('e 1/x')]);
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e 1/x')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.entryId, 'e 1/x');
+    });
+
+    testWidgets("the entry reads the session's collection hydrate", (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true, failedPass: true);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.hydration, isNotNull);
+    });
+
+    testWidgets('a container with no hydrate gives the entry none', (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.hydration, isNull);
+    });
+
+    testWidgets('without a sender rows stay inert', (tester) async {
+      await pumpHome(tester);
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+      expect(find.byType(GameCollectionListScreen), findsOneWidget);
+    });
+
+    testWidgets('a go from one entry to another drives the second', (
+      tester,
+    ) async {
+      // go_router keys the route's page by its path pattern, so the go keeps
+      // the page; the screen must not keep the first entry's bloc with it.
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      final router = GoRouter.of(
+        tester.element(find.byType(GameCollectionListScreen)),
+      );
+
+      router.go(AppRoutes.collectionEntryOf('e-1'));
+      await tester.pumpAndSettle();
+      router.go(AppRoutes.collectionEntryOf('e-2'));
+      await tester.pumpAndSettle();
+
+      final bloc = tester
+          .element(find.byType(CollectionEntryDetail))
+          .read<CollectionEntryBloc>();
+      expect(bloc.entryId, 'e-2');
+    });
+
+    testWidgets('without a sender the entry route is not available', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+      await openTheList(tester);
+
+      GoRouter.of(tester.element(find.byType(GameCollectionListScreen)))
+          .go(AppRoutes.collectionEntryOf('e-1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+    });
+
+    testWidgets('game details opens the game when there is a catalog', (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true, games: _EmptyCatalog());
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(CollectionEntryScreen.gameDetailsKey),
+      );
+      await tester.tap(find.byKey(CollectionEntryScreen.gameDetailsKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+    });
+
+    testWidgets('offers no game details where there is no catalog', (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CollectionEntryScreen), findsOneWidget);
+      expect(
+        find.byKey(CollectionEntryScreen.gameDetailsKey, skipOffstage: false),
+        findsNothing,
+      );
     });
   });
 }

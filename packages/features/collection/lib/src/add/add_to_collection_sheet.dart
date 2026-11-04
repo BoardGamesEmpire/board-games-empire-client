@@ -11,6 +11,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_collection/l10n/game_collection_localizations.dart';
 
+import '../form/collection_quantity_field.dart';
+import '../form/collection_rating_field.dart';
+import '../sync/collection_sync.dart';
 import 'add_to_collection_bloc.dart';
 import 'add_to_collection_event.dart';
 import 'add_to_collection_state.dart';
@@ -33,7 +36,7 @@ import 'add_to_collection_state.dart';
 /// [repository] and [sender] must be the active session's. The caller
 /// resolves them per use: one held across a session change is disposed, and
 /// throws. The add is sent through [sender] at once.
-Future<AddToCollectionSync?> showAddToCollectionSheet(
+Future<CollectionSync?> showAddToCollectionSheet(
   BuildContext context, {
   required GameCollectionRepository repository,
   required SyncOperationSender sender,
@@ -76,9 +79,9 @@ Future<AddToCollectionSync?> showAddToCollectionSheet(
     // A failure the sheet showed was seen before it was dismissed. One that
     // came after has no banner left to show it, so it is said here.
     final message = switch (sync) {
-      AddToCollectionSync.queued => l10n.addToCollectionQueued(title),
-      AddToCollectionSync.refused => l10n.addToCollectionRefused(title),
-      AddToCollectionSync.synced => l10n.addToCollectionAdded(title),
+      CollectionSync.queued => l10n.addToCollectionQueued(title),
+      CollectionSync.refused => l10n.addToCollectionRefused(title),
+      CollectionSync.synced => l10n.addToCollectionAdded(title),
       null when dismissedMidAdd => l10n.addToCollectionDismissedFailed(title),
       null => null,
     };
@@ -217,14 +220,8 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     super.dispose();
   }
 
-  /// What was typed, read as copies to add: a whole number from 1, or null.
-  static int? _parseQuantity(Object? typed) {
-    final copies = typed is String ? int.tryParse(typed.trim()) : null;
-    return copies != null && copies >= 1 ? copies : null;
-  }
-
   Map<String, dynamic>? _validateQuantity(AbstractControl<dynamic> control) {
-    final adding = _parseQuantity(control.value);
+    final adding = CollectionQuantityField.parseCopies(control.value);
     if (adding == null) return {_quantityInvalid: true};
     if (adding > _storedMax - _existing) return {_quantityTooMany: true};
     return null;
@@ -242,7 +239,9 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     _bloc.add(
       AddToCollectionSubmitted(
         medium: _form.control(_medium).value! as GameMedium,
-        quantity: _parseQuantity(_form.control(_quantity).value)!,
+        quantity: CollectionQuantityField.parseCopies(
+          _form.control(_quantity).value,
+        )!,
         rating: _form.control(_rating).value as int?,
         // Blank is none, which keeps an old comment on an entry added again.
         comment: comment == null || comment.isEmpty ? null : comment,
@@ -350,43 +349,28 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
           ),
           if (existing != null) ...[
             const BgeGap.sm(),
-            _ExistingNote(existing: existing, parse: _parseQuantity),
+            _ExistingNote(existing: existing),
           ],
           const BgeGap.md(),
-          _QuantityStepper(
-            l10n: l10n,
+          CollectionQuantityField(
+            formControlName: _quantity,
+            max: _storedMax - _existing,
             busy: busy,
-            parse: _parseQuantity,
-            existing: _existing,
-            field: BgeTextField(
-              key: AddToCollectionSheet.quantityKey,
-              formControlName: _quantity,
-              label: l10n.addToCollectionQuantityLabel,
-              keyboardType: TextInputType.number,
-              readOnly: busy,
-              validationMessages: {
-                _quantityInvalid: (_) => l10n.addToCollectionQuantityInvalid,
-                _quantityTooMany: (_) => l10n.addToCollectionQuantityTooMany,
-              },
-            ),
+            fieldKey: AddToCollectionSheet.quantityKey,
+            decreaseKey: AddToCollectionSheet.quantityDecreaseKey,
+            increaseKey: AddToCollectionSheet.quantityIncreaseKey,
+            label: l10n.addToCollectionQuantityLabel,
+            validationMessages: {
+              _quantityInvalid: (_) => l10n.addToCollectionQuantityInvalid,
+              _quantityTooMany: (_) => l10n.addToCollectionQuantityTooMany,
+            },
           ),
           const BgeGap.md(),
-          BgeDropdownField<int?>(
-            key: AddToCollectionSheet.ratingKey,
+          CollectionRatingField(
             formControlName: _rating,
-            label: l10n.addToCollectionRatingLabel,
-            readOnly: busy,
-            items: [
-              BgeDropdownItem(
-                value: null,
-                label: l10n.addToCollectionRatingNone,
-              ),
-              for (var rating = 1; rating <= 10; rating++)
-                BgeDropdownItem(
-                  value: rating,
-                  label: l10n.addToCollectionRatingValue(rating),
-                ),
-            ],
+            fieldKey: AddToCollectionSheet.ratingKey,
+            busy: busy,
+            offerNone: true,
           ),
           const BgeGap.md(),
           BgeTextField(
@@ -424,12 +408,9 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
 /// How many copies on the chosen medium are already in the collection, and,
 /// while the copies typed are a number, what the add makes.
 class _ExistingNote extends StatelessWidget {
-  const _ExistingNote({required this.existing, required this.parse});
+  const _ExistingNote({required this.existing});
 
   final GameCollection existing;
-
-  /// Reads the copies typed, as the form's validator does.
-  final int? Function(Object? typed) parse;
 
   @override
   Widget build(BuildContext context) {
@@ -443,7 +424,7 @@ class _ExistingNote extends StatelessWidget {
     return ReactiveValueListenableBuilder<String>(
       formControlName: _AddToCollectionSheetState._quantity,
       builder: (context, control, _) {
-        final adding = parse(control.value);
+        final adding = CollectionQuantityField.parseCopies(control.value);
         // A total past what can be stored is the field's error to say.
         final makes =
             adding == null ||
@@ -460,157 +441,4 @@ class _ExistingNote extends StatelessWidget {
       },
     );
   }
-}
-
-/// The copies field between a minus and a plus button.
-///
-/// Reads the copies from the form, so a step starts from what was typed. A
-/// value that isn't a whole number from 1 can't be stepped down, and steps up
-/// to 1.
-class _QuantityStepper extends StatefulWidget {
-  const _QuantityStepper({
-    required this.l10n,
-    required this.busy,
-    required this.parse,
-    required this.existing,
-    required this.field,
-  });
-
-  final GameCollectionLocalizations l10n;
-
-  /// Whether an add is under way, when neither button steps.
-  final bool busy;
-
-  /// Reads the copies typed, as the form's validator does.
-  final int? Function(Object? typed) parse;
-
-  /// The copies already there on the medium chosen, which plus can't take
-  /// the total past what is stored.
-  final int existing;
-
-  final Widget field;
-
-  @override
-  State<_QuantityStepper> createState() => _QuantityStepperState();
-}
-
-class _QuantityStepperState extends State<_QuantityStepper> {
-  /// The copies the last step left in the field, which the live region says
-  /// while the field still holds them.
-  int? _stepped;
-
-  void _step(AbstractControl<String> control, int copies) {
-    control
-      ..value = '$copies'
-      ..markAsTouched();
-    setState(() => _stepped = copies);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = widget.l10n;
-
-    return ReactiveValueListenableBuilder<String>(
-      formControlName: _AddToCollectionSheetState._quantity,
-      builder: (context, control, _) {
-        final copies = widget.parse(control.value);
-        final stepped = copies != null && copies == _stepped ? copies : null;
-        final max = _AddToCollectionSheetState._storedMax - widget.existing;
-        final canDecrease = !widget.busy && copies != null && copies > 1;
-        // A value that isn't a number steps to 1, which must fit too.
-        final canIncrease =
-            !widget.busy && (copies == null ? max >= 1 : copies < max);
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _StepButton(
-              key: AddToCollectionSheet.quantityDecreaseKey,
-              icon: Icons.remove,
-              label: l10n.addToCollectionQuantityDecrease,
-              onStep: canDecrease ? () => _step(control, copies - 1) : null,
-            ),
-            Expanded(child: widget.field),
-            _StepButton(
-              key: AddToCollectionSheet.quantityIncreaseKey,
-              icon: Icons.add,
-              label: l10n.addToCollectionQuantityIncrease,
-              onStep: canIncrease
-                  ? () => _step(control, copies == null ? 1 : copies + 1)
-                  : null,
-            ),
-            if (stepped != null)
-              _SteppedAnnouncement(
-                message: l10n.addToCollectionQuantityStepped(stepped),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// A minus or plus button, at least a tap target square.
-///
-/// At its limit, [onStep] is null and the button stays enabled but does
-/// nothing: a disabled button gives up the focus, so stepping down to 1
-/// would drop it. Its look and its semantics say it is disabled. The node is
-/// named in its label, not by the tooltip, which iOS doesn't read as a name.
-class _StepButton extends StatelessWidget {
-  const _StepButton({
-    required this.icon,
-    required this.label,
-    required this.onStep,
-    super.key,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onStep;
-
-  static void _ignore() {}
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = BgeTokens.of(context);
-    final onStep = this.onStep;
-
-    return Semantics(
-      container: true,
-      button: true,
-      enabled: onStep != null,
-      label: label,
-      onTap: onStep,
-      excludeSemantics: true,
-      child: SizedBox(
-        width: tokens.minTapTarget,
-        height: tokens.minTapTarget,
-        child: IconButton(
-          icon: Icon(icon),
-          tooltip: label,
-          color: onStep == null ? Theme.of(context).disabledColor : null,
-          onPressed: onStep ?? _ignore,
-        ),
-      ),
-    );
-  }
-}
-
-/// Says the copies a step left in the field to a screen reader, and shows
-/// nothing.
-class _SteppedAnnouncement extends StatelessWidget {
-  const _SteppedAnnouncement({required this.message});
-
-  /// The smallest box whose semantics node survives: an empty rect's can be
-  /// dropped. Not a spacing decision.
-  static const double _anchorExtent = 1;
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    liveRegion: true,
-    label: message,
-    child: const SizedBox(width: _anchorExtent, height: _anchorExtent),
-  );
 }

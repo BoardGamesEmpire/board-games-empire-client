@@ -73,7 +73,8 @@ import 'watch_disposal.dart';
 /// ## Quantity validation
 ///
 /// `addToCollection.quantity` must be `> 0`. `updateCollectionEntry.quantity`
-/// must be `> 0` when provided (`null` means "leave unchanged"). Both
+/// must be `> 0` and no more than `GameCollectionRepository.maxQuantity`
+/// when provided (`null` means "leave unchanged"). Both
 /// methods throw [ArgumentError] **before** opening the transaction,
 /// so the local cache and sync queue stay untouched on invalid input.
 /// `updateCollectionEntry` with every field `null` throws the same way:
@@ -81,7 +82,8 @@ import 'watch_disposal.dart';
 /// `addToCollection(quantity: 0)` or `updateCollectionEntry(quantity: 0)`.
 ///
 /// An add can't take the entry past `GameCollectionRepository.maxQuantity`.
-/// A quantity past it throws before the transaction like the checks above.
+/// A quantity past it throws before the transaction like the checks above,
+/// for an update as well as an add.
 /// A live row whose copies and the quantity together pass it throws
 /// [ArgumentError] inside the transaction, before anything is written: only
 /// there is the row read as it is.
@@ -105,8 +107,8 @@ import 'watch_disposal.dart';
 ///   so an id whose row is tombstoned throws [StateError] rather
 ///   than silently mutating a removed entry.
 /// - [removeFromCollection] is idempotent: re-removing an already
-///   tombstoned row is a silent no-op, neither bumping `deletedAt`
-///   nor enqueuing a second `RemoveFromCollectionOperation`.
+///   tombstoned row is a silent no-op returning `null`, neither bumping
+///   `deletedAt` nor enqueuing a second `RemoveFromCollectionOperation`.
 ///
 /// Tombstones are physically purged when the server confirms a
 /// removal: by [reconcileFromServer] when it returns a tombstone, or
@@ -499,7 +501,14 @@ class GameCollectionRepositoryImpl
   }
 
   @override
-  Future<GameCollection> updateCollectionEntry({
+  Future<
+    ({
+      GameCollection entry,
+      String syncQueueId,
+      UpdateCollectionOperation operation,
+    })
+  >
+  updateCollectionEntry({
     required String id,
     int? quantity,
     int? rating,
@@ -532,6 +541,13 @@ class GameCollectionRepositoryImpl
         'quantity',
         'must be positive when provided (omit to leave unchanged; '
             'use removeFromCollection to delete the entry entirely)',
+      );
+    }
+    if (quantity != null && quantity > GameCollectionRepository.maxQuantity) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'must not exceed ${GameCollectionRepository.maxQuantity}',
       );
     }
 
@@ -573,26 +589,30 @@ class GameCollectionRepositoryImpl
         ),
       );
 
-      await _syncQueue.enqueue(
-        UpdateCollectionOperation(
-          collectionId: id,
-          quantity: quantity,
-          rating: rating,
-          playAgain: playAgain,
-          favorite: favorite,
-          comment: comment,
-        ),
+      final operation = UpdateCollectionOperation(
+        collectionId: id,
+        quantity: quantity,
+        rating: rating,
+        playAgain: playAgain,
+        favorite: favorite,
+        comment: comment,
       );
+      final queued = await _syncQueue.enqueue(operation);
 
       final row = await (_db.select(
         _db.gameCollectionsTable,
       )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).getSingle();
-      return _mapRow(row);
+      return (
+        entry: _mapRow(row),
+        syncQueueId: queued.id,
+        operation: operation,
+      );
     });
   }
 
   @override
-  Future<void> removeFromCollection(String id) async {
+  Future<({String syncQueueId, RemoveFromCollectionOperation operation})?>
+  removeFromCollection(String id) async {
     checkNotDisposed();
     return _db.transaction(() async {
       final now = _clock.nowUtc();
@@ -610,8 +630,9 @@ class GameCollectionRepositoryImpl
         // Already tombstoned. Re-remove is an idempotent silent
         // no-op: no DB write, no second
         // [RemoveFromCollectionOperation] enqueued. The server
-        // already received the original removal.
-        return;
+        // already received the original removal. Nothing was queued, so
+        // there is nothing to report.
+        return null;
       }
 
       // Tombstone via deletedAt. The partial unique index ignores
@@ -629,7 +650,9 @@ class GameCollectionRepositoryImpl
         ),
       );
 
-      await _syncQueue.enqueue(RemoveFromCollectionOperation(collectionId: id));
+      final operation = RemoveFromCollectionOperation(collectionId: id);
+      final queued = await _syncQueue.enqueue(operation);
+      return (syncQueueId: queued.id, operation: operation);
     });
   }
 
@@ -1382,37 +1405,50 @@ class GameCollectionRepositoryImpl
   @override
   Stream<List<GameCollectionListItem>> watchCollectionListItems() =>
       untilDisposed(() {
-        final entries = _db.gameCollectionsTable;
-        final platformGames = _db.platformGamesTable;
-        final games = _db.gamesTable;
-
-        final query =
-            _db.select(entries).join([
-                innerJoin(
-                  platformGames,
-                  platformGames.id.equalsExp(entries.platformGameId),
-                ),
-                innerJoin(games, games.id.equalsExp(platformGames.gameId)),
-              ])
-              ..where(
-                entries.userId.equals(_userId) & entries.deletedAt.isNull(),
-              )
-              ..orderBy([
-                OrderingTerm.asc(games.title.collate(Collate.noCase)),
-                OrderingTerm.asc(entries.id),
-              ]);
+        final query = _listItemQuery()
+          ..orderBy([
+            OrderingTerm.asc(_db.gamesTable.title.collate(Collate.noCase)),
+            OrderingTerm.asc(_db.gameCollectionsTable.id),
+          ]);
 
         return query.watch().map(
-          (rows) => [
-            for (final row in rows)
-              _mapListItem(
-                row.readTable(entries),
-                row.readTable(platformGames),
-                row.readTable(games),
-              ),
-          ],
+          (rows) => [for (final row in rows) _mapListItemRow(row)],
         );
       });
+
+  @override
+  Stream<GameCollectionListItem?> watchCollectionListItem(String id) =>
+      untilDisposed(() {
+        final query = _listItemQuery()
+          ..where(_db.gameCollectionsTable.id.equals(id));
+
+        return query.watchSingleOrNull().map(
+          (row) => row == null ? null : _mapListItemRow(row),
+        );
+      });
+
+  /// The join [watchCollectionListItems] and [watchCollectionListItem]
+  /// share (#46): the user's live entries with their platform game and
+  /// game. Callers add their own filter and order.
+  JoinedSelectStatement<HasResultSet, dynamic> _listItemQuery() {
+    final entries = _db.gameCollectionsTable;
+    final platformGames = _db.platformGamesTable;
+    final games = _db.gamesTable;
+
+    return _db.select(entries).join([
+      innerJoin(
+        platformGames,
+        platformGames.id.equalsExp(entries.platformGameId),
+      ),
+      innerJoin(games, games.id.equalsExp(platformGames.gameId)),
+    ])..where(entries.userId.equals(_userId) & entries.deletedAt.isNull());
+  }
+
+  GameCollectionListItem _mapListItemRow(TypedResult row) => _mapListItem(
+    row.readTable(_db.gameCollectionsTable),
+    row.readTable(_db.platformGamesTable),
+    row.readTable(_db.gamesTable),
+  );
 
   @override
   Stream<GameCollection?> watchEntry(String id) => untilDisposed(

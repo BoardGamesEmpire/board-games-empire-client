@@ -93,8 +93,8 @@ abstract interface class SyncOperationSender {
 /// people, goes to the server directly instead and is never queued: an
 /// invite, a member's approval, an RSVP, an admin setting.
 ///
-/// The household create, the event create and the collection add send this
-/// way.
+/// The household create, the event create and the collection add, edit and
+/// removal send this way.
 extension SendQueuedOpNow on SyncOperationSender {
   /// Sends the op a write just queued under [entryId], as
   /// [SyncOperationSender.deliver] does.

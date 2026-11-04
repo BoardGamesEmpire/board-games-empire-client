@@ -60,15 +60,15 @@
   },
   "collectionListMediumPhysical": "Physical",
   "@collectionListMediumPhysical": {
-    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
   },
   "collectionListMediumDigital": "Digital",
   "@collectionListMediumDigital": {
-    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
   },
   "collectionListQuantity": "{count, plural, =1{1 copy} other{{count} copies}}",
   "@collectionListQuantity": {
-    "description": "On a collection row: how many copies of the game the user owns. Shown only when it is more than one.",
+    "description": "How many copies of the game the user owns. On a collection row it is shown only when it is more than one; on a collection entry's detail it is always shown.",
     "placeholders": {
       "count": {
         "type": "int"
@@ -77,7 +77,7 @@
   },
   "collectionListRating": "{rating}/10",
   "@collectionListRating": {
-    "description": "On a collection row: the user's own rating of the game, out of ten. The short visual form; screen readers hear collectionListRatingSpoken instead.",
+    "description": "On a collection row and a collection entry's detail: the user's own rating of the game, out of ten. The short visual form; screen readers hear collectionListRatingSpoken instead.",
     "placeholders": {
       "rating": {
         "type": "int",
@@ -87,7 +87,7 @@
   },
   "collectionListRatingSpoken": "Rated {rating} out of 10",
   "@collectionListRatingSpoken": {
-    "description": "What a screen reader says for the user's own rating of a game on a collection row, in place of the short visual form '7/10'.",
+    "description": "What a screen reader says for the user's own rating of a game on a collection row or a collection entry's detail, in place of the short visual form '7/10'.",
     "placeholders": {
       "rating": {
         "type": "int",
@@ -97,7 +97,7 @@
   },
   "collectionListLastPlayed": "Last played {date}",
   "@collectionListLastPlayed": {
-    "description": "On a collection row: the date the user last played the game.",
+    "description": "On a collection row and a collection entry's detail: the date the user last played the game.",
     "placeholders": {
       "date": {
         "type": "DateTime",
@@ -107,7 +107,7 @@
   },
   "collectionListFavorite": "Favorite",
   "@collectionListFavorite": {
-    "description": "Spoken by screen readers for the heart icon on a collection row, which marks a game the user has favorited."
+    "description": "Marks a game the user has favorited. Spoken by screen readers for the heart icon on a collection row, and shown beside the same icon on a collection entry's detail."
   },
   "collectionStatsHeading": "Your stats",
   "@collectionStatsHeading": {
@@ -163,27 +163,27 @@
   },
   "addToCollectionQuantityLabel": "Copies",
   "@addToCollectionQuantityLabel": {
-    "description": "Label of the add sheet's field for how many copies the user is adding. Starts at 1."
+    "description": "Label of the copies field, shared by the add sheet and the edit sheet. On the add sheet it is how many copies the user is adding, starting at 1; on the edit sheet it is how many copies the entry holds, starting at the entry's own count."
   },
   "addToCollectionQuantityInvalid": "Enter a whole number, 1 or more.",
   "@addToCollectionQuantityInvalid": {
-    "description": "Error under the add sheet's copies field when what was typed is not a whole number of at least 1: empty, zero, negative, a fraction or not a number."
+    "description": "Error under the copies field, on the add sheet and the edit sheet, when what was typed is not a whole number of at least 1: empty, zero, negative, a fraction or not a number."
   },
   "addToCollectionQuantityTooMany": "That's more copies than can be stored.",
   "@addToCollectionQuantityTooMany": {
-    "description": "Error under the add sheet's copies field when the copies being added, together with any already in the collection, are more than the server can store (over 2,147,483,647). A storage limit, not a rule about how many copies a person may own."
+    "description": "Error under the copies field, on the add sheet and the edit sheet, when the copies are more than the server can store (over 2,147,483,647): on the add sheet, the copies being added together with any already in the collection; on the edit sheet, the copies typed. A storage limit, not a rule about how many copies a person may own."
   },
   "addToCollectionQuantityDecrease": "One fewer copy",
   "@addToCollectionQuantityDecrease": {
-    "description": "Screen-reader name and tooltip of the minus button beside the add sheet's copies field. It lowers the copies by one, not below 1."
+    "description": "Screen-reader name and tooltip of the minus button beside the copies field, on the add sheet and the edit sheet. It lowers the copies by one, not below 1."
   },
   "addToCollectionQuantityIncrease": "One more copy",
   "@addToCollectionQuantityIncrease": {
-    "description": "Screen-reader name and tooltip of the plus button beside the add sheet's copies field. It raises the copies by one."
+    "description": "Screen-reader name and tooltip of the plus button beside the copies field, on the add sheet and the edit sheet. It raises the copies by one."
   },
   "addToCollectionQuantityStepped": "{count, plural, =1{1 copy} other{{count} copies}}",
   "@addToCollectionQuantityStepped": {
-    "description": "Announced to a screen reader, not shown, after the user presses the minus or plus button beside the add sheet's copies field: the copies the field now holds.",
+    "description": "Announced to a screen reader, not shown, after the user presses the minus or plus button beside the copies field, on the add sheet or the edit sheet: the copies the field now holds.",
     "placeholders": {
       "count": {
         "type": "int"
@@ -192,15 +192,15 @@
   },
   "addToCollectionRatingLabel": "Your rating (optional)",
   "@addToCollectionRatingLabel": {
-    "description": "Label of the add sheet's optional rating, a whole number from 1 to 10."
+    "description": "Label of the optional rating, a whole number from 1 to 10, shared by the add sheet and the edit sheet. On the edit sheet a rating already set can be changed but not removed."
   },
   "addToCollectionRatingNone": "No rating",
   "@addToCollectionRatingNone": {
-    "description": "The add sheet's rating choice that leaves the game unrated. The default."
+    "description": "The add sheet's rating choice that leaves the game unrated, and its default. Also the edit sheet's starting choice for an entry with no rating, and what a collection entry's detail shows for one."
   },
   "addToCollectionRatingValue": "{rating} out of 10",
   "@addToCollectionRatingValue": {
-    "description": "One of the add sheet's rating choices, for example \"7 out of 10\".",
+    "description": "One of the rating choices on the add sheet and the edit sheet, for example \"7 out of 10\".",
     "placeholders": {
       "rating": {
         "type": "int",
@@ -210,7 +210,7 @@
   },
   "addToCollectionCommentLabel": "Comment (optional)",
   "@addToCollectionCommentLabel": {
-    "description": "Label of the add sheet's optional free-text comment about the game."
+    "description": "Label of the optional free-text comment about the game, shared by the add sheet and the edit sheet. On the edit sheet a comment already set can be changed but not emptied."
   },
   "addToCollectionHavePhysical": "{count, plural, =1{You have 1 physical copy.} other{You have {count} physical copies.}}",
   "@addToCollectionHavePhysical": {
@@ -299,6 +299,203 @@
       "title": {
         "type": "String",
         "example": "Wingspan"
+      }
+    }
+  },
+  "editCollectionTitle": "Edit {title}",
+  "@editCollectionTitle": {
+    "description": "Heading of the sheet that edits a collection entry's copies, rating, comment, favorite and would-play-again, naming the game, for example \"Edit Wingspan\". Read by screen readers as the sheet's heading.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "editCollectionFavorite": "Favorite",
+  "@editCollectionFavorite": {
+    "description": "Label of the switch in the edit sheet that marks the game as a favorite."
+  },
+  "editCollectionPlayAgain": "Would play again",
+  "@editCollectionPlayAgain": {
+    "description": "Label of the switch in the edit sheet that says the user would play the game again."
+  },
+  "editCollectionCommentCantClear": "A comment can't be removed yet. Change it instead.",
+  "@editCollectionCommentCantClear": {
+    "description": "Error under the edit sheet's comment field when the entry has a comment and the user emptied it. The server can't clear a comment yet, so the sheet asks for a different one."
+  },
+  "editCollectionSubmit": "Save",
+  "@editCollectionSubmit": {
+    "description": "Label of the edit sheet's submit button."
+  },
+  "editCollectionInProgress": "Saving…",
+  "@editCollectionInProgress": {
+    "description": "Replaces the edit sheet's submit label while the change is being saved, and is the disabled button's accessible name meanwhile."
+  },
+  "editCollectionFailedTitle": "Couldn't save your changes",
+  "@editCollectionFailedTitle": {
+    "description": "Heading of the banner above the edit sheet's submit button when the save failed. The sheet stays open with what the user entered."
+  },
+  "editCollectionFailedBody": "Nothing was changed. Try again.",
+  "@editCollectionFailedBody": {
+    "description": "Body of the banner above the edit sheet's submit button when the save failed: nothing was written, and saving again retries it."
+  },
+  "editCollectionFailedGoneBody": "It's no longer in your collection, perhaps removed on another device.",
+  "@editCollectionFailedGoneBody": {
+    "description": "Body of the edit sheet's failed-save banner, in place of editCollectionFailedBody, when the save failed because the entry was removed while the sheet was open. Saving again can't succeed. The app can't tell where it was removed, so it says 'perhaps'."
+  },
+  "removeFromCollectionTitle": "Remove {title}?",
+  "@removeFromCollectionTitle": {
+    "description": "Title of the dialog that asks the user to confirm removing a game from their collection, naming the game.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "removeFromCollectionBody": "This says you no longer own it. Your plays, rating and comment are kept, and come back if you add it again.",
+  "@removeFromCollectionBody": {
+    "description": "Body of the remove-from-collection confirm dialog: removing marks the game as no longer owned, and keeps its plays, rating and comment for if it is added again."
+  },
+  "removeFromCollectionConfirm": "Remove",
+  "@removeFromCollectionConfirm": {
+    "description": "Label of the remove-from-collection dialog's confirm button."
+  },
+  "removeFromCollectionCancel": "Keep it",
+  "@removeFromCollectionCancel": {
+    "description": "Label of the remove-from-collection dialog's cancel button, which leaves the game in the collection."
+  },
+  "collectionEntryPlays": "{count, plural, =0{No plays recorded} =1{1 play} other{{count} plays}}",
+  "@collectionEntryPlays": {
+    "description": "On a collection entry's detail: how many plays of the game the user has recorded. Shown, not edited, here.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionEntryLastPlayedNever": "Not played yet",
+  "@collectionEntryLastPlayedNever": {
+    "description": "On a collection entry's detail, in place of collectionListLastPlayed when the user has recorded no play of the game."
+  },
+  "collectionEntryPlayAgain": "Would play again",
+  "@collectionEntryPlayAgain": {
+    "description": "On a collection entry's detail: shown when the user has said they would play the game again, and absent otherwise."
+  },
+  "collectionEntryNoComment": "No comment",
+  "@collectionEntryNoComment": {
+    "description": "On a collection entry's detail, in place of the user's comment on the game when they haven't written one."
+  },
+  "collectionEntryGameDetails": "Game details",
+  "@collectionEntryGameDetails": {
+    "description": "Button on a collection entry's detail that opens the game's own page in the catalog."
+  },
+  "collectionEntryEdit": "Edit",
+  "@collectionEntryEdit": {
+    "description": "App bar button on a collection entry's detail that opens the sheet editing the entry's copies, rating, comment, favorite and would-play-again. Also the button's name to screen readers."
+  },
+  "collectionEntryRemove": "Remove",
+  "@collectionEntryRemove": {
+    "description": "App bar button on a collection entry's detail that asks whether to remove the game from the user's collection. Also the button's name to screen readers."
+  },
+  "collectionEntryGoneTitle": "No longer in your collection",
+  "@collectionEntryGoneTitle": {
+    "description": "Heading on a collection entry's detail when the entry went away while it was open, for example because it was removed on another of the user's devices."
+  },
+  "collectionEntryGoneBody": "It was removed, perhaps on another device.",
+  "@collectionEntryGoneBody": {
+    "description": "Body under collectionEntryGoneTitle. The app can't tell where the entry was removed, so it says 'perhaps'."
+  },
+  "collectionEntryError": "Couldn't load this entry.",
+  "@collectionEntryError": {
+    "description": "Shown on a collection entry's detail when the entry couldn't be read from this device."
+  },
+  "collectionEntrySaved": "Saved",
+  "@collectionEntrySaved": {
+    "description": "SnackBar after an edit to a collection entry was saved and the server has it."
+  },
+  "collectionEntrySavedQueued": "Saved on this device. It will sync when it can.",
+  "@collectionEntrySavedQueued": {
+    "description": "SnackBar after an edit to a collection entry was saved on this device but couldn't be sent to the server yet. It is sent later without the user doing anything."
+  },
+  "collectionEntryRefused": "The server didn't accept this change. See changes that couldn't sync.",
+  "@collectionEntryRefused": {
+    "description": "SnackBar after the server refused an edit to, or the removal of, a collection entry. The change is kept on this device, and the list of changes that couldn't sync is where the user retries or discards it."
+  },
+  "collectionEntryRemoved": "Removed {title}",
+  "@collectionEntryRemoved": {
+    "description": "SnackBar after a game was removed from the user's collection and the server has it, naming the game. Shown on the screen the user goes back to.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "collectionEntryRemovedQueued": "Removed {title} on this device. It will sync when it can.",
+  "@collectionEntryRemovedQueued": {
+    "description": "SnackBar after a game was removed from the user's collection on this device but the removal couldn't be sent to the server yet, naming the game. It is sent later without the user doing anything. Shown on the screen the user goes back to.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "collectionEntryRemoveFailed": "Couldn't remove {title}.",
+  "@collectionEntryRemoveFailed": {
+    "description": "SnackBar when removing a game from the user's collection failed, naming the game. Nothing was removed, and the entry stays open.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "collectionEntryRemoving": "Removing…",
+  "@collectionEntryRemoving": {
+    "description": "Replaces the Remove button's label on a collection entry's detail while the removal is being saved and sent, and is the button's accessible name meanwhile. Announced to screen readers as it appears."
+  },
+  "collectionEntryLoading": "Loading this entry…",
+  "@collectionEntryLoading": {
+    "description": "Screen-reader name of the spinner shown on a collection entry's detail until the entry has been read from this device."
+  },
+  "collectionEntryErrorBody": "Try again, or go back to your collection.",
+  "@collectionEntryErrorBody": {
+    "description": "Body under collectionEntryError on a collection entry's detail, when the entry couldn't be read from this device. The button below it reads the entry again."
+  },
+  "collectionEntryRetry": "Try again",
+  "@collectionEntryRetry": {
+    "description": "Button on a collection entry's detail when the entry couldn't be read from this device: reads it from this device again. Kept as a plain retry: nothing here can promise the next attempt will work."
+  },
+  "collectionEntryCommentSpoken": "Your comment: {comment}",
+  "@collectionEntryCommentSpoken": {
+    "description": "What a screen reader says for the user's own comment on a collection entry's detail, in place of the comment shown alone, so the listener knows what the words are.",
+    "placeholders": {
+      "comment": {
+        "type": "String",
+        "example": "Best with five."
+      }
+    }
+  },
+  "collectionEntryPlatformSpoken": "Platform: {platform}",
+  "@collectionEntryPlatformSpoken": {
+    "description": "What a screen reader says for the platform line under the game's title on a collection entry's detail, in place of the platform's name shown alone, for example \"Platform: Board game\".",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Board game"
+      }
+    }
+  },
+  "collectionEntryMediumSpoken": "Format: {medium}",
+  "@collectionEntryMediumSpoken": {
+    "description": "What a screen reader says for whether the copy is physical or digital on a collection entry's detail, in place of the word shown alone. {medium} is collectionListMediumPhysical or collectionListMediumDigital, for example \"Format: Physical\".",
+    "placeholders": {
+      "medium": {
+        "type": "String",
+        "example": "Physical"
       }
     }
   }

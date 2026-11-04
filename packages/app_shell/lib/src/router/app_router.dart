@@ -102,6 +102,18 @@ abstract final class AppRoutes {
   /// active session's own.
   static const collection = '/collection';
 
+  /// One entry of the [collection] list (#46), beneath it, so a location
+  /// straight to an entry still builds the list under it. Build a concrete
+  /// location with [collectionEntryOf].
+  static const collectionEntry = '$collection/:$collectionEntryIdParam';
+
+  /// The id segment of [collectionEntry].
+  static const collectionEntryIdParam = 'entryId';
+
+  /// The location of one collection entry's detail screen.
+  static String collectionEntryOf(String entryId) =>
+      '$collection/${Uri.encodeComponent(entryId)}';
+
   /// The server's games, to browse (#42). Plural, unlike [household] and
   /// [collection]: it lists the catalog, not one thing the user has. Not the
   /// reserved `/server/:serverId/game/:gameId` deep link, which names a
@@ -447,6 +459,16 @@ typedef EditHouseholdScreenBuilder = Widget? Function(
 /// needs the active server's scoped container, not an `AuthBloc`.
 typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds one collection entry's detail (#46) for the
+/// [AppRoutes.collectionEntry] route. Same null contract as
+/// [CollectionListScreenBuilder], and null as well when the active container
+/// carries no `SyncOperationSender` for the edit and the removal to send
+/// through; the route then falls back to [NotYetAvailableScreen].
+typedef CollectionEntryScreenBuilder = Widget? Function(
+  BuildContext context,
+  String entryId,
+);
+
 /// Builds the game browse screen (#42) for the [AppRoutes.games] route.
 /// Supplied by [BgeApp]; returns null at navigation time when no active
 /// server is resolvable or its container carries no `GamesRemoteDataSource`,
@@ -623,6 +645,7 @@ GoRouter buildAppRouter({
   InviteInboxScreenBuilder? inviteInboxBuilder,
   SentInvitesScreenBuilder? sentInvitesBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
+  CollectionEntryScreenBuilder? collectionEntryBuilder,
   GameBrowseScreenBuilder? gameBrowseBuilder,
   GameSearchScreenBuilder? gameSearchBuilder,
   GameDetailScreenBuilder? gameDetailBuilder,
@@ -880,12 +903,28 @@ GoRouter buildAppRouter({
       // needed; see [CollectionListScreenBuilder]), pushed from the home
       // drawer, and reachable only once [AppBootstrapReady] admits
       // non-bootstrap locations. A top-level destination is #414's.
+      // #46: one entry is a child, so a location straight to it builds the
+      // list beneath, and the entry's pop after a removal lands on the list.
       GoRoute(
         path: AppRoutes.collection,
         pageBuilder: (context, state) => _materialPage(
           state,
           collectionListBuilder?.call(context) ?? const NotYetAvailableScreen(),
         ),
+        routes: [
+          GoRoute(
+            path: ':${AppRoutes.collectionEntryIdParam}',
+            pageBuilder: (context, state) {
+              final id =
+                  state.pathParameters[AppRoutes.collectionEntryIdParam] ?? '';
+              return _materialPage(
+                state,
+                collectionEntryBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
+            },
+          ),
+        ],
       ),
       // #42: browse, search and one game. Outside the auth ShellRoute, like
       // the collection list, and pushed from the home drawer. Search and the
