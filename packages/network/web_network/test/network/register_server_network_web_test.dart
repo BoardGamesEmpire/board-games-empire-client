@@ -234,5 +234,19 @@ void main() {
       // A disposed estimator emits its final estimate and completes.
       await expectLater(clock.watchSkew(), emitsInOrder([null, emitsDone]));
     });
+
+    test('disposes the AuthRepository with the container — its auth-state '
+        'stream completes', () async {
+      register();
+      final auth = container.get<AuthRepository>();
+      final completes = expectLater(
+        auth.watchAuthState(),
+        emitsThrough(emitsDone),
+      );
+
+      await container.dispose();
+
+      await completes;
+    });
   });
 }

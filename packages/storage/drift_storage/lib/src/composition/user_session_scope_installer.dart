@@ -87,14 +87,12 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     // construction (not a lazy provider): the instance is disposed on
     // every authentication transition, so it cannot carry a stale id.
     final syncQueue = SyncQueueRepositoryImpl(db, clock, userId: userId);
-    container.registerSingleton<SyncQueueRepository>(
-      syncQueue,
-      // Close-on-teardown (#135, folded #138 item 1): scope deactivation
-      // disposes the repository, which closes every vended
-      // watchPendingCount stream — a subscription taken under this user
-      // stops delivering (even the frozen count) after the scope pops.
-      dispose: (_) => syncQueue.onDispose(),
-    );
+    // Close-on-teardown (#135, folded #138 item 1): the container disposes
+    // the repository on scope deactivation because it is Disposable
+    // (WatchDisposal), which closes every vended watchPendingCount stream —
+    // a subscription taken under this user stops delivering (even the
+    // frozen count) after the scope pops.
+    container.registerSingleton<SyncQueueRepository>(syncQueue);
 
     final households = HouseholdRepositoryImpl(
       db: db,
@@ -102,14 +100,12 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       syncQueue: syncQueue,
       clock: clock,
     );
-    container.registerSingleton<HouseholdRepository>(
-      households,
-      // Close-on-teardown (#135): scope deactivation disposes the
-      // repository, which closes every vended watch stream — live
-      // subscriptions stop delivering the departing user's data without
-      // depending on the UI cancelling them.
-      dispose: (_) => households.onDispose(),
-    );
+    // Close-on-teardown (#135): the container disposes the repository on
+    // scope deactivation because it is Disposable (WatchDisposal), which
+    // closes every vended watch stream — live subscriptions stop delivering
+    // the departing user's data without depending on the UI cancelling
+    // them.
+    container.registerSingleton<HouseholdRepository>(households);
 
     // User-scoped like the queue above, and for the same reason (#150):
     // every read, write and stream filters on this id. It takes the
@@ -153,14 +149,13 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       currentUserId: userId,
       clock: clock,
     );
-    container.registerSingleton<GameCollectionRepository>(
-      collections,
-      // Close-on-teardown (#135, #138): the collection's watch streams vend
-      // Drift streams tied to the per-server database, which outlives this
-      // scope. Without this callback a subscription taken under one user
-      // would keep emitting that user's frozen rows after sign-out.
-      dispose: (_) => collections.onDispose(),
-    );
+    // Close-on-teardown (#135, #138): the collection's watch streams vend
+    // Drift streams tied to the per-server database, which outlives this
+    // scope. The container closes them on scope deactivation because the
+    // repository is Disposable (WatchDisposal); without that, a
+    // subscription taken under one user would keep emitting that user's
+    // frozen rows after sign-out.
+    container.registerSingleton<GameCollectionRepository>(collections);
 
     // Data-scoped like the collection (#434): `games` and `platform_games`
     // hold each row once per server, and this instance reads only the rows
@@ -168,12 +163,10 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     // hydrate writes a page's summaries through it just before merging that
     // page's entries through the collection, whose id is fixed.
     final games = GameRepositoryImpl(db, userId: userId);
-    container.registerSingleton<GameRepository>(
-      games,
-      // Close-on-teardown (#138): its watch streams are tied to the
-      // per-server database, which outlives this scope.
-      dispose: (_) => games.onDispose(),
-    );
+    // Close-on-teardown (#138): its watch streams are tied to the
+    // per-server database, which outlives this scope. The container closes
+    // them because the repository is Disposable (WatchDisposal).
+    container.registerSingleton<GameRepository>(games);
 
     // Data-scoped like the game cache (#496): `events` and the tables beside
     // it hold each row once per server, and this instance reads only the
@@ -190,12 +183,10 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       syncQueue: syncQueue,
       clock: clock,
     );
-    container.registerSingleton<EventRepository>(
-      events,
-      // Close-on-teardown (#138): its watch stream is tied to the per-server
-      // database, which outlives this scope.
-      dispose: (_) => events.onDispose(),
-    );
+    // Close-on-teardown (#138): its watch stream is tied to the per-server
+    // database, which outlives this scope. The container closes it because
+    // the repository is Disposable (WatchDisposal).
+    container.registerSingleton<EventRepository>(events);
   }
 
   /// Reads the authenticated user id from [authRepository] at call time

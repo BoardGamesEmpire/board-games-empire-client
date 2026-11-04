@@ -81,6 +81,20 @@ void main() {
       expect(tombstones.revoked, {config.bgeServerId});
     });
 
+    test('disposes the AuthRepository with the container — its auth-state '
+        'stream completes', () async {
+      await installer().install(container, _makeConfig());
+      final auth = container.get<AuthRepository>();
+      final completes = expectLater(
+        auth.watchAuthState(),
+        emitsThrough(emitsDone),
+      );
+
+      await container.dispose();
+
+      await completes;
+    });
+
     test('shared Dio uses the config server URL as base', () async {
       await installer().install(container, _makeConfig());
 

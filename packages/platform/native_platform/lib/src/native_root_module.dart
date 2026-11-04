@@ -75,13 +75,10 @@ Future<void> registerNativeRootModule(
     ..registerLazySingleton<DeviceInfoReader>(
       () => deviceInfoReader ?? NativeDeviceInfoReader(),
     )
+    // ConnectivityPlusService holds a platform subscription and is
+    // Disposable, so the container closes it; an injected fake need not be.
     ..registerLazySingleton<ConnectivityService>(
       connectivityFactory ?? ConnectivityPlusService.new,
-      dispose: (service) async {
-        if (service case final Disposable disposable) {
-          await disposable.onDispose();
-        }
-      },
     )
     // #15 push interface stub. Replaced per platform by #111/#112.
     ..registerSingleton<PushNotificationService>(

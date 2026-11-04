@@ -86,24 +86,15 @@ Future<void> registerWebRootModule(
   final pendingSink = feedbackSink ?? Future<FeedbackSink?>.value();
   container
     ..registerSingleton<BuildInfo>(await reader.read())
-    ..registerSingleton<FeedbackSink>(
-      await pendingSink ?? MemoryFeedbackSink(),
-      dispose: (sink) async {
-        // The durable sink holds an open IndexedDB connection; the stand-in
-        // holds nothing. Same conformance check as ConnectivityService below,
-        // so neither needs the module to know which it got.
-        if (sink case final Disposable disposable) {
-          await disposable.onDispose();
-        }
-      },
-    )
+    // The durable sink holds an open IndexedDB connection and is
+    // Disposable, so the container closes it; the stand-in holds nothing.
+    // Neither this registration nor ConnectivityService's below needs to
+    // know which implementation it got.
+    ..registerSingleton<FeedbackSink>(await pendingSink ?? MemoryFeedbackSink())
+    // ConnectivityPlusService holds a platform subscription and is
+    // Disposable, so the container closes it; an injected fake need not be.
     ..registerLazySingleton<ConnectivityService>(
       connectivityFactory ?? ConnectivityPlusService.new,
-      dispose: (service) async {
-        if (service case final Disposable disposable) {
-          await disposable.onDispose();
-        }
-      },
     )
     // #15 push interface stub. Possibly permanent on web (#113 decides).
     ..registerSingleton<PushNotificationService>(

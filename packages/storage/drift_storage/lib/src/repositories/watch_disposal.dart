@@ -17,8 +17,9 @@ import 'package:interfaces/orchestration.dart';
 ///
 /// Mixing classes must:
 ///
-/// - be registered with `dispose: (_) => instance.onDispose()` by their
-///   scope installer;
+/// - be registered by their scope installer without a `dispose:` callback:
+///   the mixin makes them [Disposable], so the container closes them, and
+///   an explicit callback would replace that;
 /// - call [checkNotDisposed] at the top of every public method **except**
 ///   the `watch*` methods, whose post-disposal contract is an
 ///   already-closed stream rather than a throw (a `Stream`-returning
