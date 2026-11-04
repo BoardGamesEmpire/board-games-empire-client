@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:di/di.dart' show LocalClockService, replayThenForward;
 import 'package:http_status/http_status.dart';
@@ -12,6 +11,7 @@ import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
 
+import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 import '../network/redact_uri.dart';
 import '../network/token_interceptor.dart';
@@ -949,7 +949,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // A REJECTION is settled from the status plus a bounded read of the raw
     // body, and never a full decode. The only thing wanted from a rejected
     // body is its envelope's code (a duplicate email, or why a 403 refused),
-    // which [_rejectionCode] reads through [_probeJson] when handed a
+    // which [_rejectionCode] reads through [probeJsonBody] when handed a
     // `String`. Decoding first would pay an isolate spawn and a full parse on
     // a 2 MB proxy error page about to be thrown away on its status — and
     // would answer the code question differently from `_mapDioException`,
@@ -1060,12 +1060,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// four call sites is a shared mutable default waiting to be edited.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// Ceiling on the synchronous probe below. A rejection envelope is a few
-  /// hundred bytes — BetterAuth's is about a hundred — so anything past this
-  /// is not the envelope being looked for, and reading it would be paying
-  /// main-isolate parse time for a body that cannot answer the question.
-  static const int _probeMaxChars = 4 * 1024;
-
   /// Whether a rejected auth response means "this email is already
   /// registered".
   ///
@@ -1095,7 +1089,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// The code is read under the same bound as the duplicate-email envelope.
   /// The status still decides first: only a 403 gets here, and the body only
   /// refines it. A 403 without a readable envelope (a proxy's HTML page, an
-  /// envelope past [_probeMaxChars], no body at all) stays the invalid
+  /// envelope past [probeJsonMaxChars], no body at all) stays the invalid
   /// credentials it always was.
   AuthException _forbidden(Object? body) => switch (_rejectionCode(body)) {
     'EMAIL_NOT_VERIFIED' => const AuthEmailNotVerifiedException(),
@@ -1105,39 +1099,19 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   /// The `code` of a rejection envelope, or null when [body] is not one.
   ///
-  /// A `String` is the raw body and goes through [_probeJson]; a `Map` is a
-  /// body [_requireGrantBody] has already decoded, and is taken as it is.
+  /// [body] is the raw text, or a body [_requireGrantBody] has already
+  /// decoded; both go through [probeJsonBody]. [_mapDioException] reads the
+  /// raw text off a **thrown** `DioException` too: without the probe, a
+  /// duplicate sign-up rejected by a `Dio` whose `validateStatus` is not
+  /// `DefaultDioFactory`'s would report "unexpected 422" instead of "that
+  /// account already exists".
+  ///
+  /// It probes rather than decodes because a rejection envelope is small, and
+  /// `decodeJsonBody`'s isolate hop would make this async for nothing.
   String? _rejectionCode(Object? body) {
-    final decoded = body is String ? _probeJson(body) : body;
+    final decoded = probeJsonBody(body);
     final code = decoded is Map ? decoded['code'] : null;
     return code is String ? code : null;
-  }
-
-  /// Best-effort synchronous decode, for [_rejectionCode] alone.
-  ///
-  /// [_mapDioException] reads the body off a **thrown** `DioException`, where
-  /// it now arrives as the raw `String` the request asked for rather than the
-  /// decoded map the probe used to get for free. Without this, a duplicate
-  /// sign-up rejected by a `Dio` whose `validateStatus` is not this factory's
-  /// would report "unexpected 422" instead of "that account already exists".
-  ///
-  /// Deliberately not routed through `decodeJsonBody`: this reads a rejection
-  /// envelope, which is small, and the probe is best-effort — a body that will
-  /// not parse simply is not this envelope. `decodeJsonBody`'s 50 KB isolate
-  /// offload exists for success-path payloads and would make this async for no
-  /// benefit.
-  ///
-  /// Bounded by [_probeMaxChars], because this runs SYNCHRONOUSLY on the UI
-  /// isolate. Taking the body as a `String` dropped dio's
-  /// `BackgroundTransformer`, which used to offload a decode above 50 KB; a
-  /// bound restores that protection the only way a synchronous probe can.
-  Object? _probeJson(String raw) {
-    if (raw.isEmpty || raw.length > _probeMaxChars) return null;
-    try {
-      return jsonDecode(raw);
-    } on FormatException {
-      return null;
-    }
   }
 
   /// [credentialGrant] gates the body probes, the duplicate-email one and a

@@ -414,8 +414,8 @@ void main() {
   });
 
   group('the duplicate-email probe on the THROWN path (#352)', () {
-    // The only route to `_probeJson`: a rejection that arrives thrown, so the
-    // body is still the raw `String` the request asked for rather than the
+    // A rejection that arrives thrown reaches the probe (`probeJsonBody`)
+    // with the body still the raw `String` the request asked for, not the
     // decoded map `_assertSuccess` gets. Without the probe this reports
     // "unexpected 422" instead of "that account already exists".
     test('a thrown 422 duplicate-email envelope still maps', () async {
@@ -469,7 +469,7 @@ void main() {
 
     test('an envelope past the probe bound is not read, so the status '
         'decides', () async {
-      // Over `_probeMaxChars`. The bound is what keeps a 2 MB proxy page off
+      // Over `probeJsonMaxChars`. The bound is what keeps a 2 MB proxy page off
       // the main isolate, and the cost of it is exactly this: an envelope
       // this large is not treated as the duplicate-email envelope.
       final huge =

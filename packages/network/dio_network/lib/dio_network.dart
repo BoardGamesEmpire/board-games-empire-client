@@ -17,6 +17,7 @@ export 'src/household/household_invite_remote_data_source_impl.dart';
 export 'src/household/household_member_remote_data_source_impl.dart';
 export 'src/household/household_remote_data_source_impl.dart';
 
+export 'src/network/api_error_envelope.dart' show probeJsonBody;
 export 'src/network/clock_skew_interceptor.dart';
 export 'src/network/decode_json_body.dart';
 export 'src/network/dio_factory.dart';

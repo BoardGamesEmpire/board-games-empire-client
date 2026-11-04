@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:di/di.dart' show replayThenForward;
 import 'package:dio/dio.dart';
-// `decodeJsonBody` only — shared rather than copied so dio's 50 KB
-// isolate threshold lives in one place (#352 D2).
-import 'package:dio_network/dio_network.dart' show decodeJsonBody;
+// Shared rather than copied, so dio's 50 KB isolate threshold and the
+// probe's 4 KiB bound each live in one place (#352, #278).
+import 'package:dio_network/dio_network.dart'
+    show decodeJsonBody, probeJsonBody;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -1565,12 +1565,6 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// and #360 rejected a shared request-shaping seam.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// Ceiling on the synchronous probe below. A rejection envelope is a few
-  /// hundred bytes, so anything past this is not the envelope being looked
-  /// for, and reading it would be paying main-thread parse time for a body
-  /// that cannot answer the question.
-  static const int _probeMaxChars = 4 * 1024;
-
   /// Whether a rejected auth response means "this email is already
   /// registered".
   ///
@@ -1600,7 +1594,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// The code is read under the same bound as the duplicate-email envelope.
   /// The status still decides first: only a 403 gets here, and the body only
   /// refines it. A 403 without a readable envelope (a proxy's HTML page, an
-  /// envelope past [_probeMaxChars], no body at all) stays the invalid
+  /// envelope past [probeJsonBody]'s bound, no body at all) stays the invalid
   /// credentials it always was.
   AuthException _forbidden(Object? body) => switch (_rejectionCode(body)) {
     'EMAIL_NOT_VERIFIED' => const AuthEmailNotVerifiedException(),
@@ -1610,36 +1604,19 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   /// The `code` of a rejection envelope, or null when [body] is not one.
   ///
-  /// A `String` is the raw body and goes through [_probeJson]; a `Map` is a
-  /// body [_requireGrantBody] has already decoded, and is taken as it is.
+  /// [body] is the raw text, or a body [_requireGrantBody] has already
+  /// decoded; both go through [probeJsonBody]. [_mapDioException] reads the
+  /// raw text off a **thrown** `DioException` too: without the probe, a
+  /// duplicate sign-up rejected by a `Dio` whose `validateStatus` is not
+  /// `WebDioFactory`'s would report "unexpected 422" instead of "that
+  /// account already exists".
+  ///
+  /// It probes rather than decodes because a rejection envelope is small, and
+  /// `decodeJsonBody`'s isolate hop would make this async for nothing.
   String? _rejectionCode(Object? body) {
-    final decoded = body is String ? _probeJson(body) : body;
+    final decoded = probeJsonBody(body);
     final code = decoded is Map ? decoded['code'] : null;
     return code is String ? code : null;
-  }
-
-  /// Best-effort synchronous decode, for [_rejectionCode] alone.
-  ///
-  /// [_mapDioException] reads the body off a **thrown** `DioException`, where
-  /// it now arrives as the raw `String` the request asked for rather than the
-  /// decoded map the probe used to get for free. Without this, a duplicate
-  /// sign-up rejected by a `Dio` whose `validateStatus` is not
-  /// `WebDioFactory`'s would report "unexpected 422" instead of "that account
-  /// already exists".
-  ///
-  /// Deliberately not routed through `decodeJsonBody`: this reads a rejection
-  /// envelope, which is small, and the probe is best-effort — a body that will
-  /// not parse simply is not this envelope.
-  ///
-  /// Bounded by [_probeMaxChars], because this runs SYNCHRONOUSLY on the main
-  /// thread.
-  Object? _probeJson(String raw) {
-    if (raw.isEmpty || raw.length > _probeMaxChars) return null;
-    try {
-      return jsonDecode(raw);
-    } on FormatException {
-      return null;
-    }
   }
 
   /// [credentialGrant] gates the body probes, the duplicate-email one and a
