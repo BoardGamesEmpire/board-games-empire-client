@@ -78,13 +78,18 @@ class ServerContextImpl implements ServerContext {
        _config = config,
        _container = _SwappableContainer(
          containerFactory ?? DependencyContainerImpl.new,
-         label: 'ServerContext(${config.id})',
+         label: _diagnosticTagFor(config.id),
        ),
        _state = ServerContextState.initializing,
        _stateController = StreamController<ServerContextState>.broadcast();
 
   @override
   final String serverId;
+
+  /// The prefix of every line this context reports, and of the ones its
+  /// user-scope host reports on its behalf. Static so the constructor's
+  /// initializer list can pass it to the host (#327).
+  static String _diagnosticTagFor(String id) => 'ServerContext($id)';
 
   @override
   ServerConfig get config => _config;
@@ -170,7 +175,7 @@ class ServerContextImpl implements ServerContext {
             await _container.replaceInner();
           } catch (teardownError) {
             debugReportSwallowed(
-              'ServerContext($serverId): scope reset after a failed '
+              '${_diagnosticTagFor(serverId)}: scope reset after a failed '
               'activation threw (suppressed in favor of the original '
               'installer error)',
               teardownError,
@@ -246,7 +251,8 @@ class ServerContextImpl implements ServerContext {
         await _container.replaceInner();
       } catch (e) {
         debugReportSwallowed(
-          'ServerContext($serverId): scope disposal threw during suspend()',
+          '${_diagnosticTagFor(serverId)}: scope disposal threw during '
+          'suspend()',
           e,
         );
       }
@@ -289,7 +295,8 @@ class ServerContextImpl implements ServerContext {
       // stream must still close so disposal is reliably idempotent and the
       // orchestrator's teardown isn't left brittle.
       debugReportSwallowed(
-        'ServerContext($serverId): container disposal threw during dispose()',
+        '${_diagnosticTagFor(serverId)}: container disposal threw during '
+        'dispose()',
         e,
       );
     }
@@ -410,7 +417,7 @@ class ServerContextImpl implements ServerContext {
       await _container.endUserScope();
     } catch (e) {
       debugReportSwallowed(
-        'ServerContext($serverId): user-scope disposal threw during '
+        '${_diagnosticTagFor(serverId)}: user-scope disposal threw during '
         'session deactivation',
         e,
       );

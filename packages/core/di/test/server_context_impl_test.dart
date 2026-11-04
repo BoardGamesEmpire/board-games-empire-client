@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
@@ -218,6 +219,29 @@ void main() {
         await context.dispose();
         expect(() => context.container.isRegistered<Probe>(), throwsStateError);
       });
+
+      test(
+        'reports a throwing container disposal under its ServerContext tag',
+        () async {
+          when(() => mockContainer.dispose())
+              .thenAnswer((_) async => throw StateError('boom'));
+          when(() => mockContainer.isRegistered<Probe>()).thenReturn(false);
+          context.container.isRegistered<Probe>(); // materialize the inner
+          final printed = <String>[];
+          final previousPrint = debugPrint;
+          debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
+          addTearDown(() => debugPrint = previousPrint);
+
+          await context.dispose();
+
+          expect(printed, [
+            startsWith(
+              'ServerContext(server-local-1): container disposal threw '
+              'during dispose(): ',
+            ),
+          ]);
+        },
+      );
     });
 
     group('watchState()', () {

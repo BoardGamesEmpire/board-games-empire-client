@@ -1,4 +1,5 @@
 import 'package:di/di.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
@@ -87,6 +88,23 @@ class FailingUserInstaller implements UserScopeInstaller {
   ) async {
     calls++;
     throw StateError('user installer boom');
+  }
+}
+
+/// User installer that registers a probe whose teardown throws, then fails,
+/// so discarding the partial scope throws too.
+class TeardownThrowingFailingUserInstaller implements UserScopeInstaller {
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ScopedServer server,
+    String userId,
+  ) async {
+    container.registerSingleton<UserProbe>(
+      UserProbe('x'),
+      dispose: (_) => throw StateError('teardown'),
+    );
+    throw StateError('install');
   }
 }
 
@@ -268,6 +286,34 @@ void main() {
         throwsA(isA<StateError>()),
       );
       expect(failing.calls, 2);
+    });
+
+    test('a failed activation whose reset throws is reported under the '
+        'ServerContext tag', () async {
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [TeardownThrowingFailingUserInstaller()],
+      );
+      addTearDown(context.dispose);
+      final printed = <String>[];
+      final previousPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
+      addTearDown(() => debugPrint = previousPrint);
+      await context.activate();
+
+      await expectLater(
+        context.activateUserSession('user-a'),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'install'),
+        ),
+      );
+
+      expect(printed, [
+        startsWith(
+          'ServerContext(server-local-1): user-scope reset after a failed '
+          'session activation threw',
+        ),
+      ]);
     });
   });
 
