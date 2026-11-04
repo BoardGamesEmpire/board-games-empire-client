@@ -766,44 +766,52 @@ class _MemberMenu extends StatelessWidget {
     final busyLabel = name == null
         ? l10n.householdMemberBusy
         : l10n.householdMemberBusyFor(name);
+    // Both items are direct writes, so they wait for a connection (#49). The
+    // button stays enabled, so the menu can be opened to read why.
+    final online = !BgeConnectivityScope.offlineOf(context);
 
-    return MenuAnchor(
-      // Left unconstrained, the panel sits in a hard-clipped box as wide as
-      // its widest entry, which at 2.0 text runs past a phone's edge. Held
-      // to the screen, the entries wrap instead.
-      crossAxisUnconstrained: false,
-      menuChildren: [
-        if (actions.contains(HouseholdMemberAction.changeRole))
-          MenuItemButton(
-            key: HouseholdDetailScreen.changeRoleKey,
-            overflowAxis: Axis.vertical,
-            onPressed: () => unawaited(_changeRole(context)),
-            child: Text(l10n.householdMemberChangeRole),
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          if (actions.contains(HouseholdMemberAction.changeRole))
+            MenuItemButton(
+              key: HouseholdDetailScreen.changeRoleKey,
+              overflowAxis: Axis.vertical,
+              onPressed: online ? () => unawaited(_changeRole(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.householdMemberChangeRole),
+            ),
+          if (actions.contains(HouseholdMemberAction.remove))
+            MenuItemButton(
+              key: HouseholdDetailScreen.removeKey,
+              overflowAxis: Axis.vertical,
+              onPressed: online ? () => unawaited(_remove(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.householdMemberRemove),
+            ),
+        ],
+        builder: (context, controller, _) => BgeInertButton(
+          // Inert while busy, so it keeps focus through a write (#607). The
+          // name is a label because VoiceOver skips a node named only by its
+          // tooltip.
+          inert: busy,
+          label: busy ? busyLabel : actionsLabel,
+          expanded: controller.isOpen,
+          onPressed: controller.isOpen ? controller.close : controller.open,
+          builder: (context, focusNode, onPressed) => IconButton(
+            key: HouseholdDetailScreen.memberActionsKey(member.userId),
+            focusNode: focusNode,
+            icon: busy
+                ? const _MemberMenuSpinner()
+                : const Icon(Icons.more_vert),
+            // Every row has one, so the name says whose it is to a pointer
+            // user hovering one after another.
+            tooltip: busy ? busyLabel : actionsLabel,
+            onPressed: onPressed,
           ),
-        if (actions.contains(HouseholdMemberAction.remove))
-          MenuItemButton(
-            key: HouseholdDetailScreen.removeKey,
-            overflowAxis: Axis.vertical,
-            onPressed: () => unawaited(_remove(context)),
-            child: Text(l10n.householdMemberRemove),
-          ),
-      ],
-      builder: (context, controller, _) => BgeInertButton(
-        // Inert while busy, so it keeps focus through a write (#607). The
-        // name is a label because VoiceOver skips a node named only by its
-        // tooltip.
-        inert: busy,
-        label: busy ? busyLabel : actionsLabel,
-        expanded: controller.isOpen,
-        onPressed: controller.isOpen ? controller.close : controller.open,
-        builder: (context, focusNode, onPressed) => IconButton(
-          key: HouseholdDetailScreen.memberActionsKey(member.userId),
-          focusNode: focusNode,
-          icon: busy ? const _MemberMenuSpinner() : const Icon(Icons.more_vert),
-          // Every row has one, so the name says whose it is to a pointer
-          // user hovering one after another.
-          tooltip: busy ? busyLabel : actionsLabel,
-          onPressed: onPressed,
         ),
       ),
     );

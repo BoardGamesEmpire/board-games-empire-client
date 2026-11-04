@@ -296,14 +296,17 @@ class _SentRow extends StatelessWidget {
               end: tokens.spaceMd,
               bottom: tokens.spaceSm,
             ),
-            child: OutlinedButton(
-              key: SentInvitesScreen.withdrawKey(invite.id),
-              onPressed: busy
-                  ? null
-                  : () => context.read<SentInvitesBloc>().add(
-                      SentInvitesWithdrawRequested(invite.id),
-                    ),
-              child: Text(l10n.householdInviteWithdraw),
+            // A direct write, so it waits for a connection (#49).
+            child: BgeOnlineOnly(
+              child: OutlinedButton(
+                key: SentInvitesScreen.withdrawKey(invite.id),
+                onPressed: busy || BgeConnectivityScope.offlineOf(context)
+                    ? null
+                    : () => context.read<SentInvitesBloc>().add(
+                        SentInvitesWithdrawRequested(invite.id),
+                      ),
+                child: Text(l10n.householdInviteWithdraw),
+              ),
             ),
           ),
       ],

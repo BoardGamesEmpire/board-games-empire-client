@@ -1,12 +1,16 @@
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
+
+const _onlineOnlyCopy = "Available when you're online";
 
 HouseholdInvite _received(
   String id, {
@@ -30,14 +34,28 @@ void main() {
   Widget harness({
     void Function(BuildContext context)? onOpenSent,
     TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: (context, child) {
+      final app = MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+      if (offline == null) return app;
+      return ValueListenableBuilder<bool>(
+        valueListenable: offline,
+        child: app,
+        builder: (context, isOffline, app) => BgeConnectivityScope(
+          offline: isOffline,
+          noticeShowing: isOffline,
+          onlineOnlyReason: _onlineOnlyCopy,
+          child: app!,
+        ),
+      );
+    },
     home: InviteInboxScreen(
       remote: remote,
       onJoined: (_) async {},
@@ -55,6 +73,54 @@ void main() {
     expect(find.text('Sunday Crew'), findsOneWidget);
     expect(find.text('Invited by u_other'), findsOneWidget);
     expect(find.text('Member'), findsOneWidget);
+  });
+
+  testWidgets('online, the buttons sit in the same padding as before the '
+      'offline note', (tester) async {
+    remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    final wrap = find.byType(Wrap);
+    final padding = find
+        .ancestor(of: wrap, matching: find.byType(Padding))
+        .first;
+    // Only the 8dp bottom inset, no gap for a note.
+    expect(tester.getSize(padding).height - tester.getSize(wrap).height, 8.0);
+  });
+
+  testWidgets('Accept and Decline are disabled offline and say why', (
+    tester,
+  ) async {
+    final offline = ValueNotifier(true);
+    addTearDown(offline.dispose);
+    remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
+    await tester.pumpWidget(harness(offline: offline));
+    await tester.pumpAndSettle();
+
+    final accept = find.byKey(InviteInboxScreen.acceptKey('i_1'));
+    final decline = find.byKey(InviteInboxScreen.declineKey('i_1'));
+    for (final (button, label) in [(accept, 'Accept'), (decline, 'Decline')]) {
+      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
+      expect(
+        tester.getSemantics(button),
+        matchesSemantics(
+          label: label,
+          hint: _onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+    }
+    // Once under the pair, not once a button.
+    expect(find.text(_onlineOnlyCopy), findsOneWidget);
+
+    offline.value = false;
+    await tester.pumpAndSettle();
+
+    expect(find.text(_onlineOnlyCopy), findsNothing);
+    expect(tester.widget<ButtonStyleButton>(accept).onPressed, isNotNull);
+    expect(tester.widget<ButtonStyleButton>(decline).onPressed, isNotNull);
   });
 
   testWidgets('Accept joins, then offers to open the household', (

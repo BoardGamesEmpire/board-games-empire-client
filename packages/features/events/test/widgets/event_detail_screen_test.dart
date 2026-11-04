@@ -5,6 +5,7 @@ import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_date_dialogs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -26,6 +27,7 @@ const _errorCopy = "We couldn't load this event.";
 const _errorBodyCopy =
     'Nothing about it could be shown. Trying again may work.';
 const _inProgressCopy = 'Refreshing…';
+const _onlineOnlyCopy = "Available when you're online";
 const _offline = EventRemoteTransientException('offline');
 const _notFoundCopy = "We couldn't find this event";
 const _deleteBodyCopy =
@@ -196,15 +198,31 @@ void main() {
     void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     locale: const Locale('en', 'US'),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: (context, child) {
+      final app = MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+      if (offline == null) return app;
+      // As the shell hosts it, above the navigator, so menus and dialogs
+      // read it too.
+      return ValueListenableBuilder<bool>(
+        valueListenable: offline,
+        child: app,
+        builder: (context, isOffline, app) => BgeConnectivityScope(
+          offline: isOffline,
+          noticeShowing: isOffline,
+          onlineOnlyReason: _onlineOnlyCopy,
+          child: app!,
+        ),
+      );
+    },
     home: EventDetailScreen(
       eventId: eventId,
       repository: repository,
@@ -236,6 +254,7 @@ void main() {
     void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
+    ValueListenable<bool>? offline,
   }) async {
     await tester.pumpWidget(
       harness(
@@ -246,6 +265,7 @@ void main() {
         onWhoAnswered: onWhoAnswered,
         confirmSession: confirmSession,
         textScaler: textScaler,
+        offline: offline,
       ),
     );
     cache.add(detail);
@@ -1622,7 +1642,7 @@ void main() {
           find.byType(MenuItemButton),
         );
         expect(
-          [for (final item in shown) (item.child! as Text).data],
+          [for (final item in shown) (item.child! as BgeOnlineOnlyLabel).label],
           items,
           reason: id,
         );
@@ -1668,7 +1688,7 @@ void main() {
           for (final item in tester.widgetList<MenuItemButton>(
             find.byType(MenuItemButton),
           ))
-            (item.child! as Text).data,
+            (item.child! as BgeOnlineOnlyLabel).label,
         ],
         ['Edit', 'Remove'],
       );
@@ -3774,6 +3794,318 @@ void main() {
       );
       await expectReachable(tester, retry);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('offline (#49)', () {
+    const available = AvailabilityResponse.available;
+    const maybe = AvailabilityResponse.maybe;
+    const unavailable = AvailabilityResponse.unavailable;
+    late ValueNotifier<bool> offline;
+
+    setUpAll(() {
+      registerFallbackValue(confirmed('o-fallback', kItemInstant));
+    });
+
+    setUp(() {
+      offline = ValueNotifier(true);
+      when(() => repository.cacheOccurrence(any()))
+          .thenAnswer((_) async => true);
+    });
+
+    tearDown(() => offline.dispose());
+
+    EventOccurrence date(String id, {int day = 6, int sortOrder = 0}) =>
+        confirmed(
+          id,
+          DateTime(2026, 11, day, 19),
+          sortOrder: sortOrder,
+        ).copyWith(eventId: 'e-1', status: OccurrenceStatus.proposed);
+
+    /// A poll the viewer hosts, with two proposed dates, the first leading
+    /// alone.
+    Future<void> showPoll(WidgetTester tester) async {
+      await show(
+        tester,
+        _detail(
+          event: _event(schedulingMode: EventSchedulingMode.poll),
+          occurrences: [
+            date('o-1'),
+            date('o-2', day: 13, sortOrder: 1),
+            date(
+              'o-3',
+              day: 20,
+              sortOrder: 2,
+            ).copyWith(status: OccurrenceStatus.confirmed),
+          ],
+          attendance: _attending(EventRole.host),
+        ),
+        remote: FakeEventRemote.detail(
+          (_) => _detail().snapshot,
+          summary: (_) => AvailabilitySummary(
+            occurrences: [
+              OccurrenceAvailability(
+                occurrenceId: 'o-1',
+                available: 1,
+                maybe: 0,
+                unavailable: 0,
+                voters: const [
+                  AvailabilityVoter(
+                    attendeeId: 'att-2',
+                    response: available,
+                    eligible: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        onBack: (_) {},
+        offline: offline,
+      );
+      await settle(tester);
+    }
+
+    Finder reason() => find.text(_onlineOnlyCopy, skipOffstage: false);
+
+    /// What a screen reader gets for a gated button or chip: its own state,
+    /// not enabled, with the reason as its hint.
+    Matcher gatedButton(String label) => matchesSemantics(
+      label: label,
+      hint: _onlineOnlyCopy,
+      isButton: true,
+      hasEnabledState: true,
+    );
+
+    Matcher gatedChip(String label) => matchesSemantics(
+      label: label,
+      hint: _onlineOnlyCopy,
+      isButton: true,
+      hasSelectedState: true,
+      hasEnabledState: true,
+    );
+
+    /// A menu item's one node: both lines in its label, not enabled, no
+    /// actions.
+    Matcher gatedItem(String label) => matchesSemantics(
+      label: '$label\n$_onlineOnlyCopy',
+      hasEnabledState: true,
+    );
+
+    Future<void> openDateMenu(WidgetTester tester, String id) async {
+      await tester.ensureVisible(find.byKey(EventDetailScreen.dateMenuKey(id)));
+      await tester.tap(find.byKey(EventDetailScreen.dateMenuKey(id)));
+      await animate(tester);
+    }
+
+    testWidgets("the poll's controls are disabled and say why", (tester) async {
+      await showPoll(tester);
+
+      final add = find.byKey(EventDetailScreen.addDateKey);
+      final confirm = find.byKey(EventDetailScreen.confirmLeaderKey('o-1'));
+      for (final (control, label) in [
+        (add, 'Add a date'),
+        (confirm, 'Confirm this date, Fri, Nov 6 \u{b7} 7:00 PM'),
+      ]) {
+        await tester.ensureVisible(control);
+        await tester.pump();
+        expect(tester.widget<ButtonStyleButton>(control).onPressed, isNull);
+        expect(tester.getSemantics(control), gatedButton(label));
+      }
+      for (final (id, starts) in [
+        ('o-1', 'Fri, Nov 6 \u{b7} 7:00 PM'),
+        ('o-2', 'Fri, Nov 13 \u{b7} 7:00 PM'),
+      ]) {
+        for (final (response, answer) in [
+          (available, 'Available'),
+          (maybe, 'Maybe'),
+          (unavailable, 'Unavailable'),
+        ]) {
+          final chip = find.byKey(
+            EventDetailScreen.pollAnswerKey(id, response),
+          );
+          await tester.ensureVisible(chip);
+          await tester.pump();
+          expect(tester.widget<ChoiceChip>(chip).onSelected, isNull);
+          expect(tester.getSemantics(chip), gatedChip('$answer for $starts'));
+        }
+      }
+      // Once under Add a date, once under Confirm this date, and once under
+      // each date's three chips, not once a chip.
+      expect(reason(), findsNWidgets(4));
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(reason(), findsNothing);
+      expect(tester.widget<ButtonStyleButton>(add).onPressed, isNotNull);
+      expect(tester.widget<ButtonStyleButton>(confirm).onPressed, isNotNull);
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.byKey(EventDetailScreen.pollAnswerKey('o-1', maybe)),
+            )
+            .onSelected,
+        isNotNull,
+      );
+    });
+
+    testWidgets("a date's menu opens, and its items say why they can't be "
+        'pressed', (tester) async {
+      await showPoll(tester);
+
+      await openDateMenu(tester, 'o-1');
+
+      // A proposed date's items, then a confirmed date's, which is the one
+      // offering Cancel.
+      for (final (id, items) in [
+        (
+          'o-1',
+          [
+            (EventAction.confirmDate, 'Confirm'),
+            (EventAction.editDate, 'Edit'),
+            (EventAction.declineDate, 'Decline'),
+            (EventAction.removeDate, 'Remove'),
+          ],
+        ),
+        (
+          'o-3',
+          [
+            (EventAction.editDate, 'Edit'),
+            (EventAction.cancelDate, 'Cancel date'),
+            (EventAction.removeDate, 'Remove'),
+          ],
+        ),
+      ]) {
+        if (id == 'o-3') {
+          await openDateMenu(tester, 'o-1');
+          await openDateMenu(tester, id);
+        }
+        for (final (action, label) in items) {
+          final item = find.byKey(EventDetailScreen.dateActionKey(id, action));
+          expect(item, findsOneWidget, reason: '$id $label');
+          expect(tester.widget<MenuItemButton>(item).onPressed, isNull);
+          expect(
+            tester.getSemantics(item),
+            gatedItem(label),
+            reason: '$id $label',
+          );
+        }
+        expect(find.byType(MenuItemButton), findsNWidgets(items.length));
+      }
+      // The anchor stays enabled, so the menu could be opened to read this.
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(EventDetailScreen.dateMenuKey('o-1')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(reason(), findsNothing);
+      for (final action in [
+        EventAction.editDate,
+        EventAction.cancelDate,
+        EventAction.removeDate,
+      ]) {
+        expect(
+          tester
+              .widget<MenuItemButton>(
+                find.byKey(EventDetailScreen.dateActionKey('o-3', action)),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      }
+    });
+
+    testWidgets('online, the chips sit one 4dp step above the tallies, as '
+        'before the offline note', (tester) async {
+      offline.value = false;
+      await showPoll(tester);
+
+      final chip = find.byKey(
+        EventDetailScreen.pollAnswerKey('o-1', unavailable),
+      );
+      final tallies = find.byKey(EventDetailScreen.pollTalliesKey('o-1'));
+      await tester.ensureVisible(tallies);
+      await tester.pump();
+
+      expect(tester.getTopLeft(tallies).dy - tester.getRect(chip).bottom, 4.0);
+    });
+
+    testWidgets('Delete is disabled and says why', (tester) async {
+      await show(
+        tester,
+        _detail(attendance: _attending(EventRole.host)),
+        remote: FakeEventRemote.detail((_) => _detail().snapshot),
+        onBack: (_) {},
+        offline: offline,
+      );
+
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+
+      final delete = find.byKey(EventDetailScreen.deleteKey);
+      expect(tester.widget<MenuItemButton>(delete).onPressed, isNull);
+      expect(tester.getSemantics(delete), gatedItem('Delete event'));
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(EventDetailScreen.moreActionsKey))
+            .onPressed,
+        isNotNull,
+      );
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(tester.widget<MenuItemButton>(delete).onPressed, isNotNull);
+      expect(reason(), findsNothing);
+    });
+
+    testWidgets('going offline with Delete focused leaves focus recoverable', (
+      tester,
+    ) async {
+      offline.value = false;
+      await show(
+        tester,
+        _detail(attendance: _attending(EventRole.host)),
+        remote: FakeEventRemote.detail((_) => _detail().snapshot),
+        onBack: (_) {},
+        offline: offline,
+      );
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+      Focus.of(tester.element(find.text('Delete event'))).requestFocus();
+      await tester.pump();
+      final focused = FocusManager.instance.primaryFocus;
+      expect(
+        focused,
+        Focus.of(tester.element(find.text('Delete event'))),
+        reason: 'Delete holds focus before the connection drops',
+      );
+      expect(focused!.hasPrimaryFocus, isTrue);
+
+      // The menu has nothing left to press, so it closes, and focus falls to
+      // the page.
+      offline.value = true;
+      await animate(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(EventDetailScreen.deleteKey), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final now = FocusManager.instance.primaryFocus;
+      expect(tester.takeException(), isNull);
+      expect(now, isNotNull);
+      expect(now, isNot(focused));
+      expect(now, isNot(isA<FocusScopeNode>()));
+      expect(now!.context, isNotNull);
     });
   });
 

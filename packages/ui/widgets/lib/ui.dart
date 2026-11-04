@@ -38,6 +38,7 @@ export 'src/buttons/bge_inert_button.dart';
 export 'src/buttons/bge_submit_button.dart';
 export 'src/connectivity/bge_connectivity_scope.dart';
 export 'src/connectivity/bge_online_only.dart';
+export 'src/connectivity/bge_online_only_menu.dart';
 export 'src/focus/bge_focus_ring.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';

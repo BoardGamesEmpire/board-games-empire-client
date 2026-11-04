@@ -176,6 +176,7 @@ void main() {
     Stream<List<Household>>? households,
     String? householdId,
     TextScaler textScaler = TextScaler.noScaling,
+    bool offline = false,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: [
@@ -183,9 +184,14 @@ void main() {
       UserSearchLocalizations.delegate,
     ],
     supportedLocales: EventsLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
+    builder: (context, child) => BgeConnectivityScope(
+      offline: offline,
+      noticeShowing: offline,
+      onlineOnlyReason: "Available when you're online",
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      ),
     ),
     home: Builder(
       builder: (context) => Scaffold(
@@ -216,12 +222,14 @@ void main() {
     Stream<List<Household>>? households,
     String? householdId,
     TextScaler textScaler = TextScaler.noScaling,
+    bool offline = false,
   }) async {
     await tester.pumpWidget(
       harness(
         households: households,
         householdId: householdId,
         textScaler: textScaler,
+        offline: offline,
       ),
     );
     await tester.tap(find.text('open'));
@@ -395,6 +403,22 @@ void main() {
     expect(draft.occurrences.single.startDate!.isUtc, isTrue);
     // The rules are untouched, so the server's apply.
     expect(draft.policy, isNull);
+  });
+
+  testWidgets('create event stays enabled offline', (tester) async {
+    await open(tester, offline: true);
+    await fill(tester);
+
+    // A create is queued, so it needs no connection (#49).
+    final button = find.byKey(CreateEventScreen.submitKey);
+    await reveal(tester, button);
+    expect(tester.widget<BgeSubmitButton>(button).onPressed, isNotNull);
+    expect(find.text("Available when you're online"), findsNothing);
+
+    await submit(tester);
+    await landed(tester);
+
+    expect(sent().single.title, 'Game night');
   });
 
   testWidgets('type and who can see it start as the server has them, and '

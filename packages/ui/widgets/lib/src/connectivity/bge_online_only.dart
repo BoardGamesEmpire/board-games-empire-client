@@ -46,6 +46,8 @@ class BgeOnlineOnly extends StatelessWidget {
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      // The note lines up with the control's start edge, not its middle.
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MergeSemantics(
           child: Semantics(hint: reason, child: child),

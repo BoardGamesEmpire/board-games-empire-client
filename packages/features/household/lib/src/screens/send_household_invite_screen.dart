@@ -414,7 +414,9 @@ class _SendFormState extends State<_SendForm> {
   }
 
   void _submit(bool submitting) {
-    if (submitting) return;
+    // Sending is a direct write (#49). Returning before the validity check
+    // keeps an offline press from marking the form touched.
+    if (submitting || BgeConnectivityScope.offlineOf(context)) return;
     if (!_form.valid) {
       _form.rejectSubmit();
       setState(() {});
@@ -582,12 +584,16 @@ class _SendFormState extends State<_SendForm> {
                         ),
                       )
                     : null,
-                action: BgeSubmitButton(
-                  key: SendHouseholdInviteScreen.submitKey,
-                  label: l10n.inviteSendSubmit,
-                  progressLabel: l10n.inviteSendSending,
-                  submitting: submitting,
-                  onPressed: () => _submit(submitting),
+                action: BgeOnlineOnly(
+                  child: BgeSubmitButton(
+                    key: SendHouseholdInviteScreen.submitKey,
+                    label: l10n.inviteSendSubmit,
+                    progressLabel: l10n.inviteSendSending,
+                    submitting: submitting,
+                    onPressed: BgeConnectivityScope.offlineOf(context)
+                        ? null
+                        : () => _submit(submitting),
+                  ),
                 ),
               ),
             ],

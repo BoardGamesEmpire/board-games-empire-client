@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -5,6 +6,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
@@ -12,6 +14,7 @@ import '../support/fake_household_invite_remote.dart';
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 const _me = 'u_me';
+const _onlineOnlyCopy = "Available when you're online";
 
 HouseholdMember _member(HouseholdRole role, {String householdId = 'hh_1'}) =>
     HouseholdMember(
@@ -37,8 +40,21 @@ void main() {
   Widget harness({
     String householdId = 'hh_1',
     void Function(BuildContext context)? onInvite,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
+    builder: offline == null
+        ? null
+        : (context, child) => ValueListenableBuilder<bool>(
+            valueListenable: offline,
+            child: child,
+            builder: (context, isOffline, child) => BgeConnectivityScope(
+              offline: isOffline,
+              noticeShowing: isOffline,
+              onlineOnlyReason: _onlineOnlyCopy,
+              child: child!,
+            ),
+          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: HouseholdInviteListScreen(
@@ -136,6 +152,80 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('online, each row keeps the padding its buttons had before the '
+      'offline note', (tester) async {
+    remote.listing([
+      invite('i_1', status: HouseholdInviteStatus.awaitingApproval),
+    ]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    final wrap = find.byType(Wrap);
+    final padding = find
+        .ancestor(of: wrap, matching: find.byType(Padding))
+        .first;
+    // Only the 8dp bottom inset, no gap for a note.
+    expect(tester.getSize(padding).height - tester.getSize(wrap).height, 8.0);
+  });
+
+  testWidgets('Approve, Turn down, Revoke and Withdraw are disabled offline '
+      'and say why', (tester) async {
+    final offline = ValueNotifier(true);
+    addTearDown(offline.dispose);
+    remote.listing([
+      invite('i_1', status: HouseholdInviteStatus.awaitingApproval),
+      invite('i_2', inviterId: _me),
+      invite('i_3'),
+    ]);
+    await tester.pumpWidget(harness(offline: offline));
+    await tester.pumpAndSettle();
+
+    final buttons = {
+      HouseholdInviteTile.actionKey(HouseholdInviteRowAction.approve, 'i_1'):
+          'Approve',
+      HouseholdInviteTile.actionKey(HouseholdInviteRowAction.revoke, 'i_1'):
+          'Turn down',
+      HouseholdInviteTile.actionKey(HouseholdInviteRowAction.withdraw, 'i_2'):
+          'Withdraw',
+      HouseholdInviteTile.actionKey(HouseholdInviteRowAction.revoke, 'i_3'):
+          'Revoke',
+    };
+    for (final MapEntry(key: key, value: label) in buttons.entries) {
+      final button = find.byKey(key);
+      expect(button, findsOneWidget, reason: label);
+      await tester.ensureVisible(button);
+      await tester.pump();
+      expect(
+        tester.widget<ButtonStyleButton>(button).onPressed,
+        isNull,
+        reason: label,
+      );
+      expect(
+        tester.getSemantics(button),
+        matchesSemantics(
+          label: label,
+          hint: _onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+        reason: label,
+      );
+    }
+    // Once under each row's buttons, not once a button.
+    expect(find.text(_onlineOnlyCopy), findsNWidgets(3));
+
+    offline.value = false;
+    await tester.pumpAndSettle();
+
+    expect(find.text(_onlineOnlyCopy), findsNothing);
+    for (final key in buttons.keys) {
+      expect(
+        tester.widget<ButtonStyleButton>(find.byKey(key)).onPressed,
+        isNotNull,
+      );
+    }
   });
 
   testWidgets('the empty, denied and failed states', (tester) async {

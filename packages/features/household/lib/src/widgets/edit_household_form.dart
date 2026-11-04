@@ -121,7 +121,10 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
   }
 
   void _submit() {
-    if (widget.submitting) return;
+    // Saving is a direct write (#49). Returning before the validity check
+    // keeps an offline press from marking the form touched, which would show
+    // errors the user has not caused.
+    if (widget.submitting || BgeConnectivityScope.offlineOf(context)) return;
     if (!_form.valid) {
       _form.rejectSubmit();
       return;
@@ -219,12 +222,16 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
           const BgeGap.lg(),
           BgeFormActions(
             failure: widget.failure,
-            action: BgeSubmitButton(
-              key: EditHouseholdForm.submitButtonKey,
-              label: l10n.editHouseholdSave,
-              progressLabel: l10n.editHouseholdSaving,
-              submitting: widget.submitting,
-              onPressed: _submit,
+            action: BgeOnlineOnly(
+              child: BgeSubmitButton(
+                key: EditHouseholdForm.submitButtonKey,
+                label: l10n.editHouseholdSave,
+                progressLabel: l10n.editHouseholdSaving,
+                submitting: widget.submitting,
+                onPressed: BgeConnectivityScope.offlineOf(context)
+                    ? null
+                    : _submit,
+              ),
             ),
           ),
         ],

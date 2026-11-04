@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:household/l10n/household_localizations.dart';
@@ -57,6 +58,7 @@ class HouseholdInviteTile extends StatelessWidget {
     final role = invite.role;
     final awaiting = invite.status == HouseholdInviteStatus.awaitingApproval;
     final expiry = inviteExpiryLine(l10n, invite);
+    final offline = BgeConnectivityScope.offlineOf(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,42 +84,71 @@ class HouseholdInviteTile extends StatelessWidget {
               end: tokens.spaceMd,
               bottom: tokens.spaceSm,
             ),
-            child: Wrap(
-              spacing: tokens.spaceSm,
-              runSpacing: tokens.spaceSm,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: tokens.spaceXs,
               children: [
-                // Approve first: on a row awaiting approval it is the
-                // answer most likely wanted.
-                if (actions.contains(HouseholdInviteRowAction.approve))
-                  FilledButton.tonal(
-                    key: actionKey(HouseholdInviteRowAction.approve, invite.id),
-                    onPressed: busy
-                        ? null
-                        : () => onAction(HouseholdInviteRowAction.approve),
-                    child: Text(l10n.householdInviteApprove),
-                  ),
-                if (actions.contains(HouseholdInviteRowAction.revoke))
-                  TextButton(
-                    key: actionKey(HouseholdInviteRowAction.revoke, invite.id),
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
-                    ),
-                    onPressed: busy
-                        ? null
-                        : () => onAction(HouseholdInviteRowAction.revoke),
-                    child: Text(revokeLabel(l10n, invite)),
-                  ),
-                if (actions.contains(HouseholdInviteRowAction.withdraw))
-                  OutlinedButton(
-                    key: actionKey(
-                      HouseholdInviteRowAction.withdraw,
-                      invite.id,
-                    ),
-                    onPressed: busy
-                        ? null
-                        : () => onAction(HouseholdInviteRowAction.withdraw),
-                    child: Text(l10n.householdInviteWithdraw),
-                  ),
+                Wrap(
+                  spacing: tokens.spaceSm,
+                  runSpacing: tokens.spaceSm,
+                  children: [
+                    // Each is a direct write, so each waits for a
+                    // connection (#49). Each carries the reason; the row
+                    // shows it once.
+                    //
+                    // Approve first: on a row awaiting approval it is the
+                    // answer most likely wanted.
+                    if (actions.contains(HouseholdInviteRowAction.approve))
+                      BgeOnlineOnly(
+                        showNote: false,
+                        child: FilledButton.tonal(
+                          key: actionKey(
+                            HouseholdInviteRowAction.approve,
+                            invite.id,
+                          ),
+                          onPressed: busy || offline
+                              ? null
+                              : () =>
+                                    onAction(HouseholdInviteRowAction.approve),
+                          child: Text(l10n.householdInviteApprove),
+                        ),
+                      ),
+                    if (actions.contains(HouseholdInviteRowAction.revoke))
+                      BgeOnlineOnly(
+                        showNote: false,
+                        child: TextButton(
+                          key: actionKey(
+                            HouseholdInviteRowAction.revoke,
+                            invite.id,
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: theme.colorScheme.error,
+                          ),
+                          onPressed: busy || offline
+                              ? null
+                              : () => onAction(HouseholdInviteRowAction.revoke),
+                          child: Text(revokeLabel(l10n, invite)),
+                        ),
+                      ),
+                    if (actions.contains(HouseholdInviteRowAction.withdraw))
+                      BgeOnlineOnly(
+                        showNote: false,
+                        child: OutlinedButton(
+                          key: actionKey(
+                            HouseholdInviteRowAction.withdraw,
+                            invite.id,
+                          ),
+                          onPressed: busy || offline
+                              ? null
+                              : () =>
+                                    onAction(HouseholdInviteRowAction.withdraw),
+                          child: Text(l10n.householdInviteWithdraw),
+                        ),
+                      ),
+                  ],
+                ),
+                // Only offline: online it would still take the Column's gap.
+                if (offline) const BgeOnlineOnlyNote(),
               ],
             ),
           ),

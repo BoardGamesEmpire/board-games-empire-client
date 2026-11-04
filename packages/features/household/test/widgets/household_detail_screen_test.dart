@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +56,7 @@ const _refreshFailedCopy = "This may be out of date — we couldn't refresh it."
 const _retryCopy = 'Try again';
 const _refreshingCopy = 'Refreshing\u2026';
 const _errorCopy = "We couldn't open this household.";
+const _onlineOnlyCopy = "Available when you're online";
 const _unknownRoleCopy = "A role this app doesn't recognise";
 
 /// Pins the #270 detail screen against a mocked repository and hand-driven
@@ -106,14 +108,30 @@ void main() {
     void Function(BuildContext context, String householdId)? onNewEvent,
     HouseholdMemberRemoteDataSource? members,
     Future<void> Function()? onMembershipChanged,
+    ValueListenable<bool>? offline,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: (context, child) {
+      final app = MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: child!,
+      );
+      if (offline == null) return app;
+      // As the shell hosts it, above the navigator, so menus and dialogs
+      // read it too.
+      return ValueListenableBuilder<bool>(
+        valueListenable: offline,
+        child: app,
+        builder: (context, isOffline, app) => BgeConnectivityScope(
+          offline: isOffline,
+          noticeShowing: isOffline,
+          onlineOnlyReason: _onlineOnlyCopy,
+          child: app!,
+        ),
+      );
+    },
     home: HouseholdDetailScreen(
       householdId: householdId,
       repository: repository,
@@ -2064,6 +2082,79 @@ void main() {
         findsOneWidget,
       );
       expect(toneOf(tester), BgeBannerTone.error);
+    });
+
+    group('offline (#49)', () {
+      late ValueNotifier<bool> offline;
+
+      setUp(() => offline = ValueNotifier(true));
+
+      tearDown(() => offline.dispose());
+
+      Widget whileOffline() => harness(
+        members: remote,
+        onMembershipChanged: () async => refreshes++,
+        offline: offline,
+      );
+
+      testWidgets('Change role and Remove are disabled and say why', (
+        tester,
+      ) async {
+        await tester.pumpWidget(whileOffline());
+        await settleAsOwner(tester);
+
+        // The menu opens offline, so its items can be read.
+        await tester.tap(menuOf('u-2'));
+        await tester.pumpAndSettle();
+
+        for (final (key, label) in [
+          (HouseholdDetailScreen.changeRoleKey, 'Change role'),
+          (HouseholdDetailScreen.removeKey, 'Remove from household'),
+        ]) {
+          expect(
+            tester.widget<MenuItemButton>(find.byKey(key)).onPressed,
+            isNull,
+          );
+          expect(
+            tester.getSemantics(find.byKey(key)),
+            matchesSemantics(
+              label: '$label\n$_onlineOnlyCopy',
+              hasEnabledState: true,
+            ),
+          );
+        }
+
+        offline.value = false;
+        await tester.pumpAndSettle();
+
+        for (final key in [
+          HouseholdDetailScreen.changeRoleKey,
+          HouseholdDetailScreen.removeKey,
+        ]) {
+          expect(
+            tester.widget<MenuItemButton>(find.byKey(key)).onPressed,
+            isNotNull,
+          );
+        }
+        expect(find.text(_onlineOnlyCopy), findsNothing);
+      });
+
+      testWidgets('the menu button stays enabled, and a menu open as the '
+          'connection drops closes', (tester) async {
+        offline.value = false;
+        await tester.pumpWidget(whileOffline());
+        await settleAsOwner(tester);
+        await tester.tap(menuOf('u-2'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdDetailScreen.removeKey), findsOneWidget);
+
+        offline.value = true;
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(HouseholdDetailScreen.removeKey), findsNothing);
+        expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
+      });
     });
   });
 }

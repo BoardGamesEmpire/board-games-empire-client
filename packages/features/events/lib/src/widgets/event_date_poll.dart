@@ -235,6 +235,9 @@ class DatePollBlock extends StatelessWidget {
     final alone = leads && poll.leaders.length == 1;
     final awaiting = poll.awaiting[id];
     final onConfirm = alone ? this.onConfirm : null;
+    // Votes and the confirmation are direct writes, which wait for a
+    // connection (#49).
+    final online = !BgeConnectivityScope.offlineOf(context);
     if (!votes && tally == null && onConfirm == null) {
       return const SizedBox.shrink();
     }
@@ -246,48 +249,69 @@ class DatePollBlock extends StatelessWidget {
         spacing: tokens.spaceXs,
         children: [
           if (votes)
-            Semantics(
-              container: true,
-              explicitChildNodes: true,
-              label: l10n.eventsPollYourAnswer(name),
-              child: Wrap(
-                spacing: tokens.spaceSm,
-                runSpacing: tokens.spaceSm,
-                children: [
-                  for (final response in const [
-                    AvailabilityResponse.available,
-                    AvailabilityResponse.maybe,
-                    AvailabilityResponse.unavailable,
-                  ])
-                    if (availabilityResponseLabel(l10n, response)
-                        case final label?)
-                      ChoiceChip(
-                        key: EventDetailScreen.pollAnswerKey(id, response),
-                        // A chip can't wrap its label, so one too long for
-                        // the width at large text scales down instead.
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            label,
-                            semanticsLabel: l10n.eventsPollAnswerFor(
-                              label,
-                              name,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: tokens.spaceXs,
+              children: [
+                Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  label: l10n.eventsPollYourAnswer(name),
+                  child: Wrap(
+                    spacing: tokens.spaceSm,
+                    runSpacing: tokens.spaceSm,
+                    children: [
+                      for (final response in const [
+                        AvailabilityResponse.available,
+                        AvailabilityResponse.maybe,
+                        AvailabilityResponse.unavailable,
+                      ])
+                        if (availabilityResponseLabel(l10n, response)
+                            case final label?)
+                          // Each chip carries the reason; the group is not
+                          // wrapped, which would merge its chips into one
+                          // node, and shows it once below.
+                          BgeOnlineOnly(
+                            showNote: false,
+                            child: ChoiceChip(
+                              key: EventDetailScreen.pollAnswerKey(
+                                id,
+                                response,
+                              ),
+                              // A chip can't wrap its label, so one too long
+                              // for the width at large text scales down
+                              // instead.
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  label,
+                                  semanticsLabel: l10n.eventsPollAnswerFor(
+                                    label,
+                                    name,
+                                  ),
+                                ),
+                              ),
+                              selected: poll.answers[id] == response,
+                              // The chosen answer pressed again changes
+                              // nothing: the server keeps one answer a date,
+                              // and has no way to take it back. A vote is a
+                              // direct write (#49).
+                              onSelected: poll.answersOpen && online
+                                  ? (selected) {
+                                      if (selected) {
+                                        onVote(occurrence, response);
+                                      }
+                                    }
+                                  : null,
                             ),
                           ),
-                        ),
-                        selected: poll.answers[id] == response,
-                        // The chosen answer pressed again changes nothing: the
-                        // server keeps one answer a date, and has no way to
-                        // take it back.
-                        onSelected: poll.answersOpen
-                            ? (selected) {
-                                if (selected) onVote(occurrence, response);
-                              }
-                            : null,
-                      ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                // Only offline: online it would still take the Column's gap.
+                if (!online) const BgeOnlineOnlyNote(),
+              ],
             ),
           if (tally != null)
             MergeSemantics(
@@ -327,13 +351,15 @@ class DatePollBlock extends StatelessWidget {
           if (onConfirm != null)
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                key: EventDetailScreen.confirmLeaderKey(id),
-                onPressed: enabled ? onConfirm : null,
-                icon: const Icon(Icons.event_available),
-                label: Text(
-                  l10n.eventsPollConfirmLeader,
-                  semanticsLabel: l10n.eventsPollConfirmLeaderFor(name),
+              child: BgeOnlineOnly(
+                child: TextButton.icon(
+                  key: EventDetailScreen.confirmLeaderKey(id),
+                  onPressed: enabled && online ? onConfirm : null,
+                  icon: const Icon(Icons.event_available),
+                  label: Text(
+                    l10n.eventsPollConfirmLeader,
+                    semanticsLabel: l10n.eventsPollConfirmLeaderFor(name),
+                  ),
                 ),
               ),
             ),

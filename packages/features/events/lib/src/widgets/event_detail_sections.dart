@@ -178,11 +178,15 @@ class EventDatesSection extends StatelessWidget {
         if (onAdd != null)
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              key: EventDetailScreen.addDateKey,
-              onPressed: enabled ? onAdd : null,
-              icon: const Icon(Icons.add),
-              label: Text(l10n.eventsDateAdd),
+            child: BgeOnlineOnly(
+              child: TextButton.icon(
+                key: EventDetailScreen.addDateKey,
+                onPressed: enabled && !BgeConnectivityScope.offlineOf(context)
+                    ? onAdd
+                    : null,
+                icon: const Icon(Icons.add),
+                label: Text(l10n.eventsDateAdd),
+              ),
             ),
           ),
       ],
@@ -313,6 +317,9 @@ class _DateMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    // A date's changes are direct writes, so they wait for a connection
+    // (#49).
+    final online = !BgeConnectivityScope.offlineOf(context);
     final items = {
       EventAction.confirmDate: l10n.eventsDateConfirm,
       EventAction.editDate: l10n.eventsDateEdit,
@@ -321,33 +328,38 @@ class _DateMenu extends StatelessWidget {
       EventAction.removeDate: l10n.eventsDateRemove,
     };
 
-    return MenuAnchor(
-      // Left unconstrained, the panel sits in a hard-clipped box as wide as
-      // its widest entry, which at 2.0 text runs past a phone's edge. Held
-      // to the screen, the entries wrap instead.
-      crossAxisUnconstrained: false,
-      menuChildren: [
-        for (final MapEntry(key: action, value: label) in items.entries)
-          if (actions.contains(action))
-            MenuItemButton(
-              key: EventDetailScreen.dateActionKey(occurrence.id, action),
-              overflowAxis: Axis.vertical,
-              onPressed: enabled ? () => onAction(occurrence, action) : null,
-              child: Text(label),
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          for (final MapEntry(key: action, value: label) in items.entries)
+            if (actions.contains(action))
+              MenuItemButton(
+                key: EventDetailScreen.dateActionKey(occurrence.id, action),
+                overflowAxis: Axis.vertical,
+                onPressed: enabled && online
+                    ? () => onAction(occurrence, action)
+                    : null,
+                child: BgeOnlineOnlyLabel(label),
+              ),
+        ],
+        builder: (context, controller, _) => MergeSemantics(
+          child: Semantics(
+            expanded: controller.isOpen,
+            child: IconButton(
+              key: EventDetailScreen.dateMenuKey(occurrence.id),
+              icon: const Icon(Icons.more_vert),
+              // Every date has one, so the name says whose it is to a screen
+              // reader moving from button to button.
+              tooltip: l10n.eventsDateActions(
+                eventDateName(context, occurrence, now: now),
+              ),
+              onPressed: controller.isOpen ? controller.close : controller.open,
             ),
-      ],
-      builder: (context, controller, _) => MergeSemantics(
-        child: Semantics(
-          expanded: controller.isOpen,
-          child: IconButton(
-            key: EventDetailScreen.dateMenuKey(occurrence.id),
-            icon: const Icon(Icons.more_vert),
-            // Every date has one, so the name says whose it is to a screen
-            // reader moving from button to button.
-            tooltip: l10n.eventsDateActions(
-              eventDateName(context, occurrence, now: now),
-            ),
-            onPressed: controller.isOpen ? controller.close : controller.open,
           ),
         ),
       ),

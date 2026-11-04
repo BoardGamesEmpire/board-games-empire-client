@@ -652,28 +652,36 @@ class _ActionsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    // The delete is a direct write, so it waits for a connection (#49). The
+    // anchor button stays enabled, so the menu can be opened to read why.
+    final online = !BgeConnectivityScope.offlineOf(context);
 
-    return MenuAnchor(
-      // Left unconstrained, the panel sits in a hard-clipped box as wide as
-      // its widest entry, which at 2.0 text runs past a phone's edge. Held
-      // to the screen, the entries wrap instead.
-      crossAxisUnconstrained: false,
-      menuChildren: [
-        MenuItemButton(
-          key: EventDetailScreen.deleteKey,
-          overflowAxis: Axis.vertical,
-          onPressed: canDelete ? () => unawaited(_delete(context)) : null,
-          child: Text(l10n.eventsDetailDelete),
-        ),
-      ],
-      builder: (context, controller, _) => MergeSemantics(
-        child: Semantics(
-          expanded: controller.isOpen,
-          child: IconButton(
-            key: EventDetailScreen.moreActionsKey,
-            icon: const Icon(Icons.more_vert),
-            tooltip: l10n.eventsDetailMoreActions,
-            onPressed: controller.isOpen ? controller.close : controller.open,
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          MenuItemButton(
+            key: EventDetailScreen.deleteKey,
+            overflowAxis: Axis.vertical,
+            onPressed: canDelete && online
+                ? () => unawaited(_delete(context))
+                : null,
+            child: BgeOnlineOnlyLabel(l10n.eventsDetailDelete),
+          ),
+        ],
+        builder: (context, controller, _) => MergeSemantics(
+          child: Semantics(
+            expanded: controller.isOpen,
+            child: IconButton(
+              key: EventDetailScreen.moreActionsKey,
+              icon: const Icon(Icons.more_vert),
+              tooltip: l10n.eventsDetailMoreActions,
+              onPressed: controller.isOpen ? controller.close : controller.open,
+            ),
           ),
         ),
       ),
