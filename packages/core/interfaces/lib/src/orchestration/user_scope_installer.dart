@@ -45,11 +45,13 @@ import 'dependency_container.dart';
 ///   per-user services beside them.
 /// - Installers run in list order; an installer may resolve services a
 ///   predecessor registered.
-/// - Teardown is expressed at registration time via the container's
-///   `dispose:` callbacks, never through a matching "uninstall" — scope
-///   deactivation disposes the whole user-session scope. Services vending
-///   streams must close them from their dispose path so live subscriptions
-///   stop delivering the departing user's data.
+/// - Teardown is expressed at registration time, never through a matching
+///   "uninstall": the container closes each registration through the
+///   `dispose:` callback it was given or, when it had none, a [Disposable]
+///   through [Disposable.onDispose]. Scope deactivation disposes the whole
+///   user-session scope. Services vending streams must close them from their
+///   dispose path so live subscriptions stop delivering the departing user's
+///   data.
 /// - Throwing from [install] aborts activation: the partial user-session
 ///   scope is discarded (the per-server scope is untouched) and the error
 ///   propagates to the caller. Installers therefore don't need to clean up

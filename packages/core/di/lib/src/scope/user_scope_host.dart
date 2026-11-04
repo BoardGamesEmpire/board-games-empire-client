@@ -10,9 +10,10 @@ import '../dependency_container_impl.dart';
 ///
 /// A user-session scope is a child of some parent scope: registrations made
 /// while it is open land in the child, resolution falls through to the
-/// parent, and closing it disposes everything the child holds — running the
-/// `dispose:` callback of every registration, which is how per-user
-/// repositories close their vended streams.
+/// parent, and closing it disposes everything the child holds — each
+/// registration through its `dispose:` callback, or [Disposable.onDispose]
+/// when it had none, which is how per-user repositories close their vended
+/// streams.
 ///
 /// This class owns *only* that mechanism. It deliberately knows nothing
 /// about [UserScopeInstaller], [ServerConfig], user ids, or the state of the
@@ -135,8 +136,9 @@ class UserScopeHost {
     }
   }
 
-  /// Disposes the open user-session scope — every registration's `dispose:`
-  /// callback runs — and detaches it. A no-op when none is open.
+  /// Disposes the open user-session scope — every registration is closed,
+  /// through its `dispose:` callback or as a [Disposable] — and detaches it.
+  /// A no-op when none is open.
   ///
   /// The scope is detached *before* its disposal is awaited, so a throwing
   /// dispose callback still leaves this host closed and reusable.

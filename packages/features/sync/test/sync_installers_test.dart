@@ -63,6 +63,13 @@ void main() {
     await h.close();
   });
 
+  /// The harness owns its repositories and ends them itself, as a scope pop
+  /// would ([Harness.newSession]). Registered without a callback, they would
+  /// be closed by the container as `Disposable` (#254); this one leaves them
+  /// open, so a teardown test sees only what the installers' own teardown
+  /// stops.
+  void harnessOwned(Object _) {}
+
   /// Registers what the session tier holds, less whatever a test leaves out.
   void register({
     bool queue = true,
@@ -73,22 +80,38 @@ void main() {
     bool events = true,
     bool eventRemote = true,
   }) {
-    if (queue) container.registerSingleton<SyncQueueRepository>(h.queue);
+    if (queue) {
+      container.registerSingleton<SyncQueueRepository>(
+        h.queue,
+        dispose: harnessOwned,
+      );
+    }
     if (households) {
-      container.registerSingleton<HouseholdRepository>(h.households);
+      container.registerSingleton<HouseholdRepository>(
+        h.households,
+        dispose: harnessOwned,
+      );
     }
     if (householdRemote) {
       container.registerSingleton<HouseholdRemoteDataSource>(h.householdRemote);
     }
     if (collection) {
-      container.registerSingleton<GameCollectionRepository>(h.collection);
+      container.registerSingleton<GameCollectionRepository>(
+        h.collection,
+        dispose: harnessOwned,
+      );
     }
     if (collectionRemote) {
       container.registerSingleton<GameCollectionRemoteDataSource>(
         h.collectionRemote,
       );
     }
-    if (events) container.registerSingleton<EventRepository>(h.events);
+    if (events) {
+      container.registerSingleton<EventRepository>(
+        h.events,
+        dispose: harnessOwned,
+      );
+    }
     if (eventRemote) {
       container.registerSingleton<EventRemoteDataSource>(h.eventRemote);
     }

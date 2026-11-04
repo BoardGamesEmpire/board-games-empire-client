@@ -91,6 +91,33 @@ class FailingUserInstaller implements UserScopeInstaller {
   }
 }
 
+/// A [Disposable] probe that counts its closes.
+class DisposableUserProbe implements Disposable {
+  var closes = 0;
+
+  @override
+  Future<void> onDispose() async {
+    closes++;
+  }
+}
+
+/// User installer registering a [DisposableUserProbe] with no `dispose:`,
+/// relying on the container to close it (#254).
+class NoCallbackUserInstaller implements UserScopeInstaller {
+  final probes = <DisposableUserProbe>[];
+
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ScopedServer server,
+    String userId,
+  ) async {
+    final probe = DisposableUserProbe();
+    probes.add(probe);
+    container.registerSingleton<DisposableUserProbe>(probe);
+  }
+}
+
 /// User installer that registers a probe whose teardown throws, then fails,
 /// so discarding the partial scope throws too.
 class TeardownThrowingFailingUserInstaller implements UserScopeInstaller {
@@ -337,6 +364,22 @@ void main() {
       expect(context.activeUserId, isNull);
       expect(base.probes.single.disposed, isFalse);
       expect(context.container.get<BaseProbe>(), same(base.probes.single));
+    });
+
+    test('a Disposable the user installer registers without a callback is '
+        'closed when the session ends', () async {
+      final installer = NoCallbackUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      addTearDown(context.dispose);
+      await context.activate();
+      await context.activateUserSession('user-a');
+
+      await context.deactivateUserSession();
+
+      expect(installer.probes.single.closes, 1);
     });
 
     test('is a no-op without an active session and is idempotent', () async {
