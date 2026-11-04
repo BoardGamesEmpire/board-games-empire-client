@@ -36,6 +36,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
 /// | [createEvent] | `POST /api/events` | `{ message, event }` |
 /// | [deleteEvent] | `DELETE /api/events/:id` | `{ message, event }`, not read |
+/// | [cancelEvent] | `POST /api/events/:id/cancel` | `{ message, event }` |
+/// | [reopenEvent] | `POST /api/events/:id/reopen` | `{ message, event }` |
+/// | [archiveEvent] | `POST /api/events/:id/archive` | `{ message, event }` |
+/// | [unarchiveEvent] | `POST /api/events/:id/unarchive` | `{ message, event }` |
 /// | [addOccurrence] | `POST /api/events/:id/occurrences` | `{ message, occurrence }` |
 /// | [updateOccurrence] | `PATCH /api/events/:id/occurrences/:oid` | `{ message, occurrence }` |
 /// | [confirmOccurrence] | `POST /api/events/:id/occurrences/:oid/confirm` | `{ message, occurrence }` |
@@ -178,10 +182,17 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// accepted after a re-read, so unlike [EventRemotePermanentException] it
 /// says the caller's picture is stale. A 400 without the envelope stays
 /// permanent, and so does the validation pipe's, whose message lists each
-/// value it refused: the same request is refused again. [deleteEvent] shares the classification, but the server never
-/// answers it 400.
+/// value it refused: the same request is refused again. [deleteEvent] shares
+/// the classification, but the server never answers it 400. The event status
+/// writes ([cancelEvent], [reopenEvent], [archiveEvent], [unarchiveEvent])
+/// share it too, and their enveloped 400 is a conflict with the event's status
+/// as it stands (#502). Unlike a date write's retry, a status write that finds
+/// the event already where it asks to go answers 200 with the event as it is,
+/// so a retry whose first answer was lost reads as done.
 ///
-/// The status routes answer 201 (backend#620), and any 2xx is a success.
+/// The date status routes ([confirmOccurrence], [declineOccurrence],
+/// [cancelOccurrence]) answer 201 (backend#620), and the event status writes
+/// answer 200. Any 2xx is a success.
 ///
 /// ### The poll's answers
 ///
@@ -211,9 +222,9 @@ abstract class EventRemoteDataSource {
   /// measured after it trims the key. A longer key is a 400.
   static const int maxClientRequestIdLength = 128;
 
-  /// The server's length ceiling for [cancelOccurrence]'s `reason`, in code
-  /// points, as its `MaxLength` counts them. A longer one is a 400, which is
-  /// permanent.
+  /// The server's length ceiling for [cancelOccurrence]'s and [cancelEvent]'s
+  /// `reason`, in code points, as its `MaxLength` counts them. A longer one is
+  /// a 400, which is permanent.
   static const int maxCancelReasonLength = 1000;
 
   /// `GET /api/events`: one page of the events the caller attends, newest
@@ -227,9 +238,13 @@ abstract class EventRemoteDataSource {
   /// A walk across pages is not one snapshot: an event that leaves the list
   /// between two requests shifts the rest up and can carry one past the
   /// boundary unseen. Only a first page with `hasMore: false` is complete.
+  ///
+  /// The list leaves archived events out unless [includeArchived] is true,
+  /// which sends `includeArchived=true`. It is sent only when true.
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
     int page = 1,
     int limit = maxPageSize,
+    bool includeArchived = false,
   });
 
   /// `GET /api/events/browse`: one page of the events the caller can read and
@@ -315,6 +330,49 @@ abstract class EventRemoteDataSource {
   /// An empty [id] throws [ArgumentError] before the request, as for
   /// [fetchEvent].
   Future<void> deleteEvent(String id);
+
+  /// `POST /api/events/:id/cancel`: cancels the event, and returns it as the
+  /// server holds it, with its `cancelReason` and `cancelledAt`. The event has
+  /// no dates in the answer.
+  ///
+  /// [reason] is trimmed, and one that is empty after trimming is not sent: the
+  /// body is `{}`. A reason longer than [maxCancelReasonLength] code points
+  /// after trimming throws [ArgumentError] before the request, because the
+  /// server's 400 for it is permanent.
+  ///
+  /// An event already cancelled, archived since or not, is answered 200 as it
+  /// stands, with the first cancel's reason and time kept, so a retry whose
+  /// first answer was lost reads as a cancel. A 400
+  /// ([EventWriteConflictException]) says the event is archived and not
+  /// cancelled: it has to be unarchived first. A 404 is
+  /// [EventRemoteNotFoundException], a 403 carrying the envelope is
+  /// [EventWriteRefusedException], and an empty [id] throws [ArgumentError].
+  Future<Event> cancelEvent(String id, {String? reason});
+
+  /// `POST /api/events/:id/reopen`: reopens a cancelled event, and returns it
+  /// as the server holds it.
+  ///
+  /// An event that isn't cancelled is answered 200 as it stands, so a retry
+  /// reads as a reopen. A 400 ([EventWriteConflictException]) says the event
+  /// is cancelled and archived: it has to be unarchived first. Other errors
+  /// read as for [cancelEvent].
+  Future<Event> reopenEvent(String id);
+
+  /// `POST /api/events/:id/archive`: archives a cancelled or completed event,
+  /// and returns it as the server holds it.
+  ///
+  /// An event already archived is answered 200 as it stands. A 400
+  /// ([EventWriteConflictException]) says the event is neither cancelled nor
+  /// completed, by the server's clock and the dates it holds. Other errors read
+  /// as for [cancelEvent].
+  Future<Event> archiveEvent(String id);
+
+  /// `POST /api/events/:id/unarchive`: brings an archived event back, and
+  /// returns it as the server holds it, still cancelled if it was.
+  ///
+  /// An event that isn't archived is answered 200 as it stands, and the server
+  /// never answers this route 400. Other errors read as for [cancelEvent].
+  Future<Event> unarchiveEvent(String id);
 
   /// `POST /api/events/:eventId/occurrences`: adds [draft] as a date of the
   /// event, at position [sortOrder], and returns it as the server holds it.

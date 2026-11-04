@@ -38,7 +38,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
     int page = 1,
     int limit = EventRemoteDataSource.maxPageSize,
-  }) => _fetchList(_basePath, page: page, limit: limit, action: 'Event list');
+    bool includeArchived = false,
+  }) => _fetchList(
+    _basePath,
+    page: page,
+    limit: limit,
+    action: 'Event list',
+    includeArchived: includeArchived,
+  );
 
   @override
   Future<PaginatedResult<EventSnapshot>> browseEvents({
@@ -57,6 +64,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required int page,
     required int limit,
     required String action,
+    bool includeArchived = false,
   }) async {
     _checkPaging(page: page, limit: limit);
 
@@ -64,7 +72,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       request: () => _dio.get<String>(
         path,
         options: _plainBody,
-        queryParameters: {'page': page, 'limit': limit},
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          if (includeArchived) 'includeArchived': true,
+        },
       ),
       action: action,
       // A list route is never absent for a caller who reached it: no events is
@@ -156,6 +168,74 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<Event> cancelEvent(String id, {String? reason}) async {
+    _checkId(id);
+    final trimmed = _checkedReason(reason);
+
+    return _writeEvent(
+      'Event cancel',
+      '${_pathOf(id)}/cancel',
+      data: {if (trimmed != null && trimmed.isNotEmpty) 'reason': trimmed},
+    );
+  }
+
+  @override
+  Future<Event> reopenEvent(String id) async {
+    _checkId(id);
+    return _writeEvent('Event reopen', '${_pathOf(id)}/reopen');
+  }
+
+  @override
+  Future<Event> archiveEvent(String id) async {
+    _checkId(id);
+    return _writeEvent('Event archive', '${_pathOf(id)}/archive');
+  }
+
+  @override
+  Future<Event> unarchiveEvent(String id) async {
+    _checkId(id);
+    return _writeEvent('Event unarchive', '${_pathOf(id)}/unarchive');
+  }
+
+  /// A status write to one event: a POST to [path] that answers
+  /// `{ message, event }`, where the event carries its status and no dates.
+  Future<Event> _writeEvent(
+    String action,
+    String path, {
+    Map<String, dynamic>? data,
+  }) async {
+    final response = await _send(
+      request: () => _dio.post<String>(path, options: _plainBody, data: data),
+      action: action,
+      // The path names one event, and the call is a write to it.
+      route: _Route.write,
+    );
+    return _parse(
+      () => _mapEvent(_eventObject(response.body)),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  /// [reason] trimmed, or null when none was given. A reason past the server's
+  /// ceiling, in code points, throws before anything is sent.
+  static String? _checkedReason(String? reason) {
+    final trimmed = reason?.trim();
+    if (trimmed != null &&
+        trimmed.runes.length > EventRemoteDataSource.maxCancelReasonLength) {
+      // The server's 400 for this is permanent, so it is not sent.
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'must be at most ${EventRemoteDataSource.maxCancelReasonLength} '
+            'characters after trimming (the server rejects anything longer '
+            'with a 400)',
+      );
+    }
+    return trimmed;
+  }
+
+  @override
   Future<EventOccurrence> addOccurrence(
     String eventId,
     EventOccurrenceDraft draft, {
@@ -233,18 +313,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String? reason,
   }) async {
     _checkOccurrenceIds(eventId, occurrenceId);
-    final trimmed = reason?.trim();
-    if (trimmed != null &&
-        trimmed.runes.length > EventRemoteDataSource.maxCancelReasonLength) {
-      // The server's 400 for this is permanent, so it is not sent.
-      throw ArgumentError.value(
-        reason,
-        'reason',
-        'must be at most ${EventRemoteDataSource.maxCancelReasonLength} '
-            'characters after trimming (the server rejects anything longer '
-            'with a 400)',
-      );
-    }
+    final trimmed = _checkedReason(reason);
 
     return _writeOccurrence(
       'Date cancel',
@@ -969,8 +1038,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         apiErrorField(body, 'message') != null) {
       // The server judged a write against the row as it stands now, in one
       // message. The validation pipe's 400 lists one per value it refused,
-      // and falls to permanent below: the same request is refused again. The
-      // event delete shares this route, but the server never answers it 400.
+      // and falls to permanent below: the same request is refused again.
+      // The event delete shares this route, and the server never answers it
+      // 400. The event status writes share it too, and their 400 is a
+      // conflict with the event's status as it stands.
       return EventWriteConflictException(
         message,
         cause: cause,
@@ -1021,10 +1092,11 @@ enum _Route {
   /// `POST /api/events`, whose 403 and 404 refuse that create.
   create,
 
-  /// A write to one event or to one of its dates: `DELETE /api/events/:id`
-  /// and the date routes under it, a vote included. Its 403 refuses that
-  /// write, its 404 says the event or date is gone, and its enveloped 400 with
-  /// one message is a conflict with the row as it stands (#506). The event
-  /// delete is never answered 400.
+  /// A write to one event or to one of its dates: `DELETE /api/events/:id`,
+  /// the event status writes (`cancel`, `reopen`, `archive`, `unarchive`) and
+  /// the date routes under it, a vote included. Its 403 refuses that write, its
+  /// 404 says the event or date is gone, and its enveloped 400 with one message
+  /// is a conflict with the row as it stands (#506), for a status write the
+  /// event's status. The event delete is never answered 400.
   write,
 }

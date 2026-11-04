@@ -607,6 +607,20 @@ void main() {
       expect(adapter.sent.single.query, {'page': 2, 'limit': 50});
     });
 
+    test('sends includeArchived only when asked', () async {
+      final remote = answering(_listBody([]));
+
+      await remote.fetchEvents();
+      await remote.fetchEvents(includeArchived: true);
+
+      expect(adapter.sent[0].query, {'page': 1, 'limit': 100});
+      expect(adapter.sent[1].query, {
+        'page': 1,
+        'limit': 100,
+        'includeArchived': true,
+      });
+    });
+
     test('defaults to the first page at the largest size', () async {
       final remote = answering(_listBody([]));
 
@@ -1754,6 +1768,121 @@ void main() {
       await expectLater(
         remote.deleteEvent('ev_1'),
         throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+  });
+
+  group('status writes (#502)', () {
+    String statusBody(String status) =>
+        jsonEncode({'message': 'ok', 'event': _eventRow(status: status)});
+
+    final calls =
+        <String, (String, Future<Event> Function(EventRemoteDataSource))>{
+          'cancel': ('Cancelled', (r) => r.cancelEvent('ev 1')),
+          'reopen': ('Scheduled', (r) => r.reopenEvent('ev 1')),
+          'archive': ('Archived', (r) => r.archiveEvent('ev 1')),
+          'unarchive': ('Scheduled', (r) => r.unarchiveEvent('ev 1')),
+        };
+
+    for (final entry in calls.entries) {
+      test('${entry.key}Event POSTs /api/events/:id/${entry.key} and returns '
+          'the event', () async {
+        final remote = answering(statusBody(entry.value.$1));
+
+        final event = await entry.value.$2(remote);
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(adapter.sent.single.path, '/api/events/ev%201/${entry.key}');
+        expect(event.id, 'ev_1');
+        expect(
+          event.status,
+          EventStatus.values.byName(entry.value.$1.toLowerCase()),
+        );
+      });
+    }
+
+    test(
+      'cancelEvent sends the trimmed reason, and {} when it is blank',
+      () async {
+        final remote = answering(statusBody('Cancelled'));
+
+        await remote.cancelEvent('ev_1', reason: '  Rain  ');
+        await remote.cancelEvent('ev_1', reason: '   ');
+        await remote.cancelEvent('ev_1');
+
+        expect(adapter.sent[0].body, {'reason': 'Rain'});
+        expect(adapter.sent[1].body, <String, dynamic>{});
+        expect(adapter.sent[2].body, <String, dynamic>{});
+      },
+    );
+
+    test(
+      'cancelEvent takes 1000 emoji and refuses 1001 before sending',
+      () async {
+        final remote = answering(statusBody('Cancelled'));
+
+        await remote.cancelEvent('ev_1', reason: '😀' * 1000);
+        expect(adapter.sent.single.body, {'reason': '😀' * 1000});
+
+        await expectLater(
+          remote.cancelEvent('ev_1', reason: '😀' * 1001),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, hasLength(1));
+      },
+    );
+
+    test('an empty id is refused before sending', () async {
+      final remote = answering(statusBody('Archived'));
+
+      await expectLater(remote.archiveEvent(''), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a 400 is EventWriteConflictException', () async {
+      // An archive of an event that is neither cancelled nor over. A repeat
+      // archive is answered 200, not this.
+      const notArchivable =
+          'Only a cancelled event, or one whose dates have all passed, can be '
+          'archived.';
+      final remote = answering(
+        _envelope(400, 'Bad Request', notArchivable),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.archiveEvent('ev_1'),
+        throwsA(
+          isA<EventWriteConflictException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            notArchivable,
+          ),
+        ),
+      );
+    });
+
+    test('a 404 is EventRemoteNotFoundException', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Event not found'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.archiveEvent('ev_1'),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test('a 403 envelope is EventWriteRefusedException', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'You may not archive this event.'),
+        status: 403,
+      );
+
+      await expectLater(
+        remote.archiveEvent('ev_1'),
+        throwsA(isA<EventWriteRefusedException>()),
       );
     });
   });

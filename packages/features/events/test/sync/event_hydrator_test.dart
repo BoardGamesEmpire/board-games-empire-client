@@ -203,6 +203,22 @@ void main() {
       },
     );
 
+    test('asks for archived events too', () async {
+      final remote = FakeEventRemote.pages([
+        _page([_row('e-2', 20)], limit: 1, total: 2, hasMore: true),
+        _page([_row('e-1', 10)], page: 2, limit: 1, total: 2),
+      ]);
+
+      await EventHydrator(
+        repository: repository,
+        remote: remote,
+        limit: 1,
+      ).hydrate();
+
+      expect(remote.requests, hasLength(2));
+      expect(remote.includeArchivedRequests, [true, true]);
+    });
+
     test('several pages: caches every page and purges only within page 1\'s '
         'range', () async {
       // Page 1 ends on e-5, created at minute 50.

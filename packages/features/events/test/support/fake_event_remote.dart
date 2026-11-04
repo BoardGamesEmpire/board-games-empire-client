@@ -22,6 +22,11 @@ typedef EventDateRequest = ({
   String? reason,
 });
 
+/// What an event status write sent (#502): its `call`, one of `cancel`,
+/// `reopen`, `archive` and `unarchive`, the event it named, and the reason a
+/// cancel carried.
+typedef EventStatusRequest = ({String call, String id, String? reason});
+
 /// What a vote sent (#507): the event, the date, and the answer.
 typedef EventVoteRequest = ({
   String eventId,
@@ -56,6 +61,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.dateWritten = _noDateWrite,
     this.voted = _noVote,
     this.summary = _noSummary,
+    this.statusWritten = _noStatusWrite,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -69,6 +75,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.dateWritten = _noDateWrite,
     this.voted = _noVote,
     this.summary = _noSummary,
+    this.statusWritten = _noStatusWrite,
   }) : respond = ((request) {
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
@@ -84,6 +91,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.dateWritten = _noDateWrite,
     this.voted = _noVote,
     this.summary = _noSummary,
+    this.statusWritten = _noStatusWrite,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -94,6 +102,9 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noDateWrite(EventDateRequest request) =>
       throw UnimplementedError('the date ${request.call} is not faked');
+
+  static Never _noStatusWrite(EventStatusRequest request) =>
+      throw UnimplementedError('the event ${request.call} is not faked');
 
   static Never _noVote(EventVoteRequest request) =>
       throw UnimplementedError('submitAvailability is not faked');
@@ -133,7 +144,18 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// supplies one.
   final FutureOr<AvailabilitySummary> Function(String eventId) summary;
 
+  /// Answers each event status write with the event as the server holds it
+  /// after, or throws what a test supplies. It throws unless a test supplies
+  /// one (#502).
+  final FutureOr<Event> Function(EventStatusRequest request) statusWritten;
+
   final List<EventListRequest> requests = [];
+
+  /// The `includeArchived` of each list read, in order, beside [requests].
+  final List<bool> includeArchivedRequests = [];
+
+  /// Each event status write, in order, recorded before it is answered.
+  final List<EventStatusRequest> statusRequests = [];
 
   /// Answers each browse read, which throws unless a test supplies one (#613).
   FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)?
@@ -165,6 +187,7 @@ class FakeEventRemote implements EventRemoteDataSource {
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
     int page = 1,
     int limit = EventRemoteDataSource.maxPageSize,
+    bool includeArchived = false,
   }) async {
     final respond = this.respond;
     if (respond == null) {
@@ -172,6 +195,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     }
     final request = (page: page, limit: limit);
     requests.add(request);
+    includeArchivedRequests.add(includeArchived);
     return respond(request);
   }
 
@@ -212,6 +236,26 @@ class FakeEventRemote implements EventRemoteDataSource {
   Future<void> deleteEvent(String id) async {
     deleteRequests.add(id);
     return deleted(id);
+  }
+
+  @override
+  Future<Event> cancelEvent(String id, {String? reason}) =>
+      _writeStatus('cancel', id, reason: reason);
+
+  @override
+  Future<Event> reopenEvent(String id) => _writeStatus('reopen', id);
+
+  @override
+  Future<Event> archiveEvent(String id) => _writeStatus('archive', id);
+
+  @override
+  Future<Event> unarchiveEvent(String id) => _writeStatus('unarchive', id);
+
+  /// Records one event status write, then answers it from [statusWritten].
+  Future<Event> _writeStatus(String call, String id, {String? reason}) async {
+    final request = (call: call, id: id, reason: reason);
+    statusRequests.add(request);
+    return statusWritten(request);
   }
 
   @override
