@@ -469,6 +469,92 @@ void main() {
       expectFocusOn(tester, 'Dismiss');
     });
 
+    testWidgets('with the outcome dismissed before the next frame, focus goes '
+        'to the row, not the Dismiss that frame takes away', (tester) async {
+      remote
+        ..listing([bgg, steam])
+        ..onDisconnect = (_) async => throw unreachable();
+      await pumpScreen(tester, onOpen: (_, _) {});
+      await choose(tester, 'dg_1', DataGatewayListScreen.disconnectKey);
+      expect(find.byKey(DataGatewayListScreen.outcomeKey), findsOneWidget);
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // The answer reaches the screen, and a click dismisses the banner
+      // before the frame that takes the menus away. A click focuses nothing.
+      access.current = mayOnlyAdd;
+      await tester.binding.delayed(Duration.zero);
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListOutcomeDismissed());
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.outcomeKey), findsNothing);
+      expectFocusOn(tester, 'Steam');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when a read '
+        'refused under access that has just fallen takes the list away', (
+      tester,
+    ) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // The answer that takes the menus away lands, and the read out at the
+      // time is refused before the next frame.
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      await tester.binding.delayed(Duration.zero);
+      remote.refusingReads();
+      reread.completeError(forbidden());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayListScreen.deniedKey), findsOneWidget);
+      expectFocusOn(tester, 'Data gateways');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when the read '
+        'that takes the menus away moves its row out of view', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // A read lands under access that has just fallen, with rows enough
+      // above Steam to take it out of the built range.
+      final above = [
+        for (var i = 0; i < 40; i++) gateway('dg_new_$i', name: 'New $i'),
+      ];
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      reread.complete(pageOf([bgg, ...above, steam]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Steam', skipOffstage: false), findsNothing);
+      expectFocusOn(tester, 'Data gateways');
+
+      // Steam coming back into view doesn't take focus either.
+      await tester.scrollUntilVisible(find.text('Steam'), 200);
+      await tester.pumpAndSettle();
+      expectFocusOn(tester, 'Data gateways');
+    });
+
     testWidgets('focus on a control that stays is left where it is', (
       tester,
     ) async {

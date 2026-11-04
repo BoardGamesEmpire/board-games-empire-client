@@ -209,11 +209,13 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
   /// any time, whenever the session asks again, so it goes somewhere chosen:
   ///
   /// - the banner's Dismiss, while an outcome shows, as on the detail screen;
-  /// - else from a row's menu to its own row, when rows open: the stop just
-  ///   before the menu, on the DataGateway the user was at;
+  /// - else from a row's menu to its own row, when rows open and the row is
+  ///   still built: the stop just before the menu, on the DataGateway the
+  ///   user was at;
   /// - else to the page's heading, which is always there, with rows that
-  ///   don't open and with none at all. The next Tab goes on from the top of
-  ///   the page, to whatever control is left.
+  ///   don't open and with none at all, and once a read refused or failed
+  ///   meanwhile has taken the list away. The next Tab goes on from the top
+  ///   of the page, to whatever control is left.
   ///
   /// Runs before the frame that takes the control away, while it still has
   /// focus, and hands it on after that frame. Not if the user has moved focus
@@ -234,14 +236,24 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
       final now = bloc.state;
-      final stillGone =
-          now is DataGatewayListReady &&
-          (addGoes ? !now.mayCreate : !_offersMenus(now));
-      if (!stillGone) return;
-      // The row is looked up now: the state that took the menu away may have
-      // taken its row too, and [_forgetRowsGone] has dropped its node.
-      final ownRow = ownRowId == null ? null : _rows[ownRowId];
-      final target = state.outcome != null ? _dismiss : ownRow ?? _heading;
+      final FocusNode target;
+      if (now is DataGatewayListReady) {
+        if (addGoes ? now.mayCreate : _offersMenus(now)) return;
+        // The banner and the row are looked up now, as that frame built them.
+        // It may have dismissed the banner, or taken the row away, and
+        // [_forgetRowsGone] has dropped its node. Or it left the row listed
+        // but out of the built range, where its node would take focus only
+        // once the row is built again.
+        final ownRow = ownRowId == null ? null : _rows[ownRowId];
+        target = now.outcome != null
+            ? _dismiss
+            : ownRow?.parent != null
+            ? ownRow!
+            : _heading;
+      } else {
+        // A read refused or failed meanwhile: the list offers nothing.
+        target = _heading;
+      }
       target.requestFocus();
       if (FocusManager.instance.highlightMode ==
           FocusHighlightMode.traditional) {

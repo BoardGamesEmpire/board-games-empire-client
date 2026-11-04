@@ -790,18 +790,24 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
         : widget.controls.hasFocus;
     if (!hadFocus) return;
     final onInterview = widget.interview.hasFocus;
-    final banner = state.outcome != null;
     final focused = FocusManager.instance.primaryFocus;
     final bloc = context.read<DataGatewayDetailBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
+      // What that frame built: the control may be offered again, and the
+      // banner may have been dismissed.
       final now = bloc.state;
+      // A switch is back only taking presses, as [_CapabilitiesSection] has
+      // it: an interview stops it, and it gives up focus.
       final back =
           now is DataGatewayDetailReady &&
           now.mayUpdate &&
-          (!onInterview || now.gateway.enabled);
+          (onInterview
+              ? now.gateway.enabled
+              : now.busy != DataGatewayDetailBusy.interview &&
+                    !now.interviewWaiting);
       if (back) return;
-      if (banner) {
+      if (now is DataGatewayDetailReady && now.outcome != null) {
         _focusDismiss();
       } else {
         final next = widget.controls.traversalDescendants.firstOrNull;

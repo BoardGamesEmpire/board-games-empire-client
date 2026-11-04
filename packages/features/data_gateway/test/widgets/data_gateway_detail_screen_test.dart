@@ -587,6 +587,66 @@ void main() {
       expect(focusIsIn(tester, refreshButton), isTrue);
     });
 
+    testWidgets('with the outcome dismissed before the next frame, focus goes '
+        'on past the Dismiss that frame takes away', (tester) async {
+      remote.onFetchOne = (_) async => row();
+      remote.onInterview = (_) async => throw forbidden();
+      await pumpScreen(tester);
+      await focusOn(tester, textIn(interviewButton, 'Interview again'));
+      await pressKey(tester);
+      await tester.pumpAndSettle();
+      expect(banner, findsOneWidget);
+      expect(focusIsIn(tester, interviewButton), isTrue);
+
+      // The answer reaches the screen, and a click dismisses the banner
+      // before the frame that takes the button away. A click focuses nothing.
+      access.current = readOnly;
+      await tester.binding.delayed(Duration.zero);
+      tester
+          .element(interviewButton)
+          .read<DataGatewayDetailBloc>()
+          .add(const DataGatewayDetailOutcomeDismissed());
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(banner, findsNothing);
+      expect(interviewButton, findsNothing);
+      expect(focusIsIn(tester, refreshButton), isTrue);
+    });
+
+    testWidgets('a focused switch moves on when update falls and comes back '
+        'before the next frame with an interview started, which stops it', (
+      tester,
+    ) async {
+      final mayUpdate = access.current;
+      final interview = Completer<DataGatewayInterviewResult>();
+      remote.onFetchOne = (_) async => row();
+      remote.onInterview = (_) => interview.future;
+      await pumpScreen(tester);
+      await tester.ensureVisible(capability(search));
+      await tester.pumpAndSettle();
+      await focusOn(tester, textIn(capability(search), 'Search'));
+
+      // Each answer reaches the screen, and a click on Interview again
+      // lands, but no frame is drawn between them. A click focuses nothing.
+      final bloc = tester
+          .element(interviewButton)
+          .read<DataGatewayDetailBloc>();
+      access.current = readOnly;
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayUpdate;
+      await tester.binding.delayed(Duration.zero);
+      bloc.add(const DataGatewayDetailInterviewRequested());
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(tile(tester, search).onChanged, isNull);
+      expect(focusIsIn(tester, interviewButton), isTrue);
+
+      interview.complete(answered(row()));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('interview again shows busy, then the banner', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
       remote.onFetchOne = (_) async => row();
