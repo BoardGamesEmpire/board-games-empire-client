@@ -128,7 +128,8 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(EventOverviewScreen.loadingKey), findsNothing);
-    for (final group in EventGroup.values) {
+    // The fixture holds no archived event, and an empty group is skipped.
+    for (final group in EventGroup.values.where((g) => g != .archived)) {
       expect(find.byKey(EventOverviewScreen.groupKey(group)), findsOneWidget);
     }
     // The groups are slivers, so their headings are what is measured.
@@ -278,7 +279,7 @@ void main() {
       await showAll(tester);
 
       final colours = [
-        for (final group in EventGroup.values)
+        for (final group in EventGroup.values.where((g) => g != .archived))
           ((tester
                               .widget<DecoratedSliver>(
                                 find.descendant(

@@ -107,6 +107,33 @@ void main() {
     });
   });
 
+  group('wasCancelled', () {
+    final at = DateTime.utc(2026, 11, 1);
+
+    test('a cancelled event was', () {
+      expect(wasCancelled(eventWith(EventStatus.cancelled)), isTrue);
+    });
+
+    test('an archived event was when the archive kept a cancel', () {
+      final archived = eventWith(EventStatus.archived);
+      expect(wasCancelled(archived.copyWith(cancelledAt: at)), isTrue);
+      expect(wasCancelled(archived), isFalse);
+    });
+
+    test('no other status was, whatever the event carries', () {
+      for (final status in EventStatus.values) {
+        if (status == EventStatus.cancelled || status == EventStatus.archived) {
+          continue;
+        }
+        expect(
+          wasCancelled(eventWith(status).copyWith(cancelledAt: at)),
+          isFalse,
+          reason: status.name,
+        );
+      }
+    });
+  });
+
   group('nextDetailBoundary', () {
     DateTime? next(
       List<EventOccurrence> dates,

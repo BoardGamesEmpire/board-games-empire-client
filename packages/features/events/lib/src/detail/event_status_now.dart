@@ -29,6 +29,16 @@ EventStatus eventStatusAt(
   return now.isBefore(span.end) ? EventStatus.ongoing : EventStatus.completed;
 }
 
+/// Whether [event] says it was cancelled (#502): it is, or it was cancelled
+/// before it was archived. The server's archive keeps the cancel's time and
+/// reason, so the overview's row and the detail's header both say so of an
+/// archived event that has them.
+bool wasCancelled(Event event) => switch (event.status) {
+  EventStatus.cancelled => true,
+  EventStatus.archived => event.cancelledAt != null,
+  _ => false,
+};
+
 /// The first instant after [now] at which the detail has to be built again
 /// (#502, #655): the earliest of the next start and the next end when
 /// [eventStatusAt] is worked out from the dates, and of the moment each

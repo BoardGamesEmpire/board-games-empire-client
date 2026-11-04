@@ -16,6 +16,10 @@
   "@eventsGroupPast": {
     "description": "Heading of the group of events whose every date is over, most recent first. Also the title of the page listing the whole group."
   },
+  "eventsGroupArchived": "Archived",
+  "@eventsGroupArchived": {
+    "description": "Heading of the group of events the host has archived, latest date first. Also the title of the page listing the whole group."
+  },
   "eventsGroupSeeAll": "See all ({count})",
   "@eventsGroupSeeAll": {
     "description": "Button beside a group's heading on the events overview, which shows only the first few events of each group. It opens a page listing every event in the group; the number is how many events the group holds. Screen readers hear eventsGroupSeeAllSpoken instead.",

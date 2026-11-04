@@ -92,4 +92,5 @@ String eventGroupName(EventsLocalizations l10n, EventGroup group) =>
       EventGroup.upcoming => l10n.eventsGroupUpcoming,
       EventGroup.planning => l10n.eventsGroupPlanning,
       EventGroup.past => l10n.eventsGroupPast,
+      EventGroup.archived => l10n.eventsGroupArchived,
     };
