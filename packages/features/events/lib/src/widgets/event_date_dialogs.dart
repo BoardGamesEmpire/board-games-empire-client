@@ -9,7 +9,7 @@ import 'package:events/l10n/events_localizations.dart';
 
 import '../create/event_create_controls.dart';
 import 'cancel_reason_dialog.dart';
-import 'destructive_button_style.dart';
+import 'confirm_dialog.dart';
 import 'event_labels.dart';
 import 'event_when_field.dart';
 
@@ -154,46 +154,27 @@ Future<bool> showRemoveDateDialog(BuildContext context, String dateName) {
   );
 }
 
-/// A dialog that asks whether to go ahead, and answers whether the user
-/// did. Keep date, not Cancel: cancelling a date is one of the things these
-/// dialogs ask about. A [destructive] action is drawn in the error colour,
-/// as Delete's is.
+/// [showConfirmDialog] with the date dialogs' keys. Keep date, not Cancel:
+/// cancelling a date is one of the things these dialogs ask about.
 Future<bool> _ask(
   BuildContext context, {
   required String title,
   required String body,
   required String action,
   bool destructive = false,
-}) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) {
-      final l10n = EventsLocalizations.of(dialogContext);
-      return AlertDialog(
-        scrollable: true,
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            key: EventDateDialogKeys.dismiss,
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.eventsDateKeep),
-          ),
-          TextButton(
-            key: EventDateDialogKeys.submit,
-            style: destructive ? destructiveButtonStyle(dialogContext) : null,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(action),
-          ),
-        ],
-      );
-    },
-  );
-  return confirmed ?? false;
-}
+}) => showConfirmDialog(
+  context,
+  title: title,
+  body: body,
+  keepLabel: EventsLocalizations.of(context).eventsDateKeep,
+  confirmLabel: action,
+  destructive: destructive,
+  keepKey: EventDateDialogKeys.dismiss,
+  confirmKey: EventDateDialogKeys.submit,
+);
 
-/// The confirm dialog, for [showConfirmDateDialog]: [_ask]'s, with the
-/// checkbox where it is offered.
+/// The confirm dialog, for [showConfirmDateDialog]: [showConfirmDialog]'s,
+/// with the checkbox where it is offered.
 class _ConfirmDialog extends StatefulWidget {
   const _ConfirmDialog({
     required this.dateName,

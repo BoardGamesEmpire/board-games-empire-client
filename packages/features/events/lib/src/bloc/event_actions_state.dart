@@ -63,6 +63,7 @@ final class EventActionOutcome extends Equatable {
     required this.result,
     this.error,
     this.statusWrite,
+    this.dropped = false,
   });
 
   final EventAction action;
@@ -77,6 +78,14 @@ final class EventActionOutcome extends Equatable {
   /// its remove went out, and when a confirm's first missed decline stopped
   /// before it went out.
   final Object? error;
+
+  /// Whether the screen dropped the write without sending it (#502, #655).
+  /// Once its dialog closed, the event no longer offered it: a sync changed
+  /// the event or the viewer's role, or a date passed. Its result is
+  /// [EventActionResult.changed], as the server's 400 for a write the event
+  /// has moved past is, so it says so in the same words. Nothing reached the
+  /// server.
+  final bool dropped;
 
   /// Whether the detail should be read again.
   ///
@@ -97,6 +106,9 @@ final class EventActionOutcome extends Equatable {
   /// changed read again. A done cancel changed the dates it called off, and
   /// the read brings them. Changed is a 400 from a status that moved since
   /// it was read, and the read shows the status as it now stands.
+  ///
+  /// A write the screen dropped isn't read again: the page it was checked
+  /// against is the event as the cache now holds it.
   ///
   /// A failure before the request went out, from a session that no longer
   /// matches or a cache that could not be read, has no error and isn't read
@@ -125,14 +137,13 @@ final class EventActionOutcome extends Equatable {
                 error is! EventRemoteTransientException),
       EventActionResult.done ||
       EventActionResult.gone => action != EventAction.delete,
-      EventActionResult.refused ||
-      EventActionResult.changed ||
-      EventActionResult.partlyDone => true,
+      EventActionResult.changed => !dropped,
+      EventActionResult.refused || EventActionResult.partlyDone => true,
     };
   }
 
   @override
-  List<Object?> get props => [action, result, error, statusWrite];
+  List<Object?> get props => [action, result, error, statusWrite, dropped];
 }
 
 /// The actions on one event detail screen (#501).

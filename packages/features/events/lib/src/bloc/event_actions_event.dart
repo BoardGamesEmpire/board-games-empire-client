@@ -2,6 +2,9 @@ import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../detail/event_actions.dart';
+import 'event_actions_state.dart';
+
 /// Input to the actions on an event's detail screen: the delete (#501), the
 /// date writes (#506) and the event's status writes (#502).
 sealed class EventActionsEvent extends Equatable {
@@ -175,6 +178,27 @@ final class EventUnarchiveRequested extends EventActionsEvent {
 
   @override
   List<Object?> get props => [eventId];
+}
+
+/// The screen dropped a write of [action] once its dialog closed, because
+/// the event no longer offered it (#502, #655), and nothing was sent. Its
+/// banner says the event changed, as a 400 for it would, so a screen reader
+/// hears why nothing happened. [statusWrite] says which, for the four that
+/// change the event's own status.
+final class EventWriteDropped extends EventActionsEvent {
+  /// Drops a date write.
+  const EventWriteDropped(this.action) : statusWrite = null;
+
+  /// Drops [write], under the action whose grant it needs.
+  EventWriteDropped.status(EventStatusWrite write)
+    : action = write.action,
+      statusWrite = write;
+
+  final EventAction action;
+  final EventStatusWrite? statusWrite;
+
+  @override
+  List<Object?> get props => [action, statusWrite];
 }
 
 /// The person closed the last action's banner.

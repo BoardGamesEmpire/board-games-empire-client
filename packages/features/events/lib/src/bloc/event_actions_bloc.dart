@@ -231,6 +231,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     on<EventReopenRequested>(_onReopenRequested);
     on<EventArchiveRequested>(_onArchiveRequested);
     on<EventUnarchiveRequested>(_onUnarchiveRequested);
+    on<EventWriteDropped>(_onWriteDropped);
     on<EventActionOutcomeDismissed>(_onOutcomeDismissed);
   }
 
@@ -662,6 +663,25 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Says a write was dropped before it was sent (#502, #655). While a
+  /// request is out its own outcome is on the way, and says what happened.
+  void _onWriteDropped(
+    EventWriteDropped event,
+    Emitter<EventActionsState> emit,
+  ) {
+    if (state.busy) return;
+    emit(
+      EventActionsState(
+        outcome: EventActionOutcome(
+          action: event.action,
+          result: EventActionResult.changed,
+          statusWrite: event.statusWrite,
+          dropped: true,
+        ),
+      ),
+    );
   }
 
   void _onOutcomeDismissed(

@@ -70,6 +70,22 @@ const _pollLoadFailedCopy = "Couldn't load the poll's answers.";
 const _pollHiddenCopy = "You can't see this poll's answers.";
 const _pollNotCountingCopy =
     "Your answers don't count while you're not attending.";
+const _cancelBodyCopy =
+    'Everyone on the event is told, with your reason if you give one. You '
+    'can reopen it later.';
+const _reopenBodyCopy =
+    'Everyone on the event is told. Dates cancelled with it stay cancelled.';
+const _cancelledNoteCopy = 'This event was cancelled.';
+const _statusGoneCopy = 'This event was deleted.';
+const _statusRefusedCopy = "You can't change this event's status any more.";
+const _statusChangedCopy =
+    'This event changed before that went through. Check it below before '
+    'trying again.';
+const _statusFailedCopy =
+    "An error occurred, and the event's status may not have changed. You may "
+    'need to try again.';
+const _statusFailedUnexpectedCopy =
+    "Something went wrong, and the event's status didn't change.";
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -154,11 +170,16 @@ EventAttendee _guest(String id, String name) => EventAttendee(
 EventAttendee _attending(EventRole? role) =>
     attendance(EventParticipationStatus.attending).copyWith(role: role);
 
+/// A confirmed date of `e-1` ahead of the test's clock, so that the event
+/// reads Scheduled: the screen works the status out from the dates (#502).
+EventOccurrence _ahead() =>
+    confirmed('o-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1');
+
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
 /// header, the dates, who's coming and the games, and the refresh banner it
 /// shares with the overview. Then Delete (#501), from the menu to the screen
-/// leaving, the dates' menus and dialogs (#506), and the poll on the dates
-/// (#507).
+/// leaving, the event's status writes (#502), the dates' menus and dialogs
+/// (#506), and the poll on the dates (#507).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -341,6 +362,7 @@ void main() {
             url: link,
             description: 'Bring snacks.',
           ),
+          occurrences: [_ahead()],
         ),
         households: Stream.value([_household('h-1', 'The Smiths')]),
       );
@@ -370,7 +392,7 @@ void main() {
     testWidgets('reads type and status with a pause, not the symbol', (
       tester,
     ) async {
-      await show(tester, _detail());
+      await show(tester, _detail(occurrences: [_ahead()]));
 
       expect(
         tester.getSemantics(find.text('Strategy night · Scheduled')).label,
@@ -384,12 +406,21 @@ void main() {
         tester,
         _detail(
           event: _event(type: EventType.unknown, reach: Reach.unknown),
+          occurrences: [_ahead()],
           attendance: _attending(EventRole.unknown),
         ),
       );
 
       expect(find.text('Scheduled'), findsOneWidget);
-      expect(find.textContaining('·'), findsNothing);
+      // The only separator is the date's own, under the dates.
+      expect(find.textContaining('·'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.datesKey),
+          matching: find.textContaining('·'),
+        ),
+        findsOneWidget,
+      );
       for (final reach in ['Friends', 'Friends of friends', 'Private']) {
         expect(find.text(reach), findsNothing);
       }
@@ -970,10 +1001,11 @@ void main() {
       expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
     });
 
-    testWidgets("a household admin who doesn't host gets no menu", (
+    testWidgets("a household admin who doesn't host gets no Delete", (
       tester,
     ) async {
-      // An owner or admin deletes only an event they host.
+      // An owner or admin deletes only an event they host. They may cancel
+      // it, so the menu is there for that (#502).
       await show(
         tester,
         _detail(
@@ -985,8 +1017,10 @@ void main() {
         onBack: back,
       );
       await settle(tester);
+      await openMenu(tester);
 
-      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+      expect(find.byKey(EventDetailScreen.cancelKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.deleteKey), findsNothing);
     });
 
     testWidgets('no remote, no menu', (tester) async {
@@ -1496,6 +1530,822 @@ void main() {
         tester.getRect(find.byKey(EventDetailScreen.deleteConfirmKey)).bottom,
         lessThanOrEqualTo(640),
       );
+    });
+  });
+
+  group('status writes', () {
+    var backs = 0;
+
+    /// What the cache holds: the detail a test shows, then each status
+    /// write's row over it.
+    late EventDetail cached;
+
+    setUpAll(() => registerFallbackValue(_event()));
+
+    setUp(() {
+      backs = 0;
+      // The row alone, beside the cached dates and roster, and the watch
+      // delivers it, as the repository does (#502).
+      when(() => repository.cacheEventRow(any()))
+          .thenAnswer((invocation) async {
+            final row = invocation.positionalArguments.single as Event;
+            cached = EventDetail(
+              snapshot: EventSnapshot(
+                event: row,
+                occurrences: cached.snapshot.occurrences,
+                attendees: cached.snapshot.attendees,
+              ),
+              attendance: cached.attendance,
+            );
+            cache.add(cached);
+            return true;
+          });
+    });
+
+    /// The way back, which records the call: no status write leaves.
+    void back(BuildContext _) => backs++;
+
+    /// The date of `e-1` on the evening of [day] of [month].
+    EventOccurrence dated(
+      int month,
+      int day, {
+      OccurrenceStatus status = OccurrenceStatus.confirmed,
+    }) => confirmed(
+      'o-1',
+      DateTime(2026, month, day, 19),
+      end: DateTime(2026, month, day, 23),
+    ).copyWith(eventId: 'e-1', status: status);
+
+    /// Event `e-1` reading [status], to a viewer holding [role] on it, or
+    /// not attending where it is null. Scheduled and completed by its one
+    /// confirmed date, ahead of the clock or ended before it. Cancelled and
+    /// archived by the cached status, over the date the cancel called off
+    /// or one that ended.
+    EventDetail viewed(
+      EventStatus status, {
+      EventRole? role = EventRole.host,
+      String? householdId,
+      String? reason,
+    }) {
+      final (stored, date) = switch (status) {
+        EventStatus.scheduled => (status, dated(11, 6)),
+        // Cached before its date ended: the screen works it out.
+        EventStatus.completed => (EventStatus.scheduled, dated(10, 20)),
+        EventStatus.cancelled => (
+          status,
+          dated(11, 6, status: OccurrenceStatus.cancelled),
+        ),
+        EventStatus.archived => (status, dated(10, 20)),
+        _ => throw ArgumentError.value(status),
+      };
+      return _detail(
+        event: _event(status: stored, householdId: householdId).copyWith(
+          cancelReason: reason,
+          cancelledAt: status == EventStatus.cancelled
+              ? DateTime.utc(2026, 10, 22)
+              : null,
+        ),
+        occurrences: [date],
+        attendance: role == null ? null : _attending(role),
+      );
+    }
+
+    /// The row the server answers [request] with, from what the cache
+    /// holds.
+    Event answer(EventStatusRequest request) {
+      final event = cached.snapshot.event;
+      return switch (request.call) {
+        'cancel' => event.copyWith(
+          status: EventStatus.cancelled,
+          cancelReason: request.reason == '' ? null : request.reason,
+          cancelledAt: now.toUtc(),
+        ),
+        'reopen' => event.copyWith(
+          status: EventStatus.scheduled,
+          cancelReason: null,
+          cancelledAt: null,
+        ),
+        'archive' => event.copyWith(status: EventStatus.archived),
+        'unarchive' => event.copyWith(status: EventStatus.completed),
+        final call => throw ArgumentError.value(call),
+      };
+    }
+
+    /// A server whose reads serve what the cache holds, and whose status
+    /// writes answer from [written], by default with the row each leads to.
+    FakeEventRemote answering({
+      FutureOr<Event> Function(EventStatusRequest request)? written,
+    }) => FakeEventRemote.detail(
+      (_) => cached.snapshot,
+      deleted: (_) {},
+      statusWritten: written ?? answer,
+    );
+
+    /// Shows [detail] with a way back, from [remote], or [answering]'s.
+    Future<void> showStatus(
+      WidgetTester tester,
+      EventDetail detail, {
+      EventRemoteDataSource? remote,
+      Future<HouseholdRole?> Function(String householdId)? householdRole,
+      TextScaler textScaler = TextScaler.noScaling,
+      ValueListenable<bool>? offline,
+    }) async {
+      cached = detail;
+      await show(
+        tester,
+        detail,
+        remote: remote ?? answering(),
+        householdRole: householdRole,
+        onBack: back,
+        textScaler: textScaler,
+        offline: offline,
+      );
+      // The household role's lookup.
+      await settle(tester);
+    }
+
+    Future<void> toggleMenu(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+    }
+
+    /// The open menu's items, by label, in order.
+    List<String> offered(WidgetTester tester) => [
+      for (final item in tester.widgetList<MenuItemButton>(
+        find.byType(MenuItemButton),
+      ))
+        (item.child! as BgeOnlineOnlyLabel).label,
+    ];
+
+    MenuItemButton itemOf(WidgetTester tester, Key key) =>
+        tester.widget(find.byKey(key));
+
+    /// Picks [key] from the menu, and lets its dialog open where it has
+    /// one. The press lands after the tap's frame, which [animate] waits
+    /// for.
+    Future<void> choose(WidgetTester tester, Key key) async {
+      await toggleMenu(tester);
+      await tester.tap(find.byKey(key));
+      await animate(tester);
+    }
+
+    testWidgets('a host sees Cancel on a scheduled event, and Reopen and '
+        'Archive on a cancelled one', (tester) async {
+      await showStatus(tester, viewed(EventStatus.scheduled));
+      await toggleMenu(tester);
+
+      expect(offered(tester), ['Cancel event', 'Delete event']);
+      expect(itemOf(tester, EventDetailScreen.cancelKey).onPressed, isNotNull);
+      await toggleMenu(tester);
+
+      cache.add(viewed(EventStatus.cancelled));
+      await settle(tester);
+      await toggleMenu(tester);
+
+      expect(offered(tester), [
+        'Reopen event',
+        'Archive event',
+        'Delete event',
+      ]);
+      for (final key in [
+        EventDetailScreen.reopenKey,
+        EventDetailScreen.archiveKey,
+      ]) {
+        expect(itemOf(tester, key).onPressed, isNotNull);
+      }
+    });
+
+    testWidgets('a co-host sees Archive on a completed event', (tester) async {
+      await showStatus(
+        tester,
+        viewed(EventStatus.completed, role: EventRole.coHost),
+      );
+
+      // Cached as Scheduled, which its date has ended since.
+      expect(find.text('Strategy night · Completed'), findsOneWidget);
+      await toggleMenu(tester);
+      // No Delete, which the host alone holds.
+      expect(offered(tester), ['Cancel event', 'Archive event']);
+    });
+
+    testWidgets("a household admin who doesn't attend sees Cancel and no "
+        'Archive', (tester) async {
+      await showStatus(
+        tester,
+        viewed(EventStatus.completed, role: null, householdId: 'h-1'),
+        householdRole: (_) async => HouseholdRole.householdAdmin,
+      );
+      await toggleMenu(tester);
+
+      expect(offered(tester), ['Cancel event']);
+    });
+
+    testWidgets('an archived event offers Unarchive and no Reopen', (
+      tester,
+    ) async {
+      await showStatus(tester, viewed(EventStatus.archived));
+
+      expect(find.text('Strategy night · Archived'), findsOneWidget);
+      await toggleMenu(tester);
+      expect(offered(tester), ['Unarchive event', 'Delete event']);
+      await toggleMenu(tester);
+
+      // A household admin holds cancel alone, which an archived event
+      // doesn't offer, so there is no menu to open on nothing.
+      cache.add(viewed(EventStatus.archived, role: null, householdId: 'h-1'));
+      await settle(tester);
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets('Cancel sends the trimmed reason after the dialog, and the '
+        'banner says Event cancelled', (tester) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
+      await choose(tester, EventDetailScreen.cancelKey);
+
+      expect(find.text('Cancel Catan night?'), findsOneWidget);
+      expect(find.text(_cancelBodyCopy), findsOneWidget);
+      expect(find.text('Reason (optional)'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(EventDetailScreen.cancelReasonKey),
+        '  The venue flooded.  ',
+      );
+      await tester.pumpAndSettle();
+      expect(remote.statusRequests, isEmpty);
+
+      await tester.tap(find.byKey(EventDetailScreen.cancelConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.statusRequests, [
+        (call: 'cancel', id: 'e-1', reason: 'The venue flooded.'),
+      ]);
+      expect(inOutcome('Event cancelled'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      // The row is cached, and the read brings the dates it called off.
+      verify(() => repository.cacheEventRow(any())).called(1);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.text('Reason: The venue flooded.'), findsOneWidget);
+      expect(backs, 0);
+    });
+
+    testWidgets('Reopen asks first, and Keep cancelled sends nothing', (
+      tester,
+    ) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.cancelled), remote: remote);
+      await choose(tester, EventDetailScreen.reopenKey);
+
+      expect(find.text('Reopen Catan night?'), findsOneWidget);
+      expect(find.text(_reopenBodyCopy), findsOneWidget);
+      await tester.tap(find.text('Keep cancelled'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.statusRequests, isEmpty);
+      expect(outcome(), findsNothing);
+
+      await choose(tester, EventDetailScreen.reopenKey);
+      await tester.tap(find.byKey(EventDetailScreen.reopenConfirmKey));
+      await animate(tester);
+
+      expect(remote.statusRequests, [
+        (call: 'reopen', id: 'e-1', reason: null),
+      ]);
+      expect(inOutcome('Event reopened'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(find.text(_cancelledNoteCopy), findsNothing);
+    });
+
+    testWidgets('Archive sends with no dialog, and the screen stays and '
+        'reads Archived with Unarchive offered', (tester) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.completed), remote: remote);
+      await choose(tester, EventDetailScreen.archiveKey);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.statusRequests, [
+        (call: 'archive', id: 'e-1', reason: null),
+      ]);
+      expect(inOutcome('Event archived'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      // No action leaves the screen (#502). The read after it serves the
+      // archived event.
+      expect(backs, 0);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsNothing);
+      expect(find.text('Strategy night · Archived'), findsOneWidget);
+
+      await toggleMenu(tester);
+      expect(offered(tester), ['Unarchive event', 'Delete event']);
+      await tester.tap(find.byKey(EventDetailScreen.unarchiveKey));
+      await animate(tester);
+
+      expect(remote.statusRequests.last, (
+        call: 'unarchive',
+        id: 'e-1',
+        reason: null,
+      ));
+      expect(inOutcome('Event unarchived'), findsOneWidget);
+      expect(find.text('Strategy night · Completed'), findsOneWidget);
+      expect(backs, 0);
+    });
+
+    testWidgets('the controls wait for a running read', (tester) async {
+      // The read's answer, landing after the write, would cache the event
+      // as it was.
+      final reads = <Completer<EventSnapshot>>[];
+      await showStatus(
+        tester,
+        viewed(EventStatus.cancelled),
+        remote: scripted(reads),
+      );
+      await toggleMenu(tester);
+
+      for (final (key, label) in [
+        (EventDetailScreen.reopenKey, 'Reopen event'),
+        (EventDetailScreen.archiveKey, 'Archive event'),
+      ]) {
+        expect(itemOf(tester, key).onPressed, isNull, reason: label);
+        // Disabled, not hidden, and still named.
+        expect(
+          tester.getSemantics(find.byKey(key)),
+          matchesSemantics(label: label, hasEnabledState: true),
+          reason: label,
+        );
+      }
+
+      reads.single.complete(cached.snapshot);
+      await settle(tester);
+
+      for (final key in [
+        EventDetailScreen.reopenKey,
+        EventDetailScreen.archiveKey,
+      ]) {
+        expect(itemOf(tester, key).onPressed, isNotNull);
+      }
+    });
+
+    testWidgets('the controls wait for a request already out', (tester) async {
+      final archiving = Completer<Event>();
+      final remote = answering(written: (_) => archiving.future);
+      await showStatus(tester, viewed(EventStatus.cancelled), remote: remote);
+      await choose(tester, EventDetailScreen.archiveKey);
+      expect(remote.statusRequests, hasLength(1));
+
+      await toggleMenu(tester);
+      for (final key in [
+        EventDetailScreen.reopenKey,
+        EventDetailScreen.archiveKey,
+        EventDetailScreen.deleteKey,
+      ]) {
+        expect(itemOf(tester, key).onPressed, isNull);
+      }
+      await toggleMenu(tester);
+
+      archiving.complete(answer(remote.statusRequests.single));
+      await animate(tester);
+
+      expect(inOutcome('Event archived'), findsOneWidget);
+      expect(remote.statusRequests, hasLength(1));
+    });
+
+    testWidgets('offline: every status control is disabled and names why', (
+      tester,
+    ) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+
+      /// A menu item's one node: both lines in its label, not enabled, no
+      /// actions.
+      Matcher gatedItem(String label) => matchesSemantics(
+        label: '$label\n$_onlineOnlyCopy',
+        hasEnabledState: true,
+      );
+
+      // Opened from a link while offline: the read fails, and the cache
+      // shows the event as it was last read.
+      await showStatus(
+        tester,
+        viewed(EventStatus.archived),
+        remote: FakeEventRemote.detail((_) => throw _offline),
+        offline: offline,
+      );
+      expect(find.text('Strategy night · Archived'), findsOneWidget);
+
+      for (final (detail, items) in [
+        (
+          viewed(EventStatus.archived),
+          [(EventDetailScreen.unarchiveKey, 'Unarchive event')],
+        ),
+        (
+          viewed(EventStatus.scheduled),
+          [(EventDetailScreen.cancelKey, 'Cancel event')],
+        ),
+        (
+          viewed(EventStatus.cancelled),
+          [
+            (EventDetailScreen.reopenKey, 'Reopen event'),
+            (EventDetailScreen.archiveKey, 'Archive event'),
+          ],
+        ),
+      ]) {
+        cache.add(detail);
+        await settle(tester);
+        await toggleMenu(tester);
+        for (final (key, label) in items) {
+          expect(itemOf(tester, key).onPressed, isNull, reason: label);
+          expect(
+            tester.getSemantics(find.byKey(key)),
+            gatedItem(label),
+            reason: label,
+          );
+        }
+        await toggleMenu(tester);
+      }
+
+      offline.value = false;
+      await tester.pump();
+      await toggleMenu(tester);
+
+      expect(find.text(_onlineOnlyCopy), findsNothing);
+      for (final key in [
+        EventDetailScreen.reopenKey,
+        EventDetailScreen.archiveKey,
+      ]) {
+        expect(itemOf(tester, key).onPressed, isNotNull);
+      }
+    });
+
+    testWidgets('the delete dialog offers Cancel event instead to a host of a '
+        "live event, and it opens Cancel's dialog", (tester) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
+      await choose(tester, EventDetailScreen.deleteKey);
+
+      expect(find.text('Delete Catan night?'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byKey(EventDetailScreen.cancelInsteadKey),
+                matching: find.byType(Text),
+              ),
+            )
+            .data,
+        'Cancel event instead',
+      );
+
+      await tester.tap(find.byKey(EventDetailScreen.cancelInsteadKey));
+      await animate(tester);
+
+      expect(find.text('Delete Catan night?'), findsNothing);
+      expect(find.text('Cancel Catan night?'), findsOneWidget);
+      await tester.tap(find.byKey(EventDetailScreen.cancelConfirmKey));
+      await animate(tester);
+
+      expect(remote.deleteRequests, isEmpty);
+      expect(remote.statusRequests, [(call: 'cancel', id: 'e-1', reason: '')]);
+      expect(inOutcome('Event cancelled'), findsOneWidget);
+      expect(backs, 0);
+    });
+
+    testWidgets('not on a cancelled event', (tester) async {
+      await showStatus(tester, viewed(EventStatus.cancelled));
+      await choose(tester, EventDetailScreen.deleteKey);
+
+      expect(find.text('Delete Catan night?'), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.cancelInsteadKey), findsNothing);
+      await tester.tap(find.text('Keep event'));
+      await animate(tester);
+
+      // Nor on an archived one.
+      cache.add(viewed(EventStatus.archived));
+      await settle(tester);
+      await choose(tester, EventDetailScreen.deleteKey);
+
+      expect(find.text('Delete Catan night?'), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.cancelInsteadKey), findsNothing);
+    });
+
+    testWidgets("the delete dialog's three buttons fit at 320dp and 2.0 "
+        'text', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      await showStatus(
+        tester,
+        viewed(EventStatus.scheduled),
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      await choose(tester, EventDetailScreen.deleteKey);
+
+      expect(tester.takeException(), isNull);
+      final dialog = tester.getRect(find.byType(AlertDialog));
+      for (final label in ['Keep event', 'Cancel event instead', 'Delete']) {
+        final text = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text(label),
+        );
+        expect(text, findsOneWidget, reason: label);
+        final button = find.ancestor(
+          of: text,
+          matching: find.byType(TextButton),
+        );
+        // Whole, inside its button, inside the dialog, on screen.
+        final textRect = tester.getRect(text);
+        final buttonRect = tester.getRect(button);
+        expect(
+          buttonRect.intersect(textRect),
+          textRect,
+          reason: '$label within its button',
+        );
+        expect(
+          dialog.intersect(buttonRect),
+          buttonRect,
+          reason: '$label within the dialog',
+        );
+        expect(buttonRect.bottom, lessThanOrEqualTo(640), reason: label);
+      }
+    });
+
+    testWidgets('the note, a long reason and the status dialogs fit at 320dp '
+        'and 2.0 text', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      final reason = 'The venue flooded, and the trains are off. ' * 6;
+      await showStatus(
+        tester,
+        viewed(EventStatus.cancelled, reason: reason),
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.text('Reason: $reason'), findsOneWidget);
+
+      // Each dialog's title and body scroll, and its buttons stay on screen.
+      await choose(tester, EventDetailScreen.reopenKey);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Reopen Catan night?'), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(EventDetailScreen.reopenConfirmKey)).bottom,
+        lessThanOrEqualTo(640),
+      );
+      await tester.tap(find.text('Keep cancelled'));
+      await animate(tester);
+
+      cache.add(viewed(EventStatus.scheduled));
+      await settle(tester);
+      await choose(tester, EventDetailScreen.cancelKey);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Cancel Catan night?'), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(EventDetailScreen.cancelConfirmKey)).bottom,
+        lessThanOrEqualTo(640),
+      );
+    });
+
+    testWidgets('a cancelled event shows the note and its reason', (
+      tester,
+    ) async {
+      await showStatus(
+        tester,
+        viewed(EventStatus.cancelled, reason: 'The venue flooded.'),
+      );
+
+      expect(find.text('Strategy night · Cancelled'), findsOneWidget);
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      const reason = 'Reason: The venue flooded.';
+      expect(find.text(reason), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text(reason)).dy,
+        greaterThan(tester.getTopLeft(find.text(_cancelledNoteCopy)).dy),
+      );
+      // Read as one, the note and why.
+      expect(
+        tester.getSemantics(find.text(_cancelledNoteCopy)).label,
+        '$_cancelledNoteCopy\n$reason',
+      );
+
+      cache.add(viewed(EventStatus.scheduled));
+      await settle(tester);
+
+      expect(find.text(_cancelledNoteCopy), findsNothing);
+      expect(find.textContaining('Reason:'), findsNothing);
+    });
+
+    testWidgets('no reason line for a blank reason', (tester) async {
+      await showStatus(tester, viewed(EventStatus.cancelled));
+
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.textContaining('Reason:'), findsNothing);
+
+      cache.add(viewed(EventStatus.cancelled, reason: '   '));
+      await settle(tester);
+
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.textContaining('Reason:'), findsNothing);
+    });
+
+    testWidgets('an archived event that was cancelled keeps its note and '
+        'reason', (tester) async {
+      // The server's archive keeps the cancel's time and reason.
+      final archived = viewed(
+        EventStatus.archived,
+        reason: 'The venue flooded.',
+      );
+      EventDetail cancelledThenArchived(List<EventOccurrence> occurrences) =>
+          _detail(
+            event: archived.snapshot.event.copyWith(
+              cancelledAt: DateTime.utc(2026, 10, 22),
+            ),
+            occurrences: occurrences,
+            attendance: archived.attendance,
+          );
+      const reason = 'Reason: The venue flooded.';
+
+      await showStatus(
+        tester,
+        cancelledThenArchived([
+          dated(11, 6, status: OccurrenceStatus.cancelled),
+        ]),
+      );
+
+      expect(find.text('Strategy night · Archived'), findsOneWidget);
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.text(reason), findsOneWidget);
+
+      // With no dates, the header is the only place the reason shows.
+      cache.add(cancelledThenArchived(const []));
+      await settle(tester);
+
+      expect(find.text(_cancelledNoteCopy), findsOneWidget);
+      expect(find.text(reason), findsOneWidget);
+
+      // Archived without a cancel: nothing to say of one.
+      cache.add(viewed(EventStatus.archived));
+      await settle(tester);
+
+      expect(find.text('Strategy night · Archived'), findsOneWidget);
+      expect(find.text(_cancelledNoteCopy), findsNothing);
+      expect(find.textContaining('Reason:'), findsNothing);
+    });
+
+    testWidgets('a 400 shows the changed copy and reads again', (tester) async {
+      // Archived on another device, say: the cached status was stale.
+      final remote = answering(
+        written: (_) => throw const EventWriteConflictException(
+          'already archived',
+          statusCode: 400,
+        ),
+      );
+      await showStatus(tester, viewed(EventStatus.completed), remote: remote);
+      expect(remote.detailRequests, ['e-1']);
+      await choose(tester, EventDetailScreen.archiveKey);
+
+      expect(inOutcome(_statusChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      verifyNever(() => repository.cacheEventRow(any()));
+    });
+
+    testWidgets('a cancel retried after its answer was lost says Event '
+        'cancelled and shows the first reason', (tester) async {
+      var lost = true;
+      final remote = answering(
+        written: (request) {
+          if (lost) {
+            lost = false;
+            throw _offline;
+          }
+          // Cancelled by the first, whose reason the server kept.
+          return cached.snapshot.event.copyWith(
+            status: EventStatus.cancelled,
+            cancelReason: 'The venue flooded.',
+            cancelledAt: now.toUtc(),
+          );
+        },
+      );
+      await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
+
+      Future<void> cancelWith(String reason) async {
+        await choose(tester, EventDetailScreen.cancelKey);
+        await tester.enterText(
+          find.byKey(EventDetailScreen.cancelReasonKey),
+          reason,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(EventDetailScreen.cancelConfirmKey));
+        await animate(tester);
+      }
+
+      await cancelWith('The venue flooded.');
+      expect(inOutcome(_statusFailedCopy), findsOneWidget);
+
+      // Still offered, since the answer said nothing of what happened.
+      await cancelWith('Rain.');
+
+      expect(remote.statusRequests.map((request) => request.reason), [
+        'The venue flooded.',
+        'Rain.',
+      ]);
+      expect(inOutcome('Event cancelled'), findsOneWidget);
+      expect(find.text('Reason: The venue flooded.'), findsOneWidget);
+      expect(find.text('Reason: Rain.'), findsNothing);
+    });
+
+    testWidgets('a cancel whose event was cancelled while its dialog was open '
+        'sends nothing, and says the event changed', (tester) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
+      await choose(tester, EventDetailScreen.cancelKey);
+      await tester.enterText(
+        find.byKey(EventDetailScreen.cancelReasonKey),
+        'Rain.',
+      );
+      await tester.pump();
+
+      // From another device, through a sync.
+      cache.add(viewed(EventStatus.cancelled));
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.cancelConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.statusRequests, isEmpty);
+      // The banner is a live region, so a screen reader hears why nothing
+      // happened. The page already shows the event as cached, so nothing
+      // is read again.
+      expect(inOutcome(_statusChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, ['e-1']);
+    });
+
+    testWidgets('a reopen whose role a sync took while its dialog was open '
+        'sends nothing, and says the event changed', (tester) async {
+      final remote = answering();
+      await showStatus(tester, viewed(EventStatus.cancelled), remote: remote);
+      await choose(tester, EventDetailScreen.reopenKey);
+
+      cache.add(viewed(EventStatus.cancelled, role: EventRole.participant));
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.reopenConfirmKey));
+      await animate(tester);
+
+      expect(remote.statusRequests, isEmpty);
+      expect(inOutcome(_statusChangedCopy), findsOneWidget);
+    });
+
+    group('each end has its copy and tone', () {
+      final ends = [
+        (
+          name: 'a gone event',
+          thrown: const EventRemoteNotFoundException('gone') as Object,
+          copy: _statusGoneCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a refusal',
+          thrown: const EventWriteRefusedException('no', statusCode: 403),
+          copy: _statusRefusedCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a transient failure',
+          thrown: _offline,
+          copy: _statusFailedCopy,
+          tone: BgeBannerTone.error,
+          rereads: false,
+        ),
+        (
+          name: 'any other failure',
+          thrown: const EventRemotePermanentException(
+            'broken',
+            statusCode: 500,
+          ),
+          copy: _statusFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+          rereads: true,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          final remote = answering(written: (_) => throw end.thrown);
+          await showStatus(
+            tester,
+            viewed(EventStatus.completed),
+            remote: remote,
+          );
+          await choose(tester, EventDetailScreen.archiveKey);
+
+          expect(inOutcome(end.copy), findsOneWidget);
+          expect(toneOf(tester), end.tone);
+          expect(remote.detailRequests, hasLength(end.rereads ? 2 : 1));
+          expect(backs, 0);
+        });
+      }
     });
   });
 
@@ -4168,9 +5018,11 @@ void main() {
           description: 'Bring snacks, a pencil and a good mood. ' * 4,
         ),
         occurrences: [
+          // Started before the clock and ending long after it, so the event
+          // reads Happening now by its dates (#502), with the long end.
           confirmed(
             'o-1',
-            DateTime(2027, 12, 29, 19),
+            DateTime(2026, 10, 23, 17),
             end: DateTime(2027, 12, 30, 2),
             location: 'The upstairs room',
           ).copyWith(label: 'The first and longest evening'),

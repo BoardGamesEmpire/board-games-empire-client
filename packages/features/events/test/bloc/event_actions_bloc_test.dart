@@ -439,6 +439,83 @@ void main() {
     );
   });
 
+  group('a write the screen dropped (#502, #655)', () {
+    // The screen checks a write again once its dialog closes, and drops one
+    // the event no longer offers. The bloc only says so.
+    blocTest<EventActionsBloc, EventActionsState>(
+      'a status write ends changed, sends nothing and reads nothing again',
+      build: () => build(serving((_) {})),
+      act: (bloc) =>
+          bloc.add(EventWriteDropped.status(EventStatusWrite.reopen)),
+      expect: () => [
+        const EventActionsState(
+          outcome: EventActionOutcome(
+            action: EventAction.cancel,
+            result: EventActionResult.changed,
+            statusWrite: EventStatusWrite.reopen,
+            dropped: true,
+          ),
+        ),
+      ],
+      verify: (bloc) {
+        expect(bloc.state.outcome!.rereads, isFalse);
+        expect(calls, isEmpty);
+        verifyNoWrite();
+      },
+    );
+
+    blocTest<EventActionsBloc, EventActionsState>(
+      'a date write ends changed under its action',
+      build: () => build(serving((_) {})),
+      act: (bloc) => bloc.add(const EventWriteDropped(EventAction.confirmDate)),
+      expect: () => [
+        const EventActionsState(
+          outcome: EventActionOutcome(
+            action: EventAction.confirmDate,
+            result: EventActionResult.changed,
+            dropped: true,
+          ),
+        ),
+      ],
+      verify: (bloc) => expect(bloc.state.outcome!.rereads, isFalse),
+    );
+
+    blocTest<EventActionsBloc, EventActionsState>(
+      'it replaces the last outcome',
+      build: () => build(serving((_) {})),
+      seed: () => settled(EventActionResult.refused, error: _refused),
+      act: (bloc) => bloc.add(const EventWriteDropped(EventAction.editDate)),
+      expect: () => [
+        const EventActionsState(
+          outcome: EventActionOutcome(
+            action: EventAction.editDate,
+            result: EventActionResult.changed,
+            dropped: true,
+          ),
+        ),
+      ],
+    );
+
+    blocTest<EventActionsBloc, EventActionsState>(
+      'it says nothing while a request is out, whose outcome is on its way',
+      build: () => build(serving((_) {})),
+      seed: () => busy,
+      act: (bloc) =>
+          bloc.add(EventWriteDropped.status(EventStatusWrite.cancel)),
+      expect: () => <EventActionsState>[],
+    );
+
+    test('a 400 for the same write still reads again', () {
+      // Only the drop is checked against the page as the cache holds it.
+      const answered = EventActionOutcome(
+        action: EventAction.cancel,
+        result: EventActionResult.changed,
+        statusWrite: EventStatusWrite.cancel,
+      );
+      expect(answered.rereads, isTrue);
+    });
+  });
+
   group('date actions (#506)', () {
     // The real cache, as the detail bloc's tests use it: a date write is
     // judged by what the cache holds after it, and by when it held it.

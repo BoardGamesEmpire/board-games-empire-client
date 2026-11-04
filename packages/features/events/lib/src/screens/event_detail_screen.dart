@@ -22,6 +22,10 @@ import '../bloc/event_poll_state.dart';
 import '../detail/event_actions.dart';
 import '../detail/event_date_actions.dart';
 import '../detail/event_poll.dart';
+import '../detail/event_status_now.dart';
+import '../widgets/cancel_reason_dialog.dart';
+import '../widgets/confirm_dialog.dart';
+import '../widgets/destructive_button_style.dart';
 import '../widgets/event_date_dialogs.dart';
 import '../widgets/event_date_poll.dart';
 import '../widgets/event_detail_sections.dart';
@@ -41,11 +45,11 @@ import '../widgets/event_labels.dart';
 /// ## What it doesn't show yet
 ///
 /// Most actions. The bloc works out what the viewer may do, and the app
-/// bar's menu offers Delete (#501), the dates their own (#506), and a poll's
-/// dates their answers (#507), to a viewer the role table gives them. The
-/// other actions' issues (#500, #502–#518) add theirs. The games section
-/// says the event's games will show there, until #519 has something to
-/// show.
+/// bar's menu offers the event's status changes (#502) and Delete (#501),
+/// the dates their own (#506), and a poll's dates their answers (#507), to
+/// a viewer the role table gives them. The other actions' issues (#500,
+/// #503–#518) add theirs. The games section says the event's games will
+/// show there, until #519 has something to show.
 ///
 /// ## Delete
 ///
@@ -53,8 +57,10 @@ import '../widgets/event_labels.dart';
 /// server, after a dialog that says it can't be undone and that nobody on the
 /// event is told. It is offered only with a [remote] and an [onBack]: the
 /// delete is never queued, and once the event is gone a screen that can't
-/// leave has nowhere to go. The dates' actions share the bloc, so they are
-/// offered only there too.
+/// leave has nowhere to go. The status changes and the dates' actions share
+/// the bloc, so they are offered only there too. Where the menu offers
+/// Cancel, the dialog offers *Cancel event instead*, which closes it and
+/// opens Cancel's (#502): a cancel tells everyone and keeps the event.
 ///
 /// Delete waits for the detail read, and the refresh banner's retry waits
 /// for the delete: a read's answer landing after the delete would cache the
@@ -67,6 +73,27 @@ import '../widgets/event_labels.dart';
 /// Gone, refused and failed each show a
 /// banner over the event, and the screen reads the event again where
 /// [EventActionOutcome.rereads] says to.
+///
+/// ## The event's status
+///
+/// The menu offers Cancel or Reopen, then Archive or Unarchive, by the
+/// status worked out from the dates as the page builds and by what the
+/// viewer's role holds (#502): Cancel until the event is cancelled or
+/// archived, Reopen once it is cancelled, Archive once it is cancelled or
+/// has ended, and Unarchive once it is archived, which offers nothing else
+/// until it is unarchived. Each goes straight to the server, so it waits
+/// for a connection, for a running read and for a request already out, as
+/// Delete does, disabled in the menu meanwhile.
+///
+/// Cancel asks for an optional reason, and Reopen asks first, since both
+/// tell everyone on the event. Archive and Unarchive tell nobody and undo
+/// each other in one tap, so they go at once. Each is sent once a read
+/// that started meanwhile has ended, with the id the detail shows then,
+/// and only if the menu would still offer it then: a sync can have changed
+/// the status or the viewer's role while a dialog was open, and a date can
+/// have ended. Every end shows a banner, done included, and is read again
+/// as [EventActionOutcome.rereads] says. None leaves the screen: an
+/// archived event stays, and offers Unarchive.
 ///
 /// ## Dates
 ///
@@ -176,6 +203,30 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the delete dialog's confirm button.
   static const Key deleteConfirmKey = Key('event_detail.delete_confirm');
 
+  /// Key on the delete dialog's *Cancel event instead* (#502).
+  static const Key cancelInsteadKey = Key('event_detail.cancel_instead');
+
+  /// Key on the menu's Cancel item (#502).
+  static const Key cancelKey = Key('event_detail.cancel');
+
+  /// Key on the cancel dialog's reason field.
+  static const Key cancelReasonKey = Key('event_detail.cancel_reason');
+
+  /// Key on the cancel dialog's confirm button.
+  static const Key cancelConfirmKey = Key('event_detail.cancel_confirm');
+
+  /// Key on the menu's Reopen item (#502).
+  static const Key reopenKey = Key('event_detail.reopen');
+
+  /// Key on the reopen dialog's confirm button.
+  static const Key reopenConfirmKey = Key('event_detail.reopen_confirm');
+
+  /// Key on the menu's Archive item (#502).
+  static const Key archiveKey = Key('event_detail.archive');
+
+  /// Key on the menu's Unarchive item (#502).
+  static const Key unarchiveKey = Key('event_detail.unarchive');
+
   /// Key on the banner saying how the last action went.
   static const Key actionOutcomeKey = Key('event_detail.action_outcome');
 
@@ -258,8 +309,9 @@ class EventDetailScreen extends StatelessWidget {
   /// visible.
   final void Function(BuildContext context)? onWhoAnswered;
 
-  /// The clock that decides whether a date is this year's. Defaults to the
-  /// device's.
+  /// The clock that decides whether a date is this year's, and where the
+  /// event stands as its dates pass, which picks the menu's status changes
+  /// (#502). Defaults to the device's.
   final DateTime Function()? now;
 
   @override
@@ -444,8 +496,9 @@ bool _covered(BuildContext context) =>
     !(ModalRoute.isCurrentOf(context) ?? true);
 
 /// Reads the event again after a vote's end that asks for it, or a poll read
-/// that found the event gone (#507), once no read is running and no date write
-/// or Delete is out, and not at all once the event is removed.
+/// that found the event gone (#507), once no read is running and no date
+/// write, status write (#502) or Delete is out, and not at all once the event
+/// is removed.
 ///
 /// A vote or a poll read runs beside the event's read, so it can end while one
 /// is running, whose answer may have been served before what this found. The
@@ -454,10 +507,10 @@ bool _covered(BuildContext context) =>
 ///
 /// It runs beside the actions' requests too, so it can end while one of them
 /// is out. A read then could land after the write's answer and put the date
-/// back as it was (#589), or cache a deleted event again (#501). The write's
-/// own end reads the event where its outcome says to. Where that read is
-/// running, it began after what this found, so the detail drops this one, and
-/// the running read shows the date as it is.
+/// or the event's status back as it was (#589), or cache a deleted event
+/// again (#501). The write's own end reads the event where its outcome says
+/// to. Where that read is running, it began after what this found, so the
+/// detail drops this one, and the running read shows the event as it is.
 Future<void> _rereadForPoll(BuildContext context) async {
   final actions = context.read<EventActionsBloc>();
   final detail = context.read<EventDetailBloc>();
@@ -537,7 +590,7 @@ class _ReadyPage extends StatelessWidget {
   }
 
   /// [actionsState] and [pollState] are null where there are no such blocs,
-  /// and then nothing offers Delete, and no poll shows.
+  /// and then the app bar offers no menu, and no poll shows.
   Widget _build(
     BuildContext context,
     EventActionsState? actionsState,
@@ -551,19 +604,32 @@ class _ReadyPage extends StatelessWidget {
     // A request on its way, or a delete done and the screen leaving.
     final acting =
         actionsState != null && (actionsState.busy || _deleted(actionsState));
+    // As the event stands now, which its dates move on (#502).
+    final writes = _statusWritesFor(
+      eventStatusAt(event, snapshot.occurrences, now: now()),
+      state.actions,
+    );
+    final deletes = state.actions.contains(EventAction.delete);
 
     return BgePage(
       // The section name, not the event's: the title is the page's heading
       // below, where a long one wraps rather than being cut short.
       title: Text(l10n.eventsTitle),
       actions: [
-        if (actionsState != null && state.actions.contains(EventAction.delete))
+        // Only with something in it: a menu would otherwise open on
+        // nothing, as an archived event does for a viewer holding cancel
+        // alone.
+        if (actionsState != null && (deletes || writes.isNotEmpty))
           _ActionsMenu(
             title: event.title,
-            // Not while a read runs, whose answer landing after the delete
-            // would cache the event again (#501). Nor while a request is out
-            // or once the delete is done, when a press would send another.
-            canDelete: !state.reading && !acting,
+            writes: writes,
+            deletes: deletes,
+            now: now,
+            // Not while a read runs, whose answer landing after the write
+            // would cache the event as it was before (#501, #502). Nor
+            // while a request is out or once the delete is done, when a
+            // press would send another.
+            enabled: !state.reading && !acting,
           ),
       ],
       width: BgePageWidth.pane,
@@ -611,6 +677,8 @@ class _ReadyPage extends StatelessWidget {
           ],
           EventDetailHeader(
             event: event,
+            occurrences: snapshot.occurrences,
+            now: now,
             householdName: state.householdName,
             role: state.detail.attendance?.role,
           ),
@@ -637,24 +705,41 @@ class _ReadyPage extends StatelessWidget {
   }
 }
 
-/// The app bar's More actions menu (#501), holding Delete. #502's actions
-/// join it.
+/// The app bar's More actions menu (#501): the event's status changes the
+/// viewer may make as it stands (#502), then Delete where they may delete
+/// it. See [EventDetailScreen] on how each is sent.
 class _ActionsMenu extends StatelessWidget {
-  const _ActionsMenu({required this.title, required this.canDelete});
+  const _ActionsMenu({
+    required this.title,
+    required this.writes,
+    required this.deletes,
+    required this.enabled,
+    required this.now,
+  });
 
-  /// The event's title, for the dialog's.
+  /// The event's title, for the dialogs'.
   final String title;
 
-  /// Whether Delete may be pressed now. When it may not, it stays in the
-  /// menu, disabled, rather than leaving the menu empty.
-  final bool canDelete;
+  /// The status changes the menu offers, in its order ([_statusWritesFor]).
+  final List<EventStatusWrite> writes;
+
+  /// Whether the menu offers Delete.
+  final bool deletes;
+
+  /// Whether the items may be pressed now. When they may not, they stay in
+  /// the menu, disabled, rather than leaving it empty.
+  final bool enabled;
+
+  /// The screen's clock, which a status change is checked against again
+  /// once its dialog closes.
+  final DateTime Function() now;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    // The delete is a direct write, so it waits for a connection (#49). The
-    // anchor button stays enabled, so the menu can be opened to read why.
-    final online = !BgeConnectivityScope.offlineOf(context);
+    // Each is a direct write, so it waits for a connection (#49). The anchor
+    // button stays enabled, so the menu can be opened to read why.
+    final pressable = enabled && !BgeConnectivityScope.offlineOf(context);
 
     return BgeOnlineOnlyMenu(
       builder: (context, menu) => MenuAnchor(
@@ -664,14 +749,32 @@ class _ActionsMenu extends StatelessWidget {
         // to the screen, the entries wrap instead.
         crossAxisUnconstrained: false,
         menuChildren: [
-          MenuItemButton(
-            key: EventDetailScreen.deleteKey,
-            overflowAxis: Axis.vertical,
-            onPressed: canDelete && online
-                ? () => unawaited(_delete(context))
-                : null,
-            child: BgeOnlineOnlyLabel(l10n.eventsDetailDelete),
-          ),
+          for (final write in writes)
+            MenuItemButton(
+              key: switch (write) {
+                EventStatusWrite.cancel => EventDetailScreen.cancelKey,
+                EventStatusWrite.reopen => EventDetailScreen.reopenKey,
+                EventStatusWrite.archive => EventDetailScreen.archiveKey,
+                EventStatusWrite.unarchive => EventDetailScreen.unarchiveKey,
+              },
+              overflowAxis: Axis.vertical,
+              onPressed: pressable
+                  ? () => unawaited(_writeStatus(context, write))
+                  : null,
+              child: BgeOnlineOnlyLabel(switch (write) {
+                EventStatusWrite.cancel => l10n.eventsDetailCancel,
+                EventStatusWrite.reopen => l10n.eventsDetailReopen,
+                EventStatusWrite.archive => l10n.eventsDetailArchive,
+                EventStatusWrite.unarchive => l10n.eventsDetailUnarchive,
+              }),
+            ),
+          if (deletes)
+            MenuItemButton(
+              key: EventDetailScreen.deleteKey,
+              overflowAxis: Axis.vertical,
+              onPressed: pressable ? () => unawaited(_delete(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.eventsDetailDelete),
+            ),
         ],
         builder: (context, controller, _) => MergeSemantics(
           child: Semantics(
@@ -693,7 +796,13 @@ class _ActionsMenu extends StatelessWidget {
     // this menu, and take the context it was asked from with it.
     final actions = context.read<EventActionsBloc>();
     final detail = context.read<EventDetailBloc>();
-    if (!await _confirmDelete(context) || actions.isClosed) return;
+    final choice = await _confirmDelete(context);
+    if (choice == _DeleteChoice.cancelInstead && context.mounted) {
+      // The delete's dialog has closed, and Cancel's opens in its place
+      // (#502), to be sent as Cancel from the menu is.
+      return _writeStatus(context, EventStatusWrite.cancel);
+    }
+    if (choice != _DeleteChoice.delete || actions.isClosed) return;
 
     // A read can have started while the dialog was open, and Delete waits
     // for it to end (#501). The id is the detail's then, not the one the
@@ -703,34 +812,173 @@ class _ActionsMenu extends StatelessWidget {
     actions.add(EventDeleteRequested(state.detail.snapshot.event.id));
   }
 
-  Future<bool> _confirmDelete(BuildContext context) async {
+  /// Delete's dialog. Where the menu offers Cancel, it offers *Cancel event
+  /// instead* too (#502): a cancel tells everyone on the event and keeps it,
+  /// where a delete takes it from everyone and tells nobody. It has three
+  /// answers, so it is built here, laid out as `showConfirmDialog` lays out
+  /// its two.
+  Future<_DeleteChoice> _confirmDelete(BuildContext context) async {
     final l10n = EventsLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
+    final offersCancel = writes.contains(EventStatusWrite.cancel);
+    final choice = await showDialog<_DeleteChoice>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        // At 2.0 text a long title and the body can outgrow a phone's height.
-        scrollable: true,
-        title: Text(l10n.eventsDeleteConfirmTitle(title)),
-        content: Text(l10n.eventsDeleteConfirmBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.eventsDeleteConfirmKeep),
-          ),
-          TextButton(
-            key: EventDetailScreen.deleteConfirmKey,
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(dialogContext).colorScheme.error,
+      builder: (dialogContext) {
+        void choose(_DeleteChoice choice) =>
+            Navigator.of(dialogContext).pop(choice);
+
+        return AlertDialog(
+          // At 2.0 text a long title and the body can outgrow a phone's
+          // height. Buttons that don't fit side by side stack, each as wide
+          // as its label needs, up to the dialog's width.
+          scrollable: true,
+          title: Text(l10n.eventsDeleteConfirmTitle(title)),
+          content: Text(l10n.eventsDeleteConfirmBody),
+          actions: [
+            TextButton(
+              onPressed: () => choose(_DeleteChoice.keep),
+              child: Text(l10n.eventsDeleteConfirmKeep),
             ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.eventsDeleteConfirm),
-          ),
-        ],
-      ),
+            if (offersCancel)
+              TextButton(
+                key: EventDetailScreen.cancelInsteadKey,
+                onPressed: () => choose(_DeleteChoice.cancelInstead),
+                child: Text(l10n.eventsDeleteCancelInstead),
+              ),
+            TextButton(
+              key: EventDetailScreen.deleteConfirmKey,
+              style: destructiveButtonStyle(dialogContext),
+              onPressed: () => choose(_DeleteChoice.delete),
+              child: Text(l10n.eventsDeleteConfirm),
+            ),
+          ],
+        );
+      },
     );
-    return confirmed ?? false;
+    return choice ?? _DeleteChoice.keep;
+  }
+
+  /// Asks for [write] where it asks first, then sends it (#502). See
+  /// [EventDetailScreen].
+  Future<void> _writeStatus(
+    BuildContext context,
+    EventStatusWrite write,
+  ) async {
+    // Read before a dialog opens: the page under it can rebuild without
+    // this menu, and take the context it was asked from with it.
+    final actions = context.read<EventActionsBloc>();
+    final detail = context.read<EventDetailBloc>();
+    final _StatusRequest? request = await switch (write) {
+      EventStatusWrite.cancel => _askCancel(context),
+      EventStatusWrite.reopen => _askReopen(context),
+      // No dialog: they tell nobody, and one tap undoes the other.
+      EventStatusWrite.archive => Future.value(EventArchiveRequested.new),
+      EventStatusWrite.unarchive => Future.value(EventUnarchiveRequested.new),
+    };
+    if (request == null || actions.isClosed) return;
+
+    // A read can have started while a dialog was open, and the write waits
+    // for it to end, as Delete does (#501). The event is the detail's as it
+    // is then, whose id a reconcile can have moved (#499).
+    final state = await _readEnded(detail);
+    if (state is! EventDetailReady || actions.isClosed) return;
+
+    // A sync can have changed the status or the viewer's role meanwhile,
+    // or a date can have ended and moved the status on. The page already
+    // shows the menu as it is then, and nothing is sent that it no longer
+    // offers. Its banner says so, or a screen reader would hear nothing
+    // happen, and a typed reason would go without a word.
+    final shown = state.detail.snapshot;
+    final status = eventStatusAt(shown.event, shown.occurrences, now: now());
+    if (!_statusWritesFor(status, state.actions).contains(write)) {
+      actions.add(EventWriteDropped.status(write));
+      return;
+    }
+    actions.add(request(shown.event.id));
+  }
+
+  /// Cancel's dialog, with its optional reason: null when the event is
+  /// kept, else the request to send. A blank reason is sent as none.
+  Future<_StatusRequest?> _askCancel(BuildContext context) async {
+    final l10n = EventsLocalizations.of(context);
+    final reason = await showCancelReasonDialog(
+      context,
+      title: l10n.eventsCancelConfirmTitle(title),
+      body: l10n.eventsCancelConfirmBody,
+      keepLabel: l10n.eventsCancelConfirmKeep,
+      confirmLabel: l10n.eventsCancelConfirm,
+      reasonKey: EventDetailScreen.cancelReasonKey,
+      confirmKey: EventDetailScreen.cancelConfirmKey,
+    );
+    if (reason == null) return null;
+    return (eventId) => EventCancelRequested(eventId, reason: reason);
+  }
+
+  /// Reopen's dialog, which asks first since a reopen tells everyone on the
+  /// event: null when it stays cancelled, else the request to send.
+  Future<_StatusRequest?> _askReopen(BuildContext context) async {
+    final l10n = EventsLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.eventsReopenConfirmTitle(title),
+      body: l10n.eventsReopenConfirmBody,
+      keepLabel: l10n.eventsReopenConfirmKeep,
+      confirmLabel: l10n.eventsReopenConfirm,
+      confirmKey: EventDetailScreen.reopenConfirmKey,
+    );
+    return confirmed ? EventReopenRequested.new : null;
   }
 }
+
+/// An event status write's request, built from the id of the event as the
+/// detail shows it once its dialog closes (#502).
+typedef _StatusRequest = EventActionsEvent Function(String eventId);
+
+/// How Delete's dialog closed (#502).
+enum _DeleteChoice {
+  /// *Keep event*, or dismissed: nothing is sent.
+  keep,
+
+  /// *Delete*.
+  delete,
+
+  /// *Cancel event instead*: Cancel's dialog opens.
+  cancelInstead,
+}
+
+/// The status changes the menu offers on an event reading [status], to a
+/// viewer holding [actions] (#502): Cancel or Reopen, then Archive or
+/// Unarchive.
+///
+/// The role table gives `cancel` and `archive`, and the status picks which
+/// of each pair, as the server allows them. Cancel until the event is
+/// cancelled or archived, Reopen once it is cancelled. Archive once it is
+/// cancelled or has ended, and Unarchive once it is archived, which offers
+/// nothing else: it has to be unarchived first. An unknown status, which a
+/// newer server sent, offers neither.
+List<EventStatusWrite> _statusWritesFor(
+  EventStatus status,
+  Set<EventAction> actions,
+) => [
+  if (actions.contains(EventAction.cancel))
+    ?switch (status) {
+      EventStatus.planning ||
+      EventStatus.scheduled ||
+      EventStatus.ongoing ||
+      EventStatus.completed => EventStatusWrite.cancel,
+      EventStatus.cancelled => EventStatusWrite.reopen,
+      EventStatus.archived || EventStatus.unknown => null,
+    },
+  if (actions.contains(EventAction.archive))
+    ?switch (status) {
+      EventStatus.completed ||
+      EventStatus.cancelled => EventStatusWrite.archive,
+      EventStatus.archived => EventStatusWrite.unarchive,
+      EventStatus.planning ||
+      EventStatus.scheduled ||
+      EventStatus.ongoing ||
+      EventStatus.unknown => null,
+    },
+];
 
 /// The dates section (#498), with each date's menu and *Add a date* where
 /// the viewer may use them (#506), and a poll's answers (#507). See
@@ -950,7 +1198,7 @@ List<String> _otherProposed(List<EventOccurrence> occurrences, String id) => [
 
 /// [detail]'s state once no read is running: now, or when the running one
 /// ends. Its last state if it closes first. A write asked for through a
-/// dialog waits on it, Delete's and the dates' alike.
+/// dialog waits on it, Delete's, the status changes' and the dates' alike.
 Future<EventDetailState> _readEnded(EventDetailBloc detail) {
   bool ended(EventDetailState state) =>
       state is! EventDetailReady || !state.reading;
@@ -963,8 +1211,8 @@ Future<EventDetailState> _readEnded(EventDetailBloc detail) {
 /// dialog closes.
 typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
 
-/// How the last action went (#501, #506), or the last vote (#507), over the
-/// event until dismissed or replaced. A live region, as every
+/// How the last action went (#501, #502, #506), or the last vote (#507),
+/// over the event until dismissed or replaced. A live region, as every
 /// [BgeInlineBanner] is. A delete's done has none: the screen leaves. Nor
 /// does a vote's: its chip shows it.
 class _ActionOutcomeBanner extends StatelessWidget {
@@ -1003,29 +1251,11 @@ class _ActionOutcomeBanner extends StatelessWidget {
         EventActionResult.partlyDone => BgeBannerTone.warning,
         EventActionResult.failed => BgeBannerTone.error,
       },
-      message: switch (outcome.action) {
-        EventAction.addDate => _dateMessage(l10n, done: l10n.eventsDateAdded),
-        EventAction.editDate => _dateMessage(l10n, done: l10n.eventsDateSaved),
-        EventAction.confirmDate => _dateMessage(
-          l10n,
-          done: l10n.eventsDateConfirmed,
-        ),
-        EventAction.declineDate => _dateMessage(
-          l10n,
-          done: l10n.eventsDateDeclined,
-        ),
-        EventAction.cancelDate => _dateMessage(
-          l10n,
-          done: l10n.eventsDateCancelled,
-        ),
-        EventAction.removeDate => _dateMessage(
-          l10n,
-          done: l10n.eventsDateRemoved,
-        ),
-        EventAction.voteAvailability => _voteMessage(l10n),
-        // Delete is the only other action the screen sends yet. #500's and
-        // #502's add their own copy.
-        _ => _deleteMessage(l10n),
+      message: switch (outcome.statusWrite) {
+        // Cancel and reopen share an action, as archive and unarchive do,
+        // so the outcome says which it was (#502).
+        final write? => _statusWriteMessage(l10n, write),
+        null => _actionMessage(l10n),
       },
       action: TextButton(
         onPressed: onDismiss,
@@ -1033,6 +1263,55 @@ class _ActionOutcomeBanner extends StatelessWidget {
       ),
     );
   }
+
+  /// The copy of an outcome that is not a status write, by its action.
+  String _actionMessage(EventsLocalizations l10n) => switch (outcome.action) {
+    EventAction.addDate => _dateMessage(l10n, done: l10n.eventsDateAdded),
+    EventAction.editDate => _dateMessage(l10n, done: l10n.eventsDateSaved),
+    EventAction.confirmDate => _dateMessage(
+      l10n,
+      done: l10n.eventsDateConfirmed,
+    ),
+    EventAction.declineDate => _dateMessage(
+      l10n,
+      done: l10n.eventsDateDeclined,
+    ),
+    EventAction.cancelDate => _dateMessage(
+      l10n,
+      done: l10n.eventsDateCancelled,
+    ),
+    EventAction.removeDate => _dateMessage(l10n, done: l10n.eventsDateRemoved),
+    EventAction.voteAvailability => _voteMessage(l10n),
+    // Delete is the only other action the screen sends yet. #500's adds its
+    // own copy.
+    _ => _deleteMessage(l10n),
+  };
+
+  /// A status write's copy (#502), saying which was done where it was.
+  ///
+  /// A transient failure never says the status didn't change: a write whose
+  /// answer was lost may have landed, and it may be pressed again. Any other
+  /// failure, or one that sent nothing, would end the same way pressed
+  /// again, so its copy doesn't ask for that.
+  String _statusWriteMessage(
+    EventsLocalizations l10n,
+    EventStatusWrite write,
+  ) => switch (outcome.result) {
+    EventActionResult.done => switch (write) {
+      EventStatusWrite.cancel => l10n.eventsCancelled,
+      EventStatusWrite.reopen => l10n.eventsReopened,
+      EventStatusWrite.archive => l10n.eventsArchived,
+      EventStatusWrite.unarchive => l10n.eventsUnarchived,
+    },
+    EventActionResult.gone => l10n.eventsStatusWriteGone,
+    EventActionResult.refused => l10n.eventsStatusWriteRefused,
+    EventActionResult.changed => l10n.eventsStatusWriteChanged,
+    // A status write is one request, so it never ends partly done.
+    EventActionResult.failed || EventActionResult.partlyDone =>
+      outcome.error is EventRemoteTransientException
+          ? l10n.eventsStatusWriteFailed
+          : l10n.eventsStatusWriteFailedUnexpected,
+  };
 
   /// A vote's copy (#507). A failure never says the answer wasn't saved:
   /// one whose answer was lost may have landed.
