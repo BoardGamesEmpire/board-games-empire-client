@@ -193,6 +193,40 @@ Set<HouseholdMemberAction> householdMemberActionsFor({
   };
 }
 
+/// Why a viewer may not leave a household (#479), or null from
+/// [householdLeaveBlock] when they may.
+enum HouseholdLeaveBlock {
+  /// The viewer is the household's only owner and others remain. The server
+  /// answers 400 to exactly this, so the client says so first.
+  lastOwner,
+
+  /// The viewer is the household's only member. An owner alone has no one to
+  /// hand the household to, and deleting it (#477) will be the way out.
+  onlyMember,
+}
+
+/// Why [viewerRole] may not leave a household whose roster is [members], or
+/// null when they may (#479).
+///
+/// Only an owner is ever blocked. "Another member" is one whose user id is not
+/// [currentUserId]. With none, the block is [HouseholdLeaveBlock.onlyMember].
+/// With others but no other owner, it is [HouseholdLeaveBlock.lastOwner]: the
+/// server refuses that with a 400 and nothing else.
+HouseholdLeaveBlock? householdLeaveBlock({
+  required HouseholdRole? viewerRole,
+  required String? currentUserId,
+  required List<HouseholdMember> members,
+}) {
+  if (viewerRole != HouseholdRole.householdOwner) return null;
+
+  final others = members.where((member) => member.userId != currentUserId);
+  if (others.isEmpty) return HouseholdLeaveBlock.onlyMember;
+  if (!others.any((member) => member.role == HouseholdRole.householdOwner)) {
+    return HouseholdLeaveBlock.lastOwner;
+  }
+  return null;
+}
+
 /// The roles a viewer holding [viewerRole] may give a member, in the order a
 /// picker lists them, and none for anyone who may not change a role.
 ///

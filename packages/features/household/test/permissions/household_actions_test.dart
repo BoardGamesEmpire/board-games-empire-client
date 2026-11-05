@@ -723,4 +723,61 @@ void main() {
       }
     });
   });
+
+  group('householdLeaveBlock', () {
+    HouseholdMember who(String userId, HouseholdRole role) => HouseholdMember(
+      id: 'm_$userId',
+      userId: userId,
+      householdId: 'hh_1',
+      role: role,
+      createdAt: DateTime.utc(2026, 10, 1),
+      updatedAt: DateTime.utc(2026, 10, 1),
+    );
+
+    HouseholdLeaveBlock? block(HouseholdRole? role, List<HouseholdMember> m) =>
+        householdLeaveBlock(viewerRole: role, currentUserId: _me, members: m);
+
+    final me = who(_me, HouseholdRole.householdOwner);
+
+    test('an owner with a co-owner may leave', () {
+      expect(
+        block(HouseholdRole.householdOwner, [
+          me,
+          who(_other, HouseholdRole.householdOwner),
+        ]),
+        isNull,
+      );
+    });
+
+    test('the last owner, with other members, is lastOwner', () {
+      expect(
+        block(HouseholdRole.householdOwner, [
+          me,
+          who(_other, HouseholdRole.householdAdmin),
+        ]),
+        HouseholdLeaveBlock.lastOwner,
+      );
+    });
+
+    test('an owner alone is onlyMember', () {
+      expect(
+        block(HouseholdRole.householdOwner, [me]),
+        HouseholdLeaveBlock.onlyMember,
+      );
+    });
+
+    test('a member, an admin and a guest may always leave', () {
+      for (final role in [
+        HouseholdRole.householdMember,
+        HouseholdRole.householdAdmin,
+        HouseholdRole.householdGuest,
+      ]) {
+        expect(block(role, [who(_me, role)]), isNull, reason: '$role');
+      }
+    });
+
+    test('a null role gives no block', () {
+      expect(block(null, [me]), isNull);
+    });
+  });
 }
