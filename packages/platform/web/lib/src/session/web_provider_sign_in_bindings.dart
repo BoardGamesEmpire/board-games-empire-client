@@ -22,21 +22,22 @@ import 'package:web_network/web_network.dart'
 /// 1. Reads the return id the marker holds, set by a provider sign-in before
 ///    it left the page, and removes the marker whatever the load, so that no
 ///    later load can read it again.
-/// 2. Counts it only when this page load is a fresh navigation (#583). A
-///    Back from the provider page and a reload of the page that left both
-///    arrive with the marker still set. Where the browser cannot say how the
-///    page was loaded, the next step decides alone.
-/// 3. Reads the address with it ([readProviderSignInReturn]). The load is the
+/// 2. Reads the address with it ([readProviderSignInReturn]). The load is the
 ///    attempt's return only when the address carries the same return id, as
-///    the server's redirect back does. A fresh navigation the user makes by
-///    hand in the same tab after giving up on the provider, a typed address
-///    or a bookmark, keeps the marker but not the id. Taken as a return with
-///    no `?error=`, any of these would read as a success: its first session
+///    the server's redirect back does. Back from the provider page, a reload
+///    of the page that left, and an address the user reaches by hand in the
+///    same tab after giving up on the provider, a typed address or a
+///    bookmark, all keep the marker but not the id. Taken as a return with no
+///    `?error=`, any of these would read as a success: its first session
 ///    read would announce a sign-in to the other tabs over whatever cookie
 ///    the jar holds, and a tab whose sign-out failed to revoke it would then
 ///    adopt that cookie. Not a return, an `?error=` is not this tab's to
 ///    report, and stays where it is.
-/// 4. Takes the return id, and with a return `error` and
+///
+///    How the page was loaded is not asked (#583). Only the return itself
+///    carries the id, so a reload of it, or a Back and Forward to it, before
+///    this first ran is still that return, and is read as one.
+/// 3. Takes the return id, and with a return `error` and
 ///    `error_description`, out of the address bar with
 ///    `history.replaceState`, so a reload does not read the return again,
 ///    and a copied address does not carry it to another tab.
@@ -57,11 +58,10 @@ import 'package:web_network/web_network.dart'
 /// Nothing here logs the address, which carries the provider's own `state` on
 /// the way out and its error on the way back.
 ///
-/// [navigationType], [listenForPageShow] and [reload] stand in for the
-/// browser's, for tests: the runner's page is never restored from the cache,
-/// and reloading it would end the run.
+/// [listenForPageShow] and [reload] stand in for the browser's, for tests:
+/// the runner's page is never restored from the cache, and reloading it would
+/// end the run.
 WebProviderSignInBindings captureWebProviderSignIn({
-  String? Function() navigationType = _navigationType,
   void Function(void Function(bool persisted) onPageShow) listenForPageShow =
       _listenForPageShow,
   void Function() reload = _reload,
@@ -70,11 +70,8 @@ WebProviderSignInBindings captureWebProviderSignIn({
     (persisted) => _settleCacheRestore(persisted: persisted, reload: reload),
   );
 
-  final marker = _takeMarker();
   final read = readProviderSignInReturn(
-    marker: marker != null && _isFreshNavigation(navigationType())
-        ? marker
-        : null,
+    marker: _takeMarker(),
     address: Uri.base,
   );
 
@@ -116,35 +113,6 @@ String? _takeMarker() {
       'provider sign-in return',
       context: {'cause': error.runtimeType.toString()},
     );
-    return null;
-  }
-}
-
-/// Whether a page load of [type] can be a provider's redirect back: a fresh
-/// navigation, or one the browser could not describe.
-bool _isFreshNavigation(String? type) {
-  if (type == null || type == 'navigate') return true;
-  _log.info(
-    'A provider sign-in marker came back without a provider redirect; this '
-    'page load is not read as a return',
-    context: {'navigation': type},
-  );
-  return false;
-}
-
-/// How this page load was reached, from Navigation Timing: `navigate`,
-/// `reload`, `back_forward` or `prerender`. Null where the browser has no
-/// navigation entry to read.
-String? _navigationType() {
-  try {
-    final entries = web.window.performance
-        .getEntriesByType('navigation')
-        .toDart;
-    if (entries.isEmpty) return null;
-    final entry = entries.first;
-    if (!entry.isA<web.PerformanceNavigationTiming>()) return null;
-    return (entry as web.PerformanceNavigationTiming).type;
-  } on Object {
     return null;
   }
 }
