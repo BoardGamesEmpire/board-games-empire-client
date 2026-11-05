@@ -180,6 +180,27 @@ final class EventUnarchiveRequested extends EventActionsEvent {
   List<Object?> get props => [eventId];
 }
 
+/// Answer the viewer's own invitation to [eventId] with [status] (#508).
+/// [attendeeId] is the viewer's row on the event's roster.
+final class EventRsvpRequested extends EventActionsEvent {
+  const EventRsvpRequested(
+    this.eventId,
+    this.attendeeId,
+    this.status, {
+    this.notes,
+  });
+
+  final String eventId;
+  final String attendeeId;
+  final EventParticipationStatus status;
+
+  /// Null leaves the note as it is; '' clears it (#508).
+  final String? notes;
+
+  @override
+  List<Object?> get props => [eventId, attendeeId, status, notes];
+}
+
 /// The screen dropped a write of [action] once its dialog closed, because
 /// the event no longer offered it (#502, #655), and nothing was sent. Its
 /// banner says the event changed, as a 400 for it would, so a screen reader
