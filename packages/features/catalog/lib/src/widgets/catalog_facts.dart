@@ -153,6 +153,24 @@ CatalogFact _upTo(GameCatalogLocalizations l10n, CatalogFact duration) => (
   spoken: l10n.catalogPlayTimeUpTo(duration.spoken),
 );
 
+/// Who a game is for and how long it takes: its players, its play time and
+/// the youngest age it is for, each where it is known.
+///
+/// The detail page lists them after the content type and the year, and the
+/// quick look on their own, with the year in its header (#707).
+List<CatalogFact> playFacts(GameCatalogLocalizations l10n, Game game) {
+  final age = game.minAge;
+  return [
+    ?playersFact(l10n, game.minPlayers, game.maxPlayers),
+    ?playTimeFact(l10n, game),
+    if (age != null)
+      (
+        shown: l10n.catalogDetailMinAge('$age'),
+        spoken: l10n.catalogDetailMinAgeSpoken('$age'),
+      ),
+  ];
+}
+
 /// The name of [band], as the play-time filter offers it (#580).
 String bandName(GameCatalogLocalizations l10n, GameLengthBand band) =>
     switch (band) {

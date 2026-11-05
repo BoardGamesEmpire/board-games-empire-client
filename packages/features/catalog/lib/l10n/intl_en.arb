@@ -955,6 +955,14 @@
   "@catalogDescriptionLess": {
     "description": "Button under a game's whole description, after catalogDescriptionMore was pressed, that cuts it back to its first few lines. A screen reader also hears that it is expanded."
   },
+  "catalogQuickLookViewDetails": "View full details",
+  "@catalogQuickLookViewDetails": {
+    "description": "Button in a game's quick look, the pop-up a tapped cover opens over the page, that opens the game's own page with everything about it."
+  },
+  "catalogQuickLookPartial": "Some details couldn't be loaded.",
+  "@catalogQuickLookPartial": {
+    "description": "Banner in a game's quick look when the server's copy of the game could not be loaded, for any reason. What the list already knew about the game stays shown, or the copy saved on this device. Names no cause. Beside it, catalogRetry asks the server again."
+  },
   "catalogDetailAvailableOn": "Available on",
   "@catalogDetailAvailableOn": {
     "description": "Heading over the list of platforms a game can be played on, such as Tabletop or Steam."

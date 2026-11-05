@@ -95,6 +95,26 @@ void main() {
     });
   });
 
+  group('playFacts', () {
+    test('are the players, the play time and the age, in that order', () {
+      final base = timed(min: 30, max: 45);
+      final game = base.copyWith(minPlayers: 1, maxPlayers: 5, minAge: 10);
+
+      expect(playFacts(l10n, game), [
+        (shown: '1–5 players', spoken: '1 to 5 players'),
+        (shown: '30–45 min', spoken: '30 to 45 minutes'),
+        (shown: 'Ages 10+', spoken: 'Ages 10 and up'),
+      ]);
+    });
+
+    test('leave out what is not known', () {
+      expect(playFacts(l10n, timed()), isEmpty);
+      expect(playFacts(l10n, timed().copyWith(minAge: 8)), [
+        (shown: 'Ages 8+', spoken: 'Ages 8 and up'),
+      ]);
+    });
+  });
+
   group('yearText', () {
     test('a year before the common era reads as BCE', () {
       expect(yearText(l10n, -3000), '3000 BCE');
