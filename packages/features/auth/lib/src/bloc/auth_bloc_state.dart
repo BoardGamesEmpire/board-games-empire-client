@@ -236,6 +236,20 @@ final class AuthFailureEmailNotVerified extends AuthOperationFailure {
   const AuthFailureEmailNotVerified();
 }
 
+/// The server refused a sign-in or sign-up for coming too often (a 429, #559).
+///
+/// [retryAfter] is the wait the server asked for, when it said. Retrying is
+/// the right move once it has passed, so this is its own kind rather than
+/// [AuthFailureServer], whose copy says the server broke.
+final class AuthFailureRateLimited extends AuthOperationFailure {
+  const AuthFailureRateLimited([this.retryAfter]);
+
+  final Duration? retryAfter;
+
+  @override
+  List<Object?> get props => [retryAfter];
+}
+
 /// Anything unanticipated (unexpected status, malformed body, …). The
 /// original error is retained for the feedback pipeline, but excluded
 /// from equality so tests can match on the state alone.

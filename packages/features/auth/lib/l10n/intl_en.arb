@@ -160,6 +160,19 @@
   "@authErrorServer": {
     "description": "Submission error: unexpected server failure"
   },
+  "authErrorRateLimited": "Too many attempts. Try again in {seconds, plural, =1{1 second} other{{seconds} seconds}}.",
+  "@authErrorRateLimited": {
+    "description": "Submission error: the server refused a sign-in or sign-up for too many attempts and said how long to wait. Announced once when it appears, with no countdown: a ticking number would be re-announced every second. The submit button stays enabled during the wait.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "authErrorRateLimitedNoWait": "Too many attempts. Wait a moment, then try again.",
+  "@authErrorRateLimitedNoWait": {
+    "description": "Submission error: the server refused a sign-in or sign-up for too many attempts and gave no usable wait (none, or under a second). Announced once, with no countdown."
+  },
   "authPasswordVisibilityShow": "Show password",
   "@authPasswordVisibilityShow": {
     "description": "Semantic label to show password"

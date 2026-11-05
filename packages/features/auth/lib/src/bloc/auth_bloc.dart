@@ -333,6 +333,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(AuthFailureLocalDecode(e));
     } on AuthNetworkException {
       emit(const AuthFailureNetwork());
+    } on AuthRateLimitedException catch (e) {
+      emit(AuthFailureRateLimited(e.retryAfter));
     } on AuthException catch (e) {
       emit(AuthFailureServer(e));
     }
@@ -365,6 +367,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(AuthFailureLocalDecode(e));
     } on AuthNetworkException {
       emit(const AuthFailureNetwork());
+    } on AuthRateLimitedException catch (e) {
+      emit(AuthFailureRateLimited(e.retryAfter));
     } on AuthException catch (e) {
       emit(AuthFailureServer(e));
     }
@@ -595,6 +599,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureNetwork():
       case AuthFailureSessionNotGranted():
       case AuthFailureEmailNotVerified():
+      case AuthFailureRateLimited():
         _log.warn(
           'Auth operation failed',
           context: {'event': event, 'failure': next.runtimeType.toString()},

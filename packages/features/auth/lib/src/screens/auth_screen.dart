@@ -356,6 +356,11 @@ class _AuthScreenState extends State<AuthScreen> {
         AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
         AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
         AuthFailureServer() => l10n.authErrorServer,
+        // A wait under a second would read "in 0 seconds", which is no advice.
+        AuthFailureRateLimited(:final retryAfter) =>
+          retryAfter == null || retryAfter < const Duration(seconds: 1)
+              ? l10n.authErrorRateLimitedNoWait
+              : l10n.authErrorRateLimited(retryAfter.inSeconds),
       };
 
   void _switchMode({required bool signIn}) {
