@@ -1,6 +1,8 @@
+import 'package:bge_test_support/network.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -44,11 +46,16 @@ ServerConfig _config() => ServerConfig(
 /// register, not a feature's: it shares the per-server Dio, which carries the
 /// base URL and the BetterAuth session the `/api/households` routes require,
 /// and adds no auth of its own. Other suites only touch it in passing; this
-/// one pins its type and identity.
+/// one pins its type, its identity and the Dio it sends on.
 void main() {
   late DependencyContainerImpl container;
 
   setUp(() {
+    // The token interceptor reads the keychain before each request; the
+    // plugin's own in-memory store stands in for it, empty, so requests go
+    // out with no session.
+    TestWidgetsFlutterBinding.ensureInitialized();
+    FlutterSecureStorage.setMockInitialValues({});
     container = DependencyContainerImpl();
     registerServerNetwork(
       container: container,
@@ -71,15 +78,34 @@ void main() {
       expect(container.isRegistered<HouseholdRemoteDataSourceImpl>(), isFalse);
     });
 
-    test('resolves as one instance over the shared per-server Dio', () {
+    test('resolves as one instance', () {
       expect(
         container.get<HouseholdRemoteDataSource>(),
         same(container.get<HouseholdRemoteDataSource>()),
       );
-      // The remote exposes no internals, so identity with the Dio cannot be
-      // asserted; the base URL is the observable sign that it is the
-      // per-server one.
-      expect(container.get<Dio>().options.baseUrl, 'https://bge.example.com');
+    });
+
+    test('sends on the shared per-server Dio', () async {
+      // The remote keeps its Dio private, so this checks it by what it
+      // does: a request reaches the transport of the Dio the container
+      // holds. A remote on a Dio of its own would miss it, and with it the
+      // session the household routes require.
+      final server = ScriptedServer()
+        ..json('GET', '/api/households', {
+          'households': <Object?>[],
+          'pagination': {
+            'page': 1,
+            'limit': 100,
+            'total': 0,
+            'totalPages': 0,
+            'hasMore': false,
+          },
+        });
+      container.get<Dio>().httpClientAdapter = server;
+
+      await container.get<HouseholdRemoteDataSource>().fetchHouseholds();
+
+      expect(server.requestsTo('GET', '/api/households'), hasLength(1));
     });
 
     test('registers beside the other remotes, not instead of them', () {

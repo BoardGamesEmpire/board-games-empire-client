@@ -225,6 +225,46 @@ void main() {
     );
 
     test(
+      'records each body as it was sent, though the caller changes it later',
+      () async {
+        server.json('POST', '/api/thing', <String, Object?>{});
+        final body = <String, Object?>{
+          'clientRequestId': 'first',
+          'tags': ['a'],
+        };
+        final query = <String, dynamic>{
+          'ids': ['1'],
+        };
+
+        await dio.post<Object?>(
+          '/api/thing',
+          data: body,
+          queryParameters: query,
+        );
+        body['clientRequestId'] = 'second';
+        (body['tags']! as List<Object?>).add('b');
+        (query['ids'] as List<Object?>).add('2');
+        await dio.post<Object?>(
+          '/api/thing',
+          data: body,
+          queryParameters: query,
+        );
+
+        expect(server.requests[0].data, {
+          'clientRequestId': 'first',
+          'tags': ['a'],
+        });
+        expect(server.requests[0].queryParameters, {
+          'ids': ['1'],
+        });
+        expect(server.requests[1].data, {
+          'clientRequestId': 'second',
+          'tags': ['a', 'b'],
+        });
+      },
+    );
+
+    test(
       'stores a JSON String body decoded and a non-JSON String as-is',
       () async {
         server.json('POST', '/api/thing', <String, Object?>{});

@@ -129,15 +129,24 @@ void main() {
         );
       });
 
-      test('the hydrates run at sign-in', () async {
+      test('the hydrates run at sign-in, on the session', () async {
         await harness.awaitHydrated();
 
+        // The bearer is the server network's `TokenInterceptor` at work. The
+        // sign-out request carries its token itself, so this is the root
+        // test that fails if the interceptor goes missing.
         for (final path in [
           '/api/households',
           '/api/game-collections',
           '/api/events',
         ]) {
-          expect(harness.server.requestsTo('GET', path), hasLength(1));
+          final requests = harness.server.requestsTo('GET', path);
+          expect(requests, hasLength(1), reason: path);
+          expect(
+            requests.single.authorization,
+            'Bearer ${NativeRootHarness.sessionToken}',
+            reason: path,
+          );
         }
       });
     });

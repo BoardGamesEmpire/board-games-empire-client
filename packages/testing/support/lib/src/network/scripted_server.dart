@@ -62,6 +62,8 @@ class RecordedRequest {
   /// The request body: `options.data`, except that a `String` which parses as
   /// JSON is stored decoded, as whatever JSON value it holds (a `Map`, a
   /// `List`, a number, a bool, a string or null). Any other string stays as-is.
+  /// A `Map` or `List` body is a copy taken when the request arrived, so it
+  /// holds what that request sent even if the caller changes its body later.
   final Object? data;
 
   /// The `Authorization` header, if one was sent.
@@ -163,13 +165,26 @@ class ScriptedServer implements HttpClientAdapter {
   }
 
   static Object? _decode(Object? data) {
-    if (data is! String) return data;
+    if (data is! String) return _snapshot(data);
     try {
       return jsonDecode(data);
     } on FormatException {
       return data;
     }
   }
+
+  /// Copies the maps and lists in [value], at any depth, so a caller that
+  /// changes a body after sending it cannot change what was recorded: dio
+  /// hands the adapter the caller's own object. Anything else, a `FormData`
+  /// say, is kept as it is.
+  static Object? _snapshot(Object? value) => switch (value) {
+    Map() => {
+      for (final MapEntry(:key, value: entry) in value.entries)
+        key: _snapshot(entry),
+    },
+    List() => [for (final element in value) _snapshot(element)],
+    _ => value,
+  };
 
   @override
   Future<ResponseBody> fetch(
@@ -181,7 +196,10 @@ class ScriptedServer implements HttpClientAdapter {
     final request = RecordedRequest(
       method: method,
       path: options.path,
-      queryParameters: Map.of(options.queryParameters),
+      queryParameters: {
+        for (final MapEntry(:key, :value) in options.queryParameters.entries)
+          key: _snapshot(value),
+      },
       headers: _caseInsensitive(options.headers),
       data: _decode(options.data),
     );
