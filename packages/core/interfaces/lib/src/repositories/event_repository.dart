@@ -333,6 +333,15 @@ abstract class EventRepository {
   /// (#589): a detail read in flight may still write the event over it.
   Future<bool> cacheOccurrence(EventOccurrence occurrence);
 
+  /// Writes [attendee], which an RSVP answered, over the cached roster row
+  /// with its id, and onto the current user's `attending` row when it is
+  /// theirs (#508, #667). Never adds a row to a roster.
+  ///
+  /// Returns false, writing nothing, when the event isn't cached or is
+  /// `isDirty` or `isLocalOnly`, or when neither row is cached. Stamps the
+  /// generation, and [watchEvent] emits. Last-write-wins (#589).
+  Future<bool> cacheAttendee(EventAttendee attendee);
+
   /// Writes [event], the row a status write returned (cancel, reopen,
   /// archive or unarchive), over the cached one with its id (#502).
   ///

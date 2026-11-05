@@ -799,6 +799,49 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   @override
+  Future<bool> cacheAttendee(EventAttendee attendee) async {
+    checkNotDisposed();
+    final eventId = attendee.eventId;
+    return _db.transaction(() async {
+      if (!await _isCachedAndServerOwned(eventId)) return false;
+
+      // The roster row with this id, where one is cached. An RSVP answers
+      // for a row the server has, but a roster this client never read has no
+      // row to replace, and one row alone would read as a roster of one.
+      final rosterRows =
+          await (_db.update(_db.eventAttendeesTable)..where(
+                (t) => t.id.equals(attendee.id) & t.eventId.equals(eventId),
+              ))
+              .write(
+                _attendeeToCompanion(attendee).copyWith(
+                  id: const Value.absent(),
+                  eventId: const Value.absent(),
+                ),
+              );
+
+      // The user's own answer also lives on their `attending` row, which the
+      // list reads first (#667). Only theirs, and only where the row exists.
+      var attendingRows = 0;
+      if (attendee.userId == _userId) {
+        attendingRows =
+            await (_db.update(_db.eventAccessTable)..where(
+                  (t) =>
+                      t.eventId.equals(eventId) &
+                      t.userId.equals(_userId) &
+                      t.source.equals(eventAccessSourceAttending),
+                ))
+                .write(
+                  _answerToCompanion(EventAttendance.fromAttendee(attendee)),
+                );
+      }
+
+      if (rosterRows == 0 && attendingRows == 0) return false;
+      await _db.batch((b) => _stampGeneration(b, [eventId]));
+      return true;
+    });
+  }
+
+  @override
   Future<bool> cacheEventRow(Event event) async {
     checkNotDisposed();
     final id = event.id;
