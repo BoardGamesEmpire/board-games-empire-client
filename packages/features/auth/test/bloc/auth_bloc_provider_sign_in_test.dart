@@ -181,6 +181,84 @@ void main() {
     }
   });
 
+  // On web the page regaining focus re-reads the session, and a read that
+  // finds none publishes unauthenticated again though nothing changed. The
+  // grant still pending owns what the screen shows: dropping its loading
+  // state would show buttons that look live while every press is dropped.
+  group('a no-session reading while a grant is pending keeps it loading', () {
+    late StreamController<AuthState> repoStates;
+
+    setUp(() {
+      repoStates = StreamController<AuthState>();
+      addTearDown(repoStates.close);
+      when(() => repo.watchAuthState()).thenAnswer((_) => repoStates.stream);
+    });
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'a provider attempt, which then settles the screen itself',
+      build: () {
+        final gate = Completer<ProviderSignInOutcome>();
+        when(() => repo.signInWithProvider(any()))
+            .thenAnswer((_) => gate.future);
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete(const ProviderSignInCancelled());
+        });
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        await pumpEventQueue();
+        repoStates.add(const AuthStateUnauthenticated());
+        await pumpEventQueue();
+      },
+      expect: () => [loading],
+    );
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'a password sign-in',
+      build: () {
+        final gate = Completer<AuthResponse>();
+        when(
+          () => repo.signIn(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+          ),
+        ).thenAnswer((_) => gate.future);
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete(testSession());
+        });
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
+        await pumpEventQueue();
+        repoStates.add(const AuthStateUnauthenticated());
+        await pumpEventQueue();
+      },
+      expect: () => [const AuthLoading()],
+    );
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'but once the grant has settled the mirror follows again',
+      build: () {
+        when(() => repo.signInWithProvider(any()))
+            .thenAnswer((_) async => ProviderSignInCompleted(testSession()));
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        await pumpEventQueue();
+        repoStates.add(const AuthStateUnauthenticated());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        loading,
+        AuthAuthenticated(session: testSession()),
+        const AuthUnauthenticated(),
+      ],
+    );
+  });
+
   blocTest<AuthBloc, AuthBlocState>(
     'a second request while one is in flight is dropped',
     build: () {

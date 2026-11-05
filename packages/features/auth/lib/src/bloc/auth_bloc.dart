@@ -86,7 +86,9 @@ import 'auth_bloc_state.dart';
 /// password sign-in runs, and the first to finish would settle the screen
 /// over the other. The screen disables the other controls once the loading
 /// state is built, which leaves the frame before it; [_oneGrantAtATime]
-/// covers that frame and any caller that isn't the screen.
+/// covers that frame and any caller that isn't the screen. That loading
+/// state lasts until the grant settles: the repository reporting no session
+/// again does not end it (see [_onRepositoryStateChanged]).
 ///
 /// ## i18n
 ///
@@ -595,6 +597,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // safe to hand the same value repeatedly.
       case AuthStateAuthenticated(:final session, :final verification):
         emit(AuthAuthenticated(session: session, verification: verification));
+      // A credential grant's loading state is the grant's to end (#583). On
+      // web the page regaining focus re-reads the session, and a read that
+      // finds none publishes unauthenticated again though nothing changed.
+      // Following it would show the sign-in buttons as live while
+      // [_oneGrantAtATime] drops every press until the grant settles. A
+      // sign-out landing meanwhile reaches the grant itself, which then
+      // settles the screen: a password grant as [AuthSupersededException], a
+      // provider attempt whose page stayed as its cancel. A session that
+      // lands is still followed, above.
+      case AuthStateUnauthenticated()
+          when _grantInFlight && state is AuthLoading:
+        break;
       // By TYPE, unlike the case above; see [_mirrorUnauthenticated].
       case AuthStateUnauthenticated():
         _mirrorUnauthenticated(emit);
