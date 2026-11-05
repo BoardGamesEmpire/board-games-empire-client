@@ -506,5 +506,43 @@
         "example": "Physical"
       }
     }
+  },
+  "collectionPickerTitle": "{title}: your copies",
+  "@collectionPickerTitle": {
+    "description": "Heading of the pop-up that opens from a game the user owns more than one copy of, on different platforms or as both a physical and a digital copy. It lists the copies, and tapping one opens it. A screen reader also announces it as the pop-up's name when it opens. {title} is the game's name.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "collectionPickerEntryWithMedium": "{platform} · {medium}",
+  "@collectionPickerEntryWithMedium": {
+    "description": "Shown under one copy's cover in the pop-up listing a game's copies, when the user owns the game twice on the same platform, so the physical and the digital copy can be told apart, for example 'Tabletop · Physical'. Where a platform has only one copy, its name is shown alone. {medium} is collectionListMediumPhysical or collectionListMediumDigital. Keep or drop the spaces around the dot as your language's punctuation needs.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
+  },
+  "collectionPickerEntryWithMediumSpoken": "{platform} {medium}",
+  "@collectionPickerEntryWithMediumSpoken": {
+    "description": "What a screen reader says for one copy in the pop-up listing a game's copies, in place of collectionPickerEntryWithMedium, whose dot would be read out, for example 'Tabletop Physical'. It is the name of the button that opens that copy. Keep a comma out of it: a list of copies, such as the collection's name for a game owned twice, 'Wingspan, 2 copies: Tabletop Physical, Tabletop Digital', joins these with collectionListDetailSpokenSeparator, and a comma inside each would make two copies sound like four.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
   }
 }

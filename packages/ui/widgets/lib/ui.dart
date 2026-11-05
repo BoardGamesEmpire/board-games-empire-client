@@ -37,10 +37,10 @@
 /// they take from `BgeTokens.contentMaxWidth`.
 ///
 /// New widgets belong here once a second call site wants them — not in
-/// anticipation of one. One exception, by decision: `showBgePopup` has one
-/// call site, the game quick look, and is here because #707 placed the
+/// anticipation of one. One exception, by decision: `showBgePopup` came here
+/// with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
-/// same way.
+/// same way. That picker, the collection entry picker, is now its second.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
