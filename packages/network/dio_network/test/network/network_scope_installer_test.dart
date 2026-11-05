@@ -30,8 +30,25 @@ ServerConfig _makeConfig() => ServerConfig(
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );
 
-NetworkScopeInstaller installer() =>
-    NetworkScopeInstaller(sessionTombstones: InMemorySessionTombstoneStore());
+class _FakeProviderBrowser implements ProviderSignInBrowser {
+  const _FakeProviderBrowser({this.isSupported = true});
+
+  @override
+  final bool isSupported;
+
+  @override
+  Future<Uri?> authenticate({
+    required Uri url,
+    required String callbackScheme,
+  }) => throw UnimplementedError();
+}
+
+NetworkScopeInstaller installer({
+  ProviderSignInBrowser providerBrowser = const _FakeProviderBrowser(),
+}) => NetworkScopeInstaller(
+  sessionTombstones: InMemorySessionTombstoneStore(),
+  providerBrowser: providerBrowser,
+);
 
 void main() {
   late DependencyContainerImpl container;
@@ -67,8 +84,10 @@ void main() {
       final tombstones = InMemorySessionTombstoneStore();
       final config = _makeConfig();
       expect(config.id, isNot(config.bgeServerId));
-      await NetworkScopeInstaller(sessionTombstones: tombstones)
-          .install(container, config);
+      await NetworkScopeInstaller(
+        sessionTombstones: tombstones,
+        providerBrowser: const _FakeProviderBrowser(),
+      ).install(container, config);
 
       // The marker is written ahead of the keychain delete. There is no
       // keychain plugin in the test host, so the delete itself throws.
@@ -79,6 +98,28 @@ void main() {
       }
 
       expect(tombstones.revoked, {config.bgeServerId});
+    });
+
+    test(
+      'passes its browser to the AuthRepository it registers (#583)',
+      () async {
+        await installer().install(container, _makeConfig());
+        expect(
+          container.get<AuthRepository>().providerSignInAvailability,
+          isA<ProviderSignInAvailable>(),
+        );
+      },
+    );
+
+    test('a browser that is not supported makes provider sign-in '
+        'unavailable (#583)', () async {
+      await installer(
+        providerBrowser: const _FakeProviderBrowser(isSupported: false),
+      ).install(container, _makeConfig());
+      expect(
+        container.get<AuthRepository>().providerSignInAvailability,
+        isA<ProviderSignInUnsupportedDevice>(),
+      );
     });
 
     test('disposes the AuthRepository with the container — its auth-state '

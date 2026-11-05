@@ -11,6 +11,7 @@
 /// platform-specific concerns.
 library;
 
+export 'src/auth/flutter_web_auth_provider_sign_in_browser.dart';
 export 'src/build_info/package_info_build_info_reader.dart';
 export 'src/deep_links/app_links_deep_link_source.dart';
 export 'src/deep_links/server_repository_known_server_lookup.dart';

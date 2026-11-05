@@ -1,3 +1,4 @@
+import 'package:dio_network/dio_network.dart' show NetworkScopeInstaller;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,5 +68,21 @@ void main() {
     // StorageScopeInstaller opens the database everything else sits on.
     expect(installers.first, isA<StorageScopeInstaller>());
     expect(installers, hasLength(2));
+  });
+
+  test('the per-server tier hands the provider browser to the network '
+      'installer (#583)', () {
+    final browser = FlutterWebAuthProviderSignInBrowser(isSupported: true);
+    final installers = buildNativeServerScopeInstallers(
+      executorFactory: _MockExecutorFactory(),
+      keyService: _MockKeyService(),
+      sessionTombstones: _MockSessionTombstoneStore(),
+      providerBrowser: browser,
+    );
+
+    expect(
+      installers.whereType<NetworkScopeInstaller>().single.providerBrowser,
+      same(browser),
+    );
   });
 }

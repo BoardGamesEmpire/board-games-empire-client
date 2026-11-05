@@ -3,7 +3,8 @@ import 'package:dio/dio.dart';
 
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:interfaces/services.dart' show ClockService;
+import 'package:interfaces/services.dart'
+    show ClockService, ProviderSignInBrowser, UnsupportedProviderSignInBrowser;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
@@ -57,6 +58,8 @@ void registerServerNetwork({
   required DependencyContainer container,
   required ServerConfig config,
   required SessionTombstoneStore sessionTombstones,
+  ProviderSignInBrowser providerBrowser =
+      const UnsupportedProviderSignInBrowser(),
 }) {
   // #12: per-server skew-corrected clock. Registered here — not in its
   // own installer — per the registration convention: it is fed by this
@@ -114,6 +117,7 @@ void registerServerNetwork({
     tokenStorage: tokenStorage,
     dio: dio,
     clock: clock,
+    providerBrowser: providerBrowser,
   );
   // Disposable, so the container closes it with the scope.
   container.registerSingleton<AuthRepository>(authRepository);
