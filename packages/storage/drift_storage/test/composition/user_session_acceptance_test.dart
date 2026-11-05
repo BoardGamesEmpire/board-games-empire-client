@@ -27,6 +27,11 @@ import '../support/platform_game_fixture.dart';
 /// #150 extends both to `GameCollectionRepository`, which joined the same
 /// scope, and adds the missed-pop case: a *direct* user change with no
 /// intervening sign-out.
+///
+/// This suite tests how the user scope behaves over a fixture base
+/// installer. drift_storage cannot depend on `native_platform`, so it does
+/// not prove the production wiring;
+/// `native_platform/test/native_root_composition_test.dart` does (#435).
 
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
