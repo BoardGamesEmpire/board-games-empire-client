@@ -1458,6 +1458,7 @@ void main() {
 
     setUpAll(() {
       registerFallbackValue(_member('u-fallback'));
+      registerFallbackValue(<HouseholdMember>[]);
       registerFallbackValue(HouseholdRole.householdMember);
     });
 
@@ -1465,6 +1466,7 @@ void main() {
       remote = _MockMemberRemote();
       refreshes = 0;
       when(() => repository.cacheMember(any())).thenAnswer((_) async {});
+      when(() => repository.cacheMembers(any())).thenAnswer((_) async {});
       when(() => repository.removeCachedMember(any(), any()))
           .thenAnswer((_) async {});
     });
@@ -1819,6 +1821,150 @@ void main() {
       expect(find.text('1 awaiting approval'), findsOneWidget);
     });
 
+    /// Both sides of Zed's taking over the household from the viewer.
+    HouseholdOwnershipTransfer zedTakesOver() => (
+      owner: _member(
+        'u-2',
+        role: HouseholdRole.householdOwner,
+        displayName: 'Zed',
+      ),
+      previousOwner: _member('u-me', role: HouseholdRole.householdAdmin),
+    );
+
+    testWidgets('an owner is offered Make owner on a member, and not on '
+        'another owner', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', role: HouseholdRole.householdOwner),
+          _member('u-2', displayName: 'Zed'),
+          _member('u-3', role: HouseholdRole.householdOwner),
+        ],
+      );
+
+      await tester.tap(menuOf('u-2'));
+      await tester.pumpAndSettle();
+      final makeOwner = find.byKey(HouseholdDetailScreen.makeOwnerKey);
+      expect(makeOwner, findsOneWidget);
+      // After Remove.
+      expect(
+        tester.getTopLeft(makeOwner).dy,
+        greaterThan(
+          tester.getTopLeft(find.byKey(HouseholdDetailScreen.removeKey)).dy,
+        ),
+      );
+      await tester.tap(menuOf('u-2'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(menuOf('u-3'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.removeKey), findsOneWidget);
+      expect(makeOwner, findsNothing);
+    });
+
+    testWidgets('an admin is never offered Make owner', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', role: HouseholdRole.householdAdmin),
+          _member('u-2', displayName: 'Zed'),
+        ],
+      );
+
+      await tester.tap(menuOf('u-2'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.removeKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.makeOwnerKey), findsNothing);
+    });
+
+    testWidgets('Make owner confirms, then sends the transfer', (tester) async {
+      when(() => remote.transferOwnership(any(), any()))
+          .thenAnswer((_) async => zedTakesOver());
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await choose(tester, 'u-2', HouseholdDetailScreen.makeOwnerKey);
+
+      expect(find.text('Make Zed the owner?'), findsOneWidget);
+      expect(
+        find.text("You'll stop being an owner and become an admin."),
+        findsOneWidget,
+      );
+      verifyNever(() => remote.transferOwnership(any(), any()));
+      final confirm = find.byKey(HouseholdDetailScreen.makeOwnerConfirmKey);
+      // A plain button: the viewer stays on, as an admin.
+      expect(tester.widget<TextButton>(confirm).style, isNull);
+
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+
+      // The member's own id, which the route names, not their user id.
+      verify(() => remote.transferOwnership(_id, 'm-u-2')).called(1);
+      expect(
+        inOutcome("Ownership handed over. You're now an admin."),
+        findsOneWidget,
+      );
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(refreshes, 1);
+    });
+
+    testWidgets('cancelling Make owner sends nothing', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester, zed: null);
+
+      await choose(tester, 'u-2', HouseholdDetailScreen.makeOwnerKey);
+      // Unnamed, so it asks about "this member".
+      expect(find.text('Make this member the owner?'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Make this member the owner?'), findsNothing);
+      verifyNever(() => remote.transferOwnership(any(), any()));
+      expect(outcome(), findsNothing);
+    });
+
+    testWidgets('the Make owner confirmation fits at 320dp and 2.0 text', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      await tester.pumpWidget(
+        harness(
+          textScaler: const TextScaler.linear(2),
+          members: remote,
+          onMembershipChanged: () async => refreshes++,
+        ),
+      );
+      await settleAsOwner(
+        tester,
+        zed: 'Maximiliana Theodora Wolfeschlegelsteinhausen-Bergdorff',
+      );
+
+      await choose(tester, 'u-2', HouseholdDetailScreen.makeOwnerKey);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          'Make Maximiliana Theodora Wolfeschlegelsteinhausen-Bergdorff the '
+          'owner?',
+        ),
+        findsOneWidget,
+      );
+      // The dialog scrolls rather than pushing its buttons off the screen.
+      await tester.ensureVisible(
+        find.byKey(HouseholdDetailScreen.makeOwnerConfirmKey),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(HouseholdDetailScreen.makeOwnerConfirmKey).hitTestable(),
+        findsOneWidget,
+      );
+    });
+
     FocusNode menuFocus(WidgetTester tester, String userId) =>
         tester.widget<IconButton>(menuOf(userId)).focusNode!;
 
@@ -2139,6 +2285,32 @@ void main() {
         expect(find.text(_onlineOnlyCopy), findsNothing);
       });
 
+      testWidgets('Make owner is disabled offline, with the reason', (
+        tester,
+      ) async {
+        await tester.pumpWidget(whileOffline());
+        await settleAsOwner(tester);
+
+        await tester.tap(menuOf('u-2'));
+        await tester.pumpAndSettle();
+
+        final makeOwner = find.byKey(HouseholdDetailScreen.makeOwnerKey);
+        expect(tester.widget<MenuItemButton>(makeOwner).onPressed, isNull);
+        expect(
+          tester.getSemantics(makeOwner),
+          matchesSemantics(
+            label: 'Make owner\n$_onlineOnlyCopy',
+            hasEnabledState: true,
+          ),
+        );
+
+        offline.value = false;
+        await tester.pumpAndSettle();
+
+        expect(tester.widget<MenuItemButton>(makeOwner).onPressed, isNotNull);
+        expect(find.text(_onlineOnlyCopy), findsNothing);
+      });
+
       testWidgets('the menu button stays enabled, and a menu open as the '
           'connection drops closes', (tester) async {
         offline.value = false;
@@ -2154,6 +2326,281 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.byKey(HouseholdDetailScreen.removeKey), findsNothing);
         expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
+      });
+    });
+
+    group("focus after a member's control goes (#478)", () {
+      final owner = _member('u-me', role: HouseholdRole.householdOwner);
+      final zed = _member('u-2', displayName: 'Zed');
+
+      Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+        await tester.sendKeyEvent(key);
+        // A menu item's onPressed runs after the frame, so two pumps.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      /// Tabs down the page to [userId]'s menu button, as a keyboard user
+      /// would, so focus is in traditional highlight mode.
+      Future<void> tabTo(WidgetTester tester, String userId) async {
+        for (var i = 0; i < 5; i++) {
+          if (menuFocus(tester, userId).hasPrimaryFocus) return;
+          await press(tester, LogicalKeyboardKey.tab);
+        }
+        expect(menuFocus(tester, userId).hasPrimaryFocus, isTrue);
+      }
+
+      /// From the keyboard alone: opens [userId]'s menu, moves [down] items
+      /// into it, and confirms the dialog that item opens.
+      ///
+      /// [userId]'s row must be the last. Opening the menu leaves focus on
+      /// its button, and from there an arrow moves to whatever is nearest
+      /// below: a row under it puts the first arrow on that row's menu.
+      Future<void> confirmFromKeyboard(
+        WidgetTester tester,
+        String userId, {
+        required int down,
+      }) async {
+        await tabTo(tester, userId);
+        await press(tester, LogicalKeyboardKey.enter);
+        for (var i = 0; i < down; i++) {
+          await press(tester, LogicalKeyboardKey.arrowDown);
+        }
+        await press(tester, LogicalKeyboardKey.enter);
+        // The first Tab lands on Cancel, the second on the confirm button.
+        await press(tester, LogicalKeyboardKey.tab);
+        await press(tester, LogicalKeyboardKey.tab);
+        await press(tester, LogicalKeyboardKey.enter);
+      }
+
+      // The menu lists Change role, Remove, then Make owner.
+      const toRemove = 2;
+      const toMakeOwner = 3;
+
+      final dismiss = find.byKey(HouseholdDetailScreen.memberOutcomeDismissKey);
+      final count = find.byKey(HouseholdDetailScreen.memberCountKey);
+
+      void expectFocusOnDismiss(WidgetTester tester) {
+        expect(
+          FocusManager.instance.primaryFocus,
+          same(tester.widget<TextButton>(dismiss).focusNode),
+        );
+        expect(
+          tester.getSemantics(dismiss),
+          isSemantics(label: 'Dismiss', isButton: true, isFocused: true),
+        );
+      }
+
+      testWidgets('after a transfer, focus moves to the outcome banner '
+          'Dismiss', (tester) async {
+        when(() => remote.transferOwnership(any(), any()))
+            .thenAnswer((_) async => zedTakesOver());
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+
+        await confirmFromKeyboard(tester, 'u-2', down: toMakeOwner);
+        await tester.pumpAndSettle();
+        expect(
+          inOutcome("Ownership handed over. You're now an admin."),
+          findsOneWidget,
+        );
+        // Until the roster says otherwise, the menu stays, and so does focus.
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        // The viewer is an admin now, with nothing to do to the new owner.
+        final answer = zedTakesOver();
+        members.add([answer.previousOwner, answer.owner]);
+        await tester.pumpAndSettle();
+
+        expect(menuOf('u-2'), findsNothing);
+        expectFocusOnDismiss(tester);
+      });
+
+      testWidgets('after a removal, focus moves to Dismiss when the row goes '
+          'after the outcome', (tester) async {
+        when(() => remote.remove(any(), any())).thenAnswer((_) async => zed);
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+
+        await confirmFromKeyboard(tester, 'u-2', down: toRemove);
+        await tester.pumpAndSettle();
+        expect(inOutcome('Removed from the household.'), findsOneWidget);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        members.add([owner]);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(HouseholdDetailScreen.memberKey('u-2')),
+          findsNothing,
+        );
+        expectFocusOnDismiss(tester);
+      });
+
+      testWidgets('after a removal, focus moves to Dismiss when the row goes '
+          'before the outcome', (tester) async {
+        final reply = Completer<HouseholdMember>();
+        when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+
+        await confirmFromKeyboard(tester, 'u-2', down: toRemove);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        // The roster drops Zed while the request is still on its way.
+        members.add([owner]);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(HouseholdDetailScreen.memberKey('u-2')),
+          findsNothing,
+        );
+        expect(outcome(), findsNothing);
+
+        reply.complete(zed);
+        await tester.pumpAndSettle();
+
+        expect(inOutcome('Removed from the household.'), findsOneWidget);
+        expectFocusOnDismiss(tester);
+      });
+
+      testWidgets('after a transfer, focus moves to Dismiss when the roster '
+          'changes before the outcome', (tester) async {
+        final reply = Completer<HouseholdOwnershipTransfer>();
+        when(() => remote.transferOwnership(any(), any()))
+            .thenAnswer((_) => reply.future);
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+
+        await confirmFromKeyboard(tester, 'u-2', down: toMakeOwner);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        // The roster has Zed as the owner while the request is still on its
+        // way, so the viewer, an admin now, has no menu on him.
+        final answer = zedTakesOver();
+        members.add([answer.previousOwner, answer.owner]);
+        await tester.pumpAndSettle();
+        expect(menuOf('u-2'), findsNothing);
+        expect(outcome(), findsNothing);
+
+        reply.complete(answer);
+        await tester.pumpAndSettle();
+
+        expect(
+          inOutcome("Ownership handed over. You're now an admin."),
+          findsOneWidget,
+        );
+        expectFocusOnDismiss(tester);
+      });
+
+      testWidgets('after a removal, focus moves to Dismiss when the row goes '
+          "before the outcome, past another member's menu", (tester) async {
+        // Amy's menu comes first, so the keyboard passes it on the way to
+        // Zed's. Left to the framework, focus falls back to it when Zed's
+        // menu goes.
+        final reply = Completer<HouseholdMember>();
+        when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+        final amy = _member('u-3', displayName: 'Amy');
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, amy, zed]);
+
+        await press(tester, LogicalKeyboardKey.tab);
+        expect(menuFocus(tester, 'u-3').hasPrimaryFocus, isTrue);
+        await confirmFromKeyboard(tester, 'u-2', down: toRemove);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        members.add([owner, amy]);
+        await tester.pumpAndSettle();
+        // Held on the page while the request is on its way, not fallen back
+        // to Amy's menu, which would keep the outcome from taking it.
+        expect(menuFocus(tester, 'u-3').hasFocus, isFalse);
+        expect(
+          FocusManager.instance.primaryFocus,
+          same(FocusScope.of(tester.element(count))),
+        );
+
+        reply.complete(zed);
+        await tester.pumpAndSettle();
+
+        expectFocusOnDismiss(tester);
+      });
+
+      testWidgets('a row removed by a hydrate, with no banner, hands focus to '
+          'the member count', (tester) async {
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+        await tabTo(tester, 'u-2');
+
+        members.add([owner]);
+        await tester.pumpAndSettle();
+
+        expect(outcome(), findsNothing);
+        expect(
+          FocusManager.instance.primaryFocus,
+          same(Focus.of(tester.element(count))),
+        );
+        expect(
+          tester.getSemantics(count),
+          isSemantics(label: '1 member', isHeader: true, isFocused: true),
+        );
+      });
+
+      testWidgets('focus the user has moved elsewhere is left alone', (
+        tester,
+      ) async {
+        final reply = Completer<HouseholdMember>();
+        when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+        final amy = _member('u-3', displayName: 'Amy');
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, amy, zed]);
+
+        await confirmFromKeyboard(tester, 'u-2', down: toRemove);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+        members.add([owner, amy]);
+        await tester.pumpAndSettle();
+        // The user moves on to Amy's menu while the removal is on its way.
+        await press(tester, LogicalKeyboardKey.tab);
+        expect(menuFocus(tester, 'u-3').hasPrimaryFocus, isTrue);
+
+        reply.complete(zed);
+        await tester.pumpAndSettle();
+
+        expect(inOutcome('Removed from the household.'), findsOneWidget);
+        expect(menuFocus(tester, 'u-3').hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('a role change keeps focus on its menu button', (
+        tester,
+      ) async {
+        final guest = _member(
+          'u-2',
+          role: HouseholdRole.householdGuest,
+          displayName: 'Zed',
+        );
+        when(() => remote.changeRole(any(), any(), any()))
+            .thenAnswer((_) async => guest);
+        await tester.pumpWidget(withMembers());
+        await settleWith(tester, roster: [owner, zed]);
+
+        await tabTo(tester, 'u-2');
+        await press(tester, LogicalKeyboardKey.enter);
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        await press(tester, LogicalKeyboardKey.enter);
+        await tester.tap(
+          find.byKey(
+            HouseholdDetailScreen.roleOptionKey(HouseholdRole.householdGuest),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(HouseholdDetailScreen.roleSaveKey));
+        await tester.pumpAndSettle();
+        expect(inOutcome('Role changed.'), findsOneWidget);
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
+
+        // A guest still has a menu, so nothing is handed on.
+        members.add([owner, guest]);
+        await tester.pumpAndSettle();
+
+        expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
       });
     });
   });
