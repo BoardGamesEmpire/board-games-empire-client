@@ -3,16 +3,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 
 /// [DataGatewayRemoteDataSource] over a **per-server** Dio instance (#41).
 ///
-/// Built on the collection source's request plumbing (#351): the body is asked
-/// for as a `String` with the response type pinned on every request, decoded
-/// here after the status is read, and probed for the API's error envelope with
-/// a bounded synchronous parse. Like that source, it does not build or own its
-/// Dio; the network installer constructs it from the per-server container.
+/// The body is asked for as a `String` with the response type pinned on every
+/// request, and `sendForJson` decodes it after the status is read and
+/// classifies a failure through [_GatewayFailures]. Like the other remote
+/// sources, it does not build or own its Dio; the network installer
+/// constructs it from the per-server container.
 ///
 /// Failure taxonomy per the [DataGatewayRemoteDataSource] contract.
 class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
@@ -45,18 +44,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// mutable.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// 4xx statuses worth retrying: an expired session (401), proxy
-  /// authentication (407), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
-
-  /// Whether a request that failed with [type] ran out of time waiting for an
-  /// answer. A browser reports a slow answer as a connection timeout (see
-  /// [interviewTimeout]). Elsewhere a connection timeout means the request
-  /// never left, so it says nothing is running on the server.
-  bool _ranOutOfTime(DioExceptionType type) =>
-      type == DioExceptionType.receiveTimeout ||
-      (_browser && type == DioExceptionType.connectionTimeout);
-
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
     int page = 1,
@@ -69,20 +56,22 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     );
 
     const action = 'DataGateway list';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    // A list route is never absent for a caller who reached it: an empty list
+    // is a 200. So a 404 here means the route is not deployed, such as a
+    // server older than backend#710's rename.
+    const failures = _GatewayFailures(rowRoute: false);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         _basePath,
         options: _plainBody,
         queryParameters: {'page': page, 'limit': limit},
       ),
       action: action,
-      // A list route is never absent for a caller who reached it: an empty
-      // list is a 200. So a 404 here means the route is not deployed, such as
-      // a server older than backend#710's rename.
-      rowRoute: false,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'dataGateways',
@@ -96,12 +85,14 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   @override
   Future<DataGateway> fetchOne(String id) async {
     const action = 'DataGateway fetch';
-    final response = await _send(
-      request: () => _dio.get<String>(_pathOf(id), options: _plainBody),
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapDataGateway(_dataGatewayObject(response.body)),
       action: action,
       status: response.status,
@@ -113,8 +104,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     _checkPort(input.connectionPort);
 
     const action = 'DataGateway create';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _GatewayFailures(rowRoute: false, conflictIsName: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         _basePath,
         options: _plainBody,
         data: {
@@ -129,10 +121,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         },
       ),
       action: action,
-      rowRoute: false,
-      conflictIsName: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -163,14 +154,13 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     };
 
     const action = 'DataGateway update';
-    final response = await _send(
-      request: () =>
-          _dio.patch<String>(_pathOf(id), options: _plainBody, data: body),
+    const failures = _GatewayFailures(rowRoute: true, conflictIsName: true);
+    final response = await sendForJson(
+      () => _dio.patch<String>(_pathOf(id), options: _plainBody, data: body),
       action: action,
-      rowRoute: true,
-      conflictIsName: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
@@ -179,8 +169,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     List<String> disabled,
   ) async {
     const action = 'DataGateway capability update';
-    final response = await _send(
-      request: () => _dio.patch<String>(
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.patch<String>(
         _pathOf(id),
         options: _plainBody,
         // The whole list, in the order given: the server replaces its list
@@ -189,51 +180,58 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         data: {'disabledCapabilities': disabled},
       ),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> delete(String id) async {
     const action = 'DataGateway delete';
-    final response = await _send(
-      request: () => _dio.delete<String>(_pathOf(id), options: _plainBody),
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.delete<String>(_pathOf(id), options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> connect(String id) async {
     const action = 'DataGateway connect';
-    final response = await _send(
-      request: () =>
-          _dio.post<String>('${_pathOf(id)}/connect', options: _plainBody),
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>('${_pathOf(id)}/connect', options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayChangeResult> disconnect(String id) async {
     const action = 'DataGateway disconnect';
-    final response = await _send(
-      request: () =>
-          _dio.post<String>('${_pathOf(id)}/disconnect', options: _plainBody),
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>('${_pathOf(id)}/disconnect', options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _changeResult(response, action: action);
+    return _changeResult(response, action: action, family: failures);
   }
 
   @override
   Future<DataGatewayInterviewResult> interview(String id) async {
     const action = 'DataGateway interview';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    // The server may keep interviewing after the caller stops waiting.
+    final failures = _GatewayFailures(
+      rowRoute: true,
+      timeoutIsUnknown: true,
+      browser: _browser,
+    );
+    final response = await sendForJson(
+      () => _dio.post<String>(
         '${_pathOf(id)}/interview',
         options: _plainBody.copyWith(
           connectTimeout: _browser ? interviewTimeout : null,
@@ -241,11 +239,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         ),
       ),
       action: action,
-      rowRoute: true,
-      // The server may keep interviewing after the caller stops waiting.
-      timeoutIsUnknown: true,
+      family: failures,
     );
-    return _interviewResult(response, action: action);
+    return _interviewResult(response, action: action, family: failures);
   }
 
   @override
@@ -273,8 +269,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final wireStatuses = statuses?.map((status) => status.toWire()).join(',');
 
     const action = 'Language link list';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         _languageLinksPath(id),
         options: _plainBody,
         queryParameters: {
@@ -286,10 +283,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         },
       ),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'languageLinks',
@@ -307,44 +305,47 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     String tagId,
   ) async {
     const action = 'Language link to tag';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/link',
         options: _plainBody,
         data: {'tagId': tagId},
       ),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _languageLinkResult(response, action: action);
+    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
   Future<LanguageLink> ignoreLanguageLink(String id, String linkId) async {
     const action = 'Language link ignore';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/ignore',
         options: _plainBody,
       ),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _languageLinkResult(response, action: action);
+    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
   Future<LanguageLink> acceptLanguageLink(String id, String linkId) async {
     const action = 'Language link accept';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _GatewayFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         '${_languageLinkPath(id, linkId)}/accept',
         options: _plainBody,
       ),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _languageLinkResult(response, action: action);
+    return _languageLinkResult(response, action: action, family: failures);
   }
 
   @override
@@ -363,8 +364,12 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     final filter = name?.trim();
 
     const action = 'Language tag list';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    // The catalogue belongs to no DataGateway, and a list route is never
+    // absent for a caller who reached it, so a 404 here means the route is
+    // not deployed.
+    const failures = _GatewayFailures(rowRoute: false);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         _languagesPath,
         options: _plainBody,
         queryParameters: {
@@ -374,13 +379,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         },
       ),
       action: action,
-      // The catalogue belongs to no DataGateway, and a list route is never
-      // absent for a caller who reached it, so a 404 here means the route is
-      // not deployed.
-      rowRoute: false,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () {
         // The server pages languages, so the page is read as one, and its
         // tags are flattened afterwards. `meta` stays the languages'.
@@ -407,119 +410,14 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   static String _languageLinkPath(String id, String linkId) =>
       '${_languageLinksPath(id)}/${Uri.encodeComponent(linkId)}';
 
-  // ── Request plumbing ────────────────────────────────────────────────
-
-  /// Sends [request] and returns its decoded body, having converted every
-  /// failure into a [DataGatewayRemoteException].
-  ///
-  /// [rowRoute] says whether the path names one DataGateway, which is what
-  /// lets an application 404 mean that row is gone.
-  ///
-  /// [conflictIsName] says a 409 from the API means another DataGateway has the
-  /// name. Only the routes that take a name say so. Any other route's 409 is the
-  /// row's state refusing the request, a [DataGatewayConflictException].
-  ///
-  /// [timeoutIsUnknown] says the server may still be working on a request that
-  /// ran out of time, so the outcome is unknown. Such a request throws
-  /// [DataGatewayTimedOutException], not a transient failure.
-  Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<String>> Function() request,
-    required String action,
-    required bool rowRoute,
-    bool conflictIsName = false,
-    bool timeoutIsUnknown = false,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(
-        error,
-        action: action,
-        rowRoute: rowRoute,
-        conflictIsName: conflictIsName,
-        timeoutIsUnknown: timeoutIsUnknown,
-      );
-    } on Object catch (error) {
-      // Nothing else should escape Dio. `Object`, not `Exception`, so an
-      // `Error` cannot break the "no raw transport error" promise either.
-      throw DataGatewayTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw DataGatewayTransientException('$action returned no status');
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        rowRoute: rowRoute,
-        body: response.data,
-        conflictIsName: conflictIsName,
-      );
-    }
-
-    final raw = response.data;
-    if (raw == null || raw.isEmpty) {
-      throw DataGatewayPermanentException(
-        '$action returned an empty body',
-        statusCode: status,
-      );
-    }
-
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      throw DataGatewayPermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // The decode could not run (an isolate that would not spawn), which
-      // says nothing about the response. See the collection source (#297).
-      throw DataGatewayTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
-
-    if (decoded is! Map<String, dynamic>) {
-      throw DataGatewayPermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return (body: decoded, status: status);
-  }
-
-  /// A 2xx whose body cannot be mapped is permanent: the same request returns
-  /// the same body.
-  T _parse<T>(T Function() map, {required String action, required int status}) {
-    try {
-      return map();
-    } on Object catch (error) {
-      throw DataGatewayPermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
-  }
-
   /// Reads `{ dataGateway, connection_* | disconnection_* }`, the body every
   /// change route answers with.
   DataGatewayChangeResult _changeResult(
-    ({Map<String, dynamic> body, int status}) response, {
+    RemoteJson response, {
     required String action,
-  }) => _parse(
+    required _GatewayFailures family,
+  }) => parseRemote(
+    family,
     () {
       final body = response.body;
       return DataGatewayChangeResult(
@@ -549,9 +447,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// `interview_attempt` is always true there, so it says nothing and is not
   /// read.
   DataGatewayInterviewResult _interviewResult(
-    ({Map<String, dynamic> body, int status}) response, {
+    RemoteJson response, {
     required String action,
-  }) => _parse(
+    required _GatewayFailures family,
+  }) => parseRemote(
+    family,
     () {
       final body = response.body;
       final answer = body['interview_response'];
@@ -572,9 +472,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// Reads `{ languageLink }`, the body every language link action answers
   /// with: the link as it stands afterwards.
   LanguageLink _languageLinkResult(
-    ({Map<String, dynamic> body, int status}) response, {
+    RemoteJson response, {
     required String action,
-  }) => _parse(
+    required _GatewayFailures family,
+  }) => parseRemote(
+    family,
     () {
       final row = response.body['languageLink'];
       if (row is! Map<String, dynamic>) {
@@ -748,133 +650,108 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       throw ArgumentError.value(port, 'connectionPort', 'must be 1–65535');
     }
   }
+}
 
-  // ── Failure classification ──────────────────────────────────────────
+/// How the DataGateway source builds its failures for the shared classifier.
+final class _GatewayFailures
+    extends RemoteFailureFamily<DataGatewayRemoteException> {
+  const _GatewayFailures({
+    required this.rowRoute,
+    this.conflictIsName = false,
+    this.timeoutIsUnknown = false,
+    this.browser = false,
+  }) : super(
+         transient: DataGatewayTransientException.new,
+         permanent: DataGatewayPermanentException.new,
+       );
 
-  DataGatewayRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    required bool rowRoute,
-    required bool conflictIsName,
-    required bool timeoutIsUnknown,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        rowRoute: rowRoute,
-        body: error.response?.data,
-        conflictIsName: conflictIsName,
-      );
-    }
-    if (timeoutIsUnknown && _ranOutOfTime(error.type)) {
-      return DataGatewayTimedOutException(
-        '$action timed out; the server may still be working',
-        cause: error,
-      );
-    }
-    return DataGatewayTransientException('$action failed', cause: error);
-  }
+  /// Whether the path names one DataGateway, which is what lets an
+  /// application 404 mean that row is gone.
+  final bool rowRoute;
 
-  DataGatewayRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required bool rowRoute,
-    required Object? body,
-    required bool conflictIsName,
-  }) {
-    if (status >= 500 || _retryable4xx.contains(status)) {
-      return DataGatewayTransientException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
+  /// Whether a 409 from the API means another DataGateway has the name. Only
+  /// the routes that take a name say so. Any other route's 409 is the row's
+  /// state refusing the request, a [DataGatewayConflictException].
+  final bool conflictIsName;
 
-    // Every answer below is a conclusion about the caller's role or about a
-    // row, and only the application's own envelope licenses one. A proxy or
-    // WAF answers 403 and 404 too (#350, #365, #253).
-    final fromApi = isApiErrorEnvelope(body, status);
+  /// Whether the server may still be working on a request that ran out of
+  /// time, so the outcome is unknown. Such a request throws
+  /// [DataGatewayTimedOutException], not a transient failure.
+  final bool timeoutIsUnknown;
 
-    if (status == 403) {
-      return fromApi
-          ? DataGatewayForbiddenException(
-              message,
-              cause: cause,
-              statusCode: status,
-            )
-          : DataGatewayTransientException(
+  /// Whether a browser's adapter carries the requests. See
+  /// [DataGatewayRemoteDataSourceImpl.interviewTimeout].
+  final bool browser;
+
+  /// Every answer here is a conclusion about the caller's role or about a
+  /// row, and only the application's own envelope licenses one, so a 403, a
+  /// 404 or a 409 needs [RemoteRefusal.fromApi]. A 404 is a missing row only
+  /// on a [rowRoute]: Nest answers an unregistered route with this same
+  /// envelope, so on the list route even an application 404 means "not
+  /// deployed", not "no rows", and takes the shared default, transient. A 409
+  /// is [DataGatewayNameInUseException] on a route that takes a name
+  /// ([conflictIsName]) and [DataGatewayConflictException] on the others.
+  ///
+  /// A 400 without the envelope is a proxy's, which says nothing about what
+  /// the request asked for, so it is transient. A link's enveloped 400 is the
+  /// server saying it has no such tag, and takes the shared default,
+  /// permanent.
+  @override
+  DataGatewayRemoteException? refused(RemoteRefusal refusal) {
+    final status = refusal.status;
+    final message = refusal.message;
+    final cause = refusal.cause;
+    if (!refusal.fromApi) {
+      return status == 400
+          ? transient(
               '$message; the request did not reach the API',
-              cause: cause,
               statusCode: status,
-            );
-    }
-    if (status == 404) {
-      // Nest answers an unregistered route with this same envelope, so on the
-      // list route even an application 404 means "not deployed", not "no
-      // rows". On a row route it is the service saying the row is gone.
-      return fromApi && rowRoute
-          ? DataGatewayNotFoundException(
-              message,
               cause: cause,
-              statusCode: status,
             )
-          : DataGatewayTransientException(
-              '$message; the route was not reachable',
-              cause: cause,
-              statusCode: status,
-            );
+          : null;
     }
-    if (status == 409 && isRetryableRefusal(body)) {
-      // A deadlock that outlived the server's own retry (#431). Nothing
-      // about the request was wrong, so the same write is expected to
-      // succeed. Read the field, not the message, which is translated.
-      return DataGatewayTransientException(
-        '$message; the server hit a deadlock and asked for a retry',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 409 && fromApi) {
-      // On a route that takes a name, the application's 409 is a name clash.
-      // On the others it is the row's state refusing the request.
-      return conflictIsName
-          ? DataGatewayNameInUseException(
-              message,
-              cause: cause,
-              statusCode: status,
-            )
-          : DataGatewayConflictException(
-              message,
-              cause: cause,
-              statusCode: status,
-            );
-    }
-    if (status == 400 && !fromApi) {
-      // A proxy's 400 says nothing about what the request asked for: a link's
-      // 400 is the server saying it has no such tag.
-      return DataGatewayTransientException(
-        '$message; the request did not reach the API',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status >= 400) {
-      return DataGatewayPermanentException(
+    return switch (status) {
+      403 => DataGatewayForbiddenException(
         message,
-        cause: cause,
         statusCode: status,
-      );
-    }
-    // A 1xx or 3xx surfaced by a permissive validateStatus carries no
-    // rejection.
-    return DataGatewayTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
+        cause: cause,
+      ),
+      404 when rowRoute => DataGatewayNotFoundException(
+        message,
+        statusCode: status,
+        cause: cause,
+      ),
+      409 when conflictIsName => DataGatewayNameInUseException(
+        message,
+        statusCode: status,
+        cause: cause,
+      ),
+      409 => DataGatewayConflictException(
+        message,
+        statusCode: status,
+        cause: cause,
+      ),
+      _ => null,
+    };
   }
+
+  /// A request that ran out of time while the server may still be working is
+  /// [DataGatewayTimedOutException], when [timeoutIsUnknown] says so.
+  @override
+  DataGatewayRemoteException? unanswered(DioException error, String message) =>
+      timeoutIsUnknown && _ranOutOfTime(error.type)
+      ? DataGatewayTimedOutException(
+          '$message; it timed out and the server may still be working',
+          cause: error,
+        )
+      : null;
+
+  /// Whether a request that failed with [type] ran out of time waiting for an
+  /// answer. A browser reports a slow answer as a connection timeout (see
+  /// [DataGatewayRemoteDataSourceImpl.interviewTimeout]). Elsewhere a
+  /// connection timeout means the request never left, so it says nothing is
+  /// running on the server.
+  bool _ranOutOfTime(DioExceptionType type) =>
+      type == DioExceptionType.receiveTimeout ||
+      (browser && type == DioExceptionType.connectionTimeout);
 }
