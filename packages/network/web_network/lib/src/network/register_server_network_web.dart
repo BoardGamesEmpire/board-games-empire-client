@@ -30,6 +30,7 @@ import 'package:network_interface/network_interface.dart'
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
+import '../auth/provider_sign_in_bindings.dart';
 import '../auth/session_channel.dart';
 import '../auth/web_auth_repository_impl.dart';
 import '../auth/web_session_monitor.dart';
@@ -60,6 +61,13 @@ import 'web_dio_factory.dart';
 /// that feeds it. Without it, as in every VM suite and the storage-less
 /// bootstrap, none is, and callers read every session as confirmed.
 ///
+/// [providerSignIn] is the browser half of a provider sign-in (#583), which
+/// `web_platform` captures in `main()` and this package cannot name either:
+/// leaving the page for the provider, and what the page load the provider
+/// sent the user back to brought with it. The repository takes it as it is.
+/// Without it, as in every VM suite and the storage-less bootstrap, the
+/// repository reports provider sign-in as unavailable.
+///
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose;
 /// the repository only closes its own resources.
 void registerServerNetworkWeb({
@@ -67,6 +75,7 @@ void registerServerNetworkWeb({
   required ServerIdentity identity,
   String Function() originProvider = WebDioFactory.currentOrigin,
   WebSessionBindings? sessionBindings,
+  WebProviderSignInBindings? providerSignIn,
 }) {
   const factory = WebDioFactory();
   container.registerSingleton<DioFactory>(factory);
@@ -119,7 +128,11 @@ void registerServerNetworkWeb({
   );
   container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());
 
-  final authRepository = WebAuthRepositoryImpl(identity: identity, dio: dio);
+  final authRepository = WebAuthRepositoryImpl(
+    identity: identity,
+    dio: dio,
+    providerSignIn: providerSignIn,
+  );
   // Disposable, so the container closes it with the scope.
   container.registerSingleton<AuthRepository>(authRepository);
 

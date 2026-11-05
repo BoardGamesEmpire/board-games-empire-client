@@ -7,6 +7,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 import 'package:web_network/src/orchestration/bootstrap_web_server_scope.dart';
 
@@ -54,6 +55,7 @@ void main() {
   Future<ActiveServerScope> bootstrap({
     WebServerScopeInstall? installStorage,
     List<UserScopeInstaller> userInstallers = const [],
+    WebProviderSignInBindings? providerSignIn,
   }) => bootstrapWebServerScope(
     wellKnownClient: wellKnownClient,
     // Uri.base has no origin on the VM, so the origin is injected; production
@@ -61,6 +63,7 @@ void main() {
     originProvider: () => _kOrigin,
     installStorage: installStorage,
     userInstallers: userInstallers,
+    providerSignIn: providerSignIn,
   );
 
   void stubFetchSuccess() =>
@@ -103,6 +106,29 @@ void main() {
         );
       },
     );
+
+    test('hands the scope\'s AuthRepository the provider sign-in bindings, '
+        'and gives it none without them (#583)', () async {
+      stubFetchSuccess();
+
+      scope = await bootstrap(
+        providerSignIn: WebProviderSignInBindings(leavePageFor: (_, _) {}),
+      );
+      final withBindings = scope!.active!.container.get<AuthRepository>();
+      expect(
+        withBindings.providerSignInAvailability,
+        isA<ProviderSignInAvailable>(),
+      );
+      await scope!.active!.container.dispose();
+
+      scope = await bootstrap();
+      expect(
+        scope!.active!.container
+            .get<AuthRepository>()
+            .providerSignInAvailability,
+        isA<ProviderSignInUnsupportedDevice>(),
+      );
+    });
 
     test(
       'builds the server Dio against the same origin used for the fetch',

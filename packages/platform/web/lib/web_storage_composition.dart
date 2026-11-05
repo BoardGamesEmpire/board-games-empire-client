@@ -25,9 +25,15 @@
 /// Since #447 it also carries the sync drain's cross-tab lock, over the
 /// browser's Web Locks, again for `dart:js_interop`: it keeps the tabs that
 /// share one database from draining it at once.
+///
+/// Since #583 it also carries a provider sign-in's browser half: the marker in
+/// `sessionStorage`, the address the provider sends the user back to, and the
+/// navigation away to the provider. `package:web` again, composed by the same
+/// caller.
 library;
 
 export 'src/feedback/indexed_db_feedback_sink.dart';
+export 'src/session/web_provider_sign_in_bindings.dart';
 export 'src/session/web_session_bindings.dart';
 export 'src/sync/web_cross_tab_lock.dart';
 export 'src/web_storage_composition.dart';

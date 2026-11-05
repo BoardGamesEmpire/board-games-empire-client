@@ -5,6 +5,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart' show ScopedServer, ServerIdentity;
 import 'package:network_interface/network_interface.dart' show WellKnownClient;
 
+import '../auth/provider_sign_in_bindings.dart';
 import '../auth/session_channel.dart';
 import '../network/register_server_network_web.dart';
 import '../network/web_dio_factory.dart';
@@ -45,7 +46,8 @@ typedef WebServerScopeInstall = Future<void> Function(
 /// 3. builds an isolated per-server [DependencyContainer] and populates it via
 ///    [registerServerNetworkWeb] (shared `Dio` + `AuthRepository`, no token
 ///    storage — the browser owns the session cookie), with the session
-///    monitor over [sessionBindings] when given one (#432);
+///    monitor over [sessionBindings] when given one (#432), and the
+///    repository over [providerSignIn] (#583);
 /// 4. runs [installStorage], if given, so the web data layer (#288) is
 ///    registered into that same container before anything can resolve from
 ///    it;
@@ -77,18 +79,20 @@ typedef WebServerScopeInstall = Future<void> Function(
 /// `WebPlatformBootstrap.createRootContainer`.
 ///
 /// [wellKnownClient] and [originProvider] are injection seams for tests; both
-/// default to production behavior. [installStorage], [userInstallers] and
-/// [sessionBindings] are **composition** seams, not test seams — production
-/// supplies all three from `web_platform`, which is the one package that
-/// depends on the network stack, the data layer and the browser alike.
-/// Omitting them yields the storage-less, session-scope-less scope web ran
-/// with before #288 and #137, with no cross-tab monitor (#432).
+/// default to production behavior. [installStorage], [userInstallers],
+/// [sessionBindings] and [providerSignIn] are **composition** seams, not test
+/// seams — production supplies all four from `web_platform`, which is the one
+/// package that depends on the network stack, the data layer and the browser
+/// alike. Omitting them yields the storage-less, session-scope-less scope web
+/// ran with before #288 and #137, with no cross-tab monitor (#432) and no
+/// provider sign-in (#583).
 Future<ActiveServerScope> bootstrapWebServerScope({
   WellKnownClient? wellKnownClient,
   String Function() originProvider = WebDioFactory.currentOrigin,
   WebServerScopeInstall? installStorage,
   List<UserScopeInstaller> userInstallers = const [],
   WebSessionBindings? sessionBindings,
+  WebProviderSignInBindings? providerSignIn,
 }) async {
   final origin = originProvider();
 
@@ -132,6 +136,7 @@ Future<ActiveServerScope> bootstrapWebServerScope({
       identity: identity,
       originProvider: originProvider,
       sessionBindings: sessionBindings,
+      providerSignIn: providerSignIn,
     );
 
     if (installStorage != null) await installStorage(container, identity);
