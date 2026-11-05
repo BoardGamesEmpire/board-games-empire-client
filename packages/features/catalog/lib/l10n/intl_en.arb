@@ -947,6 +947,14 @@
   "@catalogDetailDescription": {
     "description": "Heading over a game's description."
   },
+  "catalogDescriptionMore": "More",
+  "@catalogDescriptionMore": {
+    "description": "Button under a game's description, shown cut to its first few lines, that shows the whole description in place. A screen reader also hears that it is collapsed."
+  },
+  "catalogDescriptionLess": "Less",
+  "@catalogDescriptionLess": {
+    "description": "Button under a game's whole description, after catalogDescriptionMore was pressed, that cuts it back to its first few lines. A screen reader also hears that it is expanded."
+  },
   "catalogDetailAvailableOn": "Available on",
   "@catalogDetailAvailableOn": {
     "description": "Heading over the list of platforms a game can be played on, such as Tabletop or Steam."
