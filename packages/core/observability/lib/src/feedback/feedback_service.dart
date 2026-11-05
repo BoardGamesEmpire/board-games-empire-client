@@ -112,7 +112,9 @@ enum FeedbackSubmitResult {
 ///
 /// - [FeedbackTransientSubmissionException] — **retryable**: offline /
 ///   connection errors, timeouts, cancellation, 401 (session expired
-///   between resolve and send), 408, 429 (throttle), 5xx, and — via its
+///   between resolve and send), 407, 408, 429 (throttle), 5xx, a 403
+///   without the API's error envelope (a proxy answered), any 404, a 409
+///   saying `retryable: true` (a deadlock), and — via its
 ///   subtype [FeedbackUnverifiedDeliveryException] — a 2xx whose body does
 ///   not look like the API answering (#358, #363). That last one is a
 ///   *smell test, not proof*: it catches the common interception shape — a
@@ -127,8 +129,8 @@ enum FeedbackSubmitResult {
 ///   response rather than the server or the network, so the drain counts an
 ///   attempt against the record and carries on to the next (#359).
 /// - [FeedbackPermanentSubmissionException] — will **never** succeed on
-///   retry: 400 (validation), 403 (feedback-banned), and every other
-///   4xx. `submit` surfaces these to the caller without queueing
+///   retry: 400 (validation), an enveloped 403 (feedback-banned), and
+///   every other 4xx. `submit` surfaces these to the caller without queueing
 ///   (queueing would mislead the user with "will send later" and build
 ///   an un-drainable backlog); `drainPending` drops the record.
 /// - [FeedbackPersistenceException] — the third mode: the report could
@@ -152,8 +154,9 @@ sealed class FeedbackSubmissionException implements Exception {
 }
 
 /// A retryable submission failure — offline, timeout, cancellation, 401,
-/// 408, 429, or 5xx. Queue-and-drain-later is the correct response, and
-/// `drainPending` stops its run on one.
+/// 407, 408, 429, 5xx, a 403 without the API's error envelope, any 404, or
+/// a 409 saying `retryable: true`. Queue-and-drain-later is the correct
+/// response, and `drainPending` stops its run on one.
 ///
 /// A 2xx whose body does not look like the API answering is raised as the
 /// subtype [FeedbackUnverifiedDeliveryException], not as this class, and
@@ -169,7 +172,8 @@ final class FeedbackTransientSubmissionException
   /// The status the response carried, or null when there was no response
   /// (connection-level failures).
   ///
-  /// Usually the status that classified the failure — 401 / 408 / 429 / 5xx.
+  /// Usually the status that classified the failure — 401 / 403 / 404 /
+  /// 407 / 408 / 409 / 429 / 5xx.
   /// Not always: on an undecodable 2xx (#358) the status is context and the
   /// classification came from the body, and a device-local decode fault
   /// reports the 2xx it was reading. Do not read this field as "the server
@@ -214,8 +218,9 @@ final class FeedbackUnverifiedDeliveryException
   });
 }
 
-/// A permanent server rejection — 400, 403, or any other 4xx. Retrying
-/// can never succeed; the report must not be queued.
+/// A permanent server rejection — 400, an enveloped 403 (feedback-banned),
+/// or any other 4xx that [FeedbackTransientSubmissionException] does not
+/// list. Retrying can never succeed; the report must not be queued.
 final class FeedbackPermanentSubmissionException
     extends FeedbackSubmissionException {
   const FeedbackPermanentSubmissionException(

@@ -53,12 +53,12 @@ void main() {
         );
       });
 
-      test('HTML under application/json on a 403 is PERMANENT, status '
-          'intact', () async {
+      test('HTML under application/json on a 403 is transient (a proxy '
+          'answered), status intact', () async {
         await expectLater(
           send(cannedDio(body: _kHtml, statusCode: 403)),
           throwsA(
-            isA<FeedbackPermanentSubmissionException>().having(
+            isA<FeedbackTransientSubmissionException>().having(
               (e) => e.statusCode,
               'statusCode',
               403,

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:observability/observability.dart';
 
+import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 
 /// Concrete [FeedbackTransport] posting through a **per-server** Dio
@@ -26,16 +27,19 @@ import '../network/decode_json_body.dart';
 ///
 /// - [FeedbackTransientSubmissionException] (**retryable**): connection
 ///   errors, all timeouts, cancellation, 401 (a session can expire
-///   between resolve and send), 408, 429 (throttle — the drain stops
-///   here), all 5xx, and any failure without a response status
+///   between resolve and send), 407, 408, 429 (throttle — the drain stops
+///   here), all 5xx, a 403 without the API's error envelope (a proxy or
+///   WAF answered, #350), any 404 (the route is fixed, so none is a
+///   verdict on the report, #297), a 409 saying `retryable: true` (a
+///   deadlock, #431), and any failure without a response status
 ///   (including certificate errors, which can be a captive portal —
 ///   discarding a user-approved report on one would be wrong), and — as
 ///   [FeedbackUnverifiedDeliveryException] — a 2xx that does not carry the
 ///   API's documented JSON object, which means something other than the API
 ///   answered (#358, #363 — see [_rejectUndecodableBody]).
-/// - [FeedbackPermanentSubmissionException]: 400 (validation), 403
-///   (feedback-banned), and every other 4xx — retrying can never
-///   succeed, so the service must not queue these.
+/// - [FeedbackPermanentSubmissionException]: 400 (validation), an
+///   enveloped 403 (feedback-banned), and every other 4xx — retrying can
+///   never succeed, so the service must not queue these.
 ///
 /// The status is read before the body is touched, so a rejection is
 /// classified by what the server said rather than by whether Dio could
@@ -46,8 +50,10 @@ class FeedbackDioTransport implements FeedbackTransport {
   final Dio _dio;
 
   /// 4xx statuses that are nonetheless worth retrying: an expired
-  /// session (401), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 408, 429};
+  /// session (401), a proxy that wants credentials (407), a request
+  /// timeout (408), and the throttle (429). A 403, 404 and 409 are retried
+  /// by `_classifyStatus` on what the body says.
+  static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
   Future<void> send(FeedbackReport report) async {
@@ -101,6 +107,7 @@ class FeedbackDioTransport implements FeedbackTransport {
           status,
           'Feedback endpoint returned $status',
           cause: null,
+          body: response.data,
         );
       }
 
@@ -277,6 +284,7 @@ class FeedbackDioTransport implements FeedbackTransport {
         status,
         'Feedback submission failed with status $status',
         cause: error,
+        body: error.response?.data,
       );
     }
     // connectionTimeout / sendTimeout / receiveTimeout / connectionError /
@@ -292,11 +300,39 @@ class FeedbackDioTransport implements FeedbackTransport {
     int status,
     String message, {
     required Object? cause,
+    required Object? body,
   }) {
     final transient = status >= 500 || _retryable4xx.contains(status);
     if (transient) {
       return FeedbackTransientSubmissionException(
         message,
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    if (status == 409 && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). A queued
+      // report is deleted by a permanent failure, so keep it.
+      return FeedbackTransientSubmissionException(
+        '$message; the server hit a deadlock and asked for a retry',
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    // Only the feedback ban is a 403 the API renders, and it carries the
+    // envelope; a proxy or WAF answers 403 without one (#350).
+    if (status == 403 && !isApiErrorEnvelope(body, status)) {
+      return FeedbackTransientSubmissionException(
+        '$message; the request did not reach the API',
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    // The route is fixed, so a 404 is never a verdict on the report, only
+    // a proxy or a deployment that has not caught up (#297).
+    if (status == 404) {
+      return FeedbackTransientSubmissionException(
+        '$message; the route was not reachable',
         cause: cause,
         statusCode: status,
       );
