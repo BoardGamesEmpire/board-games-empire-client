@@ -93,7 +93,9 @@ final class WellKnownInvalidResponseException extends WellKnownException {
     this.statusCode,
   });
 
-  /// HTTP status code if the failure was a non-200 response, null for parse
-  /// errors on a 200 response.
+  /// The HTTP status of the response: the non-200 status, or 200 when a 200's
+  /// body could not be parsed as a valid [ServerIdentity]. Null only when the
+  /// response carried no status at all, which an injected Dio's interceptor
+  /// can produce.
   final int? statusCode;
 }

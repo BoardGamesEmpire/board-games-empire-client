@@ -295,21 +295,10 @@ class GameCollectionRemoteDataSourceImpl
       );
     }
 
-    // Typed as `String`, which is not sufficient on its own — see
-    // `_plainBody` above for why the per-request pin has to do the rest.
-    // Together they keep Dio out of the body. `DioMixin.fetch` forces
-    // `responseType` from `T` — `String` gives `plain`, and anything else,
-    // `Object?` included, gives `json` (`dio_mixin.dart:417-427`).
-    //
-    // Both halves of Dio's own handling destroy the status. The cast
-    // (`data as T?`) throws a `TypeError` on a 2xx that is not the expected
-    // shape; the transformer's `jsonDecode` throws a `FormatException` on any
-    // body whose *content type* merely claims JSON. Either escapes `request()`
-    // as `DioException(type: unknown)` with **no response attached**, so
-    // `_classifyDioException` read a null status and called a permanent
-    // failure transient — which the drain then retries forever (#351).
-    //
-    // Decoding here, after the status is read, is what restores it.
+    // The `String` type plus `_plainBody` keep Dio out of the body; see
+    // `decodeJsonBody` for what either half of Dio's own handling would do to
+    // the status. Decoding here, after the status is read, is what keeps it
+    // (#351).
     final raw = response.data;
     if (raw == null || raw.isEmpty) {
       throw GameCollectionRemotePermanentException(

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:di/di.dart' show LocalClockService, replayThenForward;
 import 'package:http_status/http_status.dart';
@@ -12,9 +11,11 @@ import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
 
+import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 import '../network/redact_uri.dart';
 import '../network/token_interceptor.dart';
+import 'session_read_status.dart';
 import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
@@ -396,22 +397,23 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // here as `DioException(type: unknown)` with no response — so a
       // captive portal's HTML reached the user as "can't reach the server"
       // with the dead session still on disk.
-      final mapped = _mapDioException(e, credentialGrant: false);
+      final status = e.response?.statusCode;
 
       // A thrown 401/403 is the SAME definitive negative the response path
-      // settles below, and it has to settle the same way. Rethrowing it left
-      // the dead token on disk for the `TokenInterceptor` and the auth state
-      // wherever it stood — and, reaching `_finalizeCredentialGrant` as an
-      // exception, its `on AuthException` catch bucketed this definitive
-      // rejection as INDETERMINATE and kept a session the server had just
-      // disowned. That method's own contract already promises the opposite:
-      // "the token has already been cleared by getSession". It was not.
+      // settles below, so it goes through `readSessionStatus` too and settles
+      // the same way. Rethrowing it left the dead token on disk for the
+      // `TokenInterceptor` and the auth state wherever it stood — and,
+      // reaching `_finalizeCredentialGrant` as an exception, its
+      // `on AuthException` catch bucketed this definitive rejection as
+      // INDETERMINATE and kept a session the server had just disowned. That
+      // method's own contract already promises the opposite: "the token has
+      // already been cleared by getSession". It was not.
       //
       // Web locked this call in #180 for the same reason; native kept the
       // gap because its permissive `validateStatus` normally resolves a 401
       // as a Response, and only an injected Dio — which this class accepts
       // by design — throws one.
-      if (mapped is AuthInvalidCredentialsException) {
+      if (readSessionStatus(status) == SessionReadStatus.noSession) {
         if (epoch != _sessionEpoch) {
           _log.warn(
             'Discarding a rejected session response that resolved after '
@@ -419,13 +421,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
           );
           return null;
         }
-        return _settleNoSession(
-          status: e.response?.statusCode,
-          uri: e.requestOptions.uri,
-        );
+        return _settleNoSession(status: status, uri: e.requestOptions.uri);
       }
 
-      throw mapped;
+      throw _mapDioException(e, credentialGrant: false);
     }
 
     // The user signed out while this request was in flight. Their intent is
@@ -441,47 +440,27 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
     final status = response.statusCode;
 
-    // Three shapes of "definitively no session": an explicit 401, a 403, and
-    // BetterAuth's 200-with-no-body — which is how it reports an absent or
-    // expired session rather than using a status code. All mean the stored
-    // material is dead: clear it and settle on unauthenticated.
-    //
-    // Two of the three are decidable from the status alone and are taken
-    // here. The third needs the body and so waits until after the decode
-    // below — which is a reordering #352 forced and not a change of rule:
-    // the body no longer arrives pre-decoded, and reading "no session" off
-    // an undecoded string would call a captive portal's HTML page a rejected
-    // session and clear the user's credentials over it.
-    //
-    // 403 belongs here, not in the indeterminate bucket below. The
-    // per-server Dio sets `validateStatus: (_) => true`, so a 403 resolves
-    // as a Response and never reaches `_mapDioException` — the path that
-    // maps 403 to `AuthInvalidCredentialsException`. Classifying it as
-    // indeterminate would strand a genuinely revoked session on the
-    // retry-forever view with the dead material still on disk, and the user
-    // has no way out of that loop. A false positive from an intermediary
-    // costs one re-sign-in, which is the cheaper failure.
-    if (status == HttpStatusCode.unauthorized ||
-        status == HttpStatusCode.forbidden) {
-      return _settleNoSession(status: status, uri: response.requestOptions.uri);
-    }
-
-    // Anything else is INDETERMINATE and must throw, not return null (#98).
-    // The previous `return null` here made a 5xx during startup restore
-    // indistinguishable from "no session", so a transient server fault sent
-    // the user to the sign-in form and implied their stored session had been
-    // rejected — the exact failure mode #37's design set out to avoid, and
-    // the one #98's optimistic fallback depends on being able to detect.
-    // `WebAuthRepositoryImpl.getSession` throws here too — though not until
-    // #180: when this comment was first written web was asserted to "already"
-    // throw and in fact did not, returning null for any non-2xx that carried
-    // no body. Both implementations agree now; do not weaken either half
-    // without the other.
-    if (status != HttpStatusCode.ok) {
-      throw AuthServerException(
-        message: 'Unexpected $status from the session endpoint.',
-        statusCode: status,
-      );
+    // The status decides first, by the rules `readSessionStatus` holds with
+    // their reasons. What is local is the reaction: a definitive "no
+    // session" means the stored material is dead, so `_settleNoSession`
+    // clears it and settles on unauthenticated. BetterAuth's 200-with-no-body
+    // settles the same way, after the decode below — a reordering #352
+    // forced, not a change of rule: reading "no session" off an undecoded
+    // string would call a captive portal's HTML page a rejected session and
+    // clear the user's credentials over it.
+    switch (readSessionStatus(status)) {
+      case SessionReadStatus.noSession:
+        return _settleNoSession(
+          status: status,
+          uri: response.requestOptions.uri,
+        );
+      case SessionReadStatus.undecided:
+        throw AuthServerException(
+          message: 'Unexpected $status from the session endpoint.',
+          statusCode: status,
+        );
+      case SessionReadStatus.readBody:
+        break;
     }
 
     final decoded = await _decodeBody(
@@ -520,11 +499,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     final failure = decoded.failure;
     if (failure != null) throw failure;
 
-    // The third "definitively no session" shape, now that the body is
-    // readable: BetterAuth answers 200 with no session payload. An empty
-    // body and a literal JSON `null` both land here as null, which is
-    // exactly what `Response<Map<String, dynamic>>` used to hand over as
-    // `data == null`.
+    // The "no session" answer the status could not give, which
+    // `SessionReadStatus.readBody` left to the body: BetterAuth answers 200
+    // with no session payload. An empty body and a literal JSON `null` both
+    // land here as null, which is exactly what
+    // `Response<Map<String, dynamic>>` used to hand over as `data == null`.
     final body = decoded.value;
     if (body == null) {
       return _settleNoSession(status: status, uri: response.requestOptions.uri);
@@ -883,7 +862,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// `responseType` per request** — together, not either alone.
   /// `DioMixin.fetch` forces `responseType` from `T`, so `String` gives
   /// `plain` and anything else gives `json`
-  /// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`) — but it skips that forcing
+  /// (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`) — but it skips that forcing
   /// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
   /// and this class takes an arbitrary `Dio` by constructor. The pin is what
   /// makes the rule true here rather than only for the Dio the factories build
@@ -949,7 +928,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // A REJECTION is settled from the status plus a bounded read of the raw
     // body, and never a full decode. The only thing wanted from a rejected
     // body is its envelope's code (a duplicate email, or why a 403 refused),
-    // which [_rejectionCode] reads through [_probeJson] when handed a
+    // which [_rejectionCode] reads through [probeJsonBody] when handed a
     // `String`. Decoding first would pay an isolate spawn and a full parse on
     // a 2 MB proxy error page about to be thrown away on its status — and
     // would answer the code question differently from `_mapDioException`,
@@ -1060,12 +1039,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// four call sites is a shared mutable default waiting to be edited.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// Ceiling on the synchronous probe below. A rejection envelope is a few
-  /// hundred bytes — BetterAuth's is about a hundred — so anything past this
-  /// is not the envelope being looked for, and reading it would be paying
-  /// main-isolate parse time for a body that cannot answer the question.
-  static const int _probeMaxChars = 4 * 1024;
-
   /// Whether a rejected auth response means "this email is already
   /// registered".
   ///
@@ -1095,7 +1068,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// The code is read under the same bound as the duplicate-email envelope.
   /// The status still decides first: only a 403 gets here, and the body only
   /// refines it. A 403 without a readable envelope (a proxy's HTML page, an
-  /// envelope past [_probeMaxChars], no body at all) stays the invalid
+  /// envelope past [probeJsonMaxChars], no body at all) stays the invalid
   /// credentials it always was.
   AuthException _forbidden(Object? body) => switch (_rejectionCode(body)) {
     'EMAIL_NOT_VERIFIED' => const AuthEmailNotVerifiedException(),
@@ -1105,39 +1078,19 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   /// The `code` of a rejection envelope, or null when [body] is not one.
   ///
-  /// A `String` is the raw body and goes through [_probeJson]; a `Map` is a
-  /// body [_requireGrantBody] has already decoded, and is taken as it is.
+  /// [body] is the raw text, or a body [_requireGrantBody] has already
+  /// decoded; both go through [probeJsonBody]. [_mapDioException] reads the
+  /// raw text off a **thrown** `DioException` too: without the probe, a
+  /// duplicate sign-up rejected by a `Dio` whose `validateStatus` is not
+  /// `DefaultDioFactory`'s would report "unexpected 422" instead of "that
+  /// account already exists".
+  ///
+  /// It probes rather than decodes because a rejection envelope is small, and
+  /// `decodeJsonBody`'s isolate hop would make this async for nothing.
   String? _rejectionCode(Object? body) {
-    final decoded = body is String ? _probeJson(body) : body;
+    final decoded = probeJsonBody(body);
     final code = decoded is Map ? decoded['code'] : null;
     return code is String ? code : null;
-  }
-
-  /// Best-effort synchronous decode, for [_rejectionCode] alone.
-  ///
-  /// [_mapDioException] reads the body off a **thrown** `DioException`, where
-  /// it now arrives as the raw `String` the request asked for rather than the
-  /// decoded map the probe used to get for free. Without this, a duplicate
-  /// sign-up rejected by a `Dio` whose `validateStatus` is not this factory's
-  /// would report "unexpected 422" instead of "that account already exists".
-  ///
-  /// Deliberately not routed through `decodeJsonBody`: this reads a rejection
-  /// envelope, which is small, and the probe is best-effort — a body that will
-  /// not parse simply is not this envelope. `decodeJsonBody`'s 50 KB isolate
-  /// offload exists for success-path payloads and would make this async for no
-  /// benefit.
-  ///
-  /// Bounded by [_probeMaxChars], because this runs SYNCHRONOUSLY on the UI
-  /// isolate. Taking the body as a `String` dropped dio's
-  /// `BackgroundTransformer`, which used to offload a decode above 50 KB; a
-  /// bound restores that protection the only way a synchronous probe can.
-  Object? _probeJson(String raw) {
-    if (raw.isEmpty || raw.length > _probeMaxChars) return null;
-    try {
-      return jsonDecode(raw);
-    } on FormatException {
-      return null;
-    }
   }
 
   /// [credentialGrant] gates the body probes, the duplicate-email one and a
@@ -1164,8 +1117,8 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       return const AuthInvalidCredentialsException();
     }
 
-    // A session 403 is the definitive negative `getSession` settles on,
-    // whatever its body says, so only a grant's body is read.
+    // `getSession` settles a session 403 before it gets here, whatever its
+    // body says, so only a grant's body is read.
     if (status == HttpStatusCode.forbidden) {
       return credentialGrant
           ? _forbidden(e.response?.data)

@@ -339,8 +339,8 @@ void main() {
   });
 
   group('the duplicate-email probe on the THROWN path (#352)', () {
-    // The only route to `_probeJson`: a rejection that arrives thrown, so the
-    // body is still the raw `String` the request asked for.
+    // A rejection that arrives thrown reaches the probe (`probeJsonBody`)
+    // with the body still the raw `String` the request asked for.
     test('a thrown 422 duplicate-email envelope still maps', () async {
       final repo = repoWith(
         routingDio({
