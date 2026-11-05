@@ -55,8 +55,8 @@ import 'package:flutter/foundation.dart';
 /// What that statement is worth is the caller's call, not this function's,
 /// because it depends on what the caller loses by treating it as final
 /// (#362). The callers in tree reach different answers, each for a stated
-/// reason: the household and game-collection sources file it as permanent,
-/// since the payload they needed will not change; the well-known client reads
+/// reason: `sendForJson` files it as permanent for every data source, since
+/// the payload the source needed will not change; the well-known client reads
 /// it as "this is not a BGE server"; the auth repositories file it as a
 /// server fault that leaves the session undecided, since an unreadable body
 /// is not proof the session is gone; and the feedback transport reports the
