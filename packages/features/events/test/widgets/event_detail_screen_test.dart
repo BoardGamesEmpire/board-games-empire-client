@@ -5049,6 +5049,55 @@ void main() {
       }
     });
 
+    testWidgets('a note saved as the dialog showed it, or as a sync left it '
+        'while the dialog was open, sends nothing', (tester) async {
+      // Saving what the dialog opened on would put it back over the note
+      // another device saved meanwhile.
+      for (final saved in ['Running late', 'Stuck in traffic']) {
+        final remote = answering();
+        await showRsvp(
+          tester,
+          viewed(me(status: going, notes: 'Running late')),
+          remote,
+        );
+        await press(tester, note());
+
+        cached = viewed(me(status: going, notes: 'Stuck in traffic'));
+        cache.add(cached);
+        await settle(tester);
+        await saveNote(tester, saved);
+
+        expect(remote.rsvps, isEmpty, reason: saved);
+        expect(outcome(), findsNothing, reason: saved);
+        expect(inGroup(going, 'Stuck in traffic'), findsOneWidget);
+        expect(noteOf(tester).onPressed, isNotNull, reason: saved);
+        await leave(tester);
+      }
+    });
+
+    testWidgets('Not going confirmed after a sync answered it sends nothing', (
+      tester,
+    ) async {
+      // The server takes it as a new answer all the same.
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+      await press(tester, chip(notGoing));
+
+      cached = viewed(me(status: notGoing));
+      cache.add(cached);
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inGroup(notGoing, 'Me'), findsOneWidget);
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull);
+      }
+    });
+
     testWidgets('a host is offered Not going', (tester) async {
       final remote = answering();
       await showRsvp(

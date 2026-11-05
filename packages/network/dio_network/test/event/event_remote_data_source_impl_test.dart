@@ -2729,6 +2729,22 @@ void main() {
       expect(adapter.sent.single.body, {'status': 'Maybe', 'notes': ''});
     });
 
+    test('sends a note as given', () async {
+      final remote = answering(rsvpBody(status: 'Maybe'));
+
+      await remote.updateAttendeeStatus(
+        'e1',
+        'a1',
+        EventParticipationStatus.maybe,
+        notes: 'Bringing snacks.',
+      );
+
+      expect(adapter.sent.single.body, {
+        'status': 'Maybe',
+        'notes': 'Bringing snacks.',
+      });
+    });
+
     test('percent-encodes both ids', () async {
       final remote = answering(rsvpBody());
 

@@ -1421,7 +1421,7 @@ typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
 /// Sends the viewer's answer [status], or with [editNote] their current
 /// answer with the note its dialog asks for (#508), and answers whether it
 /// sent it: not when a dialog was cancelled, the note was saved unchanged,
-/// the read it waited for left no event to show, the write was dropped, or
+/// the answer is already the viewer's, the read it waited for left no event to show, the write was dropped, or
 /// another request is out. The controls hold the control pressed only while
 /// what it sent is out. See [EventDetailScreen].
 Future<bool> _sendRsvp(
@@ -1436,12 +1436,13 @@ Future<bool> _sendRsvp(
   final l10n = EventsLocalizations.of(context);
 
   String? notes;
+  String? shownNote;
   if (editNote) {
     final shown = detail.state;
-    notes = await showRsvpNoteDialog(
-      context,
-      note: shown is EventDetailReady ? shown.detail.attendance?.notes : null,
-    );
+    shownNote = shown is EventDetailReady
+        ? shown.detail.attendance?.notes
+        : null;
+    notes = await showRsvpNoteDialog(context, note: shownNote);
     if (notes == null) return false;
   } else if (status == EventParticipationStatus.notAttending) {
     // It pauses the viewer's nominations and takes the games they offered
@@ -1475,14 +1476,18 @@ Future<bool> _sendRsvp(
   // happen.
   final event = state.detail.snapshot.event;
   final attendance = state.detail.attendance;
-  // A note saved as it stands sends nothing. The server takes every send as
-  // a new answer: it notifies the host that the viewer answered, and an
-  // answer of Going or Not going takes a new date.
+  // A note saved as the dialog showed it, or as it stands now, sends
+  // nothing, and so does the answer the viewer already gave. The server
+  // takes every send as a new answer: it notifies the host that the viewer
+  // answered, and an answer of Going or Not going takes a new date. Saving
+  // the note the dialog opened on would also put it back over one another
+  // device saved while the dialog was open.
   if (notes != null &&
-      attendance != null &&
-      notes == (attendance.notes ?? '').trim()) {
+      (notes == (shownNote ?? '').trim() ||
+          (attendance != null && notes == (attendance.notes ?? '').trim()))) {
     return false;
   }
+  if (status != null && status == attendance?.status) return false;
   final answer = status ?? attendance?.status;
   if (attendance == null ||
       answer == null ||

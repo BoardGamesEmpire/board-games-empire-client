@@ -602,11 +602,17 @@ List<String> _attendeeDetails(
 /// Whether [attendee]'s row would show nothing: no name, no role or answer
 /// with a word, and no note. Only a status this client doesn't know has no
 /// word, so only an Other answers row can.
-bool _showsNothing(EventsLocalizations l10n, EventAttendee attendee) {
-  final note = attendee.notes;
-  return attendee.name == null &&
-      _attendeeDetails(l10n, attendee).isEmpty &&
-      (note == null || note.isEmpty);
+bool _showsNothing(EventsLocalizations l10n, EventAttendee attendee) =>
+    attendee.name == null &&
+    _attendeeDetails(l10n, attendee).isEmpty &&
+    _noteOf(attendee) == null;
+
+/// [attendee]'s note as their row shows it: trimmed, or null where that
+/// leaves nothing. The server keeps a note as it was sent, and another
+/// client can send spaces.
+String? _noteOf(EventAttendee attendee) {
+  final note = attendee.notes?.trim();
+  return note == null || note.isEmpty ? null : note;
 }
 
 /// The people who gave one answer: a heading with their count, over their
@@ -660,7 +666,7 @@ class _AttendeeEntry extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
     final name = attendee.name;
-    final note = attendee.notes;
+    final note = _noteOf(attendee);
     final details = _attendeeDetails(l10n, attendee);
 
     return _Entry(
@@ -672,7 +678,7 @@ class _AttendeeEntry extends StatelessWidget {
             semanticsLabel: details.join(l10n.eventsDetailSpokenSeparator),
             style: _quiet(theme),
           ),
-        if (note != null && note.isNotEmpty) Text(note, style: _quiet(theme)),
+        if (note != null) Text(note, style: _quiet(theme)),
       ],
     );
   }

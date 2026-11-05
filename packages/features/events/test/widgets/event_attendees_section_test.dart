@@ -145,6 +145,25 @@ void main() {
     );
   });
 
+  testWidgets('a note of only spaces is no note, and one with spaces round it '
+      'shows without them', (tester) async {
+    await pump(tester, [
+      _who('1', 'Ann', going, notes: ' \n '),
+      _who('2', 'Bob', going, notes: '  Bringing snacks \n'),
+    ]);
+
+    Finder rowOf(String name) => find.ancestor(
+      of: find.text(name),
+      matching: find.byType(MergeSemantics),
+    );
+    // A name and a role and answer, and nothing under them.
+    expect(
+      find.descendant(of: rowOf('Ann'), matching: find.byType(Text)),
+      findsNWidgets(2),
+    );
+    expect(find.text('Bringing snacks'), findsOneWidget);
+  });
+
   testWidgets('a row with no name, role, answer or note is left out, and no '
       'heading counts it, an empty note included', (tester) async {
     EventAttendee nobody(String id, String? notes) => EventAttendee(
@@ -160,7 +179,7 @@ void main() {
       matching: find.byType(MergeSemantics),
     );
 
-    for (final notes in [null, '']) {
+    for (final notes in [null, '', ' \n ']) {
       final reason = 'notes: $notes';
 
       // Alone, it leaves no group: a heading over no rows would count

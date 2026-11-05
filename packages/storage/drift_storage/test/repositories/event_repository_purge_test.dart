@@ -159,18 +159,22 @@ void main() {
     // The list's answer is kept on the attending row (#667), so it goes with
     // it, and no row this user keeps holds it. Another user's answer stays.
     final b = repoFor(_kUserB);
+    // A still reads it by id, so the event stays cached for them. Read
+    // first: a read with no answer clears the one the list kept.
+    await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+    const mine = EventAttendance(
+      attendeeId: 'att-a',
+      status: EventParticipationStatus.maybe,
+    );
     await a.cacheEvent(
-      testSnapshot(
-        'e-1',
-        attendance: const EventAttendance(
-          attendeeId: 'att-a',
-          status: EventParticipationStatus.maybe,
-        ),
-      ),
+      testSnapshot('e-1', attendance: mine),
       source: EventAccessSource.attending,
     );
-    // A still reads it by id, so the event stays cached for them.
-    await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+    expect(
+      (await a.watchAttendingEventListItems().first).single.attendance,
+      mine,
+      reason: "A's answer is kept until the purge",
+    );
     const theirs = EventAttendance(
       attendeeId: 'att-b',
       status: EventParticipationStatus.attending,
