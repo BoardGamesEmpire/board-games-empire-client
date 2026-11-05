@@ -16,6 +16,10 @@ import '../bloc/auth_bloc_state.dart';
 ///
 /// Only rendered when the server's [EmailAndPasswordStrategy.signUpDisabled]
 /// is false. Submits [AuthRegisterRequested] to the ancestor [AuthBloc].
+/// While its own registration is in flight ([AuthLoading] with no provider)
+/// the fields go read-only and the submit shows its progress. While a
+/// provider sign-in is open, the fields stay as they are and the submit is
+/// disabled, with no progress shown (#583).
 ///
 /// i18n (#37): all copy — labels, hints, validation messages, button and
 /// loading semantics — comes from [AuthLocalizations].
@@ -92,6 +96,10 @@ class _RegisterFormState extends State<RegisterForm> {
   }
 
   void _submit(BuildContext context) {
+    // Nothing starts while a sign-in runs. While a provider's is open the
+    // fields are editable, so their done action reaches here even though the
+    // submit is disabled (#583).
+    if (context.read<AuthBloc>().state is AuthLoading) return;
     if (_form.invalid) {
       _form.rejectSubmit();
       return;
@@ -117,7 +125,14 @@ class _RegisterFormState extends State<RegisterForm> {
 
     return BlocBuilder<AuthBloc, AuthBlocState>(
       builder: (context, state) {
-        final isLoading = state is AuthLoading;
+        // A provider sign-in is open in the browser (#583). This form's
+        // submission isn't what is running, so it shows no progress and its
+        // fields stay as they are at rest. Its submit is unavailable for a
+        // press that isn't its own, so it has no focus to keep, and is
+        // disabled (STYLE_GUIDE §5).
+        final providerOpen = state is AuthLoading && state.isProviderSignIn;
+        // This form's own submission is in flight.
+        final isLoading = state is AuthLoading && !providerOpen;
 
         return ReactiveForm(
           formGroup: _form,
@@ -219,13 +234,16 @@ class _RegisterFormState extends State<RegisterForm> {
                     label: l10n.authRegisterButton,
                     progressLabel: l10n.authRegisterLoadingLabel,
                     submitting: isLoading,
-                    onPressed: () => _submit(context),
+                    onPressed: providerOpen ? null : () => _submit(context),
                   ),
                 ),
                 if (widget.onSwitchToSignIn != null) ...[
                   const BgeGap.md(),
                   TextButton(
-                    onPressed: isLoading ? null : widget.onSwitchToSignIn,
+                    // Off while any sign-in runs, a provider's included.
+                    onPressed: state is AuthLoading
+                        ? null
+                        : widget.onSwitchToSignIn,
                     child: Text(l10n.authSwitchToSignIn),
                   ),
                 ],

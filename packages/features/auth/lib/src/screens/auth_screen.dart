@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:interfaces/repositories.dart'
+    show
+        ProviderSignInAddressMismatch,
+        ProviderSignInAvailability,
+        ProviderSignInAvailable,
+        ProviderSignInFailureReason,
+        ProviderSignInUnsupportedDevice;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -24,6 +31,13 @@ import '../widgets/oidc_strategy_button.dart';
 ///   produced them, through the form's [BgeFormActions] (#211). It announces
 ///   itself on appearance. The screen stays put through a failure, so the
 ///   message belongs on it rather than in a SnackBar (#191).
+/// - A provider sign-in's failure has its own banner, directly above the
+///   provider buttons, so a server that offers only providers still has a
+///   surface for it, and the email form never shows it (#583).
+/// - While a provider sign-in is open in the browser, the provider buttons
+///   stay focusable and ignore presses, so a screen-reader user coming back
+///   lands on the button they pressed (#583). Where this device or this
+///   server can't offer provider sign-in, they are disabled, and say why.
 /// - Focus is managed between sign-in/register mode switches
 /// - Server name displayed so screen readers can identify which server
 ///   the user is authenticating against
@@ -48,6 +62,11 @@ class AuthScreen extends StatefulWidget {
 
   /// Key on the operation-failure banner, for tests.
   static const Key failureBannerKey = Key('auth_failure_banner');
+
+  /// Key on the provider sign-in failure banner, for tests (#583).
+  static const Key providerFailureBannerKey = Key(
+    'auth_provider_failure_banner',
+  );
 
   /// Key on the unsent-changes notice, for tests.
   static const Key unsentChangesNoticeKey = Key('auth_unsent_changes_notice');
@@ -99,6 +118,24 @@ class _AuthScreenState extends State<AuthScreen> {
   /// again and offers registration until #87 refreshes it.
   bool _registrationClosed = false;
 
+  /// Whether provider sign-in can run here (#583). It follows from the device
+  /// and the server's discovery, so it is read when the screen appears and
+  /// again whenever the gate rebuilds it, which it does for a new
+  /// [AuthScreen.identity] as well as on every auth state. The provider
+  /// buttons come from the identity as it is now, so their availability has
+  /// to as well.
+  late ProviderSignInAvailability _providerAvailability;
+
+  /// How many provider sign-ins this screen has started. The provider banner
+  /// is keyed by it, so each attempt's failure is a banner of its own (#583).
+  ///
+  /// An attempt can fail before the next frame: web offline, or a platform
+  /// channel that fails at once. The clear and the attempt's progress then
+  /// never reach the screen, and a repeat of the same failure would rebuild
+  /// the old banner with the same copy. It would be neither announced nor
+  /// revealed, and the press would seem to have done nothing.
+  int _providerAttempt = 0;
+
   /// Read when the screen appears rather than in build: the page rebuilds on
   /// every failure, and the count only changes when a session starts. That
   /// normally takes the user off this screen, and the one that comes back
@@ -110,7 +147,18 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
+    _readProviderAvailability();
     _readUnsentChangesCount();
+  }
+
+  @override
+  void didUpdateWidget(AuthScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _readProviderAvailability();
+  }
+
+  void _readProviderAvailability() {
+    _providerAvailability = context.read<AuthBloc>().providerSignInAvailability;
   }
 
   // A block body: as an arrow, it would hand setState the future.
@@ -157,9 +205,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
     // Scoped to the failure surface: the OIDC section and both forms hold
     // their own narrower builders, and an unscoped rebuild here would make
-    // those pointless by rebuilding the whole page on every tick. The failure
-    // itself is rendered by the form, above its submit; this screen owns the
-    // copy, the title and the key, and hands them down.
+    // those pointless by rebuilding the whole page on every tick. An email
+    // failure is rendered by the form, above its submit; this screen owns the
+    // copy, the title and the key, and hands them down. A provider failure is
+    // the provider section's, which its own builder rebuilds for (#583).
     return BlocBuilder<AuthBloc, AuthBlocState>(
       buildWhen: (previous, current) =>
           previous is AuthOperationFailure || current is AuthOperationFailure,
@@ -267,10 +316,12 @@ class _AuthScreenState extends State<AuthScreen> {
     final canRegister = !strategy.signUpDisabled && !_registrationClosed;
     final l10n = AuthLocalizations.of(context);
 
-    // Only sign-in and register emit an operation failure, so the form that
-    // is showing is the one whose submit it answers — and an OIDC-only
-    // server, which has neither form, has no failure to show.
+    // Apart from a provider sign-in's, every operation failure answers
+    // sign-in or register, so the form that is showing is the one whose
+    // submit it answers. A provider sign-in's failure is the provider
+    // section's: exactly one surface shows a given failure (#583).
     BgeFormFailure? failureTitled(String title) => switch (state) {
+      AuthFailureProviderSignIn() => null,
       final AuthOperationFailure kind => BgeFormFailure(
         key: AuthScreen.failureBannerKey,
         // Titled because some of the messages give only a cause: "Could not
@@ -296,21 +347,85 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// The provider buttons, with a provider sign-in's failure above them and,
+  /// where the server's address doesn't match, a note below (#583).
   Widget _buildOidcSection(BuildContext context) {
+    final availability = _providerAvailability;
+    final available = availability is ProviderSignInAvailable;
+    final unavailableOnDevice = availability is ProviderSignInUnsupportedDevice;
+
     return BlocBuilder<AuthBloc, AuthBlocState>(
+      // What this section shows: which sign-in is open, and a provider
+      // failure. Every other change leaves it as it was.
+      buildWhen: (previous, current) =>
+          previous is AuthLoading ||
+          current is AuthLoading ||
+          previous is AuthFailureProviderSignIn ||
+          current is AuthFailureProviderSignIn,
       builder: (context, state) {
-        final isLoading = state is AuthLoading;
+        final l10n = AuthLocalizations.of(context);
+        // While a provider's sign-in is open, its button is busy and the
+        // others are inert with it. None drops the focus of a user on it, so
+        // one back from the browser lands where they were.
+        final openProvider = state is AuthLoading ? state.providerId : null;
+        // An email sign-in or a sign-out is in flight. The buttons are
+        // unavailable for a press that isn't theirs, so they have no focus
+        // to keep, and are disabled (STYLE_GUIDE §5).
+        final otherInFlight = state is AuthLoading && openProvider == null;
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (state case final AuthFailureProviderSignIn failure) ...[
+              // A new banner for each attempt, so a repeated failure is
+              // announced and revealed again. See [_providerAttempt].
+              KeyedSubtree(
+                key: ValueKey(_providerAttempt),
+                child: BgeInlineBanner(
+                  key: AuthScreen.providerFailureBannerKey,
+                  tone: BgeBannerTone.error,
+                  // Titled because some of the messages give only a cause:
+                  // "Could not reach the server" never says that signing in
+                  // failed (#211).
+                  title: l10n.authSignInErrorTitle,
+                  message: _localizedFailure(l10n, failure),
+                ),
+              ),
+              // The gap `BgeFormActions` puts between a banner and its
+              // submit.
+              const BgeGap.md(),
+            ],
             for (final oidcStrategy in widget.identity.oidcStrategies) ...[
               OidcStrategyButton(
+                // Keyed, so a banner arriving above keeps each button, and
+                // the focus on it.
+                key: ValueKey(oidcStrategy.providerId),
                 strategy: oidcStrategy,
-                enabled: !isLoading,
-                onPressed: () => _handleOidc(context, oidcStrategy),
+                busy: openProvider == oidcStrategy.providerId,
+                inert: openProvider != null,
+                unavailableOnDevice: unavailableOnDevice,
+                onPressed: available && !otherInFlight
+                    ? () => _signInWithProvider(oidcStrategy)
+                    : null,
               ),
               const BgeGap.sm(),
             ],
+            // Built only in this state: a note always in the tree would
+            // leave its gap everywhere else.
+            if (availability case ProviderSignInAddressMismatch(
+              :final configuredAddress,
+            ))
+              Semantics(
+                container: true,
+                child: Text(
+                  // A URL, inserted as the server reports it.
+                  l10n.authProviderAddressMismatch(configuredAddress),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -346,24 +461,50 @@ class _AuthScreenState extends State<AuthScreen> {
   /// The single place the sealed failure kinds become user-facing copy.
   /// Exhaustive: a new kind fails compilation here until it gets a
   /// localized message.
-  String _localizedFailure(AuthLocalizations l10n, AuthOperationFailure f) =>
-      switch (f) {
-        AuthFailureInvalidCredentials() => l10n.authErrorInvalidCredentials,
-        AuthFailureEmailAlreadyExists() => l10n.authErrorEmailExists,
-        AuthFailureRegistrationDisabled() => l10n.authRegistrationDisabled,
-        AuthFailureNetwork() => l10n.authErrorNetwork,
-        AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
-        AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
-        AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
-        AuthFailureServer() => l10n.authErrorServer,
-        // Placeholder until the provider banner words each reason (#583).
-        AuthFailureProviderSignIn() => l10n.authErrorServer,
-        // A wait under a second would read "in 0 seconds", which is no advice.
-        AuthFailureRateLimited(:final retryAfter) =>
-          retryAfter == null || retryAfter < const Duration(seconds: 1)
-              ? l10n.authErrorRateLimitedNoWait
-              : l10n.authErrorRateLimited(retryAfter.inSeconds),
-      };
+  String _localizedFailure(
+    AuthLocalizations l10n,
+    AuthOperationFailure f,
+  ) => switch (f) {
+    AuthFailureInvalidCredentials() => l10n.authErrorInvalidCredentials,
+    AuthFailureEmailAlreadyExists() => l10n.authErrorEmailExists,
+    AuthFailureRegistrationDisabled() => l10n.authRegistrationDisabled,
+    AuthFailureNetwork() => l10n.authErrorNetwork,
+    AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
+    AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
+    AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
+    AuthFailureServer() => l10n.authErrorServer,
+    AuthFailureRateLimited(:final retryAfter) => _rateLimited(l10n, retryAfter),
+    AuthFailureProviderSignIn(:final reason, :final retryAfter) =>
+      switch (reason) {
+        ProviderSignInFailureReason.registrationDisabled =>
+          l10n.authProviderErrorRegistrationDisabled,
+        ProviderSignInFailureReason.emailUnverified =>
+          l10n.authProviderErrorEmailUnverified,
+        // #582 adds the next step, linking the provider to the account.
+        ProviderSignInFailureReason.accountNotLinked =>
+          l10n.authProviderErrorAccountNotLinked,
+        ProviderSignInFailureReason.accessDenied =>
+          l10n.authProviderErrorAccessDenied,
+        ProviderSignInFailureReason.providerUnavailable =>
+          l10n.authProviderErrorUnavailable,
+        ProviderSignInFailureReason.startAgain =>
+          l10n.authProviderErrorStartAgain,
+        ProviderSignInFailureReason.rateLimited => _rateLimited(
+          l10n,
+          retryAfter,
+        ),
+        ProviderSignInFailureReason.network => l10n.authErrorNetwork,
+        ProviderSignInFailureReason.generic => l10n.authProviderErrorGeneric,
+      },
+  };
+
+  /// The rate-limit copy for a sign-in, a sign-up or a provider sign-in
+  /// (#559). A wait under a second would read "in 0 seconds", which is no
+  /// advice, so it reads as no wait.
+  String _rateLimited(AuthLocalizations l10n, Duration? retryAfter) =>
+      retryAfter == null || retryAfter < const Duration(seconds: 1)
+      ? l10n.authErrorRateLimitedNoWait
+      : l10n.authErrorRateLimited(retryAfter.inSeconds);
 
   void _switchMode({required bool signIn}) {
     // Retire any failure first: it describes a submission to the form the
@@ -381,22 +522,15 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isSignIn = signIn);
   }
 
-  void _handleOidc(BuildContext context, OidcStrategy strategy) {
-    // TODO(phase5): Launch OIDC redirect flow via platform-specific
-    // browser integration. For now this is a placeholder.
-    //
-    // A SnackBar rather than a BgeInlineBanner, and deliberately: this is a
-    // transient "not built yet" notice, not the outcome of a form the user
-    // submitted, and it disappears with this placeholder. Note it carries no
-    // `Semantics(liveRegion:)` wrapper — SnackBar already is one
-    // (`snack_bar.dart`), and nesting the two makes screen readers stutter
-    // (#191).
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AuthLocalizations.of(context).authOidcComingSoon(strategy.providerId),
-        ),
-      ),
-    );
+  void _signInWithProvider(OidcStrategy strategy) {
+    setState(() => _providerAttempt++);
+    final bloc = context.read<AuthBloc>();
+    // Retire a standing failure first, the provider banner's or the form's:
+    // it answers an attempt the user is starting over (#583). The banner is
+    // bound to bloc state and does not fade on its own (#191).
+    if (bloc.state is AuthOperationFailure) {
+      bloc.add(const AuthFailureCleared());
+    }
+    bloc.add(AuthProviderSignInRequested(strategy));
   }
 }

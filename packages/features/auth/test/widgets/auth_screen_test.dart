@@ -63,6 +63,7 @@ void main() {
     mockBloc = MockAuthBloc();
     when(() => mockBloc.state).thenReturn(const AuthInitial());
     when(() => mockBloc.stream).thenAnswer((_) => const Stream.empty());
+    stubProviderSignInAvailability(mockBloc);
   });
 
   group('AuthScreen', () {
@@ -780,6 +781,8 @@ void main() {
         // that it lands before the next frame.
         final repo = MockAuthRepository();
         when(repo.watchAuthState).thenAnswer((_) => const Stream.empty());
+        when(() => repo.providerSignInAvailability)
+            .thenReturn(const ProviderSignInAvailable());
         when(
           () => repo.signIn(
             email: any(named: 'email'),

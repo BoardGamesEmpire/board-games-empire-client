@@ -569,7 +569,8 @@ These are not aspirations; each is enforced somewhere.
   presses instead, because a disabled Material button cannot hold focus (#607).
   A button builds that from `BgeInertButton`. Those named are examples of the
   rule, not a complete list: the data gateway detail's interview button and
-  capability switches (#457, #660) stay enabled and inert the same way. A
+  capability switches (#457, #660), and the auth screen's provider buttons
+  while a sign-in is open (#583), stay enabled and inert the same way. A
   control with no focus to keep is disabled as before.
 
 ---

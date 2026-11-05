@@ -17,6 +17,15 @@ class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
+/// Stubs what [bloc] says about provider sign-in on this device, which
+/// `AuthScreen` reads once when it appears (#583). Every suite that builds
+/// the screen over a [MockAuthBloc] needs it: the getter isn't nullable, so
+/// left unstubbed it throws.
+void stubProviderSignInAvailability(
+  MockAuthBloc bloc, [
+  ProviderSignInAvailability availability = const ProviderSignInAvailable(),
+]) => when(() => bloc.providerSignInAvailability).thenReturn(availability);
+
 const _kAuthBase = '/api/auth';
 
 /// A provider sign-in strategy, as the server advertises one (#583).
@@ -31,10 +40,14 @@ const kOidcStrategy = OidcStrategy(
 
 /// A server identity advertising the strategies a suite asks for: email and
 /// password by default, open for sign-up unless [signUpDisabled].
+///
+/// [hasOidc] adds [kOidcStrategy]; [oidcStrategies], when given, are the
+/// provider strategies instead.
 ServerIdentity testServerIdentity({
   bool hasEmailPassword = true,
   bool signUpDisabled = false,
   bool hasOidc = false,
+  List<OidcStrategy>? oidcStrategies,
 }) => ServerIdentity(
   serverId: 'server-1',
   issuer: 'https://api.example.com',
@@ -54,7 +67,7 @@ ServerIdentity testServerIdentity({
         signInEndpoint: '$_kAuthBase/sign-in/email',
         signUpEndpoint: signUpDisabled ? null : '$_kAuthBase/sign-up/email',
       ),
-    if (hasOidc) kOidcStrategy,
+    ...(oidcStrategies ?? [if (hasOidc) kOidcStrategy]),
   ],
 );
 
