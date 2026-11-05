@@ -1,11 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import '../members/send_member_request.dart';
 import '../permissions/household_actions.dart';
 import 'household_member_actions_event.dart';
 import 'household_member_actions_state.dart';
@@ -123,7 +122,18 @@ class HouseholdMemberActionsBloc
       HouseholdMemberActionsState(busy: Set.unmodifiable({...state.busy, id})),
     );
 
-    final outcome = await _attempt(action, send, cache);
+    final o = await sendMemberRequest<HouseholdMember>(
+      action: action.name,
+      send: send,
+      cache: cache,
+      refresh: _onChanged,
+      logger: _logger,
+    );
+    final outcome = HouseholdMemberOutcome(
+      action: action,
+      result: o.result,
+      error: o.error,
+    );
 
     // Read again: another member's request may have started or ended
     // meanwhile.
@@ -133,84 +143,6 @@ class HouseholdMemberActionsBloc
         outcome: outcome,
       ),
     );
-  }
-
-  /// Sends a request, caches the answer to a 200, and starts the refresh
-  /// the answer calls for. Answers how it ended. Never throws.
-  Future<HouseholdMemberOutcome> _attempt(
-    HouseholdMemberAction action,
-    Future<HouseholdMember> Function() send,
-    Future<void> Function(HouseholdMember answer) cache,
-  ) async {
-    final HouseholdMember answer;
-    try {
-      answer = await send();
-    } on HouseholdMemberRefusedException catch (error) {
-      _refresh();
-      return HouseholdMemberOutcome(
-        action: action,
-        result: error.statusCode == 404
-            ? HouseholdMemberActionResult.gone
-            : HouseholdMemberActionResult.refused,
-        error: error,
-      );
-    } on HouseholdMemberTransientException catch (error, stackTrace) {
-      // Nothing is written here and no refresh starts (#122). The server
-      // may have made the change before the answer was lost, and the next
-      // hydrate brings it if so.
-      _logger.warn(
-        'Household member ${action.name} got no answer',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return HouseholdMemberOutcome(
-        action: action,
-        result: HouseholdMemberActionResult.failed,
-        error: error,
-      );
-    } on Object catch (error, stackTrace) {
-      _logger.warn(
-        'Household member ${action.name} failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      _refresh();
-      return HouseholdMemberOutcome(
-        action: action,
-        result: HouseholdMemberActionResult.failed,
-        error: error,
-      );
-    }
-
-    try {
-      await cache(answer);
-    } on Object catch (error, stackTrace) {
-      // The server made the change, and the refresh brings it.
-      _logger.warn(
-        'Household member ${action.name} done, but its answer was not cached',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-    _refresh();
-    return HouseholdMemberOutcome(
-      action: action,
-      result: HouseholdMemberActionResult.done,
-    );
-  }
-
-  void _refresh() => unawaited(_runRefresh());
-
-  Future<void> _runRefresh() async {
-    try {
-      await _onChanged();
-    } on Object catch (error, stackTrace) {
-      _logger.warn(
-        'Household refresh after a member change failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
   }
 
   void _onOutcomeDismissed(
