@@ -172,17 +172,27 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
 /// [showBgePopup]'s bottom sheet, for a narrow window (#707).
 ///
 /// It grows with its content up to the safe area, and has a drag handle.
+///
+/// The sheet's own safe area keeps it clear of the top and the sides only,
+/// so its surface reaches the bottom edge. Its content stops above the
+/// system navigation or the home indicator there, so the last action is
+/// never under it.
 class BgePopupSheetRoute<T> extends ModalBottomSheetRoute<T>
     with BgeRemoveWhenCovered<T> {
   /// A sheet showing [builder]'s content.
   BgePopupSheetRoute({
-    required super.builder,
+    required WidgetBuilder builder,
     super.capturedThemes,
     super.barrierLabel,
     super.barrierOnTapHint,
     super.modalBarrierColor,
     super.settings,
-  }) : super(isScrollControlled: true, showDragHandle: true, useSafeArea: true);
+  }) : super(
+         builder: (context) => SafeArea(top: false, child: builder(context)),
+         isScrollControlled: true,
+         showDragHandle: true,
+         useSafeArea: true,
+       );
 }
 
 /// [showBgePopup]'s dialog, for a window from

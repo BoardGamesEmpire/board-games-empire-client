@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -58,6 +59,23 @@ class GameBrowseScreen extends StatelessWidget {
   static const Key searchKey = Key('catalog_browse.search');
   static const Key sortKey = Key('catalog_browse.sort');
   static const Key layoutToggleKey = Key('catalog_browse.layout_toggle');
+
+  static final BgeLogger _log = BgeLogger('bge.catalog.browse.layout');
+
+  /// A remembered layout that could not be read or written (#710). Logged,
+  /// not shown: the screen shows the list, or keeps the choice for this
+  /// visit.
+  static void _layoutFailed(
+    Object error,
+    StackTrace stackTrace, {
+    required bool writing,
+  }) => _log.warn(
+    writing
+        ? 'Remembering the layout choice failed'
+        : 'Reading the remembered layout choice failed',
+    error: error,
+    stackTrace: stackTrace,
+  );
 
   /// Per-tile key: `catalog_browse.tile_<gameId>`.
   ///
@@ -125,6 +143,7 @@ class GameBrowseScreen extends StatelessWidget {
             ? null
             : (thumbnails) =>
                   layouts.writeThumbnails(ListLayoutScreen.games, thumbnails),
+        onError: _layoutFailed,
         builder: (context, thumbnails, onChanged) => _GameBrowsePage(
           thumbnails: thumbnails,
           onLayoutChanged: onChanged,

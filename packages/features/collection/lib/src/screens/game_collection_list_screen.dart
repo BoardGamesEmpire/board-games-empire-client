@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -86,6 +87,23 @@ class GameCollectionListScreen extends StatelessWidget {
   /// Key on the list or thumbnails toggle.
   static const Key layoutToggleKey = Key('collection_list.layout_toggle');
 
+  static final BgeLogger _log = BgeLogger('bge.collection.list.layout');
+
+  /// A remembered layout that could not be read or written (#710). Logged,
+  /// not shown: the screen shows the list, or keeps the choice for this
+  /// visit.
+  static void _layoutFailed(
+    Object error,
+    StackTrace stackTrace, {
+    required bool writing,
+  }) => _log.warn(
+    writing
+        ? 'Remembering the layout choice failed'
+        : 'Reading the remembered layout choice failed',
+    error: error,
+    stackTrace: stackTrace,
+  );
+
   /// Per-tile key: `collection_list.tile_<entryId>`.
   ///
   /// Held by the wrapper [BgeKeyedSliverGrid] puts around each tile, as
@@ -162,6 +180,7 @@ class GameCollectionListScreen extends StatelessWidget {
                 ListLayoutScreen.collection,
                 thumbnails,
               ),
+        onError: _layoutFailed,
         builder: (context, thumbnails, onChanged) => _GameCollectionListPage(
           thumbnails: thumbnails,
           onLayoutChanged: onChanged,

@@ -80,8 +80,9 @@ Future<void> showGameQuickLook(
 /// ## A read that doesn't land
 ///
 /// It never becomes an empty pop-up. A read that fails keeps what the seed
-/// had, and one answered from this device's cache shows the cached copy.
-/// Either way a banner says some details couldn't be loaded, with a retry.
+/// had, and one answered from this device's cache shows the cached copy,
+/// unless the seed is a full row: a cached copy is never newer than that,
+/// and only its platforms are shown. Either way a banner says some details couldn't be loaded, with a retry.
 /// The retry keeps everything in place while it runs, itself included, so
 /// it keeps focus (#607). It says it is trying for at least [retryDwell],
 /// however soon its answer comes. A game the server refuses keeps the seed
@@ -294,7 +295,13 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
     final tokens = BgeTokens.of(context);
     final seed = widget.seed;
     final ready = answer is GameDetailReady ? answer : null;
-    final game = ready?.game ?? seed.game;
+    // A cached copy is never newer than a full seed, which came from the
+    // server or from that same cache, so the seed's row stays. The cache
+    // still brings the platforms.
+    final game = switch (ready) {
+      GameDetailReady(fromCache: true) => seed.game ?? ready.game,
+      _ => ready?.game ?? seed.game,
+    };
     final platformGames = ready?.platformGames ?? const <PlatformGame>[];
     final facts = game == null ? const <CatalogFact>[] : playFacts(l10n, game);
     final description = game?.description;

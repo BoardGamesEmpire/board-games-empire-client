@@ -3022,6 +3022,7 @@ class _AuthScopeState extends State<_AuthScope> {
                 // the listener, not as an unhandled zone error), and the
                 // home subtree starts unmounting before the scope pop
                 // disposes its repositories.
+                _closePopUps(context);
                 widget.onSignedOut();
                 unawaited(_deactivateSessionScope(active));
               }
@@ -3230,15 +3231,31 @@ class _AuthScopeState extends State<_AuthScope> {
   /// Screens opened under the departing user are closed first, for the
   /// reason the sign-out arm routes first: they hold repositories the scope
   /// pop is about to dispose. Going home does that, since every such screen
-  /// is pushed above it. Home itself shows the splash until the new user's
-  /// scope is live, and is rebuilt for them then (see
-  /// `_BgeAppState._homeSession`).
+  /// is pushed above it, and [_closePopUps] closes what is open over home.
+  /// Home itself shows the splash until the new user's scope is live, and is
+  /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
     widget.homeSession.value = (userId: null, switching: true);
+    _closePopUps(context);
     GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
   }
+
+  /// Closes the pop-ups open on the root navigator as a session ends, such
+  /// as a game's quick look over home (#707).
+  ///
+  /// A pop-up is a route with no page of its own, so it goes when the page
+  /// it was opened over goes. The routing a session's end does takes down
+  /// every page pushed above home, and theirs with them, but home and the
+  /// sign-in screen share the auth shell's page, which stays. One over home
+  /// would outlive the session: over the sign-in screen, or over the next
+  /// user's home, still showing the departing user's game, and reading
+  /// through repositories the scope pop is about to dispose.
+  static void _closePopUps(BuildContext context) => Navigator.maybeOf(
+    context,
+    rootNavigator: true,
+  )?.popUntil((route) => route.settings is Page<Object?>);
 
   /// The one-time notice that this tab now shows [user]'s account (#432),
   /// or null where there is nowhere to show it.

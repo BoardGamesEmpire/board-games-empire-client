@@ -643,6 +643,30 @@ void main() {
       ]);
     });
 
+    // Logged, not reported as a framework error, which the app takes for a
+    // crash and offers to send.
+    testWidgets('a store that fails shows the list and keeps a change for '
+        'the visit, with no framework error', (tester) async {
+      await show(tester, [
+        listItem('e-1'),
+      ], layouts: _FakeLayouts()..failing = true);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.rowKey('e-1')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a stored thumbnails choice opens in thumbnails', (
       tester,
     ) async {
@@ -1144,12 +1168,18 @@ class _FakeLayouts implements ListLayoutRepository {
   Completer<ListLayout?>? hold;
   final writes = <(ListLayoutScreen, ListLayout)>[];
 
+  /// Every read and write throws, as a store that has gone does.
+  bool failing = false;
+
   @override
-  Future<ListLayout?> read(ListLayoutScreen screen) async =>
-      hold == null ? stored : hold!.future;
+  Future<ListLayout?> read(ListLayoutScreen screen) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
+    return hold == null ? stored : hold!.future;
+  }
 
   @override
   Future<void> write(ListLayoutScreen screen, ListLayout layout) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
     stored = layout;
     writes.add((screen, layout));
   }

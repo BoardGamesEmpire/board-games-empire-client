@@ -42,6 +42,16 @@ void main() {
     expect(await layouts.read(ListLayoutScreen.collection), ListLayout.list);
   });
 
+  // So the choice is in the database, not held by the instance that wrote
+  // it: a new session builds a new repository.
+  test("another instance for the same user reads this one's write", () async {
+    await layouts.write(ListLayoutScreen.games, ListLayout.thumbnails);
+
+    final next = ListLayoutRepositoryImpl(db, userId: 'a');
+
+    expect(await next.read(ListLayoutScreen.games), ListLayout.thumbnails);
+  });
+
   test("one user's choice is not another's", () async {
     final other = ListLayoutRepositoryImpl(db, userId: 'b');
 

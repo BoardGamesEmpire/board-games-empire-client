@@ -1176,6 +1176,39 @@ void main() {
       expect(second.owned.watches, greaterThan(0));
     });
 
+    // Home and sign-in share the auth shell's page, so a pop-up over home is
+    // not taken down by the routing a session's end does (#707).
+    testWidgets("a quick look open over home closes as another user's session "
+        'replaces it', (tester) async {
+      await signedInAsFirstUser(tester);
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      switchToSecondUser();
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameQuickLook), findsNothing);
+      expectOnlySecondUser(tester);
+    });
+
+    testWidgets('a quick look open over home closes as the session ends', (
+      tester,
+    ) async {
+      await signedInAsFirstUser(tester);
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(find.byType(GameQuickLook), findsNothing);
+    });
+
     testWidgets("Something to play is keyed on the session's collection, which "
         'is where half of its draw comes from: a new one is a new row even '
         'under the same games cache', (tester) async {

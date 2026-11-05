@@ -59,9 +59,14 @@ void main() {
       required Future<void> Function(bool)? write,
       required List<bool?> seen,
       void Function(ValueChanged<bool>)? onBuilt,
+      List<({Object error, bool writing})>? failures,
     }) => BgeRememberedLayout(
       read: read,
       write: write,
+      onError: failures == null
+          ? null
+          : (error, _, {required writing}) =>
+                failures.add((error: error, writing: writing)),
       builder: (context, thumbnails, onChanged) {
         seen.add(thumbnails);
         onBuilt?.call(onChanged);
@@ -86,7 +91,32 @@ void main() {
       expect(seen.last, isTrue);
     });
 
-    testWidgets('remembered: a failed read shows the list, and is reported', (
+    // Not as a framework error, which the app takes for a crash.
+    testWidgets('remembered: a failed read shows the list, and is told to '
+        'onError only', (tester) async {
+      final seen = <bool?>[];
+      final failures = <({Object error, bool writing})>[];
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = previous);
+      await tester.pumpWidget(
+        host(
+          read: () async => throw StateError('no store'),
+          write: null,
+          seen: seen,
+          failures: failures,
+        ),
+      );
+      await tester.pump();
+
+      expect(seen.last, isFalse);
+      expect(failures.single.error, isA<StateError>());
+      expect(failures.single.writing, isFalse);
+      expect(reported, isEmpty);
+    });
+
+    testWidgets('remembered: a failure with no onError is dropped', (
       tester,
     ) async {
       final seen = <bool?>[];
@@ -104,7 +134,7 @@ void main() {
       await tester.pump();
 
       expect(seen.last, isFalse);
-      expect(reported.single.exception, isA<StateError>());
+      expect(reported, isEmpty);
     });
 
     testWidgets('remembered: no read shows the list', (tester) async {
@@ -174,9 +204,11 @@ void main() {
       expect(written, [true]);
     });
 
-    testWidgets('remembered: a failed write is not shown', (tester) async {
+    testWidgets('remembered: a failed write is not shown, and is told to '
+        'onError only', (tester) async {
       final seen = <bool?>[];
       late ValueChanged<bool> change;
+      final failures = <({Object error, bool writing})>[];
       final reported = <FlutterErrorDetails>[];
       final previous = FlutterError.onError;
       FlutterError.onError = reported.add;
@@ -187,6 +219,7 @@ void main() {
           write: (_) async => throw StateError('disk full'),
           seen: seen,
           onBuilt: (onChanged) => change = onChanged,
+          failures: failures,
         ),
       );
       await tester.pump();
@@ -195,7 +228,9 @@ void main() {
       await tester.pump();
 
       expect(seen.last, isTrue);
-      expect(reported, hasLength(1));
+      expect(failures.single.error, isA<StateError>());
+      expect(failures.single.writing, isTrue);
+      expect(reported, isEmpty);
     });
 
     testWidgets('remembered: a read that answers after dispose is ignored', (

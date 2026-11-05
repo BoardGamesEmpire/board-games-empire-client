@@ -78,11 +78,12 @@ class _SegmentIcon extends StatelessWidget {
 /// before [read] answers wins: the late answer is dropped, so the screen keeps
 /// what the user chose and what was written.
 ///
-/// A read or a write that fails is reported through
-/// [FlutterError.reportError] and not shown. A failed read shows the list,
-/// and a failed write keeps the choice for this visit, simply not
-/// remembered. Reported, so that a store that always fails, which looks to
-/// the user like a choice that is never kept, can be found.
+/// A read or a write that fails is told to [onError] and not shown. A failed
+/// read shows the list, and a failed write keeps the choice for this visit,
+/// simply not remembered. Told, so that a store that always fails, which
+/// looks to the user like a choice that is never kept, can be found in the
+/// log. Not through [FlutterError.reportError]: the app takes everything
+/// reported there for a crash and offers to send a report of it.
 ///
 /// A widget that needs a fresh read for a different store takes a new key,
 /// since [read] is not called again.
@@ -92,6 +93,7 @@ class BgeRememberedLayout extends StatefulWidget {
     required this.read,
     required this.write,
     required this.builder,
+    this.onError,
     super.key,
   });
 
@@ -100,6 +102,15 @@ class BgeRememberedLayout extends StatefulWidget {
 
   /// Stores `thumbnails` as the choice.
   final Future<void> Function(bool thumbnails)? write;
+
+  /// Told of a [read] or a [write] that failed, [writing] for a write. A
+  /// screen logs it. Null drops it.
+  final void Function(
+    Object error,
+    StackTrace stackTrace, {
+    required bool writing,
+  })?
+  onError;
 
   /// Builds the screen with the choice, `null` while it is being read.
   final Widget Function(
@@ -131,11 +142,13 @@ class _BgeRememberedLayoutState extends State<BgeRememberedLayout> {
   }
 
   Future<void> _load(Future<bool?> Function() read) async {
+    // Taken now: a read can fail after this state has gone.
+    final onError = widget.onError;
     bool value;
     try {
       value = await read() ?? false;
     } on Object catch (error, stack) {
-      _report(error, stack, 'while reading the remembered layout choice');
+      onError?.call(error, stack, writing: false);
       value = false;
     }
     if (!mounted || _changed) {
@@ -148,25 +161,16 @@ class _BgeRememberedLayoutState extends State<BgeRememberedLayout> {
     _changed = true;
     setState(() => _thumbnails = thumbnails);
     final write = widget.write;
+    final onError = widget.onError;
     if (write == null) {
       return;
     }
     try {
       await write(thumbnails);
     } on Object catch (error, stack) {
-      _report(error, stack, 'while remembering the layout choice');
+      onError?.call(error, stack, writing: true);
     }
   }
-
-  void _report(Object error, StackTrace stack, String context) =>
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'ui',
-          context: ErrorDescription(context),
-        ),
-      );
 
   @override
   Widget build(BuildContext context) =>

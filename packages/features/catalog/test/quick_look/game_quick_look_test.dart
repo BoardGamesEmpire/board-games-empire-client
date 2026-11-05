@@ -333,6 +333,31 @@ void main() {
     expect(find.byKey(GameQuickLook.platformsKey), findsNothing);
   });
 
+  // Newest games reads the server and leaves the cache as it was, so its row
+  // can be newer than the cached copy, and is never older.
+  testWidgets('offline with a full seed keeps the seed over an older cached '
+      'copy', (tester) async {
+    remote.onFetchGame = (_) async => throw unreachable();
+    final older = Game(
+      id: 'g_wingspan',
+      title: 'Wingspan (first printing)',
+      createdAt: DateTime.utc(2025),
+      updatedAt: DateTime.utc(2025),
+    );
+    await open(
+      tester,
+      GameQuickLookSeed.fromGame(wingspan),
+      cache: FakeGamesCache([older]),
+    );
+
+    expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+    expect(find.text('Wingspan'), findsOneWidget);
+    expect(find.text('Wingspan (first printing)'), findsNothing);
+    expect(factsShown(tester), wingspanFacts);
+    expect(find.text('Published 2016'), findsOneWidget);
+    expect(find.textContaining('wildlife preserves'), findsOneWidget);
+  });
+
   testWidgets('a retry keeps what is shown, and its button keeps focus, '
       'until the answer comes', (tester) async {
     remote.onFetchGame = (_) async => throw unreachable();

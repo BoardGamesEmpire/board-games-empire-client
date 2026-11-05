@@ -175,6 +175,25 @@ void main() {
       expect(find.byType(Dialog), findsNothing);
     }, variant: _platforms);
 
+    // The sheet keeps clear of the top and the sides only; it reaches the
+    // bottom edge, under three-button navigation or the home indicator.
+    testWidgets('its sheet ends its content above the system navigation, and '
+        'its surface reaches the bottom edge', (tester) async {
+      final app = _App();
+      await app.pump(tester, _narrow);
+      tester.view
+        ..padding = const FakeViewPadding(bottom: 48)
+        ..viewPadding = const FakeViewPadding(bottom: 48);
+
+      await app.open(tester);
+
+      expect(
+        tester.getBottomLeft(find.byKey(_openDialogKey)).dy,
+        lessThanOrEqualTo(_narrow.height - 48),
+      );
+      expect(tester.getBottomLeft(find.byType(BottomSheet)).dy, _narrow.height);
+    }, variant: _platforms);
+
     testWidgets('at 800 wide it opens a dialog no wider than the content '
         'measure', (tester) async {
       final app = _App();
