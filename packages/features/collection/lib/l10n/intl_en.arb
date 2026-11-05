@@ -58,6 +58,14 @@
   "@collectionListDetailSpokenSeparator": {
     "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
   },
+  "collectionLayoutList": "List",
+  "@collectionLayoutList": {
+    "description": "Tooltip and spoken name of the segment on the collection's layout toggle that shows the games as rows, one per line."
+  },
+  "collectionLayoutThumbnails": "Thumbnails",
+  "@collectionLayoutThumbnails": {
+    "description": "Tooltip and spoken name of the segment on the collection's layout toggle that shows the games as a grid of covers, each opening its collection entry."
+  },
   "collectionListMediumPhysical": "Physical",
   "@collectionListMediumPhysical": {
     "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."

@@ -1535,6 +1535,7 @@ class _BgeAppState extends State<BgeApp> {
           : (ctx) => unawaited(ctx.push<void>(AppRoutes.games)),
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
+      layouts: _listLayouts(container),
     );
   }
 
@@ -1612,6 +1613,14 @@ class _BgeAppState extends State<BgeApp> {
   static GameRepository? _gamesCache(DependencyContainer container) =>
       container.isRegistered<GameRepository>()
       ? container.get<GameRepository>()
+      : null;
+
+  /// The remembered list or thumbnails choice (#710): per user, so null when
+  /// no user session is active, and the screens then keep it for the session
+  /// only.
+  static ListLayoutRepository? _listLayouts(DependencyContainer container) =>
+      container.isRegistered<ListLayoutRepository>()
+      ? container.get<ListLayoutRepository>()
       : null;
 
   /// Opens one game from a catalog screen (#42). A push, so leaving the
@@ -1704,9 +1713,7 @@ class _BgeAppState extends State<BgeApp> {
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
-      layouts: container.isRegistered<ListLayoutRepository>()
-          ? container.get<ListLayoutRepository>()
-          : null,
+      layouts: _listLayouts(container),
       onQuickLook: _openQuickLook(container),
       initialSort: sort,
     );
