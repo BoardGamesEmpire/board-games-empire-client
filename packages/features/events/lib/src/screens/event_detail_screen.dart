@@ -202,6 +202,13 @@ class EventDetailScreen extends StatelessWidget {
   static Key attendeeGroupKey(EventParticipationStatus status) =>
       Key('event_detail.attendees_${status.name}');
 
+  /// Key on one of the viewer's answer chips (#508).
+  static Key rsvpAnswerKey(EventParticipationStatus status) =>
+      Key('event_detail.rsvp_${status.name}');
+
+  /// Key on the viewer's *Add a note* or *Edit note* button (#508).
+  static const Key rsvpNoteKey = Key('event_detail.rsvp_note');
+
   /// Key on the games section.
   static const Key gamesKey = Key('event_detail.games');
 

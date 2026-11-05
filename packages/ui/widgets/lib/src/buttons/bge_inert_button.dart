@@ -3,11 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 /// Builds the button a [BgeInertButton] wraps, from the focus node and the
-/// press handler it must use.
+/// press handler it must use. The handler is null while the button is
+/// disabled.
 typedef BgeInertButtonBuilder = Widget Function(
   BuildContext context,
   FocusNode focusNode,
-  VoidCallback onPressed,
+  VoidCallback? onPressed,
 );
 
 /// A button that stays enabled while it can do nothing, so it keeps focus,
@@ -30,6 +31,12 @@ typedef BgeInertButtonBuilder = Widget Function(
 /// open, its sibling provider buttons are inert with the pressed one, so the
 /// group reads the same whichever a user lands on (#583).
 ///
+/// A null [onPressed] disables it in place, as it would a Material button: it
+/// takes no focus, and the same node reads as not enabled, with no tap and no
+/// focus action. For a control that is inert after its own press and disabled
+/// after another's, as each of a group of choices is (#508): one tree in all
+/// three states, so its focus node and its semantics node stay its own.
+///
 /// [builder] gets the focus node and the press handler to give the button.
 /// The handler ignores a press while [inert], so the button can always be
 /// enabled. Its look while inert, a spinner or a muted style, is the
@@ -41,6 +48,7 @@ class BgeInertButton extends StatefulWidget {
     required this.onPressed,
     required this.builder,
     this.expanded,
+    this.selected,
     this.ignoreKeyRepeats = true,
     super.key,
   });
@@ -52,11 +60,18 @@ class BgeInertButton extends StatefulWidget {
   /// string, so the name says why it is not available.
   final String label;
 
-  /// What a press does while not [inert].
-  final VoidCallback onPressed;
+  /// What a press does while not [inert]. Null disables the button.
+  final VoidCallback? onPressed;
 
   /// For a button that opens a menu: whether the menu is open.
   final bool? expanded;
+
+  /// For a button that is one of a set of choices, as a chip is: whether it
+  /// is the one chosen. Its node keeps it while inert, as a chip's would.
+  ///
+  /// On the web it is reported as checked, as `RawChip` reports a chip's:
+  /// a button's role takes no `aria-selected`.
+  final bool? selected;
 
   /// Whether a held Enter or Space activates the button once, not once per
   /// key repeat.
@@ -94,7 +109,7 @@ class _BgeInertButtonState extends State<BgeInertButton> {
       : KeyEventResult.ignored;
 
   void _press() {
-    if (!widget.inert) widget.onPressed();
+    if (!widget.inert) widget.onPressed?.call();
   }
 
   @override
@@ -106,25 +121,32 @@ class _BgeInertButtonState extends State<BgeInertButton> {
   @override
   Widget build(BuildContext context) {
     final inert = widget.inert;
+    final onPressed = widget.onPressed;
+    // Disabled, the button can't take focus, and its node says so, as
+    // `Focus` has it for a node that can't.
+    final focusable = onPressed != null;
+    final selected = widget.selected;
 
     return ListenableBuilder(
       listenable: _focusNode,
       builder: (context, button) => Semantics(
         container: true,
         button: true,
-        enabled: !inert,
+        enabled: focusable && !inert,
         expanded: widget.expanded,
-        focused: _focusNode.hasPrimaryFocus,
+        selected: kIsWeb ? null : selected,
+        checked: kIsWeb ? selected : null,
+        focused: focusable ? _focusNode.hasPrimaryFocus : null,
         label: widget.label,
-        onTap: inert ? null : widget.onPressed,
+        onTap: inert ? null : onPressed,
         // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-        onFocus: defaultTargetPlatform == TargetPlatform.iOS
+        onFocus: !focusable || defaultTargetPlatform == TargetPlatform.iOS
             ? null
             : _focusNode.requestFocus,
         excludeSemantics: true,
         child: button,
       ),
-      child: widget.builder(context, _focusNode, _press),
+      child: widget.builder(context, _focusNode, focusable ? _press : null),
     );
   }
 }
