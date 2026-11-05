@@ -1,7 +1,8 @@
 import 'package:models/domain.dart';
 
 /// Remote data source for acting on a household member: changing their role,
-/// or removing them (#480, #483).
+/// removing them, leaving the household, or handing it over (#480, #483,
+/// #479, #478).
 ///
 /// Online-only, like [HouseholdInviteRemoteDataSource]: each call is a person
 /// waiting on a screen, so nothing is queued and nothing is stored on the
@@ -13,9 +14,6 @@ import 'package:models/domain.dart';
 /// That one feeds the sync drain and classifies failures by whether a
 /// queued operation should be retried; these calls are made by a person
 /// waiting on a screen, and their refusals are answers to show them.
-///
-/// Leaving a household (#479) and transferring its ownership (#478) will add
-/// `leave` and `transferOwnership` here.
 ///
 /// Implementations run over a **per-server** authenticated transport: the
 /// injected client carries the base URL and the session.
@@ -29,10 +27,14 @@ import 'package:models/domain.dart';
 /// |---|---|---|
 /// | [changeRole] | `PATCH /api/households/:hid/members/:mid/role` | 200 `{ message, member }` |
 /// | [remove] | `DELETE /api/households/:hid/members/:mid` | 200 `{ message, member }` |
+/// | [leave] | `DELETE /api/households/:hid/members/me` | 200 `{ message, member }` |
+/// | [transferOwnership] | `POST /api/households/:hid/members/:mid/transfer-ownership` | 200 `{ message, owner, previousOwner }` |
 ///
 /// [changeRole] sends `{ "role": "HouseholdAdmin" | "HouseholdMember" |
-/// "HouseholdGuest" }`. `member` is in the shape the household list embeds
-/// for each of its members.
+/// "HouseholdGuest" }`. `member`, `owner` and `previousOwner` are in the shape
+/// the household list embeds for each of its members. [leave] names the
+/// caller's own membership by the literal `me`; its `member` is the
+/// membership that was removed.
 ///
 /// ## Failure classification
 ///
@@ -40,18 +42,19 @@ import 'package:models/domain.dart';
 /// callers never see a raw transport error.
 ///
 /// - [HouseholdMemberRefusedException]: the API answered and said no. A 400,
-///   403, 404 or 409 carrying the API's error envelope. Both routes name a
-///   member row, so an enveloped 404 is a refusal here. It most likely says
-///   the member is gone, but Nest's unmatched-route 404 carries the same
-///   envelope, so a server without the route answers it too. The two cannot
-///   be told apart, so what a 404 means is the caller's to decide (#122).
+///   403, 404 or 409 carrying the API's error envelope. Every route names a
+///   member row, or the caller's own, so an enveloped 404 is a refusal on
+///   each. It most likely says the member is gone, but Nest's unmatched-route
+///   404 carries the same envelope, so a server without the route answers it
+///   too. The two cannot be told apart, so what a 404 means is the caller's
+///   to decide (#122).
 /// - [HouseholdMemberTransientException]: no response at all, 401, 407, 408,
 ///   429, every 5xx, a 409 saying `retryable: true`, a 403 or 404 without the
 ///   envelope (a proxy answered, not the API), and a status that is no
 ///   verdict, a 1xx or 3xx.
 /// - [HouseholdMemberPermanentException]: any other 4xx, a 400 or 409 without
 ///   the envelope included, and a 2xx whose body cannot be read as the
-///   contract above, `member` included.
+///   contract above, `member` (or `owner` and `previousOwner`) included.
 ///
 /// The server's error bodies carry no stable code yet
 /// (BoardGamesEmpire/board-games-empire-backend#822), so one status can mean
@@ -90,7 +93,30 @@ abstract class HouseholdMemberRemoteDataSource {
   /// [memberId] is the membership's own id. The answer is the member that
   /// was removed.
   Future<HouseholdMember> remove(String householdId, String memberId);
+
+  /// Removes the caller from the household (#479).
+  ///
+  /// The answer is the caller's removed membership. Whether the caller may
+  /// leave, for instance as the last owner, is the server's to decide, and
+  /// its refusal is a [HouseholdMemberRefusedException].
+  Future<HouseholdMember> leave(String householdId);
+
+  /// Hands the household's ownership to the member [memberId] (#478).
+  ///
+  /// [memberId] is the membership's own id. The answer has `owner`, now
+  /// [HouseholdRole.householdOwner], and `previousOwner`, the caller, now
+  /// [HouseholdRole.householdAdmin].
+  Future<HouseholdOwnershipTransfer> transferOwnership(
+    String householdId,
+    String memberId,
+  );
 }
+
+/// Both sides of an ownership transfer, as the server now has them.
+typedef HouseholdOwnershipTransfer = ({
+  HouseholdMember owner,
+  HouseholdMember previousOwner,
+});
 
 /// Base class for every household member remote failure.
 sealed class HouseholdMemberRemoteException implements Exception {

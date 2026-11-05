@@ -1101,8 +1101,8 @@ class _BgeAppState extends State<BgeApp> {
   /// [_buildHouseholdListRoute], and guards on the repository alone for
   /// the same reason (#269 D4): the detail screen reads the local cache
   /// and never calls the server to show itself. The invite, edit and member
-  /// actions it offers (#455, #476, #480) do, and each is left out where its
-  /// client is not registered.
+  /// actions it offers (#455, #476, #480, #478) and its Leave row (#479) do,
+  /// and each is left out where its client is not registered.
   ///
   /// [householdId] arrives from the path, unvalidated. Nothing checks it
   /// here — an unreadable id is exactly what the screen's not-found state
@@ -1165,20 +1165,23 @@ class _BgeAppState extends State<BgeApp> {
               ctx.push<void>(AppRoutes.eventCreateOf(householdId: id)),
             )
           : null,
-      // #480: the menu on a member's row. The screen itself decides who sees
-      // it, by the role table (#483), and for a household the server does not
-      // know yet; here it is only whether this composition can send the
-      // change and read the households again after it. The screen offers no
-      // menu without both.
+      // #480, #478, #479: the menu on a member's row, with its Make owner,
+      // and the Leave row. The screen itself decides who sees them, by the
+      // role table (#483), and for a household the server does not know yet;
+      // here it is only whether this composition can send the change and
+      // read the households again after it. The screen offers no menu and no
+      // Leave row without both.
       members: _memberClient(container),
-      // A role change or a removal is sent straight to the server (#122), so
-      // the household list is read again afterwards, as after a join.
+      // A role change, a removal, a transfer or a leave is sent straight to
+      // the server (#122), so the household list is read again afterwards,
+      // as after a join.
       onMembershipChanged: _afterMembershipChange(container),
     );
   }
 
   /// What a screen runs once a change to a household's membership has
-  /// answered, a join (#455) or a role change or removal (#480):
+  /// answered, a join (#455), a role change or removal (#480), a transfer
+  /// (#478) or a leave (#479):
   /// `refreshAfterMembershipChange` over the [HouseholdRefresher] and the
   /// optional [HouseholdHydrationStatus] the hydrate installer registers.
   /// Null where no refresher is registered, which means no drain to run, and

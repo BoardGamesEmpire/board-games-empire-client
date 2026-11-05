@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
@@ -18,7 +20,12 @@ import '../bloc/household_detail_state.dart';
 import '../bloc/household_member_actions_bloc.dart';
 import '../bloc/household_member_actions_event.dart';
 import '../bloc/household_member_actions_state.dart';
+import '../bloc/leave_household_bloc.dart';
+import '../bloc/leave_household_event.dart';
+import '../bloc/leave_household_state.dart';
+import '../members/leave_message.dart';
 import '../members/member_action_message.dart';
+import '../members/send_member_request.dart';
 import '../permissions/household_actions.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
@@ -40,23 +47,67 @@ import '../sync/household_hydration_status.dart';
 /// the count: the user's own reads "You", as on a household just created
 /// here, and anyone else's reads as their role alone, or "Member" with none.
 ///
-/// ## A member's menu (#480)
+/// ## A member's menu (#480, #478)
 ///
 /// To its owners and admins, a row offers a menu beside the member's name:
-/// change their role, remove them, or both, as the role table allows the
-/// viewer on that member (#483). An admin acts only on members and guests,
-/// nobody acts on their own row, and on another owner, an owner may only
-/// remove them. Each is sent straight to the server and never queued, and
+/// change their role, remove them, or make them owner, as the role table
+/// allows the viewer on that member (#483). An admin acts only on members
+/// and guests and makes no one owner, nobody acts on their own row, and on
+/// another owner, an owner may only remove them. Make owner hands the
+/// household over and leaves the viewer an admin, so it asks first, as
+/// Remove does. Each is sent straight to the server and never queued, and
 /// how it went shows in a banner under the member count until dismissed.
 ///
 /// The menu is left out for a household the server does not know yet
 /// (`isLocalOnly`), and where the composition passes no [members] client.
 ///
+/// ## Where focus goes after a member's menu goes (#478)
+///
+/// An action can take away the menu it was chosen from: after a transfer
+/// the viewer has no actions on the new owner, and after a removal the row
+/// goes. Focus that was on it moves to the outcome banner's Dismiss, or,
+/// with no outcome to show, to the member count. It moves only while the
+/// bloc holds a roster, and not if the user has moved it meanwhile. The
+/// roster's own doc has the details.
+///
+/// ## Leaving (#479)
+///
+/// The page ends with a Leave row, in the error colour, offered to every
+/// role the role table gives `leave` (#483). It is left out for a household
+/// the server does not know yet (`isLocalOnly`), where the composition
+/// passes no [members] client, and where it passes no [onBack], since the
+/// screen has to go once the person has left.
+///
+/// An owner who is the household's last is shown it disabled, with the
+/// reason as its second line: with others in it, to make one of them the
+/// owner first, which Make owner on their row does (#478), and alone, that
+/// they are the only member. That reason comes before the online-only one,
+/// since coming back online would not lift it. Otherwise the row is
+/// disabled while offline, as every direct write is (#49). The row is one
+/// tile in every state, so the connection coming and going changes only
+/// its online-only note.
+///
+/// It asks first, then sends the request straight to the server, never
+/// queued. While the request is on its way the row stays enabled and inert,
+/// so it keeps focus (#607), and says it is leaving. That comes before both
+/// reasons: whatever the roster or the connection does meanwhile, the answer
+/// settles the row. Once the server says yes, the page is held: it goes on
+/// drawing the household as it last was, rather than the not-found page the
+/// membership gate turns it into, so nothing flashes on the way out. Then
+/// the screen pops, and a snack bar says the person left. A refusal or a
+/// failure stays on the page, in a banner directly above the row until
+/// dismissed.
+///
+/// A failure can leave the row disabled: offline by the time it lands, or
+/// the last owner once a co-owner has gone, while the request was on its way
+/// or with the refresh a refusal starts. A disabled row can't hold focus, so
+/// focus that was on it moves to the banner's Dismiss, unless the user has
+/// moved it meanwhile. The row's own doc has the details.
+///
 /// ## What this screen does not show
 ///
 /// **No avatars** yet (#603), and no opening a member's row yet (#540).
-/// **No leaving, transferring or deleting** the household yet (#479, #478,
-/// #477).
+/// **No deleting** the household yet (#477).
 ///
 /// ## Edit and invites are the exceptions
 ///
@@ -148,6 +199,9 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the Remove item of the open member menu.
   static const Key removeKey = Key('household_detail.remove');
 
+  /// Key on the Make owner item of the open member menu (#478).
+  static const Key makeOwnerKey = Key('household_detail.make_owner');
+
   /// Key on a role's option in the change-role dialog.
   static Key roleOptionKey(HouseholdRole role) =>
       Key('household_detail.role_option.${role.name}');
@@ -158,8 +212,18 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the remove dialog's confirm button.
   static const Key removeConfirmKey = Key('household_detail.remove_confirm');
 
-  /// Key on the banner saying how the last role change or removal went.
+  /// Key on the Make owner dialog's confirm button (#478).
+  static const Key makeOwnerConfirmKey = Key(
+    'household_detail.make_owner_confirm',
+  );
+
+  /// Key on the banner saying how the last member action went.
   static const Key memberOutcomeKey = Key('household_detail.member_outcome');
+
+  /// Key on that banner's Dismiss button.
+  static const Key memberOutcomeDismissKey = Key(
+    'household_detail.member_outcome_dismiss',
+  );
 
   /// Key on the current user's role.
   static const Key roleKey = Key('household_detail.role');
@@ -176,6 +240,16 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the New event row.
   static const Key newEventKey = Key('household_detail.new_event');
 
+  /// Key on the Leave row (#479).
+  static const Key leaveKey = Key('household_detail.leave');
+
+  /// Key on the leave dialog's confirm button (#479).
+  static const Key leaveConfirmKey = Key('household_detail.leave_confirm');
+
+  /// Key on the banner saying why the last request to leave did not go
+  /// through (#479).
+  static const Key leaveFailureKey = Key('household_detail.leave_failure');
+
   /// The household to show. A literal `create` never reaches the
   /// repository — see the class doc.
   final String householdId;
@@ -191,6 +265,9 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// surface's primary action: with no household to show, leaving is the
   /// likely intent, so it is offered in the body rather than left to the
   /// app bar's back button alone. Null offers no such button.
+  ///
+  /// Also how the screen goes once the person has left the household
+  /// (#479). Null leaves the Leave row out.
   ///
   /// Called with this screen's own context, mirroring the list's
   /// `onCreate` — the feature package does not know the route table.
@@ -226,14 +303,16 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// or a member. Null leaves the New event row out (#499).
   final void Function(BuildContext context, String householdId)? onNewEvent;
 
-  /// The per-server member client, for changing a member's role or removing
-  /// them (#480). Null, or a null [onMembershipChanged], leaves every row
-  /// without a menu.
+  /// The per-server member client, for changing a member's role, removing
+  /// them or making them owner (#480, #478), and for leaving the household
+  /// (#479). Null, or a null [onMembershipChanged], leaves every row
+  /// without a menu and leaves the Leave row out.
   final HouseholdMemberRemoteDataSource? members;
 
-  /// Marks the household list stale and reads it again after a role change
-  /// or removal, as `refreshAfterMembershipChange` does. Null leaves every
-  /// row without a menu, as a null [members] does.
+  /// Marks the household list stale and reads it again after a member
+  /// action or a leave, as `refreshAfterMembershipChange` does. Null leaves
+  /// every row without a menu and the Leave row out, as a null [members]
+  /// does.
   final Future<void> Function()? onMembershipChanged;
 
   /// The reserved create segment. `/household/create` is a route of its
@@ -274,8 +353,8 @@ class HouseholdDetailScreen extends StatelessWidget {
           ),
         ),
         // None without a member client and a refresh, and then no row has a
-        // menu.
-        if (memberActions != null)
+        // menu and there is no Leave row.
+        if (memberActions != null) ...[
           BlocProvider<HouseholdMemberActionsBloc>(
             create: (_) => HouseholdMemberActionsBloc(
               remote: memberActions.remote,
@@ -283,6 +362,14 @@ class HouseholdDetailScreen extends StatelessWidget {
               onChanged: memberActions.onChanged,
             ),
           ),
+          BlocProvider<LeaveHouseholdBloc>(
+            create: (_) => LeaveHouseholdBloc(
+              remote: memberActions.remote,
+              repository: repository,
+              onChanged: memberActions.onChanged,
+            ),
+          ),
+        ],
       ],
       // The callbacks stay with the blocs; the view only needs to know
       // whether there is one, to decide whether to draw a control.
@@ -299,6 +386,15 @@ class HouseholdDetailScreen extends StatelessWidget {
     );
   }
 }
+
+/// Whether the page is held (#479): the server has accepted a leave, so the
+/// page goes on drawing the household as it last was while the screen pops,
+/// rather than the not-found page the membership gate turns it into. A
+/// detail state that arrives meanwhile is neither drawn nor acted on.
+///
+/// [leave] is null where no [LeaveHouseholdBloc] is provided, and then the
+/// page is never held.
+bool _isHeld(LeaveHouseholdBloc? leave) => leave?.state.accepted ?? false;
 
 class _HouseholdDetailView extends StatelessWidget {
   const _HouseholdDetailView({
@@ -323,15 +419,23 @@ class _HouseholdDetailView extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onInvite;
   final void Function(BuildContext context, String householdId)? onNewEvent;
 
-  /// Whether a [HouseholdMemberActionsBloc] is provided above, which is
-  /// whether the composition passed a member client.
+  /// Whether a [HouseholdMemberActionsBloc] and a [LeaveHouseholdBloc] are
+  /// provided above, which is whether the composition passed a member
+  /// client. The two come together or not at all.
   final bool hasMemberActionsBloc;
 
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
+    final leave = hasMemberActionsBloc
+        ? context.read<LeaveHouseholdBloc>()
+        : null;
+    final back = onBack;
 
-    return BlocBuilder<HouseholdDetailBloc, HouseholdDetailState>(
+    final page = BlocBuilder<HouseholdDetailBloc, HouseholdDetailState>(
+      // The hold (#479). The builder keeps the last state it was given, so
+      // a rebuild from above draws the held page too.
+      buildWhen: (_, _) => !_isHeld(leave),
       builder: (context, state) {
         return switch (state) {
           HouseholdDetailLoading() => _MessagePage(
@@ -358,6 +462,7 @@ class _HouseholdDetailView extends StatelessWidget {
             ),
           HouseholdDetailReady() => _ReadyPage(
             state: state,
+            onBack: onBack,
             canRetry: canRetry,
             invites: invites,
             onOpenInvites: onOpenInvites,
@@ -369,6 +474,92 @@ class _HouseholdDetailView extends StatelessWidget {
         };
       },
     );
+    // The Leave row is offered only with a way back.
+    return leave == null || back == null
+        ? page
+        : _LeaveOutcome(onBack: back, child: page);
+  }
+}
+
+/// Says the person left, then pops the screen, once a leave has gone through
+/// (#479).
+///
+/// Above the page rather than in the Leave row, so it happens even when the
+/// row has gone from under the request: a hydrate that read the list after
+/// the server let the person go turns the page into the not-found one while
+/// the answer is on its way. The hold then keeps that page drawn until the
+/// screen has gone.
+class _LeaveOutcome extends StatefulWidget {
+  const _LeaveOutcome({required this.onBack, required this.child});
+
+  /// Where the screen goes once the person has left.
+  final void Function(BuildContext context) onBack;
+
+  final Widget child;
+
+  @override
+  State<_LeaveOutcome> createState() => _LeaveOutcomeState();
+}
+
+class _LeaveOutcomeState extends State<_LeaveOutcome> {
+  /// The household's name as the page last drew it, for the SnackBar. The
+  /// cache may have let the household go by the time the leave is accepted.
+  /// Always set by then: Leave is offered only on a page that drew it.
+  String? _name;
+
+  @override
+  void initState() {
+    super.initState();
+    _remember(context.read<HouseholdDetailBloc>().state);
+  }
+
+  void _remember(HouseholdDetailState state) {
+    if (state is HouseholdDetailReady) _name = state.household.name;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<HouseholdDetailBloc, HouseholdDetailState>(
+          // Not while the page is held, which draws none of them.
+          listenWhen: (_, _) => !_isHeld(context.read<LeaveHouseholdBloc>()),
+          listener: (_, state) => _remember(state),
+        ),
+        BlocListener<LeaveHouseholdBloc, LeaveHouseholdState>(
+          listenWhen: (previous, current) =>
+              previous.phase != LeavePhase.left &&
+              current.phase == LeavePhase.left,
+          listener: _onLeft,
+        ),
+      ],
+      child: widget.child,
+    );
+  }
+
+  /// Says the person left, then goes. The messenger is the one above the
+  /// route, read before any pop, so the snack bar shows on the page beneath.
+  ///
+  /// The page stays live while a leave is on its way, so a dialog or a route
+  /// can be open over it when the answer lands, and an [_LeaveOutcome.onBack]
+  /// that pops would take whichever is on top. Those go first. A route
+  /// already on its way out, by its back button say, is left to go: popping
+  /// then would take the page beneath with it.
+  void _onLeft(BuildContext context, LeaveHouseholdState _) {
+    final l10n = HouseholdLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final route = ModalRoute.of(context);
+    final going = route != null && !route.isActive;
+    if (route != null && !going && !route.isCurrent) {
+      Navigator.of(context).popUntil((r) => r == route);
+    }
+    final name = _name;
+    if (name != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.householdLeaveDone(name))),
+      );
+    }
+    if (!going) widget.onBack(context);
   }
 }
 
@@ -376,6 +567,7 @@ class _HouseholdDetailView extends StatelessWidget {
 class _ReadyPage extends StatelessWidget {
   const _ReadyPage({
     required this.state,
+    this.onBack,
     this.canRetry = false,
     this.invites,
     this.onOpenInvites,
@@ -387,6 +579,10 @@ class _ReadyPage extends StatelessWidget {
 
   final HouseholdDetailReady state;
 
+  /// Where the screen goes once the person has left — see
+  /// [HouseholdDetailScreen.onBack].
+  final void Function(BuildContext context)? onBack;
+
   /// Whether a retry can be offered — see [HouseholdDetailScreen.onRetry].
   final bool canRetry;
 
@@ -396,7 +592,8 @@ class _ReadyPage extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onInvite;
   final void Function(BuildContext context, String householdId)? onNewEvent;
 
-  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  /// Whether a [HouseholdMemberActionsBloc] and a [LeaveHouseholdBloc] are
+  /// provided above.
   final bool hasMemberActionsBloc;
 
   @override
@@ -410,6 +607,7 @@ class _ReadyPage extends StatelessWidget {
     final edit = onEdit;
     final invite = onInvite;
     final newEvent = onNewEvent;
+    final back = onBack;
     // Empty for a household the server does not know yet, so none of the
     // controls below is offered for one.
     final actions = householdActionsFor(state.household, state.role);
@@ -495,6 +693,14 @@ class _ReadyPage extends StatelessWidget {
               onTap: () => newEvent(context, state.household.id),
             ),
           ],
+          // Last, after every other row: the one that ends the person's
+          // place here (#479).
+          if (hasMemberActionsBloc &&
+              back != null &&
+              actions.contains(HouseholdAction.leave)) ...[
+            const BgeGap.lg(),
+            _LeaveRow(state: state),
+          ],
         ],
       ),
     );
@@ -568,29 +774,224 @@ class _InvitesEntry extends StatelessWidget {
   }
 }
 
-/// The member actions a row's menu offers. Making someone owner has no
-/// route until #478.
+/// The member actions a row's menu offers: every one there is (#480, #478).
 const _menuActions = {
   HouseholdMemberAction.changeRole,
   HouseholdMemberAction.remove,
+  HouseholdMemberAction.makeOwner,
 };
+
+/// What [state]'s viewer may do to [member] from the member's menu, by the
+/// role table (#483). Empty leaves the row without a menu.
+Set<HouseholdMemberAction> _menuActionsOn(
+  HouseholdDetailReady state,
+  HouseholdMember member,
+) {
+  // A household the server does not know yet has no member ids it issued,
+  // so its rows offer nothing, as Edit and invites are left out (#476).
+  if (state.household.isLocalOnly) return const {};
+
+  return householdMemberActionsFor(
+    viewerRole: state.role,
+    isSelf: member.userId == state.currentUserId,
+    target: member,
+  ).intersection(_menuActions);
+}
 
 /// The member count over the roster (#304), with each row's menu and the
 /// banner saying how the last member action went (#480).
-class _Roster extends StatelessWidget {
+///
+/// ## Where focus goes when a member's menu goes (#478)
+///
+/// A member action can take away the very menu it was chosen from. After a
+/// transfer the viewer is an admin, with nothing to do to the new owner, and
+/// after a removal the row goes. A hydrate can take a row away too. Left to
+/// go with the menu, focus would fall back on whatever the page last had
+/// focused, which may be anywhere on it. So when the member whose menu has
+/// focus is no longer offered one, focus goes on to:
+///
+/// - the outcome banner's Dismiss, while an outcome shows;
+/// - else, while that member's request is still on its way, the Dismiss of
+///   the outcome it will show. The roster can drop the row before the bloc
+///   says how the request went. Until then focus is held on the page itself,
+///   so the framework's fallback can't put it on another control;
+/// - else the member count, which heads the roster. It is no Tab stop: the
+///   next Tab goes on from there.
+///
+/// Decided before the frame that takes the menu away, while it still has
+/// focus, and done after that frame. Not if the user has moved focus
+/// meanwhile, and only on a roster. Any other state, such as not-found,
+/// leaves focus to whatever replaces the household, even while the last
+/// roster is still drawn on the way out: a hand-off then would pull focus
+/// off a menu still on screen.
+///
+/// Nor while the page is held after a leave (#479). The roster then drawn is
+/// the one it last had, menus and all, whatever the bloc now holds: the
+/// person's own row can go before the household does.
+class _Roster extends StatefulWidget {
   const _Roster({required this.state, required this.hasMemberActionsBloc});
 
   final HouseholdDetailReady state;
 
-  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  /// Whether a [HouseholdMemberActionsBloc] and a [LeaveHouseholdBloc] are
+  /// provided above.
   final bool hasMemberActionsBloc;
 
   @override
-  Widget build(BuildContext context) {
-    if (!hasMemberActionsBloc) return _build(context, null);
+  State<_Roster> createState() => _RosterState();
+}
 
-    return BlocBuilder<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
-      builder: _build,
+class _RosterState extends State<_Roster> {
+  /// On the member count, which takes focus only when sent there: it is no
+  /// Tab stop.
+  final FocusNode _heading = FocusNode(
+    debugLabel: 'household roster heading',
+    skipTraversal: true,
+  );
+
+  /// The outcome banner's Dismiss.
+  final FocusNode _dismiss = FocusNode(debugLabel: 'household member dismiss');
+
+  /// The node of the [Focus] around each member's menu, by member id
+  /// (`HouseholdMember.id`, which the bloc's busy set holds), for as long as
+  /// the member is listed.
+  ///
+  /// The handle on a member's menu: the button inside has its own node. This
+  /// one can't take focus itself, and has it while the button does.
+  final Map<String, FocusNode> _menus = {};
+
+  /// The member whose menu went, with focus on it, while a request for them
+  /// was still on its way. Focus waits for that request's outcome.
+  String? _pendingHandOff;
+
+  FocusNode _menuNode(String memberId) => _menus.putIfAbsent(
+    memberId,
+    () => FocusNode(debugLabel: 'household member menu $memberId'),
+  );
+
+  static bool _offersMenu(HouseholdDetailReady state, String memberId) {
+    final member = state.members.where((m) => m.id == memberId).firstOrNull;
+    return member != null && _menuActionsOn(state, member).isNotEmpty;
+  }
+
+  /// When the member whose menu has focus is no longer offered one, hands
+  /// focus on, as the class doc says.
+  void _onRosterChanged(BuildContext context, HouseholdDetailState state) {
+    if (state is! HouseholdDetailReady) return;
+    final memberId = _menus.entries
+        .where((entry) => entry.value.hasFocus)
+        .firstOrNull
+        ?.key;
+    if (memberId == null || _offersMenu(state, memberId)) return;
+
+    final focused = FocusManager.instance.primaryFocus;
+    final detail = context.read<HouseholdDetailBloc>();
+    final actions = context.read<HouseholdMemberActionsBloc>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
+      final now = detail.state;
+      // No roster now (see the class doc), or the menu is back.
+      if (now is! HouseholdDetailReady || _offersMenu(now, memberId)) return;
+      final answered = actions.state;
+      if (answered.outcome == null && answered.busy.contains(memberId)) {
+        _pendingHandOff = memberId;
+        // On the page itself, which counts as free, rather than wherever the
+        // framework falls back to: the control the page had focused before
+        // the menu.
+        FocusScope.of(
+          this.context,
+          createDependency: false,
+        ).requestScopeFocus();
+        return;
+      }
+      _handFocusTo(answered.outcome != null ? _dismiss : _heading);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// When the request a hand-off waits on ends, hands focus to the outcome
+  /// it shows.
+  void _onPendingAnswered(
+    BuildContext context,
+    HouseholdMemberActionsState state,
+  ) {
+    _pendingHandOff = null;
+    final detail = context.read<HouseholdDetailBloc>();
+    final actions = context.read<HouseholdMemberActionsBloc>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !focusIsFree(this.context) ||
+          detail.state is! HouseholdDetailReady) {
+        return;
+      }
+      _handFocusTo(actions.state.outcome != null ? _dismiss : _heading);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// Disposes the nodes of members no longer listed, after the frame that
+  /// takes them down: a [Focus] holds its node until then.
+  void _forgetMembersGone(HouseholdDetailState state) {
+    // Only a roster says who has gone. Any other state replaces this page,
+    // which disposes every node with it.
+    if (state is! HouseholdDetailReady) return;
+    final listed = {for (final member in state.members) member.id};
+    final gone = [
+      for (final id in _menus.keys)
+        if (!listed.contains(id)) id,
+    ];
+    if (gone.isEmpty) return;
+    final nodes = [for (final id in gone) ?_menus.remove(id)];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final node in nodes) {
+        node.dispose();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _heading.dispose();
+    _dismiss.dispose();
+    for (final node in _menus.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Without a member client no row has a menu, so there is nothing to hand
+    // focus on from.
+    if (!widget.hasMemberActionsBloc) return _build(context, null);
+    final leave = context.read<LeaveHouseholdBloc>();
+
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<HouseholdDetailBloc, HouseholdDetailState>(
+          // A held page draws the roster as it last was, so a state it does
+          // not draw says nothing about which menus are on screen, and a
+          // member gone from it still has their node in use.
+          listenWhen: (_, _) => !_isHeld(leave),
+          listener: (context, state) {
+            // In this order: the hand-off looks for the focused menu among
+            // the nodes, and a member gone takes their node with them.
+            _onRosterChanged(context, state);
+            _forgetMembersGone(state);
+          },
+        ),
+        BlocListener<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+          listenWhen: (_, current) {
+            final pending = _pendingHandOff;
+            return pending != null && !current.busy.contains(pending);
+          },
+          listener: _onPendingAnswered,
+        ),
+      ],
+      child:
+          BlocBuilder<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+            builder: _build,
+          ),
     );
   }
 
@@ -602,22 +1003,26 @@ class _Roster extends StatelessWidget {
   ) {
     final l10n = HouseholdLocalizations.of(context);
     final theme = Theme.of(context);
+    final state = widget.state;
     final outcome = actionsState?.outcome;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Semantics(
-          header: true,
-          child: Text(
-            key: HouseholdDetailScreen.memberCountKey,
-            l10n.householdDetailMembers(state.memberCount),
-            style: theme.textTheme.titleMedium,
+        Focus(
+          focusNode: _heading,
+          child: Semantics(
+            header: true,
+            child: Text(
+              key: HouseholdDetailScreen.memberCountKey,
+              l10n.householdDetailMembers(state.memberCount),
+              style: theme.textTheme.titleMedium,
+            ),
           ),
         ),
         const BgeGap.xs(),
         if (outcome != null) ...[
-          _MemberOutcomeBanner(outcome: outcome),
+          _MemberOutcomeBanner(outcome: outcome, dismissFocus: _dismiss),
           const BgeGap.xs(),
         ],
         for (final member in state.members)
@@ -637,22 +1042,22 @@ class _Roster extends StatelessWidget {
     HouseholdMember member,
     HouseholdMemberActionsState? actionsState,
   ) {
-    // A household the server does not know yet has no member ids it issued,
-    // so its rows offer nothing, as Edit and invites are left out (#476).
-    if (actionsState == null || state.household.isLocalOnly) return null;
-
-    final offered = householdMemberActionsFor(
-      viewerRole: state.role,
-      isSelf: member.userId == state.currentUserId,
-      target: member,
-    ).intersection(_menuActions);
+    if (actionsState == null) return null;
+    final state = widget.state;
+    final offered = _menuActionsOn(state, member);
     if (offered.isEmpty) return null;
 
-    return _MemberMenu(
-      member: member,
-      actions: offered,
-      roles: assignableMemberRoles(state.role),
-      busy: actionsState.busy.contains(member.id),
+    return Focus(
+      focusNode: _menuNode(member.id),
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      child: _MemberMenu(
+        member: member,
+        actions: offered,
+        roles: assignableMemberRoles(state.role),
+        busy: actionsState.busy.contains(member.id),
+      ),
     );
   }
 }
@@ -727,7 +1132,8 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
-/// A member's menu: change their role, remove them, or both (#480).
+/// A member's menu: change their role, remove them, or make them owner, as
+/// [actions] has it (#480, #478).
 ///
 /// While a request for the member is on its way the button stays **enabled
 /// and inert** rather than disabled: `ButtonStyleButton` passes
@@ -766,7 +1172,7 @@ class _MemberMenu extends StatelessWidget {
     final busyLabel = name == null
         ? l10n.householdMemberBusy
         : l10n.householdMemberBusyFor(name);
-    // Both items are direct writes, so they wait for a connection (#49). The
+    // Every item is a direct write, so each waits for a connection (#49). The
     // button stays enabled, so the menu can be opened to read why.
     final online = !BgeConnectivityScope.offlineOf(context);
 
@@ -792,6 +1198,13 @@ class _MemberMenu extends StatelessWidget {
               onPressed: online ? () => unawaited(_remove(context)) : null,
               child: BgeOnlineOnlyLabel(l10n.householdMemberRemove),
             ),
+          if (actions.contains(HouseholdMemberAction.makeOwner))
+            MenuItemButton(
+              key: HouseholdDetailScreen.makeOwnerKey,
+              overflowAxis: Axis.vertical,
+              onPressed: online ? () => unawaited(_makeOwner(context)) : null,
+              child: BgeOnlineOnlyLabel(l10n.householdMemberMakeOwner),
+            ),
         ],
         builder: (context, controller, _) => BgeInertButton(
           // Inert while busy, so it keeps focus through a write (#607). The
@@ -804,9 +1217,7 @@ class _MemberMenu extends StatelessWidget {
           builder: (context, focusNode, onPressed) => IconButton(
             key: HouseholdDetailScreen.memberActionsKey(member.userId),
             focusNode: focusNode,
-            icon: busy
-                ? const _MemberMenuSpinner()
-                : const Icon(Icons.more_vert),
+            icon: busy ? const _BusyIconSpinner() : const Icon(Icons.more_vert),
             // Every row has one, so the name says whose it is to a pointer
             // user hovering one after another.
             tooltip: busy ? busyLabel : actionsLabel,
@@ -831,49 +1242,98 @@ class _MemberMenu extends StatelessWidget {
 
   Future<void> _remove(BuildContext context) async {
     final bloc = context.read<HouseholdMemberActionsBloc>();
-    if (!await _confirmRemove(context) || bloc.isClosed) return;
+    final l10n = HouseholdLocalizations.of(context);
+    final name = member.name;
+    final confirmed = await _confirm(
+      context,
+      title: name == null
+          ? l10n.householdMemberRemoveConfirmTitleUnnamed
+          : l10n.householdMemberRemoveConfirmTitle(name),
+      body: l10n.householdMemberRemoveConfirmBody,
+      confirmLabel: l10n.householdMemberRemoveConfirm,
+      confirmKey: HouseholdDetailScreen.removeConfirmKey,
+      destructive: true,
+    );
+    if (!confirmed || bloc.isClosed) return;
     bloc.add(HouseholdMemberRemovalRequested(member));
   }
 
-  Future<bool> _confirmRemove(BuildContext context) async {
+  Future<void> _makeOwner(BuildContext context) async {
+    final bloc = context.read<HouseholdMemberActionsBloc>();
     final l10n = HouseholdLocalizations.of(context);
     final name = member.name;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        // At 2.0 text the title and body can outgrow a phone's height.
-        scrollable: true,
-        title: Text(
-          name == null
-              ? l10n.householdMemberRemoveConfirmTitleUnnamed
-              : l10n.householdMemberRemoveConfirmTitle(name),
-        ),
-        content: Text(l10n.householdMemberRemoveConfirmBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.householdMemberCancel),
-          ),
-          TextButton(
-            key: HouseholdDetailScreen.removeConfirmKey,
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(dialogContext).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.householdMemberRemoveConfirm),
-          ),
-        ],
-      ),
+    final confirmed = await _confirm(
+      context,
+      title: name == null
+          ? l10n.householdMemberMakeOwnerConfirmTitleUnnamed
+          : l10n.householdMemberMakeOwnerConfirmTitle(name),
+      body: l10n.householdMemberMakeOwnerConfirmBody,
+      confirmLabel: l10n.householdMemberMakeOwnerConfirm,
+      confirmKey: HouseholdDetailScreen.makeOwnerConfirmKey,
+      // The viewer stays on, as an admin, and nobody loses access.
+      destructive: false,
     );
-    return confirmed ?? false;
+    if (!confirmed || bloc.isClosed) return;
+    bloc.add(HouseholdMemberOwnershipTransferRequested(member));
   }
 }
 
-/// The member menu's busy icon: a spinner the size of the icon it replaces,
-/// silent to a screen reader because the button's label says what is running
-/// (#607).
-class _MemberMenuSpinner extends StatelessWidget {
-  const _MemberMenuSpinner();
+/// Moves focus to [target] after a control holding it has gone or turned
+/// disabled: the roster's hand-off (#478) and the Leave row's (#479). Scrolled
+/// into view only for a keyboard user, whose focus ring would otherwise be
+/// off screen; a touch user's view is left where they put it.
+void _handFocusTo(FocusNode target) {
+  target.requestFocus();
+  if (FocusManager.instance.highlightMode == FocusHighlightMode.traditional) {
+    target.context?.findRenderObject()?.showOnScreen();
+  }
+}
+
+/// Asks before an action, and answers whether the user confirmed it: a
+/// member's removal or transfer (#480, #478), or leaving (#479).
+/// [destructive] colours the confirm button as an error.
+Future<bool> _confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String confirmLabel,
+  required Key confirmKey,
+  required bool destructive,
+}) async {
+  final l10n = HouseholdLocalizations.of(context);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      // At 2.0 text the title and body can outgrow a phone's height.
+      scrollable: true,
+      title: Text(title),
+      content: Text(body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(l10n.householdMemberCancel),
+        ),
+        TextButton(
+          key: confirmKey,
+          style: destructive
+              ? TextButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error,
+                )
+              : null,
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
+
+/// A busy control's icon: a spinner the size of the icon it replaces, silent
+/// to a screen reader because the control's label says what is running
+/// (#607). The member menu's (#480) and the Leave row's (#479).
+class _BusyIconSpinner extends StatelessWidget {
+  const _BusyIconSpinner();
 
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
@@ -967,13 +1427,20 @@ String? _roleDescription(HouseholdLocalizations l10n, HouseholdRole role) =>
       HouseholdRole.householdOwner || HouseholdRole.unknown => null,
     };
 
-/// How the last role change or removal went (#480), under the member count
-/// until dismissed or replaced. A live region, as every [BgeInlineBanner]
-/// is.
+/// How the last role change, removal or transfer went (#480, #478), under
+/// the member count until dismissed or replaced. A live region, as every
+/// [BgeInlineBanner] is.
 class _MemberOutcomeBanner extends StatelessWidget {
-  const _MemberOutcomeBanner({required this.outcome});
+  const _MemberOutcomeBanner({
+    required this.outcome,
+    required this.dismissFocus,
+  });
 
   final HouseholdMemberOutcome outcome;
+
+  /// For the Dismiss button, which takes focus when the menu the action was
+  /// chosen from goes (#478).
+  final FocusNode dismissFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -984,6 +1451,8 @@ class _MemberOutcomeBanner extends StatelessWidget {
       tone: _tone(outcome),
       message: memberActionMessage(l10n, outcome),
       action: TextButton(
+        key: HouseholdDetailScreen.memberOutcomeDismissKey,
+        focusNode: dismissFocus,
         onPressed: () => context.read<HouseholdMemberActionsBloc>().add(
           const HouseholdMemberOutcomeDismissed(),
         ),
@@ -1039,6 +1508,276 @@ class _RoleBlock extends StatelessWidget {
             style: theme.textTheme.bodyLarge,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The Leave row (#479), with the banner saying why the last request to
+/// leave did not go through directly above it. The pop once one did is
+/// [_LeaveOutcome]'s. The screen's class doc says who is offered it and when
+/// it is disabled.
+///
+/// Its states, first match wins:
+///
+/// - **Busy**, from the moment a request goes until the screen has gone:
+///   enabled and inert, so it keeps focus (#607), with a spinner, and named
+///   as leaving. Whatever the roster or the connection does meanwhile, since
+///   being disabled would drop focus, and the answer is what settles the
+///   row. The left phase counts, so the row does not go back to Leave on the
+///   way out.
+/// - **The last owner**, with others in the household or alone: disabled,
+///   with the reason as its second line. Coming back online would not lift
+///   it, so it comes before offline, and the row has no online-only note.
+/// - **Offline**: disabled, with the online-only reason (#49).
+/// - Otherwise a press asks, then sends.
+///
+/// Every state is the one [ListTile], with a focus node the row owns, under
+/// one semantics node the row builds. So a request going and answering, the
+/// roster changing and the connection coming and going keep the row's
+/// element, its focus node and its semantics node, as STYLE_GUIDE's
+/// online-only controls require. Only the reason line, the online-only note
+/// and the spinner come and go.
+///
+/// The node is built here rather than by [BgeInertButton], whose node says
+/// it can take focus in every state: over a disabled tile it would offer a
+/// focus action the tile can't take. Otherwise it is built as that one is:
+/// not enabled and with no tap action while inert, still focusable while
+/// busy, and with the tile's own semantics left out, so its label carries
+/// the second line itself.
+///
+/// ## Where focus goes when the row turns disabled
+///
+/// A disabled tile can't hold focus, so the row turning disabled drops focus
+/// that was on it. A failure can do that, since busy outranks the rest only
+/// until the answer. If the connection drops while the request is on its
+/// way, the row is idle and offline once the failure lands. If the co-owner
+/// who let the person leave goes, while the request is on its way or with
+/// the refresh a refusal starts, the person is the last owner once it has
+/// answered. Left to the framework, focus would fall back on whatever the
+/// page last had focused, which may be anywhere on it. So while a failure
+/// shows, focus moves to its banner's Dismiss.
+///
+/// Decided before the frame that disables the row, while it still has focus,
+/// and done after that frame, as the roster's hand-off is. Not if the user
+/// has moved focus meanwhile. With no failure to show, focus is left to the
+/// framework, as it is for any online-only control disabled under it (#49).
+/// The member count, where the roster sends focus, is the roster's own node.
+class _LeaveRow extends StatefulWidget {
+  const _LeaveRow({required this.state});
+
+  /// The household as the page draws it. It is the held one once a leave is
+  /// accepted.
+  final HouseholdDetailReady state;
+
+  @override
+  State<_LeaveRow> createState() => _LeaveRowState();
+}
+
+class _LeaveRowState extends State<_LeaveRow> {
+  /// On the row's tile in every state, so focus stays put from one to the
+  /// next until the tile is disabled.
+  final FocusNode _row = FocusNode(
+    debugLabel: 'household leave row',
+    onKeyEvent: _ignoreActivationRepeat,
+  );
+
+  static final _activationKeys = {
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.numpadEnter,
+    LogicalKeyboardKey.space,
+  };
+
+  /// A held Enter or Space presses the row once, as [BgeInertButton] has it:
+  /// the repeats still arriving as the confirmation opens would open it
+  /// again.
+  static KeyEventResult _ignoreActivationRepeat(FocusNode _, KeyEvent event) =>
+      event is KeyRepeatEvent && _activationKeys.contains(event.logicalKey)
+      ? KeyEventResult.handled
+      : KeyEventResult.ignored;
+
+  /// The failure banner's Dismiss.
+  final FocusNode _dismiss = FocusNode(debugLabel: 'household leave dismiss');
+
+  /// Whether the row was disabled when last built. Null before the first
+  /// build.
+  bool? _wasDisabled;
+
+  @override
+  void dispose() {
+    _row.dispose();
+    _dismiss.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<LeaveHouseholdBloc, LeaveHouseholdState>(
+      builder: (context, leave) {
+        final failure = leave.failure;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (failure != null) ...[
+              _LeaveFailureBanner(failure: failure, dismissFocus: _dismiss),
+              const BgeGap.xs(),
+            ],
+            _tile(context, leave),
+          ],
+        );
+      },
+    );
+  }
+
+  /// When the row turns disabled with focus on it, hands focus on, as the
+  /// class doc says. Called as the row is built, while it still has focus.
+  void _onShape({required bool disabled}) {
+    final wasDisabled = _wasDisabled;
+    _wasDisabled = disabled;
+    if (!disabled || wasDisabled != false || !_row.hasFocus) return;
+
+    final focused = FocusManager.instance.primaryFocus;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !focusIsFree(context, untouched: focused)) return;
+      if (context.read<LeaveHouseholdBloc>().state.failure == null) return;
+      _handFocusTo(_dismiss);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Widget _tile(BuildContext context, LeaveHouseholdState leave) {
+    final l10n = HouseholdLocalizations.of(context);
+    final theme = Theme.of(context);
+    final state = widget.state;
+    // Plain colours: a disabled tile resolves them to its own disabled one.
+    final error = theme.colorScheme.error;
+    // In the class doc's order: busy, then the last owner, then offline.
+    final busy = leave.phase != LeavePhase.idle;
+    final reason = busy
+        ? null
+        : switch (householdLeaveBlock(
+            viewerRole: state.role,
+            currentUserId: state.currentUserId,
+            members: state.members,
+          )) {
+            HouseholdLeaveBlock.lastOwner => l10n.householdLeaveLastOwner,
+            HouseholdLeaveBlock.onlyMember => l10n.householdLeaveOnlyMember,
+            null => null,
+          };
+    final offline =
+        !busy && reason == null && BgeConnectivityScope.offlineOf(context);
+    final disabled = reason != null || offline;
+    final inert = busy || disabled;
+    _onShape(disabled: disabled);
+
+    final label = busy ? l10n.householdLeaving : l10n.householdLeave;
+    void press() {
+      if (!inert) unawaited(_confirmLeave(context));
+    }
+
+    return ListenableBuilder(
+      listenable: _row,
+      builder: (context, tile) => Semantics(
+        container: true,
+        button: true,
+        enabled: !inert,
+        // Only while the tile can take focus.
+        focused: disabled ? null : _row.hasPrimaryFocus,
+        // The tile's own semantics are left out, so the label carries its
+        // second line, as a merged tile would read it.
+        label: [
+          label,
+          ?reason,
+          if (offline) ?BgeConnectivityScope.onlineOnlyReasonOf(context),
+        ].join('\n'),
+        onTap: inert ? null : press,
+        // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
+        onFocus: disabled || defaultTargetPlatform == TargetPlatform.iOS
+            ? null
+            : _row.requestFocus,
+        excludeSemantics: true,
+        child: tile,
+      ),
+      child: ListTile(
+        key: HouseholdDetailScreen.leaveKey,
+        focusNode: _row,
+        contentPadding: EdgeInsets.zero,
+        enabled: !disabled,
+        iconColor: error,
+        textColor: error,
+        leading: const Icon(Icons.logout),
+        // A last owner's row has no online-only note, and nor does a busy
+        // one: neither changes when the connection does.
+        title: busy || reason != null ? Text(label) : BgeOnlineOnlyLabel(label),
+        // In the online-only reason's style, `bodySmall` in
+        // `onSurfaceVariant`, so the two reason lines match and this one
+        // stays legible on the disabled row.
+        subtitle: reason == null
+            ? null
+            : Text(
+                reason,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+        trailing: busy ? const _BusyIconSpinner() : null,
+        onTap: press,
+      ),
+    );
+  }
+
+  Future<void> _confirmLeave(BuildContext context) async {
+    // Read before the dialog opens: the page can change under it.
+    final bloc = context.read<LeaveHouseholdBloc>();
+    final l10n = HouseholdLocalizations.of(context);
+    final household = widget.state.household;
+    final confirmed = await _confirm(
+      context,
+      title: l10n.householdLeaveConfirmTitle(household.name),
+      body: l10n.householdLeaveConfirmBody,
+      confirmLabel: l10n.householdLeaveConfirm,
+      confirmKey: HouseholdDetailScreen.leaveConfirmKey,
+      destructive: true,
+    );
+    if (!confirmed || bloc.isClosed) return;
+    bloc.add(LeaveHouseholdRequested(household.id));
+  }
+}
+
+/// Why the last request to leave did not go through (#479), directly above
+/// the Leave row until dismissed or replaced. A live region, as every
+/// [BgeInlineBanner] is.
+class _LeaveFailureBanner extends StatelessWidget {
+  const _LeaveFailureBanner({
+    required this.failure,
+    required this.dismissFocus,
+  });
+
+  /// Gone, refused or failed.
+  final MemberRequestOutcome failure;
+
+  /// For the Dismiss button, which takes focus when the failure leaves the
+  /// row disabled.
+  final FocusNode dismissFocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+
+    return BgeInlineBanner(
+      key: HouseholdDetailScreen.leaveFailureKey,
+      // A warning when the server answered no, and an error when nobody can
+      // say.
+      tone: failure.result == HouseholdMemberActionResult.failed
+          ? BgeBannerTone.error
+          : BgeBannerTone.warning,
+      message: leaveFailureMessage(l10n, failure),
+      action: TextButton(
+        focusNode: dismissFocus,
+        onPressed: () => context.read<LeaveHouseholdBloc>().add(
+          const LeaveHouseholdFailureDismissed(),
+        ),
+        child: Text(l10n.householdMemberDismiss),
       ),
     );
   }

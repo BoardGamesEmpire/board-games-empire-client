@@ -301,6 +301,24 @@ class HouseholdRepositoryImpl
   }
 
   @override
+  Future<void> updateCachedMembers(List<HouseholdMember> members) async {
+    checkNotDisposed();
+    // An update matches on the same `(householdId, userId)` pair the
+    // upserts conflict on, so it replaces a synthesized owner row's id as
+    // they do.
+    await _db.batch((b) {
+      for (final m in members) {
+        b.update(
+          _db.householdMembersTable,
+          _memberToCompanion(m),
+          where: (t) =>
+              t.householdId.equals(m.householdId) & t.userId.equals(m.userId),
+        );
+      }
+    });
+  }
+
+  @override
   Future<void> removeCachedMember(String householdId, String userId) async {
     checkNotDisposed();
     await (_db.delete(_db.householdMembersTable)..where(

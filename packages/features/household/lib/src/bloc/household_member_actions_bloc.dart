@@ -1,17 +1,16 @@
-import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import '../members/send_member_request.dart';
 import '../permissions/household_actions.dart';
 import 'household_member_actions_event.dart';
 import 'household_member_actions_state.dart';
 
-/// Changes a household member's role, or removes them, from the household
-/// screen (#480).
+/// Changes a household member's role, removes them, or makes them the
+/// owner, from the household screen (#480, #478).
 ///
 /// Each request goes straight to the server, never through the sync queue
 /// (#122): nothing is queued and no row is marked dirty. The answer to a 200
@@ -28,7 +27,7 @@ import 'household_member_actions_state.dart';
 ///
 /// | Answer | Cache | Outcome | Refresh |
 /// |---|---|---|---|
-/// | 200 | the answer written, or the row deleted | done | started |
+/// | 200 | the answer written (both sides still cached, for a transfer), or the row deleted | done | started |
 /// | An enveloped 404 | untouched | gone | started |
 /// | An enveloped 400, 403 or 409 | untouched | refused | started |
 /// | Transient | untouched | failed | none |
@@ -60,6 +59,7 @@ class HouseholdMemberActionsBloc
     // drops only a request for a member who is busy.
     on<HouseholdMemberRoleChangeRequested>(_onRoleChangeRequested);
     on<HouseholdMemberRemovalRequested>(_onRemovalRequested);
+    on<HouseholdMemberOwnershipTransferRequested>(_onTransferRequested);
     on<HouseholdMemberOutcomeDismissed>(_onOutcomeDismissed);
   }
 
@@ -86,7 +86,9 @@ class HouseholdMemberActionsBloc
       member,
       HouseholdMemberAction.changeRole,
       send: () => _remote.changeRole(member.householdId, member.id, event.role),
-      cache: _repository.cacheMember,
+      // Over the cached row only: a hydrate may have dropped the member
+      // while the request was out, and an upsert would put them back.
+      cache: (member) => _repository.updateCachedMembers([member]),
     );
   }
 
@@ -105,14 +107,31 @@ class HouseholdMemberActionsBloc
     );
   }
 
+  Future<void> _onTransferRequested(
+    HouseholdMemberOwnershipTransferRequested event,
+    Emitter<HouseholdMemberActionsState> emit,
+  ) {
+    final member = event.member;
+    return _act(
+      emit,
+      member,
+      HouseholdMemberAction.makeOwner,
+      send: () => _remote.transferOwnership(member.householdId, member.id),
+      // Rows still cached only: the viewer may have left while this was on
+      // its way, and an upsert would bring the household back.
+      cache: (answer) =>
+          _repository.updateCachedMembers([answer.owner, answer.previousOwner]),
+    );
+  }
+
   /// Runs [action] on [member] and reports how it went, unless [member] is
   /// busy.
-  Future<void> _act(
+  Future<void> _act<T>(
     Emitter<HouseholdMemberActionsState> emit,
     HouseholdMember member,
     HouseholdMemberAction action, {
-    required Future<HouseholdMember> Function() send,
-    required Future<void> Function(HouseholdMember answer) cache,
+    required Future<T> Function() send,
+    required Future<void> Function(T answer) cache,
   }) async {
     final id = member.id;
     // Checked and marked before anything is awaited, so a second request
@@ -123,7 +142,18 @@ class HouseholdMemberActionsBloc
       HouseholdMemberActionsState(busy: Set.unmodifiable({...state.busy, id})),
     );
 
-    final outcome = await _attempt(action, send, cache);
+    final o = await sendMemberRequest<T>(
+      action: action.name,
+      send: send,
+      cache: cache,
+      refresh: _onChanged,
+      logger: _logger,
+    );
+    final outcome = HouseholdMemberOutcome(
+      action: action,
+      result: o.result,
+      error: o.error,
+    );
 
     // Read again: another member's request may have started or ended
     // meanwhile.
@@ -133,84 +163,6 @@ class HouseholdMemberActionsBloc
         outcome: outcome,
       ),
     );
-  }
-
-  /// Sends a request, caches the answer to a 200, and starts the refresh
-  /// the answer calls for. Answers how it ended. Never throws.
-  Future<HouseholdMemberOutcome> _attempt(
-    HouseholdMemberAction action,
-    Future<HouseholdMember> Function() send,
-    Future<void> Function(HouseholdMember answer) cache,
-  ) async {
-    final HouseholdMember answer;
-    try {
-      answer = await send();
-    } on HouseholdMemberRefusedException catch (error) {
-      _refresh();
-      return HouseholdMemberOutcome(
-        action: action,
-        result: error.statusCode == 404
-            ? HouseholdMemberActionResult.gone
-            : HouseholdMemberActionResult.refused,
-        error: error,
-      );
-    } on HouseholdMemberTransientException catch (error, stackTrace) {
-      // Nothing is written here and no refresh starts (#122). The server
-      // may have made the change before the answer was lost, and the next
-      // hydrate brings it if so.
-      _logger.warn(
-        'Household member ${action.name} got no answer',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return HouseholdMemberOutcome(
-        action: action,
-        result: HouseholdMemberActionResult.failed,
-        error: error,
-      );
-    } on Object catch (error, stackTrace) {
-      _logger.warn(
-        'Household member ${action.name} failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      _refresh();
-      return HouseholdMemberOutcome(
-        action: action,
-        result: HouseholdMemberActionResult.failed,
-        error: error,
-      );
-    }
-
-    try {
-      await cache(answer);
-    } on Object catch (error, stackTrace) {
-      // The server made the change, and the refresh brings it.
-      _logger.warn(
-        'Household member ${action.name} done, but its answer was not cached',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-    _refresh();
-    return HouseholdMemberOutcome(
-      action: action,
-      result: HouseholdMemberActionResult.done,
-    );
-  }
-
-  void _refresh() => unawaited(_runRefresh());
-
-  Future<void> _runRefresh() async {
-    try {
-      await _onChanged();
-    } on Object catch (error, stackTrace) {
-      _logger.warn(
-        'Household refresh after a member change failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
   }
 
   void _onOutcomeDismissed(

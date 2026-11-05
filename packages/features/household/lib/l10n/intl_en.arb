@@ -710,31 +710,31 @@
   },
   "householdMemberGoneRole": "That member is no longer in the household, or it no longer exists.",
   "@householdMemberGoneRole": {
-    "description": "Banner on the household screen when changing a member's role found them no longer in the household, or the household itself deleted. The server's answer does not say which, so the text must name both. The role was not changed, and the household is being read again."
+    "description": "Banner on the household screen when changing a member's role, or making them the owner, found them no longer in the household, or the household itself deleted. The server's answer does not say which, so the text must name both. Their role was not changed and ownership did not move, and the household is being read again."
   },
   "householdMemberErrorRoleChanged": "You can't do that here any more. Your role in this household may have changed.",
   "@householdMemberErrorRoleChanged": {
-    "description": "Banner on the household screen when the server refused a role change or removal as not allowed (403): the user's own role may have changed, for instance on another device. The household is being read again."
+    "description": "Banner on the household screen when the server refused a role change, removal or ownership transfer as not allowed (403): the user's own role may have changed, for instance on another device. The household is being read again."
   },
   "householdMemberErrorRejected": "The server didn't accept that change. The household is being read again.",
   "@householdMemberErrorRejected": {
-    "description": "Banner on the household screen when the server turned down a role change or removal (400 or 409), for instance because the household no longer stands as the screen showed it. The household is being read again."
+    "description": "Banner on the household screen when the server turned down a role change, removal or ownership transfer (400 or 409), or a request to leave (403 or 409), for instance because the household no longer stands as the screen showed it. The household is being read again."
   },
   "householdMemberErrorOffline": "Couldn't reach the server. Try again.",
   "@householdMemberErrorOffline": {
-    "description": "Banner on the household screen when a role change or removal got no usable answer from the server: no connection, a timeout, a server error or an expired session. Nothing on the device was changed, but the server may or may not have made the change, so the text must not say either way. Must not say the device is offline."
+    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave got no usable answer from the server: no connection, a timeout, a server error or an expired session. Nothing on the device was changed, but the server may or may not have made the change, so the text must not say either way. Must not say the device is offline."
   },
   "householdMemberErrorUnexpected": "Something went wrong. The household is being read again to show where things stand.",
   "@householdMemberErrorUnexpected": {
-    "description": "Banner on the household screen when a role change or removal failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again."
+    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again."
   },
   "householdMemberActions": "Member actions",
   "@householdMemberActions": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, when the app does not know the member's name yet. Opens a menu of what the user may do to that member: change their role, or remove them. Shown to owners and admins only."
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, when the app does not know the member's name yet. Opens a menu of what the user may do to that member: change their role, remove them, or make them the owner. Shown to owners and admins only."
   },
   "householdMemberActionsFor": "Actions for {name}",
   "@householdMemberActionsFor": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, by the member's display name or username. Opens a menu of what the user may do to that member: change their role, or remove them. Every row has one, so the name tells a screen-reader user which member's menu it is. Shown to owners and admins only.",
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, by the member's display name or username. Opens a menu of what the user may do to that member: change their role, remove them, or make them the owner. Every row has one, so the name tells a screen-reader user which member's menu it is. Shown to owners and admins only.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -744,11 +744,11 @@
   },
   "householdMemberBusy": "Updating this member…",
   "@householdMemberBusy": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, when the app does not know the member's name yet. The button stays focusable but does nothing until the request answers."
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change, removal or ownership transfer for that member is running, when the app does not know the member's name yet. The button stays focusable but does nothing until the request answers."
   },
   "householdMemberBusyFor": "Updating {name}…",
   "@householdMemberBusyFor": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, by the member's display name or username. The button stays focusable but does nothing until the request answers.",
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change, removal or ownership transfer for that member is running, by the member's display name or username. The button stays focusable but does nothing until the request answers.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -786,7 +786,7 @@
   },
   "householdMemberCancel": "Cancel",
   "@householdMemberCancel": {
-    "description": "Button in the change-role and remove-member dialogs that closes the dialog without changing anything."
+    "description": "Button in the household screen's change-role, remove-member, make-owner and leave dialogs that closes the dialog without changing anything."
   },
   "householdMemberRemoveConfirmTitle": "Remove {name}?",
   "@householdMemberRemoveConfirmTitle": {
@@ -810,8 +810,94 @@
   "@householdMemberRemoveConfirm": {
     "description": "Confirm button of the remove-member dialog, shown in the error colour. Takes the member out of the household."
   },
+  "householdMemberMakeOwner": "Make owner",
+  "@householdMemberMakeOwner": {
+    "description": "Item in a member's action menu on the household screen. Hands the household's ownership to that member; the person using it becomes an admin."
+  },
+  "householdMemberMakeOwnerConfirmTitle": "Make {name} the owner?",
+  "@householdMemberMakeOwnerConfirmTitle": {
+    "description": "Title of the dialog asking an owner to confirm handing the household's ownership to a member, by the member's display name or username.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "householdMemberMakeOwnerConfirmTitleUnnamed": "Make this member the owner?",
+  "@householdMemberMakeOwnerConfirmTitleUnnamed": {
+    "description": "Title of the dialog asking to confirm handing the household's ownership to a member, when the app does not know the member's name yet."
+  },
+  "householdMemberMakeOwnerConfirmBody": "You'll stop being an owner and become an admin.",
+  "@householdMemberMakeOwnerConfirmBody": {
+    "description": "Body of the dialog asking to confirm handing the household's ownership to another member: what it does to the person confirming."
+  },
+  "householdMemberMakeOwnerConfirm": "Make owner",
+  "@householdMemberMakeOwnerConfirm": {
+    "description": "Confirm button of the make-owner dialog. Hands the household's ownership to the member."
+  },
+  "householdMemberDoneOwner": "Ownership handed over. You're now an admin.",
+  "@householdMemberDoneOwner": {
+    "description": "Banner on the household screen after an owner handed the household's ownership to another member and the server accepted it."
+  },
+  "householdMemberErrorAlreadyOwner": "They're already an owner, or it's you. The household is being read again.",
+  "@householdMemberErrorAlreadyOwner": {
+    "description": "Banner on the household screen when the server refused an ownership hand-over with 400: the member is already an owner, or is the person asking. The household is being read again."
+  },
   "householdMemberDismiss": "Dismiss",
   "@householdMemberDismiss": {
-    "description": "Button on the banner that reports how a role change or removal went, on the household screen. Closes the banner."
+    "description": "Button on the banners that report how a role change, removal or ownership transfer went, or why leaving did not go through, on the household screen. Closes the banner."
+  },
+  "householdLeave": "Leave household",
+  "@householdLeave": {
+    "description": "Row at the end of the household screen that takes the signed-in person out of the household, after asking. Shown to every role, in the error colour."
+  },
+  "householdLeaveLastOwner": "Make another member the owner first.",
+  "@householdLeaveLastOwner": {
+    "description": "Second line of the disabled Leave household row, when the person is the household's only owner and other members remain. The way there is the Make owner item on another member's row."
+  },
+  "householdLeaveOnlyMember": "You're the only member.",
+  "@householdLeaveOnlyMember": {
+    "description": "Second line of the disabled Leave household row, when the person is the household's only member, so there is no one to hand it to."
+  },
+  "householdLeaving": "Leaving…",
+  "@householdLeaving": {
+    "description": "Label of the Leave household row while the request to leave is on its way, beside a spinner. Also its accessible name then."
+  },
+  "householdLeaveConfirmTitle": "Leave {household}?",
+  "@householdLeaveConfirmTitle": {
+    "description": "Title of the dialog asking the person to confirm leaving the household, by its name.",
+    "placeholders": {
+      "household": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "householdLeaveConfirmBody": "You lose access to the household and its events. To come back, you need a new invite.",
+  "@householdLeaveConfirmBody": {
+    "description": "Body of the dialog asking the person to confirm leaving the household: what leaving costs them, and how they would come back."
+  },
+  "householdLeaveConfirm": "Leave",
+  "@householdLeaveConfirm": {
+    "description": "Confirm button of the leave-household dialog, in the error colour. Sends the request to leave."
+  },
+  "householdLeaveDone": "You left {household}.",
+  "@householdLeaveDone": {
+    "description": "Snack bar shown once the server accepted the person leaving the household, as the household screen closes and returns to the list.",
+    "placeholders": {
+      "household": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "householdLeaveGone": "You're no longer in this household. It's being read again.",
+  "@householdLeaveGone": {
+    "description": "Warning banner by the Leave household row when the server answered that the person is not in the household (a 404). The screen stays, and the household is being read again."
+  },
+  "householdLeaveErrorLastOwner": "You're the household's only owner. Make another member the owner first.",
+  "@householdLeaveErrorLastOwner": {
+    "description": "Warning banner by the Leave household row when the server refused because the person is its only owner (a 400), for instance because another owner left on another device."
   }
 }

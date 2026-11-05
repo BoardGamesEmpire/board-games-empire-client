@@ -53,6 +53,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(m1);
+    registerFallbackValue(<HouseholdMember>[]);
     registerFallbackValue(HouseholdRole.householdMember);
   });
 
@@ -61,8 +62,11 @@ void main() {
     repository = MockHouseholdRepository();
     logger = MockBgeLogger();
     calls = [];
-    when(() => repository.cacheMember(any())).thenAnswer((_) async {
-      calls.add('cacheMember');
+    when(() => repository.cacheMembers(any())).thenAnswer((_) async {
+      calls.add('cacheMembers');
+    });
+    when(() => repository.updateCachedMembers(any())).thenAnswer((_) async {
+      calls.add('updateCachedMembers');
     });
     when(() => repository.removeCachedMember(any(), any()))
         .thenAnswer((invocation) async {
@@ -99,13 +103,82 @@ void main() {
   void failRemoval(Object error) =>
       when(() => remote.remove(any(), any())).thenThrow(error);
 
+  group('a transfer', () {
+    final newOwner = _member(
+      id: 'm2',
+      userId: 'u2',
+      role: HouseholdRole.householdOwner,
+    );
+    final previousOwner = _member(role: HouseholdRole.householdAdmin);
+
+    blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+      'a transfer writes both sides over the cached rows and refreshes',
+      setUp: () => when(() => remote.transferOwnership('h1', 'm2')).thenAnswer(
+        (_) async => (owner: newOwner, previousOwner: previousOwner),
+      ),
+      build: build,
+      act: (bloc) => bloc.add(HouseholdMemberOwnershipTransferRequested(m2)),
+      expect: () => [
+        const HouseholdMemberActionsState(busy: {'m2'}),
+        settled(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.done,
+        ),
+      ],
+      verify: (_) {
+        // Over the cached rows only, never an upsert: the viewer may have
+        // left while the transfer was on its way.
+        verify(() => repository.updateCachedMembers([newOwner, previousOwner]))
+            .called(1);
+        expect(calls, ['updateCachedMembers', 'onChanged']);
+      },
+    );
+
+    blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+      'a transfer answered 404 is gone',
+      setUp: () =>
+          when(() => remote.transferOwnership(any(), any())).thenThrow(_gone),
+      build: build,
+      act: (bloc) => bloc.add(HouseholdMemberOwnershipTransferRequested(m2)),
+      expect: () => [
+        const HouseholdMemberActionsState(busy: {'m2'}),
+        settled(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.gone,
+          error: _gone,
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => repository.updateCachedMembers(any()));
+        expect(refreshes(), 1);
+      },
+    );
+
+    test('a second transfer for a busy member is dropped', () async {
+      final reply = Completer<HouseholdOwnershipTransfer>();
+      when(() => remote.transferOwnership(any(), any()))
+          .thenAnswer((_) => reply.future);
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      bloc
+        ..add(HouseholdMemberOwnershipTransferRequested(m2))
+        ..add(HouseholdMemberOwnershipTransferRequested(m2));
+      await pumpEventQueue();
+      reply.complete((owner: newOwner, previousOwner: previousOwner));
+      await pumpEventQueue();
+
+      verify(() => remote.transferOwnership(any(), any())).called(1);
+    });
+  });
+
   group('a 200', () {
     late Completer<HouseholdMember> reply;
 
     setUp(() => reply = Completer<HouseholdMember>());
 
     blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
-      'a role change caches the answer, then refreshes',
+      'a role change writes the answer over the cached row, then refreshes',
       setUp: () => when(
         () => remote.changeRole('h1', 'm1', HouseholdRole.householdAdmin),
       ).thenAnswer((_) => reply.future),
@@ -127,8 +200,10 @@ void main() {
         ),
       ],
       verify: (_) {
-        verify(() => repository.cacheMember(promoted)).called(1);
-        expect(calls, ['cacheMember', 'onChanged']);
+        // Over the cached row only, never an upsert: a hydrate may have
+        // dropped the member while the change was on its way.
+        verify(() => repository.updateCachedMembers([promoted])).called(1);
+        expect(calls, ['updateCachedMembers', 'onChanged']);
       },
     );
 
@@ -144,7 +219,7 @@ void main() {
       ],
       verify: (_) {
         expect(calls, ['removeCachedMember(h1, u1)', 'onChanged']);
-        verifyNever(() => repository.cacheMember(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
       },
     );
 
@@ -154,7 +229,7 @@ void main() {
       setUp: () {
         when(() => remote.changeRole(any(), any(), any()))
             .thenAnswer((_) async => promoted);
-        when(() => repository.cacheMember(any()))
+        when(() => repository.updateCachedMembers(any()))
             .thenThrow(StateError('scope disposed'));
       },
       build: build,
@@ -198,7 +273,7 @@ void main() {
       ],
       verify: (_) {
         verifyNever(() => repository.removeCachedMember(any(), any()));
-        verifyNever(() => repository.cacheMember(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
         expect(refreshes(), 1);
       },
     );
@@ -219,7 +294,7 @@ void main() {
         ),
       ],
       verify: (_) {
-        verifyNever(() => repository.cacheMember(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
         expect(refreshes(), 1);
       },
     );
@@ -250,7 +325,7 @@ void main() {
             403,
           ),
         );
-        verifyNever(() => repository.cacheMember(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
         expect(refreshes(), 1);
       },
     );
@@ -315,7 +390,7 @@ void main() {
         ),
       ],
       verify: (_) {
-        verifyNever(() => repository.cacheMember(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
         expect(refreshes(), 1);
       },
     );
@@ -441,7 +516,7 @@ void main() {
       await pumpEventQueue();
       expect(bloc.state, const HouseholdMemberActionsState(outcome: removed));
       expect(calls, [
-        'cacheMember',
+        'updateCachedMembers',
         'onChanged',
         'removeCachedMember(h1, u2)',
         'onChanged',
@@ -469,7 +544,7 @@ void main() {
         expect(calls, [
           'removeCachedMember(h1, u2)',
           'onChanged',
-          'cacheMember',
+          'updateCachedMembers',
           'onChanged',
         ]);
       },
@@ -495,8 +570,8 @@ void main() {
         reply.complete(promoted);
         await pumpEventQueue();
 
-        verify(() => repository.cacheMember(promoted)).called(1);
-        expect(calls, ['cacheMember', 'onChanged']);
+        verify(() => repository.updateCachedMembers([promoted])).called(1);
+        expect(calls, ['updateCachedMembers', 'onChanged']);
       },
     );
   });

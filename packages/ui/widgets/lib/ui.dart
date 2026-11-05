@@ -54,6 +54,7 @@ export 'src/connectivity/bge_online_only.dart';
 export 'src/connectivity/bge_online_only_menu.dart';
 export 'src/connectivity/bge_online_only_popup_menu_item.dart';
 export 'src/focus/bge_focus_ring.dart';
+export 'src/focus/focus_is_free.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';

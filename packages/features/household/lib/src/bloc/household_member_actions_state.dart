@@ -2,15 +2,18 @@ import 'package:equatable/equatable.dart';
 
 import '../permissions/household_actions.dart';
 
-/// How a role change or removal ended (#480).
+/// How a member request ended: a role change, removal or ownership transfer
+/// (#480, #478), or a request to leave (#479).
 enum HouseholdMemberActionResult {
   /// The server did it, and its answer is cached.
   done,
 
   /// The server says the member is not in the household, or that the
   /// household is gone: its 404 does not say which (#122). On a removal
-  /// either way they are out of it; on a role change there is no one to
-  /// change.
+  /// either way they are out of it; on a role change or a transfer there is
+  /// no one to change or to hand the household to. On a leave the member is
+  /// the person themselves, and the refresh, not this answer, takes the
+  /// household away (#479).
   gone,
 
   /// The server said no, with a 400, 403 or 409. The outcome's error says
@@ -21,8 +24,8 @@ enum HouseholdMemberActionResult {
   failed,
 }
 
-/// The last member action's outcome, for the banner on the household screen
-/// (#480).
+/// The outcome of the last role change, removal or ownership transfer, for
+/// the banner under the member count on the household screen (#480, #478).
 final class HouseholdMemberOutcome extends Equatable {
   const HouseholdMemberOutcome({
     required this.action,
@@ -41,7 +44,8 @@ final class HouseholdMemberOutcome extends Equatable {
   List<Object?> get props => [action, result, error];
 }
 
-/// The role changes and removals on one household screen (#480).
+/// The role changes, removals and ownership transfers on one household
+/// screen (#480, #478).
 final class HouseholdMemberActionsState extends Equatable {
   const HouseholdMemberActionsState({this.busy = const {}, this.outcome});
 

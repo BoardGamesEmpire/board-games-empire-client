@@ -6,7 +6,7 @@ import '../network/remote_failure.dart';
 import 'household_member_json.dart';
 
 /// [HouseholdMemberRemoteDataSource] over a **per-server** Dio instance
-/// (#480, #483).
+/// (#480, #483, #479, #478).
 ///
 /// The body is asked for as a `String` with the response type pinned on
 /// every request, and `sendForJson` decodes it after the status is read and
@@ -14,10 +14,10 @@ import 'household_member_json.dart';
 /// its Dio; the network installer constructs it from the per-server
 /// container.
 ///
-/// Failure taxonomy per the [HouseholdMemberRemoteDataSource] contract. Both
-/// routes name a member row, so unlike the invite source there is no route
-/// whose enveloped 404 is read as an absent route: every one is a refusal,
-/// and the caller decides what it means.
+/// Failure taxonomy per the [HouseholdMemberRemoteDataSource] contract. Every
+/// route names a member row, or the caller's own, so unlike the invite source
+/// there is no route whose enveloped 404 is read as an absent route: every
+/// one is a refusal, and the caller decides what it means.
 class HouseholdMemberRemoteDataSourceImpl
     implements HouseholdMemberRemoteDataSource {
   const HouseholdMemberRemoteDataSourceImpl(this._dio);
@@ -64,15 +64,50 @@ class HouseholdMemberRemoteDataSourceImpl
         action: 'Household member remove',
       );
 
+  @override
+  Future<HouseholdMember> leave(String householdId) => _sendForMember(
+    () => _dio.delete<String>(_member(householdId, 'me'), options: _plainBody),
+    action: 'Household leave',
+  );
+
+  @override
+  Future<HouseholdOwnershipTransfer> transferOwnership(
+    String householdId,
+    String memberId,
+  ) => _send(
+    () => _dio.post<String>(
+      '${_member(householdId, memberId)}/transfer-ownership',
+      options: _plainBody,
+    ),
+    action: 'Household ownership transfer',
+    parse: (body) => (
+      owner: _memberAt(body, 'owner'),
+      previousOwner: _memberAt(body, 'previousOwner'),
+    ),
+  );
+
   static String _member(String householdId, String memberId) =>
       '/api/households/${Uri.encodeComponent(householdId)}'
       '/members/${Uri.encodeComponent(memberId)}';
 
-  /// Sends [request] and reads the `{ message, member }` answer the two
-  /// routes share.
+  /// Sends [request] and reads the `{ message, member }` answer the
+  /// member routes share.
   Future<HouseholdMember> _sendForMember(
     Future<Response<String>> Function() request, {
     required String action,
+  }) => _send(
+    request,
+    action: action,
+    parse: (body) => _memberAt(body, 'member'),
+  );
+
+  /// Sends [request], classifying a failure through [_MemberFailures], and
+  /// reads its answer with [parse]. A [FormatException] from [parse] is a
+  /// body that cannot be read as the contract.
+  Future<T> _send<T>(
+    Future<Response<String>> Function() request, {
+    required String action,
+    required T Function(Map<String, dynamic> body) parse,
   }) async {
     const failures = _MemberFailures();
     final response = await sendForJson(
@@ -82,16 +117,19 @@ class HouseholdMemberRemoteDataSourceImpl
     );
     return parseRemote(
       failures,
-      () {
-        final member = response.body['member'];
-        if (member is! Map<String, dynamic>) {
-          throw const FormatException('response is missing a "member" object');
-        }
-        return mapHouseholdMember(member);
-      },
+      () => parse(response.body),
       action: action,
       status: response.status,
     );
+  }
+
+  /// The member object under [key] in [body].
+  static HouseholdMember _memberAt(Map<String, dynamic> body, String key) {
+    final member = body[key];
+    if (member is! Map<String, dynamic>) {
+      throw FormatException('response is missing the "$key" object');
+    }
+    return mapHouseholdMember(member);
   }
 }
 

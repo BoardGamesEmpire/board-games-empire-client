@@ -432,6 +432,469 @@ void main() {
     });
   });
 
+  group('focus after the household a row opened is gone (#479)', () {
+    // Leaving a household pops its detail screen back to this list, which no
+    // longer has the row the user came from. #477's Delete will do the same.
+
+    /// Pushes a page over the list, as the app's route to the detail screen
+    /// does.
+    void openDetail(BuildContext context, String householdId) => unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(body: Text('Detail $householdId')),
+        ),
+      ),
+    );
+
+    Finder detail() => find.textContaining('Detail ', skipOffstage: false);
+
+    void popDetail(WidgetTester tester) =>
+        Navigator.of(tester.element(detail())).pop();
+
+    FocusNode heading(WidgetTester tester) => tester
+        .widget<Focus>(find.byKey(HouseholdListScreen.headingKey))
+        .focusNode!;
+
+    FocusNode row(WidgetTester tester, String name) =>
+        Focus.of(tester.element(find.text(name)), createDependency: false);
+
+    /// Tabs [stops] times from the top of the page, then presses Enter.
+    Future<void> openWithKeyboard(WidgetTester tester, {int stops = 1}) async {
+      for (var i = 0; i < stops; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(detail(), findsOneWidget);
+    }
+
+    /// Hands the list [listed] while the detail covers it, and lets the
+    /// covered list rebuild without the rest.
+    ///
+    /// Two frames: the first delivers the cache's answer and the second
+    /// builds it.
+    Future<void> dropWhileCovered(
+      WidgetTester tester,
+      List<Household> listed,
+    ) async {
+      households.add(listed);
+      await tester.pumpAndSettle();
+      for (final name in ['Alpha', 'Bravo']) {
+        final kept = listed.any((household) => household.name == name);
+        expect(
+          find.text(name, skipOffstage: false),
+          kept ? findsOneWidget : findsNothing,
+        );
+      }
+    }
+
+    final alpha = _household('h-1', name: 'Alpha');
+    final bravo = _household('h-2', name: 'Bravo');
+
+    setUp(() => status.finished(HydrateOutcome.complete));
+
+    testWidgets('when the household it opened is gone, focus lands on the '
+        'heading', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      await dropWhileCovered(tester, [bravo]);
+      popDetail(tester);
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+      final node = tester.getSemantics(
+        find.byKey(HouseholdListScreen.headingKey),
+      );
+      expect(node.label, 'Households');
+      expect(node, isSemantics(isHeader: true, isFocused: true));
+      handle.dispose();
+    });
+
+    testWidgets('when the household goes only once the detail has started to '
+        'pop, focus still lands on the heading', (tester) async {
+      // The app's order: the detail pops as soon as its cache write
+      // resolves, and the list's read of the cache answers after that.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pump();
+      households.add([bravo]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alpha'), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('after a screen reader opened it, focus lands on the heading', (
+      tester,
+    ) async {
+      // A screen reader's tap gives the row no keyboard focus, so focus comes
+      // back to the page itself.
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      tester.semantics.tap(find.semantics.byLabel('Alpha'));
+      await tester.pumpAndSettle();
+      expect(detail(), findsOneWidget);
+
+      await dropWhileCovered(tester, [bravo]);
+      popDetail(tester);
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+      expect(
+        tester.getSemantics(find.byKey(HouseholdListScreen.headingKey)),
+        isSemantics(isFocused: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('when the household it opened is still listed, focus is left '
+        'to the framework', (tester) async {
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('after a screen reader opened it, and it is still listed, '
+        'focus is left to the framework', (tester) async {
+      // Focus comes back to the page itself, as it does when the household
+      // is gone. Only a row that went is a reason to move it.
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      tester.semantics.tap(find.semantics.byLabel('Alpha'));
+      await tester.pumpAndSettle();
+      expect(detail(), findsOneWidget);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>());
+      handle.dispose();
+    });
+
+    testWidgets('focus the user moved is left alone', (tester) async {
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      await dropWhileCovered(tester, [bravo]);
+      popDetail(tester);
+      // The user moves on while the detail is still on its way out.
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('focus the user moves after the row has gone, while the '
+        'detail is still leaving, is left alone', (tester) async {
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pump();
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      households.add([bravo]);
+      await tester.pump();
+      expect(find.text('Alpha'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('focus the user moves before the row goes, and again after, is '
+        'left alone', (tester) async {
+      // The row isn't focused when it goes, so the framework hands nothing on
+      // and the second move is the user's too.
+      final charlie = _household('h-3', name: 'Charlie');
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo, charlie]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pump();
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+      households.add([bravo, charlie]);
+      await tester.pump();
+      expect(find.text('Alpha'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(row(tester, 'Charlie').hasPrimaryFocus, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Charlie').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('focus the user moves back onto the row the framework handed '
+        'it to is left alone', (tester) async {
+      final charlie = _household('h-3', name: 'Charlie');
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo, charlie]);
+      await tester.pump();
+      await openWithKeyboard(tester, stops: 2);
+
+      await dropWhileCovered(tester, [alpha, charlie]);
+      popDetail(tester);
+      await tester.pump();
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(row(tester, 'Charlie').hasPrimaryFocus, isTrue);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('when the framework hands focus back to a row focused before, '
+        'the heading takes it', (tester) async {
+      // The page's scope remembers the nodes it has focused, so with the
+      // opened row gone the framework goes back to the one before it: here
+      // the row above, which the user passed on the way. Which one that is
+      // depends on how they got there, and the heading doesn't.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester, stops: 2);
+
+      await dropWhileCovered(tester, [alpha]);
+      popDetail(tester);
+      await tester.pump();
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('when the row goes once the detail has started to pop, and the '
+        'framework hands focus on to a row focused before, the heading takes '
+        'it', (tester) async {
+      // Focus comes back to the opened row, which is still listed, and the
+      // framework hands it on to the row above when the row goes.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester, stops: 2);
+
+      popDetail(tester);
+      await tester.pump();
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+      households.add([alpha]);
+      await tester.pump();
+      expect(find.text('Bravo'), findsNothing);
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('when the row goes in the frame the detail finishes leaving, '
+        'the heading takes focus', (tester) async {
+      // The row's own node goes at the end of that frame, and focus is on
+      // nothing until the framework hands it back after the frame.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester, stops: 2);
+      final leaving = ModalRoute.of(tester.element(detail()))!;
+      final exit = leaving.reverseTransitionDuration;
+      final above = ModalRoute.of(
+        tester.element(find.text('Households', skipOffstage: false)),
+      )!.secondaryAnimation!;
+
+      popDetail(tester);
+      await tester.pump();
+      // The exit's value reaches nothing here, and it ends on the next frame.
+      await tester.pump(exit);
+      expect(above.status, AnimationStatus.reverse);
+      expect(find.text('Bravo'), findsOneWidget);
+
+      households.add([alpha]);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(above.status, AnimationStatus.dismissed);
+      expect(find.text('Bravo'), findsNothing);
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('when the household goes only after the detail has gone, '
+        'focus still lands on the heading', (tester) async {
+      // The leave's answer can land after the detail has gone, as when the
+      // user pressed Back while it was on its way.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+      expect(detail(), findsNothing);
+      expect(row(tester, 'Alpha').hasPrimaryFocus, isTrue);
+
+      households.add([bravo]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alpha'), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('when the household goes only after the detail has gone, '
+        'focus does not fall back to a row focused before', (tester) async {
+      // Left to the framework, focus would go back to the row above, which
+      // the user passed on the way.
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester, stops: 2);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+
+      households.add([alpha]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bravo'), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(heading(tester)));
+    });
+
+    testWidgets('focus the user moves after the detail has gone, before the '
+        'household goes, is left alone', (tester) async {
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+
+      households.add([bravo]);
+      await tester.pumpAndSettle();
+
+      expect(heading(tester).hasFocus, isFalse);
+      expect(row(tester, 'Bravo').hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a route opened after the detail has gone, before the '
+        'household goes, leaves focus to the framework', (tester) async {
+      await tester.pumpWidget(harness(onOpen: openDetail));
+      households.add([alpha, bravo]);
+      await tester.pump();
+      await openWithKeyboard(tester);
+
+      popDetail(tester);
+      await tester.pumpAndSettle();
+      const other = 'Other page';
+      unawaited(
+        Navigator.of(tester.element(find.text('Alpha'))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text(other)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await dropWhileCovered(tester, [bravo]);
+      Navigator.of(tester.element(find.text(other))).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.text(other), findsNothing);
+      expect(heading(tester).hasFocus, isFalse);
+    });
+
+    testWidgets('a route no row opened, such as Create, leaves focus to the '
+        'framework, even with a household gone meanwhile', (tester) async {
+      const form = 'Create form';
+      await tester.pumpWidget(
+        harness(
+          onCreate: (context) => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text(form)),
+              ),
+            ),
+          ),
+          onOpen: openDetail,
+        ),
+      );
+      households.add([alpha, bravo]);
+      await tester.pump();
+
+      final fab = find.byKey(HouseholdListScreen.createFabKey);
+
+      /// Whether the primary focus is the Create button's own.
+      bool fabFocused() {
+        final focused = FocusManager.instance.primaryFocus?.context;
+        if (focused == null) return false;
+        return find
+            .descendant(
+              of: fab,
+              matching: find.byElementPredicate((e) => identical(e, focused)),
+            )
+            .evaluate()
+            .isNotEmpty;
+      }
+
+      for (var i = 0; i < 6 && !fabFocused(); i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+      }
+      expect(fabFocused(), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text(form), findsOneWidget);
+
+      await dropWhileCovered(tester, [bravo]);
+      Navigator.of(tester.element(find.text(form))).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.text(form), findsNothing);
+      expect(heading(tester).hasFocus, isFalse);
+      expect(fabFocused(), isTrue);
+    });
+  });
+
   // The Create button floats over the end of the list (#467). BgePage owns
   // the room that lets the last row scroll clear of it, and this is the
   // screen the bug was found on.

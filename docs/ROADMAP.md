@@ -222,10 +222,11 @@ In rough order:
 - **Offline-first UX** (the polished experience on top of the existing infra).
 - **WebSocket layer** (search/import live updates, then real-time chat) via
   `socket_io_client`; REST paths remain the documented fallback.
-- **Household membership** (epic #495): leaving (#479) and transferring
-  ownership (#478). Membership changes go straight to the server, not through
-  the sync queue (#122); invites (#455) and role changes and removals (#480)
-  have shipped that way.
+- **Household membership** (epic #495): the member cap (#481), bans (#485),
+  and discoverable households and requests to join (#486). Membership changes
+  go straight to the server, not through the sync queue (#122); invites (#455),
+  role changes and removals (#480), leaving (#479) and transferring ownership
+  (#478) have shipped that way.
 - **Play sessions** (timezone-aware datetimes via the `timezone` package).
 - **Events / social** (friendship, events, RSVP).
 - **Push notification implementations** (FCM/APNs/web-push; interface stub only in P0).
