@@ -30,6 +30,12 @@ dependencies:
   web_network:
     path: ../../network/web_network
 
+  # `buildWebServerScope` and `bgeWebPlatformBootstrap` name `WellKnownClient`
+  # in their test seams (#325): a direct dependency on the same rule as the
+  # others, this package names the symbol.
+  network_interface:
+    path: ../../network/network_interface
+
   # The web data layer (#288): this package is where the drift/wasm executor
   # and the network scope are composed, because `web_network` must not depend
   # on a browser-only library (see `WebServerScopeInstall`).
@@ -90,8 +96,6 @@ dev_dependencies:
   logging: ^1.2.0
   mocktail: ^1.0.5
 
-  network_interface:
-    path: ../../network/network_interface
   auth:
     path: ../../features/auth
   flutter_test:
