@@ -980,6 +980,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   ///
   /// The request waits [providerStartReceiveTimeout] for its answer.
   ///
+  /// A session that lands while the start request is out, such as another
+  /// tab's sign-in, is the newer intent. The page stays, and the call throws
+  /// [AuthSupersededException], so a start answered after it cannot take the
+  /// page to the provider and replace that session with another.
+  ///
   /// The server sends the browser back to the app's root with a return id
   /// this attempt chose ([providerSignInCallback]), and the page navigator
   /// keeps the same id in the marker. The page load that comes back is read
@@ -1011,6 +1016,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     final returnId = newProviderSignInReturnId();
     final callback = providerSignInCallback(returnId);
+    // Before the first await: a session landing while the start is out must
+    // move it (see [_credentialGrants], which another tab's sign-in moves as
+    // well).
+    final grantsAtStart = _credentialGrants;
 
     late final Response<String> response;
     try {
@@ -1049,6 +1058,19 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw const AuthProviderSignInException(
         ProviderSignInFailureReason.generic,
         message: 'The server named no address for the provider sign-in.',
+      );
+    }
+
+    // Nothing suspends between this check and the navigation.
+    if (_credentialGrants != grantsAtStart) {
+      _log.info(
+        'A session arrived while the provider sign-in was starting; the page '
+        'stays',
+      );
+      throw const AuthSupersededException(
+        message:
+            'A session arrived while the provider sign-in was starting, so '
+            'the page stayed.',
       );
     }
 

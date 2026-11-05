@@ -55,13 +55,19 @@ ServerIdentity _identity() => ServerIdentity(
 );
 
 /// Answers every request with [statusCode], [body] and any [headers], and
-/// keeps each request it was asked.
+/// keeps each request it was asked. With a [gate], each answer waits for it.
 class _StartRoute implements HttpClientAdapter {
-  _StartRoute({this.statusCode = 200, this.body = '', this.headers = const {}});
+  _StartRoute({
+    this.statusCode = 200,
+    this.body = '',
+    this.headers = const {},
+    this.gate,
+  });
 
   final int statusCode;
   final String body;
   final Map<String, String> headers;
+  final Future<void>? gate;
   final List<RequestOptions> requests = [];
 
   @override
@@ -71,6 +77,7 @@ class _StartRoute implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
+    await gate;
     return ResponseBody.fromString(
       body,
       statusCode,
@@ -204,6 +211,47 @@ void main() {
         expect(outcome, isA<ProviderSignInCancelled>());
       });
     });
+
+    test('a session that lands while the start is out keeps the page: the '
+        'call is superseded and does not leave', () async {
+      final gate = Completer<void>();
+      final route = _StartRoute(
+        body: _answer(_kProviderUrl),
+        gate: gate.future,
+      );
+      final repo = repoWith(_dio(route), providerSignIn: bindings());
+
+      final outcome = repo.signInWithProvider(_kStrategy);
+      await pumpEventQueue();
+      expect(route.requests, hasLength(1));
+      // Another tab's sign-in, as the session monitor hands it over.
+      repo.signedInInAnotherTab();
+      gate.complete();
+
+      await expectLater(outcome, throwsA(isA<AuthSupersededException>()));
+      expect(left, isEmpty);
+    });
+
+    test(
+      "another tab's sign-out while the start is out still leaves: the "
+      'user here asked for the provider, and no session replaced that',
+      () async {
+        final gate = Completer<void>();
+        final route = _StartRoute(
+          body: _answer(_kProviderUrl),
+          gate: gate.future,
+        );
+        final repo = repoWith(_dio(route), providerSignIn: bindings());
+
+        final outcome = repo.signInWithProvider(_kStrategy);
+        await pumpEventQueue();
+        repo.signedOutInAnotherTab();
+        gate.complete();
+
+        await expectLater(outcome, completion(isA<ProviderSignInCancelled>()));
+        expect(left, [Uri.parse(_kProviderUrl)]);
+      },
+    );
 
     for (final permissive in [true, false]) {
       final shape = permissive ? 'a resolved' : 'a thrown';
