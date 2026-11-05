@@ -324,6 +324,28 @@ void main() {
       },
     );
 
+    test(
+      'a content type in ScriptedResponse.headers replaces the JSON one, '
+      'whatever its case',
+      () async {
+        server.on(
+          'GET',
+          '/api/thing',
+          (_) => const ScriptedResponse(
+            '{"ok":true}',
+            headers: {
+              'Content-Type': ['text/plain'],
+            },
+          ),
+        );
+
+        final res = await dio.get<Object?>('/api/thing');
+
+        expect(res.data, '{"ok":true}');
+        expect(res.headers.value(Headers.contentTypeHeader), 'text/plain');
+      },
+    );
+
     test('an unrouted request throws naming it', () async {
       await expectLater(
         dio.get<Object?>('/api/nowhere'),
