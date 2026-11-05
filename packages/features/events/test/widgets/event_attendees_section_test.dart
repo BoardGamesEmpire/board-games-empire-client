@@ -30,6 +30,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester,
     List<EventAttendee>? attendees, {
+    Widget? controls,
     Size? size,
     TextScaler textScaler = TextScaler.noScaling,
   }) async {
@@ -50,7 +51,10 @@ void main() {
         ),
         home: Scaffold(
           body: SingleChildScrollView(
-            child: EventAttendeesSection(attendees: attendees),
+            child: EventAttendeesSection(
+              attendees: attendees,
+              controls: controls,
+            ),
           ),
         ),
       ),
@@ -141,6 +145,46 @@ void main() {
     );
   });
 
+  testWidgets('a row with no name, role, answer or note is left out, and no '
+      'heading counts it, an empty note included', (tester) async {
+    EventAttendee nobody(String id, String? notes) => EventAttendee(
+      id: id,
+      eventId: 'e-1',
+      status: unknown,
+      notes: notes,
+      createdAt: kItemInstant,
+      updatedAt: kItemInstant,
+    );
+    Finder rowsOf(EventParticipationStatus status) => find.descendant(
+      of: find.byKey(EventDetailScreen.attendeeGroupKey(status)),
+      matching: find.byType(MergeSemantics),
+    );
+
+    for (final notes in [null, '']) {
+      final reason = 'notes: $notes';
+
+      // Alone, it leaves no group: a heading over no rows would count
+      // someone it doesn't show.
+      await pump(tester, [_who('1', 'Ann', going), nobody('2', notes)]);
+      expect(
+        find.byKey(EventDetailScreen.attendeeGroupKey(unknown)),
+        findsNothing,
+        reason: reason,
+      );
+      expect(
+        find.textContaining('Other answers'),
+        findsNothing,
+        reason: reason,
+      );
+
+      // Beside a row that shows, the count is of the rows that show.
+      await pump(tester, [_who('1', 'Zed', unknown), nobody('2', notes)]);
+      expect(find.text('Other answers (1)'), findsOneWidget, reason: reason);
+      // A row is one merged semantics node.
+      expect(rowsOf(unknown), findsOneWidget, reason: reason);
+    }
+  });
+
   testWidgets('the three states stay', (tester) async {
     await pump(tester, null);
     expect(find.text('Not loaded yet.'), findsOneWidget);
@@ -152,6 +196,25 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('('), findsNothing);
+  });
+
+  testWidgets('the controls sit under the heading, above the roster in each '
+      'of its states', (tester) async {
+    const controls = Text('The answer chips');
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+
+    for (final (attendees, first) in [
+      ([_who('1', 'Ann', going)], 'Going (1)'),
+      // The viewer's answer needs only their own row, not a roster they
+      // may read.
+      (null, 'Not loaded yet.'),
+      (const <EventAttendee>[], "You can't see who's coming to this event."),
+    ]) {
+      await pump(tester, attendees, controls: controls);
+
+      expect(top("Who's coming"), lessThan(top('The answer chips')));
+      expect(top('The answer chips'), lessThan(top(first)), reason: first);
+    }
   });
 
   testWidgets('each heading is a semantics header', (tester) async {

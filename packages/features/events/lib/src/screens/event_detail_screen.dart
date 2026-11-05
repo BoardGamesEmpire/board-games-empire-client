@@ -30,6 +30,8 @@ import '../widgets/event_date_dialogs.dart';
 import '../widgets/event_date_poll.dart';
 import '../widgets/event_detail_sections.dart';
 import '../widgets/event_labels.dart';
+import '../widgets/event_rsvp_controls.dart';
+import '../widgets/rsvp_note_dialog.dart';
 
 /// One event (#498): its header, its dates, who's coming and its games, read
 /// reactively from the local cache and from the server once per open.
@@ -46,8 +48,9 @@ import '../widgets/event_labels.dart';
 ///
 /// Most actions. The bloc works out what the viewer may do, and the app
 /// bar's menu offers the event's status changes (#502) and Delete (#501),
-/// the dates their own (#506), and a poll's dates their answers (#507), to
-/// a viewer the role table gives them. The other actions' issues (#500,
+/// the dates their own (#506), a poll's dates their answers (#507), and
+/// who's coming the viewer's own answer to the invitation (#508), to a
+/// viewer the role table gives them. The other actions' issues (#500,
 /// #503–#518) add theirs. The games section says the event's games will
 /// show there, until #519 has something to show.
 ///
@@ -57,10 +60,11 @@ import '../widgets/event_labels.dart';
 /// server, after a dialog that says it can't be undone and that nobody on the
 /// event is told. It is offered only with a [remote] and an [onBack]: the
 /// delete is never queued, and once the event is gone a screen that can't
-/// leave has nowhere to go. The status changes and the dates' actions share
-/// the bloc, so they are offered only there too. Where the menu offers
-/// Cancel, the dialog offers *Cancel event instead*, which closes it and
-/// opens Cancel's (#502): a cancel tells everyone and keeps the event.
+/// leave has nowhere to go. The status changes, the dates' actions and the
+/// viewer's answer share the bloc, so they are offered only there too. Where
+/// the menu offers Cancel, the dialog offers *Cancel event instead*, which
+/// closes it and opens Cancel's (#502): a cancel tells everyone and keeps
+/// the event.
 ///
 /// Delete waits for the detail read, and the refresh banner's retry waits
 /// for the delete: a read's answer landing after the delete would cache the
@@ -144,6 +148,29 @@ import '../widgets/event_labels.dart';
 /// opens a page of everyone's answers, through [onWhoAnswered], where the
 /// roster can be read.
 ///
+/// ## Your answer
+///
+/// Who's coming offers the viewer Going, Maybe and Not going, and a note to
+/// go with their answer, where the role table gives them `rsvp` and the
+/// event takes date writes: not once it is cancelled or archived (#508).
+/// Elsewhere their answer shows on their row, as everyone's does. The write
+/// names their row on the cached roster, so an event opened before a read
+/// cached one offers nothing yet. Each goes straight to the server, so it
+/// waits for a connection, for a running read and for a request already
+/// out, as the dates' controls do, and the control pressed keeps its focus
+/// through the write and the read it starts ([EventRsvpControls]).
+///
+/// Going and Maybe go at once. Not going asks first, since it pauses the
+/// games the viewer nominated and takes the ones they offered off the dates
+/// ahead. Coming back brings the nominations back, but not the games they
+/// offered. The note opens a dialog, and goes with the answer they have. If a read started while a dialog was
+/// open, the write waits for it to end, as a date's does, and is sent for
+/// the event and the row the detail shows then. Not at all if the event was
+/// cancelled or archived meanwhile, or the viewer was taken off it. Every
+/// end shows a banner, done included, and is read again as
+/// [EventActionOutcome.rereads] says, which reads a poll again too: whether
+/// the viewer's answers on its dates count follows their answer.
+///
 /// ## The clock
 ///
 /// Nothing writes to the cache as time passes, so the page is built again at
@@ -208,6 +235,17 @@ class EventDetailScreen extends StatelessWidget {
 
   /// Key on the viewer's *Add a note* or *Edit note* button (#508).
   static const Key rsvpNoteKey = Key('event_detail.rsvp_note');
+
+  /// Key on the Not going dialog's confirm button (#508).
+  static const Key rsvpNotGoingConfirmKey = Key(
+    'event_detail.rsvp_not_going_confirm',
+  );
+
+  /// Key on the note dialog's field (#508).
+  static const Key rsvpNoteFieldKey = Key('event_detail.rsvp_note_field');
+
+  /// Key on the note dialog's Save note button (#508).
+  static const Key rsvpNoteSaveKey = Key('event_detail.rsvp_note_save');
 
   /// Key on the games section.
   static const Key gamesKey = Key('event_detail.games');
@@ -727,11 +765,43 @@ class _ReadyPage extends StatelessWidget {
             enabled: !state.reading && !acting,
           ),
           const BgeGap.lg(),
-          EventAttendeesSection(attendees: snapshot.attendees),
+          EventAttendeesSection(
+            attendees: snapshot.attendees,
+            controls: _rsvpControls(context, actionsState, acting: acting),
+          ),
           const BgeGap.lg(),
           const EventGamesSection(),
         ],
       ),
+    );
+  }
+
+  /// The viewer's answer to the invitation (#508), or null where none is
+  /// offered: no actions bloc, a role that doesn't answer, an event that no
+  /// longer takes one, or no row of theirs on the cached roster to send it
+  /// for. [acting] is [_build]'s.
+  Widget? _rsvpControls(
+    BuildContext context,
+    EventActionsState? actionsState, {
+    required bool acting,
+  }) {
+    final attendee = state.detail.attendance;
+    if (actionsState == null ||
+        attendee == null ||
+        !state.actions.contains(EventAction.rsvp) ||
+        !takesDateWrites(state.detail.snapshot.event)) {
+      return null;
+    }
+
+    return EventRsvpControls(
+      attendee: attendee,
+      // Not while a read runs, whose answer landing after the write would
+      // put the old answer back (#589). Nor while a request is out or once
+      // the delete is done.
+      enabled: !state.reading && !acting,
+      busy: actionsState.busy,
+      onAnswer: (status) => _sendRsvp(context, status),
+      onEditNote: () => _sendRsvp(context, null, editNote: true),
     );
   }
 }
@@ -1348,7 +1418,92 @@ Future<EventDetailState> _readEnded(EventDetailBloc detail) {
 /// dialog closes.
 typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
 
-/// How the last action went (#501, #502, #506), or the last vote (#507),
+/// Sends the viewer's answer [status], or with [editNote] their current
+/// answer with the note its dialog asks for (#508), and answers whether it
+/// sent it: not when a dialog was cancelled, the note was saved unchanged,
+/// the read it waited for left no event to show, the write was dropped, or
+/// another request is out. The controls hold the control pressed only while
+/// what it sent is out. See [EventDetailScreen].
+Future<bool> _sendRsvp(
+  BuildContext context,
+  EventParticipationStatus? status, {
+  bool editNote = false,
+}) async {
+  // Read before a dialog opens: the page under it can rebuild without the
+  // controls, and take the context they were asked from with it.
+  final actions = context.read<EventActionsBloc>();
+  final detail = context.read<EventDetailBloc>();
+  final l10n = EventsLocalizations.of(context);
+
+  String? notes;
+  if (editNote) {
+    final shown = detail.state;
+    notes = await showRsvpNoteDialog(
+      context,
+      note: shown is EventDetailReady ? shown.detail.attendance?.notes : null,
+    );
+    if (notes == null) return false;
+  } else if (status == EventParticipationStatus.notAttending) {
+    // It pauses the viewer's nominations and takes the games they offered
+    // off the dates ahead. Coming back brings the nominations back, but not
+    // the games they offered.
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.eventsRsvpNotGoingTitle,
+      body: l10n.eventsRsvpNotGoingBody,
+      keepLabel: l10n.eventsRsvpNotGoingKeep,
+      confirmLabel: l10n.eventsRsvpNotGoingConfirm,
+      destructive: true,
+      confirmKey: EventDetailScreen.rsvpNotGoingConfirmKey,
+    );
+    if (!confirmed) return false;
+  }
+  if (actions.isClosed) return false;
+
+  // A read can have started while a dialog was open, and the write waits for
+  // it to end, as a date's does (#589). The event and the viewer's row are
+  // the detail's as they are then, whose ids a reconcile can have moved
+  // (#499).
+  final state = await _readEnded(detail);
+  if (state is! EventDetailReady || actions.isClosed) return false;
+
+  // A sync can have cancelled or archived the event while a dialog was open,
+  // taken the viewer off it, or left their row with a role or an answer this
+  // client doesn't know, which a note would go out with. The page already
+  // shows that, without the controls or without the note, and the banner
+  // says the write was dropped, or a screen reader would hear nothing
+  // happen.
+  final event = state.detail.snapshot.event;
+  final attendance = state.detail.attendance;
+  // A note saved as it stands sends nothing. The server takes every send as
+  // a new answer: it notifies the host that the viewer answered, and an
+  // answer of Going or Not going takes a new date.
+  if (notes != null &&
+      attendance != null &&
+      notes == (attendance.notes ?? '').trim()) {
+    return false;
+  }
+  final answer = status ?? attendance?.status;
+  if (attendance == null ||
+      answer == null ||
+      answer == EventParticipationStatus.unknown ||
+      !takesDateWrites(event) ||
+      !state.actions.contains(EventAction.rsvp)) {
+    actions.add(const EventWriteDropped(EventAction.rsvp));
+    return false;
+  }
+  // One request at a time, and the bloc drops one sent while another is
+  // out. A press before a frame showed another control's request out, such
+  // as a date's, gets here, and has to hear that it sent nothing, or the
+  // controls would hold it.
+  if (actions.state.busy) return false;
+  actions.add(
+    EventRsvpRequested(event.id, attendance.id, answer, notes: notes),
+  );
+  return true;
+}
+
+/// How the last action went (#501, #502, #506, #508), or the last vote (#507),
 /// over the event until dismissed or replaced. A live region, as every
 /// [BgeInlineBanner] is. A delete's done has none: the screen leaves. Nor
 /// does a vote's: its chip shows it.
@@ -1419,6 +1574,7 @@ class _ActionOutcomeBanner extends StatelessWidget {
     ),
     EventAction.removeDate => _dateMessage(l10n, done: l10n.eventsDateRemoved),
     EventAction.voteAvailability => _voteMessage(l10n),
+    EventAction.rsvp => _rsvpMessage(l10n),
     // Delete is the only other action the screen sends yet. #500's adds its
     // own copy.
     _ => _deleteMessage(l10n),
@@ -1463,6 +1619,23 @@ class _ActionOutcomeBanner extends StatelessWidget {
     EventActionResult.failed ||
     EventActionResult.done ||
     EventActionResult.partlyDone => l10n.eventsPollVoteFailed,
+  };
+
+  /// The viewer's answer's copy (#508). No failure says the answer wasn't
+  /// saved: a transient one's answer was lost, and the write may have
+  /// landed, so it may be pressed again. Any other points at the answer,
+  /// which the screen reads again after it, as a status write's does.
+  String _rsvpMessage(EventsLocalizations l10n) => switch (outcome.result) {
+    EventActionResult.done => l10n.eventsRsvpSaved,
+    // The event or the viewer's row on it, and the read after says which.
+    EventActionResult.gone => l10n.eventsRsvpGone,
+    EventActionResult.refused => l10n.eventsRsvpRefused,
+    EventActionResult.changed => l10n.eventsRsvpChanged,
+    // An RSVP is one request, so it never ends partly done.
+    EventActionResult.failed || EventActionResult.partlyDone =>
+      outcome.error is EventRemoteTransientException
+          ? l10n.eventsRsvpFailed
+          : l10n.eventsRsvpFailedUnexpected,
   };
 
   String _deleteMessage(EventsLocalizations l10n) => switch (outcome.result) {

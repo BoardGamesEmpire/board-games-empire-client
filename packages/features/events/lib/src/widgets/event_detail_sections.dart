@@ -513,35 +513,54 @@ class _OccurrenceEntry extends StatelessWidget {
 ///
 /// An empty roster is the server saying this user may not read it, not that
 /// nobody is coming, so it says so rather than "nobody".
+///
+/// The viewer's own answer, where they may give one, sits under the heading
+/// above whichever of the three shows (#508): it needs only their own row,
+/// not a roster they may read.
 class EventAttendeesSection extends StatelessWidget {
-  const EventAttendeesSection({required this.attendees, super.key});
+  const EventAttendeesSection({
+    required this.attendees,
+    this.controls,
+    super.key,
+  });
 
   /// Null where no read has carried a roster, empty where the read carried
   /// one this user may not see.
   final List<EventAttendee>? attendees;
 
+  /// The viewer's answer to the invitation, or null where none is offered.
+  final Widget? controls;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    final controls = this.controls;
 
     return _Section(
       key: EventDetailScreen.attendeesKey,
       title: l10n.eventsDetailAttendees,
-      children: switch (attendees) {
-        null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
-        [] => [_Note(l10n.eventsDetailAttendeesHidden)],
-        final attendees => [
-          for (final status in _groupOrder)
-            if (attendees.any((attendee) => attendee.status == status))
-              _AttendeeGroup(
-                status: status,
-                attendees: [
-                  for (final attendee in attendees)
-                    if (attendee.status == status) attendee,
-                ],
-              ),
-        ],
-      },
+      children: [
+        if (controls != null) ...[controls, const BgeGap.md()],
+        ...switch (attendees) {
+          null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
+          [] => [_Note(l10n.eventsDetailAttendeesHidden)],
+          // A gap between the groups, so each heading reads as the start of
+          // its group and not as a line of the row above it.
+          final attendees => [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: BgeTokens.of(context).spaceMd,
+              children: [
+                for (final MapEntry(key: status, value: group) in _grouped(
+                  l10n,
+                  attendees,
+                ).entries)
+                  _AttendeeGroup(status: status, attendees: group),
+              ],
+            ),
+          ],
+        },
+      ],
     );
   }
 }
@@ -554,6 +573,41 @@ const _groupOrder = [
   EventParticipationStatus.notAttending,
   EventParticipationStatus.unknown,
 ];
+
+/// [attendees] by answer, in [_groupOrder], each group in the roster's order
+/// and none empty. A row that would show nothing is left out, so no heading
+/// counts someone it doesn't show.
+Map<EventParticipationStatus, List<EventAttendee>> _grouped(
+  EventsLocalizations l10n,
+  List<EventAttendee> attendees,
+) {
+  final byStatus = <EventParticipationStatus, List<EventAttendee>>{};
+  for (final attendee in attendees) {
+    if (_showsNothing(l10n, attendee)) continue;
+    (byStatus[attendee.status] ??= []).add(attendee);
+  }
+  return {for (final status in _groupOrder) status: ?byStatus[status]};
+}
+
+/// [attendee]'s role and answer, as their row names them. Either is left
+/// out where this client has no word for it.
+List<String> _attendeeDetails(
+  EventsLocalizations l10n,
+  EventAttendee attendee,
+) => [
+  if (attendee.role case final role?) ?eventRoleLabel(l10n, role),
+  ?eventRsvpLabel(l10n, attendee.status),
+];
+
+/// Whether [attendee]'s row would show nothing: no name, no role or answer
+/// with a word, and no note. Only a status this client doesn't know has no
+/// word, so only an Other answers row can.
+bool _showsNothing(EventsLocalizations l10n, EventAttendee attendee) {
+  final note = attendee.notes;
+  return attendee.name == null &&
+      _attendeeDetails(l10n, attendee).isEmpty &&
+      (note == null || note.isEmpty);
+}
 
 /// The people who gave one answer: a heading with their count, over their
 /// rows in the roster's order.
@@ -594,7 +648,8 @@ class _AttendeeGroup extends StatelessWidget {
 }
 
 /// One person on the roster, with their role and their answer and, under
-/// them, the note they left, as one semantics node.
+/// them, the note they left, as one semantics node. Never one of whom it
+/// would show nothing: [_grouped] leaves them out.
 class _AttendeeEntry extends StatelessWidget {
   const _AttendeeEntry({required this.attendee});
 
@@ -605,15 +660,8 @@ class _AttendeeEntry extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
     final name = attendee.name;
-    final role = attendee.role;
     final note = attendee.notes;
-    final details = [
-      if (role != null) ?eventRoleLabel(l10n, role),
-      ?eventRsvpLabel(l10n, attendee.status),
-    ];
-    if (name == null && details.isEmpty && note == null) {
-      return const SizedBox.shrink();
-    }
+    final details = _attendeeDetails(l10n, attendee);
 
     return _Entry(
       children: [
