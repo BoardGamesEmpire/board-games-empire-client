@@ -98,6 +98,9 @@ dev_dependencies:
 
   auth:
     path: ../../features/auth
+  # `ScriptedServer`, the transport the session suite answers through (#369).
+  bge_test_support:
+    path: ../../testing/support
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.2.0

@@ -25,14 +25,14 @@ import 'package:logging/logging.dart';
 import 'package:models/domain.dart' show ServerIdentity;
 import 'package:mocktail/mocktail.dart';
 import 'package:network_interface/network_interface.dart'
-    show HouseholdRemoteDataSource, WellKnownClient;
+    show HouseholdRemoteDataSource;
 import 'package:observability/observability.dart';
 import 'package:web_network/web_network.dart' show WebAuthRepositoryImpl;
 import 'package:web_platform/web.dart';
 import 'package:web_platform/web_storage_composition.dart';
 import 'package:web_storage/web_storage.dart';
 
-int _serverCounter = 0;
+import 'support/web_origin.dart';
 
 void main() {
   group('bgeWebPlatformBootstrap', () {
@@ -48,17 +48,12 @@ void main() {
       // the scope it builds) passed every suite: the app would boot with no
       // database or no per-user tier. Only the well-known client and the
       // origin are faked; everything the scope installs is real.
-      final wellKnownClient = _MockWellKnownClient();
-      // Fresh per run: the web database is named by the server id and
-      // IndexedDB outlives the test.
-      final identity = _identity(
-        'srv-${DateTime.now().microsecondsSinceEpoch}-${_serverCounter++}',
-      );
-      when(() => wellKnownClient.fetchIdentity(any()))
-          .thenAnswer((_) async => identity);
+      //
+      // A fresh server id: the web database is named by it, and IndexedDB
+      // outlives the test.
       final bootstrap = bgeWebPlatformBootstrap(
-        wellKnownClient: wellKnownClient,
-        originProvider: () => 'https://bge.test.invalid',
+        wellKnownClient: wellKnownAnswering(freshIdentity('web-bootstrap')),
+        originProvider: () => kWebTestOrigin,
       );
       addTearDown(bootstrap.dispose);
 
@@ -285,5 +280,3 @@ ServerIdentity _identity(String serverId) => ServerIdentity(
 /// The report never queries; a mock keeps this suite from needing a real
 /// database to assert a log level.
 class _UnusedExecutor extends Mock implements QueryExecutor {}
-
-class _MockWellKnownClient extends Mock implements WellKnownClient {}
