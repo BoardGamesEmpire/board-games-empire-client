@@ -1209,6 +1209,47 @@ void main() {
       expect(find.byType(GameQuickLook), findsNothing);
     });
 
+    // View full details's page covers the quick look before it removes it,
+    // once it has arrived. A session ending in between reaches the quick
+    // look only once the routing has taken the page down (#707).
+    Future<void> detailsArriving(WidgetTester tester) async {
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsOneWidget);
+    }
+
+    testWidgets("a quick look under View full details's arriving page closes "
+        "as another user's session replaces it", (tester) async {
+      await signedInAsFirstUser(tester);
+      await detailsArriving(tester);
+
+      switchToSecondUser();
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+      expectOnlySecondUser(tester);
+    });
+
+    testWidgets("a quick look under View full details's arriving page closes "
+        'as the session ends', (tester) async {
+      await signedInAsFirstUser(tester);
+      await detailsArriving(tester);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+    });
+
     testWidgets("Something to play is keyed on the session's collection, which "
         'is where half of its draw comes from: a new one is a new row even '
         'under the same games cache', (tester) async {

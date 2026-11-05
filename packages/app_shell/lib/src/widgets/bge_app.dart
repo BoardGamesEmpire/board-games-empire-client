@@ -8,6 +8,7 @@ import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
@@ -3252,10 +3253,26 @@ class _AuthScopeState extends State<_AuthScope> {
   /// would outlive the session: over the sign-in screen, or over the next
   /// user's home, still showing the departing user's game, and reading
   /// through repositories the scope pop is about to dispose.
-  static void _closePopUps(BuildContext context) => Navigator.maybeOf(
-    context,
-    rootNavigator: true,
-  )?.popUntil((route) => route.settings is Page<Object?>);
+  ///
+  /// Closed twice. Now, for one on top. And again after the next frame,
+  /// once the routing has taken down the pages above home, for one that was
+  /// under a page: View full details's page, while it is still arriving,
+  /// covers the quick look it removes only once it has arrived. Popping
+  /// stops at the first page, so that one is out of reach until the page has
+  /// gone. The routing lands by then: `go` and the bootstrap redirect are
+  /// synchronous, and the router builds its new pages in that frame.
+  static void _closePopUps(BuildContext context) {
+    final navigator = Navigator.maybeOf(context, rootNavigator: true);
+    if (navigator == null) return;
+    bool isPage(Route<dynamic> route) => route.settings is Page<Object?>;
+    navigator.popUntil(isPage);
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (navigator.mounted) navigator.popUntil(isPage);
+      }, debugLabel: '_AuthScope.closePopUps')
+      // A post-frame callback asks for no frame of its own.
+      ..ensureVisualUpdate();
+  }
 
   /// The one-time notice that this tab now shows [user]'s account (#432),
   /// or null where there is nowhere to show it.
