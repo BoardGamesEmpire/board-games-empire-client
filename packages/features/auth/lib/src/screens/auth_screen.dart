@@ -356,6 +356,8 @@ class _AuthScreenState extends State<AuthScreen> {
         AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
         AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
         AuthFailureServer() => l10n.authErrorServer,
+        // Placeholder until the provider banner words each reason (#583).
+        AuthFailureProviderSignIn() => l10n.authErrorServer,
         // A wait under a second would read "in 0 seconds", which is no advice.
         AuthFailureRateLimited(:final retryAfter) =>
           retryAfter == null || retryAfter < const Duration(seconds: 1)

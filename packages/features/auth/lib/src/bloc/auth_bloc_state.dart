@@ -22,8 +22,20 @@ final class AuthInitial extends AuthBlocState {
 /// An interactive auth operation (sign-in, register, sign-out) is in
 /// flight. Rendered as inline progress by the auth form — distinct from
 /// [AuthSessionCheckInProgress], which happens before any form is shown.
+///
+/// [providerId] names the provider whose sign-in is open, so the screen can
+/// show which button was pressed (#583); null for every other operation.
 final class AuthLoading extends AuthBlocState {
-  const AuthLoading();
+  const AuthLoading({this.providerId});
+
+  final String? providerId;
+
+  /// Whether what is running is a provider sign-in, rather than one of the
+  /// forms' own submissions or a sign-out.
+  bool get isProviderSignIn => providerId != null;
+
+  @override
+  List<Object?> get props => [providerId];
 }
 
 /// The startup session check (restore) is in flight (#37).
@@ -248,6 +260,28 @@ final class AuthFailureRateLimited extends AuthOperationFailure {
 
   @override
   List<Object?> get props => [retryAfter];
+}
+
+/// A sign-in through a provider failed (#583).
+///
+/// Its own kind, not [AuthFailureServer]: the provider section shows it, the
+/// email form does not, so exactly one surface shows a given failure.
+final class AuthFailureProviderSignIn extends AuthOperationFailure {
+  const AuthFailureProviderSignIn(this.reason, {this.retryAfter, this.cause});
+
+  final ProviderSignInFailureReason reason;
+
+  /// The wait the server asked for; only for
+  /// [ProviderSignInFailureReason.rateLimited].
+  final Duration? retryAfter;
+
+  /// The exception behind it, for the log. Excluded from equality like
+  /// [AuthFailureServer.cause], and never logged whole: it can carry the
+  /// returned address.
+  final Object? cause;
+
+  @override
+  List<Object?> get props => [reason, retryAfter];
 }
 
 /// Anything unanticipated (unexpected status, malformed body, …). The

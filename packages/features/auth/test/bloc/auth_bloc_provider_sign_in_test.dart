@@ -1,0 +1,208 @@
+import 'dart:async';
+
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+
+import '../support/auth_test_fixtures.dart';
+
+void main() {
+  late MockAuthRepository repo;
+
+  setUpAll(() => registerFallbackValue(kOidcStrategy));
+
+  setUp(() {
+    repo = MockAuthRepository();
+    when(() => repo.watchAuthState()).thenAnswer((_) => const Stream.empty());
+    when(() => repo.restoreCachedSession()).thenAnswer((_) async => null);
+    when(() => repo.getCachedSession()).thenAnswer((_) async => null);
+  });
+
+  const loading = AuthLoading(providerId: 'authentik');
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a completed provider sign-in: [AuthLoading(providerId), AuthAuthenticated]',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenAnswer((_) async => ProviderSignInCompleted(testSession()));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [loading, AuthAuthenticated(session: testSession())],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a cancelled one returns to AuthUnauthenticated with no failure',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenAnswer((_) async => const ProviderSignInCancelled());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [loading, const AuthUnauthenticated()],
+  );
+
+  // A web page that leaves for the provider never sees the call complete.
+  blocTest<AuthBloc, AuthBlocState>(
+    'while the call is pending, only the loading state is emitted',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenAnswer((_) => Completer<ProviderSignInOutcome>().future);
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [loading],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a refusal emits AuthFailureProviderSignIn with its reason',
+    build: () {
+      when(() => repo.signInWithProvider(any())).thenThrow(
+        const AuthProviderSignInException(
+          ProviderSignInFailureReason.registrationDisabled,
+          code: 'REGISTRATION_DISABLED',
+        ),
+      );
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [
+      loading,
+      const AuthFailureProviderSignIn(
+        ProviderSignInFailureReason.registrationDisabled,
+      ),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a rate limit carries its wait',
+    build: () {
+      when(() => repo.signInWithProvider(any())).thenThrow(
+        const AuthRateLimitedException(retryAfter: Duration(seconds: 7)),
+      );
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [
+      loading,
+      const AuthFailureProviderSignIn(
+        ProviderSignInFailureReason.rateLimited,
+        retryAfter: Duration(seconds: 7),
+      ),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a network failure gives reason network',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenThrow(const AuthNetworkException(message: 'offline'));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [
+      loading,
+      const AuthFailureProviderSignIn(ProviderSignInFailureReason.network),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'an AuthServerException gives reason generic',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenThrow(const AuthServerException(message: 'boom'));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [
+      loading,
+      const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a superseded attempt lands quietly',
+    build: () {
+      when(() => repo.signInWithProvider(any()))
+          .thenThrow(const AuthSupersededException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
+    expect: () => [loading, const AuthUnauthenticated()],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a second request while one is in flight is dropped',
+    build: () {
+      final gate = Completer<ProviderSignInOutcome>();
+      when(() => repo.signInWithProvider(any())).thenAnswer((_) => gate.future);
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete(const ProviderSignInCancelled());
+      });
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) {
+      b.add(const AuthProviderSignInRequested(kOidcStrategy));
+      b.add(const AuthProviderSignInRequested(kOidcStrategy));
+    },
+    expect: () => [loading],
+    verify: (_) => verify(() => repo.signInWithProvider(any())).called(1),
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a startup session check with a pending failed return emits the provider '
+    'failure, not sessionLost',
+    build: () {
+      when(() => repo.getSession()).thenAnswer((_) async => null);
+      when(() => repo.takeProviderSignInReturn()).thenReturn(
+        const AuthProviderSignInException(
+          ProviderSignInFailureReason.accessDenied,
+        ),
+      );
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthSessionCheckRequested()),
+    expect: () => [
+      const AuthSessionCheckInProgress(),
+      const AuthFailureProviderSignIn(ProviderSignInFailureReason.accessDenied),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'a startup session check without one emits AuthUnauthenticated(sessionLost)',
+    build: () {
+      when(() => repo.getSession()).thenAnswer((_) async => null);
+      when(() => repo.takeProviderSignInReturn()).thenReturn(null);
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(const AuthSessionCheckRequested()),
+    expect: () => [
+      const AuthSessionCheckInProgress(),
+      const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+    ],
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'AuthFailureCleared retires a provider failure',
+    build: () => AuthBloc(authRepository: repo),
+    seed: () =>
+        const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+    act: (b) => b.add(const AuthFailureCleared()),
+    expect: () => [const AuthUnauthenticated()],
+  );
+
+  test('providerSignInAvailability forwards the repository', () {
+    when(() => repo.providerSignInAvailability)
+        .thenReturn(const ProviderSignInUnsupportedDevice());
+    final bloc = AuthBloc(authRepository: repo);
+    addTearDown(bloc.close);
+    expect(
+      bloc.providerSignInAvailability,
+      isA<ProviderSignInUnsupportedDevice>(),
+    );
+  });
+}

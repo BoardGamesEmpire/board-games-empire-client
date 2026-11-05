@@ -114,6 +114,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     );
     on<AuthSignInRequested>(_onSignIn, transformer: droppable());
     on<AuthRegisterRequested>(_onRegister, transformer: droppable());
+    on<AuthProviderSignInRequested>(
+      _onProviderSignIn,
+      transformer: droppable(),
+    );
     on<AuthSignOutRequested>(_onSignOut, transformer: droppable());
     on<AuthRepositoryStateChanged>(_onRepositoryStateChanged);
     on<AuthFailureCleared>(_onFailureCleared);
@@ -241,7 +245,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(
         session != null
             ? AuthAuthenticated(session: session)
-            : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+            : _noSessionState(),
       );
     } on TimeoutException catch (e, s) {
       // Budget expended with restorable material in hand: enter on it.
@@ -262,6 +266,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // splash. The stack rides along for the error log.
       await _emitRestoreOrFailed(emit, e, s);
     }
+  }
+
+  /// What a startup check that found no session lands on (#583).
+  ///
+  /// On web a provider sign-in finishes on a fresh page load, so a refusal
+  /// arrives here as a pending return rather than from the handler.
+  AuthBlocState _noSessionState() {
+    final failure = _authRepository.takeProviderSignInReturn();
+    return failure == null
+        ? const AuthUnauthenticated(cause: SignOutCause.sessionLost)
+        : AuthFailureProviderSignIn(failure.reason, cause: failure);
   }
 
   /// #98: re-check a session entered without server confirmation.
@@ -373,6 +388,52 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(AuthFailureServer(e));
     }
   }
+
+  Future<void> _onProviderSignIn(
+    AuthProviderSignInRequested event,
+    Emitter<AuthBlocState> emit,
+  ) async {
+    emit(AuthLoading(providerId: event.strategy.providerId));
+    try {
+      switch (await _authRepository.signInWithProvider(event.strategy)) {
+        case ProviderSignInCompleted(:final session):
+          emit(AuthAuthenticated(session: session));
+        case ProviderSignInCancelled():
+          // Closing the browser, or stopping a web page from leaving for the
+          // provider, is a cancel, not a failure: no banner. A web page that
+          // does leave never gets here; its sign-in finishes on the next load.
+          emit(const AuthUnauthenticated());
+      }
+    } on AuthSupersededException {
+      // See _onSignIn: the sign-out already won; return quietly.
+      _mirrorUnauthenticated(emit);
+    } on AuthProviderSignInException catch (e) {
+      emit(AuthFailureProviderSignIn(e.reason, cause: e));
+    } on AuthRateLimitedException catch (e) {
+      emit(
+        AuthFailureProviderSignIn(
+          ProviderSignInFailureReason.rateLimited,
+          retryAfter: e.retryAfter,
+        ),
+      );
+    } on AuthNetworkException {
+      emit(
+        const AuthFailureProviderSignIn(ProviderSignInFailureReason.network),
+      );
+    } on AuthException catch (e) {
+      emit(
+        AuthFailureProviderSignIn(
+          ProviderSignInFailureReason.generic,
+          cause: e,
+        ),
+      );
+    }
+  }
+
+  /// Whether provider sign-in can run here (#583). The screen's only way to
+  /// read it.
+  ProviderSignInAvailability get providerSignInAvailability =>
+      _authRepository.providerSignInAvailability;
 
   Future<void> _onSignOut(
     AuthSignOutRequested event,
@@ -603,6 +664,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
         _log.warn(
           'Auth operation failed',
           context: {'event': event, 'failure': next.runtimeType.toString()},
+        );
+      // The cause can hold the returned address, so only the reason (and the
+      // wire code) are logged, never the exception itself (#583).
+      case AuthFailureProviderSignIn(:final reason, :final cause):
+        _log.warn(
+          'Provider sign-in failed',
+          context: {
+            'event': event,
+            'failure': 'AuthFailureProviderSignIn',
+            'reason': reason.name,
+            if (cause is AuthProviderSignInException && cause.code != null)
+              'code': cause.code,
+          },
         );
       // Recoverable too, but nothing else records it: keep the cause.
       case AuthFailureLocalDecode(:final cause):

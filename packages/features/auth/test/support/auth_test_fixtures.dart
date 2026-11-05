@@ -19,6 +19,16 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 
 const _kAuthBase = '/api/auth';
 
+/// A provider sign-in strategy, as the server advertises one (#583).
+const kOidcStrategy = OidcStrategy(
+  providerId: 'authentik',
+  discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
+  displayName: 'Authentik',
+  authorizationEndpoint: '$_kAuthBase/sign-in/social',
+  appSignInEndpoint: '$_kAuthBase/app-sign-in/start',
+  appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
+);
+
 /// A server identity advertising the strategies a suite asks for: email and
 /// password by default, open for sign-up unless [signUpDisabled].
 ServerIdentity testServerIdentity({
@@ -44,15 +54,7 @@ ServerIdentity testServerIdentity({
         signInEndpoint: '$_kAuthBase/sign-in/email',
         signUpEndpoint: signUpDisabled ? null : '$_kAuthBase/sign-up/email',
       ),
-    if (hasOidc)
-      const OidcStrategy(
-        providerId: 'acme-sso',
-        discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
-        displayName: 'Acme SSO',
-        authorizationEndpoint: '$_kAuthBase/sign-in/oauth2',
-        appSignInEndpoint: '$_kAuthBase/app-sign-in/start',
-        appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
-      ),
+    if (hasOidc) kOidcStrategy,
   ],
 );
 
