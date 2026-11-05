@@ -27,9 +27,12 @@ final class EventRow extends Equatable {
   final Event event;
   final EventGroup group;
 
-  /// The confirmed date the row shows: the soonest that hasn't ended for an
-  /// upcoming event, the latest for a past one. Null in planning, where the
-  /// event has none.
+  /// The date the row shows, out of the dates its event counts: the soonest
+  /// that hasn't ended for an upcoming event, the latest for a past or
+  /// archived one. Those are its confirmed dates, or for a cancelled event the
+  /// dates its cancel took away, so a cancelled row shows a cancelled date
+  /// (#502). Null in planning, where the event has none, and for an archived
+  /// event with none.
   final EventOccurrence? date;
 
   /// Whether a planning row's date is being chosen, which is true of a Poll
