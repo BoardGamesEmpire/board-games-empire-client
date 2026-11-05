@@ -86,7 +86,9 @@ class HouseholdMemberActionsBloc
       member,
       HouseholdMemberAction.changeRole,
       send: () => _remote.changeRole(member.householdId, member.id, event.role),
-      cache: _repository.cacheMember,
+      // Over the cached row only: a hydrate may have dropped the member
+      // while the request was out, and an upsert would put them back.
+      cache: (member) => _repository.updateCachedMembers([member]),
     );
   }
 

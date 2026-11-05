@@ -26,11 +26,10 @@ enum HouseholdRosterWrite {
 /// description or settings does not come through here: the caller sends
 /// it to the server, and caches the server's answer with [cacheHousehold]
 /// (#476). Invites go to the server the same way (#455), as do role changes
-/// and removals (#480), whose answers land through [cacheMember] and
-/// [removeCachedMember]. Leaving (#479) and transferring ownership (#478) go
-/// direct too, and their answers land through [removeCachedMember] and
-/// [updateCachedMembers]. Delete (#477) is still to come, and will go direct
-/// too.
+/// and removals (#480), whose answers land through [updateCachedMembers]
+/// and [removeCachedMember]. Leaving (#479) and transferring ownership
+/// (#478) go direct too, and their answers land through the same two.
+/// Delete (#477) is still to come, and will go direct too.
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
 /// [updateCachedMembers], [removeCachedMember], [cacheHouseholdWithRoster])
@@ -51,9 +50,9 @@ enum HouseholdRosterWrite {
 /// page: nothing short of a single-page read licenses the purge.
 ///
 /// This device's own membership changes go straight to the server (#122).
-/// Their answers are written through [cacheMember], [updateCachedMembers]
-/// and [removeCachedMember]. A hydrate that read the roster before such a change
-/// can write the old roster back after it. The caller therefore marks the
+/// Their answers are written through [updateCachedMembers] and
+/// [removeCachedMember]. A hydrate that read the roster before such a
+/// change can write the old roster back after it. The caller therefore marks the
 /// list stale and runs another pass (`refreshAfterMembershipChange`), and
 /// that pass corrects it.
 /// Nothing is queued, so there is no pending window to hold against the two
@@ -269,9 +268,6 @@ abstract class HouseholdRepository {
 
   /// Upserts a [HouseholdMember] from a server response. User-agnostic
   /// by design — the read-side boundary enforces visibility.
-  ///
-  /// Also applies the server's answer to a role change sent from this
-  /// device (#480).
   Future<void> cacheMember(HouseholdMember member);
 
   /// Upserts a batch of members. Same user-agnostic semantics as
@@ -282,12 +278,12 @@ abstract class HouseholdRepository {
   /// the same household, and adds no row, in one transaction. A member with
   /// no cached row is skipped. User-agnostic, like [cacheMember].
   ///
-  /// Applies the server's answer to an ownership transfer sent from this
-  /// device (#478): the new owner and the previous one. A row gone by the
-  /// time the answer lands was taken out after the request went out, by
-  /// the viewer leaving or a removal, and an upsert would put it back.
-  /// Putting back the viewer's own row would bring back a household they
-  /// have left.
+  /// Applies the server's answer to a role change (#480) or an ownership
+  /// transfer (#478) sent from this device: the member whose role changed,
+  /// or the new owner and the previous one. A row gone by the time the
+  /// answer lands was taken out after the request went out, by that member
+  /// leaving or a removal, and an upsert would put it back. Putting back
+  /// the viewer's own row would bring back a household they have left.
   Future<void> updateCachedMembers(List<HouseholdMember> members);
 
   /// Deletes the cached member row for [userId] in [householdId], if there
