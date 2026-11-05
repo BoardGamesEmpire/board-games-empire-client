@@ -2573,6 +2573,115 @@ void main() {
     });
   });
 
+  group('attendance (#667)', () {
+    Map<String, dynamic> attendance({
+      String status = 'Maybe',
+      String? role = 'EventGuest',
+    }) => {
+      'attendeeId': 'a1',
+      'status': status,
+      'role': role,
+      'rsvpDate': null,
+    };
+
+    final maybeGuest = EventAttendance(
+      attendeeId: 'a1',
+      status: EventParticipationStatus.maybe,
+      role: EventRole.guest,
+    );
+
+    test("a list row's attendance is read", () async {
+      final remote = answering(
+        _listBody([_eventRow()..['attendance'] = attendance()]),
+      );
+
+      final page = await remote.fetchEvents();
+
+      expect(page.items.single.attendance, maybeGuest);
+    });
+
+    test("a detail row's attendance is read", () async {
+      final remote = answering(
+        _detailBody(_eventRow(attendees: [])..['attendance'] = attendance()),
+      );
+
+      final snapshot = await remote.fetchEvent('ev_1');
+
+      expect(snapshot.attendance, maybeGuest);
+    });
+
+    test('a null or missing attendance reads as null', () async {
+      final remote = answering(
+        _listBody([_eventRow()..['attendance'] = null, _eventRow(id: 'ev_2')]),
+      );
+
+      final page = await remote.fetchEvents();
+
+      expect(page.items[0].attendance, isNull);
+      expect(page.items[1].attendance, isNull);
+    });
+
+    test(
+      'a null role reads as null, and an unknown status as unknown',
+      () async {
+        final remote = answering(
+          _listBody([
+            _eventRow()
+              ..['attendance'] = attendance(status: 'Sideline', role: null),
+          ]),
+        );
+
+        final read = (await remote.fetchEvents()).items.single.attendance!;
+
+        expect(read.role, isNull);
+        expect(read.status, EventParticipationStatus.unknown);
+      },
+    );
+
+    test('a malformed attendance is a contract breach', () async {
+      for (final bad in <Object>[
+        'yes',
+        {'status': 'Maybe', 'role': null, 'rsvpDate': null},
+      ]) {
+        final list = answering(_listBody([_eventRow()..['attendance'] = bad]));
+        await expectLater(
+          list.fetchEvents(),
+          throwsA(isA<EventRemotePermanentException>()),
+          reason: '$bad on the list',
+        );
+
+        final detail = answering(
+          _detailBody(_eventRow(attendees: [])..['attendance'] = bad),
+        );
+        await expectLater(
+          detail.fetchEvent('ev_1'),
+          throwsA(isA<EventRemotePermanentException>()),
+          reason: '$bad on the detail',
+        );
+      }
+    });
+
+    test('a wrong-typed role is a contract breach', () async {
+      final bad = attendance()..['role'] = 5;
+
+      final list = answering(_listBody([_eventRow()..['attendance'] = bad]));
+      await expectLater(
+        list.fetchEvents(),
+        throwsA(isA<EventRemotePermanentException>()),
+        reason: 'on the list',
+      );
+
+      final detail = answering(
+        _detailBody(_eventRow(attendees: [])..['attendance'] = bad),
+      );
+      await expectLater(
+        detail.fetchEvent('ev_1'),
+        throwsA(isA<EventRemotePermanentException>()),
+        reason: 'on the detail',
+      );
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,

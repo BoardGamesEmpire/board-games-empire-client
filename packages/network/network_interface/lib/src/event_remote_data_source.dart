@@ -53,9 +53,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// which it got:
 ///
 /// - **The list** serves each event with its `occurrences`, always a list, and
-///   its `policy`, an object or null. No row carries a roster, so every
-///   snapshot from [fetchEvents] has `attendees: null`. That says nothing about
-///   who is on the event.
+///   its `policy`, an object or null, and the caller's own `attendance`, an
+///   object or null (#667). No row carries a roster, so every snapshot from
+///   [fetchEvents] has `attendees: null`. That says nothing about who is on the
+///   event.
 /// - **The detail** serves the event with its `occurrences`, `attendees` and
 ///   `policy`. Each of the three is read under its own permission
 ///   (backend#560): a caller who may not read the roster is served
@@ -229,7 +230,7 @@ abstract class EventRemoteDataSource {
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
-  /// roster.
+  /// roster, and the caller's own answer as `attendance`.
   ///
   /// Follow [PaginationMeta.hasMore] to the end of the list, never by inferring
   /// the end from a page shorter than [limit]. [page] is 1-based and [limit] is
@@ -254,7 +255,8 @@ abstract class EventRemoteDataSource {
   /// Upcoming events only: a confirmed date that hasn't ended, not cancelled or
   /// archived. The order is soonest first, then by id, so the first page is the
   /// next few. Rows have the shape of [fetchEvents]' rows, each snapshot with
-  /// `attendees: null`, and no row carries an RSVP because the caller has none.
+  /// `attendees: null`, and `attendance: null` because the caller has no RSVP on
+  /// an event they don't attend.
   ///
   /// [page] is 1-based and [limit] is in `1..maxPageSize`. Failures classify as
   /// [fetchEvents]' do.
