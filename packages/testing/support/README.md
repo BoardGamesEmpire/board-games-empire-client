@@ -49,6 +49,9 @@ against the very bug it is meant to catch.
 | `routingDio(byPathSuffix, permissiveStatus:)` | A different answer per request path |
 | `unreachableDio(type)` | A fresh `Dio` that always fails with no response |
 | `FailingAdapter(type, error:)` | The same failure, installable on a `Dio` you did not construct |
+| `ScriptedServer` | A recording, routable fake transport for root-level tests; it can hold and drop answers |
+| `ScriptedResponse(body, status:, headers:)` | The answer a `ScriptedServer` route returns |
+| `RecordedRequest` | One request as the server saw it: method, path, query, headers, data |
 
 **`permissiveStatus` means the same thing on both** and defaults to `true`:
 Dio hands every status back as a `Response` rather than throwing. Pass `false`

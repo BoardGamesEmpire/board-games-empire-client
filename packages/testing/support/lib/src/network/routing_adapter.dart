@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:bge_test_support/src/network/canned_adapter.dart';
+import 'package:bge_test_support/src/network/route_suffixes.dart';
 import 'package:dio/dio.dart';
 
 /// An [HttpClientAdapter] that answers a canned body and status **per request
@@ -33,14 +34,8 @@ class RoutingAdapter implements HttpClientAdapter {
         'mutually exclusive.',
       );
 
-  static bool _hasSuffixOverlap(Iterable<String> keys) {
-    for (final a in keys) {
-      for (final b in keys) {
-        if (a != b && a.endsWith(b)) return true;
-      }
-    }
-    return false;
-  }
+  static bool _hasSuffixOverlap(Iterable<String> keys) =>
+      keys.any((a) => keys.any((b) => suffixesOverlap(a, b)));
 
   /// Suffix → (body, status).
   ///
