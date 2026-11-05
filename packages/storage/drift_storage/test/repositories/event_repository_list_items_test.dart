@@ -133,7 +133,7 @@ void main() {
 
     final item = (await repo.watchAttendingEventListItems().first).single;
 
-    expect(item.attendance, _me);
+    expect(item.attendance, EventAttendance.fromAttendee(_me));
     // One row per occurrence, not one per occurrence and attendee.
     expect(item.occurrences.map((o) => o.id), ['o-1', 'o-2']);
   });
@@ -158,7 +158,7 @@ void main() {
         (await otherRepo.watchAttendingEventListItems().first).single;
 
     expect(mine.attendance, isNull);
-    expect(theirs.attendance, _other);
+    expect(theirs.attendance, EventAttendance.fromAttendee(_other));
   });
 
   test('a read-only event is left out', () async {
@@ -230,7 +230,7 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(emitted.last.single.attendance, _me);
+      expect(emitted.last.single.attendance, EventAttendance.fromAttendee(_me));
     });
 
     test("when a purge removes this user's attendance", () async {

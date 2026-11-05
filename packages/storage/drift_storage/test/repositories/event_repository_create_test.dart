@@ -151,7 +151,10 @@ void main() {
       expect(item.event.createdById, _kUserA);
       expect(item.event.createdAt, _now);
       expect(item.event.updatedAt, _now);
-      expect(item.attendance?.userId, _kUserA);
+      // The answer is the creator's own row on the local roster.
+      final own = await repo.getCurrentUserAttendance(created.event.id);
+      expect(own?.userId, _kUserA);
+      expect(item.attendance?.attendeeId, own!.id);
       expect(item.attendance?.role, EventRole.host);
       expect(item.attendance?.status, EventParticipationStatus.attending);
     });

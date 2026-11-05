@@ -1132,7 +1132,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               ],
               // The same on every row of the event.
               attendance: switch (eventRows.first.readTableOrNull(mine)) {
-                final row? => _mapAttendee(row),
+                final row? => EventAttendance.fromAttendee(_mapAttendee(row)),
                 null => null,
               },
             ),

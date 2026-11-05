@@ -14,7 +14,7 @@ EventListItem item(
   String? location,
   String? householdId,
   List<EventOccurrence> occurrences = const [],
-  EventAttendee? attendance,
+  EventAttendance? attendance,
 }) {
   final at = createdAt ?? kItemInstant;
   return EventListItem(
@@ -64,3 +64,8 @@ EventAttendee attendance(EventParticipationStatus status) => EventAttendee(
   createdAt: kItemInstant,
   updatedAt: kItemInstant,
 );
+
+/// The current user's own attendance as a list row carries it, answered
+/// [status].
+EventAttendance listAttendance(EventParticipationStatus status) =>
+    EventAttendance.fromAttendee(attendance(status));

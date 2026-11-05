@@ -27,6 +27,7 @@ export 'src/domain/event/availability_response.dart';
 export 'src/domain/event/availability_summary.dart';
 export 'src/domain/event/availability_vote.dart';
 export 'src/domain/event/event.dart';
+export 'src/domain/event/event_attendance.dart';
 export 'src/domain/event/event_attendee.dart';
 export 'src/domain/event/event_detail.dart';
 export 'src/domain/event/event_draft.dart';

@@ -311,7 +311,7 @@ void main() {
   test('rsvp is the attendance status, and null when unknown or absent', () {
     final groups = groupEvents([
       for (final status in EventParticipationStatus.values)
-        item('e-${status.name}', attendance: attendance(status)),
+        item('e-${status.name}', attendance: listAttendance(status)),
       item('e-not-known'),
     ], now: now);
 
@@ -323,6 +323,19 @@ void main() {
       null,
       null,
     ]);
+  });
+
+  test('a declined event stays in its group with Not going', () {
+    final row = only([
+      item(
+        'e-1',
+        occurrences: [confirmed('o-1', at(30, 19))],
+        attendance: listAttendance(EventParticipationStatus.notAttending),
+      ),
+    ]);
+
+    expect(row.group, EventGroup.upcoming);
+    expect(row.rsvp, EventParticipationStatus.notAttending);
   });
 
   group('the groups', () {
