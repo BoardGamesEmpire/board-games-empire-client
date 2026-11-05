@@ -53,6 +53,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(m1);
+    registerFallbackValue(<HouseholdMember>[]);
     registerFallbackValue(HouseholdRole.householdMember);
   });
 
@@ -63,6 +64,9 @@ void main() {
     calls = [];
     when(() => repository.cacheMember(any())).thenAnswer((_) async {
       calls.add('cacheMember');
+    });
+    when(() => repository.cacheMembers(any())).thenAnswer((_) async {
+      calls.add('cacheMembers');
     });
     when(() => repository.removeCachedMember(any(), any()))
         .thenAnswer((invocation) async {
@@ -98,6 +102,73 @@ void main() {
 
   void failRemoval(Object error) =>
       when(() => remote.remove(any(), any())).thenThrow(error);
+
+  group('a transfer', () {
+    final newOwner = _member(
+      id: 'm2',
+      userId: 'u2',
+      role: HouseholdRole.householdOwner,
+    );
+    final previousOwner = _member(role: HouseholdRole.householdAdmin);
+
+    blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+      'a transfer caches both sides and refreshes',
+      setUp: () => when(() => remote.transferOwnership('h1', 'm2')).thenAnswer(
+        (_) async => (owner: newOwner, previousOwner: previousOwner),
+      ),
+      build: build,
+      act: (bloc) => bloc.add(HouseholdMemberOwnershipTransferRequested(m2)),
+      expect: () => [
+        const HouseholdMemberActionsState(busy: {'m2'}),
+        settled(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.done,
+        ),
+      ],
+      verify: (_) {
+        verify(() => repository.cacheMembers([newOwner, previousOwner]))
+            .called(1);
+        expect(calls, ['cacheMembers', 'onChanged']);
+      },
+    );
+
+    blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+      'a transfer answered 404 is gone',
+      setUp: () =>
+          when(() => remote.transferOwnership(any(), any())).thenThrow(_gone),
+      build: build,
+      act: (bloc) => bloc.add(HouseholdMemberOwnershipTransferRequested(m2)),
+      expect: () => [
+        const HouseholdMemberActionsState(busy: {'m2'}),
+        settled(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.gone,
+          error: _gone,
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => repository.cacheMembers(any()));
+        expect(refreshes(), 1);
+      },
+    );
+
+    test('a second transfer for a busy member is dropped', () async {
+      final reply = Completer<HouseholdOwnershipTransfer>();
+      when(() => remote.transferOwnership(any(), any()))
+          .thenAnswer((_) => reply.future);
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      bloc
+        ..add(HouseholdMemberOwnershipTransferRequested(m2))
+        ..add(HouseholdMemberOwnershipTransferRequested(m2));
+      await pumpEventQueue();
+      reply.complete((owner: newOwner, previousOwner: previousOwner));
+      await pumpEventQueue();
+
+      verify(() => remote.transferOwnership(any(), any())).called(1);
+    });
+  });
 
   group('a 200', () {
     late Completer<HouseholdMember> reply;

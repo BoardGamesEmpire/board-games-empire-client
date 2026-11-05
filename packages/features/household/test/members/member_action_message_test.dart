@@ -19,11 +19,6 @@ void main() {
     HouseholdMemberOutcome(action: action, result: result, error: error),
   );
 
-  const roleActions = [
-    HouseholdMemberAction.changeRole,
-    HouseholdMemberAction.makeOwner,
-  ];
-
   group('memberActionMessage', () {
     test('a role change that was done', () {
       expect(
@@ -76,7 +71,10 @@ void main() {
     });
 
     test("a 400 or 409 says the server didn't accept it", () {
-      for (final action in HouseholdMemberAction.values) {
+      for (final action in [
+        HouseholdMemberAction.changeRole,
+        HouseholdMemberAction.remove,
+      ]) {
         for (final status in [400, 409]) {
           expect(
             message(
@@ -128,19 +126,58 @@ void main() {
       }
     });
 
-    test('make-owner reads as a role change until it has its own (#478)', () {
-      for (final action in roleActions) {
-        expect(
-          message(action, HouseholdMemberActionResult.done),
-          'Role changed.',
-          reason: action.name,
-        );
-        expect(
-          message(action, HouseholdMemberActionResult.gone, _refused(404)),
-          'That member is no longer in the household, or it no longer exists.',
-          reason: action.name,
-        );
-      }
+    test('a transfer that was done', () {
+      expect(
+        message(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.done,
+        ),
+        "Ownership handed over. You're now an admin.",
+      );
+    });
+
+    test('a transfer refused 400 says they are already an owner', () {
+      expect(
+        message(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.refused,
+          _refused(400),
+        ),
+        "They're already an owner, or it's you. The household is being read "
+        'again.',
+      );
+    });
+
+    test('a transfer refused 403 or 409 reads as for any other action', () {
+      expect(
+        message(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.refused,
+          _refused(403),
+        ),
+        "You can't do that here any more. Your role in this household may "
+        'have changed.',
+      );
+      expect(
+        message(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.refused,
+          _refused(409),
+        ),
+        "The server didn't accept that change. The household is being read "
+        'again.',
+      );
+    });
+
+    test('a transfer for someone gone', () {
+      expect(
+        message(
+          HouseholdMemberAction.makeOwner,
+          HouseholdMemberActionResult.gone,
+          _refused(404),
+        ),
+        'That member is no longer in the household, or it no longer exists.',
+      );
     });
   });
 }

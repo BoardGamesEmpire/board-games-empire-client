@@ -710,11 +710,11 @@
   },
   "householdMemberGoneRole": "That member is no longer in the household, or it no longer exists.",
   "@householdMemberGoneRole": {
-    "description": "Banner on the household screen when changing a member's role found them no longer in the household, or the household itself deleted. The server's answer does not say which, so the text must name both. The role was not changed, and the household is being read again."
+    "description": "Banner on the household screen when changing a member's role, or making them the owner, found them no longer in the household, or the household itself deleted. The server's answer does not say which, so the text must name both. Their role was not changed and ownership did not move, and the household is being read again."
   },
   "householdMemberErrorRoleChanged": "You can't do that here any more. Your role in this household may have changed.",
   "@householdMemberErrorRoleChanged": {
-    "description": "Banner on the household screen when the server refused a role change or removal as not allowed (403): the user's own role may have changed, for instance on another device. The household is being read again."
+    "description": "Banner on the household screen when the server refused a role change, removal or ownership transfer as not allowed (403): the user's own role may have changed, for instance on another device. The household is being read again."
   },
   "householdMemberErrorRejected": "The server didn't accept that change. The household is being read again.",
   "@householdMemberErrorRejected": {
@@ -744,11 +744,11 @@
   },
   "householdMemberBusy": "Updating this member…",
   "@householdMemberBusy": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, when the app does not know the member's name yet. The button stays focusable but does nothing until the request answers."
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change, removal or ownership transfer for that member is running, when the app does not know the member's name yet. The button stays focusable but does nothing until the request answers."
   },
   "householdMemberBusyFor": "Updating {name}…",
   "@householdMemberBusyFor": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change or removal for that member is running, by the member's display name or username. The button stays focusable but does nothing until the request answers.",
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen while a role change, removal or ownership transfer for that member is running, by the member's display name or username. The button stays focusable but does nothing until the request answers.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -809,6 +809,40 @@
   "householdMemberRemoveConfirm": "Remove",
   "@householdMemberRemoveConfirm": {
     "description": "Confirm button of the remove-member dialog, shown in the error colour. Takes the member out of the household."
+  },
+  "householdMemberMakeOwner": "Make owner",
+  "@householdMemberMakeOwner": {
+    "description": "Item in a member's action menu on the household screen. Hands the household's ownership to that member; the person using it becomes an admin."
+  },
+  "householdMemberMakeOwnerConfirmTitle": "Make {name} the owner?",
+  "@householdMemberMakeOwnerConfirmTitle": {
+    "description": "Title of the dialog asking an owner to confirm handing the household's ownership to a member, by the member's display name or username.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "householdMemberMakeOwnerConfirmTitleUnnamed": "Make this member the owner?",
+  "@householdMemberMakeOwnerConfirmTitleUnnamed": {
+    "description": "Title of the dialog asking to confirm handing the household's ownership to a member, when the app does not know the member's name yet."
+  },
+  "householdMemberMakeOwnerConfirmBody": "You'll stop being an owner and become an admin.",
+  "@householdMemberMakeOwnerConfirmBody": {
+    "description": "Body of the dialog asking to confirm handing the household's ownership to another member: what it does to the person confirming."
+  },
+  "householdMemberMakeOwnerConfirm": "Make owner",
+  "@householdMemberMakeOwnerConfirm": {
+    "description": "Confirm button of the make-owner dialog. Hands the household's ownership to the member."
+  },
+  "householdMemberDoneOwner": "Ownership handed over. You're now an admin.",
+  "@householdMemberDoneOwner": {
+    "description": "Banner on the household screen after an owner handed the household's ownership to another member and the server accepted it."
+  },
+  "householdMemberErrorAlreadyOwner": "They're already an owner, or it's you. The household is being read again.",
+  "@householdMemberErrorAlreadyOwner": {
+    "description": "Banner on the household screen when the server refused an ownership hand-over with 400: the member is already an owner, or is the person asking. The household is being read again."
   },
   "householdMemberDismiss": "Dismiss",
   "@householdMemberDismiss": {

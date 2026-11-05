@@ -9,8 +9,8 @@ import '../permissions/household_actions.dart';
 import 'household_member_actions_event.dart';
 import 'household_member_actions_state.dart';
 
-/// Changes a household member's role, or removes them, from the household
-/// screen (#480).
+/// Changes a household member's role, removes them, or makes them the
+/// owner, from the household screen (#480, #478).
 ///
 /// Each request goes straight to the server, never through the sync queue
 /// (#122): nothing is queued and no row is marked dirty. The answer to a 200
@@ -27,7 +27,7 @@ import 'household_member_actions_state.dart';
 ///
 /// | Answer | Cache | Outcome | Refresh |
 /// |---|---|---|---|
-/// | 200 | the answer written, or the row deleted | done | started |
+/// | 200 | the answer written (both sides, for a transfer), or the row deleted | done | started |
 /// | An enveloped 404 | untouched | gone | started |
 /// | An enveloped 400, 403 or 409 | untouched | refused | started |
 /// | Transient | untouched | failed | none |
@@ -59,6 +59,7 @@ class HouseholdMemberActionsBloc
     // drops only a request for a member who is busy.
     on<HouseholdMemberRoleChangeRequested>(_onRoleChangeRequested);
     on<HouseholdMemberRemovalRequested>(_onRemovalRequested);
+    on<HouseholdMemberOwnershipTransferRequested>(_onTransferRequested);
     on<HouseholdMemberOutcomeDismissed>(_onOutcomeDismissed);
   }
 
@@ -104,14 +105,29 @@ class HouseholdMemberActionsBloc
     );
   }
 
+  Future<void> _onTransferRequested(
+    HouseholdMemberOwnershipTransferRequested event,
+    Emitter<HouseholdMemberActionsState> emit,
+  ) {
+    final member = event.member;
+    return _act(
+      emit,
+      member,
+      HouseholdMemberAction.makeOwner,
+      send: () => _remote.transferOwnership(member.householdId, member.id),
+      cache: (answer) =>
+          _repository.cacheMembers([answer.owner, answer.previousOwner]),
+    );
+  }
+
   /// Runs [action] on [member] and reports how it went, unless [member] is
   /// busy.
-  Future<void> _act(
+  Future<void> _act<T>(
     Emitter<HouseholdMemberActionsState> emit,
     HouseholdMember member,
     HouseholdMemberAction action, {
-    required Future<HouseholdMember> Function() send,
-    required Future<void> Function(HouseholdMember answer) cache,
+    required Future<T> Function() send,
+    required Future<void> Function(T answer) cache,
   }) async {
     final id = member.id;
     // Checked and marked before anything is awaited, so a second request
@@ -122,7 +138,7 @@ class HouseholdMemberActionsBloc
       HouseholdMemberActionsState(busy: Set.unmodifiable({...state.busy, id})),
     );
 
-    final o = await sendMemberRequest<HouseholdMember>(
+    final o = await sendMemberRequest<T>(
       action: action.name,
       send: send,
       cache: cache,
