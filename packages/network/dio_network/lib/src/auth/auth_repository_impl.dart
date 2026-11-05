@@ -757,6 +757,17 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   }
 
   @override
+  Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy) =>
+      throw UnimplementedError('provider sign-in: #583');
+
+  @override
+  ProviderSignInAvailability get providerSignInAvailability =>
+      const ProviderSignInUnsupportedDevice();
+
+  @override
+  AuthProviderSignInException? takeProviderSignInReturn() => null;
+
+  @override
   Stream<AuthState> watchAuthState() {
     return replayThenForward(
       current: () => _currentState,

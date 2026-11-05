@@ -907,6 +907,17 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   Future<AuthResponse?> restoreCachedSession() async => null;
 
   @override
+  Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy) =>
+      throw UnimplementedError('provider sign-in: #583');
+
+  @override
+  ProviderSignInAvailability get providerSignInAvailability =>
+      const ProviderSignInUnsupportedDevice();
+
+  @override
+  AuthProviderSignInException? takeProviderSignInReturn() => null;
+
+  @override
   Stream<AuthState> watchAuthState() {
     return replayThenForward(
       current: () => _currentState,

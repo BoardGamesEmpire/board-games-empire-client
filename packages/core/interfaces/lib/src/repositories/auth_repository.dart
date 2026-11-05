@@ -1,6 +1,8 @@
 import 'package:models/dto.dart';
 import 'package:models/domain.dart';
 
+import 'provider_sign_in.dart';
+
 /// Per-server authentication repository.
 ///
 /// Scoped to a single BGE server. All endpoint URLs are sourced from the
@@ -192,6 +194,50 @@ abstract class AuthRepository {
   /// (web, whose cookie is opaque) return null unconditionally.
   Future<AuthResponse?> restoreCachedSession();
 
+  /// Signs in through the sign-in provider [strategy] names (#583).
+  ///
+  /// Native: opens the provider in an in-app browser tab, checks what the tab
+  /// returns, and exchanges the code for a session at the token endpoint the
+  /// attempt recorded. Completes with [ProviderSignInCompleted], or with
+  /// [ProviderSignInCancelled] when the user closes the tab. A second call
+  /// while a tab is open replaces the first attempt: a late return from the
+  /// first signs nobody in.
+  /// Web: posts to the strategy's authorization endpoint, then navigates the
+  /// page to the URL the server answers with. The sign-in finishes on the
+  /// page that loads when the provider sends the user back, and a failure is
+  /// read there through [takeProviderSignInReturn], so a page that leaves
+  /// never sees this call complete. One the user stops from leaving (Esc, or
+  /// the browser's Stop) is still here a while later, and completes with
+  /// [ProviderSignInCancelled].
+  ///
+  /// Throws [AuthProviderSignInException] when the provider or the server
+  /// refuses, or when a return fails a check; its reason is mapped from the
+  /// error code, never from text. Throws [AuthRateLimitedException] for a 429
+  /// on the token exchange and [AuthNetworkException] for connectivity
+  /// failures.
+  Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy);
+
+  /// Whether this device can sign in through a provider on this server.
+  ///
+  /// Native: [ProviderSignInUnsupportedDevice] when no in-app browser tab
+  /// exists; [ProviderSignInAddressMismatch] when discovery's issuer is not the
+  /// address discovery was fetched from, once both are normalised (scheme and
+  /// host case, default port, trailing slash); otherwise
+  /// [ProviderSignInAvailable].
+  /// Web: runs no address check, because the server handles the cookie flow
+  /// itself. [ProviderSignInAvailable] whenever the page can leave for a
+  /// provider, otherwise [ProviderSignInUnsupportedDevice].
+  ProviderSignInAvailability get providerSignInAvailability;
+
+  /// A failed provider return that arrived with this page load, or null.
+  ///
+  /// Web only: it is present only when this browser tab left the page for a
+  /// provider and came back with an error. Take-once: the first call returns
+  /// it and later calls return null, so a reload or a second reader never
+  /// shows the same failure twice. Native always returns null, since a native
+  /// return reaches [signInWithProvider] directly.
+  AuthProviderSignInException? takeProviderSignInReturn();
+
   /// Stream of auth state changes. Replays current state on subscribe.
   Stream<AuthState> watchAuthState();
 
@@ -368,6 +414,25 @@ final class AuthRateLimitedException extends AuthException {
   /// From `X-Retry-After`; null when the header is missing or isn't a whole
   /// number of seconds.
   final Duration? retryAfter;
+}
+
+/// A sign-in through a sign-in provider was refused (#583).
+///
+/// [reason] is what the screen words; it comes from the wire [code] through
+/// [ProviderSignInFailureReason.forCode], never from any text the provider or
+/// server sent.
+final class AuthProviderSignInException extends AuthException {
+  const AuthProviderSignInException(
+    this.reason, {
+    this.code,
+    super.message = 'The provider sign-in was refused.',
+    super.cause,
+  });
+
+  final ProviderSignInFailureReason reason;
+
+  /// The wire code, for logs only.
+  final String? code;
 }
 
 /// Reads an `X-Retry-After` header as a whole number of seconds, or null when

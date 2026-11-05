@@ -8,5 +8,6 @@ export 'src/services/connectivity_state.dart';
 export 'src/services/device_info_reader.dart';
 export 'src/services/encryption_key_service.dart';
 export 'src/services/push_notification_service.dart';
+export 'src/services/provider_sign_in_browser.dart';
 export 'src/services/push_registrar.dart';
 export 'src/services/version_negotiator.dart';
