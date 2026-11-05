@@ -27,8 +27,9 @@ enum HouseholdRosterWrite {
 /// it to the server, and caches the server's answer with [cacheHousehold]
 /// (#476). Invites go to the server the same way (#455), as do role changes
 /// and removals (#480), whose answers land through [cacheMember] and
-/// [removeCachedMember]. Leave (#479), transfer-ownership (#478) and delete
-/// (#477) are still to come, and will go direct too.
+/// [removeCachedMember]. Leaving (#479) and transferring ownership (#478) go
+/// direct too, and their answers land through [removeCachedMember] and
+/// [cacheMembers]. Delete (#477) is still to come, and will go direct too.
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
 /// [removeCachedMember], [cacheHouseholdWithRoster]) and
@@ -48,10 +49,11 @@ enum HouseholdRosterWrite {
 /// page: nothing short of a single-page read licenses the purge.
 ///
 /// This device's own membership changes go straight to the server (#122).
-/// Their answers are written through [cacheMember] and [removeCachedMember].
-/// A hydrate that read the roster before such a change can write the old
-/// roster back after it. The caller therefore marks the list stale and runs
-/// another pass (`refreshAfterMembershipChange`), and that pass corrects it.
+/// Their answers are written through [cacheMember], [cacheMembers] and
+/// [removeCachedMember]. A hydrate that read the roster before such a change
+/// can write the old roster back after it. The caller therefore marks the
+/// list stale and runs another pass (`refreshAfterMembershipChange`), and
+/// that pass corrects it.
 /// Nothing is queued, so there is no pending window to hold against the two
 /// writers above.
 ///

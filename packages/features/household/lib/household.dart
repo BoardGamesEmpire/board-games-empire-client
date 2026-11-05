@@ -36,6 +36,7 @@ export 'src/bloc/sent_invites_state.dart';
 export 'src/invites/invite_expiry_line.dart';
 export 'src/invites/invite_refusal_message.dart';
 export 'src/invites/sent_invite_filter.dart';
+export 'src/members/leave_message.dart';
 export 'src/members/member_action_message.dart';
 export 'src/members/send_member_request.dart' show MemberRequestOutcome;
 export 'src/permissions/household_actions.dart';
