@@ -531,15 +531,70 @@ class EventAttendeesSection extends StatelessWidget {
         null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
         [] => [_Note(l10n.eventsDetailAttendeesHidden)],
         final attendees => [
-          for (final attendee in attendees) _AttendeeEntry(attendee: attendee),
+          for (final status in _groupOrder)
+            if (attendees.any((attendee) => attendee.status == status))
+              _AttendeeGroup(
+                status: status,
+                attendees: [
+                  for (final attendee in attendees)
+                    if (attendee.status == status) attendee,
+                ],
+              ),
         ],
       },
     );
   }
 }
 
-/// One person on the roster, with their role and their answer, as one
-/// semantics node.
+/// The order the groups come in. A status this client doesn't know goes last.
+const _groupOrder = [
+  EventParticipationStatus.attending,
+  EventParticipationStatus.maybe,
+  EventParticipationStatus.invited,
+  EventParticipationStatus.notAttending,
+  EventParticipationStatus.unknown,
+];
+
+/// The people who gave one answer: a heading with their count, over their
+/// rows in the roster's order.
+class _AttendeeGroup extends StatelessWidget {
+  const _AttendeeGroup({required this.status, required this.attendees});
+
+  final EventParticipationStatus status;
+  final List<EventAttendee> attendees;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final count = attendees.length;
+    final heading = switch (status) {
+      EventParticipationStatus.attending => l10n.eventsAttendeesGoing(count),
+      EventParticipationStatus.maybe => l10n.eventsAttendeesMaybe(count),
+      EventParticipationStatus.invited => l10n.eventsAttendeesNotAnswered(
+        count,
+      ),
+      EventParticipationStatus.notAttending => l10n.eventsAttendeesNotGoing(
+        count,
+      ),
+      EventParticipationStatus.unknown => l10n.eventsAttendeesOther(count),
+    };
+
+    return Column(
+      key: EventDetailScreen.attendeeGroupKey(status),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(heading, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        for (final attendee in attendees) _AttendeeEntry(attendee: attendee),
+      ],
+    );
+  }
+}
+
+/// One person on the roster, with their role and their answer and, under
+/// them, the note they left, as one semantics node.
 class _AttendeeEntry extends StatelessWidget {
   const _AttendeeEntry({required this.attendee});
 
@@ -551,11 +606,14 @@ class _AttendeeEntry extends StatelessWidget {
     final theme = Theme.of(context);
     final name = attendee.name;
     final role = attendee.role;
+    final note = attendee.notes;
     final details = [
       if (role != null) ?eventRoleLabel(l10n, role),
       ?eventRsvpLabel(l10n, attendee.status),
     ];
-    if (name == null && details.isEmpty) return const SizedBox.shrink();
+    if (name == null && details.isEmpty && note == null) {
+      return const SizedBox.shrink();
+    }
 
     return _Entry(
       children: [
@@ -566,6 +624,7 @@ class _AttendeeEntry extends StatelessWidget {
             semanticsLabel: details.join(l10n.eventsDetailSpokenSeparator),
             style: _quiet(theme),
           ),
+        if (note != null && note.isNotEmpty) Text(note, style: _quiet(theme)),
       ],
     );
   }

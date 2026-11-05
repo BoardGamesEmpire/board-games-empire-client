@@ -197,6 +197,11 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the who's-coming section.
   static const Key attendeesKey = Key('event_detail.attendees');
 
+  /// Key on one answer's group of the who's-coming section (#508). A status
+  /// this client doesn't know keys the Other answers group.
+  static Key attendeeGroupKey(EventParticipationStatus status) =>
+      Key('event_detail.attendees_${status.name}');
+
   /// Key on the games section.
   static const Key gamesKey = Key('event_detail.games');
 

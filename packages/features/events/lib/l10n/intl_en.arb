@@ -188,6 +188,56 @@
   "@eventsDetailAttendees": {
     "description": "Heading of the section of an event's screen listing the people invited to it, each with their role and their answer."
   },
+  "eventsAttendeesGoing": "Going ({count})",
+  "@eventsAttendeesGoing": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Going, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesMaybe": "Maybe ({count})",
+  "@eventsAttendeesMaybe": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Maybe, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesNotAnswered": "Not answered ({count})",
+  "@eventsAttendeesNotAnswered": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who were invited and have not answered yet, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesNotGoing": "Not going ({count})",
+  "@eventsAttendeesNotGoing": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Not going, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesOther": "Other answers ({count})",
+  "@eventsAttendeesOther": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people whose answer this version of the app does not recognise, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {
     "description": "Heading of the section of an event's screen that will list the games planned for it."
