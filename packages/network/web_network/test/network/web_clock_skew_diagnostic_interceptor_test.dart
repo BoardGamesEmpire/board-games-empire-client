@@ -12,7 +12,7 @@ import '../support/scripted_adapter.dart';
 void main() {
   // Deliberately a literal IMF-fixdate rather than `HttpDate.format`: this
   // suite stays `dart:io`-free, so it could run in a browser as it stands
-  // (#369).
+  // (#731).
   const readableDate = 'Wed, 10 Sep 2026 12:00:00 GMT';
 
   late List<LogRecord> records;

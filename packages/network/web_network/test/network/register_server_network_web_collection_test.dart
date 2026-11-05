@@ -53,7 +53,7 @@ String _listBody() => jsonEncode({
 /// Like the household suite next door, these run on the VM and replace the
 /// transport, so they prove the *registered* remote over the *registered* Dio
 /// classifies as the contract says. They say nothing about browser-specific
-/// failure shapes; #369 owns that gap.
+/// failure shapes; #731 owns that gap.
 void main() {
   late DependencyContainerImpl container;
 
