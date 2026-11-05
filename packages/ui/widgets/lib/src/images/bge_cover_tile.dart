@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../focus/bge_focus_ring.dart';
+import 'bge_stack_marker.dart';
 import 'bge_thumbnail.dart';
 
 /// A game's cover alone, as one tappable tile (#707).
@@ -49,6 +50,7 @@ class BgeCoverTile extends StatefulWidget {
     required this.label,
     this.imageUrl,
     this.onTap,
+    this.stackCount,
     this.extent = shelfExtent,
     this.placeholderIcon = Icons.casino_outlined,
     super.key,
@@ -64,6 +66,13 @@ class BgeCoverTile extends StatefulWidget {
   final String? imageUrl;
 
   final VoidCallback? onTap;
+
+  /// How many entries the cover stands for, when more than one (#709).
+  ///
+  /// Draws a [BgeStackMarker] around the picture alone: the tile stays one
+  /// tap target with the ink and ring over the whole of it, and [label] is
+  /// where the count is spoken.
+  final int? stackCount;
 
   /// The side of the tile, or null to fill the incoming width, which must
   /// then be bounded.
@@ -137,6 +146,12 @@ class _BgeCoverTileState extends State<BgeCoverTile> {
   @override
   Widget build(BuildContext context) {
     final onTap = widget.onTap;
+    final stackCount = widget.stackCount;
+    BgeThumbnail thumbnail(double extent) => BgeThumbnail(
+      url: widget.imageUrl,
+      extent: extent,
+      placeholderIcon: widget.placeholderIcon,
+    );
     final radius = BorderRadius.circular(BgeTokens.of(context).radiusSm);
 
     // MergeSemantics so that the label and the ink's tap and focus are one
@@ -160,11 +175,15 @@ class _BgeCoverTileState extends State<BgeCoverTile> {
                 child: Stack(
                   children: [
                     ExcludeSemantics(
-                      child: BgeThumbnail(
-                        url: widget.imageUrl,
-                        extent: side,
-                        placeholderIcon: widget.placeholderIcon,
-                      ),
+                      child: stackCount == null
+                          ? thumbnail(side)
+                          : BgeStackMarker(
+                              count: stackCount,
+                              // The marker adds its offsets to the picture.
+                              child: thumbnail(
+                                side - BgeStackMarker.reachOf(context),
+                              ),
+                            ),
                     ),
                     Positioned.fill(
                       child: Material(

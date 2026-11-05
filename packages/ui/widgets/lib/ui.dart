@@ -60,6 +60,7 @@ export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/images/bge_cover_tile.dart';
+export 'src/images/bge_stack_marker.dart';
 export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_keyed_sliver_grid.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
