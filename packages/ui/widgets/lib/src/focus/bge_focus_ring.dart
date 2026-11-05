@@ -16,17 +16,28 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// appears and goes at once rather than fading: a focus ring that lags the
 /// focus is no help, and this way it needs nothing from the motion settings.
 /// The content keeps its element as the ring comes and goes.
+///
+/// A mouse or a trackpad leaves the highlight mode as it was, which on a
+/// desktop is the keyboard's, so a control that takes focus from a click would
+/// be ringed by it. Such a control hides the ring with [suppressed] while its
+/// focus is a pointer's (#707).
 class BgeFocusRing extends StatefulWidget {
   /// Creates a ring with the corners of [borderRadius] around what [builder]
   /// builds.
   const BgeFocusRing({
     required this.borderRadius,
     required this.builder,
+    this.suppressed = false,
     super.key,
   });
 
   /// The ring's corners, the same as the content's.
   final BorderRadius borderRadius;
+
+  /// Hides the ring whatever the focus and the highlight mode, for focus the
+  /// caller knows a pointer gave. The ring follows the focus again as soon as
+  /// this is false.
+  final bool suppressed;
 
   /// Builds the content, given the `onFocusChange` for its control.
   final Widget Function(BuildContext context, ValueChanged<bool> onFocusChange)
@@ -69,7 +80,7 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     position: DecorationPosition.foreground,
-    decoration: _showRing
+    decoration: _showRing && !widget.suppressed
         ? BoxDecoration(
             borderRadius: widget.borderRadius,
             border: Border.all(

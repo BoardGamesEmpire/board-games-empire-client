@@ -8,7 +8,6 @@ import 'package:ui/ui.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
-import 'game_cover_tile.dart';
 import 'shelf_loading.dart';
 import 'something_to_play_cubit.dart';
 
@@ -138,10 +137,10 @@ class _Section extends StatelessWidget {
             resetToken: draw,
             children: [
               for (final game in games)
-                GameCoverTile(
+                BgeCoverTile(
                   key: SomethingToPlaySection.coverKey(game.id),
-                  title: game.title,
-                  thumbnailUrl: game.thumbnail,
+                  label: game.title,
+                  imageUrl: game.thumbnail,
                   onTap: onOpen == null ? null : () => onOpen(context, game.id),
                 ),
             ],

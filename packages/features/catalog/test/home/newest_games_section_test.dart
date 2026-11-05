@@ -102,6 +102,7 @@ void main() {
   testWidgets('shows the heading, the covers in order, and See all', (
     tester,
   ) async {
+    final handle = tester.ensureSemantics();
     remote.onFetchPage = (_, _) async => pageOf(_newest(3));
 
     await show(tester);
@@ -111,8 +112,10 @@ void main() {
       tester.widget<Text>(find.byKey(NewestGamesSection.headingKey)).data,
       'Recently added',
     );
-    expect(find.text('Game g-0'), findsOneWidget);
-    expect(find.text('Game g-2'), findsOneWidget);
+    // The cover is the tile, and the title is its name, not drawn text.
+    expect(find.bySemanticsLabel('Game g-0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Game g-2'), findsOneWidget);
+    expect(find.text('Game g-0'), findsNothing);
     expect(
       tester.getTopLeft(cover(0)).dx,
       lessThan(tester.getTopLeft(cover(1)).dx),
@@ -128,6 +131,7 @@ void main() {
       ),
       findsOneWidget,
     );
+    handle.dispose();
   });
 
   testWidgets('See all calls onSeeAll, and speaks "See all recently added '

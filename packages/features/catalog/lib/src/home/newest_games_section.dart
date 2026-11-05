@@ -9,7 +9,6 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
 import 'empty_server_card.dart';
-import 'game_cover_tile.dart';
 import 'newest_games_cubit.dart';
 import 'shelf_loading.dart';
 
@@ -240,10 +239,10 @@ class _SectionState extends State<_Section> {
             context,
             children: [
               for (final game in games)
-                GameCoverTile(
+                BgeCoverTile(
                   key: NewestGamesSection.coverKey(game.id),
-                  title: game.title,
-                  thumbnailUrl: game.thumbnail,
+                  label: game.title,
+                  imageUrl: game.thumbnail,
                   onTap: onOpen == null ? null : () => onOpen(context, game.id),
                 ),
             ],

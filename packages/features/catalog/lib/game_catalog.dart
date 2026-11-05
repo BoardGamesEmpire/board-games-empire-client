@@ -12,7 +12,6 @@ export 'src/bloc/game_detail_state.dart';
 export 'src/bloc/game_import_bloc.dart';
 export 'src/bloc/game_import_event.dart';
 export 'src/bloc/game_import_state.dart';
-export 'src/home/game_cover_tile.dart';
 export 'src/home/newest_games_cubit.dart';
 export 'src/home/newest_games_section.dart';
 export 'src/home/something_to_play_cubit.dart';

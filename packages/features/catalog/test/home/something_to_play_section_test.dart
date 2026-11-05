@@ -122,6 +122,7 @@ void main() {
   }
 
   testWidgets('heading, covers, Reshuffle', (tester) async {
+    final handle = tester.ensureSemantics();
     poolHolds(['g-1', 'g-2']);
 
     await show(tester);
@@ -132,12 +133,15 @@ void main() {
     );
     expect(cover('g-1'), findsOneWidget);
     expect(cover('g-2'), findsOneWidget);
-    expect(find.text('Game g-1'), findsOneWidget);
+    // The cover is the tile, and the title is its name, not drawn text.
+    expect(find.bySemanticsLabel('Game g-1'), findsOneWidget);
+    expect(find.text('Game g-1'), findsNothing);
     expect(
       find.descendant(of: reshuffle, matching: find.text('Reshuffle')),
       findsOneWidget,
     );
     expect(find.byKey(SomethingToPlaySection.loadingKey), findsNothing);
+    handle.dispose();
   });
 
   testWidgets('a spinner under the heading while the first draw runs, and no '
@@ -411,7 +415,7 @@ void main() {
       await tester.pump();
       expect(
         FocusManager.instance.primaryFocus!.context!
-            .findAncestorWidgetOfExactType<GameCoverTile>()
+            .findAncestorWidgetOfExactType<BgeCoverTile>()
             ?.key,
         SomethingToPlaySection.coverKey('g-1'),
       );

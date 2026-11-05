@@ -16,8 +16,8 @@
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
-/// cards on them (#669), `BgeRefreshBanner` by the 7 stale-data banners, on
-/// 3 lists, 2 detail screens, the home events section and the catalog's
+/// cards on them (#669), `BgeCoverTile` by the home shelves' covers (#707),
+/// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail screens, the home events section and the catalog's
 /// from-cache screens (#573, #607), `BgeInertButton` by the 4 buttons that
 /// keep focus while they can do nothing (#607), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
@@ -51,6 +51,7 @@ export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_cover_tile.dart';
 export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_page.dart';
