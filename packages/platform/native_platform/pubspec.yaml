@@ -58,6 +58,13 @@ dependencies:
   logging: ^1.3.0
 
 dev_dependencies:
+  # `ScriptedServer`, the transport the root harness answers through (#435).
+  bge_test_support:
+    path: ../../testing/support
+  # Swaps the adapter under each server scope's real Dio (#435).
+  dio: ^5.11.0
+  # Fakes the keychain the real token storage reads (#435).
+  flutter_secure_storage: ^11.0.0
   flutter_test:
     sdk: flutter
   mocktail: ^1.0.5
