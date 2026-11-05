@@ -291,6 +291,24 @@ void main() {
       );
     });
 
+    testWidgets('a server that lists no providers now shows a provider '
+        'failure on the email form, the only surface left', (tester) async {
+      await pumpScreen(tester, identity: testServerIdentity());
+      states.add(
+        const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+      );
+      await tester.pumpAndSettle();
+
+      expect(_banner, findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(AuthScreen.failureBannerKey),
+          matching: find.text(_genericCopy),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an email-form failure stays on the form, not over the '
         'providers', (tester) async {
       await pumpScreen(tester);

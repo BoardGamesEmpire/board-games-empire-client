@@ -319,9 +319,12 @@ class _AuthScreenState extends State<AuthScreen> {
     // Apart from a provider sign-in's, every operation failure answers
     // sign-in or register, so the form that is showing is the one whose
     // submit it answers. A provider sign-in's failure is the provider
-    // section's: exactly one surface shows a given failure (#583).
+    // section's: exactly one surface shows a given failure (#583). Where the
+    // server lists no providers there is no such section, so the form shows
+    // it. A web page that comes back with a refusal from a provider the
+    // server has since dropped still says why.
     BgeFormFailure? failureTitled(String title) => switch (state) {
-      AuthFailureProviderSignIn() => null,
+      AuthFailureProviderSignIn() when widget.identity.hasOidc => null,
       final AuthOperationFailure kind => BgeFormFailure(
         key: AuthScreen.failureBannerKey,
         // Titled because some of the messages give only a cause: "Could not
