@@ -334,7 +334,7 @@ void main() {
   });
 
   // Newest games reads the server and leaves the cache as it was, so its row
-  // can be newer than the cached copy, and is never older.
+  // can be newer than the cached copy.
   testWidgets('offline with a full seed keeps the seed over an older cached '
       'copy', (tester) async {
     remote.onFetchGame = (_) async => throw unreachable();
@@ -356,6 +356,37 @@ void main() {
     expect(factsShown(tester), wingspanFacts);
     expect(find.text('Published 2016'), findsOneWidget);
     expect(find.textContaining('wildlife preserves'), findsOneWidget);
+  });
+
+  // A quick look's read caches the game, while the list it was opened from
+  // keeps the row it read before, so reopened offline the cache is newer.
+  testWidgets('offline with a full seed shows a newer cached copy over it', (
+    tester,
+  ) async {
+    remote.onFetchGame = (_) async => throw unreachable();
+    final newer = Game(
+      id: 'g_wingspan',
+      title: 'Wingspan (second edition)',
+      publishYear: 2019,
+      minPlayers: 1,
+      maxPlayers: 5,
+      minPlayTime: 40,
+      maxPlayTime: 55,
+      minAge: 10,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2027),
+    );
+    await open(
+      tester,
+      GameQuickLookSeed.fromGame(wingspan),
+      cache: FakeGamesCache([newer]),
+    );
+
+    expect(find.byKey(GameQuickLook.partialKey), findsOneWidget);
+    expect(find.text('Wingspan (second edition)'), findsOneWidget);
+    expect(factsShown(tester), '1–5 players · 40–55 min · Ages 10+');
+    expect(find.text('Published 2019'), findsOneWidget);
+    expect(find.textContaining('wildlife preserves'), findsNothing);
   });
 
   testWidgets('a retry keeps what is shown, and its button keeps focus, '

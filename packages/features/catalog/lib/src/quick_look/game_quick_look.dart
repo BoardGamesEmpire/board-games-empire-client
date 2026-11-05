@@ -295,11 +295,17 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
     final tokens = BgeTokens.of(context);
     final seed = widget.seed;
     final ready = answer is GameDetailReady ? answer : null;
-    // A cached copy is never newer than a full seed, which came from the
-    // server or from that same cache, so the seed's row stays. The cache
-    // still brings the platforms.
+    // Offline, the newer of a full seed and the cached copy. Either can be
+    // ahead: newest games reads the server and leaves the cache as it was,
+    // and a quick look's read caches a newer row than the list it was
+    // opened from still holds. A tie keeps the seed, the row tapped.
     final game = switch (ready) {
-      GameDetailReady(fromCache: true) => seed.game ?? ready.game,
+      GameDetailReady(fromCache: true, game: final cached) =>
+        switch (seed.game) {
+          final seeded? when !seeded.updatedAt.isBefore(cached.updatedAt) =>
+            seeded,
+          _ => cached,
+        },
       _ => ready?.game ?? seed.game,
     };
     final platformGames = ready?.platformGames ?? const <PlatformGame>[];
