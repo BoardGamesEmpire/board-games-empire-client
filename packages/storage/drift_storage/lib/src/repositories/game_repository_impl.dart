@@ -576,6 +576,10 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     gameId: row.gameId,
     platformId: row.platformId,
     platformName: row.platformName,
+    platformType: switch (row.platformType) {
+      final String type => PlatformType.fromWire(type),
+      null => null,
+    },
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
     minPlayTime: row.minPlayTime,
@@ -601,6 +605,14 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     gameId: pg.gameId,
     platformId: pg.platformId,
     platformName: pg.platformName,
+    platformType: Value(switch (pg.platformType) {
+      final PlatformType type => storedEnumName(
+        type,
+        PlatformType.unknown,
+        (v) => v.toWire(),
+      ),
+      null => null,
+    }),
     minPlayers: Value(pg.minPlayers),
     maxPlayers: Value(pg.maxPlayers),
     minPlayTime: Value(pg.minPlayTime),

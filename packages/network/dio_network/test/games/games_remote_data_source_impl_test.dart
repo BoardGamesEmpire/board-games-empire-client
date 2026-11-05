@@ -643,11 +643,41 @@ void main() {
           gameId: 'g_catan',
           platformId: 'plat_tabletop',
           platformName: 'Tabletop',
+          platformType: PlatformType.tabletop,
           minPlayers: 3,
           supportsSolo: true,
           createdAt: DateTime.utc(2026, 1, 2, 3, 4, 5),
           updatedAt: DateTime.utc(2026, 2, 3, 4, 5, 6),
         ),
+      ]);
+    });
+
+    test('reads each platform game\'s type', () async {
+      Map<String, dynamic> withPlatform(String id, Map<String, dynamic> p) => {
+        ..._platformGameRow(id: id),
+        'platform': {'id': 'plat_$id', 'name': 'P', ...p},
+      };
+
+      final remote = answering(
+        jsonEncode({
+          'game': _detailRow(
+            platformGames: [
+              withPlatform('pg_a', {'platformType': 'Tabletop'}),
+              withPlatform('pg_b', {'platformType': 'Hovercraft'}),
+              withPlatform('pg_c', {}),
+              withPlatform('pg_d', {'platformType': 7}),
+            ],
+          ),
+        }),
+      );
+
+      final read = await remote.fetchGame('g_catan');
+
+      expect(read.platformGames.map((pg) => pg.platformType), [
+        PlatformType.tabletop,
+        PlatformType.unknown,
+        null,
+        null,
       ]);
     });
 

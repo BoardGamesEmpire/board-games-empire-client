@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'platform_type.dart';
+
 part 'platform_game.freezed.dart';
 part 'platform_game.g.dart';
 
@@ -17,6 +19,11 @@ abstract class PlatformGame with _$PlatformGame {
 
     required String platformId,
     required String platformName,
+
+    /// What kind of platform this is. Null means not known: no type was
+    /// stored, or the server did not send one. [PlatformType.unknown] is a
+    /// type this client cannot read.
+    PlatformType? platformType,
 
     // Platform-specific overrides — null means use parent Game value
     int? minPlayers,

@@ -56,7 +56,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **15**.
+/// `schemaVersion` is **16**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -149,6 +149,10 @@ part 'server_database.g.dart';
 ///   row. Additive: four `addColumn` calls, no table rebuilt. A row cached
 ///   before it holds null for all four, which the list reads as no answer
 ///   kept, falling back to the user's row on a cached roster.
+/// - **v15 → v16 (#708):** adds a nullable `platform_games.platform_type`,
+///   the platform's type, so the game screen can tell which platforms a
+///   game is on by kind. Additive: one `addColumn` call, no table rebuilt. A
+///   row cached before it holds null, which the screen reads as not known.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -165,7 +169,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v15.json`, and
+/// `drift_schemas/server/drift_schema_v16.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -212,7 +216,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -412,6 +416,13 @@ class ServerDatabase extends _$ServerDatabase {
         await m.addColumn(eventAccessTable, eventAccessTable.attendanceStatus);
         await m.addColumn(eventAccessTable, eventAccessTable.attendanceRole);
         await m.addColumn(eventAccessTable, eventAccessTable.rsvpDate);
+      }
+      if (from < 16 && to >= 16) {
+        // v15 → v16 (#708): the platform's type. Additive and nullable: a
+        // platform row cached before it holds null until the next hydrate
+        // writes it, and the screen reads null as not known, so there is
+        // nothing to backfill.
+        await m.addColumn(platformGamesTable, platformGamesTable.platformType);
       }
     },
   );

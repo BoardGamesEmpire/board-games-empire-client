@@ -20,6 +20,7 @@ import 'generated/schema_v12.dart' as v12;
 import 'generated/schema_v13.dart' as v13;
 import 'generated/schema_v14.dart' as v14;
 import 'generated/schema_v15.dart' as v15;
+import 'generated/schema_v16.dart' as v16;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1391,4 +1392,76 @@ void main() {
       },
     );
   });
+
+  // Data-integrity coverage for v15 → v16 (#708): the step adds a nullable
+  // `platform_games.platform_type`, the platform's type. A platform row cached
+  // before it must come through with every other column unchanged and read
+  // the new one as null, which the screen reads as not known.
+  test(
+    'v15 → v16 adds platform_games.platform_type, rows keep their data',
+    () async {
+      const at = '2024-01-15T10:30:00.000Z';
+      const cachedAt = '2024-02-01T08:00:00.000Z';
+
+      await verifier.testWithDataIntegrity(
+        oldVersion: 15,
+        newVersion: 16,
+        createOld: v15.DatabaseAtV15.new,
+        createNew: v16.DatabaseAtV16.new,
+        openTestedDatabase: ServerDatabase.new,
+        createItems: (batch, oldDb) {
+          batch.insert(
+            oldDb.platformGames,
+            const v15.PlatformGamesData(
+              id: 'pg_v15_1',
+              gameId: 'g_v15_1',
+              platformId: 'plat_tabletop',
+              platformName: 'Tabletop',
+              minPlayers: 2,
+              maxPlayers: 4,
+              minPlayTime: 45,
+              maxPlayTime: 90,
+              image: 'https://example.test/pg.png',
+              thumbnail: 'https://example.test/pg_t.png',
+              supportsSolo: 1,
+              supportsLocal: 1,
+              supportsOnline: 0,
+              hasAsyncPlay: 0,
+              hasRealtime: 0,
+              hasTutorial: 1,
+              createdAt: at,
+              updatedAt: at,
+              fullRecordCachedAt: cachedAt,
+            ),
+          );
+        },
+        validateItems: (newDb) async {
+          expect(await newDb.select(newDb.platformGames).get(), const [
+            v16.PlatformGamesData(
+              id: 'pg_v15_1',
+              gameId: 'g_v15_1',
+              platformId: 'plat_tabletop',
+              platformName: 'Tabletop',
+              platformType: null,
+              minPlayers: 2,
+              maxPlayers: 4,
+              minPlayTime: 45,
+              maxPlayTime: 90,
+              image: 'https://example.test/pg.png',
+              thumbnail: 'https://example.test/pg_t.png',
+              supportsSolo: 1,
+              supportsLocal: 1,
+              supportsOnline: 0,
+              hasAsyncPlay: 0,
+              hasRealtime: 0,
+              hasTutorial: 1,
+              createdAt: at,
+              updatedAt: at,
+              fullRecordCachedAt: cachedAt,
+            ),
+          ]);
+        },
+      );
+    },
+  );
 }

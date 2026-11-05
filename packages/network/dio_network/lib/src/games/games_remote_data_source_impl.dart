@@ -349,9 +349,10 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// A row missing what a [PlatformGame] requires (its id, its game's, its
   /// platform's id and name, and both timestamps) is skipped rather than
   /// failing the game it came with: the game is what the detail screen is
-  /// for. The platform's abbreviation and type are not kept, because the
-  /// record has no field for them. A server older than backend#791 sends no
-  /// list, which reads as none.
+  /// for. The platform's type is kept (an absent one reads as none, one this
+  /// client does not know as [PlatformType.unknown]); its abbreviation still
+  /// is not, because the record has no field for it. A server older than
+  /// backend#791 sends no list, which reads as none.
   static List<PlatformGame> _mapPlatformGames(Map<String, dynamic> row) {
     final rows = row['platformGames'];
     if (rows is! List) return const [];
@@ -363,10 +364,12 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
           'gameId': final String gameId,
           'createdAt': final String createdAt,
           'updatedAt': final String updatedAt,
-          'platform': {
-            'id': final String platformId,
-            'name': final String platformName,
-          },
+          'platform':
+              {
+                'id': final String platformId,
+                'name': final String platformName,
+              } &&
+              final Map<String, dynamic> platform,
         })
           if ((DateTime.tryParse(createdAt), DateTime.tryParse(updatedAt))
               case (final DateTime created, final DateTime updated))
@@ -375,6 +378,10 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
               gameId: gameId,
               platformId: platformId,
               platformName: platformName,
+              platformType: switch (platform['platformType']) {
+                final String type => PlatformType.fromWire(type),
+                _ => null,
+              },
               minPlayers: entry['minPlayers'] as int?,
               maxPlayers: entry['maxPlayers'] as int?,
               minPlayTime: entry['minPlayTime'] as int?,
