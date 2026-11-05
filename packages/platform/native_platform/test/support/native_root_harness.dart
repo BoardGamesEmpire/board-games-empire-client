@@ -16,6 +16,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
+import 'package:sync_queue/sync_queue.dart';
 
 /// Boots the real native composition root, [NativePlatformBootstrap], with
 /// only its external boundaries faked (#435), so a test can assert what the
@@ -339,6 +340,29 @@ class NativeRootHarness {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
   }
+
+  /// Joins the user tier's [SyncQueueDrain] pass in flight, or runs one, and
+  /// returns when that pass completes. Throws a [TimeoutException] after
+  /// [timeout].
+  ///
+  /// The drain joins a pass in flight, so this waits out the pass the user
+  /// tier starts at activation, which runs after [activateUser] returns and
+  /// which no status reports. With none in flight it runs one, which sends
+  /// whatever is queued.
+  ///
+  /// A test waits on this before it queues an op that it means a later pass
+  /// to find, since a pass already in flight may or may not read it, and
+  /// before it asserts what a pass did not send. It cannot show that the
+  /// root started a pass of its own, since it runs one where none is.
+  Future<void> joinOrRunDrainPass({
+    Duration timeout = const Duration(seconds: 10),
+  }) => container.get<SyncQueueDrain>().drain().timeout(
+    timeout,
+    onTimeout: () => throw TimeoutException(
+      'The sync drain still had a pass in flight',
+      timeout,
+    ),
+  );
 
   /// Disposes the bootstrap, closing every scope and database, as the
   /// process ending does. The files and the keychain stay for the next
