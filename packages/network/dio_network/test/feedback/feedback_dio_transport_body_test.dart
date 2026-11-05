@@ -8,7 +8,7 @@
 // `BaseOptions` already defaults to json (`options.dart:153`). So Dio decoded
 // the body anyway, and a `FormatException` escaped as
 // `DioException(type: unknown)` with **no response attached**: the status was
-// gone before `_classifyDioException` could read it, and a permanent rejection
+// gone before the classifier could read it, and a permanent rejection
 // classified transient and retried forever.
 //
 // Content type is not a promise about content. Every case below serves a body
