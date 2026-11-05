@@ -207,10 +207,11 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// layout should become a different one: a navigation rail, or a list with
   /// its detail beside it.
   ///
-  /// Nothing reads the breakpoints yet: the home page stopped setting its
-  /// events and stats sections side by side (#669). The first readers are
-  /// expected to be the navigation shell (#414) and the first two-pane layout
-  /// (#46).
+  /// Two things read the breakpoints so far: `showBgePopup`, which opens a
+  /// sheet below [breakpointMedium] and a dialog from there up, and
+  /// `bgeGridColumns` (#707, #710). The home page stopped setting its events
+  /// and stats sections side by side (#669); the next readers are expected to
+  /// be the navigation shell (#414) and the first two-pane layout (#46).
   final double breakpointExpanded;
 
   // ── Motion durations ───────────────────────────────────────────────

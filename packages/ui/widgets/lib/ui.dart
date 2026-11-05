@@ -16,12 +16,16 @@
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
-/// cards on them (#669), `BgeCoverTile` by the home shelves' covers (#707),
-/// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail screens, the home events section and the catalog's
-/// from-cache screens (#573, #607), `BgeInertButton` by the 4 buttons that
+/// cards on them (#669), `BgeCoverTile` by the home shelves' covers and the
+/// Games and Collection grids' tiles (#707, #710), `BgeKeyedSliverGrid`,
+/// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
+/// those two grids and their list or thumbnails choice (#710),
+/// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
+/// screens, the home events section and the catalog's from-cache screens and
+/// quick look (#573, #607), `BgeInertButton` by the 4 buttons that
 /// keep focus while they can do nothing (#607), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
-/// empty and denied surfaces of the feature screens, at 22, 23 and 38 call
+/// empty and denied surfaces of the feature screens, at 23, 23 and 39 call
 /// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
 /// are on the controls that write straight to the server, at 14, 6, 4, 3 and
@@ -33,7 +37,10 @@
 /// they take from `BgeTokens.contentMaxWidth`.
 ///
 /// New widgets belong here once a second call site wants them — not in
-/// anticipation of one.
+/// anticipation of one. One exception, by decision: `showBgePopup` has one
+/// call site, the game quick look, and is here because #707 placed the
+/// sheet-or-dialog launcher in this package for #709's picker to open the
+/// same way.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -53,7 +60,9 @@ export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/images/bge_cover_tile.dart';
 export 'src/images/bge_thumbnail.dart';
+export 'src/layout/bge_keyed_sliver_grid.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
+export 'src/layout/bge_layout_toggle.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/popups/bge_popup.dart';

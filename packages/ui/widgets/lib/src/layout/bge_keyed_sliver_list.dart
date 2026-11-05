@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'bge_keyed_child_delegate.dart';
+
 /// A sliver list of rows that keep their state when a row above them leaves
 /// or arrives (#549).
 ///
@@ -82,31 +84,12 @@ class BgeKeyedSliverList<T> extends StatelessWidget {
   final int semanticIndexOffset;
 
   @override
-  Widget build(BuildContext context) {
-    // Built on the first lookup of this build, not before. The sliver looks
-    // up the key of every live row each time it rebuilds, so the map is built
-    // once per rebuild that has live rows; waiting only saves a rebuild with
-    // none, such as the first. Rebuilt on the next build because `items` may
-    // be a different list by then.
-    Map<Key, int>? indexByKey;
-
-    return SliverList.builder(
-      itemCount: items.length,
+  Widget build(BuildContext context) => SliverList(
+    delegate: bgeKeyedChildDelegate(
+      items: items,
+      keyOf: keyOf,
+      itemBuilder: itemBuilder,
       semanticIndexOffset: semanticIndexOffset,
-      findChildIndexCallback: (key) {
-        indexByKey ??= {
-          for (final (index, item) in items.indexed) keyOf(item): index,
-        };
-        // Null for a key that has gone: the sliver then drops that row.
-        return indexByKey![key];
-      },
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return KeyedSubtree(
-          key: keyOf(item),
-          child: itemBuilder(context, item),
-        );
-      },
-    );
-  }
+    ),
+  );
 }
