@@ -184,6 +184,61 @@ void main() {
     });
   });
 
+  group('leave', () {
+    test('deletes members/me and parses the member', () async {
+      final remote = answering(_answer(_member(roleName: 'HouseholdMember')));
+
+      final member = await remote.leave('h/1');
+
+      expect(adapter.sent.single.method, 'DELETE');
+      expect(adapter.sent.single.path, '/api/households/h%2F1/members/me');
+      expect(adapter.sent.single.body, isNull);
+      expect(member.id, 'm1');
+      expect(member.role, HouseholdRole.householdMember);
+      expect(member.username, 'ada');
+    });
+  });
+
+  group('transferOwnership', () {
+    String transferAnswer({Map<String, dynamic>? previousOwner}) => jsonEncode({
+      'message': 'translated',
+      'owner': _member(id: 'm2', roleName: 'HouseholdOwner'),
+      'previousOwner':
+          previousOwner ?? _member(id: 'm1', roleName: 'HouseholdAdmin'),
+    });
+
+    test('posts to the member and parses both sides', () async {
+      final remote = answering(transferAnswer());
+
+      final result = await remote.transferOwnership('h-1', 'm-2');
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(
+        adapter.sent.single.path,
+        '/api/households/h-1/members/m-2/transfer-ownership',
+      );
+      expect(adapter.sent.single.body, isNull);
+      expect(result.owner.id, 'm2');
+      expect(result.owner.role, HouseholdRole.householdOwner);
+      expect(result.previousOwner.id, 'm1');
+      expect(result.previousOwner.role, HouseholdRole.householdAdmin);
+    });
+
+    test('a transfer answer missing previousOwner is permanent', () {
+      final remote = answering(
+        jsonEncode({
+          'message': 'translated',
+          'owner': _member(id: 'm2', roleName: 'HouseholdOwner'),
+        }),
+      );
+
+      expect(
+        remote.transferOwnership('h-1', 'm-2'),
+        throwsA(isA<HouseholdMemberPermanentException>()),
+      );
+    });
+  });
+
   group('the answer', () {
     test('keeps a member with no account projection nameless', () async {
       final remote = answering(_answer(_member(user: null)));
@@ -299,6 +354,10 @@ void main() {
         );
       });
     }
+
+    test('an enveloped 400 on leave is a refusal', () {
+      expect(answering(_envelope(400), status: 400).leave('h1'), refused(400));
+    });
 
     test('a 404 with the envelope is a refusal', () {
       expect(
