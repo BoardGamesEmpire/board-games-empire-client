@@ -26,7 +26,7 @@ ScrollableState pageScrollOf(WidgetTester tester) =>
 /// Assert a position against this, not a boolean. A predicate of the form
 /// "is it on screen" restates the widget's own guard, which makes a test that
 /// cannot fail for any implementation satisfying it — raised in review on
-/// #209 and settled there (#354 D4).
+/// #209 and settled there (#354).
 double topInViewport(WidgetTester tester, Finder target) => tester
     .renderObject<RenderBox>(target)
     .localToGlobal(Offset.zero, ancestor: scrollViewportOf(tester))
