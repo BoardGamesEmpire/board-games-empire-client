@@ -38,6 +38,12 @@ dependencies:
   # pure Dart and depend on nothing here, so neither can cycle back.
   interfaces:
     path: ../../core/interfaces
+
+  # `auditScreen` carries `@isTestGroup` so the IDE and analyzer treat its
+  # call sites as group declarations (#50). Already resolved transitively
+  # through `flutter_test`, so the lockfile does not move.
+  meta: ^1.19.0
+
   models:
     path: ../../core/models
 
@@ -49,6 +55,11 @@ dependencies:
     path: ../../ui/tokens
 
 dev_dependencies:
+  # `TestHandle.current.name` (its public `hooks.dart`) reads the running
+  # test's full name, to pin what `auditScreen` declares (#50). flutter_test
+  # pins an exact version; this range only has to admit it.
+  test_api: ^0.7.12
+
   # very_good_analysis per CONTRIBUTING.md, not the flutter_lints that
   # `packages/testing/l10n` carries — see #354 D5 and #194.
   very_good_analysis: ^10.2.0
