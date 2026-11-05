@@ -1704,6 +1704,10 @@ class _BgeAppState extends State<BgeApp> {
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
+      layouts: container.isRegistered<ListLayoutRepository>()
+          ? container.get<ListLayoutRepository>()
+          : null,
+      onQuickLook: _openQuickLook(container),
       initialSort: sort,
     );
   }

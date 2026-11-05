@@ -11,6 +11,7 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import '../bloc/game_browse_bloc.dart';
 import '../bloc/game_browse_event.dart';
 import '../bloc/game_browse_state.dart';
+import '../quick_look/game_quick_look_seed.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_game_row.dart';
 import '../widgets/catalog_slivers.dart';
@@ -28,6 +29,12 @@ import '../widgets/catalog_slivers.dart';
 /// The list starts in [initialSort], and a menu in the app bar changes it
 /// (#615). The choice lasts as long as the screen is open: [initialSort] is
 /// read once, when it opens, and nothing keeps the choice for the next time.
+///
+/// A toggle at the head of the content shows the games as rows or as a grid
+/// of covers (#710), and [layouts] remembers the choice for the user. A row
+/// opens the game's page; a cover opens its quick look. The toggle isn't in
+/// the app bar: beside the back button, search and sort, it left the title a
+/// few letters on a 320dp phone.
 class GameBrowseScreen extends StatelessWidget {
   const GameBrowseScreen({
     required this.remote,
@@ -35,6 +42,8 @@ class GameBrowseScreen extends StatelessWidget {
     this.gone,
     this.onOpen,
     this.onSearch,
+    this.layouts,
+    this.onQuickLook,
     this.initialSort = GameSort.title,
     super.key,
   });
@@ -48,6 +57,13 @@ class GameBrowseScreen extends StatelessWidget {
   static const Key moreFailedKey = Key('catalog_browse.more_failed');
   static const Key searchKey = Key('catalog_browse.search');
   static const Key sortKey = Key('catalog_browse.sort');
+  static const Key layoutToggleKey = Key('catalog_browse.layout_toggle');
+
+  /// Per-tile key: `catalog_browse.tile_<gameId>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverGrid] puts around each tile, as
+  /// [rowKey] is for rows.
+  static Key tileKey(String gameId) => Key('catalog_browse.tile_$gameId');
 
   /// Per-row key: `catalog_browse.row_<gameId>`.
   ///
@@ -71,36 +87,85 @@ class GameBrowseScreen extends StatelessWidget {
   /// Opens the search screen. Null offers no search.
   final void Function(BuildContext context)? onSearch;
 
+  /// Where the list or thumbnails choice is kept, or null where there is no
+  /// user session. Without it the toggle still works, for this visit.
+  final ListLayoutRepository? layouts;
+
+  /// Opens a game's quick look from its cover. Null leaves the covers inert.
+  ///
+  /// Called with the tile's own context.
+  final void Function(BuildContext context, GameQuickLookSeed seed)?
+  onQuickLook;
+
   /// The order the first read is in.
   final GameSort initialSort;
 
   @override
-  Widget build(BuildContext context) => BlocProvider<GameBrowseBloc>(
-    // go_router keys a page on its path, so going to another `?sort=` builds
-    // this screen again in place, and a new sort needs a new bloc. A menu
-    // choice survives any other rebuild.
-    key: ValueKey<GameSort>(initialSort),
-    create: (_) => GameBrowseBloc(
-      remote: remote,
-      cache: cache,
-      gone: gone,
-      initialSort: initialSort,
-    )..add(const GameBrowseLoadRequested()),
-    child: _GameBrowsePage(onOpen: onOpen, onSearch: onSearch),
-  );
+  Widget build(BuildContext context) {
+    final layouts = this.layouts;
+    return BlocProvider<GameBrowseBloc>(
+      // go_router keys a page on its path, so going to another `?sort=` builds
+      // this screen again in place, and a new sort needs a new bloc. A menu
+      // choice survives any other rebuild.
+      key: ValueKey<GameSort>(initialSort),
+      create: (_) => GameBrowseBloc(
+        remote: remote,
+        cache: cache,
+        gone: gone,
+        initialSort: initialSort,
+      )..add(const GameBrowseLoadRequested()),
+      // A different user's repository reads again, rather than keeping the
+      // previous user's answer.
+      child: BgeRememberedLayout(
+        key: ObjectKey(layouts),
+        read: layouts == null
+            ? null
+            : () => layouts.readThumbnails(ListLayoutScreen.games),
+        write: layouts == null
+            ? null
+            : (thumbnails) =>
+                  layouts.writeThumbnails(ListLayoutScreen.games, thumbnails),
+        builder: (context, thumbnails, onChanged) => _GameBrowsePage(
+          thumbnails: thumbnails,
+          onLayoutChanged: onChanged,
+          onOpen: onOpen,
+          onSearch: onSearch,
+          onQuickLook: onQuickLook,
+        ),
+      ),
+    );
+  }
 }
 
 class _GameBrowsePage extends StatelessWidget {
-  const _GameBrowsePage({this.onOpen, this.onSearch});
+  const _GameBrowsePage({
+    required this.thumbnails,
+    required this.onLayoutChanged,
+    this.onOpen,
+    this.onSearch,
+    this.onQuickLook,
+  });
 
+  /// Null until the remembered choice is read.
+  final bool? thumbnails;
+  final ValueChanged<bool> onLayoutChanged;
   final void Function(BuildContext context, String gameId)? onOpen;
   final void Function(BuildContext context)? onSearch;
+  final void Function(BuildContext context, GameQuickLookSeed seed)?
+  onQuickLook;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
     final search = onSearch;
+    final thumbnails = this.thumbnails;
+    final loading = BgeStateSliver(
+      child: BgeLoadingState(
+        key: GameBrowseScreen.loadingKey,
+        label: l10n.catalogBrowseLoading,
+      ),
+    );
 
     return BlocBuilder<GameBrowseBloc, GameBrowseState>(
       builder: (context, state) {
@@ -110,9 +175,11 @@ class _GameBrowsePage extends StatelessWidget {
         return BgePage.slivers(
           title: Text(l10n.catalogBrowseTitle),
           width: BgePageWidth.pane,
-          // "Game 3 of 50": the rows loaded so far.
+          // "Game 3 of 50": the rows loaded so far, once they are built.
           semanticChildCount: switch (state) {
-            GameBrowseReady(:final games) when games.isNotEmpty => games.length,
+            GameBrowseReady(:final games)
+                when games.isNotEmpty && thumbnails != null =>
+              games.length,
             _ => null,
           },
           actions: [
@@ -128,74 +195,102 @@ class _GameBrowsePage extends StatelessWidget {
             // disabled drops the focus it holds (#607).
             _SortMenu(sort: state.sort),
           ],
-          slivers: switch (state) {
-            GameBrowseLoading() => [
-              BgeStateSliver(
-                child: BgeLoadingState(
-                  key: GameBrowseScreen.loadingKey,
-                  label: l10n.catalogBrowseLoading,
+          slivers: [
+            // In every state, and first, so that it keeps its place and its
+            // focus as the content below it changes (#607). Never disabled:
+            // while the choice is read it shows the list, which is what a
+            // missing choice means.
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: tokens.spaceMd),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: BgeLayoutToggle(
+                    key: GameBrowseScreen.layoutToggleKey,
+                    thumbnails: thumbnails ?? false,
+                    onChanged: onLayoutChanged,
+                    listLabel: l10n.catalogLayoutList,
+                    thumbnailsLabel: l10n.catalogLayoutThumbnails,
+                  ),
                 ),
               ),
-            ],
-            GameBrowseFailed() => [
-              BgeStateSliver(
-                child: CatalogErrorState(
-                  key: GameBrowseScreen.errorKey,
-                  title: l10n.catalogBrowseFailedTitle,
-                  body: l10n.catalogBrowseFailedBody,
-                  onRetry: retry,
+            ),
+            ...switch (state) {
+              GameBrowseLoading() => [loading],
+              GameBrowseFailed() => [
+                BgeStateSliver(
+                  child: CatalogErrorState(
+                    key: GameBrowseScreen.errorKey,
+                    title: l10n.catalogBrowseFailedTitle,
+                    body: l10n.catalogBrowseFailedBody,
+                    onRetry: retry,
+                  ),
                 ),
-              ),
-            ],
-            GameBrowseDenied() => [
-              BgeStateSliver(
-                child: CatalogErrorState(
-                  key: GameBrowseScreen.deniedKey,
-                  icon: Icons.lock_outline,
-                  title: l10n.catalogDeniedTitle,
-                  body: l10n.catalogDeniedBody,
-                  onRetry: retry,
+              ],
+              GameBrowseDenied() => [
+                BgeStateSliver(
+                  child: CatalogErrorState(
+                    key: GameBrowseScreen.deniedKey,
+                    icon: Icons.lock_outline,
+                    title: l10n.catalogDeniedTitle,
+                    body: l10n.catalogDeniedBody,
+                    onRetry: retry,
+                  ),
                 ),
-              ),
-            ],
-            GameBrowseReady(
-              :final games,
-              :final hasMore,
-              :final fromCache,
-              :final retrying,
-            ) =>
-              [
-                if (fromCache)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.only(bottom: tokens.spaceMd),
-                      child: CatalogFromCacheBanner(
-                        key: GameBrowseScreen.fromCacheBannerKey,
-                        message: l10n.catalogBrowseFromCache,
-                        onRetry: retry,
-                        retrying: retrying,
+              ],
+              GameBrowseReady(
+                :final games,
+                :final hasMore,
+                :final fromCache,
+                :final retrying,
+              ) =>
+                [
+                  if (fromCache)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: tokens.spaceMd),
+                        child: CatalogFromCacheBanner(
+                          key: GameBrowseScreen.fromCacheBannerKey,
+                          message: l10n.catalogBrowseFromCache,
+                          onRetry: retry,
+                          retrying: retrying,
+                        ),
                       ),
                     ),
-                  ),
-                // Games found gone can empty a list that has more to load.
-                if (games.isEmpty && !hasMore)
-                  BgeStateSliver(
-                    child: BgeEmptyState(
-                      key: GameBrowseScreen.emptyKey,
-                      title: l10n.catalogBrowseEmpty,
-                    ),
-                  )
-                else ...[
-                  BgeKeyedSliverList<Game>(
-                    items: games,
-                    keyOf: (game) => GameBrowseScreen.rowKey(game.id),
-                    itemBuilder: (context, game) =>
-                        _BrowseRow(game: game, onOpen: onOpen),
-                  ),
-                  SliverToBoxAdapter(child: _MoreFooter(state: state)),
+                  // Games found gone can empty a list that has more to load.
+                  if (games.isEmpty && !hasMore)
+                    BgeStateSliver(
+                      child: BgeEmptyState(
+                        key: GameBrowseScreen.emptyKey,
+                        title: l10n.catalogBrowseEmpty,
+                      ),
+                    )
+                  // Only the games wait for the choice, rather than flashing
+                  // the wrong layout. A failure or an empty list is the same
+                  // in either, so it shows as soon as it is known.
+                  else if (thumbnails == null)
+                    loading
+                  else ...[
+                    if (thumbnails)
+                      BgeKeyedSliverGrid<Game>(
+                        items: games,
+                        keyOf: (game) => GameBrowseScreen.tileKey(game.id),
+                        gridDelegate: bgeCoverGridDelegate(context),
+                        itemBuilder: (context, game) =>
+                            _BrowseTile(game: game, onQuickLook: onQuickLook),
+                      )
+                    else
+                      BgeKeyedSliverList<Game>(
+                        items: games,
+                        keyOf: (game) => GameBrowseScreen.rowKey(game.id),
+                        itemBuilder: (context, game) =>
+                            _BrowseRow(game: game, onOpen: onOpen),
+                      ),
+                    SliverToBoxAdapter(child: _MoreFooter(state: state)),
+                  ],
                 ],
-              ],
-          },
+            },
+          ],
         );
       },
     );
@@ -262,6 +357,43 @@ String _sortLabel(GameCatalogLocalizations l10n, GameSort sort) =>
       GameSort.newest => l10n.catalogBrowseSortNewest,
     };
 
+/// The facts a game's row shows under its title.
+List<CatalogFact> _gameFacts(GameCatalogLocalizations l10n, Game game) =>
+    rowFacts(
+      l10n,
+      year: game.publishYear,
+      minPlayers: game.minPlayers,
+      maxPlayers: game.maxPlayers,
+      contentType: game.contentType,
+    );
+
+/// A game's cover alone, named as its row is: the title and the row's facts,
+/// since no text is drawn to tell two covers apart (#710).
+class _BrowseTile extends StatelessWidget {
+  const _BrowseTile({required this.game, this.onQuickLook});
+
+  final Game game;
+  final void Function(BuildContext context, GameQuickLookSeed seed)?
+  onQuickLook;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCatalogLocalizations.of(context);
+    final open = onQuickLook;
+    return BgeCoverTile(
+      extent: null,
+      label: [
+        gameTitle(l10n, game.title, game.subtitle),
+        ..._gameFacts(l10n, game).map((fact) => fact.spoken),
+      ].join(l10n.catalogDetailSpokenSeparator),
+      imageUrl: game.thumbnail,
+      onTap: open == null
+          ? null
+          : () => open(context, GameQuickLookSeed.fromGame(game)),
+    );
+  }
+}
+
 class _BrowseRow extends StatelessWidget {
   const _BrowseRow({required this.game, this.onOpen});
 
@@ -275,13 +407,7 @@ class _BrowseRow extends StatelessWidget {
     return CatalogGameRow(
       title: gameTitle(l10n, game.title, game.subtitle),
       thumbnailUrl: game.thumbnail,
-      facts: rowFacts(
-        l10n,
-        year: game.publishYear,
-        minPlayers: game.minPlayers,
-        maxPlayers: game.maxPlayers,
-        contentType: game.contentType,
-      ),
+      facts: _gameFacts(l10n, game),
       onTap: open == null ? null : () => open(context, game.id),
     );
   }

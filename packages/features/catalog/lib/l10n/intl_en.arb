@@ -40,6 +40,14 @@
   "@catalogBrowseSort": {
     "description": "Tooltip and spoken label of the button on the games list that opens the menu of orders to list the games in."
   },
+  "catalogLayoutList": "List",
+  "@catalogLayoutList": {
+    "description": "Tooltip and spoken name of the segment on the games list's layout toggle that shows the games as rows, one per line."
+  },
+  "catalogLayoutThumbnails": "Thumbnails",
+  "@catalogLayoutThumbnails": {
+    "description": "Tooltip and spoken name of the segment on the games list's layout toggle that shows the games as a grid of covers, each opening a quick look."
+  },
   "catalogBrowseSortTitle": "Title",
   "@catalogBrowseSortTitle": {
     "description": "Entry of the games list's sort menu: the games in alphabetical order of their titles."

@@ -209,6 +209,7 @@ ActiveServer buildActiveServer(
   CallerAccessRepository? callerAccess,
   GamesRemoteDataSource? gamesRemoteDataSource,
   GameRepository? gameRepository,
+  ListLayoutRepository? listLayoutRepository,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -305,6 +306,9 @@ ActiveServer buildActiveServer(
   }
   if (gameRepository != null) {
     container.registerSingleton<GameRepository>(gameRepository);
+  }
+  if (listLayoutRepository != null) {
+    container.registerSingleton<ListLayoutRepository>(listLayoutRepository);
   }
   return ActiveServer(
     serverId: serverId,
