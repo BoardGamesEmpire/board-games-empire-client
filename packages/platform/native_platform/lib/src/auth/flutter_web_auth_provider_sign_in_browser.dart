@@ -59,6 +59,14 @@ class FlutterWebAuthProviderSignInBrowser implements ProviderSignInBrowser {
         ProviderSignInFailureReason.generic,
         cause: e,
       );
+    } on Object catch (e) {
+      // Anything else the plugin throws, a `MissingPluginException` where its
+      // channel isn't registered among them, is a failure too: the seam
+      // promises nothing else leaves.
+      throw AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        cause: e,
+      );
     }
 
     final uri = Uri.tryParse(returned);

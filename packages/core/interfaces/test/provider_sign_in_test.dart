@@ -64,20 +64,24 @@ void main() {
     });
   });
 
-  test(
-    'UnsupportedProviderSignInBrowser is unsupported and refuses to open',
-    () {
-      const browser = UnsupportedProviderSignInBrowser();
-      expect(browser.isSupported, isFalse);
-      expect(
-        () => browser.authenticate(
-          url: Uri.parse('https://x'),
-          callbackScheme: 'bge',
+  test('UnsupportedProviderSignInBrowser is unsupported and refuses to open '
+      'with the generic refusal the seam promises', () {
+    const browser = UnsupportedProviderSignInBrowser();
+    expect(browser.isSupported, isFalse);
+    expect(
+      () => browser.authenticate(
+        url: Uri.parse('https://x'),
+        callbackScheme: 'bge',
+      ),
+      throwsA(
+        isA<AuthProviderSignInException>().having(
+          (e) => e.reason,
+          'reason',
+          ProviderSignInFailureReason.generic,
         ),
-        throwsStateError,
-      );
-    },
-  );
+      ),
+    );
+  });
 
   test('the availability variants carry what the screen needs', () {
     const ProviderSignInAvailability a = ProviderSignInAddressMismatch(

@@ -68,6 +68,32 @@ void main() {
       );
     });
 
+    test('maps a failure that is not a PlatformException, such as a missing '
+        'plugin channel, to AuthProviderSignInException(generic)', () async {
+      final cause = MissingPluginException('no flutter_web_auth_2 here');
+      final browser = FlutterWebAuthProviderSignInBrowser(
+        authenticate: ({
+          required url,
+          required callbackUrlScheme,
+          required options,
+        }) => throw cause,
+        isSupported: true,
+      );
+
+      await expectLater(
+        browser.authenticate(url: url, callbackScheme: 'bge'),
+        throwsA(
+          isA<AuthProviderSignInException>()
+              .having(
+                (e) => e.reason,
+                'reason',
+                ProviderSignInFailureReason.generic,
+              )
+              .having((e) => e.cause, 'cause', same(cause)),
+        ),
+      );
+    });
+
     test(
       'asks for a non-ephemeral session under the scheme it is given',
       () async {
@@ -97,7 +123,7 @@ void main() {
       },
     );
 
-    test('reports unsupported on Windows and Linux', () {
+    test('honours an isSupported override', () {
       expect(
         FlutterWebAuthProviderSignInBrowser(isSupported: false).isSupported,
         isFalse,
@@ -107,5 +133,19 @@ void main() {
         isTrue,
       );
     });
+
+    // The default reads the host, so each runs only where it can mean
+    // something: CI runs on Linux, and macOS is where most of us run it.
+    test(
+      'is unsupported by default on Windows and Linux',
+      () => expect(FlutterWebAuthProviderSignInBrowser().isSupported, isFalse),
+      testOn: 'windows || linux',
+    );
+
+    test(
+      'is supported by default on macOS',
+      () => expect(FlutterWebAuthProviderSignInBrowser().isSupported, isTrue),
+      testOn: 'mac-os',
+    );
   });
 }

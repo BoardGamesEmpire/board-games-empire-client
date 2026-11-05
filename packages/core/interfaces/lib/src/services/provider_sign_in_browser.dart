@@ -15,6 +15,9 @@ abstract interface class ProviderSignInBrowser {
 }
 
 /// The browser on a device that has none.
+///
+/// A caller checks [isSupported] first, so [authenticate] is not reached. If
+/// it is, it fails as the seam promises, with the generic refusal.
 final class UnsupportedProviderSignInBrowser implements ProviderSignInBrowser {
   const UnsupportedProviderSignInBrowser();
 
@@ -25,5 +28,8 @@ final class UnsupportedProviderSignInBrowser implements ProviderSignInBrowser {
   Future<Uri?> authenticate({
     required Uri url,
     required String callbackScheme,
-  }) => throw StateError('No in-app browser tab exists on this device.');
+  }) => throw const AuthProviderSignInException(
+    ProviderSignInFailureReason.generic,
+    message: 'No in-app browser tab exists on this device.',
+  );
 }
