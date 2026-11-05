@@ -581,4 +581,20 @@ abstract class GameCollectionRepository {
 
   /// Watches a single entry. Emits null when removed.
   Stream<GameCollection?> watchEntry(String id);
+
+  /// Watches this user's live entries on [platformGameIds]: the entries
+  /// a game's detail screen shows as owned, one per medium per platform
+  /// (#708).
+  ///
+  /// Emits the matching entries, none of them marked for removal and none
+  /// another user's, in entry id order, as [watchCollectionListItems] orders one
+  /// game's entries. An empty [platformGameIds] emits one empty list.
+  ///
+  /// Re-emits only when an entry on one of those platform games changes,
+  /// is added or is removed. Watching [watchCollection] and filtering
+  /// would wake the screen on every change to any entry.
+  /// Closes, rather than errors, when the repository is disposed.
+  Stream<List<GameCollection>> watchEntriesForPlatformGames(
+    Set<String> platformGameIds,
+  );
 }

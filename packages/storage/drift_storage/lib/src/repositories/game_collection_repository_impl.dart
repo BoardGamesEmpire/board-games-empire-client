@@ -1,5 +1,6 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
@@ -1396,6 +1397,34 @@ class GameCollectionRepositoryImpl
             .watch()
             .map((rows) => rows.map(_mapRow).toList()),
   );
+
+  @override
+  Stream<List<GameCollection>> watchEntriesForPlatformGames(
+    Set<String> platformGameIds,
+  ) {
+    if (platformGameIds.isEmpty) return Stream.value(const []);
+
+    return untilDisposed(
+      () =>
+          (_db.select(_db.gameCollectionsTable)
+                ..where(
+                  (t) =>
+                      t.userId.equals(_userId) &
+                      t.deletedAt.isNull() &
+                      t.platformGameId.isIn(platformGameIds),
+                )
+                // Collection's own tiebreak, so a game's entries reach the
+                // picker in one order wherever it opens, and a re-run of the
+                // query reads as no change.
+                ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+              .watch()
+              .map((rows) => rows.map(_mapRow).toList())
+              // Drift re-runs the query on every write to the table and
+              // emits each result unchecked; this keeps the other
+              // platform games' writes from waking a watcher (#708).
+              .distinct(listEquals),
+    );
+  }
 
   /// One query joining the entry to its platform game and game, so
   /// Drift re-runs it when any of the three tables changes (#259).
