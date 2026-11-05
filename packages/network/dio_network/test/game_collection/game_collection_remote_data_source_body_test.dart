@@ -173,7 +173,7 @@ void main() {
     });
   });
 
-  // `_send` moves to `Response<String>`, which takes the body out from under
+  // Every request asks for `Response<String>`, which takes the body out from under
   // Dio's transformer — including the 50 KB isolate offload it applies.
   group('a large body still decodes off-isolate', () {
     test('a page over the 50 KB threshold parses correctly', () async {

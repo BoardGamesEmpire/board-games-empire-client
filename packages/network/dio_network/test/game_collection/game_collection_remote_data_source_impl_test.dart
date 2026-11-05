@@ -66,7 +66,7 @@ Map<String, dynamic> _entryJson({
   'release': {'id': 'rel_1', 'editionName': 'Deluxe', 'releaseYear': 2018},
 };
 
-/// `_send` asks Dio for `Response<String>` (#351), so a stubbed response
+/// Every request asks Dio for `Response<String>` (#351), so a stubbed response
 /// carries the body as the raw text the transport would have handed back —
 /// undecoded, exactly as production sees it.
 Response<String> _resp(Map<String, dynamic>? data, {int? statusCode = 200}) =>
