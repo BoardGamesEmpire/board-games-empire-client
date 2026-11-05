@@ -326,33 +326,45 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(const AuthLoading());
+    final AuthResponse session;
     try {
-      final session = await _authRepository.signIn(
+      session = await _authRepository.signIn(
         email: event.email,
         password: event.password,
       );
-      emit(AuthAuthenticated(session: session));
-    } on AuthSupersededException {
-      // A sign-out overtook the grant (#146): the system is already
-      // unauthenticated and storage already reflects it. Not a failure the
-      // user needs to hear about. The repository published that sign-out,
-      // so this lands the way the mirror does, usually by adding nothing.
-      _mirrorUnauthenticated(emit);
-    } on AuthInvalidCredentialsException {
-      emit(const AuthFailureInvalidCredentials());
-    } on AuthSessionNotGrantedException {
-      emit(const AuthFailureSessionNotGranted());
-    } on AuthEmailNotVerifiedException {
-      emit(const AuthFailureEmailNotVerified());
-    } on AuthLocalDecodeException catch (e) {
-      emit(AuthFailureLocalDecode(e));
-    } on AuthNetworkException {
-      emit(const AuthFailureNetwork());
-    } on AuthRateLimitedException catch (e) {
-      emit(AuthFailureRateLimited(e.retryAfter));
     } on AuthException catch (e) {
-      emit(AuthFailureServer(e));
+      // A failure lands only if no session arrived while the request was in
+      // flight. On web another tab's sign-in reaches this bloc through the
+      // repository, and this form's refusal settling after it would throw
+      // that live session back to the sign-in screen. Only a live session is
+      // protected, as in `_onSignOut` (#280).
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // A sign-out overtook the grant (#146): the system is already
+          // unauthenticated and storage already reflects it. Not a failure
+          // the user needs to hear about. The repository published that
+          // sign-out, so this lands the way the mirror does, usually by
+          // adding nothing.
+          _mirrorUnauthenticated(emit);
+        case AuthInvalidCredentialsException():
+          emit(const AuthFailureInvalidCredentials());
+        case AuthSessionNotGrantedException():
+          emit(const AuthFailureSessionNotGranted());
+        case AuthEmailNotVerifiedException():
+          emit(const AuthFailureEmailNotVerified());
+        case final AuthLocalDecodeException decode:
+          emit(AuthFailureLocalDecode(decode));
+        case AuthNetworkException():
+          emit(const AuthFailureNetwork());
+        case AuthRateLimitedException(:final retryAfter):
+          emit(AuthFailureRateLimited(retryAfter));
+        case _:
+          emit(AuthFailureServer(e));
+      }
+      return;
     }
+    emit(AuthAuthenticated(session: session));
   }
 
   Future<void> _onRegister(
@@ -360,33 +372,40 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(const AuthLoading());
+    final AuthResponse session;
     try {
-      final session = await _authRepository.signUp(
+      session = await _authRepository.signUp(
         email: event.email,
         password: event.password,
         username: event.username,
         firstName: event.firstName,
         lastName: event.lastName,
       );
-      emit(AuthAuthenticated(session: session));
-    } on AuthSupersededException {
-      // See _onSignIn: the sign-out already won; return quietly.
-      _mirrorUnauthenticated(emit);
-    } on AuthRegistrationDisabledException {
-      emit(const AuthFailureRegistrationDisabled());
-    } on AuthEmailAlreadyExistsException {
-      emit(const AuthFailureEmailAlreadyExists());
-    } on AuthSessionNotGrantedException {
-      emit(const AuthFailureSessionNotGranted());
-    } on AuthLocalDecodeException catch (e) {
-      emit(AuthFailureLocalDecode(e));
-    } on AuthNetworkException {
-      emit(const AuthFailureNetwork());
-    } on AuthRateLimitedException catch (e) {
-      emit(AuthFailureRateLimited(e.retryAfter));
     } on AuthException catch (e) {
-      emit(AuthFailureServer(e));
+      // See _onSignIn: a session that arrived meanwhile is kept.
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // See _onSignIn: the sign-out already won; return quietly.
+          _mirrorUnauthenticated(emit);
+        case AuthRegistrationDisabledException():
+          emit(const AuthFailureRegistrationDisabled());
+        case AuthEmailAlreadyExistsException():
+          emit(const AuthFailureEmailAlreadyExists());
+        case AuthSessionNotGrantedException():
+          emit(const AuthFailureSessionNotGranted());
+        case final AuthLocalDecodeException decode:
+          emit(AuthFailureLocalDecode(decode));
+        case AuthNetworkException():
+          emit(const AuthFailureNetwork());
+        case AuthRateLimitedException(:final retryAfter):
+          emit(AuthFailureRateLimited(retryAfter));
+        case _:
+          emit(AuthFailureServer(e));
+      }
+      return;
     }
+    emit(AuthAuthenticated(session: session));
   }
 
   Future<void> _onProviderSignIn(

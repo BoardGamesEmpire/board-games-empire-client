@@ -459,6 +459,52 @@ void main() {
           isA<AuthServerException>(),
         ),
       );
+
+      // On web another tab's sign-in reaches this bloc through the
+      // repository while this form's request is in flight. The request's
+      // own failure must not throw that live session back to the form.
+      group('a session that lands while the request is in flight is kept '
+          'when it fails as', () {
+        for (final (name, error) in <(String, AuthException)>[
+          ('superseded', const AuthSupersededException()),
+          ('invalid credentials', const AuthInvalidCredentialsException()),
+          ('a network failure', const AuthNetworkException(message: 'x')),
+        ]) {
+          late StreamController<AuthState> repoStates;
+          late Completer<AuthResponse> gate;
+
+          blocTest<AuthBloc, AuthBlocState>(
+            name,
+            build: () {
+              repoStates = StreamController<AuthState>();
+              addTearDown(repoStates.close);
+              gate = Completer<AuthResponse>();
+              when(() => mockRepo.watchAuthState())
+                  .thenAnswer((_) => repoStates.stream);
+              when(
+                () => mockRepo.signIn(
+                  email: any(named: 'email'),
+                  password: any(named: 'password'),
+                ),
+              ).thenAnswer((_) => gate.future);
+              return AuthBloc(authRepository: mockRepo);
+            },
+            act: (b) async {
+              b.add(
+                const AuthSignInRequested(email: 'a@b.com', password: 'pass'),
+              );
+              await pumpEventQueue();
+              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              await pumpEventQueue();
+              gate.completeError(error);
+            },
+            expect: () => [
+              const AuthLoading(),
+              AuthAuthenticated(session: testSession()),
+            ],
+          );
+        }
+      });
     });
 
     group('AuthRegisterRequested', () {
@@ -596,6 +642,57 @@ void main() {
           const AuthFailureSessionNotGranted(),
         ],
       );
+
+      // See the same group under AuthSignInRequested.
+      group('a session that lands while the request is in flight is kept '
+          'when it fails as', () {
+        for (final (name, error) in <(String, AuthException)>[
+          ('superseded', const AuthSupersededException()),
+          ('an existing email', const AuthEmailAlreadyExistsException()),
+          ('a network failure', const AuthNetworkException(message: 'x')),
+        ]) {
+          late StreamController<AuthState> repoStates;
+          late Completer<AuthResponse> gate;
+
+          blocTest<AuthBloc, AuthBlocState>(
+            name,
+            build: () {
+              repoStates = StreamController<AuthState>();
+              addTearDown(repoStates.close);
+              gate = Completer<AuthResponse>();
+              when(() => mockRepo.watchAuthState())
+                  .thenAnswer((_) => repoStates.stream);
+              when(
+                () => mockRepo.signUp(
+                  email: any(named: 'email'),
+                  password: any(named: 'password'),
+                  username: any(named: 'username'),
+                  firstName: any(named: 'firstName'),
+                  lastName: any(named: 'lastName'),
+                ),
+              ).thenAnswer((_) => gate.future);
+              return AuthBloc(authRepository: mockRepo);
+            },
+            act: (b) async {
+              b.add(
+                const AuthRegisterRequested(
+                  email: 'new@b.com',
+                  password: 'pass',
+                  username: 'newuser',
+                ),
+              );
+              await pumpEventQueue();
+              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              await pumpEventQueue();
+              gate.completeError(error);
+            },
+            expect: () => [
+              const AuthLoading(),
+              AuthAuthenticated(session: testSession()),
+            ],
+          );
+        }
+      });
     });
 
     group('AuthSignOutRequested', () {
