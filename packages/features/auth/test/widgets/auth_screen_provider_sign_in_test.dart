@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:auth/l10n/auth_localizations.dart';
@@ -306,6 +307,30 @@ void main() {
           matching: find.text(_genericCopy),
         ),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('a server that lists no sign-in method now still shows a '
+        'provider failure, above the no-methods message', (tester) async {
+      await pumpScreen(
+        tester,
+        identity: testServerIdentity(hasEmailPassword: false),
+      );
+      states.add(
+        const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LoginForm), findsNothing);
+      expect(find.byType(OidcStrategyButton), findsNothing);
+      expect(
+        find.descendant(of: _banner, matching: find.text(_genericCopy)),
+        findsOneWidget,
+      );
+      expect(find.byType(BgeEmptyState), findsOneWidget);
+      expect(
+        tester.getRect(_banner).bottom,
+        lessThanOrEqualTo(tester.getRect(find.byType(BgeEmptyState)).top),
       );
     });
 

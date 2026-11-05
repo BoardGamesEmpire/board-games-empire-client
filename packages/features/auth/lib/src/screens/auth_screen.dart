@@ -241,8 +241,13 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
             if (widget.identity.hasOidc) _buildOidcSection(context),
             if (!widget.identity.hasEmailAndPassword &&
-                !widget.identity.hasOidc)
+                !widget.identity.hasOidc) ...[
+              // A web page back from a provider the server has since dropped,
+              // on a server with nothing else left, still says why (#583).
+              if (state case final AuthFailureProviderSignIn failure)
+                ..._buildProviderFailure(context, failure),
               _buildNoStrategiesMessage(context),
+            ],
           ],
         ),
       ),
@@ -380,25 +385,8 @@ class _AuthScreenState extends State<AuthScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (state case final AuthFailureProviderSignIn failure) ...[
-              // A new banner for each attempt, so a repeated failure is
-              // announced and revealed again. See [_providerAttempt].
-              KeyedSubtree(
-                key: ValueKey(_providerAttempt),
-                child: BgeInlineBanner(
-                  key: AuthScreen.providerFailureBannerKey,
-                  tone: BgeBannerTone.error,
-                  // Titled because some of the messages give only a cause:
-                  // "Could not reach the server" never says that signing in
-                  // failed (#211).
-                  title: l10n.authSignInErrorTitle,
-                  message: _localizedFailure(l10n, failure),
-                ),
-              ),
-              // The gap `BgeFormActions` puts between a banner and its
-              // submit.
-              const BgeGap.md(),
-            ],
+            if (state case final AuthFailureProviderSignIn failure)
+              ..._buildProviderFailure(context, failure),
             for (final oidcStrategy in widget.identity.oidcStrategies) ...[
               OidcStrategyButton(
                 // Keyed, so a banner arriving above keeps each button, and
@@ -433,6 +421,31 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       },
     );
+  }
+
+  /// A provider sign-in's failure, and the gap below it (#583).
+  List<Widget> _buildProviderFailure(
+    BuildContext context,
+    AuthFailureProviderSignIn failure,
+  ) {
+    final l10n = AuthLocalizations.of(context);
+    return [
+      // A new banner for each attempt, so a repeated failure is announced and
+      // revealed again. See [_providerAttempt].
+      KeyedSubtree(
+        key: ValueKey(_providerAttempt),
+        child: BgeInlineBanner(
+          key: AuthScreen.providerFailureBannerKey,
+          tone: BgeBannerTone.error,
+          // Titled because some of the messages give only a cause: "Could not
+          // reach the server" never says that signing in failed (#211).
+          title: l10n.authSignInErrorTitle,
+          message: _localizedFailure(l10n, failure),
+        ),
+      ),
+      // The gap `BgeFormActions` puts between a banner and its submit.
+      const BgeGap.md(),
+    ];
   }
 
   Widget _buildDivider(BuildContext context) {
