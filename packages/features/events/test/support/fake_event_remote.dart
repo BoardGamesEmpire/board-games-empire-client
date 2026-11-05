@@ -34,6 +34,15 @@ typedef EventVoteRequest = ({
   AvailabilityResponse response,
 });
 
+/// What an RSVP sent (#508): the event, the attendee, the answer, and the note
+/// (null when left out, an empty string when clearing it).
+typedef RsvpRequest = ({
+  String eventId,
+  String attendeeId,
+  EventParticipationStatus status,
+  String? notes,
+});
+
 /// One whole page of [rows], as a browse read answers (#613).
 PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     PaginatedResult(
@@ -62,6 +71,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.rsvp = _noRsvp,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -76,6 +86,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.rsvp = _noRsvp,
   }) : respond = ((request) {
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
@@ -92,6 +103,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.voted = _noVote,
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
+    this.rsvp = _noRsvp,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -105,6 +117,9 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noStatusWrite(EventStatusRequest request) =>
       throw UnimplementedError('the event ${request.call} is not faked');
+
+  static Never _noRsvp(RsvpRequest request) =>
+      throw UnimplementedError('updateAttendeeStatus is not faked');
 
   static Never _noVote(EventVoteRequest request) =>
       throw UnimplementedError('submitAvailability is not faked');
@@ -148,6 +163,13 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// after, or throws what a test supplies. It throws unless a test supplies
   /// one (#502).
   final FutureOr<Event> Function(EventStatusRequest request) statusWritten;
+
+  /// Answers each RSVP with the attendee as the server holds it after, which
+  /// throws unless a test supplies one (#508).
+  final FutureOr<EventAttendee> Function(RsvpRequest request) rsvp;
+
+  /// Each RSVP, in order, recorded before it is answered.
+  final List<RsvpRequest> rsvps = [];
 
   final List<EventListRequest> requests = [];
 
@@ -357,6 +379,23 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     voteRequests.add(request);
     return voted(request);
+  }
+
+  @override
+  Future<EventAttendee> updateAttendeeStatus(
+    String eventId,
+    String attendeeId,
+    EventParticipationStatus status, {
+    String? notes,
+  }) async {
+    final request = (
+      eventId: eventId,
+      attendeeId: attendeeId,
+      status: status,
+      notes: notes,
+    );
+    rsvps.add(request);
+    return rsvp(request);
   }
 
   @override

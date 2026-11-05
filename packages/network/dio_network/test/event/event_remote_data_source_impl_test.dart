@@ -2682,6 +2682,164 @@ void main() {
     });
   });
 
+  group('RSVP (#508)', () {
+    /// `PATCH .../status`'s answer: the attendee with its `user` and `role`
+    /// embedded, as a roster row has them.
+    String rsvpBody({String status = 'NotAttending'}) => jsonEncode({
+      'message': 'Attendee status updated',
+      'attendee': _attendeeRow(
+        id: 'a1',
+        status: status,
+        user: _userRow(),
+        role: _roleRow('EventGuest'),
+      ),
+    });
+
+    Future<void> sendDefault(EventRemoteDataSource remote) => remote
+        .updateAttendeeStatus('e1', 'a1', EventParticipationStatus.attending);
+
+    test('sends the status and leaves notes out when none is given', () async {
+      final remote = answering(rsvpBody());
+
+      final attendee = await remote.updateAttendeeStatus(
+        'e1',
+        'a1',
+        EventParticipationStatus.notAttending,
+      );
+
+      expect(adapter.sent.single.method, 'PATCH');
+      expect(adapter.sent.single.path, '/api/events/e1/attendees/a1/status');
+      expect(adapter.sent.single.body, {'status': 'NotAttending'});
+      expect(attendee.id, 'a1');
+      expect(attendee.status, EventParticipationStatus.notAttending);
+      expect(attendee.displayName, 'Ada');
+      expect(attendee.role, EventRole.guest);
+    });
+
+    test('sends an empty note to clear it', () async {
+      final remote = answering(rsvpBody(status: 'Maybe'));
+
+      await remote.updateAttendeeStatus(
+        'e1',
+        'a1',
+        EventParticipationStatus.maybe,
+        notes: '',
+      );
+
+      expect(adapter.sent.single.body, {'status': 'Maybe', 'notes': ''});
+    });
+
+    test('percent-encodes both ids', () async {
+      final remote = answering(rsvpBody());
+
+      await remote.updateAttendeeStatus(
+        'a/b',
+        'c d',
+        EventParticipationStatus.attending,
+      );
+
+      expect(
+        adapter.sent.single.path,
+        '/api/events/a%2Fb/attendees/c%20d/status',
+      );
+    });
+
+    test('throws ArgumentError before the request for an empty id or an '
+        'unknown status', () async {
+      final remote = answering(rsvpBody());
+
+      await expectLater(
+        remote.updateAttendeeStatus('', 'a1', EventParticipationStatus.maybe),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.updateAttendeeStatus('e1', '', EventParticipationStatus.maybe),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.updateAttendeeStatus(
+          'e1',
+          'a1',
+          EventParticipationStatus.unknown,
+        ),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('maps 404, 403, 400 and a network failure', () async {
+      await expectLater(
+        sendDefault(
+          answering(
+            _envelope(404, 'Not Found', 'Attendee not found'),
+            status: 404,
+          ),
+        ),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+      await expectLater(
+        sendDefault(
+          answering(_envelope(403, 'Forbidden', 'Not your row'), status: 403),
+        ),
+        throwsA(isA<EventWriteRefusedException>()),
+      );
+      await expectLater(
+        sendDefault(
+          answering(
+            _envelope(400, 'Bad Request', 'Event has ended'),
+            status: 400,
+          ),
+        ),
+        throwsA(
+          isA<EventWriteConflictException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            'Event has ended',
+          ),
+        ),
+      );
+      await expectLater(
+        sendDefault(
+          answering(
+            jsonEncode({
+              'statusCode': 400,
+              'message': ['status must be one of the listed values'],
+              'error': 'Bad Request',
+            }),
+            status: 400,
+          ),
+        ),
+        throwsA(isA<EventRemotePermanentException>()),
+      );
+      await expectLater(
+        sendDefault(
+          EventRemoteDataSourceImpl(
+            unreachableDio(DioExceptionType.connectionError),
+          ),
+        ),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('throws on an answer with no attendee object', () async {
+      for (final body in [
+        jsonEncode({'message': 'Done'}),
+        jsonEncode({'message': 'Done', 'attendee': 'nope'}),
+      ]) {
+        await expectLater(
+          sendDefault(answering(body)),
+          throwsA(
+            isA<EventRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
+        );
+      }
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,

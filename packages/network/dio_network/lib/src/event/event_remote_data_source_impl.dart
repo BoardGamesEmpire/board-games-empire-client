@@ -383,6 +383,45 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<EventAttendee> updateAttendeeStatus(
+    String eventId,
+    String attendeeId,
+    EventParticipationStatus status, {
+    String? notes,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+    if (status == EventParticipationStatus.unknown) {
+      // It stands for a name this client could not read, and has none to send.
+      throw ArgumentError.value(
+        status,
+        'status',
+        'has no wire name, so it cannot be sent',
+      );
+    }
+
+    const action = 'RSVP';
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.patch<String>(
+        '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}'
+        '/status',
+        options: _plainBody,
+        // A note left out is kept by the server, and an empty one clears it.
+        data: {'status': status.toWire(), 'notes': ?notes},
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapAttendee(_attendeeObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
@@ -505,6 +544,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       throw const FormatException('response is missing an "occurrence" object');
     }
     return occurrence;
+  }
+
+  /// Reads the attendee out of an RSVP's body, `{ "attendee": { ... } }`.
+  static Map<String, dynamic> _attendeeObject(Map<String, dynamic> body) {
+    final attendee = body['attendee'];
+    if (attendee is! Map<String, dynamic>) {
+      throw const FormatException('response is missing an "attendee" object');
+    }
+    return attendee;
   }
 
   /// Reads the vote out of a vote's body, `{ "vote": { ... } }`.

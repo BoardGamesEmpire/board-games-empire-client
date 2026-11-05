@@ -47,6 +47,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [cancelOccurrence] | `POST /api/events/:id/occurrences/:oid/cancel` | `{ message, occurrence }` |
 /// | [removeOccurrence] | `DELETE /api/events/:id/occurrences/:oid` | `{ message, ... }`, not read |
 /// | [submitAvailability] | `POST /api/events/:id/occurrences/:oid/availability` | `{ message, vote }` |
+/// | [updateAttendeeStatus] | `PATCH /api/events/:id/attendees/:aid/status` | `{ message, attendee }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -478,6 +479,30 @@ abstract class EventRemoteDataSource {
     String occurrenceId,
     AvailabilityResponse response,
   );
+
+  /// `PATCH /api/events/:eventId/attendees/:attendeeId/status`: answers an
+  /// RSVP, sets the attendee's status to [status] (#508). Answers 200
+  /// `{ message, attendee }`, and the attendee carries its `user` and `role`
+  /// as a roster row of [fetchEvent] does.
+  ///
+  /// [notes] left null is left out of the body and the server keeps the old
+  /// note; an empty string clears it. Wire names come from
+  /// [EventParticipationStatus.toWire].
+  ///
+  /// The write is classified as the date writes are: a 404 carrying the
+  /// envelope is [EventRemoteNotFoundException], a 403 carrying it is
+  /// [EventWriteRefusedException], and a 400 carrying it with one message is
+  /// [EventWriteConflictException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id or for
+  /// [EventParticipationStatus.unknown], which has no wire name, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventAttendee> updateAttendeeStatus(
+    String eventId,
+    String attendeeId,
+    EventParticipationStatus status, {
+    String? notes,
+  });
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
   /// every date of the event stands in its availability poll. Answers 200
