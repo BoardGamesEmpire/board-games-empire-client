@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bge_test_support/network.dart';
@@ -6,7 +7,10 @@ import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:drift_storage/drift_storage_native.dart';
+import 'package:events/events.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:game_collection/game_collection.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -88,6 +92,62 @@ class NativeRootHarness {
 
   /// The fixture server's stable id.
   static const String bgeServerId = '550e8400-e29b-41d4-a716-446655440000';
+
+  /// The id of the household in [householdPageWithOne].
+  static const String householdId = 'hh_1';
+
+  /// A household row as `GET /api/households` embeds it, with the signed-in
+  /// user as its member: `_householdRow` and `_memberRow` in
+  /// `dio_network/test/household/household_remote_data_source_fetch_test.dart`,
+  /// cut to what the remote reads. The cache lists a household for the members
+  /// it holds, so a row with no member for the user never appears.
+  static final Map<String, Object?> householdPageWithOne = {
+    'households': [
+      {
+        'id': householdId,
+        'name': 'Game Night HQ',
+        'description': null,
+        'image': null,
+        'languageTagId': null,
+        'createdById': userId,
+        'visibility': 'Private',
+        'deletedAt': null,
+        'createdAt': '2026-01-15T10:30:00.000Z',
+        'updatedAt': '2026-01-15T10:30:00.000Z',
+        'languageTag': null,
+        'members': [
+          {
+            'id': 'hm_1',
+            'userId': userId,
+            'householdId': householdId,
+            'showAllGames': true,
+            'origin': 'Founder',
+            'addedById': null,
+            'createdAt': '2026-01-15T10:30:00.000Z',
+            'updatedAt': '2026-01-15T10:30:00.000Z',
+            'role': {
+              'id': 'hr_1',
+              'householdMemberId': 'hm_1',
+              'roleId': 'role_1',
+              'role': {'id': 'role_1', 'name': 'HouseholdOwner'},
+            },
+            'user': {
+              'id': userId,
+              'username': 'ada',
+              'profile': {'avatarUrl': null, 'displayName': 'Ada'},
+            },
+          },
+        ],
+      },
+    ],
+    'pagination': {
+      'page': 1,
+      'limit': 100,
+      'total': 1,
+      'totalPages': 1,
+      'hasMore': false,
+    },
+  };
 
   /// The fixture server's discovery document: email and password sign-in.
   static const ServerIdentity identity = ServerIdentity(
@@ -216,6 +276,69 @@ class NativeRootHarness {
   /// the shell does once the user is signed in.
   Future<void> activateUser() =>
       container.get<UserSessionScope>().activate(userId);
+
+  /// Waits until the household, collection and event hydrates have each
+  /// landed a pass ([HydrationState.refreshed]).
+  ///
+  /// The user tier sends its first requests after [activateUser] returns, so
+  /// a test that reads the cache or counts requests waits on this first. It
+  /// waits on the condition, not a delay, and fails with a [TimeoutException]
+  /// after [timeout] so a hydrate that never ran fails fast, not at the
+  /// runner's limit.
+  Future<void> awaitHydrated({
+    Duration timeout = const Duration(seconds: 10),
+  }) => Future.wait([
+    for (final status in [
+      container.get<HouseholdHydrationStatus>().watch(),
+      container.get<GameCollectionHydrationStatus>().watch(),
+      container.get<EventHydrationStatus>().watch(),
+    ])
+      status
+          .firstWhere((h) => h.state == HydrationState.refreshed)
+          .timeout(timeout),
+  ]);
+
+  /// Waits until [server] has recorded at least [count] requests to
+  /// [method] [pathSuffix], and returns them. Throws a [TimeoutException]
+  /// after [timeout].
+  ///
+  /// For a request the root sends after [activateUser] returns and that no
+  /// status reports, such as the caller access read.
+  Future<List<RecordedRequest>> awaitRequests(
+    String method,
+    String pathSuffix, {
+    int count = 1,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    await pollUntil(
+      () => server.requestsTo(method, pathSuffix).length >= count,
+      describe: () =>
+          'Fewer than $count $method $pathSuffix requests arrived: '
+          '${server.requests.map((r) => '${r.method} ${r.path}').toList()}',
+      timeout: timeout,
+    );
+    return server.requestsTo(method, pathSuffix);
+  }
+
+  /// Checks [condition] every 10 ms until it holds, and throws a
+  /// [TimeoutException] with what [describe] says after [timeout].
+  ///
+  /// For a state the root reaches after the call that started it returns,
+  /// with no stream or status that reports it. [describe] runs only on the
+  /// timeout, so it can name what the state was instead.
+  Future<void> pollUntil(
+    FutureOr<bool> Function() condition, {
+    required String Function() describe,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (!await condition()) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw TimeoutException(describe(), timeout);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
 
   /// Disposes the bootstrap, closing every scope and database, as the
   /// process ending does. The files and the keychain stay for the next
