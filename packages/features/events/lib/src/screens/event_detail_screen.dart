@@ -1414,10 +1414,12 @@ class _ActionOutcomeBanner extends StatelessWidget {
 
   /// A status write's copy (#502), saying which was done where it was.
   ///
-  /// A transient failure never says the status didn't change: a write whose
-  /// answer was lost may have landed, and it may be pressed again. Any other
-  /// failure, or one that sent nothing, would end the same way pressed
-  /// again, so its copy doesn't ask for that.
+  /// No failure says the status didn't change. A transient one's answer was
+  /// lost, and the write may have landed, so it may be pressed again. Any
+  /// other failure doesn't ask for that: a rejection, or one that sent
+  /// nothing, would end the same way pressed again. It points at the status
+  /// instead, which the screen reads again after it, since an answer this
+  /// device could not read may follow a write that landed.
   String _statusWriteMessage(
     EventsLocalizations l10n,
     EventStatusWrite write,

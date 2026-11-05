@@ -1773,8 +1773,14 @@ void main() {
   });
 
   group('status writes (#502)', () {
-    String statusBody(String status) =>
-        jsonEncode({'message': 'ok', 'event': _eventRow(status: status)});
+    // The row alone, with its status: a status write answers no dates and
+    // no policy.
+    String statusBody(String status) => jsonEncode({
+      'message': 'ok',
+      'event': _eventRow(status: status)
+        ..remove('occurrences')
+        ..remove('policy'),
+    });
 
     final calls =
         <String, (String, Future<Event> Function(EventRemoteDataSource))>{

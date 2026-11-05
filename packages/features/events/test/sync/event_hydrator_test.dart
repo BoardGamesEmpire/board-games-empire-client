@@ -203,10 +203,14 @@ void main() {
       },
     );
 
-    test('asks for archived events too', () async {
+    test('asks for archived events too, and caches them', () async {
+      final row = _row('e-1', 10);
+      final archived = row.copyWith(
+        event: row.event.copyWith(status: EventStatus.archived),
+      );
       final remote = FakeEventRemote.pages([
         _page([_row('e-2', 20)], limit: 1, total: 2, hasMore: true),
-        _page([_row('e-1', 10)], page: 2, limit: 1, total: 2),
+        _page([archived], page: 2, limit: 1, total: 2),
       ]);
 
       await EventHydrator(
@@ -217,6 +221,10 @@ void main() {
 
       expect(remote.requests, hasLength(2));
       expect(remote.includeArchivedRequests, [true, true]);
+      // Kept, so Unarchive stays reachable (#502).
+      final cached = await repository.getEvent('e-1');
+      expect(cached?.event.status, EventStatus.archived);
+      expect(await attending(), ['e-2', 'e-1']);
     });
 
     test('several pages: caches every page and purges only within page 1\'s '

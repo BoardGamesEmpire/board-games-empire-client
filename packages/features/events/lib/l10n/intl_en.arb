@@ -394,9 +394,9 @@
   "@eventsStatusWriteFailed": {
     "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event ended without an answer that says what happened, most often because there was no connection. The change may or may not have gone through, so the copy must not say the status didn't change."
   },
-  "eventsStatusWriteFailedUnexpected": "Something went wrong, and the event's status didn't change.",
+  "eventsStatusWriteFailedUnexpected": "Something went wrong. Check the event's status before trying again.",
   "@eventsStatusWriteFailedUnexpected": {
-    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. Unlike the connection failure it does not suggest trying again, since the same press would most likely fail the same way."
+    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event failed for any reason other than the connection: the server rejected the request, the server answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. An answer the app could not read may follow a change that went through, and the screen reads the event again, so the copy must not say the status didn't change. Unlike the connection failure it does not invite a retry straight away."
   },
   "eventsDetailCancelledNote": "This event was cancelled.",
   "@eventsDetailCancelledNote": {

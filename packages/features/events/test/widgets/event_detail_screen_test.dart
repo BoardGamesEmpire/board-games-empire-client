@@ -85,7 +85,7 @@ const _statusFailedCopy =
     "An error occurred, and the event's status may not have changed. You may "
     'need to try again.';
 const _statusFailedUnexpectedCopy =
-    "Something went wrong, and the event's status didn't change.";
+    "Something went wrong. Check the event's status before trying again.";
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -1764,8 +1764,43 @@ void main() {
 
     testWidgets('Cancel sends the trimmed reason after the dialog, and the '
         'banner says Event cancelled', (tester) async {
-      final remote = answering();
+      // The server's cancel calls off the event's Confirmed dates with it,
+      // and only the read after it serves them.
+      final remote = FakeEventRemote.detail(
+        (_) {
+          final snapshot = cached.snapshot;
+          final event = snapshot.event;
+          if (event.status != EventStatus.cancelled) return snapshot;
+          return snapshot.copyWith(
+            occurrences: [
+              for (final o in snapshot.occurrences)
+                o.status == OccurrenceStatus.confirmed
+                    ? o.copyWith(
+                        status: OccurrenceStatus.cancelled,
+                        cancelledAt: event.cancelledAt,
+                        cancelReason: event.cancelReason,
+                      )
+                    : o,
+            ],
+          );
+        },
+        deleted: (_) {},
+        statusWritten: answer,
+      );
+      // And the read's copy reaches the screen through the cache, as the
+      // repository's watch delivers it.
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        final snapshot = invocation.positionalArguments.single as EventSnapshot;
+        cached = EventDetail(snapshot: snapshot, attendance: cached.attendance);
+        cache.add(cached);
+      });
       await showStatus(tester, viewed(EventStatus.scheduled), remote: remote);
+      expect(
+        inSection(EventDetailScreen.datesKey, 'Confirmed'),
+        findsOneWidget,
+      );
       await choose(tester, EventDetailScreen.cancelKey);
 
       expect(find.text('Cancel Catan night?'), findsOneWidget);
@@ -1791,7 +1826,15 @@ void main() {
       verify(() => repository.cacheEventRow(any())).called(1);
       expect(remote.detailRequests, ['e-1', 'e-1']);
       expect(find.text(_cancelledNoteCopy), findsOneWidget);
-      expect(find.text('Reason: The venue flooded.'), findsOneWidget);
+      const reason = 'Reason: The venue flooded.';
+      expect(
+        inSection(EventDetailScreen.datesKey, 'Cancelled'),
+        findsOneWidget,
+      );
+      expect(inSection(EventDetailScreen.datesKey, 'Confirmed'), findsNothing);
+      // Once for the event, and once for the date it called off.
+      expect(find.text(reason), findsNWidgets(2));
+      expect(inSection(EventDetailScreen.datesKey, reason), findsOneWidget);
       expect(backs, 0);
     });
 
@@ -2328,6 +2371,18 @@ void main() {
           thrown: const EventRemotePermanentException(
             'broken',
             statusCode: 500,
+          ),
+          copy: _statusFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+          rereads: true,
+        ),
+        (
+          // A 2xx whose body didn't parse: the write may have landed, so
+          // the copy doesn't say it didn't, and the read shows the status.
+          name: 'an answer it could not read',
+          thrown: const EventRemotePermanentException(
+            'unreadable',
+            statusCode: 200,
           ),
           copy: _statusFailedUnexpectedCopy,
           tone: BgeBannerTone.error,
