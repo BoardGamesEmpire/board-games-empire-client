@@ -8,6 +8,7 @@ import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:events/events.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -367,10 +368,11 @@ class _Session {
   final int poolCount;
 }
 
-/// `BgeApp` composing home's sections (#614, #615, #616, #617): what each is
-/// given, and when. What the sections do with it is pinned in `game_catalog`
-/// and `game_collection`. What only this file can check is that the session's
-/// services reach them, and that one session's state ends with it.
+/// `BgeApp` composing home's sections (#614, #615, #616, #617, #707): what
+/// each is given, and when. What the sections do with it is pinned in
+/// `game_catalog` and `game_collection`. What only this file can check is that
+/// the session's services reach them, and that one session's state ends with
+/// it.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -556,8 +558,8 @@ void main() {
       expect(find.byType(HomeScreen), findsOneWidget);
     });
 
-    testWidgets('a cover opens the game, and a game found gone there leaves '
-        'both shelves', (tester) async {
+    testWidgets('a cover opens the quick look, and a game found gone there '
+        'leaves both shelves', (tester) async {
       final games = _GamesRemote([_game('a'), _game('b')])..gone.add('a');
       await pumpHome(tester, games: games);
 
@@ -567,23 +569,135 @@ void main() {
       expect(newestA, findsOneWidget);
       expect(toPlayA, findsOneWidget);
 
+      // A pop-up over home, not a page.
       await tester.tap(toPlayB);
       await tester.pumpAndSettle();
-      expect(find.byType(GameDetailScreen), findsOneWidget);
-      expect(find.byKey(GameDetailScreen.unavailableKey), findsNothing);
-      await tester.tap(find.byType(BackButton));
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byKey(GameQuickLook.unavailableKey), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsNothing);
 
       await tester.tap(newestA);
+      await tester.pumpAndSettle();
+      expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+      // Down from both shelves under the quick look, which stays open.
+      expect(newestA, findsNothing);
+      expect(toPlayA, findsNothing);
+
+      // The cover it was opened from has gone, and View full details still
+      // opens the page.
+      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
       await tester.pumpAndSettle();
       expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
 
+      expect(find.byType(GameQuickLook), findsNothing);
       expect(newestA, findsNothing);
       expect(toPlayA, findsNothing);
       expect(find.byKey(NewestGamesSection.coverKey('b')), findsOneWidget);
       expect(toPlayB, findsOneWidget);
+    });
+
+    testWidgets('View full details opens the game over the quick look, and '
+        'back lands on home without it', (tester) async {
+      await pumpHome(tester, games: _GamesRemote([_game('a')]));
+      final cover = find.byKey(NewestGamesSection.coverKey('a'));
+      final coverFocus = tester
+          .widget<InkWell>(
+            find.descendant(of: cover, matching: find.byType(InkWell)),
+          )
+          .focusNode!;
+      expect(coverFocus.hasFocus, isFalse);
+
+      await tester.tap(cover);
+      await tester.pumpAndSettle();
+      // Home is on the auth shell's nested navigator, and the quick look on
+      // the root one, where the detail page is pushed: on the nested one, it
+      // would never hear of the page.
+      final root = Navigator.of(tester.element(cover), rootNavigator: true);
+      expect(Navigator.of(tester.element(cover)), isNot(same(root)));
+      expect(
+        ModalRoute.of(tester.element(find.byType(GameQuickLook)))!.navigator,
+        same(root),
+      );
+
+      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(
+        routerOf(tester).state.uri.toString(),
+        AppRoutes.gameDetailOf('a'),
+      );
+      // Gone once the page has arrived, not just hidden under it.
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(cover, findsOneWidget);
+      expect(find.byKey(SomethingToPlaySection.coverKey('a')), findsOneWidget);
+      // The tap gave the cover focus, so that it comes back there.
+      expect(FocusManager.instance.primaryFocus, same(coverFocus));
+    });
+
+    testWidgets('focus returns to the cover after the quick look and after '
+        'the detail page', (tester) async {
+      await pumpHome(tester, games: _GamesRemote([_game('a')]));
+      final cover = tester
+          .widget<InkWell>(
+            find.descendant(
+              of: find.byKey(NewestGamesSection.coverKey('a')),
+              matching: find.byType(InkWell),
+            ),
+          )
+          .focusNode!;
+      Route<Object?>? focusedRoute() =>
+          ModalRoute.of(FocusManager.instance.primaryFocus!.context!);
+      Route<Object?>? quickLookRoute() =>
+          ModalRoute.of(tester.element(find.byType(GameQuickLook)));
+
+      // Tab to the cover, as a keyboard user gets there.
+      for (var i = 0; i < 40 && !cover.hasPrimaryFocus; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(cover.hasPrimaryFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+      expect(focusedRoute(), same(quickLookRoute()));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(cover));
+
+      // Again, through the detail page, and back by the system's back.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(focusedRoute(), same(quickLookRoute()));
+      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(
+        focusedRoute(),
+        same(ModalRoute.of(tester.element(find.byType(GameDetailScreen)))),
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(cover));
     });
 
     testWidgets('the prompt opens /household', (tester) async {
@@ -1060,6 +1174,80 @@ void main() {
       expect(statsCubit(tester), isNot(same(oldStats)));
       expect(first.owned.watches, firstWatches);
       expect(second.owned.watches, greaterThan(0));
+    });
+
+    // Home and sign-in share the auth shell's page, so a pop-up over home is
+    // not taken down by the routing a session's end does (#707).
+    testWidgets("a quick look open over home closes as another user's session "
+        'replaces it', (tester) async {
+      await signedInAsFirstUser(tester);
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      switchToSecondUser();
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameQuickLook), findsNothing);
+      expectOnlySecondUser(tester);
+    });
+
+    testWidgets('a quick look open over home closes as the session ends', (
+      tester,
+    ) async {
+      await signedInAsFirstUser(tester);
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameQuickLook), findsOneWidget);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(find.byType(GameQuickLook), findsNothing);
+    });
+
+    // View full details's page covers the quick look before it removes it,
+    // once it has arrived. A session ending in between reaches the quick
+    // look only once the routing has taken the page down (#707).
+    Future<void> detailsArriving(WidgetTester tester) async {
+      await tester.tap(find.byKey(cover('first')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsOneWidget);
+    }
+
+    testWidgets("a quick look under View full details's arriving page closes "
+        "as another user's session replaces it", (tester) async {
+      await signedInAsFirstUser(tester);
+      await detailsArriving(tester);
+
+      switchToSecondUser();
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+      expectOnlySecondUser(tester);
+    });
+
+    testWidgets("a quick look under View full details's arriving page closes "
+        'as the session ends', (tester) async {
+      await signedInAsFirstUser(tester);
+      await detailsArriving(tester);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
     });
 
     testWidgets("Something to play is keyed on the session's collection, which "

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -38,6 +40,9 @@ void main() {
     void Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context)? onSearch,
     GameSort initialSort = GameSort.title,
+    ListLayoutRepository? layouts,
+    void Function(BuildContext context, GameQuickLookSeed seed)? onQuickLook,
+    bool settle = true,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -47,11 +52,13 @@ void main() {
           gone: gone,
           onOpen: onOpen,
           onSearch: onSearch,
+          layouts: layouts,
+          onQuickLook: onQuickLook,
           initialSort: initialSort,
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) await tester.pumpAndSettle();
   }
 
   /// Opens the sort menu and picks [label] from it.
@@ -540,4 +547,343 @@ void main() {
 
     expect(searched, 1);
   });
+
+  group('thumbnails', () {
+    setUp(() {
+      remote.onFetchPage = (_, _) async => pageOf([azul, seafarers]);
+    });
+
+    testWidgets('the toggle switches to thumbnails and writes the choice', (
+      tester,
+    ) async {
+      final layouts = _FakeLayouts();
+      await show(tester, layouts: layouts);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsNothing);
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
+      expect(layouts.writes, [(ListLayoutScreen.games, ListLayout.thumbnails)]);
+    });
+
+    // Logged, not reported as a framework error, which the app takes for a
+    // crash and offers to send.
+    testWidgets('a store that fails shows the list and keeps a change for '
+        'the visit, with no framework error', (tester) async {
+      await show(tester, layouts: _FakeLayouts()..failing = true);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+    });
+
+    testWidgets('a stored thumbnails choice opens in thumbnails', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+      );
+
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
+    });
+
+    testWidgets('until the choice is read, the loading state shows', (
+      tester,
+    ) async {
+      final layouts = _FakeLayouts()..hold = Completer<ListLayout?>();
+      await show(tester, layouts: layouts, settle: false);
+      await tester.pump();
+
+      expect(find.byKey(GameBrowseScreen.loadingKey), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsNothing);
+      // No count of rows that aren't built.
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        isNull,
+      );
+
+      layouts.hold!.complete(ListLayout.thumbnails);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameBrowseScreen.loadingKey), findsNothing);
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+    });
+
+    final unread = {
+      'a failure': (() async => throw unreachable(), GameBrowseScreen.errorKey),
+      'an empty list': (() async => pageOf([]), GameBrowseScreen.emptyKey),
+    };
+    for (final MapEntry(key: name, value: (fetch, key)) in unread.entries) {
+      testWidgets('$name shows before the choice is read', (tester) async {
+        remote.onFetchPage = (_, _) => fetch();
+        await show(
+          tester,
+          cache: FakeGamesCache(),
+          layouts: _FakeLayouts()..hold = Completer<ListLayout?>(),
+          settle: false,
+        );
+        await tester.pump();
+
+        expect(find.byKey(key), findsOneWidget);
+        expect(find.byKey(GameBrowseScreen.loadingKey), findsNothing);
+      });
+    }
+
+    testWidgets("a tile's name is the title and the row's facts", (
+      tester,
+    ) async {
+      await show(
+        tester,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+      );
+
+      expect(
+        find.bySemanticsLabel('Azul, 2017, 2 to 4 players'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("tapping a tile calls onQuickLook with the game's seed", (
+      tester,
+    ) async {
+      final calls = <GameQuickLookSeed>[];
+      await show(
+        tester,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+        onQuickLook: (_, seed) => calls.add(seed),
+      );
+
+      await tester.tap(find.byKey(GameBrowseScreen.tileKey('g_azul')));
+      await tester.pumpAndSettle();
+
+      expect(calls.map((seed) => seed.id), ['g_azul']);
+      expect(calls.single.title, 'Azul');
+    });
+
+    testWidgets('thumbnails keep the More footer and its page loads', (
+      tester,
+    ) async {
+      remote.onFetchPage = (page, _) async => page == 1
+          ? pageOf([azul], hasMore: true)
+          : pageOf([seafarers], page: 2);
+      await show(
+        tester,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+      );
+
+      await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(GameBrowseScreen.tileKey('g_seafarers')),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameBrowseScreen.moreKey), findsNothing);
+    });
+
+    testWidgets('2 columns at 400, 3 at 700', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      remote.onFetchPage = (_, _) async =>
+          pageOf([azul, seafarers, game('g_c'), game('g_d')]);
+
+      Future<int> columns(double width) async {
+        tester.view.physicalSize = Size(width, 900);
+        await show(
+          tester,
+          layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+        );
+        final xs = {
+          for (final id in ['g_azul', 'g_seafarers', 'g_c', 'g_d'])
+            tester
+                .getTopLeft(find.byKey(GameBrowseScreen.tileKey(id)))
+                .dx
+                .round(),
+        };
+        return xs.length;
+      }
+
+      expect(await columns(400), 2);
+      expect(await columns(599), 2);
+      expect(await columns(600), 3);
+      expect(await columns(700), 3);
+      expect(await columns(840), 4);
+      expect(await columns(1200), 4);
+    });
+
+    testWidgets('a tap before the choice is read is not undone by it', (
+      tester,
+    ) async {
+      final layouts = _FakeLayouts()..hold = Completer<ListLayout?>();
+      await show(tester, layouts: layouts, settle: false);
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pump();
+      layouts.hold!.complete(ListLayout.list);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+      expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
+      expect(layouts.writes, [(ListLayoutScreen.games, ListLayout.thumbnails)]);
+    });
+  });
+
+  group('the layout toggle (#710)', () {
+    final toggle = find.byKey(GameBrowseScreen.layoutToggleKey);
+
+    /// The toggle heads the content, end-aligned, above [content], and is not
+    /// in the app bar, where it left the title a few letters at 320dp.
+    void expectAtTheHead(WidgetTester tester, Finder content) {
+      expect(toggle, findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: toggle),
+        findsNothing,
+      );
+      expect(content, findsOneWidget);
+      expect(
+        tester.getBottomLeft(toggle).dy,
+        lessThanOrEqualTo(tester.getTopLeft(content).dy),
+      );
+    }
+
+    final states = <String, Future<Finder> Function(WidgetTester)>{
+      'while the choice is read': (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([azul]);
+        await show(
+          tester,
+          layouts: _FakeLayouts()..hold = Completer<ListLayout?>(),
+          settle: false,
+        );
+        await tester.pump();
+        return find.byKey(GameBrowseScreen.loadingKey);
+      },
+      'while the first page loads': (tester) async {
+        remote.onFetchPage = (_, _) =>
+            Completer<PaginatedResult<Game>>().future;
+        await show(tester, settle: false);
+        await tester.pump();
+        return find.byKey(GameBrowseScreen.loadingKey);
+      },
+      'over a failure': (tester) async {
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        await show(tester, cache: FakeGamesCache());
+        return find.byKey(GameBrowseScreen.errorKey);
+      },
+      'over an empty list': (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([]);
+        await show(tester);
+        return find.byKey(GameBrowseScreen.emptyKey);
+      },
+      'over the from-cache banner': (tester) async {
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        await show(tester, cache: FakeGamesCache([azul]));
+        return find.byKey(GameBrowseScreen.fromCacheBannerKey);
+      },
+    };
+    for (final MapEntry(key: state, value: build) in states.entries) {
+      testWidgets('heads the content $state', (tester) async {
+        expectAtTheHead(tester, await build(tester));
+      });
+    }
+
+    testWidgets('heads the rows, at their end edge', (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([azul, seafarers]);
+      await show(tester, layouts: _FakeLayouts());
+
+      final row = find.byKey(GameBrowseScreen.rowKey('g_azul'));
+      expectAtTheHead(tester, row);
+      expect(
+        tester.getTopRight(toggle).dx,
+        moreOrLessEquals(tester.getTopRight(row).dx, epsilon: 0.5),
+      );
+    });
+
+    testWidgets('a screen reader meets it after the title and before the '
+        'rows', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([azul]);
+      await show(tester, layouts: _FakeLayouts());
+
+      expect(
+        tester.semantics.simulatedAccessibilityTraversal(),
+        containsAllInOrder(<Matcher>[
+          isSemantics(label: 'Games'),
+          isSemantics(label: 'List'),
+          isSemantics(label: 'Thumbnails'),
+          isSemantics(label: 'Azul\n2017, 2 to 4 players'),
+        ]),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('keeps its focus while the list reloads', (tester) async {
+      final reload = Completer<PaginatedResult<Game>>();
+      remote.onFetchPage = (_, _) => remote.calls.length > 1
+          ? reload.future
+          : Future.value(pageOf([azul]));
+      await show(tester, layouts: _FakeLayouts());
+      final segment = Focus.of(
+        tester.element(
+          find.descendant(
+            of: toggle,
+            matching: find.byIcon(Icons.view_list_outlined),
+          ),
+        ),
+      );
+      segment.requestFocus();
+      await tester.pump();
+
+      tester
+          .element(find.byKey(GameBrowseScreen.rowKey('g_azul')))
+          .read<GameBrowseBloc>()
+          .add(const GameBrowseSortChanged(GameSort.newest));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(GameBrowseScreen.loadingKey), findsOneWidget);
+      expect(segment.hasPrimaryFocus, isTrue);
+
+      reload.complete(pageOf([seafarers]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Catan: Seafarers'), findsOneWidget);
+      expect(segment.hasPrimaryFocus, isTrue);
+    });
+  });
+}
+
+/// A layout store that answers with [stored], or after [hold].
+class _FakeLayouts implements ListLayoutRepository {
+  ListLayout? stored;
+  Completer<ListLayout?>? hold;
+  final writes = <(ListLayoutScreen, ListLayout)>[];
+
+  /// Every read and write throws, as a store that has gone does.
+  bool failing = false;
+
+  @override
+  Future<ListLayout?> read(ListLayoutScreen screen) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
+    return hold?.future ?? stored;
+  }
+
+  @override
+  Future<void> write(ListLayoutScreen screen, ListLayout layout) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
+    stored = layout;
+    writes.add((screen, layout));
+  }
 }

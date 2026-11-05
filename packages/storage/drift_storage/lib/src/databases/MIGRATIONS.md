@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 13`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 14`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -97,6 +97,11 @@ Server schema history:
   stays deferred. The v6 → v7 step creates `events` from the live table, which
   now has the columns, so it drops both again right after, from the empty
   table, and this step adds them back.
+- **v13 → v14 (#710):** adds `list_layouts` (`user_id`, `screen`, `layout`,
+  primary key `(user_id, screen)`), the layout each user left each list screen
+  in, kept per user on this device and never synced. A new empty table with no
+  foreign-key edges, created by one `createTable`, so #54 stays deferred.
+  Nothing earlier references it, so no older step needs to drop anything.
 
 Meta schema history:
 
@@ -107,7 +112,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v13.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v14.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live

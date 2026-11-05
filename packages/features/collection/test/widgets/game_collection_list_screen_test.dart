@@ -72,6 +72,7 @@ void main() {
     void Function(BuildContext context)? onBrowse,
     Future<void> Function()? onRetry,
     VoidCallback? onEnter,
+    ListLayoutRepository? layouts,
     TextScaler textScaler = TextScaler.noScaling,
   }) => app(
     GameCollectionListScreen(
@@ -81,6 +82,7 @@ void main() {
       onBrowse: onBrowse,
       onRetry: onRetry,
       onEnter: onEnter,
+      layouts: layouts,
     ),
     textScaler: textScaler,
   );
@@ -91,11 +93,14 @@ void main() {
     List<GameCollectionListItem> rows, {
     void Function(BuildContext context, String entryId)? onOpen,
     void Function(BuildContext context)? onBrowse,
+    ListLayoutRepository? layouts,
   }) async {
-    await tester.pumpWidget(harness(onOpen: onOpen, onBrowse: onBrowse));
+    await tester.pumpWidget(
+      harness(onOpen: onOpen, onBrowse: onBrowse, layouts: layouts),
+    );
     status.finished(CollectionHydrateOutcome.complete);
     items.add(rows);
-    await tester.pump();
+    await tester.pumpAndSettle();
   }
 
   SemanticsNode rowSemantics(WidgetTester tester, String id) =>
@@ -612,6 +617,219 @@ void main() {
     }
   });
 
+  group('thumbnails (#710)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+
+    testWidgets('the toggle switches to thumbnails and writes the choice', (
+      tester,
+    ) async {
+      final layouts = _FakeLayouts();
+      await show(tester, [listItem('e-1')], layouts: layouts);
+      expect(
+        find.byKey(GameCollectionListScreen.rowKey('e-1')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameCollectionListScreen.rowKey('e-1')), findsNothing);
+      expect(layouts.writes, [
+        (ListLayoutScreen.collection, ListLayout.thumbnails),
+      ]);
+    });
+
+    // Logged, not reported as a framework error, which the app takes for a
+    // crash and offers to send.
+    testWidgets('a store that fails shows the list and keeps a change for '
+        'the visit, with no framework error', (tester) async {
+      await show(tester, [
+        listItem('e-1'),
+      ], layouts: _FakeLayouts()..failing = true);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.rowKey('e-1')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Thumbnails'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a stored thumbnails choice opens in thumbnails', (
+      tester,
+    ) async {
+      await show(tester, [listItem('e-1')], layouts: thumbs);
+
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameCollectionListScreen.rowKey('e-1')), findsNothing);
+    });
+
+    testWidgets('until the choice is read, the loading state shows', (
+      tester,
+    ) async {
+      final layouts = _FakeLayouts()..hold = Completer<ListLayout?>();
+      await tester.pumpWidget(harness(layouts: layouts));
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add([listItem('e-1')]);
+      await tester.pump();
+
+      expect(find.byKey(GameCollectionListScreen.loadingKey), findsOneWidget);
+      expect(find.byKey(GameCollectionListScreen.rowKey('e-1')), findsNothing);
+      // No count of rows that aren't built.
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        isNull,
+      );
+
+      layouts.hold!.complete(ListLayout.thumbnails);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failed read shows before the choice is read', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(layouts: _FakeLayouts()..hold = Completer<ListLayout?>()),
+      );
+      items.addError(StateError('no authenticated user'));
+      await tester.pump();
+
+      expect(find.byKey(GameCollectionListScreen.errorKey), findsOneWidget);
+      expect(find.byKey(GameCollectionListScreen.loadingKey), findsNothing);
+    });
+
+    testWidgets('an empty collection shows before the choice is read', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(layouts: _FakeLayouts()..hold = Completer<ListLayout?>()),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add(const []);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
+      expect(find.byKey(GameCollectionListScreen.loadingKey), findsNothing);
+    });
+
+    testWidgets('a first fill under the choice read is one loading state, '
+        'so a screen reader hears "Loading" once', (tester) async {
+      final handle = tester.ensureSemantics();
+      final layouts = _FakeLayouts()..hold = Completer<ListLayout?>();
+      await tester.pumpWidget(harness(layouts: layouts));
+      status.started();
+      items.add(const []);
+      await tester.pump();
+      final loading = find.byKey(GameCollectionListScreen.loadingKey);
+      expect(loading, findsOneWidget);
+      final element = tester.element(loading);
+      final node = tester.getSemantics(loading).id;
+
+      // The choice lands while the cache is still filling.
+      layouts.hold!.complete(ListLayout.list);
+      await tester.pump();
+      await tester.pump();
+
+      expect(loading, findsOneWidget);
+      expect(
+        tester.element(loading),
+        same(element),
+        reason: 'a new live region would announce the loading again',
+      );
+      expect(tester.getSemantics(loading).id, node);
+      handle.dispose();
+    });
+
+    testWidgets("a tile's name is the title and the row's spoken details", (
+      tester,
+    ) async {
+      await show(tester, [
+        listItem(
+          'e-1',
+          title: 'Catan',
+          subtitle: 'Seafarers',
+          medium: GameMedium.digital,
+          quantity: 2,
+          rating: 7,
+          favorite: true,
+        ),
+      ], layouts: thumbs);
+
+      expect(
+        find.bySemanticsLabel(
+          'Catan: Seafarers, Board game, Digital, 2 copies, '
+          'Rated 7 out of 10, Favorite',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping a tile opens its entry', (tester) async {
+      final opened = <String>[];
+      await show(
+        tester,
+        [listItem('e-1')],
+        layouts: thumbs,
+        onOpen: (_, id) => opened.add(id),
+      );
+
+      await tester.tap(find.byKey(GameCollectionListScreen.tileKey('e-1')));
+      await tester.pumpAndSettle();
+
+      expect(opened, ['e-1']);
+    });
+
+    testWidgets('without onOpen a tile is inert', (tester) async {
+      await show(tester, [listItem('e-1')], layouts: thumbs);
+
+      final node = tester.getSemantics(
+        find.byKey(GameCollectionListScreen.tileKey('e-1')),
+      );
+      expect(node, isSemantics(isButton: false, hasTapAction: false));
+    });
+
+    testWidgets('the refresh banner stays above the grid', (tester) async {
+      await tester.pumpWidget(harness(layouts: thumbs));
+      items.add([listItem('e-1')]);
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+
+      final banner = find.byKey(GameCollectionListScreen.refreshBannerKey);
+      expect(banner, findsOneWidget);
+      expect(
+        tester.getBottomLeft(banner).dy,
+        lessThanOrEqualTo(
+          tester
+              .getTopLeft(find.byKey(GameCollectionListScreen.tileKey('e-1')))
+              .dy,
+        ),
+      );
+    });
+  });
+
   group('when the refresh failed', () {
     testWidgets('says so above the rows it is still showing', (tester) async {
       await tester.pumpWidget(harness());
@@ -817,4 +1035,152 @@ void main() {
     expect(find.text('Catan'), findsOneWidget);
     expect(find.byType(AppBar), findsNothing);
   });
+
+  group('the layout toggle (#710)', () {
+    final toggle = find.byKey(GameCollectionListScreen.layoutToggleKey);
+
+    /// The toggle heads the content, end-aligned, above [content], and is not
+    /// in the app bar, where it left the title cut at 320dp.
+    void expectAtTheHead(WidgetTester tester, Finder content) {
+      expect(toggle, findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: toggle),
+        findsNothing,
+      );
+      expect(content, findsOneWidget);
+      expect(
+        tester.getBottomLeft(toggle).dy,
+        lessThanOrEqualTo(tester.getTopLeft(content).dy),
+      );
+    }
+
+    final states = <String, Future<Finder> Function(WidgetTester)>{
+      'while the choice is read': (tester) async {
+        await tester.pumpWidget(
+          harness(layouts: _FakeLayouts()..hold = Completer<ListLayout?>()),
+        );
+        status.finished(CollectionHydrateOutcome.complete);
+        items.add([listItem('e-1')]);
+        await tester.pump();
+        return find.byKey(GameCollectionListScreen.loadingKey);
+      },
+      'while the cache fills': (tester) async {
+        await tester.pumpWidget(harness());
+        status.started();
+        items.add(const []);
+        await tester.pump();
+        return find.byKey(GameCollectionListScreen.loadingKey);
+      },
+      'over a failed read': (tester) async {
+        await tester.pumpWidget(harness());
+        items.addError(StateError('no authenticated user'));
+        await tester.pump();
+        return find.byKey(GameCollectionListScreen.errorKey);
+      },
+      'over an empty collection': (tester) async {
+        await show(tester, const []);
+        return find.byKey(GameCollectionListScreen.emptyKey);
+      },
+      'over the refresh banner': (tester) async {
+        await tester.pumpWidget(harness());
+        items.add([listItem('e-1')]);
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+        return find.byKey(GameCollectionListScreen.refreshBannerKey);
+      },
+    };
+    for (final MapEntry(key: state, value: build) in states.entries) {
+      testWidgets('heads the content $state', (tester) async {
+        expectAtTheHead(tester, await build(tester));
+      });
+    }
+
+    testWidgets('heads the rows, at their end edge', (tester) async {
+      await show(tester, [listItem('e-1')], layouts: _FakeLayouts());
+
+      final row = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+      expectAtTheHead(tester, row);
+      expect(
+        tester.getTopRight(toggle).dx,
+        moreOrLessEquals(tester.getTopRight(row).dx, epsilon: 0.5),
+      );
+    });
+
+    testWidgets('a screen reader meets it after the title and before the '
+        'rows', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, [listItem('e-1')], layouts: _FakeLayouts());
+      final row = rowSemantics(tester, 'e-1').label;
+
+      expect(
+        tester.semantics.simulatedAccessibilityTraversal(),
+        containsAllInOrder(<Matcher>[
+          isSemantics(label: 'Collection'),
+          isSemantics(label: 'List'),
+          isSemantics(label: 'Thumbnails'),
+          isSemantics(label: row),
+        ]),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('keeps its focus as a refresh banner comes and goes', (
+      tester,
+    ) async {
+      await show(tester, [listItem('e-1')], layouts: _FakeLayouts());
+      final segment = Focus.of(
+        tester.element(
+          find.descendant(
+            of: toggle,
+            matching: find.byIcon(Icons.view_list_outlined),
+          ),
+        ),
+      );
+      segment.requestFocus();
+      await tester.pump();
+
+      status
+        ..started()
+        ..finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameCollectionListScreen.refreshBannerKey),
+        findsOneWidget,
+      );
+      expect(segment.hasPrimaryFocus, isTrue);
+
+      status
+        ..started()
+        ..finished(CollectionHydrateOutcome.complete);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameCollectionListScreen.refreshBannerKey),
+        findsNothing,
+      );
+      expect(segment.hasPrimaryFocus, isTrue);
+    });
+  });
+}
+
+/// A layout store that answers with [stored], or after [hold].
+class _FakeLayouts implements ListLayoutRepository {
+  ListLayout? stored;
+  Completer<ListLayout?>? hold;
+  final writes = <(ListLayoutScreen, ListLayout)>[];
+
+  /// Every read and write throws, as a store that has gone does.
+  bool failing = false;
+
+  @override
+  Future<ListLayout?> read(ListLayoutScreen screen) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
+    return hold == null ? stored : hold!.future;
+  }
+
+  @override
+  Future<void> write(ListLayoutScreen screen, ListLayout layout) async {
+    if (failing) throw StateError('ListLayoutRepository has been disposed');
+    stored = layout;
+    writes.add((screen, layout));
+  }
 }

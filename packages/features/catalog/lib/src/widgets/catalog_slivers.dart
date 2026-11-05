@@ -27,7 +27,9 @@ class CatalogSectionHeading extends StatelessWidget {
 /// the server's answer failed, with a retry that asks the server again.
 ///
 /// The catalog's [BgeRefreshBanner]: furniture for as long as the screen
-/// shows the cache, so it does not scroll itself into view.
+/// shows the cache, so it does not scroll itself into view. The quick look
+/// (#707) puts it over what the list already knew, too, when there is no
+/// cached copy to show.
 ///
 /// A screen that keeps the cache up while it retries passes [retrying]: the
 /// banner says so, and the retry keeps its place and its focus, relabelled

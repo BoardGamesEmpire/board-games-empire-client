@@ -46,7 +46,7 @@ void main() {
     GameCollectionRepository? collection,
     Stream<List<Household>>? Function()? households,
     Stream<String>? gone,
-    void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: BgeTheme.light(),
@@ -81,7 +81,7 @@ void main() {
   Future<void> show(
     WidgetTester tester, {
     Stream<String>? gone,
-    void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
   }) async {
     await tester.pumpWidget(harness(gone: gone, onOpen: onOpen));
     await tester.pumpAndSettle();
@@ -122,6 +122,7 @@ void main() {
   }
 
   testWidgets('heading, covers, Reshuffle', (tester) async {
+    final handle = tester.ensureSemantics();
     poolHolds(['g-1', 'g-2']);
 
     await show(tester);
@@ -132,12 +133,15 @@ void main() {
     );
     expect(cover('g-1'), findsOneWidget);
     expect(cover('g-2'), findsOneWidget);
-    expect(find.text('Game g-1'), findsOneWidget);
+    // The cover is the tile, and the title is its name, not drawn text.
+    expect(find.bySemanticsLabel('Game g-1'), findsOneWidget);
+    expect(find.text('Game g-1'), findsNothing);
     expect(
       find.descendant(of: reshuffle, matching: find.text('Reshuffle')),
       findsOneWidget,
     );
     expect(find.byKey(SomethingToPlaySection.loadingKey), findsNothing);
+    handle.dispose();
   });
 
   testWidgets('a spinner under the heading while the first draw runs, and no '
@@ -411,7 +415,7 @@ void main() {
       await tester.pump();
       expect(
         FocusManager.instance.primaryFocus!.context!
-            .findAncestorWidgetOfExactType<GameCoverTile>()
+            .findAncestorWidgetOfExactType<BgeCoverTile>()
             ?.key,
         SomethingToPlaySection.coverKey('g-1'),
       );
@@ -492,14 +496,18 @@ void main() {
     expect(asked, 1);
   });
 
-  testWidgets('tapping a cover calls onOpen', (tester) async {
+  testWidgets('tapping a cover calls onOpen with its seed', (tester) async {
     poolHolds(['g-1', 'g-2']);
-    final opened = <String>[];
-    await show(tester, onOpen: (_, id) => opened.add(id));
+    final opened = <GameQuickLookSeed>[];
+    await show(tester, onOpen: (_, seed) => opened.add(seed));
 
     await tester.tap(cover('g-2'));
 
-    expect(opened, ['g-2']);
+    final seed = opened.single;
+    expect(seed.id, 'g-2');
+    expect(seed.title, 'Game g-2');
+    // The row is a summary, so the facts wait for the quick look's read.
+    expect(seed.game, isNull);
   });
 
   testWidgets('a game found gone comes down with the row where it was', (

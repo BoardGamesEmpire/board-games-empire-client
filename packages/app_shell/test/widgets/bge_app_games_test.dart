@@ -4,6 +4,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
@@ -31,6 +32,18 @@ _MockSyncOperationSender _deliveringSender() {
   when(() => sender.deliver(any(), any()))
       .thenAnswer((_) async => const SyncDelivered());
   return sender;
+}
+
+/// Remembers the layout in memory, as the user-session store does on disk.
+class _MemoryLayouts implements ListLayoutRepository {
+  final stored = <ListLayoutScreen, ListLayout>{};
+
+  @override
+  Future<ListLayout?> read(ListLayoutScreen screen) async => stored[screen];
+
+  @override
+  Future<void> write(ListLayoutScreen screen, ListLayout layout) async =>
+      stored[screen] = layout;
 }
 
 class _MockGameCollectionRepository extends Mock
@@ -284,12 +297,14 @@ void main() {
   /// session's collection repository.
   FakeActiveServerScope activeServer({
     bool withGames = true,
+    ListLayoutRepository? layouts,
     GameCollectionRepository? collection,
     SyncOperationSender? sender,
   }) => FakeActiveServerScope(
     buildActiveServer(
       FakeAuthRepository(initialSession: sampleSession()),
       gamesRemoteDataSource: withGames ? games : null,
+      listLayoutRepository: layouts,
       dataGatewayRemoteDataSource: dataGateways,
       callerAccess: access,
       gameCollectionRepository: collection,
@@ -300,12 +315,14 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     bool withGames = true,
+    ListLayoutRepository? layouts,
     GameCollectionRepository? collection,
     SyncOperationSender? sender,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
       activeServer(
         withGames: withGames,
+        layouts: layouts,
         collection: collection,
         sender: sender,
       ),
@@ -350,6 +367,106 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GameDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('Games thumbnails open the quick look, and the choice survives '
+      'leaving and coming back', (tester) async {
+    final layouts = _MemoryLayouts();
+    await pumpHome(tester, layouts: layouts);
+    await openGames(tester);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Thumbnails'));
+    await tester.pumpAndSettle();
+    expect(layouts.stored[ListLayoutScreen.games], ListLayout.thumbnails);
+
+    // A pop-up over the list, not a page.
+    await tester.tap(find.byKey(GameBrowseScreen.tileKey('g_catan')));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameQuickLook), findsOneWidget);
+    expect(find.byType(GameDetailScreen), findsNothing);
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(GameQuickLook), findsNothing);
+
+    (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+            as GoRouter)
+        .go(AppRoutes.home);
+    await tester.pumpAndSettle();
+    expect(find.byType(GameBrowseScreen), findsNothing);
+    await openGames(tester);
+
+    expect(find.byKey(GameBrowseScreen.tileKey('g_catan')), findsOneWidget);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
+  });
+
+  testWidgets('a thumbnail whose game is found gone leaves the grid, and '
+      'View full details still opens', (tester) async {
+    games.gone.add('g_catan');
+    await pumpHome(
+      tester,
+      layouts: _MemoryLayouts()
+        ..stored[ListLayoutScreen.games] = ListLayout.thumbnails,
+    );
+    await openGames(tester);
+    final tile = find.byKey(GameBrowseScreen.tileKey('g_catan'));
+    expect(tile, findsOneWidget);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameQuickLook.unavailableKey), findsOneWidget);
+    // The tile the pop-up opened from has unmounted.
+    expect(tile, findsNothing);
+
+    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameDetailScreen), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('View full details from a Games thumbnail opens the game over '
+      'the quick look, and back lands on Games without it, on the tile', (
+    tester,
+  ) async {
+    await pumpHome(
+      tester,
+      layouts: _MemoryLayouts()
+        ..stored[ListLayoutScreen.games] = ListLayout.thumbnails,
+    );
+    await openGames(tester);
+    final tile = find.byKey(GameBrowseScreen.tileKey('g_catan'));
+    final tileFocus = tester
+        .widget<InkWell>(
+          find.descendant(of: tile, matching: find.byType(InkWell)),
+        )
+        .focusNode!;
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(find.byType(GameQuickLook), findsOneWidget);
+
+    await tester.tap(find.byKey(GameQuickLook.viewDetailsKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameDetailScreen), findsOneWidget);
+    // Gone once the page has arrived, not just hidden under it.
+    expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameDetailScreen), findsNothing);
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    expect(find.byType(GameQuickLook, skipOffstage: false), findsNothing);
+    expect(tile, findsOneWidget);
+    // The tap gave the tile focus, so that it comes back there.
+    expect(FocusManager.instance.primaryFocus, same(tileFocus));
   });
 
   testWidgets('a location that names a sort opens the catalog in it', (

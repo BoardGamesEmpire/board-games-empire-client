@@ -315,19 +315,12 @@ class _GameDetailBody extends StatelessWidget {
 
   List<CatalogFact> _facts(GameCatalogLocalizations l10n) {
     final year = game.publishYear;
-    final age = game.minAge;
     final type = contentTypeLabel(l10n, game.contentType);
     return [
       if (type != null) sameFact(type),
       if (year != null)
         sameFact(l10n.catalogDetailPublished(yearText(l10n, year))),
-      ?playersFact(l10n, game.minPlayers, game.maxPlayers),
-      ?playTimeFact(l10n, game),
-      if (age != null)
-        (
-          shown: l10n.catalogDetailMinAge('$age'),
-          spoken: l10n.catalogDetailMinAgeSpoken('$age'),
-        ),
+      ...playFacts(l10n, game),
     ];
   }
 }

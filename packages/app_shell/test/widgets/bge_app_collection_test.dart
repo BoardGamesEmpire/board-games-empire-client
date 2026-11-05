@@ -26,6 +26,18 @@ class _MockGameCollectionRepository extends Mock
 
 class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
 
+/// Remembers the layout in memory, as the user-session store does on disk.
+class _MemoryLayouts implements ListLayoutRepository {
+  final stored = <ListLayoutScreen, ListLayout>{};
+
+  @override
+  Future<ListLayout?> read(ListLayoutScreen screen) async => stored[screen];
+
+  @override
+  Future<void> write(ListLayoutScreen screen, ListLayout layout) async =>
+      stored[screen] = layout;
+}
+
 /// A catalog with no games in it: enough for the browse screen to open.
 class _EmptyCatalog implements GamesRemoteDataSource {
   @override
@@ -112,6 +124,7 @@ void main() {
     List<GameCollectionListItem>? items,
     GamesRemoteDataSource? games,
     bool withSender = false,
+    ListLayoutRepository? layouts,
   }) async {
     final repository = _MockGameCollectionRepository();
     when(repository.watchCollectionListItems).thenAnswer(
@@ -142,6 +155,7 @@ void main() {
           gameCollectionRefresher: refresher,
           sessionRehydrator: rehydrator,
           gamesRemoteDataSource: games,
+          listLayoutRepository: layouts,
         ),
       ),
     );
@@ -312,6 +326,32 @@ void main() {
       expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
       expect(find.byKey(GameCollectionListScreen.browseKey), findsNothing);
     });
+  });
+
+  testWidgets('Collection thumbnails open the entry, and the choice survives '
+      'leaving and coming back', (tester) async {
+    final layouts = _MemoryLayouts();
+    await pumpHome(tester, withSender: true, layouts: layouts);
+    await openTheList(tester);
+    expect(find.byKey(GameCollectionListScreen.rowKey('e-1')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Thumbnails'));
+    await tester.pumpAndSettle();
+    expect(layouts.stored[ListLayoutScreen.collection], ListLayout.thumbnails);
+
+    await tester.tap(find.byKey(GameCollectionListScreen.tileKey('e-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CollectionEntryScreen), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(GameCollectionListScreen), findsNothing);
+    await openTheList(tester);
+
+    expect(find.byKey(GameCollectionListScreen.tileKey('e-1')), findsOneWidget);
+    expect(find.byKey(GameCollectionListScreen.rowKey('e-1')), findsNothing);
   });
 
   group('the entry (#46)', () {

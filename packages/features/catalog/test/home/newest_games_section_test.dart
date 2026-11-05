@@ -50,7 +50,7 @@ void main() {
     FakeGamesCache? cache,
     Stream<String>? gone,
     void Function(BuildContext context)? onSeeAll,
-    void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
     void Function(BuildContext context)? onConnectDataGateway,
     Widget? above,
   }) => MaterialApp(
@@ -84,7 +84,7 @@ void main() {
     FakeGamesCache? cache,
     Stream<String>? gone,
     void Function(BuildContext context)? onSeeAll,
-    void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
     void Function(BuildContext context)? onConnectDataGateway,
   }) async {
     await tester.pumpWidget(
@@ -102,6 +102,7 @@ void main() {
   testWidgets('shows the heading, the covers in order, and See all', (
     tester,
   ) async {
+    final handle = tester.ensureSemantics();
     remote.onFetchPage = (_, _) async => pageOf(_newest(3));
 
     await show(tester);
@@ -111,8 +112,10 @@ void main() {
       tester.widget<Text>(find.byKey(NewestGamesSection.headingKey)).data,
       'Recently added',
     );
-    expect(find.text('Game g-0'), findsOneWidget);
-    expect(find.text('Game g-2'), findsOneWidget);
+    // The cover is the tile, and the title is its name, not drawn text.
+    expect(find.bySemanticsLabel('Game g-0'), findsOneWidget);
+    expect(find.bySemanticsLabel('Game g-2'), findsOneWidget);
+    expect(find.text('Game g-0'), findsNothing);
     expect(
       tester.getTopLeft(cover(0)).dx,
       lessThan(tester.getTopLeft(cover(1)).dx),
@@ -128,6 +131,7 @@ void main() {
       ),
       findsOneWidget,
     );
+    handle.dispose();
   });
 
   testWidgets('See all calls onSeeAll, and speaks "See all recently added '
@@ -148,14 +152,19 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('tapping a cover calls onOpen with its id', (tester) async {
+  testWidgets('tapping a cover calls onOpen with its seed', (tester) async {
     remote.onFetchPage = (_, _) async => pageOf(_newest(3));
-    final opened = <String>[];
-    await show(tester, onOpen: (_, id) => opened.add(id));
+    final opened = <GameQuickLookSeed>[];
+    await show(tester, onOpen: (_, seed) => opened.add(seed));
 
     await tester.tap(cover(1));
 
-    expect(opened, ['g-1']);
+    final seed = opened.single;
+    expect(seed.id, 'g-1');
+    expect(seed.title, 'Game g-1');
+    // The row is a whole game, so the quick look has its facts at once.
+    expect(seed.game, isNotNull);
+    expect(seed.game?.id, 'g-1');
   });
 
   testWidgets('shows a spinner under the heading while the first read runs', (

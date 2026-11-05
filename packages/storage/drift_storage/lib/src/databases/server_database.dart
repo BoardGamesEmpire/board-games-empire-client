@@ -15,6 +15,7 @@ import '../tables/game_collection_table.dart';
 import '../tables/household_table.dart';
 import '../tables/household_moves_table.dart';
 import '../tables/household_members_table.dart';
+import '../tables/list_layouts_table.dart';
 import '../tables/sync_queue_table.dart';
 import '../tables/unsent_changes_users_table.dart';
 import 'migration_policy.dart';
@@ -45,7 +46,7 @@ part 'server_database.g.dart';
 /// household_members, household_moves, sync_queue, unsent_changes_users,
 /// game_access, platform_game_access, events, event_occurrences,
 /// event_attendees, event_policies, event_access, event_generation,
-/// event_moves.
+/// event_moves, list_layouts.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -55,7 +56,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **13**.
+/// `schemaVersion` is **14**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -139,6 +140,9 @@ part 'server_database.g.dart';
 ///   Additive: two `addColumn` calls, no table rebuilt. A row cached before
 ///   it holds null for both, which is also what an event that isn't
 ///   cancelled holds.
+/// - **v13 → v14 (#710):** adds `list_layouts`, the layout each user left
+///   each list screen in, kept per user on this device and never synced. A
+///   new table with no foreign keys, created empty by one `createTable`.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -155,7 +159,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v13.json`, and
+/// `drift_schemas/server/drift_schema_v14.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -178,6 +182,7 @@ part 'server_database.g.dart';
     EventAccessTable,
     EventGenerationTable,
     EventMovesTable,
+    ListLayoutsTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -201,7 +206,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -376,6 +381,12 @@ class ServerDatabase extends _$ServerDatabase {
         // it, so there is nothing to backfill.
         await m.addColumn(eventsTable, eventsTable.cancelReason);
         await m.addColumn(eventsTable, eventsTable.cancelledAt);
+      }
+      if (from < 14 && to >= 14) {
+        // v13 → v14 (#710): each user's layout per list screen. A new table
+        // with no FK edges and no rows to carry, so no FK-off wrapper is
+        // needed (#54 stays deferred).
+        await m.createTable(listLayoutsTable);
       }
     },
   );

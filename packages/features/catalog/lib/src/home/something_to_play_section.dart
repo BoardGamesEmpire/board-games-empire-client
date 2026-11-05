@@ -8,13 +8,22 @@ import 'package:ui/ui.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
-import 'game_cover_tile.dart';
+import '../quick_look/game_quick_look_seed.dart';
 import 'shelf_loading.dart';
 import 'something_to_play_cubit.dart';
 
 /// The home page's "Something to play" row (#616): a random pick of games from
 /// the households the user is in and their own collection, or the server's when
 /// those have none. See [SomethingToPlayCubit] for what is drawn and when.
+///
+/// ## A cover opens a quick look
+///
+/// A cover is the game's picture alone, and a tap on it opens the game's quick
+/// look over home rather than its page (#707): the facts come to the user, who
+/// stays where they were. The row holds summaries, with a title and pictures
+/// and no more, so [onOpen] gets a seed of those, and the quick look reads the
+/// rest. Where the quick look opens, and what opens from it, is the host's:
+/// the section does no routing.
 ///
 /// ## Reshuffle
 ///
@@ -85,8 +94,9 @@ class SomethingToPlaySection extends StatelessWidget {
   /// comes down, and stays down.
   final Stream<String>? gone;
 
-  /// Opens one game, or null where there is nowhere to open it.
-  final void Function(BuildContext context, String gameId)? onOpen;
+  /// Opens one game's quick look from its cover, given what the row holds of
+  /// it (#707), or null where there is nowhere to open it.
+  final void Function(BuildContext context, GameQuickLookSeed seed)? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +119,7 @@ class SomethingToPlaySection extends StatelessWidget {
 class _Section extends StatelessWidget {
   const _Section({required this.onOpen});
 
-  final void Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context, GameQuickLookSeed seed)? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -138,11 +148,16 @@ class _Section extends StatelessWidget {
             resetToken: draw,
             children: [
               for (final game in games)
-                GameCoverTile(
+                BgeCoverTile(
                   key: SomethingToPlaySection.coverKey(game.id),
-                  title: game.title,
-                  thumbnailUrl: game.thumbnail,
-                  onTap: onOpen == null ? null : () => onOpen(context, game.id),
+                  label: game.title,
+                  imageUrl: game.thumbnail,
+                  onTap: onOpen == null
+                      ? null
+                      : () => onOpen(
+                          context,
+                          GameQuickLookSeed.fromSummary(game),
+                        ),
                 ),
             ],
           ),

@@ -8,6 +8,7 @@ import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
@@ -337,10 +338,10 @@ class _BgeAppState extends State<BgeApp> {
   /// for its writes.
   final _UnsentChanges _unsentChanges = _UnsentChanges();
 
-  /// Each game a detail finds gone (#42), told to every catalog list open:
-  /// the one it was opened from, and a browse beneath a search. A list hears
-  /// only what is found while it is open, so nothing carries over from one
-  /// visit to the next.
+  /// Each game a detail or a quick look (#707) finds gone (#42), told to
+  /// every catalog list open: the one it was opened from, and a browse
+  /// beneath a search. A list hears only what is found while it is open, so
+  /// nothing carries over from one visit to the next.
   final StreamController<String> _gamesFoundGone =
       StreamController<String>.broadcast();
 
@@ -939,20 +940,21 @@ class _BgeAppState extends State<BgeApp> {
   /// changes, and by then the user scope may have popped (#456).
   ///
   /// "See all" is a push, because the browse screen reads its sort once, when
-  /// it mounts.
+  /// it mounts. A cover opens the game's quick look: see [_openQuickLook].
   Widget Function({required bool canConnect}) _buildNewestGames(
     DependencyContainer container,
   ) {
     final remote = container.get<GamesRemoteDataSource>();
     final cache = _gamesCache(container);
     final connectivity = _rootConnectivity();
+    final openQuickLook = _openQuickLook(container);
     return ({required canConnect}) => NewestGamesSection(
       key: ObjectKey(cache ?? remote),
       remote: remote,
       cache: cache,
       connectivity: connectivity,
       gone: _gamesFoundGone.stream,
-      onOpen: _openGame,
+      onOpen: openQuickLook,
       onSeeAll: (ctx) =>
           unawaited(ctx.push<void>(AppRoutes.gamesSorted(GameSort.newest))),
       onConnectDataGateway: canConnect
@@ -966,6 +968,7 @@ class _BgeAppState extends State<BgeApp> {
   /// on the session's [GameCollectionRepository], where half of its draw comes
   /// from: another user's session is a new row. Without one, on the session's
   /// games cache as [_buildNewestGames]'s is, and without that, on the remote.
+  /// A cover opens the game's quick look: see [_openQuickLook].
   Widget _buildSomethingToPlay(DependencyContainer container) {
     final remote = container.get<GamesRemoteDataSource>();
     final collection = container.isRegistered<GameCollectionRepository>()
@@ -979,7 +982,7 @@ class _BgeAppState extends State<BgeApp> {
       households: () => _eventHouseholds(container),
       connectivity: _rootConnectivity(),
       gone: _gamesFoundGone.stream,
-      onOpen: _openGame,
+      onOpen: _openQuickLook(container),
     );
   }
 
@@ -1533,6 +1536,7 @@ class _BgeAppState extends State<BgeApp> {
           : (ctx) => unawaited(ctx.push<void>(AppRoutes.games)),
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
+      layouts: _listLayouts(container),
     );
   }
 
@@ -1612,10 +1616,49 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<GameRepository>()
       : null;
 
+  /// The remembered list or thumbnails choice (#710): per user, so null when
+  /// no user session is active, and the screens then keep it for the session
+  /// only.
+  static ListLayoutRepository? _listLayouts(DependencyContainer container) =>
+      container.isRegistered<ListLayoutRepository>()
+      ? container.get<ListLayoutRepository>()
+      : null;
+
   /// Opens one game from a catalog screen (#42). A push, so leaving the
   /// detail returns to the list or the search the user came from.
   static void _openGame(BuildContext context, String gameId) =>
       unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+
+  /// Opens a game's quick look from its cover (#707), for a [container]
+  /// holding the [GamesRemoteDataSource]. It is a pop-up over the page the
+  /// cover is on, not the game's page, so the user stays where they were.
+  ///
+  /// The remote and the games cache are resolved when this is called, not
+  /// per tap, as home resolves everything it shows once, when it builds
+  /// (#456). So the quick look reads through the ones its covers were read
+  /// through.
+  ///
+  /// A game the quick look finds gone is told to [_gamesFoundGone], so it
+  /// comes down from every list showing it, the shelf it was opened from
+  /// included. View full details pushes the detail page through [_openGame],
+  /// over the quick look, which removes itself once the page has arrived, so
+  /// back from the page lands where the cover was tapped.
+  void Function(BuildContext context, GameQuickLookSeed seed) _openQuickLook(
+    DependencyContainer container,
+  ) {
+    final remote = container.get<GamesRemoteDataSource>();
+    final cache = _gamesCache(container);
+    return (context, seed) => unawaited(
+      showGameQuickLook(
+        context,
+        seed: seed,
+        remote: remote,
+        cache: cache,
+        onGone: _reportGameGone,
+        onViewDetails: _openGame,
+      ),
+    );
+  }
 
   /// Imports a DataGateway result the server does not hold, from the search
   /// (#43). Once the import completes the dialog closes, and the game it
@@ -1671,6 +1714,8 @@ class _BgeAppState extends State<BgeApp> {
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
+      layouts: _listLayouts(container),
+      onQuickLook: _openQuickLook(container),
       initialSort: sort,
     );
   }
@@ -2978,6 +3023,7 @@ class _AuthScopeState extends State<_AuthScope> {
                 // the listener, not as an unhandled zone error), and the
                 // home subtree starts unmounting before the scope pop
                 // disposes its repositories.
+                _closePopUps(context);
                 widget.onSignedOut();
                 unawaited(_deactivateSessionScope(active));
               }
@@ -3186,14 +3232,46 @@ class _AuthScopeState extends State<_AuthScope> {
   /// Screens opened under the departing user are closed first, for the
   /// reason the sign-out arm routes first: they hold repositories the scope
   /// pop is about to dispose. Going home does that, since every such screen
-  /// is pushed above it. Home itself shows the splash until the new user's
-  /// scope is live, and is rebuilt for them then (see
-  /// `_BgeAppState._homeSession`).
+  /// is pushed above it, and [_closePopUps] closes what is open over home.
+  /// Home itself shows the splash until the new user's scope is live, and is
+  /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
     widget.unsentChanges.sessionEnded(active, deliberately: false);
     widget.homeSession.value = (userId: null, switching: true);
+    _closePopUps(context);
     GoRouter.maybeOf(context)?.go(AppRoutes.home);
     unawaited(_deactivateSessionScope(active));
+  }
+
+  /// Closes the pop-ups open on the root navigator as a session ends, such
+  /// as a game's quick look over home (#707).
+  ///
+  /// A pop-up is a route with no page of its own, so it goes when the page
+  /// it was opened over goes. The routing a session's end does takes down
+  /// every page pushed above home, and theirs with them, but home and the
+  /// sign-in screen share the auth shell's page, which stays. One over home
+  /// would outlive the session: over the sign-in screen, or over the next
+  /// user's home, still showing the departing user's game, and reading
+  /// through repositories the scope pop is about to dispose.
+  ///
+  /// Closed twice. Now, for one on top. And again after the next frame,
+  /// once the routing has taken down the pages above home, for one that was
+  /// under a page: View full details's page, while it is still arriving,
+  /// covers the quick look it removes only once it has arrived. Popping
+  /// stops at the first page, so that one is out of reach until the page has
+  /// gone. The routing lands by then: `go` and the bootstrap redirect are
+  /// synchronous, and the router builds its new pages in that frame.
+  static void _closePopUps(BuildContext context) {
+    final navigator = Navigator.maybeOf(context, rootNavigator: true);
+    if (navigator == null) return;
+    bool isPage(Route<dynamic> route) => route.settings is Page<Object?>;
+    navigator.popUntil(isPage);
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (navigator.mounted) navigator.popUntil(isPage);
+      }, debugLabel: '_AuthScope.closePopUps')
+      // A post-frame callback asks for no frame of its own.
+      ..ensureVisualUpdate();
   }
 
   /// The one-time notice that this tab now shows [user]'s account (#432),

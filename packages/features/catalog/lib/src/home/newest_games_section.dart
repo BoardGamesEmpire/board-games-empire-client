@@ -8,13 +8,22 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
+import '../quick_look/game_quick_look_seed.dart';
 import 'empty_server_card.dart';
-import 'game_cover_tile.dart';
 import 'newest_games_cubit.dart';
 import 'shelf_loading.dart';
 
 /// The home page's "Recently added" row (#615): the games most recently added
 /// to the server, newest first, in a row that moves side to side.
+///
+/// ## A cover opens a quick look
+///
+/// A cover is the game's picture alone, and a tap on it opens the game's quick
+/// look over home rather than its page (#707): the facts come to the user, who
+/// stays where they were. The row holds whole games, so [onOpen] gets a seed
+/// carrying the game, and the quick look shows its players, play time and age
+/// before its own read lands. Where the quick look opens, and what opens from
+/// it, is the host's: the section does no routing.
 ///
 /// ## The header stays put
 ///
@@ -108,8 +117,9 @@ class NewestGamesSection extends StatelessWidget {
   /// comes down, and stays down.
   final Stream<String>? gone;
 
-  /// Opens one game, or null where there is nowhere to open it.
-  final void Function(BuildContext context, String gameId)? onOpen;
+  /// Opens one game's quick look from its cover, given what the row holds of
+  /// it (#707), or null where there is nowhere to open it.
+  final void Function(BuildContext context, GameQuickLookSeed seed)? onOpen;
 
   /// Opens the list of DataGateways, for a user who can connect one. Null is
   /// the plain message to a server with no games.
@@ -143,7 +153,7 @@ class _Section extends StatefulWidget {
   });
 
   final void Function(BuildContext context) onSeeAll;
-  final void Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context, GameQuickLookSeed seed)? onOpen;
   final void Function(BuildContext context)? onConnectDataGateway;
 
   @override
@@ -240,11 +250,13 @@ class _SectionState extends State<_Section> {
             context,
             children: [
               for (final game in games)
-                GameCoverTile(
+                BgeCoverTile(
                   key: NewestGamesSection.coverKey(game.id),
-                  title: game.title,
-                  thumbnailUrl: game.thumbnail,
-                  onTap: onOpen == null ? null : () => onOpen(context, game.id),
+                  label: game.title,
+                  imageUrl: game.thumbnail,
+                  onTap: onOpen == null
+                      ? null
+                      : () => onOpen(context, GameQuickLookSeed.fromGame(game)),
                 ),
             ],
           ),

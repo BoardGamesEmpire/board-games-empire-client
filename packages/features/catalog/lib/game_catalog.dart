@@ -12,11 +12,13 @@ export 'src/bloc/game_detail_state.dart';
 export 'src/bloc/game_import_bloc.dart';
 export 'src/bloc/game_import_event.dart';
 export 'src/bloc/game_import_state.dart';
-export 'src/home/game_cover_tile.dart';
 export 'src/home/newest_games_cubit.dart';
 export 'src/home/newest_games_section.dart';
 export 'src/home/something_to_play_cubit.dart';
 export 'src/home/something_to_play_section.dart';
+export 'src/quick_look/game_quick_look.dart'
+    show GameQuickLook, showGameQuickLook;
+export 'src/quick_look/game_quick_look_seed.dart';
 export 'src/screens/game_browse_screen.dart';
 export 'src/screens/game_detail_screen.dart';
 export 'src/screens/game_import_dialog.dart';

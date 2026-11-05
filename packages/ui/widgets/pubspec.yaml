@@ -39,6 +39,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   alchemist: ^0.14.0
+  # showBgePopup's tests run under the app's router shape: home on a
+  # ShellRoute's nested navigator, pages on the root one (#707).
+  go_router: ^18.0.0
   very_good_analysis: ^10.2.0
   # Shared test helpers (#354, #213, #257): canned Dio transports and/or
   # widget-test viewport, semantics and scroll-geometry helpers.

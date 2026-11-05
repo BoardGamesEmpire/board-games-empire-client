@@ -191,10 +191,12 @@ and stops short on a monitor with no window-class check. Reach for a breakpoint
 only when a layout should *change form* (rail vs. bottom bar, one pane vs.
 two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
-the other. Nothing consumes the breakpoints yet: the home page stopped setting
-its events and stats sections side by side (#669). The first consumers are
-expected to be the navigation shell (#414), once a section of equal standing
-with home exists, and the first two-pane layout (#46). A layout that reads one
+the other. Two things read them so far: `showBgePopup` (a sheet below
+`breakpointMedium`, a dialog from there up) and `bgeGridColumns` (the column
+count of a cover grid) (#707, #710). The home page stopped setting its events
+and stats sections side by side (#669); the next readers are expected to be
+the navigation shell (#414), once a section of equal standing with home
+exists, and the first two-pane layout (#46). A layout that reads one
 reads it against the window, not a `LayoutBuilder`: under the page's padding a
 `LayoutBuilder` reaches 840 only at a window of 888.
 
@@ -208,6 +210,10 @@ Use these. They exist because the hand-rolled versions drifted.
 | --- | --- | --- |
 | `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
 | `BgeKeyedSliverList` | a `SliverList.builder` whose rows carried their key one level in, or keyed the child with no lookup (#549) | Each row is keyed and the sliver finds it by that key, so a row keeps its state — focus included — when rows above it leave or arrive |
+| `BgeKeyedSliverGrid` (with `bgeGridColumns` and `bgeCoverGridDelegate`) | a `SliverGrid.builder` for a grid whose tiles can leave or move, which would lose a tile's focus with its position | The grid sibling of `BgeKeyedSliverList`: each tile is keyed by its id; the columns come from the window width, not the grid's own, so a cover grid reads the same breakpoints as everything else (#710) |
+| `BgeCoverTile` | a cover wrapped in a hand-built tap target and a title below it | Cover only: the title is the accessible name, not drawn text; a fixed 120dp on a shelf, and `extent: null` fills a grid cell (#707, #710) |
+| `BgeLayoutToggle` (with `BgeRememberedLayout`) | a per-screen list/thumbnail switch and the preference behind it | One control for the choice, with its selected state announced; the choice is remembered per user, and the builder gets `null` until it has been read, so a screen holds its rows back until then rather than flash the other layout (#710) |
+| `showBgePopup` | `showModalBottomSheet` at every width, a wide strip along the bottom edge from 840dp up | A bottom sheet below `breakpointMedium`, a dialog from there up, on the root navigator; a page pushed over it removes it once the page has arrived, so back lands where the pop-up was opened from (#707) |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
@@ -611,7 +617,8 @@ legible body text on every surface role.
 - [ ] A list surface passes `semanticChildCount` — the count it currently
       holds, grown as pages arrive, never left null on a known list
 - [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by
-      the row's id; the row itself does not carry the key (#549)
+      the row's id; the row itself does not carry the key (#549). A grid whose
+      tiles can leave or move is a `BgeKeyedSliverGrid`
 - [ ] Loading, empty and failure states use the shared widgets
       (`BgeLoadingState`, `BgeEmptyState`, `BgeErrorState`), in a
       `BgeStateSliver` on a sliver page
