@@ -142,6 +142,21 @@ void main() {
       }
     });
 
+    test('is null for a path that moves a server address with no path off '
+        'its origin', () {
+      for (final (endpoint, reason) in [
+        ('.attacker.example/app-sign-in/token', 'extends the host'),
+        ('@attacker.example/app-sign-in/token', 'makes the host userinfo'),
+        (':8443/app-sign-in/token', 'adds a port'),
+      ]) {
+        expect(
+          resolveServerEndpoint('https://example.com', endpoint),
+          isNull,
+          reason: reason,
+        );
+      }
+    });
+
     test('is null when no address can be made, rather than throwing', () {
       expect(
         resolveServerEndpoint('https://example.com', 'https://[bad/start'),

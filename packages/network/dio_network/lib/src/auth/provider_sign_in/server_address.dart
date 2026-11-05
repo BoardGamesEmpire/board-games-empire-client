@@ -30,8 +30,9 @@ String? _normalise(String address) {
 ///
 /// Composed the way the per-server `Dio` composes every other discovery path:
 /// [serverUrl] without one trailing `/`, then [endpoint]. An [endpoint] that is
-/// already an `http:` or `https:` address is kept as it is, but only on the
-/// server's own origin: the same scheme, host and effective port.
+/// already an `http:` or `https:` address is kept as it is. Either way the
+/// result must be on the server's own origin: the same scheme, host and
+/// effective port.
 ///
 /// The token route is posted the one-time code and the PKCE verifier, which
 /// together are a session. An absolute route on another host, or in cleartext
@@ -39,25 +40,30 @@ String? _normalise(String address) {
 /// the issuer check nor the return's `iss` check. The start route is held to
 /// the same origin, since the tab it opens is where the code is issued.
 ///
+/// A composed address is checked too. Appended to a server address with no
+/// path, an [endpoint] that does not start with `/` lands in the authority:
+/// `https://bge.example.com` plus `.attacker.example/token` is a request to
+/// `bge.example.com.attacker.example`, and `@attacker.example/token` or
+/// `:8443/token` move it to another host or port.
+///
 /// Not `Uri.parse(serverUrl).resolve(endpoint)`. That drops a server reached
 /// under a path prefix to its origin (`https://example.com/bge` plus
 /// `/api/auth/x` gives `https://example.com/api/auth/x`), while email sign-in
 /// and the session check keep the prefix.
 ///
 /// Null when the result is not an `http` or `https` address with a host, such
-/// as a malformed discovery path, and when an absolute [endpoint] is on
-/// another origin. Callers refuse that with a modelled exception rather than
+/// as a malformed discovery path, and when the result is on another origin.
+/// Callers refuse that with a modelled exception rather than
 /// let a `FormatException` leave an auth method (#181).
 Uri? resolveServerEndpoint(String serverUrl, String endpoint) {
-  final absolute = endpoint.startsWith(_absoluteHttp);
-  final address = absolute
+  final address = endpoint.startsWith(_absoluteHttp)
       ? endpoint
       : DefaultDioFactory.normalizeBaseUrl(serverUrl) + endpoint;
 
   final uri = Uri.tryParse(address);
   if (uri == null || uri.host.isEmpty) return null;
   if (!uri.isScheme('http') && !uri.isScheme('https')) return null;
-  if (absolute && !_isSameOrigin(uri, Uri.tryParse(serverUrl))) return null;
+  if (!_isSameOrigin(uri, Uri.tryParse(serverUrl))) return null;
 
   return uri;
 }
