@@ -30,6 +30,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     required this.radiusLg,
     required this.minTapTarget,
     required this.focusOutlineWidth,
+    required this.focusRingGap,
     required this.separatorThickness,
     required this.separatorInset,
     required this.accentBarWidth,
@@ -80,6 +81,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     radiusLg: 16,
     minTapTarget: 48,
     focusOutlineWidth: 2,
+    focusRingGap: 2,
     separatorThickness: 2,
     separatorInset: 96,
     accentBarWidth: 4,
@@ -152,6 +154,14 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
 
   /// Visible-focus indicator stroke width (WCAG 2.4.7).
   final double focusOutlineWidth;
+
+  /// How far a button's focus ring sits outside the button's shape (#644).
+  ///
+  /// The gap keeps the ring off a filled button's fill. It touches only the
+  /// surface around the button, where `primary` holds 3:1. No colour holds
+  /// 3:1 against both the surfaces and a `primary` fill. Only buttons that
+  /// don't clip to their shape have it. See `BgeButtonFocusRing`.
+  final double focusRingGap;
 
   // ── Rules and bars ─────────────────────────────────────────────────
 
@@ -246,6 +256,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     radiusLg,
     minTapTarget,
     focusOutlineWidth,
+    focusRingGap,
     separatorThickness,
     separatorInset,
     accentBarWidth,
@@ -279,6 +290,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     double? radiusLg,
     double? minTapTarget,
     double? focusOutlineWidth,
+    double? focusRingGap,
     double? separatorThickness,
     double? separatorInset,
     double? accentBarWidth,
@@ -302,6 +314,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       radiusLg: radiusLg ?? this.radiusLg,
       minTapTarget: minTapTarget ?? this.minTapTarget,
       focusOutlineWidth: focusOutlineWidth ?? this.focusOutlineWidth,
+      focusRingGap: focusRingGap ?? this.focusRingGap,
       separatorThickness: separatorThickness ?? this.separatorThickness,
       separatorInset: separatorInset ?? this.separatorInset,
       accentBarWidth: accentBarWidth ?? this.accentBarWidth,
@@ -334,6 +347,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
         other.focusOutlineWidth,
         t,
       )!,
+      focusRingGap: lerpDouble(focusRingGap, other.focusRingGap, t)!,
       separatorThickness: lerpDouble(
         separatorThickness,
         other.separatorThickness,

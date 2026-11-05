@@ -19,6 +19,7 @@ void main() {
       expect(t.radiusLg, 16);
       expect(t.minTapTarget, 48);
       expect(t.focusOutlineWidth, 2);
+      expect(t.focusRingGap, 2);
       expect(t.separatorThickness, 2);
       expect(t.separatorInset, 96);
       expect(t.accentBarWidth, 4);
@@ -183,6 +184,16 @@ void main() {
       expect(copy.minTapTarget, BgeTokens.standard.minTapTarget);
       expect(copy.motionLong, BgeTokens.standard.motionLong);
     });
+
+    test('carries the focus ring gap', () {
+      final copy = BgeTokens.standard.copyWith(focusRingGap: 3);
+      expect(copy.focusRingGap, 3);
+      expect(copy.focusOutlineWidth, BgeTokens.standard.focusOutlineWidth);
+      expect(
+        BgeTokens.standard.copyWith(spaceMd: 20).focusRingGap,
+        BgeTokens.standard.focusRingGap,
+      );
+    });
   });
 
   group('BgeTokens equality', () {
@@ -213,6 +224,7 @@ void main() {
       'minTapTarget': (t) => t.copyWith(minTapTarget: t.minTapTarget + 1),
       'focusOutlineWidth': (t) =>
           t.copyWith(focusOutlineWidth: t.focusOutlineWidth + 1),
+      'focusRingGap': (t) => t.copyWith(focusRingGap: t.focusRingGap + 1),
       'separatorThickness': (t) =>
           t.copyWith(separatorThickness: t.separatorThickness + 1),
       'separatorInset': (t) => t.copyWith(separatorInset: t.separatorInset + 1),
@@ -267,6 +279,12 @@ void main() {
       expect(mid.separatorThickness, 3);
       expect(mid.separatorInset, 98);
       expect(mid.accentBarWidth, 6);
+    });
+
+    test('interpolates the focus ring gap', () {
+      final other = BgeTokens.standard.copyWith(focusRingGap: 6);
+
+      expect(BgeTokens.standard.lerp(other, 0.5).focusRingGap, 4);
     });
 
     test('returns this when other is null', () {

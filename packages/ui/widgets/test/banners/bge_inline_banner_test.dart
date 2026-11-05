@@ -3,6 +3,7 @@ import 'dart:async' show unawaited;
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -426,6 +427,224 @@ void main() {
       expect(errorColor, scheme.errorContainer);
       expect(warnColor, scheme.tertiaryContainer);
       expect(errorColor, isNot(warnColor));
+    });
+  });
+
+  group("BgeInlineBanner action's focus ring (#644)", () {
+    const textKey = Key('text action');
+    const iconKey = Key('icon action');
+    final boundary = GlobalKey();
+    final themes = {
+      'light': BgeTheme.light(),
+      'dark': BgeTheme.dark(),
+      'highContrastLight': BgeTheme.highContrastLight(),
+      'highContrastDark': BgeTheme.highContrastDark(),
+    };
+
+    /// Each tone's container and the foreground drawn on it: the pairs
+    /// `ui_tokens`' `bge_color_schemes_test.dart` holds at 4.5:1 or more
+    /// (7:1 in high contrast) in "every authored pair".
+    Map<BgeBannerTone, (Color, Color)> pairs(ColorScheme s) => {
+      BgeBannerTone.error: (s.errorContainer, s.onErrorContainer),
+      BgeBannerTone.info: (s.secondaryContainer, s.onSecondaryContainer),
+      BgeBannerTone.warning: (s.tertiaryContainer, s.onTertiaryContainer),
+      BgeBannerTone.success: (s.primaryContainer, s.onPrimaryContainer),
+    };
+
+    Future<void> showBanner(
+      WidgetTester tester,
+      ThemeData theme,
+      BgeBannerTone tone,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: RepaintBoundary(
+              key: boundary,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: BgeInlineBanner(
+                  tone: tone,
+                  message: 'Could not reach the server.',
+                  announce: false,
+                  reveal: false,
+                  action: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(
+                        key: textKey,
+                        onPressed: () {},
+                        child: const Text('Retry'),
+                      ),
+                      IconButton(
+                        key: iconKey,
+                        tooltip: 'Dismiss',
+                        onPressed: () {},
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    BgeButtonFocusRingPainter ringOf(WidgetTester tester, Key key) => tester
+        .widgetList<CustomPaint>(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .map((paint) => paint.foregroundPainter)
+        .whereType<BgeButtonFocusRingPainter>()
+        .single;
+
+    Future<void> tab(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+
+    for (final MapEntry(key: name, value: theme) in themes.entries) {
+      testWidgets("$name: Tab rings each action in the banner's foreground, "
+          'on the app buttons\' shape and placement, in every tone', (
+        tester,
+      ) async {
+        final appShape = theme.textButtonTheme.style!.shape!.resolve(
+          const <WidgetState>{},
+        );
+        for (final MapEntry(key: tone, value: (_, foreground)) in pairs(
+          theme.colorScheme,
+        ).entries) {
+          await showBanner(tester, theme, tone);
+
+          await tab(tester);
+          final text = ringOf(tester, textKey);
+          expect(text.color, foreground, reason: '$tone text action');
+          expect(text.placement, BgeButtonFocusRingPlacement.inside);
+          expect(text.shape, appShape, reason: '$tone text action');
+          expect(ringOf(tester, iconKey).color, isNull);
+
+          await tab(tester);
+          final icon = ringOf(tester, iconKey);
+          expect(icon.color, foreground, reason: '$tone icon action');
+          expect(icon.placement, BgeButtonFocusRingPlacement.outside);
+          expect(icon.shape, appShape, reason: '$tone icon action');
+          expect(ringOf(tester, textKey).color, isNull);
+
+          // The next tone starts from nothing focused.
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      });
+
+      testWidgets("$name: the actions' ring holds 3:1 against every tone's "
+          'container, and under the focus overlay', (tester) async {
+        for (final tone in BgeBannerTone.values) {
+          await showBanner(tester, theme, tone);
+          final container =
+              (tester
+                          .widget<Container>(find.byType(Container).first)
+                          .decoration!
+                      as BoxDecoration)
+                  .color!;
+          expect(container, pairs(theme.colorScheme)[tone]!.$1);
+
+          await tab(tester);
+          final ring = ringOf(tester, textKey).color!;
+          final overlay = tester
+              .widget<InkWell>(
+                find.descendant(
+                  of: find.byKey(textKey),
+                  matching: find.byType(InkWell),
+                ),
+              )
+              .overlayColor!
+              .resolve(const {WidgetState.focused})!;
+
+          // The icon action's ring is outside it and touches the container;
+          // the text action's is inside it and touches its focused inside.
+          expect(
+            Wcag.contrastRatio(ring, container),
+            greaterThanOrEqualTo(3.0),
+            reason: '$tone: ring against the container',
+          );
+          expect(
+            Wcag.contrastRatio(ring, Color.alphaBlend(overlay, container)),
+            greaterThanOrEqualTo(3.0),
+            reason: '$tone: ring against the focused text action',
+          );
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      });
+    }
+
+    testWidgets('the ring can be seen on both actions', (tester) async {
+      final theme = BgeTheme.dark();
+      final (container, foreground) = pairs(
+        theme.colorScheme,
+      )[BgeBannerTone.error]!;
+      await showBanner(tester, theme, BgeBannerTone.error);
+      const tokens = BgeTokens.standard;
+
+      Future<Color> pixelAt(Offset point) async {
+        final render =
+            boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        final origin = render.localToGlobal(Offset.zero);
+        return (await tester.runAsync(() async {
+          final image = await render.toImage();
+          final bytes = (await image.toByteData())!;
+          final local = point - origin;
+          final at = (local.dy.floor() * image.width + local.dx.floor()) * 4;
+          image.dispose();
+          return Color.fromARGB(
+            bytes.getUint8(at + 3),
+            bytes.getUint8(at),
+            bytes.getUint8(at + 1),
+            bytes.getUint8(at + 2),
+          );
+        }))!;
+      }
+
+      Rect materialOf(Key key) => tester.getRect(
+        find
+            .descendant(of: find.byKey(key), matching: find.byType(Material))
+            .first,
+      );
+
+      // Inside the text action's left edge.
+      await tab(tester);
+      final text = materialOf(textKey);
+      expect(
+        await pixelAt(
+          Offset(text.left + tokens.focusOutlineWidth / 2, text.center.dy),
+        ),
+        foreground,
+      );
+
+      // Outside the icon action, past the gap; the gap shows the container.
+      await tab(tester);
+      final icon = materialOf(iconKey);
+      expect(
+        await pixelAt(
+          Offset(
+            icon.left - tokens.focusRingGap - tokens.focusOutlineWidth / 2,
+            icon.center.dy,
+          ),
+        ),
+        foreground,
+      );
+      expect(
+        await pixelAt(
+          Offset(icon.left - tokens.focusRingGap / 2, icon.center.dy),
+        ),
+        container,
+      );
     });
   });
 

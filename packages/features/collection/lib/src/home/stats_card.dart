@@ -228,6 +228,9 @@ class _Card extends StatelessWidget {
     BgeTokens tokens,
     GameCollectionLocalizations l10n,
   ) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(tokens.radiusSm),
+    );
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spaceMd - tokens.spaceSm,
@@ -241,8 +244,12 @@ class _Card extends StatelessWidget {
           minimumSize: Size.square(tokens.minTapTarget),
           alignment: AlignmentDirectional.centerStart,
           padding: EdgeInsets.all(tokens.spaceSm),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(tokens.radiusSm),
+          shape: shape,
+          // The theme's focus ring follows the theme's shape, so this button
+          // passes its own (#644). Inside the edge, as on every text button.
+          backgroundBuilder: BgeButtonFocusRing.builder(
+            shape,
+            placement: BgeButtonFocusRingPlacement.inside,
           ),
         ),
         child: Text(l10n.collectionStatsCreateOrJoin),

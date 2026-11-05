@@ -71,6 +71,133 @@ void main() {
     }
   });
 
+  group('BgeTheme button focus ring (all four themes, #644)', () {
+    /// The surfaces a button sits on, and so the ones its ring touches.
+    List<(String, Color)> surfaces(ColorScheme s) => [
+      ('surface', s.surface),
+      ('surfaceContainerLowest', s.surfaceContainerLowest),
+      ('surfaceContainerLow', s.surfaceContainerLow),
+      ('surfaceContainer', s.surfaceContainer),
+      ('surfaceContainerHigh', s.surfaceContainerHigh),
+      ('surfaceContainerHighest', s.surfaceContainerHighest),
+    ];
+
+    for (final entry in themes.entries) {
+      final (theme, scheme) = entry.value;
+      final ring = BgeButtonFocusRing.colorOf(scheme);
+
+      test('${entry.key}: the ring holds 3:1 against every surface a button '
+          'sits on', () {
+        for (final (role, color) in surfaces(scheme)) {
+          expect(
+            Wcag.contrastRatio(ring, color),
+            greaterThanOrEqualTo(3.0),
+            reason: 'ring against $role',
+          );
+        }
+      });
+
+      test('${entry.key}: every button theme carries the ring and the one '
+          'button shape', () {
+        final styles = <String, ButtonStyle?>{
+          'filled': theme.filledButtonTheme.style,
+          'elevated': theme.elevatedButtonTheme.style,
+          'outlined': theme.outlinedButtonTheme.style,
+          'text': theme.textButtonTheme.style,
+          'icon': theme.iconButtonTheme.style,
+        };
+        for (final MapEntry(key: name, value: style) in styles.entries) {
+          expect(style?.backgroundBuilder, isNotNull, reason: name);
+          expect(
+            style!.shape?.resolve(const <WidgetState>{}),
+            isA<StadiumBorder>(),
+            reason: name,
+          );
+        }
+      });
+
+      // The text, outlined and elevated buttons draw their ring inside their
+      // edge, because Flutter clips them to their shape once a builder is
+      // set, so that ring touches the button's own background rather than
+      // only the surface. A transparent background shows whatever surface
+      // the button sits on.
+      testWidgets('${entry.key}: a ring inside the edge holds 3:1 against the '
+          "button's own background, at rest and focused", (tester) async {
+        const keys = {
+          'TextButton': Key('text'),
+          'OutlinedButton': Key('outlined'),
+          'ElevatedButton': Key('elevated'),
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: Material(
+              child: Column(
+                children: [
+                  TextButton(
+                    key: keys['TextButton'],
+                    onPressed: () {},
+                    child: const Text('Text'),
+                  ),
+                  OutlinedButton(
+                    key: keys['OutlinedButton'],
+                    onPressed: () {},
+                    child: const Text('Outlined'),
+                  ),
+                  ElevatedButton(
+                    key: keys['ElevatedButton'],
+                    onPressed: () {},
+                    child: const Text('Elevated'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        for (final MapEntry(key: name, value: key) in keys.entries) {
+          final background = tester
+              .widget<Material>(
+                find
+                    .descendant(
+                      of: find.byKey(key),
+                      matching: find.byType(Material),
+                    )
+                    .first,
+              )
+              .color!;
+          final focusOverlay = tester
+              .widget<InkWell>(
+                find.descendant(
+                  of: find.byKey(key),
+                  matching: find.byType(InkWell),
+                ),
+              )
+              .overlayColor!
+              .resolve(const {WidgetState.focused})!;
+          final behind = background.a == 0
+              ? surfaces(scheme)
+              : [('its fill', background)];
+
+          for (final (role, base) in behind) {
+            final atRest = Color.alphaBlend(background, base);
+            final focused = Color.alphaBlend(focusOverlay, atRest);
+            expect(
+              Wcag.contrastRatio(ring, atRest),
+              greaterThanOrEqualTo(3.0),
+              reason: '$name ring against $role at rest',
+            );
+            expect(
+              Wcag.contrastRatio(ring, focused),
+              greaterThanOrEqualTo(3.0),
+              reason: '$name ring against $role under the focus overlay',
+            );
+          }
+        }
+      });
+    }
+  });
+
   group('BgeTheme typography', () {
     late TextTheme resolved;
 

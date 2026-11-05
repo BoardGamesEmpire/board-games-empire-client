@@ -419,6 +419,70 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('its focus ring follows its own rounded corners, inside its '
+        'edge (#644)', (tester) async {
+      await show(tester, inHouseholds: const []);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final ring = tester
+          .widgetList<CustomPaint>(
+            find.descendant(
+              of: byKey(StatsCard.promptKey),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .map((paint) => paint.foregroundPainter)
+          .whereType<BgeButtonFocusRingPainter>()
+          .single;
+      const tokens = BgeTokens.standard;
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusSm),
+      );
+      expect(ring.color, BgeTheme.light().colorScheme.primary);
+      expect(ring.shape, shape, reason: 'not the theme stadium');
+      // A `TextButton()` clips to its shape, so its ring is inside the edge.
+      expect(ring.placement, BgeButtonFocusRingPlacement.inside);
+
+      // And it is drawn so: just inside the left edge, a little below the top
+      // corner, is on a rounded rectangle's ring. A stadium this tall would
+      // curve away from the edge there and leave the button's inside showing.
+      RenderObject boundary = tester.renderObject(byKey(StatsCard.promptKey));
+      while (!boundary.isRepaintBoundary) {
+        boundary = boundary.parent!;
+      }
+      final button = tester.renderObject<RenderBox>(
+        find
+            .descendant(
+              of: byKey(StatsCard.promptKey),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final corner = button.localToGlobal(
+        Offset(
+          tokens.focusOutlineWidth / 2,
+          tokens.radiusSm + tokens.focusOutlineWidth / 2,
+        ),
+        ancestor: boundary,
+      );
+      final pixel = (await tester.runAsync(() async {
+        final image = await (boundary.debugLayer! as OffsetLayer).toImage(
+          boundary.paintBounds,
+        );
+        final bytes = (await image.toByteData())!;
+        final at = (corner.dy.floor() * image.width + corner.dx.floor()) * 4;
+        image.dispose();
+        return Color.fromARGB(
+          bytes.getUint8(at + 3),
+          bytes.getUint8(at),
+          bytes.getUint8(at + 1),
+          bytes.getUint8(at + 2),
+        );
+      }))!;
+      expect(pixel, ring.color);
+    });
+
     testWidgets('keeps its element and its focus as the lines above it come '
         'and go', (tester) async {
       await show(tester, inHouseholds: const []);

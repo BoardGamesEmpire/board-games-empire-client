@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
 import 'package:ui_tokens/src/bge_status_colors.dart';
@@ -33,6 +34,28 @@ const double _dialogMinWidth = 280;
 /// runaway message can't push the rest of a form out of reach.
 const int _fieldMessageMaxLines = 6;
 
+/// Every Material button's shape (#644).
+///
+/// Material 3's default, set explicitly so a button and its focus ring share
+/// one shape, and can't drift apart when the buttons' shape changes (#645).
+const OutlinedBorder _buttonShape = StadiumBorder();
+
+/// A button theme's style: the one shape, and the focus ring at [placement].
+///
+/// The builder also makes Flutter clip a `TextButton()`, `OutlinedButton()` or
+/// `ElevatedButton()` to its shape, content and all (#644). A label that
+/// wraps to two lines reaches the stadium's curved ends and loses glyph
+/// pixels there: at 320dp and 2.0 text, "Loading more games…" lost a 4 by 4
+/// block off its "L" and off its "g"'s descender (`<A11Y-16>`, pinned by a
+/// skipped test in `bge_button_focus_ring_test.dart`).
+ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
+  shape: const WidgetStatePropertyAll(_buttonShape),
+  backgroundBuilder: BgeButtonFocusRing.builder(
+    _buttonShape,
+    placement: placement,
+  ),
+);
+
 /// The four application themes (#32), built from a [BgePalette] with the
 /// theme-level accessibility baseline applied uniformly.
 ///
@@ -44,10 +67,13 @@ const int _fieldMessageMaxLines = 6;
 /// - **`VisualDensity.standard`** — deliberately *not*
 ///   `adaptivePlatformDensity`, which compacts desktop layouts and erodes
 ///   the tap-target baseline there.
-/// - **Visible focus** — text inputs get an explicit
-///   `focusOutlineWidth`-stroke primary border; Material 3 supplies the
-///   focus overlay for buttons and list items. (The full keyboard-focus
-///   pass across real screens is #50/#70.)
+/// - **Visible focus** — text inputs get a `focusOutlineWidth` primary
+///   border. The six button types below get a `primary` ring of that width
+///   on keyboard focus only (#644), [BgeButtonFocusRing]:
+///   [BgeTokens.focusRingGap] outside the shape on filled, tonal and icon
+///   buttons, and inside the edge on text, outlined and elevated buttons,
+///   which Flutter clips to their shape. Segmented buttons, floating action
+///   buttons and list rows don't get one yet; see [BgeButtonFocusRing].
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.
@@ -155,6 +181,24 @@ abstract final class BgeTheme {
           minWidth: _dialogMinWidth,
           maxWidth: tokens.contentMaxWidth,
         ),
+      ),
+      // #644: a keyboard focus ring on each of these. Outside the shape where
+      // the button doesn't clip; inside the edge on the three that Flutter
+      // clips to their shape once a builder is set. See the class doc.
+      filledButtonTheme: FilledButtonThemeData(
+        style: _buttonStyle(BgeButtonFocusRingPlacement.outside),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: _buttonStyle(BgeButtonFocusRingPlacement.outside),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
       ),
       extensions: [tokens, BgeStatusColors.forScheme(scheme)],
     );
