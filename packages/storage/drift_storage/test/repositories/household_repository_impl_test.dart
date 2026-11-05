@@ -834,6 +834,150 @@ void main() {
       });
     });
 
+    group('updateCachedMembers() (#478)', () {
+      HouseholdMember member(
+        String id,
+        String userId,
+        HouseholdRole role, {
+        String householdId = 'h-1',
+      }) {
+        final now = DateTime.now().toUtc();
+        return HouseholdMember(
+          id: id,
+          userId: userId,
+          householdId: householdId,
+          role: role,
+          createdAt: now,
+          updatedAt: now,
+        );
+      }
+
+      test(
+        'updateCachedMembers writes over both sides of a transfer',
+        () async {
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-me-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-other-1',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdMember',
+          );
+
+          await repo.updateCachedMembers([
+            member('m-other-1', _kOtherUserId, HouseholdRole.householdOwner),
+            member('m-me-1', _kUserId, HouseholdRole.householdAdmin),
+          ]);
+
+          final roster = await repo.getMembers('h-1');
+          expect(
+            {for (final m in roster) m.userId: m.role},
+            equals({
+              _kUserId: HouseholdRole.householdAdmin,
+              _kOtherUserId: HouseholdRole.householdOwner,
+            }),
+          );
+        },
+      );
+
+      test('updateCachedMembers adds no row for a member not cached', () async {
+        // The same user is cached in h-2 only: the match is on the pair, so
+        // nothing is added to h-1 for them.
+        await _seedHousehold(db, id: 'h-1');
+        await _seedHousehold(db, id: 'h-2');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-2',
+          userId: _kOtherUserId,
+          householdId: 'h-2',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.updateCachedMembers([
+          member('m-other-1', _kOtherUserId, HouseholdRole.householdOwner),
+          member('m-never', 'user-never-cached', HouseholdRole.householdMember),
+        ]);
+
+        final rows = await db.select(db.householdMembersTable).get();
+        expect(
+          {for (final r in rows) r.id: (r.householdId, r.roleName)},
+          equals({
+            'm-me-1': ('h-1', 'HouseholdOwner'),
+            'm-other-2': ('h-2', 'HouseholdMember'),
+          }),
+        );
+      });
+
+      test('a transfer answer that lands after the viewer left does not bring '
+          'the household back', () async {
+        // Leave's answer deletes the viewer's own row, and an older
+        // transfer's answer names the viewer as its previous owner.
+        await _seedHousehold(db, id: 'h-1');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-1',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.removeCachedMember('h-1', _kUserId);
+        await repo.updateCachedMembers([
+          member('m-other-1', _kOtherUserId, HouseholdRole.householdOwner),
+          member('m-me-1', _kUserId, HouseholdRole.householdAdmin),
+        ]);
+
+        expect(await repo.getHousehold('h-1'), isNull);
+        expect(await repo.getHouseholds(), isEmpty);
+        final rows = await db.select(db.householdMembersTable).get();
+        expect({
+          for (final r in rows) r.id: r.roleName,
+        }, equals({'m-other-1': 'HouseholdOwner'}));
+      });
+
+      test('updateCachedMembers replaces a synthesized owner row\'s id, as '
+          'the upserts do (#267)', () async {
+        await _seedHousehold(db, id: 'h-1');
+        await _seedMember(
+          db,
+          id: 'local-owner-cuid',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+
+        await repo.updateCachedMembers([
+          member('server-member-id', _kUserId, HouseholdRole.householdAdmin),
+        ]);
+
+        final members = await repo.getMembers('h-1');
+        expect(members, hasLength(1));
+        expect(members.single.id, equals('server-member-id'));
+        expect(members.single.role, equals(HouseholdRole.householdAdmin));
+      });
+    });
+
     group('removeCachedMember() (#480)', () {
       test('removeCachedMember deletes only that member', () async {
         // The same user belongs to both households: the delete is keyed on

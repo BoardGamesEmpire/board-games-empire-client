@@ -68,6 +68,9 @@ void main() {
     when(() => repository.cacheMembers(any())).thenAnswer((_) async {
       calls.add('cacheMembers');
     });
+    when(() => repository.updateCachedMembers(any())).thenAnswer((_) async {
+      calls.add('updateCachedMembers');
+    });
     when(() => repository.removeCachedMember(any(), any()))
         .thenAnswer((invocation) async {
           final [householdId, userId] = invocation.positionalArguments;
@@ -112,7 +115,7 @@ void main() {
     final previousOwner = _member(role: HouseholdRole.householdAdmin);
 
     blocTest<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
-      'a transfer caches both sides and refreshes',
+      'a transfer writes both sides over the cached rows and refreshes',
       setUp: () => when(() => remote.transferOwnership('h1', 'm2')).thenAnswer(
         (_) async => (owner: newOwner, previousOwner: previousOwner),
       ),
@@ -126,9 +129,11 @@ void main() {
         ),
       ],
       verify: (_) {
-        verify(() => repository.cacheMembers([newOwner, previousOwner]))
+        // Over the cached rows only, never an upsert: the viewer may have
+        // left while the transfer was on its way.
+        verify(() => repository.updateCachedMembers([newOwner, previousOwner]))
             .called(1);
-        expect(calls, ['cacheMembers', 'onChanged']);
+        expect(calls, ['updateCachedMembers', 'onChanged']);
       },
     );
 
@@ -147,7 +152,7 @@ void main() {
         ),
       ],
       verify: (_) {
-        verifyNever(() => repository.cacheMembers(any()));
+        verifyNever(() => repository.updateCachedMembers(any()));
         expect(refreshes(), 1);
       },
     );

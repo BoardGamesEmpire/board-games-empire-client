@@ -29,10 +29,12 @@ enum HouseholdRosterWrite {
 /// and removals (#480), whose answers land through [cacheMember] and
 /// [removeCachedMember]. Leaving (#479) and transferring ownership (#478) go
 /// direct too, and their answers land through [removeCachedMember] and
-/// [cacheMembers]. Delete (#477) is still to come, and will go direct too.
+/// [updateCachedMembers]. Delete (#477) is still to come, and will go direct
+/// too.
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
-/// [removeCachedMember], [cacheHouseholdWithRoster]) and
+/// [updateCachedMembers], [removeCachedMember], [cacheHouseholdWithRoster])
+/// and
 /// [purgeHouseholdsAbsentFrom] are server-driven: they apply payloads the
 /// server already auth-filtered, and are not user-facing mutations.
 ///
@@ -49,8 +51,8 @@ enum HouseholdRosterWrite {
 /// page: nothing short of a single-page read licenses the purge.
 ///
 /// This device's own membership changes go straight to the server (#122).
-/// Their answers are written through [cacheMember], [cacheMembers] and
-/// [removeCachedMember]. A hydrate that read the roster before such a change
+/// Their answers are written through [cacheMember], [updateCachedMembers]
+/// and [removeCachedMember]. A hydrate that read the roster before such a change
 /// can write the old roster back after it. The caller therefore marks the
 /// list stale and runs another pass (`refreshAfterMembershipChange`), and
 /// that pass corrects it.
@@ -78,7 +80,8 @@ enum HouseholdRosterWrite {
 ///   self-introspection method, not a content-reveal method).
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
-/// [removeCachedMember]) are intentionally user-agnostic — the server has
+/// [updateCachedMembers], [removeCachedMember]) are intentionally
+/// user-agnostic — the server has
 /// already done auth filtering on the response payload, and the local
 /// cache may legitimately contain rows for households the current user
 /// isn't a member of (populated by friend-graph queries, etc.). The boundary
@@ -274,6 +277,18 @@ abstract class HouseholdRepository {
   /// Upserts a batch of members. Same user-agnostic semantics as
   /// [cacheMember].
   Future<void> cacheMembers(List<HouseholdMember> members);
+
+  /// Writes each of [members] over the cached row for the same person in
+  /// the same household, and adds no row, in one transaction. A member with
+  /// no cached row is skipped. User-agnostic, like [cacheMember].
+  ///
+  /// Applies the server's answer to an ownership transfer sent from this
+  /// device (#478): the new owner and the previous one. A row gone by the
+  /// time the answer lands was taken out after the request went out, by
+  /// the viewer leaving or a removal, and an upsert would put it back.
+  /// Putting back the viewer's own row would bring back a household they
+  /// have left.
+  Future<void> updateCachedMembers(List<HouseholdMember> members);
 
   /// Deletes the cached member row for [userId] in [householdId], if there
   /// is one (#480). A row that is not cached is not an error.

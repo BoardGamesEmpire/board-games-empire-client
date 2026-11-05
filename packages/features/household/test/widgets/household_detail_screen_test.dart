@@ -1466,7 +1466,8 @@ void main() {
       remote = _MockMemberRemote();
       refreshes = 0;
       when(() => repository.cacheMember(any())).thenAnswer((_) async {});
-      when(() => repository.cacheMembers(any())).thenAnswer((_) async {});
+      when(() => repository.updateCachedMembers(any()))
+          .thenAnswer((_) async {});
       when(() => repository.removeCachedMember(any(), any()))
           .thenAnswer((_) async {});
     });
