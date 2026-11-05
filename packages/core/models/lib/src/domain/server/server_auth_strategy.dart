@@ -117,23 +117,37 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
 
 /// OIDC (OpenID Connect) authentication strategy.
 ///
-/// Corresponds to [OidcStrategyDto] on the NestJS backend.
-/// The client initiates the OAuth2 redirect by POSTing to [authorizationEndpoint]
-/// with `{ providerId, callbackURL }`. BetterAuth handles the code exchange.
+/// Corresponds to [OidcStrategyDto] on the NestJS backend. One strategy is one
+/// provider the server lets people sign in through (#583).
+///
+/// Two flows use it:
+/// - Web: the client POSTs [authorizationEndpoint] with
+///   `{ provider, callbackURL, errorCallbackURL }`, navigates to the returned
+///   URL, and the server sets the session cookie on the way back.
+/// - Native: the client opens [appSignInEndpoint] in an in-app browser tab
+///   with a PKCE challenge and a `state`; the server returns to `bge://oauth`
+///   with a one-time code, and the client POSTs [appTokenEndpoint] with
+///   `{ code, code_verifier }` for `{ token, user }`.
 final class OidcStrategy extends ServerAuthStrategy {
   const OidcStrategy({
     this.signUpDisabled = false,
     required this.providerId,
+    required this.displayName,
     required this.discoveryUrl,
     required this.authorizationEndpoint,
+    required this.appSignInEndpoint,
+    required this.appTokenEndpoint,
   });
 
   factory OidcStrategy.fromJson(Map<String, dynamic> json) {
     return OidcStrategy(
       signUpDisabled: json['sign_up_disabled'] as bool? ?? false,
       providerId: json['provider_id'] as String,
+      displayName: json['display_name'] as String,
       discoveryUrl: json['discovery_url'] as String,
       authorizationEndpoint: json['authorization_endpoint'] as String,
+      appSignInEndpoint: json['app_sign_in_endpoint'] as String,
+      appTokenEndpoint: json['app_token_endpoint'] as String,
     );
   }
 
@@ -143,36 +157,55 @@ final class OidcStrategy extends ServerAuthStrategy {
   /// stays listed either way. Optional on the wire: a server older than
   /// backend#585 doesn't send it, and failing the whole discovery parse over
   /// it would report a working server as an invalid one (#443). Nothing reads
-  /// it until the provider sign-in flow is built (#583).
+  /// it yet (#583).
   final bool signUpDisabled;
 
-  /// Provider identifier passed to BetterAuth's oauth2 sign-in endpoint.
+  /// Provider identifier, sent as `provider` to both sign-in flows.
   final String providerId;
+
+  /// The provider's name as the server shows it, for the sign-in button.
+  final String displayName;
 
   /// Public OIDC well-known discovery URL. Absolute — this points at the
   /// external identity provider, not the BGE server. Clients may inspect this
   /// for scopes, PKCE requirements, etc.
   final String discoveryUrl;
 
-  /// Relative path to initiate the OAuth2/OIDC redirect flow, resolved against
-  /// the user-supplied server base URL. POST `{ providerId, callbackURL }` to
-  /// begin authentication.
+  /// Relative path for the web flow, resolved against the user-supplied server
+  /// base URL. POST `{ provider, callbackURL, errorCallbackURL }` to begin
+  /// authentication; the answer carries the URL to navigate to.
   final String authorizationEndpoint;
+
+  /// Relative path the native flow opens in an in-app browser tab, resolved
+  /// against the user-supplied server base URL. A GET carrying `provider`,
+  /// `redirect_uri`, `code_challenge`, `code_challenge_method` and `state`.
+  final String appSignInEndpoint;
+
+  /// Relative path the native flow exchanges the returned one-time code at,
+  /// resolved against the user-supplied server base URL. POST
+  /// `{ code, code_verifier }` for `{ token, user }`.
+  final String appTokenEndpoint;
 
   @override
   Map<String, dynamic> toJson() => {
     'type': AuthStrategyType.oidc,
     'sign_up_disabled': signUpDisabled,
     'provider_id': providerId,
+    'display_name': displayName,
     'discovery_url': discoveryUrl,
     'authorization_endpoint': authorizationEndpoint,
+    'app_sign_in_endpoint': appSignInEndpoint,
+    'app_token_endpoint': appTokenEndpoint,
   };
 
   @override
   List<Object?> get props => [
     signUpDisabled,
     providerId,
+    displayName,
     discoveryUrl,
     authorizationEndpoint,
+    appSignInEndpoint,
+    appTokenEndpoint,
   ];
 }

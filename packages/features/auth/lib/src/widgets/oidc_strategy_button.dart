@@ -33,22 +33,8 @@ class OidcStrategyButton extends StatelessWidget {
       ),
       icon: const Icon(Icons.login, size: 20),
       label: Text(
-        AuthLocalizations.of(context)
-            .authContinueWith(_displayName(strategy.providerId)),
+        AuthLocalizations.of(context).authContinueWith(strategy.displayName),
       ),
     );
   }
-
-  /// Converts a raw provider ID into a display-friendly name.
-  /// e.g. 'google-oidc' → 'Google Oidc', 'azure-ad' → 'Azure Ad'
-  ///
-  /// A fallback: the provider sign-in flow replaces it with the strategy's
-  /// own display name (#583).
-  String _displayName(String providerId) => providerId
-      .split(RegExp(r'[-_]'))
-      .map(
-        (word) =>
-            word.isEmpty ? word : word[0].toUpperCase() + word.substring(1),
-      )
-      .join(' ');
 }

@@ -70,6 +70,9 @@ void main() {
               'discovery_url':
                   'https://auth.acme.com/.well-known/openid-configuration',
               'authorization_endpoint': '/api/auth/sign-in/oauth2',
+              'display_name': 'Acme SSO',
+              'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+              'app_token_endpoint': '/api/auth/app-sign-in/token',
             },
           ],
         );
@@ -256,6 +259,9 @@ void main() {
               'discovery_url':
                   'https://auth.acme.com/.well-known/openid-configuration',
               'authorization_endpoint': '/api/auth/sign-in/oauth2',
+              'display_name': 'Acme SSO',
+              'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+              'app_token_endpoint': '/api/auth/app-sign-in/token',
             },
           ],
         );

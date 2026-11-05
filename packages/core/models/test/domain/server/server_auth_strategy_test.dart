@@ -41,6 +41,63 @@ void main() {
       });
 
       group('OidcStrategy', () {
+        test('parses the discovery shape the backend e2e test pins', () {
+          final s = OidcStrategy.fromJson({
+            'type': 'oidc',
+            'provider_id': 'authentik',
+            'display_name': 'Authentik',
+            'discovery_url':
+                'https://auth.example.com/.well-known/openid-configuration',
+            'authorization_endpoint': '/api/auth/sign-in/social',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
+            'sign_up_disabled': false,
+          });
+
+          expect(s.displayName, 'Authentik');
+          expect(s.appSignInEndpoint, '/api/auth/app-sign-in/start');
+          expect(s.appTokenEndpoint, '/api/auth/app-sign-in/token');
+        });
+
+        for (final key in [
+          'display_name',
+          'app_sign_in_endpoint',
+          'app_token_endpoint',
+        ]) {
+          test('a strategy without $key fails to parse', () {
+            final json = <String, dynamic>{
+              'type': 'oidc',
+              'provider_id': 'authentik',
+              'display_name': 'Authentik',
+              'discovery_url':
+                  'https://auth.example.com/.well-known/openid-configuration',
+              'authorization_endpoint': '/api/auth/sign-in/social',
+              'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+              'app_token_endpoint': '/api/auth/app-sign-in/token',
+            }..remove(key);
+
+            expect(
+              () => OidcStrategy.fromJson(json),
+              throwsA(isA<TypeError>()),
+            );
+          });
+        }
+
+        test('toJson round-trips the new keys', () {
+          final json = {
+            'type': 'oidc',
+            'sign_up_disabled': false,
+            'provider_id': 'authentik',
+            'display_name': 'Authentik',
+            'discovery_url':
+                'https://auth.example.com/.well-known/openid-configuration',
+            'authorization_endpoint': '/api/auth/sign-in/social',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
+          };
+
+          expect(OidcStrategy.fromJson(json).toJson(), json);
+        });
         test('deserializes all fields', () {
           final json = {
             'type': 'oidc',
@@ -48,6 +105,9 @@ void main() {
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
             'authorization_endpoint': '/api/auth/sign-in/oauth2',
+            'display_name': 'Acme SSO',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
           };
 
           final strategy = ServerAuthStrategy.fromJson(json);
@@ -72,6 +132,9 @@ void main() {
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
             'authorization_endpoint': '/api/auth/sign-in/oauth2',
+            'display_name': 'Acme SSO',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
           };
 
           final oidc = ServerAuthStrategy.fromJson(json) as OidcStrategy;
@@ -87,6 +150,9 @@ void main() {
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
             'authorization_endpoint': '/api/auth/sign-in/oauth2',
+            'display_name': 'Acme SSO',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
           };
 
           final oidc = ServerAuthStrategy.fromJson(json) as OidcStrategy;
@@ -154,6 +220,9 @@ void main() {
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
           authorizationEndpoint: '/api/auth/sign-in/oauth2',
+          displayName: 'Acme SSO',
+          appSignInEndpoint: '/api/auth/app-sign-in/start',
+          appTokenEndpoint: '/api/auth/app-sign-in/token',
         );
 
         final json = strategy.toJson();
@@ -207,12 +276,18 @@ void main() {
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
           authorizationEndpoint: '/api/auth/sign-in/oauth2',
+          displayName: 'Acme SSO',
+          appSignInEndpoint: '/api/auth/app-sign-in/start',
+          appTokenEndpoint: '/api/auth/app-sign-in/token',
         );
         const b = OidcStrategy(
           providerId: 'acme',
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
           authorizationEndpoint: '/api/auth/sign-in/oauth2',
+          displayName: 'Acme SSO',
+          appSignInEndpoint: '/api/auth/app-sign-in/start',
+          appTokenEndpoint: '/api/auth/app-sign-in/token',
         );
 
         expect(a, equals(b));
@@ -224,6 +299,9 @@ void main() {
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
           authorizationEndpoint: '/api/auth/sign-in/oauth2',
+          displayName: 'Acme SSO',
+          appSignInEndpoint: '/api/auth/app-sign-in/start',
+          appTokenEndpoint: '/api/auth/app-sign-in/token',
         );
         const closed = OidcStrategy(
           signUpDisabled: true,
@@ -231,6 +309,9 @@ void main() {
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
           authorizationEndpoint: '/api/auth/sign-in/oauth2',
+          displayName: 'Acme SSO',
+          appSignInEndpoint: '/api/auth/app-sign-in/start',
+          appTokenEndpoint: '/api/auth/app-sign-in/token',
         );
 
         expect(open, isNot(equals(closed)));
@@ -249,6 +330,9 @@ void main() {
             discoveryUrl:
                 'https://auth.test.com/.well-known/openid-configuration',
             authorizationEndpoint: '/api/auth/sign-in/oauth2',
+            displayName: 'Acme SSO',
+            appSignInEndpoint: '/api/auth/app-sign-in/start',
+            appTokenEndpoint: '/api/auth/app-sign-in/token',
           ),
         ];
 
@@ -280,6 +364,9 @@ void main() {
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
             'authorization_endpoint': '/api/auth/sign-in/oauth2',
+            'display_name': 'Acme SSO',
+            'app_sign_in_endpoint': '/api/auth/app-sign-in/start',
+            'app_token_endpoint': '/api/auth/app-sign-in/token',
           },
         ];
 

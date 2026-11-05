@@ -48,7 +48,10 @@ ServerIdentity testServerIdentity({
       const OidcStrategy(
         providerId: 'acme-sso',
         discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
+        displayName: 'Acme SSO',
         authorizationEndpoint: '$_kAuthBase/sign-in/oauth2',
+        appSignInEndpoint: '$_kAuthBase/app-sign-in/start',
+        appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
       ),
   ],
 );

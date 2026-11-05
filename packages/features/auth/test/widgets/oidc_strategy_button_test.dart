@@ -9,12 +9,15 @@ import 'package:auth/l10n/auth_localizations_en.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
 
 const _strategy = OidcStrategy(
-  providerId: 'google-oidc',
+  providerId: 'my-idp',
+  displayName: 'Authentik',
   discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
-  authorizationEndpoint: '/api/auth/sign-in/oauth2',
+  authorizationEndpoint: '/api/auth/sign-in/social',
+  appSignInEndpoint: '/api/auth/app-sign-in/start',
+  appTokenEndpoint: '/api/auth/app-sign-in/token',
 );
 
-const _label = 'Continue with Google Oidc';
+const _label = 'Continue with Authentik';
 
 /// The catalog with the button's label reworded. English is the only locale,
 /// so this is what tells a label read from the catalog apart from one built
@@ -82,15 +85,21 @@ Widget _wrap({
 );
 
 /// Pins the provider button's label, its one semantics node and its tap
-/// target (#188). The provider's own display name replaces the title-cased id
-/// once the sign-in flow reads it (#583).
+/// target (#188). The label carries the provider's own display name (#583).
 void main() {
+  testWidgets('the label reads the display name, not the id', (tester) async {
+    await tester.pumpWidget(_wrap());
+
+    expect(find.text('Continue with Authentik'), findsOneWidget);
+    expect(find.text('Continue with My Idp'), findsNothing);
+  });
+
   testWidgets('the label comes from authContinueWith', (tester) async {
     await tester.pumpWidget(_wrap());
     expect(find.text(_label), findsOneWidget);
 
     await tester.pumpWidget(_wrap(reworded: true));
-    expect(find.text('Sign in through Google Oidc'), findsOneWidget);
+    expect(find.text('Sign in through Authentik'), findsOneWidget);
   });
 
   testWidgets('one semantics node, as a button with the label', (tester) async {
