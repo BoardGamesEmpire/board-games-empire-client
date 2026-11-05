@@ -251,6 +251,14 @@ String _envelope(int status, String error) => jsonEncode({
   'error': error,
 });
 
+/// The envelope a deadlock that outlived the server's retry is rendered as.
+final _retryable409 = jsonEncode({
+  'statusCode': 409,
+  'message': 'm',
+  'error': 'Conflict',
+  'retryable': true,
+});
+
 /// The import batch every import body names: the server mints a v4 UUID.
 const _batch = '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f';
 
@@ -711,6 +719,45 @@ void main() {
       expect(
         remote.fetchGame('g_catan'),
         throwsA(isA<GamesRemoteTransientException>()),
+      );
+    });
+
+    test('a 409 saying retryable: true is transient', () {
+      final remote = answering(_retryable409, status: 409);
+
+      expect(
+        remote.fetchGame('g_catan'),
+        throwsA(
+          isA<GamesRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
+    test('any other 409 is permanent', () {
+      final remote = answering(_envelope(409, 'Conflict'), status: 409);
+
+      expect(
+        remote.fetchGame('g_catan'),
+        throwsA(isA<GamesRemotePermanentException>()),
+      );
+    });
+
+    test('a 407 is transient', () {
+      final remote = answering('', status: 407);
+
+      expect(
+        remote.fetchGame('g_catan'),
+        throwsA(
+          isA<GamesRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            407,
+          ),
+        ),
       );
     });
 
@@ -1200,6 +1247,50 @@ void main() {
       await expectLater(
         remote.fetchImport(_batch),
         throwsA(isA<GamesForbiddenException>()),
+      );
+    });
+
+    test('a 409 saying retryable: true is transient on either route', () async {
+      final remote = answering(_retryable409, status: 409);
+
+      for (final call in [
+        () => start(remote),
+        () => remote.fetchImport(_batch),
+      ]) {
+        await expectLater(
+          call(),
+          throwsA(
+            isA<GamesRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      }
+    });
+
+    test('any other 409 on the start route is permanent', () async {
+      final remote = answering(_envelope(409, 'Conflict'), status: 409);
+
+      await expectLater(
+        start(remote),
+        throwsA(isA<GamesRemotePermanentException>()),
+      );
+    });
+
+    test('a 407 on the start route is transient', () async {
+      final remote = answering('', status: 407);
+
+      await expectLater(
+        start(remote),
+        throwsA(
+          isA<GamesRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            407,
+          ),
+        ),
       );
     });
 

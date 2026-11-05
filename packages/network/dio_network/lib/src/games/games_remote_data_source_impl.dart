@@ -778,6 +778,15 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
             statusCode: status,
           );
     }
+    if (status == 409 && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). Read the
+      // field, not the message, which is translated.
+      return GamesRemoteTransientException(
+        '$message; the server hit a deadlock and asked for a retry',
+        cause: cause,
+        statusCode: status,
+      );
+    }
     if (status >= 400) {
       return GamesRemotePermanentException(
         message,

@@ -84,9 +84,9 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 /// ## Failure classification
 ///
 /// Every transport failure is wrapped as a [GamesRemoteException]; callers
-/// never see a raw transport error. The envelope rules are the DataGateway
-/// source's (#350, #365, #253): only the API's own error envelope licenses a
-/// conclusion about the caller or a row.
+/// never see a raw transport error. The envelope rules are the ones every
+/// remote source applies (#350, #365, #253): only the API's own error
+/// envelope licenses a conclusion about the caller or a row.
 ///
 /// - [GamesForbiddenException]: a 403 carrying the API's error envelope. A
 ///   game that exists and the caller may not read is a 403, not a 404, at
@@ -100,8 +100,9 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 /// - [GamesRemoteTransientException]: no response at all, 401, 407, 408, 429,
 ///   every 5xx, a 403 or 404 without the envelope, a 404 from [fetchPage],
 ///   [fetchRandom], [search] or [startImport] even with it (a list or write
-///   route is never absent, so the route is not deployed), and a 2xx body
-///   this device could not decode at all.
+///   route is never absent, so the route is not deployed), a 409 saying
+///   `retryable: true` (a deadlock the server asks the caller to retry), and
+///   a 2xx body this device could not decode at all.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a page, limit or offset out of range, a filter naming an
