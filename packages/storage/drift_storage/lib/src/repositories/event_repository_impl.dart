@@ -241,15 +241,79 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           (t) => t.eventId.isIn(refused) & t.userId.equals(_userId),
         );
       }
+      // A list row carries no roster, only the user's own answer, which is
+      // newer than a cached roster's copy of it. So it updates their row in
+      // place, matched by attendee id and by user, and adds none: one row on
+      // an event with no roster cached would read as a roster of one (#667).
+      for (final s in written) {
+        if ((s.attendees, s.attendance) case (null, final attendance?)) {
+          b.update(
+            _db.eventAttendeesTable,
+            EventAttendeesTableCompanion(
+              status: Value(_statusName(attendance.status)),
+              roleName: Value(_roleName(attendance.role)),
+              rsvpDate: Value(attendance.rsvpDate),
+            ),
+            where: (t) =>
+                t.id.equals(attendance.attendeeId) &
+                t.eventId.equals(s.event.id) &
+                t.userId.equals(_userId),
+          );
+        }
+      }
 
-      b.insertAll(_db.eventAccessTable, [
-        for (final eventId in byId.keys)
-          EventAccessTableCompanion.insert(
-            userId: _userId,
-            eventId: eventId,
-            source: _encodeSource(source),
-          ),
-      ], mode: InsertMode.insertOrIgnore);
+      switch (source) {
+        // The list speaks for the user's own attendance, so its answer goes
+        // on their `attending` row, null included, over whatever an earlier
+        // read left there: the last write wins (#667, #589).
+        case EventAccessSource.attending:
+          b.insertAll(
+            _db.eventAccessTable,
+            [
+              for (final s in written)
+                _answerToCompanion(s.attendance).copyWith(
+                  userId: Value(_userId),
+                  eventId: Value(s.event.id),
+                  source: const Value(eventAccessSourceAttending),
+                ),
+            ],
+            onConflict: DoUpdate.withExcluded(
+              (_, $EventAccessTableTable excluded) =>
+                  EventAccessTableCompanion.custom(
+                    attendeeId: excluded.attendeeId,
+                    attendanceStatus: excluded.attendanceStatus,
+                    attendanceRole: excluded.attendanceRole,
+                    rsvpDate: excluded.rsvpDate,
+                  ),
+            ),
+          );
+        // A detail read speaks for what the user may read, not for their
+        // list, so it adds no `attending` row. But its answer is as new as a
+        // list row's, and goes on the row the list wrote, where there is one,
+        // null included: the server sends none for a user who left or was
+        // removed, and a list item reading an answer kept from before would
+        // go on showing it. Cleared, the item falls back to the roster this
+        // same read wrote.
+        case EventAccessSource.read:
+          b.insertAll(_db.eventAccessTable, [
+            for (final eventId in byId.keys)
+              EventAccessTableCompanion.insert(
+                userId: _userId,
+                eventId: eventId,
+                source: eventAccessSourceRead,
+              ),
+          ], mode: InsertMode.insertOrIgnore);
+          for (final s in written) {
+            b.update(
+              _db.eventAccessTable,
+              _answerToCompanion(s.attendance),
+              where: (t) =>
+                  t.userId.equals(_userId) &
+                  t.eventId.equals(s.event.id) &
+                  t.source.equals(eventAccessSourceAttending),
+            );
+          }
+      }
     });
   }
 
@@ -1073,20 +1137,30 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             .map((rows) => rows.map(_mapEvent).toList()),
   );
 
-  /// One query joining each attending event to its occurrences and this
-  /// user's own attendee row, so Drift re-runs it when any of them changes
-  /// (#497), as `watchCollectionListItems` does for the collection.
+  /// One query joining each attending event to its occurrences, this user's
+  /// `attending` row and their own attendee row, so Drift re-runs it when any
+  /// of them changes (#497), as `watchCollectionListItems` does for the
+  /// collection.
+  ///
+  /// The attendance is the answer the `attending` row keeps, else the user's
+  /// row on the cached roster (#667). [_writeBatch] keeps the two in step
+  /// where it can, and where they still differ, as when the list answered
+  /// for an attendee id the roster doesn't hold, the list is the newer news.
   ///
   /// Left outer joins: an event can have no occurrences, and most have no
-  /// cached roster. The attendee join matches on this user, so another
-  /// user's row on a shared roster never joins. The server holds one row per
-  /// user per event, and a roster is replaced wholesale, so it joins at most
-  /// one row and the occurrences are not repeated.
+  /// cached roster. Neither of the other two joins can repeat the
+  /// occurrences. The access join matches the row's whole key, user, event
+  /// and source, so it joins one row, and never another user's or a `read`
+  /// row. The attendee join matches on this user, so another user's row on a
+  /// shared roster never joins. The server holds one row per user per event,
+  /// a roster is replaced wholesale, and a list row only updates the user's
+  /// row in place, so it joins at most one row.
   @override
   Stream<List<EventListItem>> watchAttendingEventListItems() => untilDisposed(
     () {
       final events = _db.eventsTable;
       final occurrences = _db.eventOccurrencesTable;
+      final attending = _db.alias(_db.eventAccessTable, 'own_access');
       final mine = _db.alias(_db.eventAttendeesTable, 'own_attendance');
 
       final query =
@@ -1094,6 +1168,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               leftOuterJoin(
                 occurrences,
                 occurrences.eventId.equalsExp(events.id),
+              ),
+              leftOuterJoin(
+                attending,
+                attending.userId.equals(_userId) &
+                    attending.eventId.equalsExp(events.id) &
+                    attending.source.equals(eventAccessSourceAttending),
               ),
               leftOuterJoin(
                 mine,
@@ -1131,22 +1211,65 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                     _mapOccurrence(o),
               ],
               // The same on every row of the event.
-              attendance: switch (eventRows.first.readTableOrNull(mine)) {
-                final row? => EventAttendance.fromAttendee(_mapAttendee(row)),
-                null => null,
-              },
+              attendance: _listAttendance(
+                eventRows.first.readTableOrNull(attending),
+                eventRows.first.readTableOrNull(mine),
+              ),
             ),
         ];
       });
     },
   );
 
+  /// A list item's attendance (#667): the answer the user's [attending] row
+  /// keeps, else their [own] row on the cached roster, else null.
+  EventAttendance? _listAttendance(
+    EventAccessTableData? attending,
+    EventAttendeesTableData? own,
+  ) =>
+      _mapAnswer(attending) ??
+      (own == null ? null : EventAttendance.fromAttendee(_mapAttendee(own)));
+
   // ── Mappers ────────────────────────────────────────────────────────────
 
-  static String _encodeSource(EventAccessSource source) => switch (source) {
-    EventAccessSource.attending => eventAccessSourceAttending,
-    EventAccessSource.read => eventAccessSourceRead,
-  };
+  /// The answer the `attending` access [row] keeps, or null where there is
+  /// no row or it keeps none (#667). Its names read back as a roster row's
+  /// do, so one this client can't read is `unknown`.
+  static EventAttendance? _mapAnswer(EventAccessTableData? row) {
+    if (row == null) return null;
+    final (attendeeId, status) = (row.attendeeId, row.attendanceStatus);
+    if (attendeeId == null || status == null) return null;
+    final role = row.attendanceRole;
+    return EventAttendance(
+      attendeeId: attendeeId,
+      status: EventParticipationStatus.fromWire(status),
+      role: role == null ? null : EventRole.fromWire(role),
+      rsvpDate: row.rsvpDate,
+    );
+  }
+
+  /// The four columns of an `attending` access row that keep [a], the
+  /// user's own answer, or clear it where [a] is null (#667). Stored as a
+  /// roster row stores them.
+  static EventAccessTableCompanion _answerToCompanion(EventAttendance? a) =>
+      EventAccessTableCompanion(
+        attendeeId: Value(a?.attendeeId),
+        attendanceStatus: Value(a == null ? null : _statusName(a.status)),
+        attendanceRole: Value(_roleName(a?.role)),
+        rsvpDate: Value(a?.rsvpDate),
+      );
+
+  /// What a status column stores for [status].
+  static String _statusName(EventParticipationStatus status) => storedEnumName(
+    status,
+    EventParticipationStatus.unknown,
+    (v) => v.toWire(),
+  );
+
+  /// What a role column stores for [role]: null for no role.
+  static String? _roleName(EventRole? role) => role == null
+      ? null
+      : storedEnumName(role, EventRole.unknown, (v) => v.toWire());
 
   Event _mapEvent(EventsTableData row) => Event(
     id: row.id,
@@ -1258,32 +1381,22 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     updatedAt: row.updatedAt,
   );
 
-  EventAttendeesTableCompanion _attendeeToCompanion(EventAttendee a) {
-    final role = a.role;
-    return EventAttendeesTableCompanion.insert(
-      id: a.id,
-      eventId: a.eventId,
-      userId: Value(a.userId),
-      guestName: Value(a.guestName),
-      username: Value(a.username),
-      displayName: Value(a.displayName),
-      avatarUrl: Value(a.avatarUrl),
-      notes: Value(a.notes),
-      status: storedEnumName(
-        a.status,
-        EventParticipationStatus.unknown,
-        (v) => v.toWire(),
-      ),
-      roleName: Value(
-        role == null
-            ? null
-            : storedEnumName(role, EventRole.unknown, (v) => v.toWire()),
-      ),
-      rsvpDate: Value(a.rsvpDate),
-      createdAt: a.createdAt,
-      updatedAt: a.updatedAt,
-    );
-  }
+  EventAttendeesTableCompanion _attendeeToCompanion(EventAttendee a) =>
+      EventAttendeesTableCompanion.insert(
+        id: a.id,
+        eventId: a.eventId,
+        userId: Value(a.userId),
+        guestName: Value(a.guestName),
+        username: Value(a.username),
+        displayName: Value(a.displayName),
+        avatarUrl: Value(a.avatarUrl),
+        notes: Value(a.notes),
+        status: _statusName(a.status),
+        roleName: Value(_roleName(a.role)),
+        rsvpDate: Value(a.rsvpDate),
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt,
+      );
 
   EventPolicy _mapPolicy(EventPoliciesTableData row) => EventPolicy(
     id: row.id,

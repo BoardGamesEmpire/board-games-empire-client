@@ -6,8 +6,10 @@ enum EventAccessSource {
   /// hold an attendee row on it that no host has removed. The row counts
   /// whatever its RSVP, so an invitation they haven't answered and an event
   /// they declined are here too. It doesn't mean they said yes: their answer
-  /// is their row on the roster. The only access
-  /// [EventRepository.purgeAttendanceAbsentFrom] removes.
+  /// is the one the list carried, kept with this access (#667), else their
+  /// row on the roster. The only access
+  /// [EventRepository.purgeAttendanceAbsentFrom] removes, and their answer
+  /// goes with it.
   attending,
 
   /// They read it by id, through `GET /events/:id`, whether or not they
@@ -56,6 +58,11 @@ enum EventAccessSource {
 /// server would show them the list. So do staff, who read every roster on
 /// the server through `read:public_content`. #567 widens the rule.
 ///
+/// The list carries no roster, only each user's own answer (#667). That is
+/// kept with the user's own `attending` access, which no other user reads,
+/// and never put on the roster as a row: one row on an event with no roster
+/// cached would read as a roster of one.
+///
 /// The occurrences and the policy need no such rule: the server checks their
 /// reads apart from the event's, but grants them wherever it grants the
 /// event's, so anyone who may read an event may read its dates and its rules.
@@ -86,6 +93,13 @@ enum EventAccessSource {
 /// - **The policy** is replaced only by a snapshot carrying one. A read serves
 ///   none to a caller its own check refuses, and the server has no policy
 ///   delete, so a missing one is never news.
+/// - **The user's own answer** is kept twice, on their `attending` access and
+///   on their row of a cached roster, and each read writes both where it can,
+///   so a later read of either kind replaces it (#667, #589). A list row
+///   writes the answer it carries to that access, a null one included, and
+///   updates their roster row with the same attendee id in place, adding
+///   none. A detail read writes the roster as above, and its answer, a null
+///   one included, to that access where they already have it, adding none.
 ///
 /// ## Removals made elsewhere
 ///
@@ -103,7 +117,13 @@ abstract class EventRepository {
   /// - replaces its roster only when `snapshot.attendees` is non-empty, and
   ///   removes the current user's own row from it when it is empty;
   /// - records [source] access for the current user, beside any access they
-  ///   already have.
+  ///   already have;
+  /// - writes the current user's own answer, as "What each read may change"
+  ///   above says. A list row ([source] attending) writes the answer it
+  ///   carries onto their `attending` access, a null one included, and a
+  ///   non-null one onto their own row on a cached roster, adding none. A
+  ///   detail read copies its answer, a null one included, onto an
+  ///   `attending` access they already have, and never adds one.
   ///
   /// For one read, such as the detail read #498 makes. The hydrate writes a
   /// page at a time, through [cacheEvents].
@@ -215,9 +235,9 @@ abstract class EventRepository {
   /// The current user's own row on the cached roster of [eventId], or null
   /// when no cached roster names them or they have no access to the event.
   ///
-  /// Only a detail read carries a roster until backend#867 puts the caller's
-  /// own attendance on every list row, so an event cached only from the list
-  /// answers null.
+  /// Only a detail read carries a roster, so an event cached only from the
+  /// list answers null. The answer the list carries is too small to make a
+  /// roster row of: [watchAttendingEventListItems] serves it (#667).
   Future<EventAttendee?> getCurrentUserAttendance(String eventId);
 
   /// Watches the cached event [id] as the detail screen shows it (#498): what
@@ -355,19 +375,22 @@ abstract class EventRepository {
   Stream<List<Event>> watchAttendingEvents();
 
   /// Watches the same events as [watchAttendingEvents], in the same order,
-  /// each with its occurrences and the current user's own attendee row
-  /// (#497).
+  /// each with its occurrences and the current user's own attendance (#497).
   ///
   /// The occurrences come in the server's order, `sortOrder` then id, and an
-  /// event with none has an empty list. The attendee row is the one
-  /// [getCurrentUserAttendance] answers: null where no cached roster names
-  /// this user, which for an event cached only from the list is every one
-  /// until backend#867. Another user's row on the same roster is never this
-  /// user's.
+  /// event with none has an empty list. The attendance is the answer the list
+  /// carried, kept with their `attending` access (#667), else their own row
+  /// on the cached roster, as [getCurrentUserAttendance] answers it. Null
+  /// where neither names them, which means not known. Each read keeps the two
+  /// in step where it can, and where they still differ, as when the list
+  /// answered for an attendee id a roster cached before the user left and
+  /// was invited back doesn't hold, the list's is the newer news. Another
+  /// user's answer, or their row on the same roster, is never this user's.
   ///
-  /// Re-emits when an event, its occurrences or this user's attendee row
-  /// changes, and on each write [watchAttendingEvents] emits for. As there,
-  /// a write that changes nothing here may still emit the list unchanged.
+  /// Re-emits when an event, its occurrences, this user's answer or their
+  /// attendee row changes, and on each write [watchAttendingEvents] emits
+  /// for. As there, a write that changes nothing here may still emit the list
+  /// unchanged.
   Stream<List<EventListItem>> watchAttendingEventListItems();
 
   // ── The queued create (#499) ───────────────────────────────────────────

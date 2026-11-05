@@ -17,6 +17,11 @@ import 'event_table.dart';
 ///   only the signed-in user's: their list speaks for their own attendance,
 ///   not anyone else's. A `GET /events/:id` the user made writes a `read` row,
 ///   which that purge leaves alone.
+/// - **An `attending` row keeps the list's answer (#667).** The list carries
+///   the user's own attendance on every row, and the hydrate writes it here,
+///   on the row it already writes for them. The purge removes the row, and
+///   the answer with it. It isn't put on the roster: one row on an event with
+///   no roster cached would read as a roster of one.
 /// - **An event goes with its last row.** Once no row is left for an event, it
 ///   is deleted, with its occurrences, roster and policy.
 /// - **Indexed on [eventId].** The primary key leads with [userId], so it
@@ -30,6 +35,20 @@ class EventAccessTable extends Table {
 
   /// [eventAccessSourceAttending] or [eventAccessSourceRead].
   TextColumn get source => text()();
+
+  /// The user's own answer as the `GET /events` row carried it (#667): their
+  /// attendee id, `EventParticipationStatus` and `EventRole` by wire name,
+  /// stored as `event_attendees` stores them, and when they last answered.
+  ///
+  /// Set only on `attending` rows, all four from one answer. Null on a row the
+  /// list carried no answer for, or hasn't written since v15, and the list
+  /// item then falls back to the user's own row on a cached roster. A detail
+  /// read that carries an answer writes it here where the row exists, and
+  /// adds none.
+  TextColumn get attendeeId => text().nullable()();
+  TextColumn get attendanceStatus => text().nullable()();
+  TextColumn get attendanceRole => text().nullable()();
+  DateTimeColumn get rsvpDate => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {userId, eventId, source};

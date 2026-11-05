@@ -19,6 +19,7 @@ import 'generated/schema_v11.dart' as v11;
 import 'generated/schema_v12.dart' as v12;
 import 'generated/schema_v13.dart' as v13;
 import 'generated/schema_v14.dart' as v14;
+import 'generated/schema_v15.dart' as v15;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1286,6 +1287,107 @@ void main() {
         final games = await newDb.select(newDb.games).get();
         expect(games.map((g) => g.id), ['g_v13_1']);
         expect(games.single.title, 'Catan');
+      },
+    );
+  });
+
+  // Data-integrity coverage for v14 → v15 (#667): the step adds a nullable
+  // `event_access.attendee_id`, `attendance_status`, `attendance_role` and
+  // `rsvp_date`, the user's own answer as the list carried it. An access row
+  // cached before it must come through unchanged and read all four as null,
+  // which the list reads as no answer kept, falling back to the roster.
+  test('v14 to v15 adds the attendance columns, empty', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 14,
+      newVersion: 15,
+      createOld: v14.DatabaseAtV14.new,
+      createNew: v15.DatabaseAtV15.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v14.EventsData(
+            id: 'e_v14_1',
+            title: 'Game night',
+            createdById: 'user_v14_1',
+            householdId: 'hh_v14_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Cancelled',
+            cancelReason: 'Snowed in',
+            cancelledAt: at,
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+        batch.insertAll(oldDb.eventAccess, const [
+          v14.EventAccessData(
+            userId: 'user_v14_1',
+            eventId: 'e_v14_1',
+            source: 'attending',
+          ),
+          v14.EventAccessData(
+            userId: 'user_v14_1',
+            eventId: 'e_v14_1',
+            source: 'read',
+          ),
+        ]);
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.events).get(), const [
+          v15.EventsData(
+            id: 'e_v14_1',
+            title: 'Game night',
+            createdById: 'user_v14_1',
+            householdId: 'hh_v14_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Cancelled',
+            cancelReason: 'Snowed in',
+            cancelledAt: at,
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(
+          await (newDb.select(
+            newDb.eventAccess,
+          )..orderBy([(t) => OrderingTerm.asc(t.source)])).get(),
+          const [
+            v15.EventAccessData(
+              userId: 'user_v14_1',
+              eventId: 'e_v14_1',
+              source: 'attending',
+              attendeeId: null,
+              attendanceStatus: null,
+              attendanceRole: null,
+              rsvpDate: null,
+            ),
+            v15.EventAccessData(
+              userId: 'user_v14_1',
+              eventId: 'e_v14_1',
+              source: 'read',
+              attendeeId: null,
+              attendanceStatus: null,
+              attendanceRole: null,
+              rsvpDate: null,
+            ),
+          ],
+        );
       },
     );
   });

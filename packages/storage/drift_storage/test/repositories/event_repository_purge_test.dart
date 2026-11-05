@@ -1,12 +1,14 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:drift_storage/src/tables/event_access_table.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -151,6 +153,65 @@ void main() {
     expect(rosterForA, isEmpty, reason: 'and it no longer names A');
     expect(await b.getCurrentUserAttendance('e-1'), roster[1]);
     expect((await b.getEvent('e-1'))!.attendees, [roster[1], roster[2]]);
+  });
+
+  test('the purge takes the attendance with the attending row', () async {
+    // The list's answer is kept on the attending row (#667), so it goes with
+    // it, and no row this user keeps holds it. Another user's answer stays.
+    final b = repoFor(_kUserB);
+    await a.cacheEvent(
+      testSnapshot(
+        'e-1',
+        attendance: const EventAttendance(
+          attendeeId: 'att-a',
+          status: EventParticipationStatus.maybe,
+        ),
+      ),
+      source: EventAccessSource.attending,
+    );
+    // A still reads it by id, so the event stays cached for them.
+    await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+    const theirs = EventAttendance(
+      attendeeId: 'att-b',
+      status: EventParticipationStatus.attending,
+      role: EventRole.host,
+    );
+    await b.cacheEvent(
+      testSnapshot('e-1', attendance: theirs),
+      source: EventAccessSource.attending,
+    );
+
+    final purged = await a.purgeAttendanceAbsentFrom(
+      const {},
+      purgeable: await a.purgeableAttendance(),
+    );
+
+    expect(purged, {'e-1'});
+    final access =
+        await (db.select(db.eventAccessTable)..orderBy([
+              (t) => OrderingTerm.asc(t.userId),
+              (t) => OrderingTerm.asc(t.source),
+            ]))
+            .get();
+    expect(access, const [
+      EventAccessTableData(
+        userId: _kUserA,
+        eventId: 'e-1',
+        source: eventAccessSourceRead,
+      ),
+      EventAccessTableData(
+        userId: _kUserB,
+        eventId: 'e-1',
+        source: eventAccessSourceAttending,
+        attendeeId: 'att-b',
+        attendanceStatus: 'Attending',
+        attendanceRole: 'EventHost',
+      ),
+    ]);
+    expect(
+      (await b.watchAttendingEventListItems().first).single.attendance,
+      theirs,
+    );
   });
 
   test('an event another user still attends stays cached', () async {

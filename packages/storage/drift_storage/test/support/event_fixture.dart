@@ -126,9 +126,9 @@ EventPolicy testPolicy({String id = 'pol-1', String eventId = 'e-1'}) =>
     );
 
 /// The event [id] as one read returned it: with one dated occurrence unless
-/// [occurrences] says otherwise, [policy] when given, and [attendees] as
-/// given. Leave [attendees] out for the list's snapshot, which carries no
-/// roster.
+/// [occurrences] says otherwise, [policy] when given, and [attendees] and
+/// [attendance] as given. Leave [attendees] out for the list's snapshot,
+/// which carries no roster.
 EventSnapshot testSnapshot(
   String id, {
   DateTime? createdAt,
@@ -136,9 +136,11 @@ EventSnapshot testSnapshot(
   List<EventOccurrence>? occurrences,
   EventPolicy? policy,
   List<EventAttendee>? attendees,
+  EventAttendance? attendance,
 }) => EventSnapshot(
   event: testEvent(id, createdAt: createdAt, title: title),
   occurrences: occurrences ?? [testOccurrence('$id-o1', eventId: id)],
   policy: policy,
   attendees: attendees,
+  attendance: attendance,
 );

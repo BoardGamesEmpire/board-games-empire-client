@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 14`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 15`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -102,6 +102,16 @@ Server schema history:
   in, kept per user on this device and never synced. A new empty table with no
   foreign-key edges, created by one `createTable`, so #54 stays deferred.
   Nothing earlier references it, so no older step needs to drop anything.
+- **v14 → v15 (#667):** adds a nullable `event_access.attendee_id`,
+  `attendance_status`, `attendance_role` and `rsvp_date`, the user's own
+  answer as the `GET /events` row carries it, kept on their `attending` row,
+  by four `addColumn` calls. A row cached before it holds null for all four,
+  which the list reads as no answer kept, falling back to the user's row on a
+  cached roster until the next hydrate writes it. Additive (nullable columns,
+  no rebuild), so #54 stays deferred. The v6 → v7 step creates `event_access`
+  from the live table, which now has the columns, so it drops all four again
+  right after, from the empty table, and this step adds them back. None is
+  in a key or an index, which `DROP COLUMN` would refuse.
 
 Meta schema history:
 
@@ -112,7 +122,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v14.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v15.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live
