@@ -234,8 +234,12 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
   );
 
   /// The household whose row opened the route above this one, until that
-  /// route has gone.
+  /// route has gone and the hand-off it may call for is settled.
   String? _opened;
+
+  /// Whether the route [_opened] opened has gone while the list still names
+  /// the household, so the hand-off waits for the list to let it go.
+  bool _routeGone = false;
 
   /// This route's secondary animation, which runs as a route above it comes
   /// in and goes.
@@ -263,6 +267,7 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
 
   void _open(BuildContext context, String householdId) {
     _opened = householdId;
+    _routeGone = false;
     widget.onOpen!(context, householdId);
   }
 
@@ -273,8 +278,14 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
   /// When the route has gone, not when it starts to leave. Leaving pops the
   /// detail as soon as its cache write resolves, and the list's read of the
   /// cache answers after that, so the row can still be listed as the route
-  /// starts to leave. By the time the route has gone it has had the whole
-  /// exit to answer.
+  /// starts to leave.
+  ///
+  /// A household still listed once the route has gone may go later, so the
+  /// hand-off waits for the list to let it go. The leave's answer lands
+  /// after the route has gone when the user pressed Back while it was on its
+  /// way, and the household goes only with the refresh when its cache write
+  /// failed. The wait ends when focus moves some other way, or when a route
+  /// opens over the list.
   ///
   /// The heading takes focus from wherever the framework has handed it back,
   /// too. That is whatever this page focused last, such as the row above or
@@ -291,30 +302,59 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
       case AnimationStatus.reverse:
         _followFocus();
       case AnimationStatus.forward || AnimationStatus.completed:
-        _forgetFocus();
+        // A route that opens while the hand-off waits on the list is no
+        // row's, since [_open] starts a new one, so the wait ends. Otherwise
+        // the route has settled back, and the row is still the one to come
+        // back from.
+        if (_routeGone) {
+          _endHandOff();
+        } else {
+          _forgetFocus();
+        }
       case AnimationStatus.dismissed:
-        _opened = null;
-        WidgetsBinding.instance
-          ..addPostFrameCallback((_) {
-            final handedBack = _handedBack;
-            final userMoved = _userMoved;
-            _forgetFocus();
-            if (!mounted) return;
-            final state = context.read<HouseholdListBloc>().state;
-            final listed =
-                state is HouseholdListReady &&
-                state.households.any((household) => household.id == opened);
-            // Before the check below: focus the user has moved back onto the
-            // node the framework chose is still theirs.
-            if (listed || userMoved) return;
-            // Focus on nothing, as it is when the row went in this frame and
-            // the framework has yet to hand focus on, counts as free.
-            if (!focusIsFree(context, untouched: handedBack)) return;
-            _heading.requestFocus();
-          })
-          // A post-frame callback does not ask for a frame.
-          ..ensureVisualUpdate();
+        _routeGone = true;
+        _checkGoneAfterFrame();
     }
+  }
+
+  /// Runs [_checkGone] after the next frame, which builds the list the
+  /// check reads.
+  void _checkGoneAfterFrame() {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => _checkGone())
+      // A post-frame callback does not ask for a frame.
+      ..ensureVisualUpdate();
+  }
+
+  /// Once the route [_opened] opened has gone: hands focus to the heading if
+  /// the household has left the list, waits for the next list if it hasn't,
+  /// and ends the hand-off if the user has moved focus.
+  void _checkGone() {
+    final opened = _opened;
+    if (!mounted || opened == null || !_routeGone) return;
+    // Before the check below: focus the user has moved back onto the node
+    // the framework chose is still theirs.
+    if (_userMoved) {
+      _endHandOff();
+      return;
+    }
+    final state = context.read<HouseholdListBloc>().state;
+    final listed =
+        state is HouseholdListReady &&
+        state.households.any((household) => household.id == opened);
+    if (listed) return;
+    final handedBack = _handedBack;
+    _endHandOff();
+    // Focus on nothing, as it is when the row went in this frame and the
+    // framework has yet to hand focus on, counts as free.
+    if (!focusIsFree(context, untouched: handedBack)) return;
+    _heading.requestFocus();
+  }
+
+  void _endHandOff() {
+    _opened = null;
+    _routeGone = false;
+    _forgetFocus();
   }
 
   /// Starts following focus as the route above starts to leave.
@@ -354,6 +394,8 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
     if (handedBack != null && handedBack.parent != null) {
       _userMoved = true;
       _stopFollowingFocus();
+      // Nothing is left to wait for once the route has gone.
+      if (_routeGone) _endHandOff();
       return;
     }
     _handedBack = FocusManager.instance.primaryFocus;
@@ -373,80 +415,89 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
     final onOpen = widget.onOpen == null ? null : _open;
     final canRetry = widget.canRetry;
 
-    return BlocBuilder<HouseholdListBloc, HouseholdListState>(
-      builder: (context, state) {
-        final households = switch (state) {
-          HouseholdListReady(:final households) => households,
-          _ => const <Household>[],
-        };
-        final create = widget.onCreate;
+    return BlocListener<HouseholdListBloc, HouseholdListState>(
+      // Each list the cache answers while the hand-off waits for the
+      // household to go (#479).
+      listenWhen: (_, _) => _routeGone,
+      listener: (_, _) => _checkGoneAfterFrame(),
+      child: BlocBuilder<HouseholdListBloc, HouseholdListState>(
+        builder: (context, state) {
+          final households = switch (state) {
+            HouseholdListReady(:final households) => households,
+            _ => const <Household>[],
+          };
+          final create = widget.onCreate;
 
-        return BgePage.slivers(
-          title: Focus(
-            key: HouseholdListScreen.headingKey,
-            focusNode: _heading,
-            child: Text(l10n.householdListTitle),
-          ),
-          // A list surface, not a form: rows are a name plus a trailing
-          // badge, so they take the wider measure.
-          width: BgePageWidth.pane,
-          semanticChildCount: households.isEmpty ? null : households.length,
-          floatingActionButton: create == null
-              ? null
-              : FloatingActionButton.extended(
-                  key: HouseholdListScreen.createFabKey,
-                  onPressed: () => create(context),
-                  icon: const Icon(Icons.group_add_outlined),
-                  label: Text(l10n.createHouseholdTitle),
-                ),
-          slivers: [
-            if (state
-                case HouseholdListReady(:final refreshFailed, :final refreshing)
-                when refreshFailed || refreshing)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: BgeTokens.of(context).spaceMd,
+          return BgePage.slivers(
+            title: Focus(
+              key: HouseholdListScreen.headingKey,
+              focusNode: _heading,
+              child: Text(l10n.householdListTitle),
+            ),
+            // A list surface, not a form: rows are a name plus a trailing
+            // badge, so they take the wider measure.
+            width: BgePageWidth.pane,
+            semanticChildCount: households.isEmpty ? null : households.length,
+            floatingActionButton: create == null
+                ? null
+                : FloatingActionButton.extended(
+                    key: HouseholdListScreen.createFabKey,
+                    onPressed: () => create(context),
+                    icon: const Icon(Icons.group_add_outlined),
+                    label: Text(l10n.createHouseholdTitle),
                   ),
-                  child: BgeRefreshBanner(
-                    key: HouseholdListScreen.refreshBannerKey,
-                    retryKey: HouseholdListScreen.refreshRetryKey,
-                    failedMessage: l10n.householdListRefreshFailed,
-                    inProgressLabel: l10n.householdRefreshInProgress,
-                    retryLabel: l10n.householdRefreshRetry,
-                    refreshing: refreshing,
-                    onRetry: canRetry
-                        ? () => context.read<HouseholdListBloc>().add(
-                            const HouseholdListRetryRequested(),
-                          )
-                        : null,
+            slivers: [
+              if (state
+                  case HouseholdListReady(
+                    :final refreshFailed,
+                    :final refreshing,
+                  )
+                  when refreshFailed || refreshing)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: BgeTokens.of(context).spaceMd,
+                    ),
+                    child: BgeRefreshBanner(
+                      key: HouseholdListScreen.refreshBannerKey,
+                      retryKey: HouseholdListScreen.refreshRetryKey,
+                      failedMessage: l10n.householdListRefreshFailed,
+                      inProgressLabel: l10n.householdRefreshInProgress,
+                      retryLabel: l10n.householdRefreshRetry,
+                      refreshing: refreshing,
+                      onRetry: canRetry
+                          ? () => context.read<HouseholdListBloc>().add(
+                              const HouseholdListRetryRequested(),
+                            )
+                          : null,
+                    ),
                   ),
                 ),
-              ),
-            switch (state) {
-              HouseholdListLoading() => BgeStateSliver(
-                child: BgeLoadingState(
-                  key: HouseholdListScreen.loadingKey,
-                  label: l10n.householdListLoading,
+              switch (state) {
+                HouseholdListLoading() => BgeStateSliver(
+                  child: BgeLoadingState(
+                    key: HouseholdListScreen.loadingKey,
+                    label: l10n.householdListLoading,
+                  ),
                 ),
-              ),
-              HouseholdListError() => _ErrorSliver(
-                message: l10n.householdListError,
-              ),
-              HouseholdListReady(:final households) when households.isEmpty =>
-                _EmptySliver(onCreate: create),
-              HouseholdListReady(:final households) =>
-                BgeKeyedSliverList<Household>(
-                  items: households,
-                  keyOf: (household) =>
-                      HouseholdListScreen.rowKey(household.id),
-                  itemBuilder: (context, household) =>
-                      _HouseholdRow(household: household, onOpen: onOpen),
+                HouseholdListError() => _ErrorSliver(
+                  message: l10n.householdListError,
                 ),
-            },
-          ],
-        );
-      },
+                HouseholdListReady(:final households) when households.isEmpty =>
+                  _EmptySliver(onCreate: create),
+                HouseholdListReady(:final households) =>
+                  BgeKeyedSliverList<Household>(
+                    items: households,
+                    keyOf: (household) =>
+                        HouseholdListScreen.rowKey(household.id),
+                    itemBuilder: (context, household) =>
+                        _HouseholdRow(household: household, onOpen: onOpen),
+                  ),
+              },
+            ],
+          );
+        },
+      ),
     );
   }
 }
