@@ -178,12 +178,13 @@ void main() {
     await container.dispose();
   });
 
-  /// Runs the user-scope installers this composition ships, in the order
-  /// `buildNativeUserScopeInstallers` puts them in, minus the storage one
-  /// whose registrations are stubbed above.
+  /// Runs the two user-scope installers a reconnect's rehydrate goes
+  /// through, over the stubbed repository and remote above. This is not
+  /// production's installer list or order: the root ships eight, and
+  /// `../native_root_composition_test.dart` asserts them.
   ///
   /// The pump at the end is what lets the install-time drain finish: it is
-  /// started unawaited (#267 D2), and a widget test's clock is fake, so
+  /// started unawaited (#267), and a widget test's clock is fake, so
   /// awaiting a real delay here would simply never return.
   Future<void> activateSession(WidgetTester tester) async {
     await const SessionRehydratorInstaller().install(

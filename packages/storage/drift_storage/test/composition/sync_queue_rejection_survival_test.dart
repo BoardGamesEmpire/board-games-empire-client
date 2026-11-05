@@ -39,6 +39,11 @@ import '../support/fixed_clock.dart';
 /// visibility/drain hazard this suite once carried a warning about is
 /// closed in the data model; its dedicated coverage lives in
 /// `../repositories/sync_queue_user_scoping_test.dart`.
+///
+/// This suite tests how the user scope behaves over a fixture base
+/// installer. drift_storage cannot depend on `native_platform`, so it does
+/// not prove the production wiring;
+/// `native_platform/test/native_root_composition_test.dart` does (#435).
 const _kUserA = 'user-a';
 const _kServerId = 'server-uuid-1';
 const _kAuthBase = '/api/auth';

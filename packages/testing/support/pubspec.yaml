@@ -20,7 +20,7 @@ resolution: workspace
 # (`network_interface` is the only candidate in the tree). Move `network.dart`
 # plus its `src/`, and consumers change one import line.
 dependencies:
-  # `CannedAdapter` implements dio's `HttpClientAdapter`.
+  # `CannedAdapter` and `ScriptedServer` implement dio's `HttpClientAdapter`.
   dio: ^5.11.0
 
   flutter:

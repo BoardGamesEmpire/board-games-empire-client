@@ -22,7 +22,9 @@ void main() {
   //
   // The factory's pass-through of both lists into ServerContextImpl isn't
   // asserted at this level (the context doesn't expose its installer
-  // lists); the tier *behavior* — install-on-activate for the server list,
+  // lists). It is asserted by effect in native_root_composition_test.dart
+  // (#435): the real root boots, signs in, and each installer's registration
+  // is there. The tier *behavior* — install-on-activate for the server list,
   // install-on-sign-in for the user list — is covered by the context and
   // acceptance suites in core/di and drift_storage (#135).
 
