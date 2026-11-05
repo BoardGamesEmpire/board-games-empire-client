@@ -33,6 +33,14 @@ dependencies:
   flutter_test:
     sdk: flutter
 
+  # `awaitRefreshed` (#369) waits on `hydration`'s `HydrationStatus`.
+  # `hydration` needs only `equatable`, `interfaces` and `observability`, none
+  # of which depends on this package, so it cannot cycle back. The feature
+  # packages that own each status dev-depend on this one, which is why the
+  # wait takes statuses rather than naming them.
+  hydration:
+    path: ../../core/hydration
+
   # `FakeCallerAccessRepository` (#456) implements `interfaces`'
   # `CallerAccessRepository` and answers in `models`' `CallerAccess`. Both are
   # pure Dart and depend on nothing here, so neither can cycle back.

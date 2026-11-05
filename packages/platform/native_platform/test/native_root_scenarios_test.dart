@@ -17,6 +17,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/network.dart';
+import 'package:bge_test_support/waits.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -196,7 +197,7 @@ void main() {
       // `joinOrRunDrainPass`: with no pass in flight that runs one, and would
       // hide a root that never started its own.
       var outstanding = const <SyncQueueEntry>[];
-      await harness.pollUntil(
+      await pollUntil(
         () async =>
             (outstanding = await queue().getOutstandingEntries()).isEmpty,
         describe: () =>

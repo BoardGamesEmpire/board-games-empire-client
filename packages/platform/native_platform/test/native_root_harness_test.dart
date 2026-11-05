@@ -8,8 +8,6 @@
 // Plain `test()`, not `testWidgets`: drift and the real async work under the
 // root need real time, and the widget tester's fake async would stall them.
 
-import 'dart:async';
-
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -96,29 +94,6 @@ void main() {
           ),
         );
       },
-    );
-
-    test(
-      'pollUntil fails at its deadline on a check that never answers',
-      () async {
-        await expectLater(
-          harness.pollUntil(
-            () => Completer<bool>().future,
-            describe: () => 'the check never answered',
-            timeout: const Duration(milliseconds: 50),
-          ),
-          throwsA(
-            isA<TimeoutException>().having(
-              (e) => e.message,
-              'message',
-              'the check never answered',
-            ),
-          ),
-        );
-      },
-      // Without the bound the check hangs: fail in seconds, not at the
-      // runner's default.
-      timeout: const Timeout(Duration(seconds: 5)),
     );
   });
 }
