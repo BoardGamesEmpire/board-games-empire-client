@@ -11,9 +11,12 @@
 /// the client offers, and a role that changed under an open screen shows the
 /// server's refusal.
 ///
-/// Complete has no action, because the backend has no route for it
-/// (backend#795). Adding a game directly waits for #518, because the event's
-/// policy decides it.
+/// Complete has no action, because the server works Completed out from the
+/// confirmed dates (backend#795). `cancel` covers cancel and reopen, and
+/// `archive` covers archive and unarchive, because the server binds each pair
+/// to one grant. Which of the pair a status offers is the detail's (#502), not
+/// this table's, which knows roles and not statuses. Adding a game directly
+/// waits for #518, because the event's policy decides it.
 library;
 
 import 'package:models/domain.dart';
@@ -26,12 +29,11 @@ enum EventAction {
   /// Remove the event (#501).
   delete,
 
-  /// Call the whole event off (#502).
+  /// Call the event off, and reopen it.
   cancel,
 
-  /// Put a cancelled event away (#502). The server also requires the event to
-  /// be cancelled already. Gating on that is #502's job, not this table's,
-  /// which knows roles and not statuses.
+  /// Put an ended or cancelled event away, and take it out again. Which a
+  /// status offers is the detail's (#502).
   archive,
 
   /// Propose another date (#506).
@@ -124,9 +126,9 @@ const _host = <EventAction>{
   EventAction.edit,
   // `delete:event`, which the catalog's `EVENT_HOST_ONLY` gives the host alone.
   EventAction.delete,
-  // `update:event:status:cancel-event`
+  // `update:event:cancel`
   EventAction.cancel,
-  // `update:event:status:archive-event`, whose condition names the host alone.
+  // `update:event:archive`
   EventAction.archive,
   // `create:event_occurrence`
   EventAction.addDate,
@@ -156,18 +158,13 @@ const _host = <EventAction>{
   EventAction.resolveNomination,
 };
 
-/// `EventCoHost`: every action except `delete` and `archive`.
-///
-/// The role catalog derives the co-host's list from the host's minus
-/// `EVENT_HOST_ONLY`, which is `delete:event` alone, so it assigns the co-host
-/// `update:event:status:archive-event`. That permission's condition names
-/// `EventHost` alone, so a co-host's archive is always refused. The table
-/// follows the condition and offers what the server will grant. The condition
-/// on `update:event:status:cancel-event` names co-hosts too, so they keep
-/// `cancel`.
+/// `EventCoHost`: every action except `delete`, which the catalog gives the
+/// host alone.
 const _coHost = <EventAction>{
   EventAction.edit,
+  // `update:event:cancel` and `update:event:archive`
   EventAction.cancel,
+  EventAction.archive,
   EventAction.addDate,
   EventAction.editDate,
   EventAction.confirmDate,
@@ -243,11 +240,13 @@ const _attending = <EventAction>{
 /// takes both from their event role. No `removeDate`, which has no household
 /// variant (an owner or admin asks for a removal instead, #513). No
 /// `delete`, because an owner or admin deletes only an event they host
-/// (#168). No `cancel` or `archive` either: the household's list holds no
-/// event status slug.
+/// (#168). No `archive`: of the event status slugs, the household's list
+/// holds only `update:event:cancel:household`.
 const _householdOwnerOrAdmin = <EventAction>{
   // `update:event:household`
   EventAction.edit,
+  // `update:event:cancel:household`
+  EventAction.cancel,
   // `create:event_occurrence:household`
   EventAction.addDate,
   // `update:event_occurrence:household`

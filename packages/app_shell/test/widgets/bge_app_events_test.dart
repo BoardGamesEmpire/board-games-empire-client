@@ -572,6 +572,41 @@ void main() {
     expect(find.byType(EventOverviewScreen), findsOneWidget);
   });
 
+  testWidgets('/events/archived opens the archived group page', (tester) async {
+    await pumpHome(
+      tester,
+      // Multi-listen, as the route is built more than once.
+      listCache: Stream.multi(
+        (cache) => cache.add([
+          for (var n = 0; n <= EventOverviewScreen.groupCap; n++)
+            EventListItem(
+              event: _upcoming('e-$n').event
+                  .copyWith(status: EventStatus.archived),
+              occurrences: const [],
+            ),
+        ]),
+      ),
+    );
+    await openTheOverview(tester);
+
+    await tester.tap(
+      find.byKey(EventOverviewScreen.seeAllKey(EventGroup.archived)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<EventGroupScreen>(find.byType(EventGroupScreen)).group,
+      EventGroup.archived,
+    );
+    expect(
+      find.byKey(
+        EventOverviewScreen.rowKey('e-${EventOverviewScreen.groupCap}'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+  });
+
   group('the retry', () {
     testWidgets('the banner reaches the session refresher', (tester) async {
       var calls = 0;
@@ -898,28 +933,29 @@ void main() {
         expect(find.text('Event deleted'), findsOneWidget);
       });
 
-      testWidgets('the session guard is asked around the delete too', (
-        tester,
-      ) async {
-        final guard = _RecordingGuard(SessionConfirmation.confirmed);
-        await pumpHome(
-          tester,
-          remote: deletable(),
-          attendance: _hosting('e-0'),
-          guard: guard,
-        );
-        await openTheOverview(tester);
-        await openRow(tester, 'e-0');
+      testWidgets(
+        'the session guard is asked before the delete request goes out',
+        (tester) async {
+          final guard = _RecordingGuard(SessionConfirmation.confirmed);
+          await pumpHome(
+            tester,
+            remote: deletable(),
+            attendance: _hosting('e-0'),
+            guard: guard,
+          );
+          await openTheOverview(tester);
+          await openRow(tester, 'e-0');
 
-        // The read's two: before the request, and before its write.
-        expect(guard.asked, ['u1', 'u1']);
+          // The read's two: before the request, and before its write.
+          expect(guard.asked, ['u1', 'u1']);
 
-        await deleteIt(tester);
+          await deleteIt(tester);
 
-        // The delete's one, before the request: its removal is every
-        // user's, so nothing is asked before it.
-        expect(guard.asked, ['u1', 'u1', 'u1']);
-      });
+          // The delete's one, before the request: its removal is every
+          // user's, so nothing is asked before it.
+          expect(guard.asked, ['u1', 'u1', 'u1']);
+        },
+      );
     });
 
     group('confirming a date (#506)', () {

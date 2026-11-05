@@ -16,10 +16,12 @@ part 'event.freezed.dart';
 ///
 /// ## What is deliberately not here
 ///
-/// The cancellation and deletion audit fields (`cancelledById`,
-/// `cancelReason`, `deletedById`) and the recurrence fields are out of scope
-/// for the data layer (#496). There is no `deletedAt` either, because neither
-/// read serves a soft-deleted event.
+/// The event carries its cancel reason and time (#502), but not who
+/// cancelled it: `cancelledById`, the deletion audit field `deletedById` and
+/// the recurrence fields are out of scope for the data layer (#496). There is
+/// no `archivedAt`, because the status already says the event is archived
+/// (#502), and no `deletedAt`, because neither read serves a soft-deleted
+/// event.
 @freezed
 abstract class Event with _$Event {
   const factory Event({
@@ -42,6 +44,14 @@ abstract class Event with _$Event {
     required Reach reach,
     required EventStatus status,
     required EventSchedulingMode schedulingMode,
+
+    /// Why the host cancelled the event. Null for an event that isn't
+    /// cancelled, and for one cancelled without a reason (#502).
+    String? cancelReason,
+
+    /// The instant the event was cancelled. Null for an event that isn't
+    /// cancelled (#502).
+    DateTime? cancelledAt,
 
     /// True when this event has local changes not yet synced to the server.
     /// Only a create sets it yet, with [isLocalOnly], on the event it writes

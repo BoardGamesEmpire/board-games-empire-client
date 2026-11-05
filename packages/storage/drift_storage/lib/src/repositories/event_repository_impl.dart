@@ -735,6 +735,25 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   @override
+  Future<bool> cacheEventRow(Event event) async {
+    checkNotDisposed();
+    final id = event.id;
+    return _db.transaction(() async {
+      // Checked inside the transaction, which starts after the lock, so the
+      // guards hold for the write.
+      if (!await _isCachedAndServerOwned(id)) return false;
+
+      // The companion leaves the two sync flags absent, so they stay as they
+      // are, and it touches no child table.
+      await (_db.update(
+        _db.eventsTable,
+      )..where((t) => t.id.equals(id))).write(_eventToCompanion(event));
+      await _db.batch((b) => _stampGeneration(b, [id]));
+      return true;
+    });
+  }
+
+  @override
   Future<bool> removeCachedOccurrence({
     required String eventId,
     required String occurrenceId,
@@ -1142,6 +1161,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     reach: Reach.fromWire(row.reach),
     status: EventStatus.fromWire(row.status),
     schedulingMode: EventSchedulingMode.fromWire(row.schedulingMode),
+    cancelReason: row.cancelReason,
+    cancelledAt: row.cancelledAt,
     isDirty: row.isDirty,
     isLocalOnly: row.isLocalOnly,
     createdAt: row.createdAt,
@@ -1175,6 +1196,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           EventSchedulingMode.unknown,
           (v) => v.toWire(),
         ),
+        cancelReason: Value(e.cancelReason),
+        cancelledAt: Value(e.cancelledAt),
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
       );

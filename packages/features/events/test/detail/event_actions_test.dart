@@ -35,6 +35,7 @@ void main() {
 
   const household = {
     EventAction.edit,
+    EventAction.cancel,
     EventAction.addDate,
     EventAction.editDate,
     EventAction.confirmDate,
@@ -48,17 +49,31 @@ void main() {
   /// co-host rows until the table says who else gets it.
   final everything = EventAction.values.toSet();
 
+  // Every action but `delete`, which the catalog gives the host alone. The
+  // co-host holds both status grants (#502).
+  const coHost = {
+    EventAction.edit,
+    EventAction.cancel,
+    EventAction.archive,
+    EventAction.addDate,
+    EventAction.editDate,
+    EventAction.confirmDate,
+    EventAction.declineDate,
+    EventAction.cancelDate,
+    EventAction.removeDate,
+    EventAction.voteAvailability,
+    EventAction.rsvp,
+    EventAction.manageAttendees,
+    EventAction.approveGame,
+    EventAction.rejectGame,
+    EventAction.resolveNomination,
+  };
+
   /// Every event role's set. A role missing from here fails the test below,
   /// so adding one to [EventRole] means deciding what it may do.
   final byEventRole = <EventRole, Set<EventAction>>{
     EventRole.host: everything,
-    // No `delete`, which the catalog gives the host alone, and no `archive`,
-    // whose permission condition names the host alone, so a co-host's archive
-    // is always refused.
-    EventRole.coHost: everything.difference({
-      EventAction.delete,
-      EventAction.archive,
-    }),
+    EventRole.coHost: coHost,
     EventRole.organizer: organizer,
     EventRole.moderator: moderator,
     EventRole.participant: participant,
@@ -186,17 +201,29 @@ void main() {
       );
     });
 
-    test('is the host alone who may archive', () {
-      final who = [
-        for (final role in EventRole.values)
-          if (eventActionsFor(
-            plain,
-            eventRole: role,
-          ).contains(EventAction.archive))
-            role,
-      ];
+    test('is the host and co-host who may cancel and archive', () {
+      for (final action in [EventAction.cancel, EventAction.archive]) {
+        final who = [
+          for (final role in EventRole.values)
+            if (eventActionsFor(plain, eventRole: role).contains(action)) role,
+        ];
 
-      expect(who, [EventRole.host]);
+        expect(who, [EventRole.host, EventRole.coHost], reason: '$action');
+      }
+    });
+
+    test('the host and co-host sets are the full sets', () {
+      expect(
+        eventActionsFor(plain, eventRole: EventRole.host),
+        equals(EventAction.values.toSet()),
+      );
+      expect(
+        eventActionsFor(plain, eventRole: EventRole.coHost),
+        equals(coHost),
+      );
+      // The co-host's set is spelled out, and is every action but `delete`,
+      // so an action added for the host and forgotten on the co-host fails.
+      expect(coHost, everything.difference({EventAction.delete}));
     });
   });
 

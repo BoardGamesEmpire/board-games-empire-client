@@ -17,6 +17,7 @@ import 'generated/schema_v9.dart' as v9;
 import 'generated/schema_v10.dart' as v10;
 import 'generated/schema_v11.dart' as v11;
 import 'generated/schema_v12.dart' as v12;
+import 'generated/schema_v13.dart' as v13;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1181,6 +1182,67 @@ void main() {
           ),
         ]);
         expect(await newDb.select(newDb.events).get(), hasLength(1));
+      },
+    );
+  });
+
+  // Data-integrity coverage for v12 → v13 (#502): the step adds a nullable
+  // `events.cancel_reason` and `events.cancelled_at`. An event cached before
+  // it must come through unchanged and read both columns as null.
+  test('migration from v12 to v13 adds an empty cancel_reason and '
+      'cancelled_at to events', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 12,
+      newVersion: 13,
+      createOld: v12.DatabaseAtV12.new,
+      createNew: v13.DatabaseAtV13.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v12.EventsData(
+            id: 'e_v12_1',
+            title: 'Game night',
+            createdById: 'user_v12_1',
+            householdId: 'hh_v12_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.events).get(), const [
+          v13.EventsData(
+            id: 'e_v12_1',
+            title: 'Game night',
+            createdById: 'user_v12_1',
+            householdId: 'hh_v12_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            cancelReason: null,
+            cancelledAt: null,
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
       },
     );
   });

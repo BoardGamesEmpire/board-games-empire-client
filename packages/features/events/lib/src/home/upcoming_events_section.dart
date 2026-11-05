@@ -207,13 +207,18 @@ class _Section extends StatelessWidget {
     );
   }
 
+  /// The upcoming rows still happening: a cancelled event is not, so it stays
+  /// off the shelf and doesn't count against the fallback (#502).
+  static List<EventRow> _shelfRows(EventGroups groups) =>
+      groups.upcoming.where((row) => !row.cancelled).toList();
+
   /// Whether the cache has settled on the user having nothing upcoming. Not
   /// during a first fill, whose later pages may hold them, nor after a failed
   /// pass, which confirms nothing: the user may have events it never reached,
   /// and the fallback's note would be false about them.
   static bool _wantsFallback(EventOverviewState own) =>
       own is EventOverviewReady &&
-      own.groups.upcoming.isEmpty &&
+      _shelfRows(own.groups).isEmpty &&
       !own.firstFill &&
       !own.refreshFailed;
 
@@ -224,8 +229,9 @@ class _Section extends StatelessWidget {
   ) {
     final l10n = EventsLocalizations.of(context);
     final ownRows = switch (own) {
-      EventOverviewReady(:final groups) =>
-        groups.upcoming.take(UpcomingEventsSection.rowCap).toList(),
+      EventOverviewReady(:final groups) => _shelfRows(
+        groups,
+      ).take(UpcomingEventsSection.rowCap).toList(),
       _ => const <EventRow>[],
     };
     final empty = _Message(

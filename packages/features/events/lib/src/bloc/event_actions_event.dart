@@ -2,7 +2,11 @@ import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-/// Input to the actions on an event's detail screen (#501, #506).
+import '../detail/event_actions.dart';
+import 'event_actions_state.dart';
+
+/// Input to the actions on an event's detail screen: the delete (#501), the
+/// date writes (#506) and the event's status writes (#502).
 sealed class EventActionsEvent extends Equatable {
   const EventActionsEvent();
 
@@ -127,6 +131,74 @@ final class EventDateRemoveRequested extends EventActionsEvent {
 
   @override
   List<Object?> get props => [eventId, occurrenceId, cancelFirst, reason];
+}
+
+// The event's own status writes (#502). Each names the event by the id the
+// screen shows, as [EventDeleteRequested] does.
+
+/// Call the event [eventId] off, giving [reason] if there is one.
+final class EventCancelRequested extends EventActionsEvent {
+  const EventCancelRequested(this.eventId, {this.reason});
+
+  final String eventId;
+
+  /// Sent trimmed, and not at all when blank
+  /// ([EventRemoteDataSource.cancelEvent]).
+  final String? reason;
+
+  @override
+  List<Object?> get props => [eventId, reason];
+}
+
+/// Reopen the cancelled event [eventId].
+final class EventReopenRequested extends EventActionsEvent {
+  const EventReopenRequested(this.eventId);
+
+  final String eventId;
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+/// Put the event [eventId] away.
+final class EventArchiveRequested extends EventActionsEvent {
+  const EventArchiveRequested(this.eventId);
+
+  final String eventId;
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+/// Take the archived event [eventId] out again.
+final class EventUnarchiveRequested extends EventActionsEvent {
+  const EventUnarchiveRequested(this.eventId);
+
+  final String eventId;
+
+  @override
+  List<Object?> get props => [eventId];
+}
+
+/// The screen dropped a write of [action] once its dialog closed, because
+/// the event no longer offered it (#502, #655), and nothing was sent. Its
+/// banner says the event changed, as a 400 for it would, so a screen reader
+/// hears why nothing happened. [statusWrite] says which, for the four that
+/// change the event's own status.
+final class EventWriteDropped extends EventActionsEvent {
+  /// Drops a date write.
+  const EventWriteDropped(this.action) : statusWrite = null;
+
+  /// Drops [write], under the action whose grant it needs.
+  EventWriteDropped.status(EventStatusWrite write)
+    : action = write.action,
+      statusWrite = write;
+
+  final EventAction action;
+  final EventStatusWrite? statusWrite;
+
+  @override
+  List<Object?> get props => [action, statusWrite];
 }
 
 /// The person closed the last action's banner.

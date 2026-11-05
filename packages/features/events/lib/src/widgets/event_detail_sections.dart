@@ -8,6 +8,7 @@ import 'package:events/l10n/events_localizations.dart';
 import '../bloc/event_poll_state.dart';
 import '../detail/event_actions.dart';
 import '../detail/event_date_actions.dart';
+import '../detail/event_status_now.dart';
 import '../screens/event_detail_screen.dart';
 import 'event_date_poll.dart';
 import 'event_labels.dart';
@@ -15,6 +16,13 @@ import 'event_labels.dart';
 /// The top of an event's detail (#498): its title, as the page's heading,
 /// then what kind of event it is and where it stands, whose it is, who may
 /// see it, where, its link and description, and what the viewer is at it.
+///
+/// Where it stands is worked out from its dates as of [now]
+/// ([eventStatusAt]), since the cached status goes stale as they pass
+/// (#502). A cancelled event says so in a sentence of its own, with the
+/// reason under it where one was given, so that the cancel is read in
+/// words and not only in the status word beside the type. An archived event
+/// that was cancelled first says so too, beside its Archived status.
 ///
 /// A line with nothing to say is left out. An unknown type, status, reach
 /// or role is a value a newer server sent, and a guess at it is worse than
@@ -29,12 +37,20 @@ import 'event_labels.dart';
 class EventDetailHeader extends StatelessWidget {
   const EventDetailHeader({
     required this.event,
+    required this.occurrences,
+    required this.now,
     this.householdName,
     this.role,
     super.key,
   });
 
   final Event event;
+
+  /// The event's cached dates, which its status is worked out from.
+  final List<EventOccurrence> occurrences;
+
+  /// The clock the status is worked out at.
+  final DateTime Function() now;
 
   /// The event's household, by name, or null where the cache has none.
   final String? householdName;
@@ -48,10 +64,17 @@ class EventDetailHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = BgeTokens.of(context);
 
+    final status = eventStatusAt(event, occurrences, now: now());
     final kind = [
       ?eventTypeLabel(l10n, event.type),
-      ?eventStatusLabel(l10n, event.status),
+      ?eventStatusLabel(l10n, status),
     ];
+    // An archive keeps the cancel's time and reason, so an archived event
+    // that was cancelled still says so, as its row does, and a dateless one
+    // has no other place to show why. Only a write moves an event in or out
+    // of either status, so the cached one is the one shown.
+    final cancelled = wasCancelled(event);
+    final cancelReason = cancelled ? _present(event.cancelReason) : null;
     final household = _present(householdName);
     final reach = eventReachLabel(l10n, event.reach);
     final location = _present(event.location);
@@ -75,6 +98,24 @@ class EventDetailHeader extends StatelessWidget {
             kind.join(l10n.eventsDetailSeparator),
             semanticsLabel: kind.join(l10n.eventsDetailSpokenSeparator),
             style: _quiet(theme),
+          ),
+        if (cancelled)
+          // The note and why, read as one.
+          MergeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.eventsDetailCancelledNote,
+                  style: theme.textTheme.bodyLarge,
+                ),
+                if (cancelReason != null)
+                  Text(
+                    l10n.eventsDateCancelReason(cancelReason),
+                    style: _quiet(theme),
+                  ),
+              ],
+            ),
           ),
         if (household != null)
           _IconLine(icon: Icons.groups_outlined, child: Text(household)),

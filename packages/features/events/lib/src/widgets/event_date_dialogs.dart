@@ -8,6 +8,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:events/l10n/events_localizations.dart';
 
 import '../create/event_create_controls.dart';
+import 'cancel_reason_dialog.dart';
+import 'confirm_dialog.dart';
 import 'event_labels.dart';
 import 'event_when_field.dart';
 
@@ -120,10 +122,23 @@ Future<String?> showCancelDateDialog(
   BuildContext context,
   String dateName, {
   required bool removing,
-}) => showDialog<String>(
-  context: context,
-  builder: (_) => _CancelDialog(dateName: dateName, removing: removing),
-);
+}) {
+  final l10n = EventsLocalizations.of(context);
+  return showCancelReasonDialog(
+    context,
+    title: removing
+        ? l10n.eventsDateRemoveTitle(dateName)
+        : l10n.eventsDateCancelTitle(dateName),
+    body: removing
+        ? l10n.eventsDateCancelRemoveBody
+        : l10n.eventsDateCancelBody,
+    keepLabel: l10n.eventsDateKeep,
+    confirmLabel: removing ? l10n.eventsDateRemove : l10n.eventsDateCancel,
+    reasonKey: EventDateDialogKeys.reason,
+    keepKey: EventDateDialogKeys.dismiss,
+    confirmKey: EventDateDialogKeys.submit,
+  );
+}
 
 /// Asks whether to remove [dateName], which can't be undone. For a date
 /// that isn't Confirmed: a Confirmed one asks through
@@ -139,50 +154,27 @@ Future<bool> showRemoveDateDialog(BuildContext context, String dateName) {
   );
 }
 
-/// A dialog that asks whether to go ahead, and answers whether the user
-/// did. Keep date, not Cancel: cancelling a date is one of the things these
-/// dialogs ask about. A [destructive] action is drawn in the error colour,
-/// as Delete's is.
+/// [showConfirmDialog] with the date dialogs' keys. Keep date, not Cancel:
+/// cancelling a date is one of the things these dialogs ask about.
 Future<bool> _ask(
   BuildContext context, {
   required String title,
   required String body,
   required String action,
   bool destructive = false,
-}) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) {
-      final l10n = EventsLocalizations.of(dialogContext);
-      return AlertDialog(
-        scrollable: true,
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            key: EventDateDialogKeys.dismiss,
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.eventsDateKeep),
-          ),
-          TextButton(
-            key: EventDateDialogKeys.submit,
-            style: destructive ? _destructive(dialogContext) : null,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(action),
-          ),
-        ],
-      );
-    },
-  );
-  return confirmed ?? false;
-}
+}) => showConfirmDialog(
+  context,
+  title: title,
+  body: body,
+  keepLabel: EventsLocalizations.of(context).eventsDateKeep,
+  confirmLabel: action,
+  destructive: destructive,
+  keepKey: EventDateDialogKeys.dismiss,
+  confirmKey: EventDateDialogKeys.submit,
+);
 
-/// An action that can't be undone, in the error colour.
-ButtonStyle _destructive(BuildContext context) =>
-    TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error);
-
-/// The confirm dialog, for [showConfirmDateDialog]: [_ask]'s, with the
-/// checkbox where it is offered.
+/// The confirm dialog, for [showConfirmDateDialog]: [showConfirmDialog]'s,
+/// with the checkbox where it is offered.
 class _ConfirmDialog extends StatefulWidget {
   const _ConfirmDialog({
     required this.dateName,
@@ -477,111 +469,3 @@ OccurrenceUpdate? _updateOf(FormGroup form, EventOccurrence occurrence) {
 /// is false for one moment held in UTC and in local time.
 bool _sameMoment(DateTime? a, DateTime? b) =>
     a == null ? b == null : b != null && a.isAtSameMomentAs(b);
-
-/// The cancel dialog, for [showCancelDateDialog].
-class _CancelDialog extends StatefulWidget {
-  const _CancelDialog({required this.dateName, required this.removing});
-
-  final String dateName;
-  final bool removing;
-
-  @override
-  State<_CancelDialog> createState() => _CancelDialogState();
-}
-
-class _CancelDialogState extends State<_CancelDialog> {
-  final FormGroup _form = FormGroup({
-    _reason: FormControl<String>(
-      validators: [Validators.delegate(_checkReason)],
-    ),
-  });
-
-  @override
-  void dispose() {
-    _form.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (!_form.valid) {
-      _form.rejectSubmit();
-      return;
-    }
-    Navigator.of(context)
-        .pop(trimmedOrNull(_form.control(_reason).value) ?? '');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final removing = widget.removing;
-
-    return ReactiveForm(
-      formGroup: _form,
-      child: AlertDialog(
-        scrollable: true,
-        title: Text(
-          removing
-              ? l10n.eventsDateRemoveTitle(widget.dateName)
-              : l10n.eventsDateCancelTitle(widget.dateName),
-        ),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              removing
-                  ? l10n.eventsDateCancelRemoveBody
-                  : l10n.eventsDateCancelBody,
-            ),
-            const BgeGap.md(),
-            BgeTextField(
-              key: EventDateDialogKeys.reason,
-              formControlName: _reason,
-              label: l10n.eventsDateReason,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              minLines: 1,
-              maxLines: 4,
-              validationMessages: {
-                _reasonTooLong: (_) => l10n.eventsDateReasonTooLong(
-                  EventRemoteDataSource.maxCancelReasonLength,
-                ),
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            key: EventDateDialogKeys.dismiss,
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(l10n.eventsDateKeep),
-          ),
-          TextButton(
-            key: EventDateDialogKeys.submit,
-            style: _destructive(context),
-            onPressed: _submit,
-            child: Text(
-              removing ? l10n.eventsDateRemove : l10n.eventsDateCancel,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-const _reason = 'reason';
-
-/// On a reason longer than the server takes.
-const _reasonTooLong = 'reasonTooLong';
-
-/// [_reasonTooLong] on a reason longer than
-/// [EventRemoteDataSource.maxCancelReasonLength] once trimmed, as the remote
-/// counts it.
-Map<String, dynamic>? _checkReason(AbstractControl<dynamic> control) {
-  final reason = (control.value as String?)?.trim() ?? '';
-  return reason.runes.length > EventRemoteDataSource.maxCancelReasonLength
-      ? const {_reasonTooLong: true}
-      : null;
-}

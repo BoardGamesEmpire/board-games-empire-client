@@ -170,7 +170,12 @@ class EventHydrator {
     while (true) {
       final PaginatedResult<EventSnapshot> result;
       try {
-        result = await _remote.fetchEvents(page: page, limit: limit);
+        // Archived events stay cached so Unarchive stays reachable (#502).
+        result = await _remote.fetchEvents(
+          page: page,
+          limit: limit,
+          includeArchived: true,
+        );
       } on Object catch (error, stackTrace) {
         // `Object`, not `EventRemoteException`: the data source throws
         // ArgumentError for paging it rejects locally, outside its own

@@ -360,6 +360,230 @@ void main() {
     });
   });
 
+  group('a cancelled or archived event (#502)', () {
+    final cancelledAt = DateTime.utc(2026, 10, 20, 9);
+
+    EventListItem withStatus(
+      EventListItem base,
+      EventStatus status, {
+      DateTime? cancelledAt,
+    }) => base.copyWith(
+      event: base.event.copyWith(status: status, cancelledAt: cancelledAt),
+    );
+
+    EventOccurrence lost(String id, DateTime start, {DateTime? when}) =>
+        confirmed(id, start).copyWith(
+          status: OccurrenceStatus.cancelled,
+          cancelledAt: when ?? cancelledAt,
+        );
+
+    test('a cancelled event with lost dates ahead is upcoming, marked '
+        'cancelled', () {
+      final row = only([
+        withStatus(
+          item('e-1', occurrences: [lost('o-1', at(30, 19))]),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ]);
+
+      expect(row.group, EventGroup.upcoming);
+      expect(row.date?.id, 'o-1');
+      expect(row.cancelled, isTrue);
+    });
+
+    test('a cancelled event whose lost dates have ended is past', () {
+      final row = only([
+        withStatus(
+          item('e-1', occurrences: [lost('o-1', at(21, 19))]),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ]);
+
+      expect(row.group, EventGroup.past);
+      expect(row.cancelled, isTrue);
+    });
+
+    test("a date cancelled on its own before the event's cancel doesn't place "
+        'it', () {
+      final row = only([
+        withStatus(
+          item(
+            'e-1',
+            occurrences: [
+              lost('o-1', at(30, 19), when: DateTime.utc(2026, 10, 10)),
+            ],
+          ),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ]);
+
+      expect(row.group, EventGroup.planning);
+      expect(row.cancelled, isTrue);
+    });
+
+    test('cancelled, reopened and cancelled again with no confirmed date: '
+        'planning, marked', () {
+      final row = only([
+        withStatus(
+          item(
+            'e-1',
+            occurrences: [
+              lost('o-old', at(30, 19), when: DateTime.utc(2026, 10, 5)),
+            ],
+          ),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ]);
+
+      expect(row.group, EventGroup.planning);
+      expect(row.date, isNull);
+      expect(row.cancelled, isTrue);
+    });
+
+    test('a cancelled poll is not having a date chosen', () {
+      // Cancelled before any date was confirmed: the cancel declined every
+      // proposed date, so nobody is choosing one.
+      final row = only([
+        withStatus(
+          item(
+            'e-1',
+            schedulingMode: EventSchedulingMode.poll,
+            occurrences: [
+              confirmed(
+                'o-1',
+                at(25),
+              ).copyWith(status: OccurrenceStatus.declined),
+            ],
+          ),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ]);
+
+      expect(row.group, EventGroup.planning);
+      expect(row.cancelled, isTrue);
+      expect(row.dateBeingChosen, isFalse);
+    });
+
+    test('a cancelled event whose dates are still cached as confirmed stays '
+        'where they put it', () {
+      // The cancel's answer carries the event alone, so until the re-read
+      // lands, or for good if it fails, its dates are cached as they were.
+      final items = [
+        withStatus(
+          item('e-ahead', occurrences: [confirmed('o-1', at(30, 19))]),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+        withStatus(
+          item('e-ended', occurrences: [confirmed('o-2', at(21, 19))]),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ];
+
+      final groups = groupEvents(items, now: now);
+
+      expect(groups.upcoming.single.event.id, 'e-ahead');
+      expect(groups.upcoming.single.date?.id, 'o-1');
+      expect(groups.upcoming.single.cancelled, isTrue);
+      expect(groups.past.single.event.id, 'e-ended');
+      expect(groups.past.single.cancelled, isTrue);
+      expect(groups.planning, isEmpty);
+      expect(
+        nextRegroupAt(items, now: now),
+        at(30, 19).add(const Duration(microseconds: 1)),
+      );
+    });
+
+    test('an archived event is in archived only', () {
+      final groups = groupEvents([
+        withStatus(
+          item('e-1', occurrences: [confirmed('o-1', at(30, 19))]),
+          EventStatus.archived,
+        ),
+      ], now: now);
+
+      expect(groups.archived.map((r) => r.event.id), ['e-1']);
+      expect(groups.archived.single.group, EventGroup.archived);
+      expect(groups.archived.single.cancelled, isFalse);
+      expect(groups.upcoming, isEmpty);
+      expect(groups.planning, isEmpty);
+      expect(groups.past, isEmpty);
+      expect(groups.of(EventGroup.archived), groups.archived);
+      expect(groups.isEmpty, isFalse);
+    });
+
+    test('archived orders latest date first, then dateless', () {
+      EventListItem archived(String id, [DateTime? start]) => withStatus(
+        item(id, occurrences: [if (start != null) confirmed('o-$id', start)]),
+        EventStatus.archived,
+      );
+
+      final groups = groupEvents([
+        archived('e-none-a'),
+        archived('e-old', at(10)),
+        archived('e-new', at(28)),
+        archived('e-none-b'),
+      ], now: now);
+
+      expect(groups.archived.map((r) => r.event.id), [
+        'e-new',
+        'e-old',
+        'e-none-a',
+        'e-none-b',
+      ]);
+    });
+
+    test('a cancelled-then-archived event orders by the dates it lost', () {
+      final groups = groupEvents([
+        withStatus(item('e-none'), EventStatus.archived),
+        withStatus(
+          item('e-lost', occurrences: [lost('o-1', at(30, 19))]),
+          EventStatus.archived,
+          cancelledAt: cancelledAt,
+        ),
+      ], now: now);
+
+      expect(groups.archived.map((r) => r.event.id), ['e-lost', 'e-none']);
+      expect(groups.archived.first.date?.id, 'o-1');
+      // The archive kept its cancelledAt, so its row says it was cancelled,
+      // as its detail does; one archived without a cancel says nothing.
+      expect(groups.archived.map((r) => r.cancelled), [isTrue, isFalse]);
+    });
+
+    test("nextRegroupAt counts a cancelled event's lost dates", () {
+      final items = [
+        withStatus(
+          item('e-1', occurrences: [lost('o-1', at(24, 19))]),
+          EventStatus.cancelled,
+          cancelledAt: cancelledAt,
+        ),
+      ];
+
+      expect(
+        nextRegroupAt(items, now: now),
+        at(24, 19).add(const Duration(microseconds: 1)),
+      );
+    });
+
+    test('nextRegroupAt skips an archived event', () {
+      expect(
+        nextRegroupAt([
+          withStatus(
+            item('e-1', occurrences: [confirmed('o-1', at(30))]),
+            EventStatus.archived,
+          ),
+        ], now: now),
+        isNull,
+      );
+    });
+  });
+
   group('the next regroup', () {
     test('is just past the earliest end that lies ahead', () {
       final items = [

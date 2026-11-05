@@ -16,6 +16,12 @@ access, so a screen watching the list rebuilds once a page rather than once
 an event. A list row carries the event's occurrences and its policy but no
 roster. Only the detail read, `GET /events/:id`, carries one.
 
+It asks for archived events too (`includeArchived=true`), which the list
+leaves out otherwise (#502). A pass that didn't see them would purge them
+(below), and with an archived event gone from the device nothing in the app
+could reach its Unarchive. So they are cached like any other, and the
+overview keeps them in a group of their own, Archived.
+
 It follows `hasMore` to the end, at the server's page-size cap. The list is
 ordered by creation, not by date, so an old event with an upcoming date can
 sit on any page, and every page is cached.
@@ -135,32 +141,39 @@ roots, `native_platform` and `web_platform`.
 
 ## The overview
 
-`EventOverviewScreen` shows the user's events as Upcoming, Planning and Past,
-five to a group, from `EventRepository.watchAttendingEventListItems`: each
-event with its dates and the user's own attendee row. `groupEvents` places
-each event by its confirmed dates, not its status, against the clock at every
-emission, so an event that ends while the overview is open moves to Past at
-the next one. A group holding more than five has a *See all* button that opens
-`EventGroupScreen`, which lists the whole group lazily over the cache. Each
-row shows its title, its date in device-local time with the platform's
-24-hour setting, its venue, its household's name from the cached households,
-and the user's RSVP where their row is cached, which until backend#867 is
-only after a detail read. The screens take hooks a composition may leave
-out: without `onOpen` a row is inert, and without `onCreate` there is no New
-event button, neither the one beside the list nor the one the empty overview
-offers under its message. The shell wires `onOpen` to the detail and
-`onCreate` to the create form. It opens the overview from the home drawer at
-`/events`, and each group at `/events/upcoming`, `/events/planning` and
-`/events/past`.
+`EventOverviewScreen` shows the user's events as Upcoming, Planning, Past and
+Archived, five to a group, from `EventRepository.watchAttendingEventListItems`:
+each event with its dates and the user's own attendee row. `groupEvents`
+places an archived event in Archived by its status, and no other group holds
+it (#502). It places every other event by its confirmed dates, not its
+status, against the clock at every emission, so an event that ends while the
+overview is open moves to Past at the next one. A cancelled event is placed
+by the dates its cancel took away instead, so it stays where it was, and with
+none it goes to Planning; its row says *Cancelled* in words. Archived lists
+its events by the date they showed, or lost to their cancel, latest first,
+then the ones with no date. A group holding more than five has a *See all*
+button that opens `EventGroupScreen`, which lists the whole group lazily over
+the cache. Each row shows its title, its date in device-local time with the
+platform's 24-hour setting, its venue, its household's name from the cached
+households, and the user's RSVP where their row is cached, which until
+backend#867 is only after a detail read. The screens take hooks a
+composition may leave out: without `onOpen` a row is inert, and without
+`onCreate` there is no New event button, neither the one beside the list nor
+the one the empty overview offers under its message. The shell wires
+`onOpen` to the detail and `onCreate` to the create form. It opens the
+overview from the home drawer at `/events`, and each group at
+`/events/upcoming`, `/events/planning`, `/events/past` and
+`/events/archived`.
 
 ## The home section
 
 `UpcomingEventsSection` is the home page's first section (#613). It shows the
-user's next three upcoming events, with their RSVP where it's known, from its
-own `EventOverviewBloc`. It passes that bloc no entry trigger, because activating
+user's next three upcoming events that are still happening, so a cancelled one
+stays off it (#502), with their RSVP where it's known, from its own
+`EventOverviewBloc`. It passes that bloc no entry trigger, because activating
 the session already runs a pass. With nothing upcoming of their own, including
-when they have only planning and past events, it asks `UpcomingFallbackCubit` for
-what's coming up that they could see, from
+when they have only planning, past and cancelled events, it asks
+`UpcomingFallbackCubit` for what's coming up that they could see, from
 `EventRemoteDataSource.browseEvents`. Those rows are network-only: nothing writes
 them to the cache, so they never reach the events screen. Offline the section
 shows its empty text, as it does when a read fails with no rows up, while a failed
@@ -198,8 +211,40 @@ session is still this scope's user, as the hydrate does. A refusal is a
 failed read. Native has no guard and is always confirmed.
 
 `eventActionsFor` maps the viewer's event role, and their household role on a
-household event, to what they may do to it. The screen shows no buttons yet:
-each action's issue (#500 to #518) adds its own and reads that table.
+household event, to what they may do to it, and the screen offers what that
+table allows. Each action goes straight to the server and is never queued, so
+each control is online-only: offline it stays, disabled, saying why.
+
+- **Delete** (#501) is the host's alone, in the app bar's menu, after a dialog
+  that says it can't be undone and that nobody is told. Done removes the
+  event from the cache and leaves the screen. Where the menu offers Cancel,
+  the dialog offers *Cancel event instead*, which opens Cancel's.
+- **The dates** (#506). Each date has a menu of what its status and the
+  viewer's role allow, and *Add a date* sits under the dates where the event
+  takes another. Each choice opens its dialog, and is checked again when the
+  dialog closes: nothing is sent if the event was cancelled or archived
+  meanwhile, if the viewer's role no longer allows it, or if the date no
+  longer offers it, as one that passed while its dialog was open (#655). On a
+  poll, each proposed date also takes the viewer's answer (#507), and Confirm
+  can decline the other proposed dates in the same step.
+- **The event's status** (#502). The app bar's menu offers Cancel or Reopen,
+  then Archive or Unarchive, by the status worked out from the dates as the
+  page builds, so it moves on as they pass with no read. Cancel is there
+  until the event is cancelled or archived, Reopen once it is cancelled,
+  Archive once it is cancelled or has ended, and Unarchive once it is
+  archived, with no other status change until it is unarchived. Cancel asks for
+  an optional reason and Reopen asks first, since both tell everyone on the
+  event. Archive and Unarchive tell nobody and undo each other, so they go at
+  once. The row each is answered with is cached through
+  `EventRepository.cacheEventRow`, and none leaves the screen.
+
+Delete, the date writes and the status writes each wait for a running read
+and for a request already out, disabled meanwhile rather than hidden, since a
+read's answer landing after a write would put back what it changed (#589).
+Every end shows a banner over the event and reads it again where the outcome
+says to, but a done delete leaves with a snackbar and a done vote shows
+nothing. Editing the event and the other actions are their own issues (#500,
+#503 to #518).
 
 ## Creating an event
 

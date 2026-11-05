@@ -62,6 +62,25 @@ void main() {
     expect(await repo.getEvent('e-1'), snapshot);
   });
 
+  test('cacheEvent keeps the cancel fields through a read', () async {
+    final base = testSnapshot('e-1');
+    final snapshot = EventSnapshot(
+      event: base.event.copyWith(
+        status: EventStatus.cancelled,
+        cancelReason: 'Rain',
+        cancelledAt: DateTime.utc(2026, 11, 4, 10),
+      ),
+      occurrences: base.occurrences,
+    );
+
+    await repo.cacheEvent(snapshot, source: EventAccessSource.attending);
+
+    final cached = (await repo.getEvent('e-1'))!.event;
+    expect(cached.cancelReason, 'Rain');
+    expect(cached.cancelledAt, DateTime.utc(2026, 11, 4, 10));
+    expect(cached, snapshot.event);
+  });
+
   test('an event cached from the list reads back as cached, with no '
       'roster', () async {
     // The list carries no roster, and no detail read has cached one, so the

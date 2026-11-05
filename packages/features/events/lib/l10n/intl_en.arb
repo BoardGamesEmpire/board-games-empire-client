@@ -16,6 +16,10 @@
   "@eventsGroupPast": {
     "description": "Heading of the group of events whose every date is over, most recent first. Also the title of the page listing the whole group."
   },
+  "eventsGroupArchived": "Archived",
+  "@eventsGroupArchived": {
+    "description": "Heading of the group of events the host has archived, latest date first. Also the title of the page listing the whole group."
+  },
   "eventsGroupSeeAll": "See all ({count})",
   "@eventsGroupSeeAll": {
     "description": "Button beside a group's heading on the events overview, which shows only the first few events of each group. It opens a page listing every event in the group; the number is how many events the group holds. Screen readers hear eventsGroupSeeAllSpoken instead.",
@@ -294,13 +298,117 @@
   "@eventsDeleteFailedUnexpected": {
     "description": "Banner on an event's screen when deleting it failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. The event is still there. Unlike the connection failure it does not suggest trying again, since the same press would most likely fail the same way."
   },
+  "eventsDeleteCancelInstead": "Cancel event instead",
+  "@eventsDeleteCancelInstead": {
+    "description": "Button in the delete-event dialog, beside Keep event and Delete. Closes that dialog and opens the cancel-event dialog in its place. Cancelling calls the event off and tells everyone on it, but keeps the event, where deleting removes it for everyone without telling them. Shown only to someone who may cancel the event, while it is not already cancelled or archived."
+  },
+  "eventsDetailCancel": "Cancel event",
+  "@eventsDetailCancel": {
+    "description": "Item in the More actions menu of an event's screen. Asks for an optional reason, then calls the event off for everyone on it, who are told. The event is kept, and can be reopened. Offered to the event's host and co-hosts and to its household's owners and admins, while the event is not cancelled or archived."
+  },
+  "eventsDetailReopen": "Reopen event",
+  "@eventsDetailReopen": {
+    "description": "Item in the More actions menu of a cancelled event's screen. Asks for confirmation, then takes the cancellation back. Everyone on the event is told."
+  },
+  "eventsDetailArchive": "Archive event",
+  "@eventsDetailArchive": {
+    "description": "Item in the More actions menu of a cancelled or completed event's screen. Puts the event away on the events' Archived page, at once and without asking: nobody is told, and Unarchive event undoes it. Offered to the event's host and co-hosts."
+  },
+  "eventsDetailUnarchive": "Unarchive event",
+  "@eventsDetailUnarchive": {
+    "description": "Item in the More actions menu of an archived event's screen. Takes the event off the events' Archived page, at once and without asking."
+  },
+  "eventsCancelConfirmTitle": "Cancel {title}?",
+  "@eventsCancelConfirmTitle": {
+    "description": "Title of the dialog asking to confirm cancelling an event, by the event's own title, which the host chose and may be long. Cancelling calls the event off and keeps it: it is not deleting it.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan night"
+      }
+    }
+  },
+  "eventsCancelConfirmBody": "Everyone on the event is told, with your reason if you give one. You can reopen it later.",
+  "@eventsCancelConfirmBody": {
+    "description": "Body of the cancel-event dialog, above its optional reason field. Says three things, and a translation must keep all three: everyone on the event is notified, the reason typed below goes with that notice, and the event can be reopened afterwards."
+  },
+  "eventsCancelConfirmKeep": "Keep event",
+  "@eventsCancelConfirmKeep": {
+    "description": "Button in the cancel-event dialog that closes it and changes nothing. Deliberately not 'Cancel', which here would read as cancelling the event."
+  },
+  "eventsCancelConfirm": "Cancel event",
+  "@eventsCancelConfirm": {
+    "description": "Confirm button of the cancel-event dialog, shown in the error colour. Calls the event off for everyone on it, with the reason typed above if there is one."
+  },
+  "eventsReopenConfirmTitle": "Reopen {title}?",
+  "@eventsReopenConfirmTitle": {
+    "description": "Title of the dialog asking to confirm reopening a cancelled event, by the event's own title, which the host chose and may be long.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan night"
+      }
+    }
+  },
+  "eventsReopenConfirmBody": "Everyone on the event is told. Dates cancelled with it stay cancelled.",
+  "@eventsReopenConfirmBody": {
+    "description": "Body of the reopen-event dialog. Says two things, and a translation must keep both: everyone on the event is notified, and the event's dates that were cancelled along with it are not brought back."
+  },
+  "eventsReopenConfirmKeep": "Keep cancelled",
+  "@eventsReopenConfirmKeep": {
+    "description": "Button in the reopen-event dialog that closes it and leaves the event cancelled."
+  },
+  "eventsReopenConfirm": "Reopen",
+  "@eventsReopenConfirm": {
+    "description": "Confirm button of the reopen-event dialog. Takes the event's cancellation back, and everyone on the event is told."
+  },
+  "eventsCancelled": "Event cancelled",
+  "@eventsCancelled": {
+    "description": "Banner on an event's screen once the server has cancelled the event. The screen stays on the event, which now reads as cancelled."
+  },
+  "eventsReopened": "Event reopened",
+  "@eventsReopened": {
+    "description": "Banner on an event's screen once the server has reopened the cancelled event."
+  },
+  "eventsArchived": "Event archived",
+  "@eventsArchived": {
+    "description": "Banner on an event's screen once the server has archived the event. The screen stays on the event, which now reads as archived and offers Unarchive event."
+  },
+  "eventsUnarchived": "Event unarchived",
+  "@eventsUnarchived": {
+    "description": "Banner on an event's screen once the server has taken the event out of the archive."
+  },
+  "eventsStatusWriteGone": "This event was deleted.",
+  "@eventsStatusWriteGone": {
+    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving it found no event by that id on the server: it was deleted meanwhile, perhaps from another device. A warning, not an error."
+  },
+  "eventsStatusWriteRefused": "You can't change this event's status any more.",
+  "@eventsStatusWriteRefused": {
+    "description": "Banner on an event's screen when the server refused to cancel, reopen, archive or unarchive the event: the user is no longer allowed to, for example because their role on it changed on another device. The screen reads the event again."
+  },
+  "eventsStatusWriteChanged": "This event changed before that went through. Check it below before trying again.",
+  "@eventsStatusWriteChanged": {
+    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event was turned down because its status had changed since the screen showed it: for example, it was archived or cancelled from another device. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the event below is up to date: the refresh banner says whether the read went through. It also shows, with no read, when the screen didn't send the change at all: by the time its dialog closed the event no longer offered it, because a sync changed the event or the user's role on it, or the event ended. A warning, not an error."
+  },
+  "eventsStatusWriteFailed": "An error occurred, and the event's status may not have changed. You may need to try again.",
+  "@eventsStatusWriteFailed": {
+    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event ended without an answer that says what happened, most often because there was no connection. The change may or may not have gone through, so the copy must not say the status didn't change."
+  },
+  "eventsStatusWriteFailedUnexpected": "Something went wrong. Check the event's status before trying again.",
+  "@eventsStatusWriteFailedUnexpected": {
+    "description": "Banner on an event's screen when cancelling, reopening, archiving or unarchiving the event failed for any reason other than the connection: the server rejected the request, the server answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. An answer the app could not read may follow a change that went through, and the screen reads the event again, so the copy must not say the status didn't change. Unlike the connection failure it does not invite a retry straight away."
+  },
+  "eventsDetailCancelledNote": "This event was cancelled.",
+  "@eventsDetailCancelledNote": {
+    "description": "On a cancelled event's screen, under the line saying what kind of event it is and where it stands: says in words that the event was called off. The reason, where the person who cancelled it gave one, follows on the next line (eventsDateCancelReason)."
+  },
   "eventsActionDismiss": "Dismiss",
   "@eventsActionDismiss": {
     "description": "Button on the banner that says how the last change made on an event's screen went, such as deleting the event or confirming one of its dates. Closes the banner."
   },
   "eventsDateChanged": "This date changed meanwhile. Check it below before trying again.",
   "@eventsDateChanged": {
-    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the date below is up to date: the refresh banner says whether the read went through. A warning, not an error."
+    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the date below is up to date: the refresh banner says whether the read went through. It also shows, with no read, when the screen didn't send the change at all: by the time its dialog closed the date no longer offered it, because a sync changed the date, cancelled the event or changed the user's role on it, or a proposed date passed. A warning, not an error."
   },
   "eventsDateCancelledRemoveUnconfirmed": "The date was cancelled. If it's still below, you can remove it now.",
   "@eventsDateCancelledRemoveUnconfirmed": {
@@ -451,7 +559,7 @@
   },
   "eventsDateCancelReason": "Reason: {reason}",
   "@eventsDateCancelReason": {
-    "description": "Under a called-off date on an event's screen, below its status: why it was called off, as the person who called it off wrote it.",
+    "description": "Under a called-off date on an event's screen, below its status: why it was called off, as the person who called it off wrote it. Also under the note on a cancelled event's screen (eventsDetailCancelledNote), giving why the event itself was called off.",
     "placeholders": {
       "reason": {
         "type": "String",

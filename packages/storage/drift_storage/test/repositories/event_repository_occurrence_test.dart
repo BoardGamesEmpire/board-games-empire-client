@@ -110,6 +110,109 @@ void main() {
     });
   });
 
+  group('cacheEventRow', () {
+    final cancelledAt = DateTime.utc(2026, 11, 4, 9);
+
+    Event cancelled(Event e) => e.copyWith(
+      status: EventStatus.cancelled,
+      cancelReason: 'Rain',
+      cancelledAt: cancelledAt,
+    );
+
+    test(
+      'writes the status and cancel fields, and leaves the dates and roster',
+      () async {
+        await cache(
+          testSnapshot(
+            'e1',
+            occurrences: [
+              testOccurrence('o1', eventId: 'e1'),
+              testOccurrence('o2', eventId: 'e1', sortOrder: 1),
+            ],
+            attendees: [testAttendee('a1', userId: _kUser, eventId: 'e1')],
+          ),
+        );
+        final before = (await repo.getEvent('e1'))!;
+
+        expect(await repo.cacheEventRow(cancelled(before.event)), isTrue);
+
+        final after = (await repo.getEvent('e1'))!;
+        expect(after.event.status, EventStatus.cancelled);
+        expect(after.event.cancelReason, 'Rain');
+        expect(after.event.cancelledAt, cancelledAt);
+        expect(after.occurrences, before.occurrences);
+        expect(after.attendees, before.attendees);
+        expect(after.attendees, isNotEmpty);
+      },
+    );
+
+    test('a reopen clears a cached reason', () async {
+      await cache(testSnapshot('e1'));
+      final event = (await repo.getEvent('e1'))!.event;
+      await repo.cacheEventRow(cancelled(event));
+
+      await repo.cacheEventRow(
+        event.copyWith(
+          status: EventStatus.planning,
+          cancelReason: null,
+          cancelledAt: null,
+        ),
+      );
+
+      final after = (await repo.getEvent('e1'))!.event;
+      expect(after.status, EventStatus.planning);
+      expect(after.cancelReason, isNull);
+      expect(after.cancelledAt, isNull);
+    });
+
+    test("returns false for an event that isn't cached", () async {
+      expect(await repo.cacheEventRow(testEvent('gone')), isFalse);
+
+      expect(await db.select(db.eventsTable).get(), isEmpty);
+    });
+
+    test('returns false and writes nothing for a dirty event', () async {
+      await cache(testSnapshot('e1'));
+      await (db.update(db.eventsTable)..where((t) => t.id.equals('e1'))).write(
+        const EventsTableCompanion(isDirty: Value(true)),
+      );
+      final before = (await repo.getEvent('e1'))!;
+
+      expect(await repo.cacheEventRow(cancelled(before.event)), isFalse);
+
+      expect((await repo.getEvent('e1'))!.event.status, before.event.status);
+    });
+
+    test('returns false and writes nothing for a local-only event', () async {
+      await cache(testSnapshot('e1'));
+      await markLocalOnly('e1');
+      final before = (await repo.getEvent('e1'))!;
+
+      expect(await repo.cacheEventRow(cancelled(before.event)), isFalse);
+
+      expect((await repo.getEvent('e1'))!.event.status, before.event.status);
+    });
+
+    test('watchEvent emits once for the write', () async {
+      await cache(testSnapshot('e1'));
+      final event = (await repo.getEvent('e1'))!.event;
+      final emitted = <EventStatus>[];
+      final sub = repo
+          .watchEvent('e1')
+          .listen((d) => emitted.add(d!.snapshot.event.status));
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      emitted.clear();
+      final before = await repo.lastWrite('e1');
+
+      await repo.cacheEventRow(cancelled(event));
+      await pumpEventQueue();
+
+      expect(emitted, [EventStatus.cancelled]);
+      expect(await repo.lastWrite('e1'), greaterThan(before!));
+    });
+  });
+
   group('removeCachedOccurrence', () {
     test('removes it and keeps the others', () async {
       await cache(

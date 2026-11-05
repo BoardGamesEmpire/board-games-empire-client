@@ -27,6 +27,23 @@ const _empty = 'Nothing coming up right now.';
 const _refreshFailed =
     "Couldn't refresh your events. What's shown may be out of date.";
 
+/// [base] cancelled, its dates left as they were (#502).
+EventListItem _cancelled(EventListItem base) => EventListItem(
+  event: base.event.copyWith(
+    status: EventStatus.cancelled,
+    cancelledAt: DateTime.utc(2026, 10, 20),
+  ),
+  occurrences: base.occurrences
+      .map(
+        (o) => o.copyWith(
+          status: OccurrenceStatus.cancelled,
+          cancelledAt: DateTime.utc(2026, 10, 20),
+        ),
+      )
+      .toList(),
+  attendance: base.attendance,
+);
+
 /// Pins the #613 home section against a mocked cache, a scripted remote and a
 /// hand-driven hydration stream: which rows it shows, when it reads the
 /// fallback, and that the fallback stays out of the cache.
@@ -237,6 +254,18 @@ void main() {
         findsOneWidget,
       );
       expect(remote.browseRequests, isEmpty);
+    });
+
+    testWidgets('a cancelled upcoming event is left off the shelf', (
+      tester,
+    ) async {
+      await show(tester, [
+        item('e-live', occurrences: [confirmed('o', day(24))]),
+        _cancelled(item('e-off', occurrences: [confirmed('o', day(25))])),
+      ]);
+
+      expect(rowOf('e-live'), findsOneWidget);
+      expect(rowOf('e-off'), findsNothing);
     });
 
     testWidgets('planning and past events alone count as no upcoming events', (
@@ -467,6 +496,21 @@ void main() {
       await settle(tester);
 
       expect(remote.browseRequests, hasLength(1));
+      expect(rowOf('e-offer-0'), findsOneWidget);
+      expect(find.text(_note), findsOneWidget);
+    });
+
+    testWidgets('with only a cancelled upcoming event, the fallback reads', (
+      tester,
+    ) async {
+      remote.browse = (_) => browsePage(offered(1));
+
+      await show(tester, [
+        _cancelled(item('e-off', occurrences: [confirmed('o', day(25))])),
+      ]);
+
+      expect(remote.browseRequests, hasLength(1));
+      expect(rowOf('e-off'), findsNothing);
       expect(rowOf('e-offer-0'), findsOneWidget);
       expect(find.text(_note), findsOneWidget);
     });

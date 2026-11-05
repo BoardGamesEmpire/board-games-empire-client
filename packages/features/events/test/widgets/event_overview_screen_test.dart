@@ -128,7 +128,8 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(EventOverviewScreen.loadingKey), findsNothing);
-    for (final group in EventGroup.values) {
+    // The fixture holds no archived event, and an empty group is skipped.
+    for (final group in EventGroup.values.where((g) => g != .archived)) {
       expect(find.byKey(EventOverviewScreen.groupKey(group)), findsOneWidget);
     }
     // The groups are slivers, so their headings are what is measured.
@@ -147,6 +148,58 @@ void main() {
       tester.getSemantics(find.text('Upcoming')),
       isSemantics(isHeader: true),
     );
+  });
+
+  /// [count] archived events, `e-arch-0` first.
+  List<EventListItem> archived(int count) => [
+    for (var n = 0; n < count; n++)
+      EventListItem(
+        event: item('e-arch-$n').event.copyWith(status: EventStatus.archived),
+        occurrences: const [],
+      ),
+  ];
+
+  testWidgets('archived events are a fourth group, last, headed "Archived"', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await show(tester, [
+      ...upcoming(1),
+      item('e-plan'),
+      item('e-past', occurrences: [confirmed('o', day(20))]),
+      ...archived(1),
+    ]);
+
+    for (final group in EventGroup.values) {
+      expect(find.byKey(EventOverviewScreen.groupKey(group)), findsOneWidget);
+    }
+    final tops = [
+      for (final heading in ['Upcoming', 'Planning', 'Past', 'Archived'])
+        tester.getTopLeft(find.text(heading)).dy,
+    ];
+    expect(tops, orderedEquals([...tops]..sort()));
+    expect(tops.toSet(), hasLength(4));
+    expect(
+      find.descendant(
+        of: find.byKey(EventOverviewScreen.groupKey(EventGroup.archived)),
+        matching: find.byKey(EventOverviewScreen.rowKey('e-arch-0')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('See all opens the archived page', (tester) async {
+    final opened = <EventGroup>[];
+    await show(tester, archived(7), onOpenGroup: (_, g) => opened.add(g));
+
+    expect(find.text('See all (7)'), findsOneWidget);
+    await tester.tap(
+      find.byKey(EventOverviewScreen.seeAllKey(EventGroup.archived)),
+    );
+
+    expect(opened, [EventGroup.archived]);
   });
 
   group('a group', () {
@@ -278,7 +331,7 @@ void main() {
       await showAll(tester);
 
       final colours = [
-        for (final group in EventGroup.values)
+        for (final group in EventGroup.values.where((g) => g != .archived))
           ((tester
                               .widget<DecoratedSliver>(
                                 find.descendant(

@@ -79,6 +79,38 @@ void main() {
     );
   });
 
+  testWidgets("the archived page is titled and lists only the group's "
+      'events, a cancelled-then-archived one marked Cancelled', (tester) async {
+    // The archive keeps the event's cancelledAt, so its row says it was
+    // cancelled, as its detail does, and doesn't read as one that took place.
+    await pumpGroup(tester, EventGroup.archived);
+    items.add([
+      EventListItem(
+        event: item('e-arch').event.copyWith(
+          status: EventStatus.archived,
+          cancelledAt: DateTime.utc(2026, 10, 1),
+        ),
+        occurrences: const [],
+      ),
+      item('e-plan'),
+    ]);
+    await tester.pump();
+
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Archived')),
+      findsOneWidget,
+    );
+    expect(find.byKey(EventOverviewScreen.rowKey('e-arch')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(EventOverviewScreen.rowKey('e-arch')),
+        matching: find.textContaining('Cancelled'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(EventOverviewScreen.rowKey('e-plan')), findsNothing);
+  });
+
   testWidgets('lists every row of its group', (tester) async {
     // No cap: the overview shows five, and this page the rest.
     await pumpGroup(tester, EventGroup.past);

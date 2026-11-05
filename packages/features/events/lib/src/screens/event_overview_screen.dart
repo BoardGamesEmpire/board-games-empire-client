@@ -16,9 +16,9 @@ import '../overview/event_groups.dart';
 import '../widgets/event_list_slivers.dart';
 import '../widgets/event_row.dart';
 
-/// The events overview (#497): the user's events as Upcoming, Planning and
-/// Past, each showing its first [groupCap], read reactively from the local
-/// cache.
+/// The events overview (#497): the user's events as Upcoming, Planning, Past
+/// and Archived (#502), in that order, each showing its first [groupCap],
+/// read reactively from the local cache.
 ///
 /// The collection list's shape (`GameCollectionListScreen`): the caller
 /// resolves the repository, the optional streams and the callbacks, and the
@@ -28,13 +28,14 @@ import '../widgets/event_row.dart';
 ///
 /// ## Capped groups, each with a page of its own
 ///
-/// Three groups of [groupCap] keep the overview to a screen on a phone. A
-/// group holding more names how many in a *See all* button beside its
+/// Each of the four groups shows at most [groupCap], which keeps the overview
+/// short on a phone, and Archived, the group least often wanted, comes last.
+/// A group holding more names how many in a *See all* button beside its
 /// heading, which opens the group's page ([onOpenGroup]). The button, not
 /// the group, is what opens it: once rows open their events, a tappable
-/// group would nest one tap target inside another. A group of [groupCap] or fewer
-/// has no button, because every event in it is already shown, and a group
-/// with none is left off.
+/// group would nest one tap target inside another. A group of [groupCap] or
+/// fewer has no button, because every event in it is already shown, and a
+/// group with none is left off.
 ///
 /// ## The page is thin
 ///
@@ -326,6 +327,7 @@ class _GroupSliver extends StatelessWidget {
               EventGroup.upcoming => colors.primary,
               EventGroup.planning => colors.tertiary,
               EventGroup.past => colors.outline,
+              EventGroup.archived => colors.outlineVariant,
             },
             width: BgeTokens.of(context).accentBarWidth,
           ),
