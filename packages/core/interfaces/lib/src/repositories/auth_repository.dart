@@ -352,6 +352,43 @@ final class AuthEmailNotVerifiedException extends AuthException {
   });
 }
 
+/// The server refused a credential grant because it was made too often (#559).
+///
+/// Classified on the 429 status alone: the body's `RATE_LIMITED` code confirms
+/// it but is not required, since a proxy in front of the server can answer 429
+/// with a different envelope. Definitive and not a fault of the credentials, so
+/// it is neither [AuthInvalidCredentialsException] nor a server error: the
+/// same request succeeds once [retryAfter] has passed.
+final class AuthRateLimitedException extends AuthException {
+  const AuthRateLimitedException({
+    this.retryAfter,
+    super.message = 'Too many attempts.',
+  });
+
+  /// From `X-Retry-After`; null when the header is missing or isn't a whole
+  /// number of seconds.
+  final Duration? retryAfter;
+}
+
+/// Reads an `X-Retry-After` header as a whole number of seconds, or null when
+/// it is missing, is anything but a run of digits, or is too large to hold.
+///
+/// Too large to hold means more seconds than a [Duration] can count, not only
+/// more than an `int` can. A [Duration] counts microseconds in an `int`, so
+/// past [_maxRetryAfterSeconds] it would wrap to a negative wait on the VM.
+Duration? parseRetryAfter(String? header) {
+  if (header == null || !RegExp(r'^\d+$').hasMatch(header)) return null;
+
+  final seconds = int.tryParse(header);
+  if (seconds == null || seconds > _maxRetryAfterSeconds) return null;
+  return Duration(seconds: seconds);
+}
+
+/// The most whole seconds a [Duration] holds: the largest 64-bit `int`,
+/// 9223372036854775807, counted in microseconds. Written out because the web
+/// compiler cannot represent that `int` exactly.
+const int _maxRetryAfterSeconds = 9223372036854;
+
 /// Nothing answered: the request failed in transport — a timeout, a refused
 /// connection, a cancellation — so there is no status to classify by.
 ///

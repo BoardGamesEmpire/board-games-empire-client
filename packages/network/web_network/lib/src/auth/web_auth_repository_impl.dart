@@ -6,7 +6,12 @@ import 'package:dio/dio.dart';
 // 4 KiB bound and the session-read rules each live in one place (#352,
 // #278).
 import 'package:dio_network/dio_network.dart'
-    show decodeJsonBody, probeJsonBody, readSessionStatus, SessionReadStatus;
+    show
+        decodeJsonBody,
+        probeJsonBody,
+        rateLimitedFrom,
+        readSessionStatus,
+        SessionReadStatus;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -1445,7 +1450,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // body, and never a full decode — see the native twin for the reasoning.
     // `_assertSuccess` never returns for a non-2xx.
     if (!_isSuccessStatus(status)) {
-      _assertSuccess(status, response.data, context: context);
+      _assertSuccess(
+        status,
+        response.data,
+        headers: response.headers,
+        context: context,
+      );
     }
 
     // A 2xx: the body IS the payload, so it earns a real decode.
@@ -1457,7 +1467,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     // Re-run on the decoded body: the duplicate-email envelope is not
     // status-gated, and here the decode has already happened.
-    _assertSuccess(status, decoded.value, context: context);
+    _assertSuccess(
+      status,
+      decoded.value,
+      headers: response.headers,
+      context: context,
+    );
 
     final failure = decoded.failure;
     if (failure != null) {
@@ -1496,7 +1511,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     return body;
   }
 
-  void _assertSuccess(int? status, Object? body, {required String context}) {
+  void _assertSuccess(
+    int? status,
+    Object? body, {
+    required Headers? headers,
+    required String context,
+  }) {
     if (status == HttpStatusCode.unauthorized) {
       throw const AuthInvalidCredentialsException();
     }
@@ -1505,6 +1525,14 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
+    }
+
+    // A 429 is a rate limit whatever its body says (#559): classified on the
+    // status alone, with the wait read from `X-Retry-After` when it is there.
+    // It sits before the generic non-2xx throw, which would file it as a
+    // server fault with nothing to act on.
+    if (status == HttpStatusCode.tooManyRequests) {
+      throw rateLimitedFrom(headers);
     }
 
     if (!_isSuccessStatus(status)) {
@@ -1635,6 +1663,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
+    }
+
+    // Only a credential grant's 429 is a rate-limited grant (#559); a session
+    // read that is throttled stays what it was.
+    if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
+      return rateLimitedFrom(e.response?.headers);
     }
 
     if (status != null && status >= HttpStatusCode.internalServerError) {

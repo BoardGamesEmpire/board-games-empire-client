@@ -16,6 +16,7 @@ import '../network/decode_json_body.dart';
 import '../network/redact_uri.dart';
 import '../network/token_interceptor.dart';
 import 'session_read_status.dart';
+import 'rate_limited.dart';
 import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
@@ -939,7 +940,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     if (status == null ||
         status < HttpStatusCode.ok ||
         status >= HttpStatusCode.multipleChoices) {
-      _assertSuccess(status, response.data, context: context);
+      _assertSuccess(
+        status,
+        response.data,
+        headers: response.headers,
+        context: context,
+      );
     }
 
     // A 2xx: the body IS the payload, so it earns a real decode.
@@ -952,7 +958,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // Re-run on the decoded body. The duplicate-email envelope is not
     // status-gated, so a 2xx can carry it too — and here the decode has
     // already happened, so the check is free.
-    _assertSuccess(status, decoded.value, context: context);
+    _assertSuccess(
+      status,
+      decoded.value,
+      headers: response.headers,
+      context: context,
+    );
 
     // An unreadable body on a 2xx fails the grant: as a server fault when it
     // is not JSON, and as a local one when this device could not run the
@@ -1002,7 +1013,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  void _assertSuccess(int? status, Object? body, {required String context}) {
+  void _assertSuccess(
+    int? status,
+    Object? body, {
+    required Headers? headers,
+    required String context,
+  }) {
     if (status == HttpStatusCode.unauthorized) {
       throw const AuthInvalidCredentialsException();
     }
@@ -1011,6 +1027,14 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
     if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
+    }
+
+    // A 429 is a rate limit whatever its body says (#559): classified on the
+    // status alone, with the wait read from `X-Retry-After` when it is there.
+    // It sits before the generic non-2xx throw, which would file it as a
+    // server fault with nothing to act on.
+    if (status == HttpStatusCode.tooManyRequests) {
+      throw rateLimitedFrom(headers);
     }
 
     if (status == null ||
@@ -1127,6 +1151,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
     if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
+    }
+
+    // Only a credential grant's 429 is a rate-limited grant (#559); a session
+    // read that is throttled stays what it was.
+    if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
+      return rateLimitedFrom(e.response?.headers);
     }
 
     if (status != null && status >= HttpStatusCode.internalServerError) {
