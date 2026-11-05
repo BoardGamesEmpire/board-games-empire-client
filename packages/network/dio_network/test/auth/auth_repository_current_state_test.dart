@@ -38,6 +38,7 @@ void main() {
         'replays', () async {
       final repository = AuthRepositoryImpl(
         identity: _identity(),
+        serverUrl: 'https://bge.example.com',
         tokenStorage: TokenStorageService(
           serverId: 'bge-uuid-1',
           tombstones: InMemorySessionTombstoneStore(),

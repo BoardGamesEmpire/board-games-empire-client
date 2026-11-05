@@ -200,8 +200,11 @@ abstract class AuthRepository {
   /// returns, and exchanges the code for a session at the token endpoint the
   /// attempt recorded. Completes with [ProviderSignInCompleted], or with
   /// [ProviderSignInCancelled] when the user closes the tab. A second call
-  /// while a tab is open replaces the first attempt: a late return from the
-  /// first signs nobody in.
+  /// replaces the first attempt, whether its tab is still open or its code is
+  /// being exchanged: a late return from the first signs nobody in, and the
+  /// first call throws [AuthSupersededException]. So does an attempt whose
+  /// repository is disposed, as switching servers does, and one that a
+  /// sign-out, a password sign-in or a sign-up overtakes.
   /// Web: posts to the strategy's authorization endpoint, then navigates the
   /// page to the URL the server answers with. The sign-in finishes on the
   /// page that loads when the provider sends the user back, and a failure is
@@ -525,8 +528,12 @@ final class AuthSessionNotGrantedException extends AuthException {
 /// Thrown by [AuthRepository.signIn]/[signUp] when a sign-out lands during
 /// the credential grant's persist-and-reconcile window. The newer intent
 /// won: state and storage already reflect the sign-out by the time this is
-/// thrown. Callers should treat it as a quiet return to the unauthenticated
-/// surface — NOT as a server fault; the previous behavior reported it as
+/// thrown. Also thrown by [AuthRepository.signInWithProvider] for an attempt
+/// that a newer one, a sign-out, a password sign-in or a sign-up overtook, or
+/// whose repository was disposed, before its grant was adopted (#583); nothing
+/// was stored for it. Callers should treat
+/// it as a quiet return to the unauthenticated surface — NOT as a server
+/// fault; the previous behavior reported it as
 /// an [AuthServerException] "server disowned the session" contract
 /// violation, which pointed a user's own sign-out at the server.
 final class AuthSupersededException extends AuthException {

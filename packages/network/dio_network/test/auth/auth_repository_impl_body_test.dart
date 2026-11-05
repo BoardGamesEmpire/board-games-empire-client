@@ -116,6 +116,7 @@ void main() {
   }) {
     final repo = AuthRepositoryImpl(
       identity: _identity(),
+      serverUrl: 'https://api.example.com',
       tokenStorage: storage,
       dio: dio,
       decodeJson: decodeJson,

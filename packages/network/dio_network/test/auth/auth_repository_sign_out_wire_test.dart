@@ -139,6 +139,7 @@ void main() {
           ]);
     repository = AuthRepositoryImpl(
       identity: _identity(),
+      serverUrl: 'https://api.example.com',
       tokenStorage: storage,
       dio: dio,
     );

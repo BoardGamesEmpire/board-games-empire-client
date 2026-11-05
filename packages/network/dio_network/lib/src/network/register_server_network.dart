@@ -110,6 +110,7 @@ void registerServerNetwork({
 
   final authRepository = AuthRepositoryImpl(
     identity: config.cachedIdentity,
+    serverUrl: config.serverUrl,
     tokenStorage: tokenStorage,
     dio: dio,
     clock: clock,
