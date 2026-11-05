@@ -3,17 +3,17 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 import '../user/user_summary_json.dart';
 
 /// [HouseholdInviteRemoteDataSource] over a **per-server** Dio instance
 /// (#455).
 ///
-/// Built on the DataGateway source's request plumbing (#41): the body is
-/// asked for as a `String` with the response type pinned on every request,
-/// decoded here after the status is read, and probed for the API's error
-/// envelope with a bounded synchronous parse. It does not build or own its
-/// Dio; the network installer constructs it from the per-server container.
+/// The body is asked for as a `String` with the response type pinned on
+/// every request, and `sendForJson` decodes it after the status is read and
+/// classifies a failure through [_InviteFailures]. It does not build or own
+/// its Dio; the network installer constructs it from the per-server
+/// container.
 ///
 /// Failure taxonomy per the [HouseholdInviteRemoteDataSource] contract.
 class HouseholdInviteRemoteDataSourceImpl
@@ -25,10 +25,6 @@ class HouseholdInviteRemoteDataSourceImpl
   /// See `DataGatewayRemoteDataSourceImpl._plainBody`.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// 4xx statuses worth retrying: an expired session (401), proxy
-  /// authentication (407), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
-
   /// 4xx statuses the API answers an invite request with, when it carries
   /// the envelope. 404 is handled apart, because it depends on the route.
   static const Set<int> _refusals = {400, 402, 403, 409, 410};
@@ -39,8 +35,9 @@ class HouseholdInviteRemoteDataSourceImpl
     HouseholdInviteDraft draft,
   ) async {
     const action = 'Household invite send';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _InviteFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         _householdInvites(householdId),
         options: _plainBody,
         data: {
@@ -58,9 +55,10 @@ class HouseholdInviteRemoteDataSourceImpl
       // the user picked has no account. A server without the route answers
       // the same way, but the list on the screen before this one would have
       // failed first.
-      rowRoute: true,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapInvite(_inviteObject(response.body)),
       action: action,
       status: response.status,
@@ -128,8 +126,9 @@ class HouseholdInviteRemoteDataSourceImpl
       throw ArgumentError.value(status, 'status', 'has no wire name');
     }
 
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _InviteFailures();
+    final response = await sendForJson(
+      () => _dio.get<String>(
         path,
         options: _plainBody,
         queryParameters: {
@@ -139,9 +138,10 @@ class HouseholdInviteRemoteDataSourceImpl
         },
       ),
       action: action,
-      rowRoute: false,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'invites',
@@ -155,13 +155,15 @@ class HouseholdInviteRemoteDataSourceImpl
   @override
   Future<AcceptedHouseholdInvite> accept(String inviteId) async {
     const action = 'Household invite accept';
-    final response = await _send(
-      request: () =>
+    const failures = _InviteFailures(rowRoute: true);
+    final response = await sendForJson(
+      () =>
           _dio.post<String>('${_invite(inviteId)}/accept', options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () {
         final member = response.body['member'];
         if (member is! Map<String, dynamic>) {
@@ -209,12 +211,14 @@ class HouseholdInviteRemoteDataSourceImpl
 
   /// A POST to [path] answered by `{ message, invite }`.
   Future<HouseholdInvite> _change(String path, String action) async {
-    final response = await _send(
-      request: () => _dio.post<String>(path, options: _plainBody),
+    const failures = _InviteFailures(rowRoute: true);
+    final response = await sendForJson(
+      () => _dio.post<String>(path, options: _plainBody),
       action: action,
-      rowRoute: true,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapInvite(_inviteObject(response.body)),
       action: action,
       status: response.status,
@@ -256,96 +260,6 @@ class HouseholdInviteRemoteDataSourceImpl
     );
   }
 
-  // ── Request plumbing ────────────────────────────────────────────────
-
-  /// Sends [request] and returns its decoded body, having converted every
-  /// failure into a [HouseholdInviteRemoteException].
-  ///
-  /// [rowRoute] says whether the path names one invite or one household,
-  /// which is what lets an application 404 mean that it is gone.
-  Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<String>> Function() request,
-    required String action,
-    required bool rowRoute,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
-    } on Object catch (error) {
-      // Nothing else should escape Dio. `Object`, not `Exception`, so an
-      // `Error` cannot break the "no raw transport error" promise either.
-      throw HouseholdInviteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw HouseholdInviteTransientException('$action returned no status');
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        rowRoute: rowRoute,
-        body: response.data,
-      );
-    }
-
-    final raw = response.data;
-    if (raw == null || raw.isEmpty) {
-      throw HouseholdInvitePermanentException(
-        '$action returned an empty body',
-        statusCode: status,
-      );
-    }
-
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      throw HouseholdInvitePermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // The decode could not run (an isolate that would not spawn), which
-      // says nothing about the response.
-      throw HouseholdInviteTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
-
-    if (decoded is! Map<String, dynamic>) {
-      throw HouseholdInvitePermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return (body: decoded, status: status);
-  }
-
-  /// A 2xx whose body cannot be mapped is permanent: the same request returns
-  /// the same body.
-  T _parse<T>(T Function() map, {required String action, required int status}) {
-    try {
-      return map();
-    } on Object catch (error) {
-      throw HouseholdInvitePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
-  }
-
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
   void _checkPaging({required int page, required int limit, required int max}) {
@@ -362,106 +276,50 @@ class HouseholdInviteRemoteDataSourceImpl
     }
   }
 
-  // ── Failure classification ──────────────────────────────────────────
-
-  HouseholdInviteRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    required bool rowRoute,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        rowRoute: rowRoute,
-        body: error.response?.data,
-      );
-    }
-    return HouseholdInviteTransientException('$action failed', cause: error);
-  }
-
-  HouseholdInviteRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required bool rowRoute,
-    required Object? body,
-  }) {
-    if (status >= 500 || _retryable4xx.contains(status)) {
-      return HouseholdInviteTransientException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 409 && isRetryableRefusal(body)) {
-      // A deadlock that outlived the server's own retry (#431). Read the
-      // field, not the message, which is translated.
-      return HouseholdInviteTransientException(
-        '$message; the server hit a deadlock and asked for a retry',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-
-    // Every answer below is a conclusion about the caller or about a row,
-    // and only the application's own envelope licenses one. A proxy or WAF
-    // answers 403 and 404 too (#350, #365, #253).
-    final fromApi = isApiErrorEnvelope(body, status);
-
-    if (status == 403 && !fromApi) {
-      return HouseholdInviteTransientException(
-        '$message; the request did not reach the API',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 404) {
-      // Nest answers an unregistered route with this same envelope, so only
-      // a route naming an invite or a household can read it as "gone".
-      return fromApi && rowRoute
-          ? HouseholdInviteRefusedException(
-              message,
-              cause: cause,
-              statusCode: status,
-            )
-          : HouseholdInviteTransientException(
-              '$message; the route was not reachable',
-              cause: cause,
-              statusCode: status,
-            );
-    }
-    if (fromApi && _refusals.contains(status)) {
-      return HouseholdInviteRefusedException(
-        message,
-        cause: cause,
-        statusCode: status,
-        quota: status == 402 ? _quota(body) : null,
-      );
-    }
-    if (status >= 400) {
-      return HouseholdInvitePermanentException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    // A 1xx or 3xx surfaced by a permissive validateStatus carries no
-    // rejection.
-    return HouseholdInviteTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
-  }
-
   /// The limit a 402 hit, or null when its body does not say.
   static InviteQuota? _quota(Object? body) {
     final resource = apiErrorField(body, 'resource');
     final scope = apiErrorField(body, 'scope');
     if (resource == null || scope == null) return null;
     return InviteQuota(resource: resource, scope: scope);
+  }
+}
+
+/// How the invite source builds its failures for the shared classifier.
+final class _InviteFailures
+    extends RemoteFailureFamily<HouseholdInviteRemoteException> {
+  const _InviteFailures({this.rowRoute = false})
+    : super(
+        transient: HouseholdInviteTransientException.new,
+        permanent: HouseholdInvitePermanentException.new,
+      );
+
+  /// Whether the path names one invite or one household, which is what lets
+  /// an application 404 mean that it is gone.
+  final bool rowRoute;
+
+  /// Every answer here is a conclusion about the caller or about a row, and
+  /// only the application's own envelope licenses one, so a refusal needs
+  /// [RemoteRefusal.fromApi]. The set is
+  /// [HouseholdInviteRemoteDataSourceImpl._refusals], plus a 404 on a
+  /// [rowRoute]: Nest answers an unregistered route with the same envelope,
+  /// so only a route naming an invite or a household can read it as "gone".
+  /// Any other 404 takes the shared default, transient.
+  @override
+  HouseholdInviteRemoteException? refused(RemoteRefusal refusal) {
+    final status = refusal.status;
+    if (!refusal.fromApi) return null;
+    if (!HouseholdInviteRemoteDataSourceImpl._refusals.contains(status) &&
+        !(status == 404 && rowRoute)) {
+      return null;
+    }
+    return HouseholdInviteRefusedException(
+      refusal.message,
+      statusCode: status,
+      cause: refusal.cause,
+      quota: status == 402
+          ? HouseholdInviteRemoteDataSourceImpl._quota(refusal.body)
+          : null,
+    );
   }
 }

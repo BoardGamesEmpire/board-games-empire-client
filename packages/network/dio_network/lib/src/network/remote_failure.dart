@@ -61,6 +61,12 @@
 /// a route later would read as a proxy block, and retry a refusal that will
 /// never change. Nothing in this package can notice that happen; #263 is the
 /// mechanism that would.
+///
+/// The cost of getting a 403 wrong runs one way. A wrong permanent gives up
+/// over a block a retry after leaving the network would have survived: the
+/// sync drain parks the entry for someone to retry by hand (#121), and the
+/// feedback drain drops the report. A genuine refusal misread as transient is
+/// only retried, at most once per drain pass (#350).
 library;
 
 import 'package:dio/dio.dart';
