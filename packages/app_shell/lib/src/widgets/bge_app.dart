@@ -337,10 +337,10 @@ class _BgeAppState extends State<BgeApp> {
   /// for its writes.
   final _UnsentChanges _unsentChanges = _UnsentChanges();
 
-  /// Each game a detail finds gone (#42), told to every catalog list open:
-  /// the one it was opened from, and a browse beneath a search. A list hears
-  /// only what is found while it is open, so nothing carries over from one
-  /// visit to the next.
+  /// Each game a detail or a quick look (#707) finds gone (#42), told to
+  /// every catalog list open: the one it was opened from, and a browse
+  /// beneath a search. A list hears only what is found while it is open, so
+  /// nothing carries over from one visit to the next.
   final StreamController<String> _gamesFoundGone =
       StreamController<String>.broadcast();
 
@@ -939,20 +939,21 @@ class _BgeAppState extends State<BgeApp> {
   /// changes, and by then the user scope may have popped (#456).
   ///
   /// "See all" is a push, because the browse screen reads its sort once, when
-  /// it mounts.
+  /// it mounts. A cover opens the game's quick look: see [_openQuickLook].
   Widget Function({required bool canConnect}) _buildNewestGames(
     DependencyContainer container,
   ) {
     final remote = container.get<GamesRemoteDataSource>();
     final cache = _gamesCache(container);
     final connectivity = _rootConnectivity();
+    final openQuickLook = _openQuickLook(container);
     return ({required canConnect}) => NewestGamesSection(
       key: ObjectKey(cache ?? remote),
       remote: remote,
       cache: cache,
       connectivity: connectivity,
       gone: _gamesFoundGone.stream,
-      onOpen: _openGame,
+      onOpen: openQuickLook,
       onSeeAll: (ctx) =>
           unawaited(ctx.push<void>(AppRoutes.gamesSorted(GameSort.newest))),
       onConnectDataGateway: canConnect
@@ -966,6 +967,7 @@ class _BgeAppState extends State<BgeApp> {
   /// on the session's [GameCollectionRepository], where half of its draw comes
   /// from: another user's session is a new row. Without one, on the session's
   /// games cache as [_buildNewestGames]'s is, and without that, on the remote.
+  /// A cover opens the game's quick look: see [_openQuickLook].
   Widget _buildSomethingToPlay(DependencyContainer container) {
     final remote = container.get<GamesRemoteDataSource>();
     final collection = container.isRegistered<GameCollectionRepository>()
@@ -979,7 +981,7 @@ class _BgeAppState extends State<BgeApp> {
       households: () => _eventHouseholds(container),
       connectivity: _rootConnectivity(),
       gone: _gamesFoundGone.stream,
-      onOpen: _openGame,
+      onOpen: _openQuickLook(container),
     );
   }
 
@@ -1616,6 +1618,37 @@ class _BgeAppState extends State<BgeApp> {
   /// detail returns to the list or the search the user came from.
   static void _openGame(BuildContext context, String gameId) =>
       unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+
+  /// Opens a game's quick look from its cover (#707), for a [container]
+  /// holding the [GamesRemoteDataSource]. It is a pop-up over the page the
+  /// cover is on, not the game's page, so the user stays where they were.
+  ///
+  /// The remote and the games cache are resolved when this is called, not
+  /// per tap, as home resolves everything it shows once, when it builds
+  /// (#456). So the quick look reads through the ones its covers were read
+  /// through.
+  ///
+  /// A game the quick look finds gone is told to [_gamesFoundGone], so it
+  /// comes down from every list showing it, the shelf it was opened from
+  /// included. View full details pushes the detail page through [_openGame],
+  /// over the quick look, which removes itself once the page has arrived, so
+  /// back from the page lands where the cover was tapped.
+  void Function(BuildContext context, GameQuickLookSeed seed) _openQuickLook(
+    DependencyContainer container,
+  ) {
+    final remote = container.get<GamesRemoteDataSource>();
+    final cache = _gamesCache(container);
+    return (context, seed) => unawaited(
+      showGameQuickLook(
+        context,
+        seed: seed,
+        remote: remote,
+        cache: cache,
+        onGone: _reportGameGone,
+        onViewDetails: _openGame,
+      ),
+    );
+  }
 
   /// Imports a DataGateway result the server does not hold, from the search
   /// (#43). Once the import completes the dialog closes, and the game it
