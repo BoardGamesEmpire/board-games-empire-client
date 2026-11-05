@@ -17,7 +17,6 @@ import '../bloc/language_link_list_bloc.dart';
 import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
 import '../widgets/data_gateway_status.dart';
-import '../widgets/focus_is_free.dart';
 import '../widgets/language_link_worklist.dart';
 
 /// One DataGateway's own page (#457): its name, whether the server uses it and

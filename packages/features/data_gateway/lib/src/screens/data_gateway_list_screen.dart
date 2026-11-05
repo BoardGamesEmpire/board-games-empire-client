@@ -14,7 +14,6 @@ import '../bloc/data_gateway_list_bloc.dart';
 import '../bloc/data_gateway_list_event.dart';
 import '../bloc/data_gateway_list_state.dart';
 import '../widgets/data_gateway_status.dart';
-import '../widgets/focus_is_free.dart';
 
 /// The DataGateway admin screen (#41): every DataGateway on the active
 /// server, with add, edit, delete, connect and disconnect.
