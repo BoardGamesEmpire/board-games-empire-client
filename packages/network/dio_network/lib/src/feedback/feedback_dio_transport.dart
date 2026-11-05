@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:observability/observability.dart';
 
 import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 
 /// Concrete [FeedbackTransport] posting through a **per-server** Dio
 /// instance (#69, #97).
@@ -22,20 +23,23 @@ import '../network/decode_json_body.dart';
 /// ## Failure classification (#97)
 ///
 /// Every failure is wrapped per the [FeedbackTransport] contract — the
-/// service never sees a raw transport exception type — and classified:
+/// service never sees a raw transport exception type — and classified by
+/// `failureForStatus` and `failureForDioException`; the shared table is in
+/// `remote_failure.dart`. What is specific to feedback:
 ///
-/// - [FeedbackTransientSubmissionException] (**retryable**): connection
-///   errors, all timeouts, cancellation, 401 (a session can expire
-///   between resolve and send), 408, 429 (throttle — the drain stops
-///   here), all 5xx, and any failure without a response status
-///   (including certificate errors, which can be a captive portal —
-///   discarding a user-approved report on one would be wrong), and — as
-///   [FeedbackUnverifiedDeliveryException] — a 2xx that does not carry the
-///   API's documented JSON object, which means something other than the API
-///   answered (#358, #363 — see [_rejectUndecodableBody]).
-/// - [FeedbackPermanentSubmissionException]: 400 (validation), 403
-///   (feedback-banned), and every other 4xx — retrying can never
-///   succeed, so the service must not queue these.
+/// - The feedback ban is an enveloped 403, and it is
+///   [FeedbackPermanentSubmissionException] like every other refusal the
+///   API renders. A 403 without the envelope is a proxy or a WAF (#350),
+///   and any 404 is a fixed route that was not reachable (#297); both are
+///   [FeedbackTransientSubmissionException].
+/// - A 2xx that does not carry the API's documented JSON object means
+///   something other than the API answered, and is
+///   [FeedbackUnverifiedDeliveryException] (#358, #363 — see
+///   [_rejectUndecodableBody]).
+/// - Transient keeps the queued report; permanent deletes it. A failure
+///   without a response status is transient, certificate errors included:
+///   one can be a captive portal, and discarding a user-approved report on
+///   it would be wrong.
 ///
 /// The status is read before the body is touched, so a rejection is
 /// classified by what the server said rather than by whether Dio could
@@ -44,10 +48,6 @@ class FeedbackDioTransport implements FeedbackTransport {
   const FeedbackDioTransport(this._dio);
 
   final Dio _dio;
-
-  /// 4xx statuses that are nonetheless worth retrying: an expired
-  /// session (401), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 408, 429};
 
   @override
   Future<void> send(FeedbackReport report) async {
@@ -61,7 +61,7 @@ class FeedbackDioTransport implements FeedbackTransport {
       // Dio `jsonDecode` any body whose *content type* claimed JSON, and a
       // `FormatException` from that decode escaped as
       // `DioException(type: unknown)` with **no response attached** — the
-      // status gone before `_classifyDioException` could read it, so a
+      // status gone before `failureForDioException` could read it, so a
       // permanent 400 classified transient and retried forever.
       //
       // `responseType` is pinned rather than left to the injected Dio.
@@ -97,9 +97,11 @@ class FeedbackDioTransport implements FeedbackTransport {
         );
       }
       if (status < 200 || status >= 300) {
-        throw _classifyStatus(
+        throw failureForStatus(
+          _failures,
           status,
           'Feedback endpoint returned $status',
+          body: response.data,
           cause: null,
         );
       }
@@ -108,7 +110,11 @@ class FeedbackDioTransport implements FeedbackTransport {
     } on FeedbackSubmissionException {
       rethrow;
     } on DioException catch (error) {
-      throw _classifyDioException(error);
+      throw failureForDioException(
+        _failures,
+        error,
+        action: 'Feedback submission',
+      );
     } on Object catch (error) {
       // Contract breach territory (nothing else should escape Dio), so
       // stay conservative: transient keeps the user-approved report
@@ -160,9 +166,9 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// so a log still says which happened.
   ///
   /// `decodeJsonBody` leaves that classification to its callers (#362).
-  /// Permanent — the answer the household and collection sources give — fits
-  /// a caller deprived of a payload it needed; this transport needs nothing
-  /// out of the body, and permanent here means deleting the user's words.
+  /// Permanent — the answer `sendForJson` gives every data source — fits a
+  /// caller deprived of a payload it needed; this transport needs nothing out
+  /// of the body, and permanent here means deleting the user's words.
   ///
   /// An unparseable body does not prove non-delivery either — it *withdraws*
   /// the delivery claim rather than settling it the other way. A truncated
@@ -191,11 +197,11 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// for the same reason, and additionally catches an impostor answering
   /// `[]`, `"ok"` or `123`.
   ///
-  /// Still deliberately weaker than
-  /// `HouseholdRemoteDataSourceImpl._requireJsonObject`: that caller needs
-  /// the payload it is checking for, and this one reads nothing out of it.
-  /// The object requirement asserts the documented shape, and stops there —
-  /// no key is required, per #297's finding above.
+  /// Still deliberately weaker than `sendForJson` in `remote_failure.dart`:
+  /// a data source calling it needs the payload it is checking for, and this
+  /// one reads nothing out of it. The object requirement asserts the
+  /// documented shape, and stops there — no key is required, per #297's
+  /// finding above.
   Future<void> _rejectUndecodableBody(
     String? body, {
     required int status,
@@ -266,54 +272,15 @@ class FeedbackDioTransport implements FeedbackTransport {
       );
     }
   }
-
-  /// Classifies [error] per the #97 table. A response status, when
-  /// present, is authoritative; without one the failure is a
-  /// connection-level fault and always transient.
-  FeedbackSubmissionException _classifyDioException(DioException error) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        'Feedback submission failed with status $status',
-        cause: error,
-      );
-    }
-    // connectionTimeout / sendTimeout / receiveTimeout / connectionError /
-    // cancel / badCertificate / unknown — no server verdict exists, so
-    // the report stays retryable.
-    return FeedbackTransientSubmissionException(
-      'Feedback submission failed',
-      cause: error,
-    );
-  }
-
-  FeedbackSubmissionException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-  }) {
-    final transient = status >= 500 || _retryable4xx.contains(status);
-    if (transient) {
-      return FeedbackTransientSubmissionException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status >= 400) {
-      return FeedbackPermanentSubmissionException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    // A non-2xx, non-4xx/5xx status (1xx/3xx surfaced by a permissive
-    // validateStatus) carries no rejection semantics — transient.
-    return FeedbackTransientSubmissionException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
-  }
 }
+
+/// Builds the feedback exceptions for the shared classifier.
+///
+/// Takes neither hook: the shared defaults are the feedback contract (#706).
+/// A bare 403 or any 404 is transient, an enveloped 403 (the feedback ban)
+/// and every other refused 4xx is permanent, and a request nothing answered
+/// is transient.
+const _failures = RemoteFailureFamily<FeedbackSubmissionException>(
+  transient: FeedbackTransientSubmissionException.new,
+  permanent: FeedbackPermanentSubmissionException.new,
+);

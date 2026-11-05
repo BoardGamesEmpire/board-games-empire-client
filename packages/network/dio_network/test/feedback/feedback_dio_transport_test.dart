@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,9 +20,12 @@ import 'package:observability/observability.dart';
 /// |-------------------------------------------|---------------|
 /// | connection error / timeouts / cancel      | transient     |
 /// | badCertificate / unknown (no status)      | transient     |
-/// | 401, 408, 429                             | transient     |
+/// | 401, 407, 408, 429                        | transient     |
 /// | 5xx                                       | transient     |
-/// | 400, 403, and every other 4xx             | permanent     |
+/// | 403 without the API's error envelope      | transient     |
+/// | 404 (the route is fixed), enveloped or not| transient     |
+/// | 409 saying `retryable: true`              | transient     |
+/// | 400, an enveloped 403, other 4xx          | permanent     |
 ///
 /// These cases stub `Dio` itself, so Dio's own body handling never runs.
 /// The cases that need it — a body Dio cannot decode, and an unparseable
@@ -54,17 +59,29 @@ void main() {
       '{"message":"Submitted","feedbackReport":'
       '{"id":"fr_123","createdAt":"2026-09-11T00:00:00.000Z"}}';
 
-  Response<String> response(int statusCode) => Response<String>(
-    requestOptions: options(),
-    statusCode: statusCode,
-    data: apiEnvelope,
-  );
+  /// The body defaults to the success payload; pass `null` for a response
+  /// with no body, or an error envelope for one the API rendered.
+  Response<String> response(int statusCode, {String? data = apiEnvelope}) =>
+      Response<String>(
+        requestOptions: options(),
+        statusCode: statusCode,
+        data: data,
+      );
 
-  DioException statusError(int statusCode) => DioException(
-    requestOptions: options(),
-    type: DioExceptionType.badResponse,
-    response: response(statusCode),
-  );
+  DioException statusError(int statusCode, {String? data = apiEnvelope}) =>
+      DioException(
+        requestOptions: options(),
+        type: DioExceptionType.badResponse,
+        response: response(statusCode, data: data),
+      );
+
+  String errorEnvelope(int status, String error, {bool? retryable}) =>
+      jsonEncode({
+        'statusCode': status,
+        'message': 'm',
+        'error': error,
+        'retryable': ?retryable,
+      });
 
   DioException typedError(DioExceptionType type) =>
       DioException(requestOptions: options(), type: type);
@@ -140,7 +157,7 @@ void main() {
         });
       }
 
-      for (final status in [401, 408, 429, 500, 502, 503]) {
+      for (final status in [401, 407, 408, 429, 500, 502, 503]) {
         test('HTTP $status', () async {
           stubThrow(statusError(status));
 
@@ -156,10 +173,75 @@ void main() {
           );
         });
       }
+
+      test('HTTP 403 with no body: a proxy answered', () async {
+        stubThrow(statusError(403, data: null));
+
+        await expectLater(send(), throwsA(_transient(403)));
+      });
+
+      test('HTTP 403 with an HTML body: a proxy answered', () async {
+        stubThrow(statusError(403, data: '<html>Forbidden</html>'));
+
+        await expectLater(send(), throwsA(_transient(403)));
+      });
+
+      test('HTTP 404 with no body', () async {
+        stubThrow(statusError(404, data: null));
+
+        await expectLater(send(), throwsA(_transient(404)));
+      });
+
+      test('HTTP 404 with the envelope: the route is fixed', () async {
+        stubThrow(statusError(404, data: errorEnvelope(404, 'Not Found')));
+
+        await expectLater(send(), throwsA(_transient(404)));
+      });
+
+      test('HTTP 409 saying retryable: true', () async {
+        stubThrow(
+          statusError(
+            409,
+            data: errorEnvelope(409, 'Conflict', retryable: true),
+          ),
+        );
+
+        await expectLater(send(), throwsA(_transient(409)));
+      });
     });
 
     group('classifies as permanent (never queued, never retried)', () {
-      for (final status in [400, 403, 404, 413, 422]) {
+      test('an enveloped 403 is permanent (a feedback ban)', () async {
+        stubThrow(statusError(403, data: errorEnvelope(403, 'Forbidden')));
+
+        await expectLater(
+          send(),
+          throwsA(
+            isA<FeedbackPermanentSubmissionException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('any other 409 is permanent', () async {
+        stubThrow(statusError(409, data: errorEnvelope(409, 'Conflict')));
+
+        await expectLater(
+          send(),
+          throwsA(
+            isA<FeedbackPermanentSubmissionException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+
+      for (final status in [400, 413, 422]) {
         test('HTTP $status', () async {
           stubThrow(statusError(status));
 
@@ -220,7 +302,9 @@ void main() {
           data: any<dynamic>(named: 'data'),
           options: any(named: 'options'),
         ),
-      ).thenAnswer((_) async => response(403));
+      ).thenAnswer(
+        (_) async => response(403, data: errorEnvelope(403, 'Forbidden')),
+      );
 
       await expectLater(
         send(),
@@ -279,3 +363,6 @@ void main() {
     });
   });
 }
+
+Matcher _transient(int status) => isA<FeedbackTransientSubmissionException>()
+    .having((e) => e.statusCode, 'statusCode', status);

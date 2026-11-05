@@ -2,8 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 
 /// What a 404 means for the request that produced it (#253 **D6**).
 ///
@@ -37,6 +36,10 @@ enum _NotFoundMeaning { missingRow, alreadyRemoved, unreachableEndpoint }
 /// [HouseholdRemoteDataSourceImpl] it does **not** build or own its Dio and is
 /// intentionally not an injectable global singleton.
 ///
+/// Reading of the answer and its failures is shared; see the library doc in
+/// `remote_failure.dart`. What is the collection's own lives on
+/// [_CollectionFailures].
+///
 /// Failure taxonomy per the [GameCollectionRemoteDataSource] contract — see
 /// that interface for the transient / permanent split and the 404 contexts.
 /// Argument violations are the one exception to it: they surface as
@@ -66,22 +69,6 @@ class GameCollectionRemoteDataSourceImpl
   /// five endpoints is a shared mutable default waiting to be edited.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// 4xx statuses that are nonetheless worth retrying: an expired session
-  /// (401), proxy authentication (407), a request timeout (408), and the
-  /// throttle (429).
-  ///
-  /// 407 is here for the reason #350 put it in the household set: it is
-  /// defined to come from a proxy and no collection route emits one, so it
-  /// says the request never reached the application. That matters more here
-  /// than there — `_send` is shared by three queued writes, and a permanent
-  /// classification parks the user's edit or deletion (#121) until someone
-  /// retries it by hand. 511 needs no entry, being a 5xx already covered.
-  ///
-  /// 403 is deliberately **not** a member: it is envelope-gated in
-  /// `_classifyStatus` rather than blanket-retryable, and the reasoning lives
-  /// at that branch (#365).
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
-
   @override
   Future<PaginatedResult<GameCollectionWithSummary>> fetchCollectionPage({
     int page = 1,
@@ -95,8 +82,10 @@ class GameCollectionRemoteDataSourceImpl
     _checkPaging(page: page, limit: limit);
 
     const action = 'Collection list';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    // A list route that 404s was never reached — see _NotFoundMeaning.
+    const failures = _CollectionFailures(_NotFoundMeaning.unreachableEndpoint);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         _basePath,
         options: _plainBody,
         queryParameters: {
@@ -112,15 +101,15 @@ class GameCollectionRemoteDataSourceImpl
         },
       ),
       action: action,
-      // A list route that 404s was never reached — see _NotFoundMeaning.
-      notFound: _NotFoundMeaning.unreachableEndpoint,
+      family: failures,
     );
 
     // The envelope parse and the row mapping share one permanent
     // classification: a missing array, a missing or partial `pagination`, and
     // a row the mapper cannot read — its summary included (#259) — are all a
     // 2xx this source cannot map.
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'collections',
@@ -136,16 +125,22 @@ class GameCollectionRemoteDataSourceImpl
     _checkEntryId(id);
 
     const action = 'Collection fetch';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _CollectionFailures(_NotFoundMeaning.missingRow);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         '$_basePath/$id',
         options: _plainBody,
         queryParameters: const {},
       ),
       action: action,
-      notFound: _NotFoundMeaning.missingRow,
+      family: failures,
     );
-    return _singleEntry(response, action: action, map: _mapEntryWithSummary);
+    return _singleEntry(
+      response,
+      action: action,
+      family: failures,
+      map: _mapEntryWithSummary,
+    );
   }
 
   @override
@@ -162,8 +157,9 @@ class GameCollectionRemoteDataSourceImpl
     _checkQuantity(quantity);
 
     const action = 'Collection add';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _CollectionFailures(_NotFoundMeaning.missingRow);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         _basePath,
         options: _plainBody,
         data: {
@@ -179,9 +175,14 @@ class GameCollectionRemoteDataSourceImpl
         },
       ),
       action: action,
-      notFound: _NotFoundMeaning.missingRow,
+      family: failures,
     );
-    return _singleEntry(response, action: action, map: _mapEntry);
+    return _singleEntry(
+      response,
+      action: action,
+      family: failures,
+      map: _mapEntry,
+    );
   }
 
   @override
@@ -220,13 +221,19 @@ class GameCollectionRemoteDataSourceImpl
     }
 
     const action = 'Collection update';
-    final response = await _send(
-      request: () =>
+    const failures = _CollectionFailures(_NotFoundMeaning.missingRow);
+    final response = await sendForJson(
+      () =>
           _dio.patch<String>('$_basePath/$id', options: _plainBody, data: body),
       action: action,
-      notFound: _NotFoundMeaning.missingRow,
+      family: failures,
     );
-    return _singleEntry(response, action: action, map: _mapEntry);
+    return _singleEntry(
+      response,
+      action: action,
+      family: failures,
+      map: _mapEntry,
+    );
   }
 
   @override
@@ -234,123 +241,34 @@ class GameCollectionRemoteDataSourceImpl
     _checkEntryId(id);
 
     const action = 'Collection remove';
-    final response = await _send(
-      request: () => _dio.delete<String>(
+    // The one place a 404 is not a failure.
+    const failures = _CollectionFailures(_NotFoundMeaning.alreadyRemoved);
+    final response = await sendForJson(
+      () => _dio.delete<String>(
         '$_basePath/$id',
         options: _plainBody,
         queryParameters: {'reason': ?reason},
       ),
       action: action,
-      // The one place a 404 is not a failure.
-      notFound: _NotFoundMeaning.alreadyRemoved,
+      family: failures,
     );
-    return _singleEntry(response, action: action, map: _mapEntry);
+    return _singleEntry(
+      response,
+      action: action,
+      family: failures,
+      map: _mapEntry,
+    );
   }
 
-  // ── Request plumbing ────────────────────────────────────────────────
-
-  /// Sends [request] and returns its decoded body, having converted every
-  /// failure mode into a [GameCollectionRemoteException].
-  Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<String>> Function() request,
-    required String action,
-    required _NotFoundMeaning notFound,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, notFound: notFound);
-    } on Object catch (error) {
-      // Contract breach territory (nothing else should escape Dio); stay
-      // conservative and transient so the caller can retry.
-      //
-      // `Object` and not `Exception`, deliberately: the interface promises
-      // callers never see a raw transport error, and an `Error` escaping here
-      // unwrapped would break that in the drain rather than in a test. Dio's
-      // own body handling no longer reaches here: asking for
-      // `Response<String>` keeps it out of the body entirely, and pinning
-      // `responseType` closes the one route by which an injected instance
-      // could put it back (#351). Mapping errors are classified separately,
-      // and permanently, by `_parse`.
-      throw GameCollectionRemoteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw GameCollectionRemoteTransientException(
-        '$action returned no status',
-      );
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        notFound: notFound,
-        body: response.data,
-      );
-    }
-
-    // The `String` type plus `_plainBody` keep Dio out of the body; see
-    // `decodeJsonBody` for what either half of Dio's own handling would do to
-    // the status. Decoding here, after the status is read, is what keeps it
-    // (#351).
-    final raw = response.data;
-    if (raw == null || raw.isEmpty) {
-      throw GameCollectionRemotePermanentException(
-        '$action returned an empty body',
-        statusCode: status,
-      );
-    }
-
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      // A body that is not JSON is a statement about the response: the same
-      // request will produce the same unparseable payload.
-      throw GameCollectionRemotePermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // Not a statement about the response. `decodeJsonBody` hands a body over
-      // 50 KB to another isolate, and a failure to spawn one is local and
-      // momentary — so this is the one decode failure that must stay
-      // transient. Permanent says a retry cannot succeed, over a fault the
-      // server had no part in (#297).
-      //
-      // This clause sits outside the `on Object` net around the Dio call
-      // above, because decoding moved out from under it when the body became a
-      // `String` — without it the interface's "callers never see a raw
-      // transport exception" would stop holding.
-      throw GameCollectionRemoteTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
-
-    if (decoded is! Map<String, dynamic>) {
-      throw GameCollectionRemotePermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return (body: decoded, status: status);
-  }
+  // ── Reading the answer ──────────────────────────────────────────────
 
   /// Unwraps the `{ collection }` envelope every single-entry endpoint returns
   /// (the mutating ones wrap it alongside a localized `message`, which the
   /// client does not consume), mapping it with [map].
   T _singleEntry<T>(
-    ({Map<String, dynamic> body, int status}) response, {
+    RemoteJson response, {
     required String action,
+    required _CollectionFailures family,
     required T Function(Map<String, dynamic> json) map,
   }) {
     final entry = response.body['collection'];
@@ -360,28 +278,19 @@ class GameCollectionRemoteDataSourceImpl
         statusCode: response.status,
       );
     }
-    return _parse(() => map(entry), action: action, status: response.status);
-  }
-
-  /// A 2xx whose body cannot be mapped is a permanent failure: retrying the
-  /// same request produces the same unparseable payload.
-  T _parse<T>(T Function() map, {required String action, required int status}) {
-    try {
-      return map();
-    } on Object catch (error) {
-      throw GameCollectionRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
+    return parseRemote(
+      family,
+      () => map(entry),
+      action: action,
+      status: response.status,
+    );
   }
 
   /// Maps a read's row to the entry plus the summary it embeds (#259).
   ///
   /// The summary is required here: a read's caller stores the entry, which it
   /// cannot do without the platform game and game the summary names. A row
-  /// without it throws, and [_parse] files that as permanent.
+  /// without it throws, and `parseRemote` files that as permanent.
   GameCollectionWithSummary _mapEntryWithSummary(Map<String, dynamic> json) =>
       (entry: _mapEntry(json), summary: _mapSummary(json));
 
@@ -504,184 +413,64 @@ class GameCollectionRemoteDataSourceImpl
       );
     }
   }
+}
 
-  // ── Failure classification ──────────────────────────────────────────
+/// How the collection source builds its failures for the shared classifier.
+///
+/// [notFound] is what a 404 means for the request being made; see
+/// [_NotFoundMeaning].
+///
+/// A 403 has no per-request reading, which is why only the 404 needs a
+/// meaning: the API refuses an entry the actor may not see with a 404, not a
+/// 403 (#365). The shared rule that a 403 without the envelope is a proxy or
+/// WAF block rests on every 403 reaching these routes carrying a message, so
+/// that Nest renders the envelope. There are two producers: the policy guard
+/// on the controller, and the actor middleware applied to every route ahead
+/// of it, which refuses an impersonated session with a raw literal rather
+/// than a translation key. Both carry a message. A messageless 403 added to
+/// either would be read as a proxy block and retried (#263), so those two are
+/// where to look.
+final class _CollectionFailures
+    extends RemoteFailureFamily<GameCollectionRemoteException> {
+  const _CollectionFailures(this.notFound)
+    : super(
+        transient: GameCollectionRemoteTransientException.new,
+        permanent: GameCollectionRemotePermanentException.new,
+      );
 
-  /// Whether [body] is the API's own error envelope for a response carrying
-  /// [status] — the evidence that the application answered rather than
-  /// something in front of it.
+  final _NotFoundMeaning notFound;
+
+  /// Reads an enveloped 404 as a statement about a row, which is only
+  /// available when the application answered. A gateway or proxy answers 404
+  /// too, and the shared rules already keep that transient, so every 404 this
+  /// hook sees carries the envelope.
   ///
-  /// Every application `HttpException` is rendered by the backend's global
-  /// `I18nExceptionFilter` as `{ statusCode, message, error }`
-  /// (`libs/common/i18n/src/lib/i18n-exception.filter.ts`), and
-  /// `translateException` builds that body from the exception's own status —
-  /// `{ statusCode: status, message, error: STATUS_CODES[status] }`
-  /// (`libs/common/i18n/src/lib/translate-exception.ts`). All three fields are
-  /// therefore always present, and `statusCode` always agrees with the HTTP
-  /// status. So the whole shape is required, not a prefix of it: a body
-  /// missing the `error` label, or announcing a status other than the one it
-  /// arrived with, was written by some other producer — a gateway rewriting an
-  /// upstream failure, most likely. A proxy answering 404 sends HTML, nothing,
-  /// or its own unrelated JSON, and none of those clear this bar, which is
-  /// what separates "the service says this row is gone" from "the request
-  /// never got there".
+  /// This matters most for a removal: [_NotFoundMeaning.alreadyRemoved] tells
+  /// the drain to mark the operation completed, and doing that for a request
+  /// the service never saw would silently discard the user's deletion (the
+  /// entry then reappears on the next hydrate). A patch has the same shape one
+  /// step removed: [_NotFoundMeaning.missingRow] is permanent, so a proxy 404
+  /// would park the user's edit (#121).
   ///
-  /// **Known residual:** if the collection module itself is not deployed, Nest
-  /// answers with its own route-not-found — which *is* this envelope, carrying
-  /// `Cannot DELETE /api/game-collections/…`. Distinguishing that from the
-  /// service's own 404 would mean matching message text, which is translated
-  /// per request locale and so not something to depend on. The mitigating
-  /// property is that the list route 404s in the same deployment, and that is
-  /// transient unconditionally, so a missing module surfaces as a hydrate that
-  /// never succeeds.
-  ///
-  /// The body arrives here **undecoded** — `_send` asks Dio for
-  /// `Response<String>`, so the envelope has to be probed out of the raw text
-  /// rather than read off a map. [isApiErrorEnvelope] does that with a bounded
-  /// synchronous parse: this question is asked about a response already headed
-  /// for the bin on its status, so it must not pay `decodeJsonBody`'s isolate
-  /// hop on a multi-megabyte portal page.
-  static bool _isApplicationError(Object? body, int status) =>
-      isApiErrorEnvelope(body, status);
-
-  /// A response status, when present, is authoritative; without one the
-  /// failure is a connection-level fault and always transient.
-  GameCollectionRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    required _NotFoundMeaning notFound,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        notFound: notFound,
-        body: error.response?.data,
-      );
-    }
-    return GameCollectionRemoteTransientException(
-      '$action failed',
-      cause: error,
-    );
-  }
-
-  GameCollectionRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required _NotFoundMeaning notFound,
-    required Object? body,
-  }) {
-    final transient = status >= 500 || _retryable4xx.contains(status);
-    if (transient) {
-      return GameCollectionRemoteTransientException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 403 && !isApiErrorEnvelope(body, status)) {
-      // The envelope IS a usable discriminator at 403, unlike at 404: Nest
-      // answers an unmatched route with a 404 carrying the standard envelope,
-      // but never with a 403. So a 403 without one was not written by the
-      // application — a corporate proxy or WAF blocked the request, and the
-      // status says nothing about what was asked.
-      //
-      // The cost runs one way. `_send` is shared by three queued writes, so a
-      // permanent classification parks the user's edit or deletion (#121)
-      // over a block that a retry from another network would have survived. A
-      // genuine refusal misread as transient is only retried, at most once a
-      // drain pass.
-      //
-      // There is no per-call-site reading of a 403 to express here, which is
-      // why this needs no equivalent of _NotFoundMeaning: the API refuses an
-      // entry the actor may not see with a 404, not a 403 (#365).
-      //
-      // What this rests on: every 403 that reaches these routes is raised
-      // with a message, so Nest renders the envelope. Two producers, not one
-      // — the policy guard on the controller, and the actor middleware
-      // applied to every route ahead of it, which refuses an impersonated
-      // session with a raw literal rather than a translation key. Both carry
-      // a message, so both render the envelope.
-      //
-      // A bare `ForbiddenException()` added to a collection route — or to any
-      // middleware in front of one — would carry none, read here as a proxy
-      // block, and retry a refusal that will never change. Nothing in this
-      // package can notice that happen; #263 is the mechanism that would.
-      return GameCollectionRemoteTransientException(
-        '$message — the request did not reach the collection module',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 404) {
-      // Both row-level readings of a 404 below are conclusions about a ROW,
-      // and neither is available unless the application actually answered.
-      // A gateway, proxy or load balancer answers 404 too, and then the
-      // status says only that the request did not arrive — so retry.
-      //
-      // This matters most for a removal: `alreadyRemoved` tells the drain to
-      // mark the operation completed, and doing that for a request the
-      // service never saw silently discards the user's deletion (the entry
-      // then reappears on the next hydrate). A patch has the same shape one
-      // step removed: `missingRow` is permanent, so a proxy 404 would park
-      // the user's edit (#121).
-      if (!_isApplicationError(body, status)) {
-        return GameCollectionRemoteTransientException(
-          '$message — the route was not reachable',
-          cause: cause,
-          statusCode: status,
-        );
-      }
-      return switch (notFound) {
-        _NotFoundMeaning.alreadyRemoved =>
-          GameCollectionAlreadyRemovedException(
-            message,
-            cause: cause,
-            statusCode: status,
-          ),
-        _NotFoundMeaning.missingRow => GameCollectionNotFoundException(
-          message,
-          cause: cause,
-          statusCode: status,
-        ),
-        // A collection list is never absent, so even an application 404 here
-        // means the route is not registered — a deployment fault, not data.
-        _NotFoundMeaning.unreachableEndpoint =>
-          GameCollectionRemoteTransientException(
-            '$message — the collection route was not reachable',
-            cause: cause,
-            statusCode: status,
-          ),
-      };
-    }
-    if (status == 409 && isRetryableRefusal(body)) {
-      // A deadlock that outlived the server's own retry (#431). The backend
-      // answers 409 because the cure is the caller's, and says
-      // `retryable: true` because the request itself was fine: the same write
-      // is expected to succeed. Every other 409 stays permanent below. Read
-      // the field, not the message, which is translated.
-      return GameCollectionRemoteTransientException(
-        '$message — the server hit a deadlock and asked for a retry',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status >= 400) {
-      return GameCollectionRemotePermanentException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    // A non-2xx, non-4xx/5xx status (1xx/3xx surfaced by a permissive
-    // validateStatus) carries no rejection semantics — transient.
-    return GameCollectionRemoteTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
+  /// [_NotFoundMeaning.unreachableEndpoint] claims nothing, so the shared 404
+  /// default makes it transient: a collection list is never absent, so even
+  /// an application 404 there means the route is not registered, a deployment
+  /// fault rather than data. Every other refusal takes the shared default.
+  @override
+  GameCollectionRemoteException? refused(RemoteRefusal refusal) {
+    if (refusal.status != 404) return null;
+    return switch (notFound) {
+      _NotFoundMeaning.alreadyRemoved => GameCollectionAlreadyRemovedException(
+        refusal.message,
+        statusCode: refusal.status,
+        cause: refusal.cause,
+      ),
+      _NotFoundMeaning.missingRow => GameCollectionNotFoundException(
+        refusal.message,
+        statusCode: refusal.status,
+        cause: refusal.cause,
+      ),
+      _NotFoundMeaning.unreachableEndpoint => null,
+    };
   }
 }

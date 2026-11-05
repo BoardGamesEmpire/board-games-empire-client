@@ -141,16 +141,20 @@ class FeedbackServiceImpl implements FeedbackService {
       await transport.send(report);
       return FeedbackSubmitResult.sent;
     } on FeedbackPermanentSubmissionException {
-      // 400 / 403 / other 4xx: retrying can never succeed. Queueing
+      // The API refused the report itself — a 400, an enveloped 403 (the
+      // feedback ban), a 413, a 422 — so retrying can never succeed. The
+      // full split is on [FeedbackPermanentSubmissionException]. Queueing
       // would mislead the user ("will be sent later") and build an
       // un-drainable backlog — surface it instead; the prompt renders
       // the rejected state (#97).
       rethrow;
     } on Object catch (error) {
-      // Transient (offline / timeout / 401 / 408 / 429 / 5xx) — and,
-      // defensively, anything unclassified a transport leaked in breach
-      // of its contract: fall back to the durable sink so an approved
-      // report is never lost to a recoverable failure.
+      // Transient — offline, a timeout, a 401, a 429, a 5xx, a proxy's
+      // 403, 404 or 407, a deadlock's 409; the full list is on
+      // [FeedbackTransientSubmissionException] — and, defensively,
+      // anything unclassified a transport leaked in breach of its
+      // contract: fall back to the durable sink so an approved report is
+      // never lost to a recoverable failure.
       return _queue(report, serverId: target.serverId, transportCause: error);
     }
   }

@@ -2,22 +2,21 @@ import 'package:dio/dio.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 import 'game_summary_json.dart';
 
 /// What a request's path names, which is what lets an application 404 mean
-/// that thing is gone. A list or write route names nothing: see `_send`.
+/// that thing is gone. A list or write route names nothing: see
+/// [_GamesFailures.row].
 enum _Row { game, importBatch }
 
 /// [GamesRemoteDataSource] over a **per-server** Dio instance (#42, #43).
 ///
-/// Built on the DataGateway source's request plumbing, which is the
-/// collection source's (#351): the body is asked for as a `String` with the
-/// response type pinned on every request, decoded here after the status is
-/// read, and probed for the API's error envelope with a bounded synchronous
-/// parse. It does not build or own its Dio; the network installer constructs
-/// it from the per-server container.
+/// The body is asked for as a `String` with the response type pinned on
+/// every request, and `sendForJson` decodes it after the status is read and
+/// classifies a failure through [_GamesFailures]. It does not build or own
+/// its Dio; the network installer constructs it from the per-server
+/// container.
 ///
 /// Failure taxonomy and mapping per the [GamesRemoteDataSource] contract.
 class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
@@ -40,10 +39,6 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// call, because `Options` is mutable.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
-  /// 4xx statuses worth retrying: an expired session (401), proxy
-  /// authentication (407), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
-
   @override
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
@@ -64,8 +59,9 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     }
 
     const action = 'Game catalog';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _GamesFailures();
+    final response = await sendForJson(
+      () => _dio.get<String>(
         _basePath,
         options: _plainBody,
         queryParameters: {
@@ -76,10 +72,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         },
       ),
       action: action,
-      row: null,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'games',
@@ -97,17 +94,19 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     checkSampleSize(size);
 
     const action = 'Random games';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _GamesFailures();
+    final response = await sendForJson(
+      () => _dio.get<String>(
         '$_basePath/random',
         options: _plainBody,
         queryParameters: {'size': size},
       ),
       action: action,
-      row: null,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () {
         final rows = response.body['games'];
         if (rows is! List) {
@@ -128,13 +127,15 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     _checkGameId(id);
 
     const action = 'Game fetch';
-    final response = await _send(
-      request: () => _dio.get<String>('$_basePath/$id', options: _plainBody),
+    const failures = _GamesFailures(row: _Row.game);
+    final response = await sendForJson(
+      () => _dio.get<String>('$_basePath/$id', options: _plainBody),
       action: action,
-      row: _Row.game,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () {
         final row = response.body['game'];
         if (row is! Map<String, dynamic>) {
@@ -195,8 +196,9 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     );
 
     const action = 'Game search';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _GamesFailures();
+    final response = await sendForJson(
+      () => _dio.get<String>(
         '$_basePath/search',
         options: _plainBody.copyWith(receiveTimeout: searchReceiveTimeout),
         queryParameters: {
@@ -216,10 +218,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         },
       ),
       action: action,
-      row: null,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapSearchResults(response.body),
       action: action,
       status: response.status,
@@ -241,8 +244,9 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     _checkUuid(correlationId, 'correlationId');
 
     const action = 'Game import start';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _GamesFailures();
+    final response = await sendForJson(
+      () => _dio.post<String>(
         '$_basePath/import',
         options: _plainBody,
         // No `expansionExternalIds` and no `locale`: both are optional on the
@@ -255,10 +259,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         },
       ),
       action: action,
-      row: null,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => GameImportReceipt(
         batchId: response.body['batchId'] as String,
         baseJobId: response.body['baseJobId'] as String,
@@ -276,109 +281,19 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     _checkUuid(batchId, 'batchId');
 
     const action = 'Game import poll';
-    final response = await _send(
-      request: () =>
-          _dio.get<String>('$_basePath/import/$batchId', options: _plainBody),
+    const failures = _GamesFailures(row: _Row.importBatch);
+    final response = await sendForJson(
+      () => _dio.get<String>('$_basePath/import/$batchId', options: _plainBody),
       action: action,
-      row: _Row.importBatch,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapImportBatch(response.body),
       action: action,
       status: response.status,
     );
-  }
-
-  // ── Request plumbing ────────────────────────────────────────────────
-
-  /// Sends [request] and returns its decoded body, having converted every
-  /// failure into a [GamesRemoteException].
-  ///
-  /// [row] is what the path names, which is what lets an application 404 mean
-  /// that it is gone. Null for a list or write route: those are never absent,
-  /// so their 404 means the route is not deployed.
-  Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<String>> Function() request,
-    required String action,
-    required _Row? row,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, row: row);
-    } on Object catch (error) {
-      // Nothing else should escape Dio. `Object`, not `Exception`, so an
-      // `Error` cannot break the "no raw transport error" promise either.
-      throw GamesRemoteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw GamesRemoteTransientException('$action returned no status');
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        row: row,
-        body: response.data,
-      );
-    }
-
-    final raw = response.data;
-    if (raw == null || raw.isEmpty) {
-      throw GamesRemotePermanentException(
-        '$action returned an empty body',
-        statusCode: status,
-      );
-    }
-
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      throw GamesRemotePermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // The decode could not run (an isolate that would not spawn), which
-      // says nothing about the response. See the collection source (#297).
-      throw GamesRemoteTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
-
-    if (decoded is! Map<String, dynamic>) {
-      throw GamesRemotePermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return (body: decoded, status: status);
-  }
-
-  /// A 2xx whose body cannot be mapped is permanent: the same request returns
-  /// the same body.
-  T _parse<T>(T Function() map, {required String action, required int status}) {
-    try {
-      return map();
-    } on Object catch (error) {
-      throw GamesRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
   }
 
   // ── Games ───────────────────────────────────────────────────────────
@@ -703,94 +618,49 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       );
     }
   }
+}
 
-  // ── Failure classification ──────────────────────────────────────────
-
-  GamesRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    required _Row? row,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        row: row,
-        body: error.response?.data,
+/// How the games source builds its failures for the shared classifier.
+final class _GamesFailures extends RemoteFailureFamily<GamesRemoteException> {
+  const _GamesFailures({this.row})
+    : super(
+        transient: GamesRemoteTransientException.new,
+        permanent: GamesRemotePermanentException.new,
       );
-    }
-    return GamesRemoteTransientException('$action failed', cause: error);
-  }
 
-  GamesRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required _Row? row,
-    required Object? body,
-  }) {
-    if (status >= 500 || _retryable4xx.contains(status)) {
-      return GamesRemoteTransientException(
-        message,
-        cause: cause,
+  /// What the path names, which is what lets an application 404 mean that it
+  /// is gone. Null for a list or write route: those are never absent, so
+  /// their 404 means the route is not deployed.
+  final _Row? row;
+
+  /// Every answer here is a conclusion about the caller or about a game,
+  /// which only the application's own envelope licenses. The shared rules
+  /// have already made a 403 or 404 without it transient, so every one this
+  /// hook sees carries it. A 403 is [GamesForbiddenException]. A 404 is a
+  /// missing game or import batch only when the path names one ([row]): Nest
+  /// answers an unregistered route with this same envelope, so on a list or
+  /// write route even an application 404 takes the shared default,
+  /// transient.
+  @override
+  GamesRemoteException? refused(RemoteRefusal refusal) {
+    final status = refusal.status;
+    return switch ((status, row)) {
+      (403, _) => GamesForbiddenException(
+        refusal.message,
         statusCode: status,
-      );
-    }
-
-    // Every answer below is a conclusion about the caller or about a game,
-    // and only the application's own envelope licenses one. A proxy or WAF
-    // answers 403 and 404 too (#350, #365, #253).
-    final fromApi = isApiErrorEnvelope(body, status);
-
-    if (status == 403) {
-      return fromApi
-          ? GamesForbiddenException(message, cause: cause, statusCode: status)
-          : GamesRemoteTransientException(
-              '$message; the request did not reach the API',
-              cause: cause,
-              statusCode: status,
-            );
-    }
-    if (status == 404) {
-      // Nest answers an unregistered route with this same envelope, so on a
-      // list or write route even an application 404 means "not deployed".
-      final GamesRemoteException? gone = !fromApi
-          ? null
-          : switch (row) {
-              _Row.game => GameNotFoundException(
-                message,
-                cause: cause,
-                statusCode: status,
-              ),
-              _Row.importBatch => GameImportNotFoundException(
-                message,
-                cause: cause,
-                statusCode: status,
-              ),
-              null => null,
-            };
-      return gone ??
-          GamesRemoteTransientException(
-            '$message; the route was not reachable',
-            cause: cause,
-            statusCode: status,
-          );
-    }
-    if (status >= 400) {
-      return GamesRemotePermanentException(
-        message,
-        cause: cause,
+        cause: refusal.cause,
+      ),
+      (404, _Row.game) => GameNotFoundException(
+        refusal.message,
         statusCode: status,
-      );
-    }
-    // A 1xx or 3xx surfaced by a permissive validateStatus carries no
-    // rejection.
-    return GamesRemoteTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
+        cause: refusal.cause,
+      ),
+      (404, _Row.importBatch) => GameImportNotFoundException(
+        refusal.message,
+        statusCode: status,
+        cause: refusal.cause,
+      ),
+      _ => null,
+    };
   }
 }

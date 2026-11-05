@@ -8,7 +8,7 @@
 // `BaseOptions` already defaults to json (`options.dart:153`). So Dio decoded
 // the body anyway, and a `FormatException` escaped as
 // `DioException(type: unknown)` with **no response attached**: the status was
-// gone before `_classifyDioException` could read it, and a permanent rejection
+// gone before the classifier could read it, and a permanent rejection
 // classified transient and retried forever.
 //
 // Content type is not a promise about content. Every case below serves a body
@@ -53,12 +53,12 @@ void main() {
         );
       });
 
-      test('HTML under application/json on a 403 is PERMANENT, status '
-          'intact', () async {
+      test('HTML under application/json on a 403 is transient (a proxy '
+          'answered), status intact', () async {
         await expectLater(
           send(cannedDio(body: _kHtml, statusCode: 403)),
           throwsA(
-            isA<FeedbackPermanentSubmissionException>().having(
+            isA<FeedbackTransientSubmissionException>().having(
               (e) => e.statusCode,
               'statusCode',
               403,

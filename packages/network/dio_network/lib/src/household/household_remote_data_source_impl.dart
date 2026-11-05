@@ -1,11 +1,9 @@
 import 'package:dio/dio.dart';
-import 'package:http_status/http_status.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../games/game_summary_json.dart';
-import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 import 'household_member_json.dart';
 
 /// [HouseholdRemoteDataSource] over a **per-server** Dio instance (#39).
@@ -20,6 +18,10 @@ import 'household_member_json.dart';
 /// is intentionally **not** an injectable global singleton (the per-server
 /// Dio is outside the global graph).
 ///
+/// The body is asked for as a `String` with the response type pinned on
+/// every request, and `sendForJson` decodes it after the status is read and
+/// classifies a failure through [_HouseholdFailures].
+///
 /// Failure taxonomy per the [HouseholdRemoteDataSource] contract — see that
 /// interface for the transient/permanent split.
 class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
@@ -28,16 +30,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   final Dio _dio;
 
   static const String _basePath = '/api/households';
-
-  /// 4xx statuses that are nonetheless worth retrying: an expired session
-  /// (401), a request timeout (408), the throttle (429), and proxy
-  /// authentication (407).
-  ///
-  /// 407 is here because the household API has no code path that emits it —
-  /// it is defined to come from a proxy, so it says the request never reached
-  /// the application (#350). 511 belongs to the same family and needs no entry:
-  /// it is a 5xx, so `status >= 500` already covers it.
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   /// Pinned on every request rather than inherited from the injected Dio.
   ///
@@ -62,28 +54,27 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     _checkPaging(page: page, limit: limit);
 
     const action = 'Household list';
-    final (:body, :status) = await _sendForJson(
+    const failures = _HouseholdFailures();
+    final (:body, :status) = await sendForJson(
       () => _dio.get<String>(
         _basePath,
         options: _plainBody,
         queryParameters: {'page': page, 'limit': limit},
       ),
       action: action,
+      family: failures,
     );
 
-    try {
-      return PaginatedResult.fromEnvelope(
+    return parseRemote(
+      failures,
+      () => PaginatedResult.fromEnvelope(
         body,
         key: 'households',
         item: _mapHouseholdWithMembers,
-      );
-    } on Object catch (error) {
-      throw HouseholdRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
+      ),
+      action: action,
+      status: status,
+    );
   }
 
   @override
@@ -93,42 +84,43 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     checkSampleSize(size);
 
     const action = 'Household game pool sample';
-    final (:body, :status) = await _sendForJson(
+    const failures = _HouseholdFailures();
+    final (:body, :status) = await sendForJson(
       () => _dio.get<String>(
         '$_basePath/game-pool/random',
         options: _plainBody,
         queryParameters: {'size': size},
       ),
       action: action,
+      family: failures,
     );
 
-    try {
-      final games = body['games'];
-      final gameCount = body['gameCount'];
-      if (games is! List) {
-        throw const FormatException('response is missing a "games" array');
-      }
-      // Read strictly: a count defaulted to 0 would tell a user with games
-      // that they have none.
-      if (gameCount is! int) {
-        throw FormatException(
-          'response "gameCount" is ${gameCount.runtimeType}, expected an int',
+    return parseRemote(
+      failures,
+      () {
+        final games = body['games'];
+        final gameCount = body['gameCount'];
+        if (games is! List) {
+          throw const FormatException('response is missing a "games" array');
+        }
+        // Read strictly: a count defaulted to 0 would tell a user with games
+        // that they have none.
+        if (gameCount is! int) {
+          throw FormatException(
+            'response "gameCount" is ${gameCount.runtimeType}, expected an int',
+          );
+        }
+        return (
+          games: [
+            for (final row in games.cast<Map<String, dynamic>>())
+              mapGameSummary(row),
+          ],
+          gameCount: gameCount,
         );
-      }
-      return (
-        games: [
-          for (final row in games.cast<Map<String, dynamic>>())
-            mapGameSummary(row),
-        ],
-        gameCount: gameCount,
-      );
-    } on Object catch (error) {
-      throw HouseholdRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
+      },
+      action: action,
+      status: status,
+    );
   }
 
   @override
@@ -197,16 +189,18 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   }
 
   /// Sends [request] and reads the `{ message, household }` answer the
-  /// create and the update share. [rowRoute] is passed to [_sendForJson].
+  /// create and the update share. [rowRoute] is passed to
+  /// [_HouseholdFailures].
   Future<Household> _sendForHousehold(
     Future<Response<String>> Function() request, {
     required String action,
     bool rowRoute = false,
   }) async {
-    final (body: data, :status) = await _sendForJson(
+    final family = _HouseholdFailures(rowRoute: rowRoute);
+    final (body: data, :status) = await sendForJson(
       request,
       action: action,
-      rowRoute: rowRoute,
+      family: family,
     );
 
     final household = data['household'];
@@ -217,62 +211,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
 
-    try {
-      return _mapHousehold(household);
-    } on Object catch (error) {
-      throw HouseholdRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
-  }
-
-  /// Sends [request] and returns its 2xx body as a JSON object with the
-  /// status it came with, having turned every failure into a
-  /// [HouseholdRemoteException]: no response, a status outside 2xx (by
-  /// [_classifyStatus]) and a body that is not a JSON object (by
-  /// [_requireJsonObject]). Every household read and write goes through it,
-  /// so the classification lives in one place.
-  ///
-  /// [rowRoute] is passed to [_classifyStatus].
-  Future<({Map<String, dynamic> body, int status})> _sendForJson(
-    Future<Response<String>> Function() request, {
-    required String action,
-    bool rowRoute = false,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
-    } on Object catch (error) {
-      throw HouseholdRemoteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw HouseholdRemoteTransientException('$action returned no status');
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        body: response.data,
-        rowRoute: rowRoute,
-      );
-    }
-
-    final body = await _requireJsonObject(
-      response.data,
+    return parseRemote(
+      family,
+      () => _mapHousehold(household),
       action: action,
       status: status,
     );
-    return (body: body, status: status);
   }
 
   /// Maps the server household payload to the domain [Household].
@@ -410,238 +354,39 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
   }
+}
 
-  /// Decodes a response body the transport was told not to touch, and
-  /// requires it to be a JSON object.
-  ///
-  /// Every request method takes the body as `Response<String>` with
-  /// `_plainBody` pinned, which keeps Dio out of it: see `decodeJsonBody` for
-  /// how either half of Dio's own handling would lose the status, and
-  /// `_plainBody` for why the pin is per request. Lost here, the status reads
-  /// as null to `_classifyDioException`, which returns transient — for a server
-  /// that answered, and whatever it answered with.
-  ///
-  /// The per-server Dio sets `validateStatus: (_) => true` (`DioFactory`), so
-  /// every status reached that path: an HTML 400 from a proxy retried forever,
-  /// and a 404 was transient by accident rather than by the rule #297 wrote.
-  /// Decoding here, after the status is known, restores both and makes a
-  /// non-object 2xx permanent as the interface documents (#265, #182).
-  ///
-  /// Realistic triggers: a captive portal or SPA catch-all serving HTML — under
-  /// `text/html` **or** `application/json`, since content type is not a promise
-  /// about content — and a dropped connection truncating a genuine JSON body.
-  Future<Map<String, dynamic>> _requireJsonObject(
-    String? raw, {
-    required String action,
-    required int status,
-  }) async {
-    if (raw == null || raw.isEmpty) {
-      throw HouseholdRemotePermanentException(
-        '$action returned an empty body',
-        statusCode: status,
+/// How the household source builds its failures for the shared classifier.
+final class _HouseholdFailures
+    extends RemoteFailureFamily<HouseholdRemoteException> {
+  const _HouseholdFailures({this.rowRoute = false})
+    : super(
+        transient: HouseholdRemoteTransientException.new,
+        permanent: HouseholdRemotePermanentException.new,
       );
-    }
 
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      throw HouseholdRemotePermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // Not a statement about the response. `decodeJsonBody` hands a large body
-      // to another isolate, and a failure to spawn one is a local, momentary
-      // condition — so this is the one decode failure that must stay
-      // **transient**. Permanent says a retry cannot succeed, and a caller that
-      // believes it gives up over a fault the server had no part in, which is
-      // the shape #297 exists to prevent.
-      //
-      // This sits outside the `on Object` net around the Dio call above,
-      // because decoding moved out from under it when the body became a
-      // `String` — so without this clause the interface's "callers never see a
-      // raw transport exception" would not hold, and `CreateHouseholdBloc`
-      // catches `HouseholdRemoteException` with no fallback beneath it.
-      throw HouseholdRemoteTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
+  /// Whether the route names a household by id, so that an enveloped 404 from
+  /// it is about that household. Only the update sets it.
+  final bool rowRoute;
 
-    if (decoded is! Map<String, dynamic>) {
-      throw HouseholdRemotePermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return decoded;
-  }
-
-  /// A response status, when present, is authoritative; without one the
-  /// failure is a connection-level fault and always transient.
-  /// [rowRoute] is passed to [_classifyStatus].
-  HouseholdRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    bool rowRoute = false,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        body: error.response?.data,
-        rowRoute: rowRoute,
-      );
-    }
-    return HouseholdRemoteTransientException('$action failed', cause: error);
-  }
-
-  /// Classifies an answered request by what its status licenses a caller to
-  /// conclude.
+  /// On a route that names the household, an enveloped 404 says it is gone
+  /// (#476). The envelope is the minimum bar, and why it is accepted though
+  /// Nest's route-not-found carries it too is in the contract.
   ///
-  /// The question is never "did this fail" — the status already says so — but
-  /// **"will the same request fail the same way again?"**, because that is
-  /// what the drain acts on. Permanent parks the queue entry, so it stops
-  /// retrying until someone retries or discards it by hand (#121); transient
-  /// keeps it queued. So the bar for permanent is evidence that the household
-  /// API itself rejected the request, not merely that something rejected
-  /// it.
-  ///
-  /// - **5xx, and 401 / 407 / 408 / 429** — transient. Expired session,
-  ///   timeout, throttle, proxy auth: all conditions a later attempt can
-  ///   survive.
-  /// - **404** — transient, unless [rowRoute] is set and the body
-  ///   carries the API's error envelope, which is
-  ///   [HouseholdNotFoundException]. The list and the create are fixed
-  ///   routes, so a 404 from either can only mean the request did not reach
-  ///   the module (#297). The update names a household, and its enveloped
-  ///   404 says that household is gone (#476). See the branch below.
-  /// - **403** — transient unless the body carries the API's error envelope.
-  ///   The application can genuinely emit a 403, so this one is gated on
-  ///   evidence rather than settled by the status (#350).
-  /// - **409 saying `retryable: true`** — transient. It is the backend's
-  ///   answer to a deadlock that outlived its own retry: a concurrency
-  ///   accident on the server, not a judgement on the request (#431).
-  /// - **Any other 4xx** — permanent. A 400, any other 409, or a 422 on these
-  ///   routes is the application rejecting the request's content, and the
-  ///   content will not change on retry.
-  /// - **1xx / 3xx** — transient. Surfaced only by the permissive
-  ///   `validateStatus`, and carrying no rejection semantics at all.
-  ///
-  /// [body] is the raw, undecoded body when there is one. Only the 403, 409
-  /// and row-level 404 branches read it, and only through the bounded
-  /// probes in `api_error_envelope.dart`.
-  ///
-  /// [rowRoute] says the route names a household by id, so an enveloped
-  /// 404 from it is about that household. Only the update sets it.
-  HouseholdRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required Object? body,
-    bool rowRoute = false,
-  }) {
-    final transient = status >= 500 || _retryable4xx.contains(status);
-    if (transient) {
-      return HouseholdRemoteTransientException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == 404) {
-      // On a route that names the household, an enveloped 404 says it is
-      // gone (#476). The envelope is the minimum bar, and why it is accepted
-      // though Nest's route-not-found carries it too is in the contract.
-      if (rowRoute && isApiErrorEnvelope(body, status)) {
-        return HouseholdNotFoundException(
-          '$message — the household is gone',
-          cause: cause,
-          statusCode: status,
-        );
-      }
-      // The list and the create are fixed routes, so a 404 from either says
-      // the request did not reach the household module: a misrouted path
-      // prefix, an API not deployed yet, a proxy or gateway answering for
-      // it. Permanent would end a hydrate for the life of the process, and
-      // on the create path it is worse than that: permanent parks the queued
-      // create (#121), stranding the user's household until someone retries
-      // it by hand, for a failure a retry thirty seconds later would have
-      // survived (#297).
-      //
-      // The envelope is deliberately NOT consulted for those routes. It does
-      // not separate the two cases on a *fixed* route, because Nest answers
-      // an unmatched route with the same envelope (`Cannot POST
-      // /api/households`, rendered by the global `I18nExceptionFilter`) —
-      // the residual the collection source documents on its own
-      // `_isApplicationError`. So an envelope-gated rule would still
-      // classify a partial deploy as a rejection, which is the exact bug
-      // #297 is about. A 404 without the envelope from the update lands
-      // here too: nothing says the application wrote it.
-      return HouseholdRemoteTransientException(
-        '$message — the household route was not reachable',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == HttpStatusCode.forbidden &&
-        !isApiErrorEnvelope(body, status)) {
-      // Unlike 404, the envelope IS a usable discriminator at 403. Nest
-      // answers an unmatched route with a 404 carrying the standard envelope
-      // — which is why #297 could not gate the 404 on it — but it does not
-      // answer an unmatched route with a 403. So a 403 without the
-      // envelope was not written by the application: a corporate proxy or WAF
-      // blocked the POST.
-      //
-      // The cost of getting this wrong runs one way. Permanent does not merely
-      // fail the attempt: it parks the queued create (#121), so the household
-      // the user just created waits for someone to retry it by hand, over a
-      // block that a retry after they leave the network would have survived. A
-      // genuine authorization refusal misread as transient is only retried, at
-      // most once a drain pass (#350).
-      //
-      // What this rests on: every production 403 on these routes is raised
-      // with a message, so Nest renders the envelope. A bare
-      // `ForbiddenException()` added to a household route later would carry
-      // none, read here as a proxy block, and retry a refusal that will never
-      // change. Nothing in this package can notice that happen — #263 is the
-      // mechanism that would.
-      return HouseholdRemoteTransientException(
-        '$message — the request did not reach the household module',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status == HttpStatusCode.conflict && isRetryableRefusal(body)) {
-      // A deadlock that outlived the server's own retry (#431). The backend
-      // answers 409 because the cure is the caller's, and says
-      // `retryable: true` because the request itself was fine: the same
-      // create is expected to succeed. Read the field, not the message,
-      // which is translated.
-      return HouseholdRemoteTransientException(
-        '$message — the server hit a deadlock and asked for a retry',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status >= 400) {
-      return HouseholdRemotePermanentException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    // A non-2xx, non-4xx/5xx status (1xx/3xx surfaced by a permissive
-    // validateStatus) carries no rejection semantics — transient.
-    return HouseholdRemoteTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
-  }
+  /// The list and the create are fixed routes, so a 404 from either falls
+  /// to the shared default, transient: it can only mean the request did not
+  /// reach the household module, and on the create path a permanent verdict
+  /// would park the queued create (#121) over a failure a retry would have
+  /// survived (#297). A 404 without the envelope never reaches this hook, not
+  /// even from the update: the shared rules have already read it as something
+  /// in front of the API answering, and made it transient.
+  @override
+  HouseholdRemoteException? refused(RemoteRefusal refusal) =>
+      refusal.status == 404 && rowRoute
+      ? HouseholdNotFoundException(
+          '${refusal.message}; the household is gone',
+          statusCode: refusal.status,
+          cause: refusal.cause,
+        )
+      : null;
 }

@@ -3,18 +3,17 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
+import '../network/remote_failure.dart';
 import '../network/user_projection.dart';
 
 /// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499,
 /// #501).
 ///
-/// Built on the DataGateway source's request plumbing (#41), which took it
-/// from the collection source (#351): the body is asked for as a `String` with
-/// the response type pinned on every request, decoded here after the status is
-/// read, and probed for the API's error envelope with a bounded synchronous
-/// parse. Like those sources, it does not build or own its Dio; the network
-/// installer constructs it from the per-server container.
+/// The body is asked for as a `String` with the response type pinned on
+/// every request, and `sendForJson` decodes it after the status is read and
+/// classifies a failure through [_EventFailures]. It does not build or own
+/// its Dio; the network installer constructs it from the per-server
+/// container.
 ///
 /// Failure taxonomy per the [EventRemoteDataSource] contract.
 class EventRemoteDataSourceImpl implements EventRemoteDataSource {
@@ -29,10 +28,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// `bytes` or `stream`. A fresh instance per call, because `Options` is
   /// mutable.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
-
-  /// 4xx statuses worth retrying: an expired session (401), proxy
-  /// authentication (407), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
@@ -68,8 +63,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }) async {
     _checkPaging(page: page, limit: limit);
 
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _EventFailures(_Route.list);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         path,
         options: _plainBody,
         queryParameters: {
@@ -82,10 +78,11 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // A list route is never absent for a caller who reached it: no events is
       // a 200 with an empty page. So a 404 here means the route is not
       // deployed, such as on a server older than the events routes.
-      route: _Route.list,
+      family: failures,
     );
 
-    return _parse(
+    return parseRemote(
+      failures,
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'events',
@@ -101,15 +98,17 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     _checkId(id);
 
     const action = 'Event fetch';
-    final response = await _send(
-      request: () => _dio.get<String>(_pathOf(id), options: _plainBody),
+    const failures = _EventFailures(_Route.row);
+    final response = await sendForJson(
+      () => _dio.get<String>(_pathOf(id), options: _plainBody),
       action: action,
       // The path names one event, so an application 404 is the service saying
       // it is gone, or that the caller may not read it: the server answers
       // both alike.
-      route: _Route.row,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapDetail(_eventObject(response.body)),
       action: action,
       status: response.status,
@@ -125,16 +124,18 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     draft.checkSendable();
 
     const action = 'Event create';
-    final response = await _send(
-      request: () => _dio.post<String>(
+    const failures = _EventFailures(_Route.create);
+    final response = await sendForJson(
+      () => _dio.post<String>(
         _basePath,
         options: _plainBody,
         data: _createBody(draft, clientRequestId),
       ),
       action: action,
-      route: _Route.create,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () {
         final event = _eventObject(response.body);
         return (
@@ -153,13 +154,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   Future<void> deleteEvent(String id) async {
     _checkId(id);
 
-    await _send(
-      request: () => _dio.delete<String>(_pathOf(id), options: _plainBody),
+    await sendForJson(
+      () => _dio.delete<String>(_pathOf(id), options: _plainBody),
       action: 'Event delete',
       // The path names one event, and the delete is a write to it: an
       // application 404 is the event being gone, and an application 403 is
       // the API refusing this write.
-      route: _Route.write,
+      family: const _EventFailures(_Route.write),
       // The answer is `{ message, event }`, which the delete has no use for. A
       // 2xx is a delete that happened, so a body this client could not read
       // must not turn it into a failure.
@@ -204,13 +205,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String path, {
     Map<String, dynamic>? data,
   }) async {
-    final response = await _send(
-      request: () => _dio.post<String>(path, options: _plainBody, data: data),
+    const failures = _EventFailures(_Route.write);
+    final response = await sendForJson(
+      () => _dio.post<String>(path, options: _plainBody, data: data),
       action: action,
       // The path names one event, and the call is a write to it.
-      route: _Route.write,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapEvent(_eventObject(response.body)),
       action: action,
       status: response.status,
@@ -330,13 +333,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   Future<void> removeOccurrence(String eventId, String occurrenceId) async {
     _checkOccurrenceIds(eventId, occurrenceId);
 
-    await _send(
-      request: () => _dio.delete<String>(
+    await sendForJson(
+      () => _dio.delete<String>(
         _occurrencePath(eventId, occurrenceId),
         options: _plainBody,
       ),
       action: 'Date remove',
-      route: _Route.write,
+      family: const _EventFailures(_Route.write),
       // As for the event delete: a 2xx is a removal that happened, whatever
       // the body says.
       readBody: false,
@@ -360,17 +363,19 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     }
 
     const action = 'Availability vote';
-    final result = await _send(
-      request: () => _dio.post<String>(
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.post<String>(
         '${_occurrencePath(eventId, occurrenceId)}/availability',
         options: _plainBody,
         data: {'response': response.toWire()},
       ),
       action: action,
       // The path names one date of one event, and the call is a write to it.
-      route: _Route.write,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapVote(_voteObject(result.body)),
       action: action,
       status: result.status,
@@ -382,17 +387,19 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     _checkId(eventId, name: 'eventId');
 
     const action = 'Availability summary';
-    final response = await _send(
-      request: () => _dio.get<String>(
+    const failures = _EventFailures(_Route.row);
+    final response = await sendForJson(
+      () => _dio.get<String>(
         '${_occurrencesPath(eventId)}/summary/availability',
         options: _plainBody,
       ),
       action: action,
       // The path names one event, so an application 404 is the service saying
       // it is gone, as for the detail read.
-      route: _Route.row,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapSummary(_summaryObject(response.body)),
       action: action,
       status: response.status,
@@ -421,13 +428,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     String path,
     Future<Response<String>> Function(String path) request,
   ) async {
-    final response = await _send(
-      request: () => request(path),
+    const failures = _EventFailures(_Route.write);
+    final response = await sendForJson(
+      () => request(path),
       action: action,
       // The path names one date of one event, and the call is a write to it.
-      route: _Route.write,
+      family: failures,
     );
-    return _parse(
+    return parseRemote(
+      failures,
       () => _mapOccurrence(_occurrenceObject(response.body)),
       action: action,
       status: response.status,
@@ -441,108 +450,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _occurrencePath(String eventId, String occurrenceId) =>
       '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
-
-  // ── Request plumbing ────────────────────────────────────────────────
-  //
-  // The fifth copy of the remotes' request and classification plumbing:
-  // `_send` here, and the failure classification at the end of the file.
-  // #260 is where the classification would become one.
-
-  /// Sends [request] and returns its decoded body, having converted every
-  /// failure into an [EventRemoteException].
-  ///
-  /// [route] says what the path names, which decides what an application 403
-  /// or 404 means.
-  ///
-  /// With [readBody] false the body is neither required nor decoded: a 2xx
-  /// returns an empty one, whatever the response carried.
-  Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<String>> Function() request,
-    required String action,
-    required _Route route,
-    bool readBody = true,
-  }) async {
-    late final Response<String> response;
-    try {
-      response = await request();
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, route: route);
-    } on Object catch (error) {
-      // Nothing else should escape Dio. `Object`, not `Exception`, so an
-      // `Error` cannot break the "no raw transport error" promise either.
-      throw EventRemoteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw EventRemoteTransientException('$action returned no status');
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        route: route,
-        body: response.data,
-      );
-    }
-
-    if (!readBody) {
-      return (body: const <String, dynamic>{}, status: status);
-    }
-
-    final raw = response.data;
-    if (raw == null || raw.isEmpty) {
-      throw EventRemotePermanentException(
-        '$action returned an empty body',
-        statusCode: status,
-      );
-    }
-
-    final Object? decoded;
-    try {
-      decoded = await decodeJsonBody(raw);
-    } on FormatException catch (error) {
-      throw EventRemotePermanentException(
-        '$action returned a body that is not JSON',
-        statusCode: status,
-        cause: error,
-      );
-    } on Object catch (error) {
-      // The decode could not run (an isolate that would not spawn), which
-      // says nothing about the response. See the collection source (#297).
-      throw EventRemoteTransientException(
-        '$action could not be decoded',
-        statusCode: status,
-        cause: error,
-      );
-    }
-
-    if (decoded is! Map<String, dynamic>) {
-      throw EventRemotePermanentException(
-        '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
-    return (body: decoded, status: status);
-  }
-
-  /// A 2xx whose body cannot be mapped is permanent: the same request returns
-  /// the same body.
-  T _parse<T>(T Function() map, {required String action, required int status}) {
-    try {
-      return map();
-    } on Object catch (error) {
-      throw EventRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
-  }
 
   // ── Mapping ─────────────────────────────────────────────────────────
   //
@@ -928,55 +835,51 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     _checkId(eventId, name: 'eventId');
     _checkId(occurrenceId, name: 'occurrenceId');
   }
+}
 
-  // ── Failure classification ──────────────────────────────────────────
-
-  EventRemoteException _classifyDioException(
-    DioException error, {
-    required String action,
-    required _Route route,
-  }) {
-    final status = error.response?.statusCode;
-    if (status != null) {
-      return _classifyStatus(
-        status,
-        '$action failed with status $status',
-        cause: error,
-        route: route,
-        body: error.response?.data,
+/// How the event source builds its failures for the shared classifier.
+///
+/// The [route] says what the request's path names, which decides what an
+/// application 403 or 404 means.
+final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
+  const _EventFailures(this.route)
+    : super(
+        transient: EventRemoteTransientException.new,
+        permanent: EventRemotePermanentException.new,
       );
-    }
-    return EventRemoteTransientException('$action failed', cause: error);
-  }
 
-  EventRemoteException _classifyStatus(
-    int status,
-    String message, {
-    required Object? cause,
-    required _Route route,
-    required Object? body,
-  }) {
-    if (status >= 500 || _retryable4xx.contains(status)) {
-      return EventRemoteTransientException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
+  final _Route route;
 
-    // The 403 and 404 below are conclusions about the caller's role or about a
-    // row, and only the application's own envelope licenses one. A proxy or
-    // WAF answers 403 and 404 too (#350, #365, #253).
+  /// The enveloped 403, 404 and 400 the event routes answer, by [route].
+  ///
+  /// On a write the API is refusing this request, not saying the caller may
+  /// not read events. Nest answers an unregistered route with the same
+  /// envelope as an application 404, so on the list route even an enveloped
+  /// 404 means "not deployed", not "no rows", and falls to the shared
+  /// default. On a row route, and on a write to one, a 404 is the service
+  /// saying the row is gone. On the create it is the service refusing an
+  /// unknown household or invitee.
+  ///
+  /// That last one is read as a refusal although a server without the route
+  /// answers alike. Parked, a create that was never routable is bounded and
+  /// can be discarded by hand. Transient, it would retry forever. The
+  /// envelope's message can name an invitee the server has no account for
+  /// (#499).
+  ///
+  /// A write's enveloped 400 with one message is the server judging the write
+  /// against the row as it stands now. The validation pipe's 400 lists one
+  /// per value it refused, and falls to permanent: the same request is
+  /// refused again. The event delete shares this route, and the server never
+  /// answers it 400. The event status writes share it too, and their 400 is a
+  /// conflict with the event's status as it stands.
+  @override
+  EventRemoteException? refused(RemoteRefusal refusal) {
+    if (!refusal.fromApi) return null;
+    final status = refusal.status;
+    final body = refusal.body;
+    final message = refusal.message;
+    final cause = refusal.cause;
     if (status == 403) {
-      if (!isApiErrorEnvelope(body, status)) {
-        return EventRemoteTransientException(
-          '$message; the request did not reach the API',
-          cause: cause,
-          statusCode: status,
-        );
-      }
-      // On a write the API is refusing this request, not saying the caller may
-      // not read events.
       return switch (route) {
         _Route.create => EventCreateRefusedException(
           message,
@@ -998,50 +901,24 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       };
     }
     if (status == 404) {
-      // Nest answers an unregistered route with this same envelope, so on the
-      // list route even an application 404 means "not deployed", not "no
-      // rows". On a row route, and on a write to one, it is the service saying
-      // the row is gone. On the create it is the service refusing an unknown
-      // household or invitee.
-      //
-      // That last one is read as a refusal although a server without the route
-      // answers alike. Parked, a create that was never routable is bounded and
-      // can be discarded by hand. Transient, it would retry forever.
-      if (isApiErrorEnvelope(body, status)) {
-        if (route == _Route.row || route == _Route.write) {
-          return EventRemoteNotFoundException(
-            message,
-            cause: cause,
-            statusCode: status,
-          );
-        }
-        if (route == _Route.create) {
-          // The envelope's message can name an invitee the server has no
-          // account for (#499).
-          return EventCreateRefusedException(
-            message,
-            cause: cause,
-            statusCode: status,
-            apiMessage: apiErrorField(body, 'message'),
-          );
-        }
-      }
-      return EventRemoteTransientException(
-        '$message; the route was not reachable',
-        cause: cause,
-        statusCode: status,
-      );
+      return switch (route) {
+        _Route.row || _Route.write => EventRemoteNotFoundException(
+          message,
+          cause: cause,
+          statusCode: status,
+        ),
+        _Route.create => EventCreateRefusedException(
+          message,
+          cause: cause,
+          statusCode: status,
+          apiMessage: apiErrorField(body, 'message'),
+        ),
+        _Route.list => null,
+      };
     }
     if (status == 400 &&
         route == _Route.write &&
-        isApiErrorEnvelope(body, status) &&
         apiErrorField(body, 'message') != null) {
-      // The server judged a write against the row as it stands now, in one
-      // message. The validation pipe's 400 lists one per value it refused,
-      // and falls to permanent below: the same request is refused again.
-      // The event delete shares this route, and the server never answers it
-      // 400. The event status writes share it too, and their 400 is a
-      // conflict with the event's status as it stands.
       return EventWriteConflictException(
         message,
         cause: cause,
@@ -1049,32 +926,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         apiMessage: apiErrorField(body, 'message'),
       );
     }
-    if (status == 409 && isRetryableRefusal(body)) {
-      // A deadlock that outlived the server's own retry (#431). Nothing
-      // about the request was wrong, so the same read is expected to
-      // succeed. Read the field, not the message, which is translated.
-      return EventRemoteTransientException(
-        '$message; the server hit a deadlock and asked for a retry',
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    if (status >= 400) {
-      // Every other 4xx, a 409 included, is the application rejecting the
-      // request, and the same request is rejected again.
-      return EventRemotePermanentException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
-    }
-    // A 1xx or 3xx surfaced by a permissive validateStatus carries no
-    // rejection.
-    return EventRemoteTransientException(
-      message,
-      cause: cause,
-      statusCode: status,
-    );
+    return null;
   }
 }
 
