@@ -234,6 +234,27 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           for (final roster in rosters.values)
             ...roster.map(_attendeeToCompanion),
         ]);
+        // The roster is shared by every user on this device, so it replaces
+        // other users' rows too, and is the newer news for their answers. Each
+        // goes on that user's `attending` row, where they have one, so their
+        // list doesn't show what it said before. This user's comes from the
+        // read's own answer, below. A user the roster leaves off keeps theirs:
+        // a roster is read under the reader's ceiling, so it doesn't say they
+        // left.
+        for (final MapEntry(key: eventId, value: roster) in rosters.entries) {
+          for (final attendee in roster) {
+            final userId = attendee.userId;
+            if (userId == null || userId == _userId) continue;
+            b.update(
+              _db.eventAccessTable,
+              _answerToCompanion(EventAttendance.fromAttendee(attendee)),
+              where: (t) =>
+                  t.userId.equals(userId) &
+                  t.eventId.equals(eventId) &
+                  t.source.equals(eventAccessSourceAttending),
+            );
+          }
+        }
       }
       if (refused.isNotEmpty) {
         b.deleteWhere(

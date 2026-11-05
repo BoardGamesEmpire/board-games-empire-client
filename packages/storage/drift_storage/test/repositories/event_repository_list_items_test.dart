@@ -379,6 +379,77 @@ void main() {
       expect((await itemOf()).attendance, isNull);
     });
 
+    test("another user's detail read updates this user's answer from the "
+        'roster it read', () async {
+      // Two users on one device share the cached roster. The other user's
+      // read replaces it, this user's row included, so it is the newer news
+      // for this user's answer too.
+      await listRow('e-1', _answer(EventParticipationStatus.attending));
+      final changed = _me.copyWith(
+        status: EventParticipationStatus.maybe,
+        role: EventRole.coHost,
+        rsvpDate: _answeredAt,
+      );
+
+      await repoFor(_kOtherUserId).cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [changed, _other],
+          attendance: EventAttendance.fromAttendee(_other),
+        ),
+        source: EventAccessSource.read,
+      );
+
+      expect(
+        (await itemOf()).attendance,
+        EventAttendance.fromAttendee(changed),
+      );
+      expect(await repo.getCurrentUserAttendance('e-1'), changed);
+
+      // And a list row after it is newer still.
+      await listRow('e-1', _answer(EventParticipationStatus.notAttending));
+      expect(
+        (await itemOf()).attendance,
+        _answer(EventParticipationStatus.notAttending),
+      );
+    });
+
+    test("another user's detail read that leaves this user off keeps their "
+        'answer', () async {
+      // A roster is read under the reader's own attendee ceiling, so one
+      // without this user doesn't say they left.
+      await listRow('e-1', _answer(EventParticipationStatus.maybe));
+
+      await repoFor(_kOtherUserId).cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [_other],
+          attendance: EventAttendance.fromAttendee(_other),
+        ),
+        source: EventAccessSource.read,
+      );
+
+      expect(
+        (await itemOf()).attendance,
+        _answer(EventParticipationStatus.maybe),
+      );
+    });
+
+    test("another user's detail read adds no attending row for this "
+        'user', () async {
+      // Their roster names this user, but this user's list never had it.
+      await repoFor(_kOtherUserId).cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [_me, _other],
+          attendance: EventAttendance.fromAttendee(_other),
+        ),
+        source: EventAccessSource.read,
+      );
+
+      expect(await repo.watchAttendingEventListItems().first, isEmpty);
+    });
+
     test('a detail read adds no attending row', () async {
       // The detail speaks for what the user may read, not for their list.
       await repo.cacheEvent(
