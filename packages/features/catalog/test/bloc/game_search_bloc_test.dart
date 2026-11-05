@@ -56,9 +56,10 @@ void main() {
     debounce: Duration.zero,
   );
 
-  /// Lets the debounce timer fire and the search answer.
-  Future<void> settle() =>
-      Future<void>.delayed(const Duration(milliseconds: 1));
+  /// Lets the debounce timer fire and the search answer. A real-time delay
+  /// can fall due before the debounce timer is even created, a microtask
+  /// later, when the test stalls between them (#737).
+  Future<void> settle() => pumpEventQueue();
 
   group('the query', () {
     blocTest<GameSearchBloc, GameSearchState>(
