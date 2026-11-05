@@ -10,7 +10,16 @@ const String retryAfterHeader = 'x-retry-after';
 ///
 /// Shared by the native and web auth repositories, which both classify a 429
 /// from Dio's [Headers].
-AuthRateLimitedException rateLimitedFrom(Headers? headers) =>
-    AuthRateLimitedException(
-      retryAfter: parseRetryAfter(headers?.value(retryAfterHeader)),
-    );
+///
+/// A header sent more than once, as when a proxy adds its own beside the
+/// server's, names no one wait, so the rate limit carries none. Read through
+/// `Headers.value` instead, it would throw a plain `Exception`, which leaves the
+/// auth method unmodelled and strands the form on its loading state.
+AuthRateLimitedException rateLimitedFrom(Headers? headers) {
+  final values = headers?[retryAfterHeader];
+  return AuthRateLimitedException(
+    retryAfter: parseRetryAfter(
+      values != null && values.length == 1 ? values.single : null,
+    ),
+  );
+}

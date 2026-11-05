@@ -54,7 +54,7 @@ class _HeaderAdapter implements HttpClientAdapter {
 
   final int statusCode;
   final String body;
-  final Map<String, String> headers;
+  final Map<String, List<String>> headers;
 
   @override
   Future<ResponseBody> fetch(
@@ -66,7 +66,7 @@ class _HeaderAdapter implements HttpClientAdapter {
     statusCode,
     headers: {
       Headers.contentTypeHeader: [Headers.jsonContentType],
-      for (final entry in headers.entries) entry.key: [entry.value],
+      ...headers,
     },
   );
 
@@ -74,9 +74,12 @@ class _HeaderAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// [headers] sends each value once; [repeatedHeaders] sends a header more
+/// than once, as a proxy adding its own beside the server's would.
 Dio _dio({
   String body = '{"code":"RATE_LIMITED","message":"slow down"}',
   Map<String, String> headers = const {},
+  Map<String, List<String>> repeatedHeaders = const {},
   bool permissiveStatus = true,
 }) =>
     Dio(
@@ -88,7 +91,10 @@ Dio _dio({
       ..httpClientAdapter = _HeaderAdapter(
         statusCode: 429,
         body: body,
-        headers: headers,
+        headers: {
+          for (final entry in headers.entries) entry.key: [entry.value],
+          ...repeatedHeaders,
+        },
       );
 
 Matcher _rateLimited(Duration? retryAfter) => isA<AuthRateLimitedException>()
@@ -189,6 +195,42 @@ void main() {
       test('on sign-up maps the same way', () async {
         final repo = repoWith(
           _dio(headers: {'x-retry-after': '7'}, permissiveStatus: permissive),
+        );
+
+        await expectLater(
+          repo.signUp(email: 'a@b.c', password: 'pw', username: 'u'),
+          throwsA(_rateLimited(const Duration(seconds: 7))),
+        );
+      });
+
+      test('with X-Retry-After sent twice has a null retryAfter, not a raw '
+          'Exception', () async {
+        // Dio's `Headers.value` throws a plain Exception for a header with
+        // more than one value.
+        final repo = repoWith(
+          _dio(
+            repeatedHeaders: {
+              'x-retry-after': ['7', '30'],
+            },
+            permissiveStatus: permissive,
+          ),
+        );
+
+        await expectLater(
+          repo.signIn(email: 'a@b.c', password: 'pw'),
+          throwsA(_rateLimited(null)),
+        );
+      });
+
+      test('with a duplicate-email body code is still a rate limit', () async {
+        // `_isEmailAlreadyExists` reads the code at any status, so the 429
+        // has to be classified first.
+        final repo = repoWith(
+          _dio(
+            body: '{"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}',
+            headers: {'x-retry-after': '7'},
+            permissiveStatus: permissive,
+          ),
         );
 
         await expectLater(

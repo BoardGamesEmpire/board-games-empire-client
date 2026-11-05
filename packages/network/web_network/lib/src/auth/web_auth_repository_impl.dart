@@ -1817,16 +1817,17 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     if (status == HttpStatusCode.forbidden) throw _forbidden(body);
 
-    if (_isEmailAlreadyExists(status, body)) {
-      throw const AuthEmailAlreadyExistsException();
-    }
-
     // A 429 is a rate limit whatever its body says (#559): classified on the
     // status alone, with the wait read from `X-Retry-After` when it is there.
-    // It sits before the generic non-2xx throw, which would file it as a
+    // It sits before the duplicate-email check, which reads a body code at any
+    // status, and before the generic non-2xx throw, which would file it as a
     // server fault with nothing to act on.
     if (status == HttpStatusCode.tooManyRequests) {
       throw rateLimitedFrom(headers);
+    }
+
+    if (_isEmailAlreadyExists(status, body)) {
+      throw const AuthEmailAlreadyExistsException();
     }
 
     if (!_isSuccessStatus(status)) {
@@ -1955,14 +1956,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
           : const AuthInvalidCredentialsException();
     }
 
-    if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
-      return const AuthEmailAlreadyExistsException();
-    }
-
     // Only a credential grant's 429 is a rate-limited grant (#559); a session
-    // read that is throttled stays what it was.
+    // read that is throttled stays what it was. Ahead of the duplicate-email
+    // check, as in [_assertSuccess].
     if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
       return rateLimitedFrom(e.response?.headers);
+    }
+
+    if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
+      return const AuthEmailAlreadyExistsException();
     }
 
     if (status != null && status >= HttpStatusCode.internalServerError) {
