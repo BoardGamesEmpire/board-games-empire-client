@@ -468,6 +468,24 @@ void main() {
       expect(server.requests, isEmpty);
     });
 
+    test('a return whose query does not decode is refused as generic, not a '
+        'raw FormatException, and posts nothing', () async {
+      final browser = FakeProviderSignInBrowser();
+      final (:repo, :server) = build(browser: browser);
+
+      final outcome = repo.signInWithProvider(_kStrategy);
+      await settle();
+      // `%FF` is not UTF-8, so `Uri.queryParameters` throws on it.
+      browser.returnTo(0, Uri.parse('bge://oauth?code=$_kCode&state=%FF'));
+
+      await expectLater(
+        outcome,
+        throwsA(_providerFailure(ProviderSignInFailureReason.generic)),
+      );
+      expect(server.requests, isEmpty);
+      verifyNothingStored();
+    });
+
     for (final (label, iss) in [
       ('no iss', null),
       ("another server's iss", 'https://evil.example.com'),

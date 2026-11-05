@@ -970,6 +970,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// Runs before `error` is read. The server echoes the app's `state` on
   /// every return it sends, failures included, so an error return that fails
   /// these is not this attempt's to report.
+  ///
+  /// A query that does not decode, such as one holding `%FF`, which is not
+  /// UTF-8, fails the `query` check. Read raw, its `FormatException` would
+  /// leave the auth method unmodelled and strand the caller on its loading
+  /// state (#181). Once this passes, the query decodes for the reads after it.
   static String? _failedReturnCheck(
     Uri returned,
     ProviderSignInAttempt attempt,
@@ -979,7 +984,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       return 'return_address';
     }
 
-    final query = returned.queryParameters;
+    final Map<String, String> query;
+    try {
+      query = returned.queryParameters;
+    } on FormatException {
+      return 'query';
+    }
     if (query['state'] != attempt.state) return 'state';
 
     // RFC 9207 section 2.4: compared with the address this attempt was

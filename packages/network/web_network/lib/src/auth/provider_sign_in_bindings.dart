@@ -74,9 +74,20 @@ const String _errorDescriptionKey = 'error_description';
 /// `error`/`error_description` with a return. Every other query parameter,
 /// the path and the fragment are kept, and a query left empty is dropped
 /// entirely.
+///
+/// A query that does not decode, such as one holding `%FF`, which is not
+/// UTF-8, is no return, and the address is left as it is. This runs on every
+/// page load, before `runBgeApp`, so the `FormatException` would otherwise
+/// stop the app from starting on any address that carries one. The server's
+/// own redirect back never does.
 ({WebProviderSignInReturn? startupReturn, Uri? cleanedAddress})
 readProviderSignInReturn({required String? marker, required Uri address}) {
-  final all = address.queryParametersAll;
+  final Map<String, List<String>> all;
+  try {
+    all = address.queryParametersAll;
+  } on FormatException {
+    return (startupReturn: null, cleanedAddress: null);
+  }
   final returnIds = all[providerSignInReturnKey];
   final isReturn =
       marker != null &&

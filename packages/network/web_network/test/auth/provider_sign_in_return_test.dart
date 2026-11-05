@@ -129,6 +129,19 @@ void main() {
         );
       }
     });
+
+    test('a query that does not decode: not a return, and no throw, so the '
+        'app still starts on that address', () {
+      for (final marker in [null, _kId]) {
+        // `%FF` is not UTF-8, so `Uri.queryParametersAll` throws on it.
+        final r = readProviderSignInReturn(
+          marker: marker,
+          address: Uri.parse('https://bge.example.com/?$_kReturn&q=%FF'),
+        );
+        expect(r.startupReturn, isNull, reason: '$marker');
+        expect(r.cleanedAddress, isNull, reason: '$marker');
+      }
+    });
   });
 
   group('providerSignInCallback', () {
