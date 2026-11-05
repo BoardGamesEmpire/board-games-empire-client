@@ -123,9 +123,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// The provider sign-in waiting on its browser tab or its code exchange
   /// (#583). One per repository: a new attempt replaces it, and a sign-out, a
   /// password sign-in or sign-up, and [onDispose] retire it, so a return for
-  /// anything but the attempt held here adopts nothing. Attempts live here, in
-  /// the per-server repository, so that switching servers, which disposes it,
-  /// also ends them.
+  /// anything but the attempt held here adopts nothing.
+  ///
+  /// Attempts live here, in the per-server repository, so a return is only
+  /// ever adopted by the server its attempt started on. [onDispose] runs when
+  /// that server is removed or suspended. A server switch only backgrounds the
+  /// server and keeps this repository, so an attempt open across a switch
+  /// still finishes here, into this server's own token storage.
   ProviderSignInAttempt? _pendingAttempt;
 
   /// Ends the pending provider sign-in, if there is one, for a newer intent
@@ -351,7 +355,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // `_exchangeProviderCode` checks it after the POST and again after the
     // decode, with nothing that suspends between that last check and this
     // capture. A provider grant that reaches here is still the newest intent,
-    // and from here the epoch covers it as it covers a password grant.
+    // and from here the epoch covers it as it covers a password grant. Like a
+    // password grant's, it is not retired by [onDispose] from here on: a
+    // disposal does not move the epoch, and clearing on a retirement could
+    // delete a newer password grant's token instead of this one's.
     final epoch = _sessionEpoch;
 
     await _tokenStorage.store(

@@ -202,16 +202,23 @@ abstract class AuthRepository {
   /// [ProviderSignInCancelled] when the user closes the tab. A second call
   /// replaces the first attempt, whether its tab is still open or its code is
   /// being exchanged: a late return from the first signs nobody in, and the
-  /// first call throws [AuthSupersededException]. So does an attempt whose
-  /// repository is disposed, as switching servers does, and one that a
-  /// sign-out, a password sign-in or a sign-up overtakes.
+  /// first call throws [AuthSupersededException]. So does one that a
+  /// sign-out, a password sign-in or a sign-up overtakes, and one whose
+  /// repository is disposed, as removing its server or suspending it does.
+  /// Switching servers only backgrounds the server and keeps its repository,
+  /// so an attempt still open across a switch finishes on the server it
+  /// started on, never on the one switched to. These checks hold until the
+  /// grant is being stored. From there it is a credential grant like a
+  /// password one, which only a sign-out supersedes.
   /// Web: posts to the strategy's authorization endpoint, then navigates the
   /// page to the URL the server answers with. The sign-in finishes on the
   /// page that loads when the provider sends the user back, and a failure is
   /// read there through [takeProviderSignInReturn], so a page that leaves
   /// never sees this call complete. One the user stops from leaving (Esc, or
   /// the browser's Stop) is still here a while later, and completes with
-  /// [ProviderSignInCancelled].
+  /// [ProviderSignInCancelled]. A session that lands while the start request
+  /// is out, such as another tab's sign-in, keeps the page where it is, and
+  /// the call throws [AuthSupersededException].
   ///
   /// Throws [AuthProviderSignInException] when the provider or the server
   /// refuses, or when a return fails a check; its reason is mapped from the
@@ -522,20 +529,25 @@ final class AuthSessionNotGrantedException extends AuthException {
   });
 }
 
-/// The operation was overtaken by a sign-out (or another supersession of
-/// the session) while it was in flight (#146).
+/// The operation was overtaken by a newer intent while it was in flight
+/// (#146).
 ///
 /// Thrown by [AuthRepository.signIn]/[signUp] when a sign-out lands during
 /// the credential grant's persist-and-reconcile window. The newer intent
 /// won: state and storage already reflect the sign-out by the time this is
 /// thrown. Also thrown by [AuthRepository.signInWithProvider] for an attempt
-/// that a newer one, a sign-out, a password sign-in or a sign-up overtook, or
-/// whose repository was disposed, before its grant was adopted (#583); nothing
-/// was stored for it. Callers should treat
-/// it as a quiet return to the unauthenticated surface — NOT as a server
-/// fault; the previous behavior reported it as
-/// an [AuthServerException] "server disowned the session" contract
-/// violation, which pointed a user's own sign-out at the server.
+/// that something newer overtook before its grant was adopted (#583): a newer
+/// attempt, a sign-out, a password sign-in or a sign-up, a disposal of its
+/// repository, or on web a session that landed while its start request was
+/// out. Nothing was stored for it.
+///
+/// The repository's state already reflects the newer intent, and that may be
+/// a session, not the unauthenticated surface: a password sign-in or another
+/// tab's sign-in can be what overtook a provider attempt. So a caller keeps a
+/// session it holds rather than returning to the sign-in screen. Nor is this a
+/// server fault; the previous behavior reported it as an
+/// [AuthServerException] "server disowned the session" contract violation,
+/// which pointed a user's own sign-out at the server.
 final class AuthSupersededException extends AuthException {
   const AuthSupersededException({
     super.message = 'The operation was superseded by a sign-out.',
