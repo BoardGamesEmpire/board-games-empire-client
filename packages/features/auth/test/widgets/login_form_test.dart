@@ -338,6 +338,25 @@ void main() {
       verify(() => mockBloc.add(any(that: isA<AuthSignInRequested>())))
           .called(1);
     });
+
+    testWidgets('the switch to register is off until the attempt ends', (
+      tester,
+    ) async {
+      var switched = 0;
+      when(() => mockBloc.state).thenReturn(providerOpen);
+      await tester.pumpWidget(
+        _wrap(LoginForm(onSwitchToRegister: () => switched++), mockBloc),
+      );
+      final link = find.widgetWithText(
+        TextButton,
+        "Don't have an account? Register",
+      );
+
+      expect(tester.widget<TextButton>(link).onPressed, isNull);
+      await tester.tap(link, warnIfMissed: false);
+      await tester.pump();
+      expect(switched, 0);
+    });
   });
 
   group('while an email sign-in is in flight', () {

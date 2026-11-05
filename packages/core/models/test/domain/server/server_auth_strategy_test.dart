@@ -316,6 +316,31 @@ void main() {
 
         expect(open, isNot(equals(closed)));
       });
+
+      // Each field #583 added: one that drops out of `props` fails here.
+      OidcStrategy acme({
+        String displayName = 'Acme SSO',
+        String appSignInEndpoint = '/api/auth/app-sign-in/start',
+        String appTokenEndpoint = '/api/auth/app-sign-in/token',
+      }) => OidcStrategy(
+        providerId: 'acme',
+        discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
+        authorizationEndpoint: '/api/auth/sign-in/oauth2',
+        displayName: displayName,
+        appSignInEndpoint: appSignInEndpoint,
+        appTokenEndpoint: appTokenEndpoint,
+      );
+
+      for (final (field, other) in [
+        ('display_name', acme(displayName: 'Other SSO')),
+        ('app_sign_in_endpoint', acme(appSignInEndpoint: '/other/start')),
+        ('app_token_endpoint', acme(appTokenEndpoint: '/other/token')),
+      ]) {
+        test('$field is part of OIDC equality', () {
+          expect(acme(), equals(acme()));
+          expect(acme(), isNot(equals(other)));
+        });
+      }
     });
 
     group('switch exhaustiveness', () {
