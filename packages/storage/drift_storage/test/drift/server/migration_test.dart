@@ -18,6 +18,7 @@ import 'generated/schema_v10.dart' as v10;
 import 'generated/schema_v11.dart' as v11;
 import 'generated/schema_v12.dart' as v12;
 import 'generated/schema_v13.dart' as v13;
+import 'generated/schema_v14.dart' as v14;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1243,6 +1244,48 @@ void main() {
             updatedAt: at,
           ),
         ]);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v13 → v14 (#710): the step adds an empty
+  // `list_layouts` and touches nothing else, so a cached game must come
+  // through unchanged.
+  test('migration from v13 to v14 adds an empty list_layouts and preserves '
+      'games', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 13,
+      newVersion: 14,
+      createOld: v13.DatabaseAtV13.new,
+      createNew: v14.DatabaseAtV14.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.games,
+          const v13.GamesData(
+            id: 'g_v13_1',
+            title: 'Catan',
+            contentType: 'BaseGame',
+            totalPlayCount: 0,
+            ownedByCount: 0,
+            categoriesJson: '[]',
+            mechanicsJson: '[]',
+            designersJson: '[]',
+            publishersJson: '[]',
+            tagsJson: '[]',
+            reach: 'Public',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.listLayouts).get(), isEmpty);
+        final games = await newDb.select(newDb.games).get();
+        expect(games.map((g) => g.id), ['g_v13_1']);
+        expect(games.single.title, 'Catan');
       },
     );
   });

@@ -8,15 +8,17 @@ import '../repositories/event_repository_impl.dart';
 import '../repositories/game_collection_repository_impl.dart';
 import '../repositories/game_repository_impl.dart';
 import '../repositories/household_repository_impl.dart';
+import '../repositories/list_layout_repository_impl.dart';
 import '../repositories/sync_queue_repository_impl.dart';
 
 /// [UserScopeInstaller] for the user-session scope (#39, #135, #150).
 ///
 /// Registers the per-user [SyncQueueRepository], [HouseholdRepository],
-/// [GameCollectionRepository], [GameRepository] and [EventRepository] into
+/// [GameCollectionRepository], [GameRepository], [EventRepository] and
+/// [ListLayoutRepository] into
 /// the **user-session scope** — the per-user child of the per-server scope,
 /// pushed on sign-in and popped on any transition out of the authenticated
-/// state (#135). All five are keyed to the current user, so scoping them to
+/// state (#135). All six are keyed to the current user, so scoping them to
 /// the session guarantees a live query can never outlive a user change:
 /// popping the scope disposes them, and each closes every vended `watch*`
 /// stream from its dispose path. For the sync queue and the collection
@@ -187,6 +189,16 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     // database, which outlives this scope. The container closes it because
     // the repository is Disposable (WatchDisposal).
     container.registerSingleton<EventRepository>(events);
+
+    // Data-scoped like the game cache (#710): `list_layouts` keeps a row per
+    // user and screen, and this instance reads and writes only this user's.
+    // Fixed-id rather than a lazy provider for the same reason as the
+    // others: a choice written just before the scope pops belongs to the
+    // user who made it. It is Disposable (WatchDisposal), so the container
+    // closes it without a callback.
+    container.registerSingleton<ListLayoutRepository>(
+      ListLayoutRepositoryImpl(db, userId: userId),
+    );
   }
 
   /// Reads the authenticated user id from [authRepository] at call time

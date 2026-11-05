@@ -232,6 +232,7 @@ void main() {
       GameCollectionRepository,
       GameRepository,
       EventRepository,
+      ListLayoutRepository,
     });
     expect(container.registered.values, everyElement(isA<Disposable>()));
     expect(container.withCallback, isEmpty);
