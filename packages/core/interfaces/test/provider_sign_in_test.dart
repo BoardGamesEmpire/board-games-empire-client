@@ -1,5 +1,6 @@
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
+import 'package:models/dto.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -81,6 +82,22 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('a completed sign-in carries the session the server granted', () {
+    final session = AuthResponse(
+      token: 'tok',
+      user: AuthUser(
+        id: 'u1',
+        username: 'user',
+        email: 'u1@example.com',
+        emailVerified: true,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+    );
+    final ProviderSignInOutcome outcome = ProviderSignInCompleted(session);
+    expect((outcome as ProviderSignInCompleted).session, same(session));
   });
 
   test('the availability variants carry what the screen needs', () {

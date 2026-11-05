@@ -643,6 +643,60 @@ void main() {
         ],
       );
 
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the network kind on a connectivity failure',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(const AuthNetworkException(message: 'timeout'));
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [const AuthLoading(), const AuthFailureNetwork()],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the server kind (cause retained) on an unexpected failure',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(
+            const AuthServerException(message: 'boom', statusCode: 500),
+          );
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [const AuthLoading(), const AuthFailureServer()],
+        verify: (b) => expect(
+          (b.state as AuthFailureServer).cause,
+          isA<AuthServerException>(),
+        ),
+      );
+
       // See the same group under AuthSignInRequested.
       group('a session that lands while the request is in flight is kept '
           'when it fails as', () {

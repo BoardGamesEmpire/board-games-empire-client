@@ -2,7 +2,7 @@
 //
 // The web twin of `dio_network/test/auth/auth_repository_rate_limit_test.dart`:
 // a resolved and a thrown 429, through a real Dio. `parseRetryAfter` is
-// unit-tested there; it is one shared function.
+// unit-tested in `interfaces`, beside it; it is one shared function.
 
 import 'dart:typed_data';
 
