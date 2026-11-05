@@ -7,6 +7,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/dto.dart' show AuthResponse;
 
 import '../support/auth_test_fixtures.dart';
 
@@ -197,6 +198,103 @@ void main() {
     expect: () => [loading],
     verify: (_) => verify(() => repo.signInWithProvider(any())).called(1),
   );
+
+  group('one credential grant at a time, across the three kinds', () {
+    blocTest<AuthBloc, AuthBlocState>(
+      'a provider request while a password sign-in is in flight is dropped: '
+      'no browser opens, and the sign-in settles the screen',
+      build: () {
+        final gate = Completer<AuthResponse>();
+        when(
+          () => repo.signIn(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+          ),
+        ).thenAnswer((_) => gate.future);
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete(testSession());
+        });
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        await pumpEventQueue();
+      },
+      expect: () => [const AuthLoading()],
+      verify: (_) => verifyNever(() => repo.signInWithProvider(any())),
+    );
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'a password sign-in or a registration while a provider sign-in is in '
+      'flight is dropped',
+      build: () {
+        final gate = Completer<ProviderSignInOutcome>();
+        when(() => repo.signInWithProvider(any()))
+            .thenAnswer((_) => gate.future);
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete(const ProviderSignInCancelled());
+        });
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
+        b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.c',
+            password: 'pw',
+            username: 'u',
+          ),
+        );
+        await pumpEventQueue();
+      },
+      expect: () => [loading],
+      verify: (_) {
+        verifyNever(
+          () => repo.signIn(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+          ),
+        );
+        verifyNever(
+          () => repo.signUp(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+            username: any(named: 'username'),
+            firstName: any(named: 'firstName'),
+            lastName: any(named: 'lastName'),
+          ),
+        );
+      },
+    );
+
+    blocTest<AuthBloc, AuthBlocState>(
+      'once a grant settles, the next one runs',
+      build: () {
+        when(() => repo.signInWithProvider(any()))
+            .thenAnswer((_) async => const ProviderSignInCancelled());
+        when(
+          () => repo.signIn(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+          ),
+        ).thenAnswer((_) async => testSession());
+        return AuthBloc(authRepository: repo);
+      },
+      act: (b) async {
+        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        await pumpEventQueue();
+        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
+      },
+      expect: () => [
+        loading,
+        const AuthUnauthenticated(),
+        const AuthLoading(),
+        AuthAuthenticated(session: testSession()),
+      ],
+    );
+  });
 
   blocTest<AuthBloc, AuthBlocState>(
     'a startup session check with a pending failed return emits the provider '

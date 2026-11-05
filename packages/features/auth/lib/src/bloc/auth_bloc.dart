@@ -80,6 +80,14 @@ import 'auth_bloc_state.dart';
 /// correct terminal state. Revalidation is droppable for the same reason:
 /// a flapping connection emits repeatedly and must not stack checks.
 ///
+/// The three credential grants, sign-in, registration and provider sign-in,
+/// also drop each other (#583). Each is its own registration, so
+/// `droppable()` alone would let a provider sign-in open the browser while a
+/// password sign-in runs, and the first to finish would settle the screen
+/// over the other. The screen disables the other controls once the loading
+/// state is built, which leaves the frame before it; [_oneGrantAtATime]
+/// covers that frame and any caller that isn't the screen.
+///
 /// ## i18n
 ///
 /// This bloc emits no display strings — failures are semantic kinds and
@@ -112,10 +120,16 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       _onSessionRevalidation,
       transformer: droppable(),
     );
-    on<AuthSignInRequested>(_onSignIn, transformer: droppable());
-    on<AuthRegisterRequested>(_onRegister, transformer: droppable());
+    on<AuthSignInRequested>(
+      (event, emit) => _oneGrantAtATime(() => _onSignIn(event, emit)),
+      transformer: droppable(),
+    );
+    on<AuthRegisterRequested>(
+      (event, emit) => _oneGrantAtATime(() => _onRegister(event, emit)),
+      transformer: droppable(),
+    );
     on<AuthProviderSignInRequested>(
-      _onProviderSignIn,
+      (event, emit) => _oneGrantAtATime(() => _onProviderSignIn(event, emit)),
       transformer: droppable(),
     );
     on<AuthSignOutRequested>(_onSignOut, transformer: droppable());
@@ -183,6 +197,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   Timer? _revalidationTimer;
 
+  /// Whether a credential grant is in flight: a sign-in, a registration or a
+  /// provider sign-in (#583). See [_oneGrantAtATime].
+  bool _grantInFlight = false;
+
   /// The cause of the sign-out in flight, if any (#142).
   ///
   /// The repository publishes unauthenticated before `signOut()` resolves
@@ -196,6 +214,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   /// Diagnostic logger for the auth bloc's failure seams (#100).
   final BgeLogger _log = BgeLogger('bge.auth.bloc');
+
+  /// Runs [grant] unless another credential grant is in flight, in which case
+  /// the request is dropped, as `droppable()` drops a repeat of its own type
+  /// (see the class docs' Concurrency section). A dropped request emits
+  /// nothing.
+  Future<void> _oneGrantAtATime(Future<void> Function() grant) async {
+    if (_grantInFlight) return;
+    _grantInFlight = true;
+    try {
+      await grant();
+    } finally {
+      _grantInFlight = false;
+    }
+  }
 
   Future<void> _onSessionCheck(
     AuthSessionCheckRequested event,
