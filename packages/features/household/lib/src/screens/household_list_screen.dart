@@ -80,6 +80,20 @@ import '../sync/household_hydration_status.dart';
 /// of 9"). What changes with [onOpen] is that the node becomes a button —
 /// announced as one, and reachable by keyboard traversal, which inert rows
 /// deliberately were not.
+///
+/// ## Focus when the household a row opened is gone (#479)
+///
+/// Leaving a household pops its detail screen back here, and the household
+/// leaves the list. Focus can't go back to the row the user came from. Left
+/// to the framework, it goes to whatever this page focused before that row,
+/// which depends on how the user got there, or to the page itself, which
+/// gives a screen reader nothing to say. Once the detail has gone, the
+/// page's heading takes focus instead, for a keyboard and a screen reader
+/// alike. It doesn't if the user has moved focus while the detail was
+/// leaving.
+///
+/// The anchor belongs to the list, not to Leave: #477's Delete pops back
+/// the same way and shares it.
 class HouseholdListScreen extends StatelessWidget {
   const HouseholdListScreen({
     required this.repository,
@@ -90,6 +104,10 @@ class HouseholdListScreen extends StatelessWidget {
     this.onEnter,
     super.key,
   });
+
+  /// Key on the page's heading, which takes focus when the household a row
+  /// opened is gone (#479).
+  static const Key headingKey = Key('household_list.heading');
 
   /// Key on the first-fill spinner.
   static const Key loadingKey = Key('household_list.loading');
@@ -194,7 +212,7 @@ class HouseholdListScreen extends StatelessWidget {
   }
 }
 
-class _HouseholdListView extends StatelessWidget {
+class _HouseholdListView extends StatefulWidget {
   const _HouseholdListView({this.onCreate, this.onOpen, this.canRetry = false});
 
   final void Function(BuildContext context)? onCreate;
@@ -204,8 +222,156 @@ class _HouseholdListView extends StatelessWidget {
   final bool canRetry;
 
   @override
+  State<_HouseholdListView> createState() => _HouseholdListViewState();
+}
+
+class _HouseholdListViewState extends State<_HouseholdListView> {
+  /// On the page's heading, which takes focus only when sent there: it is no
+  /// Tab stop.
+  final FocusNode _heading = FocusNode(
+    debugLabel: 'household list heading',
+    skipTraversal: true,
+  );
+
+  /// The household whose row opened the route above this one, until that
+  /// route has gone.
+  String? _opened;
+
+  /// This route's secondary animation, which runs as a route above it comes
+  /// in and goes.
+  Animation<double>? _above;
+
+  /// Where the framework has put focus on this page since the route above
+  /// started to leave, while [_onFocusChanged] follows it.
+  FocusNode? _handedBack;
+
+  /// Whether focus has moved some other way since the route above started
+  /// to leave, such as by the user's Tab. Once it has, the heading doesn't
+  /// take focus, wherever focus goes next.
+  bool _userMoved = false;
+
+  bool _following = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final above = ModalRoute.of(context)?.secondaryAnimation;
+    if (identical(above, _above)) return;
+    _above?.removeStatusListener(_onAboveChanged);
+    _above = above?..addStatusListener(_onAboveChanged);
+  }
+
+  void _open(BuildContext context, String householdId) {
+    _opened = householdId;
+    widget.onOpen!(context, householdId);
+  }
+
+  /// Once the route a row opened has gone, hands focus to the heading if the
+  /// household has left the list, unless the user has moved focus on this
+  /// page meanwhile (#479).
+  ///
+  /// When the route has gone, not when it starts to leave. Leaving pops the
+  /// detail as soon as its cache write resolves, and the list's read of the
+  /// cache answers after that, so the row can still be listed as the route
+  /// starts to leave. By the time the route has gone it has had the whole
+  /// exit to answer.
+  ///
+  /// The heading takes focus from wherever the framework has handed it back,
+  /// too. That is whatever this page focused last, such as the row above or
+  /// the back button, which depends on how the user got to the row. The data
+  /// gateway list does the same when a control is taken away (#456).
+  ///
+  /// A route above that settles back instead, as when a back gesture is let
+  /// go of, never gets this far, and the row is still the one to come back
+  /// from.
+  void _onAboveChanged(AnimationStatus status) {
+    final opened = _opened;
+    if (opened == null) return;
+    switch (status) {
+      case AnimationStatus.reverse:
+        _followFocus();
+      case AnimationStatus.forward || AnimationStatus.completed:
+        _forgetFocus();
+      case AnimationStatus.dismissed:
+        _opened = null;
+        WidgetsBinding.instance
+          ..addPostFrameCallback((_) {
+            final handedBack = _handedBack;
+            final userMoved = _userMoved;
+            _forgetFocus();
+            if (!mounted) return;
+            final state = context.read<HouseholdListBloc>().state;
+            final listed =
+                state is HouseholdListReady &&
+                state.households.any((household) => household.id == opened);
+            // Before the check below: focus the user has moved back onto the
+            // node the framework chose is still theirs.
+            if (listed || userMoved) return;
+            // Focus on nothing, as it is when the row went in this frame and
+            // the framework has yet to hand focus on, counts as free.
+            if (!focusIsFree(context, untouched: handedBack)) return;
+            _heading.requestFocus();
+          })
+          // A post-frame callback does not ask for a frame.
+          ..ensureVisualUpdate();
+    }
+  }
+
+  /// Starts following focus as the route above starts to leave.
+  ///
+  /// The pop has not handed focus back yet: the framework does that from a
+  /// microtask the pop queues. The first change after this is that hand-back.
+  void _followFocus() {
+    _handedBack = null;
+    _userMoved = false;
+    if (_following) return;
+    _following = true;
+    FocusManager.instance.addListener(_onFocusChanged);
+  }
+
+  void _stopFollowingFocus() {
+    if (!_following) return;
+    _following = false;
+    FocusManager.instance.removeListener(_onFocusChanged);
+  }
+
+  void _forgetFocus() {
+    _stopFollowingFocus();
+    _handedBack = null;
+    _userMoved = false;
+  }
+
+  /// Records where the framework puts focus: the hand-back after the pop,
+  /// and the hand-on when the node it chose goes while it has focus, as the
+  /// opened row does when its household leaves the list during the exit.
+  ///
+  /// A change away from that node while it is still built moved focus some
+  /// other way, such as the user's Tab. That marks [_userMoved], and nothing
+  /// after it is followed: a node the framework chose that goes once focus
+  /// has left it hands nothing on, so the next change is the user's too.
+  void _onFocusChanged() {
+    final handedBack = _handedBack;
+    if (handedBack != null && handedBack.parent != null) {
+      _userMoved = true;
+      _stopFollowingFocus();
+      return;
+    }
+    _handedBack = FocusManager.instance.primaryFocus;
+  }
+
+  @override
+  void dispose() {
+    _above?.removeStatusListener(_onAboveChanged);
+    _forgetFocus();
+    _heading.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
+    final onOpen = widget.onOpen == null ? null : _open;
+    final canRetry = widget.canRetry;
 
     return BlocBuilder<HouseholdListBloc, HouseholdListState>(
       builder: (context, state) {
@@ -213,10 +379,14 @@ class _HouseholdListView extends StatelessWidget {
           HouseholdListReady(:final households) => households,
           _ => const <Household>[],
         };
-        final create = onCreate;
+        final create = widget.onCreate;
 
         return BgePage.slivers(
-          title: Text(l10n.householdListTitle),
+          title: Focus(
+            key: HouseholdListScreen.headingKey,
+            focusNode: _heading,
+            child: Text(l10n.householdListTitle),
+          ),
           // A list surface, not a form: rows are a name plus a trailing
           // badge, so they take the wider measure.
           width: BgePageWidth.pane,
