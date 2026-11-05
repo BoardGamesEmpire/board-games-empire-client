@@ -15,6 +15,7 @@ import '../bloc/game_detail_event.dart';
 import '../bloc/game_detail_state.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_slivers.dart';
+import '../widgets/cover_beside_title.dart';
 import '../widgets/game_description.dart';
 
 /// One game (#42): its facts, its description as Markdown (#472), and the
@@ -252,36 +253,31 @@ class _GameDetailBody extends StatelessWidget {
           ),
           const BgeGap.md(),
         ],
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            BgeThumbnail(
-              url: game.image ?? game.thumbnail,
-              extent: _imageExtent,
-              placeholderIcon: Icons.casino_outlined,
-            ),
-            const BgeGap.md(axis: Axis.horizontal),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      game.title,
-                      style: theme.textTheme.headlineSmall,
-                    ),
-                  ),
-                  if (subtitle != null && subtitle.isNotEmpty)
-                    Text(subtitle, style: theme.textTheme.titleMedium),
-                  if (facts.isNotEmpty) ...[
-                    const BgeGap.sm(),
-                    CatalogFactsText(facts, key: GameDetailScreen.factsKey),
-                  ],
-                ],
+        CoverBesideTitle(
+          cover: BgeThumbnail(
+            url: game.image ?? game.thumbnail,
+            extent: _imageExtent,
+            placeholderIcon: Icons.casino_outlined,
+          ),
+          coverExtent: _imageExtent,
+          titleFontSize:
+              theme.textTheme.headlineSmall?.fontSize ??
+              BgeTypography.headlineSmall,
+          titles: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(game.title, style: theme.textTheme.headlineSmall),
               ),
-            ),
-          ],
+              if (subtitle != null && subtitle.isNotEmpty)
+                Text(subtitle, style: theme.textTheme.titleMedium),
+              if (facts.isNotEmpty) ...[
+                const BgeGap.sm(),
+                CatalogFactsText(facts, key: GameDetailScreen.factsKey),
+              ],
+            ],
+          ),
         ),
         if (platformGames.isNotEmpty) ...[
           CatalogSectionHeading(l10n.catalogDetailAvailableOn),

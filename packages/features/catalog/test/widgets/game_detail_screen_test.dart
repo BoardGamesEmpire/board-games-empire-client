@@ -1,15 +1,21 @@
 import 'package:bge_test_support/images.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
 
 void main() {
+  // The header tests measure the title in its own face; see #735.
+  setUpAll(loadDisplayFont);
+
   late FakeGamesRemote remote;
   late List<Uri> opened;
 
@@ -466,6 +472,130 @@ void main() {
           expect(fetches, 1);
         });
       });
+    });
+  });
+
+  group('the header (#735)', () {
+    Future<void> showAt(
+      WidgetTester tester, {
+      required double scale,
+      double width = 320,
+      String title = 'Wingspan',
+    }) async {
+      final view = Size(width, 640);
+      useViewSize(tester, view);
+      remote.onFetchGame = (_) async => (
+        game: catan.copyWith(title: title),
+        platformGames: const <PlatformGame>[],
+      );
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(
+            size: view,
+            textScaler: TextScaler.linear(scale),
+          ),
+          child: catalogApp(
+            GameDetailScreen(gameId: 'g_catan', remote: remote),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder cover() => find.byType(BgeThumbnail);
+
+    /// Expects the page's title under the cover, on one line at [scale].
+    void expectUnderCoverOnOneLine(WidgetTester tester, double scale) {
+      // The app bar repeats the title, after the page's own in the tree.
+      final title = find.text('Wingspan').first;
+      expect(
+        tester.getTopLeft(title).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(cover()).dy),
+      );
+      final paragraph = tester.renderObject<RenderParagraph>(title);
+      final style = tester.widget<Text>(title).style!;
+      final oneLine = TextPainter(
+        text: TextSpan(text: 'Wingspan', style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: TextScaler.linear(scale),
+      )..layout();
+      addTearDown(oneLine.dispose);
+      expect(paragraph.size.height, moreOrLessEquals(oneLine.height));
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('at 320 dp and 2.0 text the title sits under the cover and no '
+        'word breaks', (tester) async {
+      await showAt(tester, scale: 2);
+
+      expectUnderCoverOnOneLine(tester, 2);
+    });
+
+    testWidgets('at 320 dp and 1.0 text the title goes under the cover and no '
+        'word breaks', (tester) async {
+      await showAt(tester, scale: 1);
+
+      expectUnderCoverOnOneLine(tester, 1);
+    });
+
+    testWidgets('at 1.0 text the title stays beside the cover where it has 8 '
+        'ems', (tester) async {
+      await showAt(tester, scale: 1, width: 430);
+
+      expect(
+        tester.getTopLeft(find.text('Wingspan').first).dx,
+        greaterThanOrEqualTo(tester.getTopRight(cover()).dx),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('reading order stays cover, title, subtitle, facts', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // Disposed in the test body: flutter_test checks for live handles
+      // before its tear-downs run.
+      try {
+        for (final scale in [1.0, 2.0]) {
+          await showAt(tester, scale: scale);
+
+          // The cover is drawn without semantics, so a reader passes it, and
+          // what it hears is the title, then the subtitle, then the facts.
+          final heard = <String>[];
+          void walk(SemanticsNode node) {
+            final label = node.getSemanticsData().label;
+            if (label.isNotEmpty) heard.add(label);
+            node.visitChildren((child) {
+              walk(child);
+              return true;
+            });
+          }
+
+          var root = tester.getSemantics(find.text('Wingspan').first);
+          while (root.parent != null) {
+            root = root.parent!;
+          }
+          walk(root);
+          // The app bar repeats the title elsewhere in the tree, so the
+          // header's own is the one right before the subtitle.
+          expect(
+            heard.where((l) => l == 'Wingspan'),
+            hasLength(2),
+            reason: '$heard at $scale',
+          );
+          final subtitle = heard.indexOf('Trade, build, settle');
+          expect(subtitle, greaterThan(0), reason: '$heard at $scale');
+          expect(heard[subtitle - 1], 'Wingspan', reason: '$heard at $scale');
+          expect(
+            heard[subtitle + 1],
+            startsWith('Base game'),
+            reason: '$heard at $scale',
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      } finally {
+        handle.dispose();
+      }
     });
   });
 }
