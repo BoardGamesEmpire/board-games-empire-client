@@ -74,6 +74,7 @@ void main() {
   AuthRepositoryImpl repositoryOver(Dio dio) {
     final repository = AuthRepositoryImpl(
       identity: _identity(),
+      serverUrl: 'https://api.example.com',
       tokenStorage: freshStorage(),
       dio: dio,
       clock: LocalClockService(() => now),

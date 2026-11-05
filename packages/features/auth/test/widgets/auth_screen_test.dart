@@ -63,6 +63,7 @@ void main() {
     mockBloc = MockAuthBloc();
     when(() => mockBloc.state).thenReturn(const AuthInitial());
     when(() => mockBloc.stream).thenAnswer((_) => const Stream.empty());
+    stubProviderSignInAvailability(mockBloc);
   });
 
   group('AuthScreen', () {
@@ -650,6 +651,97 @@ void main() {
         );
       });
 
+      Future<void> pumpRateLimited(
+        WidgetTester tester,
+        Duration? retryAfter, {
+        bool register = false,
+      }) async {
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(mockBloc, states.stream, initialState: const AuthInitial());
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+        if (register) {
+          await tester.tap(find.text("Don't have an account? Register"));
+          await tester.pumpAndSettle();
+        }
+        states.add(AuthFailureRateLimited(retryAfter));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a rate-limited sign-in shows "Too many attempts. Try again '
+          'in 7 seconds." under "Couldn\'t sign in"', (tester) async {
+        await pumpRateLimited(tester, const Duration(seconds: 7));
+
+        final banner = find.byKey(AuthScreen.failureBannerKey);
+        expect(
+          find.descendant(of: banner, matching: find.text("Couldn't sign in")),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text('Too many attempts. Try again in 7 seconds.'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a rate-limited registration is titled with its own '
+          'operation', (tester) async {
+        await pumpRateLimited(
+          tester,
+          const Duration(seconds: 1),
+          register: true,
+        );
+
+        final banner = find.byKey(AuthScreen.failureBannerKey);
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text("Couldn't finish signing up"),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text('Too many attempts. Try again in 1 second.'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      for (final wait in <Duration?>[null, Duration.zero]) {
+        testWidgets('a rate-limited sign-in with a wait of $wait shows the '
+            'no-number copy', (tester) async {
+          await pumpRateLimited(tester, wait);
+
+          expect(
+            find.text('Too many attempts. Wait a moment, then try again.'),
+            findsOneWidget,
+          );
+          expect(find.textContaining('0 seconds'), findsNothing);
+        });
+      }
+
+      testWidgets('the rate-limit message is static text: no rebuild changes '
+          'it over 3 s, and submit stays enabled', (tester) async {
+        await pumpRateLimited(tester, const Duration(seconds: 7));
+
+        const message = 'Too many attempts. Try again in 7 seconds.';
+        expect(find.text(message), findsOneWidget);
+        await tester.pump(const Duration(seconds: 3));
+        expect(find.text(message), findsOneWidget);
+        expect(find.textContaining('6 seconds'), findsNothing);
+        expect(
+          tester
+              .widget<FilledButton>(find.byType(FilledButton).first)
+              .onPressed,
+          isNotNull,
+        );
+      });
+
       testWidgets('a registration failure is titled with its own operation, '
           'in words true of every registration failure', (tester) async {
         final states = StreamController<AuthBlocState>();
@@ -689,6 +781,8 @@ void main() {
         // that it lands before the next frame.
         final repo = MockAuthRepository();
         when(repo.watchAuthState).thenAnswer((_) => const Stream.empty());
+        when(() => repo.providerSignInAvailability)
+            .thenReturn(const ProviderSignInAvailable());
         when(
           () => repo.signIn(
             email: any(named: 'email'),

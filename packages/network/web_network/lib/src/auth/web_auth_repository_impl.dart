@@ -6,7 +6,12 @@ import 'package:dio/dio.dart';
 // 4 KiB bound and the session-read rules each live in one place (#352,
 // #278).
 import 'package:dio_network/dio_network.dart'
-    show decodeJsonBody, probeJsonBody, readSessionStatus, SessionReadStatus;
+    show
+        decodeJsonBody,
+        probeJsonBody,
+        rateLimitedFrom,
+        readSessionStatus,
+        SessionReadStatus;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -14,6 +19,7 @@ import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
 import 'package:http_status/http_status.dart';
 
+import 'provider_sign_in_bindings.dart';
 import 'session_channel.dart';
 
 /// Web implementation of [AuthRepository].
@@ -43,16 +49,65 @@ import 'session_channel.dart';
 /// through [signedOutInAnotherTab] and [signedInInAnotherTab].
 /// `WebSessionMonitor` carries both between tabs and decides when to re-read
 /// the session.
+///
+/// ## Provider sign-in (#583)
+///
+/// [signInWithProvider] posts the strategy's authorization endpoint and
+/// leaves the page for the address the server answers with, through the
+/// [WebProviderSignInBindings] `web_platform` supplies. The sign-in ends on
+/// the page load the provider sends the user back to, so this class never
+/// sees it finish. What that load brought back is read once in `main()` and
+/// handed in with the bindings: a refusal goes to [takeProviderSignInReturn]
+/// once, and a success is announced to the other tabs (see
+/// [_providerReturnUnannounced]).
 class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   WebAuthRepositoryImpl({
     required this._identity,
     required this._dio,
+    this._providerSignIn,
     this._decodeJson = decodeJsonBody,
-  }) : _stateController = StreamController<AuthState>.broadcast(sync: true);
+    this._pageLeaveGrace = defaultPageLeaveGrace,
+  }) : _stateController = StreamController<AuthState>.broadcast(sync: true) {
+    _providerReturnUnannounced = switch (_providerSignIn?.startupReturn) {
+      WebProviderSignInReturn(errorCode: null) => true,
+      _ => false,
+    };
+  }
 
   final ServerIdentity _identity;
   final Dio _dio;
   final StreamController<AuthState> _stateController;
+
+  /// The browser half of a provider sign-in, or null where the page cannot
+  /// leave for a provider: every VM suite, and the storage-less bootstrap.
+  final WebProviderSignInBindings? _providerSignIn;
+
+  /// How long [signInWithProvider] waits, once it has sent the page to the
+  /// provider, before it takes the page for one that did not leave.
+  /// [defaultPageLeaveGrace] but in tests.
+  final Duration _pageLeaveGrace;
+
+  /// Whether [takeProviderSignInReturn] has handed out this page load's
+  /// return, so that it hands it out once (#583).
+  bool _providerReturnTaken = false;
+
+  /// Whether this page load is a provider sign-in's successful return that
+  /// the other tabs have not heard of yet (#583).
+  ///
+  /// The server set the cookie on its own callback, before this page loaded,
+  /// so no grant here saw it and nothing announced it. The first [getSession]
+  /// that answers settles it. One that finds a session announces
+  /// [SessionChange.signedIn], once. One that finds none drops it: a session
+  /// found later belongs to a newer sign-in, which announces itself. A read
+  /// that cannot be answered leaves it for the next one.
+  ///
+  /// Dropped as well when the cookie changes before a read has answered:
+  /// this tab's own grant announces itself ([_reconcileCredentialGrant]), and
+  /// another tab's sign-in is never announced back ([signedInInAnotherTab]).
+  ///
+  /// On [getSession] alone, because that is the startup check's read, and the
+  /// session monitor's reads wait for the startup check to decide.
+  bool _providerReturnUnannounced = false;
 
   /// Behind [localChanges]. Asynchronous, unlike [_stateController]: a
   /// listener posting to other tabs must not run inside [signOut]'s
@@ -330,7 +385,14 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   @override
   Future<AuthResponse?> getSession() async {
     if (_refusingSessionReads()) return null;
-    return _getSessionUnlatched();
+    final session = await _getSessionUnlatched();
+
+    // A read that threw never gets here, and leaves the announcement owed.
+    if (_providerReturnUnannounced) {
+      _providerReturnUnannounced = false;
+      if (session != null) _announce(SessionChange.signedIn);
+    }
+    return session;
   }
 
   /// Re-reads the session for `WebSessionMonitor`, which moves this
@@ -838,9 +900,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// Only the bookkeeping. The caller re-reads the session afterwards, and
   /// that read is what says whose cookie it is: the broadcast that led here
   /// names nobody.
+  ///
+  /// A provider return not yet announced here is dropped (#583): the cookie
+  /// is the other tab's now, and what another tab did is not announced back.
   void signedInInAnotherTab() {
     _unrevokedSignOut = false;
     _credentialGrants += 1;
+    _providerReturnUnannounced = false;
   }
 
   /// The in-memory session if there is one, otherwise `null` — never a
@@ -900,6 +966,259 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// expiry hint from the server — tracked separately.
   @override
   Future<AuthResponse?> restoreCachedSession() async => null;
+
+  /// Web provider sign-in (#583): posts the strategy's authorization endpoint,
+  /// then leaves the page for the address the server answers with.
+  ///
+  /// The answer is classified on the start route's own terms, not a
+  /// credential grant's. No credential is presented here, so a 403 is not a
+  /// wrong password and a 409 is not a taken email. A 429 is a rate limit
+  /// (#559). Any other refusal is worded by its envelope's `code`, as
+  /// [_providerStartRefused] describes; one with no code, and a success that
+  /// names no address to leave for, is the generic failure. Either way the
+  /// page stays where it is.
+  ///
+  /// The request waits [providerStartReceiveTimeout] for its answer.
+  ///
+  /// A session that lands while the start request is out, such as another
+  /// tab's sign-in, is the newer intent. The page stays, and the call throws
+  /// [AuthSupersededException], so a start answered after it cannot take the
+  /// page to the provider and replace that session with another.
+  ///
+  /// The server sends the browser back to the app's root with a return id
+  /// this attempt chose ([providerSignInCallback]), and the page navigator
+  /// keeps the same id in the marker. The page load that comes back is read
+  /// as this attempt's return only when the two agree, so an address the
+  /// user reaches by hand after giving up on the provider is not one.
+  ///
+  /// A page that leaves never sees this call complete. One that is still
+  /// here [defaultPageLeaveGrace] later was stopped from leaving (Esc, or the
+  /// browser's Stop), and the call completes with [ProviderSignInCancelled]
+  /// so the screen comes back to rest. The marker stays: a navigation that was only
+  /// slow still lands as a return.
+  @override
+  Future<ProviderSignInOutcome> signInWithProvider(
+    OidcStrategy strategy,
+  ) async {
+    final providerSignIn = _providerSignIn;
+    if (providerSignIn == null) {
+      // The screen disables its provider buttons in this case, so reaching
+      // here is a caller that skipped the check. Refused before any request.
+      _log.warn(
+        'Refusing to start a provider sign-in that is not available here',
+        context: {'check': 'device'},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'Provider sign-in is not available here.',
+      );
+    }
+
+    final returnId = newProviderSignInReturnId();
+    final callback = providerSignInCallback(returnId);
+    // Before the first await: a session landing while the start is out must
+    // move it (see [_credentialGrants], which another tab's sign-in moves as
+    // well).
+    final grantsAtStart = _credentialGrants;
+
+    late final Response<String> response;
+    try {
+      // Relative, as every discovery path here is: this Dio's base URL is the
+      // page origin. That is also why a relative callback is one the server's
+      // origin check accepts, for a success and a failure alike.
+      response = await _dio.post<String>(
+        strategy.authorizationEndpoint,
+        data: {
+          'provider': strategy.providerId,
+          'callbackURL': callback,
+          'errorCallbackURL': callback,
+        },
+        options: _plainBody.copyWith(
+          receiveTimeout: providerStartReceiveTimeout,
+        ),
+      );
+    } on DioException catch (e) {
+      throw _providerStartFailure(e);
+    }
+
+    final status = response.statusCode;
+    if (status == HttpStatusCode.tooManyRequests) {
+      throw rateLimitedFrom(response.headers);
+    }
+    if (!_isSuccessStatus(status)) {
+      throw _providerStartRefused(status, response.data);
+    }
+
+    final (:address, :failedCheck) = await _providerAddress(response);
+    if (address == null) {
+      _log.warn(
+        'The provider sign-in start named no address to leave for',
+        context: {'check': failedCheck, 'status': status},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'The server named no address for the provider sign-in.',
+      );
+    }
+
+    // Nothing suspends between this check and the navigation.
+    if (_credentialGrants != grantsAtStart) {
+      _log.info(
+        'A session arrived while the provider sign-in was starting; the page '
+        'stays',
+      );
+      throw const AuthSupersededException(
+        message:
+            'A session arrived while the provider sign-in was starting, so '
+            'the page stayed.',
+      );
+    }
+
+    try {
+      providerSignIn.leavePageFor(address, returnId);
+    } on Object catch (error) {
+      // Neither the error nor its message is kept: a browser's refusal to
+      // navigate quotes the address it refused.
+      _log.warn(
+        'Could not leave the page for the sign-in provider',
+        context: {'cause': error.runtimeType.toString()},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'The page could not leave for the sign-in provider.',
+      );
+    }
+
+    _log.info('Left the page for the sign-in provider');
+    await Future<void>.delayed(_pageLeaveGrace);
+    _log.info('The page did not leave for the sign-in provider');
+    return const ProviderSignInCancelled();
+  }
+
+  /// How long a page sent to the provider has to leave before
+  /// [signInWithProvider] takes it for one the user stopped (#583).
+  ///
+  /// The page stays until the provider's page starts to arrive, so a slow
+  /// provider keeps it up for a while. Past this the screen comes back to
+  /// rest. A navigation that lands later still finishes the sign-in, and one
+  /// pressed again in the meantime replaces it.
+  static const Duration defaultPageLeaveGrace = Duration(seconds: 15);
+
+  static const String _providerSignInContext = 'provider sign-in';
+
+  /// How long the start request waits for its answer (#583).
+  ///
+  /// While a provider is down the server still lists it, and holds the start
+  /// for up to ten seconds before answering that it is not available. The
+  /// factory's receive timeout is that same ten seconds, too close to the
+  /// wait to budget for it, so this one request gets the wait plus room for
+  /// the server's own work and the transfer.
+  ///
+  /// In a browser the receive timeout is the one to raise, because the
+  /// request has a body. The adapter stops its connect timer once the body is
+  /// sent, and until the answer starts to arrive the request's deadline is
+  /// the connect and receive timeouts together. A request with no body would
+  /// need its connect timeout raised as well.
+  static const Duration providerStartReceiveTimeout = Duration(seconds: 30);
+
+  /// The address a 2xx start answer names, or the name of the check it
+  /// failed: a body that is not a JSON object, a `url` that is missing or not
+  /// a string, or one that is not an absolute http(s) address.
+  ///
+  /// `Uri.tryParse`, so an address that will not parse is a refusal rather
+  /// than a raw `FormatException` (#181). Only the check's name is ever
+  /// logged: the address carries the provider's `state`, and a failed
+  /// decode's own message quotes the body it could not read.
+  Future<({Uri? address, String? failedCheck})> _providerAddress(
+    Response<String> response,
+  ) async {
+    final decoded = await _decodeBody(
+      response.data,
+      context: _providerSignInContext,
+      status: response.statusCode,
+    );
+    final body = decoded.value;
+    if (body is! Map<String, dynamic>) {
+      return (address: null, failedCheck: 'body');
+    }
+
+    final url = body['url'];
+    if (url is! String) return (address: null, failedCheck: 'url');
+
+    final address = Uri.tryParse(url);
+    if (address == null ||
+        !(address.isScheme('https') || address.isScheme('http')) ||
+        address.host.isEmpty) {
+      return (address: null, failedCheck: 'address');
+    }
+    return (address: address, failedCheck: null);
+  }
+
+  /// A start request that threw. With a response attached (an injected Dio
+  /// that throws on a non-2xx) it is classified as a resolved one is; without
+  /// one, it is the transport failure it looks like.
+  AuthException _providerStartFailure(DioException e) {
+    final response = e.response;
+    if (response == null) return _mapDioException(e, credentialGrant: false);
+    if (response.statusCode == HttpStatusCode.tooManyRequests) {
+      return rateLimitedFrom(response.headers);
+    }
+    return _providerStartRefused(response.statusCode, response.data);
+  }
+
+  /// A start the server refused, other than a 429.
+  ///
+  /// A refusal whose envelope carries a `code`, read under the same bound as
+  /// every other rejection envelope, is worded by
+  /// [ProviderSignInFailureReason.forCode]: a provider that is down answers a
+  /// 404 `PROVIDER_NOT_FOUND` here (#583). A code outside that table, and a
+  /// refusal with no readable code, is the generic failure. The credential
+  /// grants' vocabulary is never read.
+  AuthProviderSignInException _providerStartRefused(int? status, Object? body) {
+    final code = _rejectionCode(body);
+    _log.warn(
+      'The server refused to start the provider sign-in',
+      context: {'status': status, 'code': ?code},
+    );
+    return AuthProviderSignInException(
+      code == null
+          ? ProviderSignInFailureReason.generic
+          : ProviderSignInFailureReason.forCode(code),
+      code: code,
+      message: 'The server refused to start the provider sign-in.',
+    );
+  }
+
+  /// Available whenever the page can leave for a provider. No address check
+  /// runs here: the server handles the cookie flow itself (#583).
+  @override
+  ProviderSignInAvailability get providerSignInAvailability =>
+      _providerSignIn == null
+      ? const ProviderSignInUnsupportedDevice()
+      : const ProviderSignInAvailable();
+
+  /// The refusal this page load came back with, once (#583).
+  ///
+  /// Once per repository. A page load builds one repository: the bootstrap
+  /// builds another only after a failed attempt, whose scope nothing read.
+  @override
+  AuthProviderSignInException? takeProviderSignInReturn() {
+    if (_providerReturnTaken) return null;
+    _providerReturnTaken = true;
+
+    final code = _providerSignIn?.startupReturn?.errorCode;
+    if (code == null) return null;
+
+    // Mapped by the code alone. `error_description` never reaches here.
+    _log.warn(
+      'The provider sign-in came back with an error',
+      context: {'code': code},
+    );
+    return AuthProviderSignInException(
+      ProviderSignInFailureReason.forCode(code),
+      code: code,
+    );
+  }
 
   @override
   Stream<AuthState> watchAuthState() {
@@ -1091,8 +1410,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     if (replacedCookie) {
       _unrevokedSignOut = false;
       _credentialGrants += 1;
-      // Every other tab's cookie is this one now (#432).
+      // Every other tab's cookie is this one now (#432), and a provider
+      // return not yet announced no longer describes it (#583).
       _announce(SessionChange.signedIn);
+      _providerReturnUnannounced = false;
     }
 
     // #346's checkpoint, and a different question from [_sessionEpoch]
@@ -1445,7 +1766,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // body, and never a full decode — see the native twin for the reasoning.
     // `_assertSuccess` never returns for a non-2xx.
     if (!_isSuccessStatus(status)) {
-      _assertSuccess(status, response.data, context: context);
+      _assertSuccess(
+        status,
+        response.data,
+        headers: response.headers,
+        context: context,
+      );
     }
 
     // A 2xx: the body IS the payload, so it earns a real decode.
@@ -1457,7 +1783,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     // Re-run on the decoded body: the duplicate-email envelope is not
     // status-gated, and here the decode has already happened.
-    _assertSuccess(status, decoded.value, context: context);
+    _assertSuccess(
+      status,
+      decoded.value,
+      headers: response.headers,
+      context: context,
+    );
 
     final failure = decoded.failure;
     if (failure != null) {
@@ -1496,12 +1827,26 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     return body;
   }
 
-  void _assertSuccess(int? status, Object? body, {required String context}) {
+  void _assertSuccess(
+    int? status,
+    Object? body, {
+    required Headers? headers,
+    required String context,
+  }) {
     if (status == HttpStatusCode.unauthorized) {
       throw const AuthInvalidCredentialsException();
     }
 
     if (status == HttpStatusCode.forbidden) throw _forbidden(body);
+
+    // A 429 is a rate limit whatever its body says (#559): classified on the
+    // status alone, with the wait read from `X-Retry-After` when it is there.
+    // It sits before the duplicate-email check, which reads a body code at any
+    // status, and before the generic non-2xx throw, which would file it as a
+    // server fault with nothing to act on.
+    if (status == HttpStatusCode.tooManyRequests) {
+      throw rateLimitedFrom(headers);
+    }
 
     if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
@@ -1631,6 +1976,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       return credentialGrant
           ? _forbidden(e.response?.data)
           : const AuthInvalidCredentialsException();
+    }
+
+    // Only a credential grant's 429 is a rate-limited grant (#559); a session
+    // read that is throttled stays what it was. Ahead of the duplicate-email
+    // check, as in [_assertSuccess].
+    if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
+      return rateLimitedFrom(e.response?.headers);
     }
 
     if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {

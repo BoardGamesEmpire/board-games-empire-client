@@ -11,6 +11,7 @@ import 'package:web_storage/web_storage.dart';
 
 import 'device_info/web_device_info_reader.dart';
 import 'feedback/indexed_db_feedback_sink.dart';
+import 'session/web_provider_sign_in_bindings.dart';
 import 'session/web_session_bindings.dart';
 import 'sync/web_cross_tab_lock.dart';
 import 'web_platform_bootstrap.dart';
@@ -34,7 +35,13 @@ import 'web_user_scope_installers.dart';
 /// Passed to [WebPlatformBootstrap] by [bgeWebPlatformBootstrap]; it is not
 /// that class's default, because `WebPlatformBootstrap` lives on the neutral
 /// side of the split and must stay VM-compilable.
-Future<ActiveServerScope> buildWebServerScope() {
+///
+/// [providerSignIn] is this page load's capture ([captureWebProviderSignIn]),
+/// taken once by [bgeWebPlatformBootstrap] and handed to every scope it
+/// builds. Without it the scope offers no provider sign-in (#583).
+Future<ActiveServerScope> buildWebServerScope({
+  WebProviderSignInBindings? providerSignIn,
+}) {
   return bootstrapWebServerScope(
     installStorage: installWebStorage,
     // #137: the per-user tier, over the database registered above.
@@ -44,6 +51,9 @@ Future<ActiveServerScope> buildWebServerScope() {
     // #432: keeps this tab's session in step with the other tabs', and gates
     // the work that sends as the session on whose it is.
     sessionBindings: webSessionBindings,
+    // #583: leaving the page for a sign-in provider, and what this page load
+    // brought back from one.
+    providerSignIn: providerSignIn,
   );
 }
 
@@ -95,10 +105,20 @@ void registerWebCrossTabLock(
 /// storage-less app, so the mistake it replaces would not fail — it would
 /// just quietly have no database. One symbol, named for what it is, is the
 /// cheapest guard available.
-WebPlatformBootstrap bgeWebPlatformBootstrap() => WebPlatformBootstrap(
-  rootModule: buildWebRootModule,
-  serverScopeBuilder: buildWebServerScope,
-);
+///
+/// Building it reads what this page load brought back from a sign-in
+/// provider (#583), and consumes it: call it once, in `main()`, where it runs
+/// before `runBgeApp` builds the router that could rewrite the address.
+WebPlatformBootstrap bgeWebPlatformBootstrap() {
+  final providerSignIn = captureWebProviderSignIn();
+  return WebPlatformBootstrap(
+    rootModule: buildWebRootModule,
+    // A closure rather than the tear-off, so that every attempt, a retry's
+    // included, builds its scope over this page load's one capture.
+    serverScopeBuilder: () =>
+        buildWebServerScope(providerSignIn: providerSignIn),
+  );
+}
 
 /// The production web **root** module: [registerWebRootModule] with the
 /// durable feedback sink (#292) and the browser's device reader (#324)

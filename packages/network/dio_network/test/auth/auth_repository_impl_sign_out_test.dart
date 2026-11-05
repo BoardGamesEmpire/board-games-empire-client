@@ -53,6 +53,7 @@ void main() {
     mockStorage = MockTokenStorage();
     repo = AuthRepositoryImpl(
       identity: _identity(),
+      serverUrl: 'https://api.example.com',
       tokenStorage: mockStorage,
       dio: mockDio,
     );

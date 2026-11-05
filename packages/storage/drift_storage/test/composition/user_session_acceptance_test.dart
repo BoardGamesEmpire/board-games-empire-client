@@ -50,6 +50,17 @@ class _FakeAuthRepository implements AuthRepository {
   Future<AuthResponse?> getCachedSession() => throw UnimplementedError();
 
   @override
+  Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy) =>
+      throw UnimplementedError();
+
+  @override
+  ProviderSignInAvailability get providerSignInAvailability =>
+      const ProviderSignInUnsupportedDevice();
+
+  @override
+  AuthProviderSignInException? takeProviderSignInReturn() => null;
+
+  @override
   Future<AuthResponse?> restoreCachedSession() => throw UnimplementedError();
 
   @override

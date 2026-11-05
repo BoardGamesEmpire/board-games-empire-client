@@ -80,6 +80,16 @@ import 'auth_bloc_state.dart';
 /// correct terminal state. Revalidation is droppable for the same reason:
 /// a flapping connection emits repeatedly and must not stack checks.
 ///
+/// The three credential grants, sign-in, registration and provider sign-in,
+/// also drop each other (#583). Each is its own registration, so
+/// `droppable()` alone would let a provider sign-in open the browser while a
+/// password sign-in runs, and the first to finish would settle the screen
+/// over the other. The screen disables the other controls once the loading
+/// state is built, which leaves the frame before it; [_oneGrantAtATime]
+/// covers that frame and any caller that isn't the screen. That loading
+/// state lasts until the grant settles: the repository reporting no session
+/// again does not end it (see [_onRepositoryStateChanged]).
+///
 /// ## i18n
 ///
 /// This bloc emits no display strings — failures are semantic kinds and
@@ -112,8 +122,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       _onSessionRevalidation,
       transformer: droppable(),
     );
-    on<AuthSignInRequested>(_onSignIn, transformer: droppable());
-    on<AuthRegisterRequested>(_onRegister, transformer: droppable());
+    on<AuthSignInRequested>(
+      (event, emit) => _oneGrantAtATime(() => _onSignIn(event, emit)),
+      transformer: droppable(),
+    );
+    on<AuthRegisterRequested>(
+      (event, emit) => _oneGrantAtATime(() => _onRegister(event, emit)),
+      transformer: droppable(),
+    );
+    on<AuthProviderSignInRequested>(
+      (event, emit) => _oneGrantAtATime(() => _onProviderSignIn(event, emit)),
+      transformer: droppable(),
+    );
     on<AuthSignOutRequested>(_onSignOut, transformer: droppable());
     on<AuthRepositoryStateChanged>(_onRepositoryStateChanged);
     on<AuthFailureCleared>(_onFailureCleared);
@@ -179,6 +199,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   Timer? _revalidationTimer;
 
+  /// Whether a credential grant is in flight: a sign-in, a registration or a
+  /// provider sign-in (#583). See [_oneGrantAtATime].
+  bool _grantInFlight = false;
+
   /// The cause of the sign-out in flight, if any (#142).
   ///
   /// The repository publishes unauthenticated before `signOut()` resolves
@@ -192,6 +216,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   /// Diagnostic logger for the auth bloc's failure seams (#100).
   final BgeLogger _log = BgeLogger('bge.auth.bloc');
+
+  /// Runs [grant] unless another credential grant is in flight, in which case
+  /// the request is dropped, as `droppable()` drops a repeat of its own type
+  /// (see the class docs' Concurrency section). A dropped request emits
+  /// nothing.
+  Future<void> _oneGrantAtATime(Future<void> Function() grant) async {
+    if (_grantInFlight) return;
+    _grantInFlight = true;
+    try {
+      await grant();
+    } finally {
+      _grantInFlight = false;
+    }
+  }
 
   Future<void> _onSessionCheck(
     AuthSessionCheckRequested event,
@@ -241,7 +279,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(
         session != null
             ? AuthAuthenticated(session: session)
-            : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+            : _noSessionState(),
       );
     } on TimeoutException catch (e, s) {
       // Budget expended with restorable material in hand: enter on it.
@@ -262,6 +300,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // splash. The stack rides along for the error log.
       await _emitRestoreOrFailed(emit, e, s);
     }
+  }
+
+  /// What a startup check that found no session lands on (#583).
+  ///
+  /// On web a provider sign-in finishes on a fresh page load, so a refusal
+  /// arrives here as a pending return rather than from the handler.
+  AuthBlocState _noSessionState() {
+    final failure = _authRepository.takeProviderSignInReturn();
+    return failure == null
+        ? const AuthUnauthenticated(cause: SignOutCause.sessionLost)
+        : AuthFailureProviderSignIn(failure.reason, cause: failure);
   }
 
   /// #98: re-check a session entered without server confirmation.
@@ -311,31 +360,45 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(const AuthLoading());
+    final AuthResponse session;
     try {
-      final session = await _authRepository.signIn(
+      session = await _authRepository.signIn(
         email: event.email,
         password: event.password,
       );
-      emit(AuthAuthenticated(session: session));
-    } on AuthSupersededException {
-      // A sign-out overtook the grant (#146): the system is already
-      // unauthenticated and storage already reflects it. Not a failure the
-      // user needs to hear about. The repository published that sign-out,
-      // so this lands the way the mirror does, usually by adding nothing.
-      _mirrorUnauthenticated(emit);
-    } on AuthInvalidCredentialsException {
-      emit(const AuthFailureInvalidCredentials());
-    } on AuthSessionNotGrantedException {
-      emit(const AuthFailureSessionNotGranted());
-    } on AuthEmailNotVerifiedException {
-      emit(const AuthFailureEmailNotVerified());
-    } on AuthLocalDecodeException catch (e) {
-      emit(AuthFailureLocalDecode(e));
-    } on AuthNetworkException {
-      emit(const AuthFailureNetwork());
     } on AuthException catch (e) {
-      emit(AuthFailureServer(e));
+      // A failure lands only if no session arrived while the request was in
+      // flight. On web another tab's sign-in reaches this bloc through the
+      // repository, and this form's refusal settling after it would throw
+      // that live session back to the sign-in screen. Only a live session is
+      // protected, as in `_onSignOut` (#280).
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // A sign-out overtook the grant (#146): the system is already
+          // unauthenticated and storage already reflects it. Not a failure
+          // the user needs to hear about. The repository published that
+          // sign-out, so this lands the way the mirror does, usually by
+          // adding nothing.
+          _mirrorUnauthenticated(emit);
+        case AuthInvalidCredentialsException():
+          emit(const AuthFailureInvalidCredentials());
+        case AuthSessionNotGrantedException():
+          emit(const AuthFailureSessionNotGranted());
+        case AuthEmailNotVerifiedException():
+          emit(const AuthFailureEmailNotVerified());
+        case final AuthLocalDecodeException decode:
+          emit(AuthFailureLocalDecode(decode));
+        case AuthNetworkException():
+          emit(const AuthFailureNetwork());
+        case AuthRateLimitedException(:final retryAfter):
+          emit(AuthFailureRateLimited(retryAfter));
+        case _:
+          emit(AuthFailureServer(e));
+      }
+      return;
     }
+    emit(AuthAuthenticated(session: session));
   }
 
   Future<void> _onRegister(
@@ -343,32 +406,107 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(const AuthLoading());
+    final AuthResponse session;
     try {
-      final session = await _authRepository.signUp(
+      session = await _authRepository.signUp(
         email: event.email,
         password: event.password,
         username: event.username,
         firstName: event.firstName,
         lastName: event.lastName,
       );
-      emit(AuthAuthenticated(session: session));
-    } on AuthSupersededException {
-      // See _onSignIn: the sign-out already won; return quietly.
-      _mirrorUnauthenticated(emit);
-    } on AuthRegistrationDisabledException {
-      emit(const AuthFailureRegistrationDisabled());
-    } on AuthEmailAlreadyExistsException {
-      emit(const AuthFailureEmailAlreadyExists());
-    } on AuthSessionNotGrantedException {
-      emit(const AuthFailureSessionNotGranted());
-    } on AuthLocalDecodeException catch (e) {
-      emit(AuthFailureLocalDecode(e));
-    } on AuthNetworkException {
-      emit(const AuthFailureNetwork());
     } on AuthException catch (e) {
-      emit(AuthFailureServer(e));
+      // See _onSignIn: a session that arrived meanwhile is kept.
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // See _onSignIn: the sign-out already won; return quietly.
+          _mirrorUnauthenticated(emit);
+        case AuthRegistrationDisabledException():
+          emit(const AuthFailureRegistrationDisabled());
+        case AuthEmailAlreadyExistsException():
+          emit(const AuthFailureEmailAlreadyExists());
+        case AuthSessionNotGrantedException():
+          emit(const AuthFailureSessionNotGranted());
+        case final AuthLocalDecodeException decode:
+          emit(AuthFailureLocalDecode(decode));
+        case AuthNetworkException():
+          emit(const AuthFailureNetwork());
+        case AuthRateLimitedException(:final retryAfter):
+          emit(AuthFailureRateLimited(retryAfter));
+        case _:
+          emit(AuthFailureServer(e));
+      }
+      return;
+    }
+    emit(AuthAuthenticated(session: session));
+  }
+
+  Future<void> _onProviderSignIn(
+    AuthProviderSignInRequested event,
+    Emitter<AuthBlocState> emit,
+  ) async {
+    emit(AuthLoading(providerId: event.strategy.providerId));
+
+    // An attempt that ends without a session of its own lands only if no
+    // session arrived while it was pending. On web another tab's sign-in
+    // reaches this bloc through the repository during the start request, or
+    // during the grace after a page that did not leave, and a cancel or a
+    // failure settling after it would throw that live session back to the
+    // sign-in screen. Only a live session is protected, as in `_onSignOut`
+    // (#280): an attempt that fails after another tab's sign-out still says
+    // why.
+    final ProviderSignInOutcome outcome;
+    try {
+      outcome = await _authRepository.signInWithProvider(event.strategy);
+    } on AuthException catch (e) {
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // See _onSignIn: the sign-out already won; return quietly.
+          _mirrorUnauthenticated(emit);
+        case AuthProviderSignInException(:final reason):
+          emit(AuthFailureProviderSignIn(reason, cause: e));
+        case AuthRateLimitedException(:final retryAfter):
+          emit(
+            AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.rateLimited,
+              retryAfter: retryAfter,
+            ),
+          );
+        case AuthNetworkException():
+          emit(
+            const AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.network,
+            ),
+          );
+        case _:
+          emit(
+            AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.generic,
+              cause: e,
+            ),
+          );
+      }
+      return;
+    }
+
+    switch (outcome) {
+      case ProviderSignInCompleted(:final session):
+        emit(AuthAuthenticated(session: session));
+      case ProviderSignInCancelled():
+        if (state is AuthAuthenticated) return;
+        // Closing the browser, or stopping a web page from leaving for the
+        // provider, is a cancel, not a failure: no banner. A web page that
+        // does leave never gets here; its sign-in finishes on the next load.
+        emit(const AuthUnauthenticated());
     }
   }
+
+  /// Whether provider sign-in can run here (#583). The screen's only way to
+  /// read it.
+  ProviderSignInAvailability get providerSignInAvailability =>
+      _authRepository.providerSignInAvailability;
 
   Future<void> _onSignOut(
     AuthSignOutRequested event,
@@ -459,6 +597,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // safe to hand the same value repeatedly.
       case AuthStateAuthenticated(:final session, :final verification):
         emit(AuthAuthenticated(session: session, verification: verification));
+      // A credential grant's loading state is the grant's to end (#583). On
+      // web the page regaining focus re-reads the session, and a read that
+      // finds none publishes unauthenticated again though nothing changed.
+      // Following it would show the sign-in buttons as live while
+      // [_oneGrantAtATime] drops every press until the grant settles. A
+      // sign-out landing meanwhile reaches the grant itself, which then
+      // settles the screen: a password grant as [AuthSupersededException], a
+      // provider attempt whose page stayed as its cancel. A session that
+      // lands is still followed, above.
+      case AuthStateUnauthenticated()
+          when _grantInFlight && state is AuthLoading:
+        break;
       // By TYPE, unlike the case above; see [_mirrorUnauthenticated].
       case AuthStateUnauthenticated():
         _mirrorUnauthenticated(emit);
@@ -595,9 +745,23 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureNetwork():
       case AuthFailureSessionNotGranted():
       case AuthFailureEmailNotVerified():
+      case AuthFailureRateLimited():
         _log.warn(
           'Auth operation failed',
           context: {'event': event, 'failure': next.runtimeType.toString()},
+        );
+      // The cause can hold the returned address, so only the reason (and the
+      // wire code) are logged, never the exception itself (#583).
+      case AuthFailureProviderSignIn(:final reason, :final cause):
+        _log.warn(
+          'Provider sign-in failed',
+          context: {
+            'event': event,
+            'failure': 'AuthFailureProviderSignIn',
+            'reason': reason.name,
+            if (cause is AuthProviderSignInException && cause.code != null)
+              'code': cause.code,
+          },
         );
       // Recoverable too, but nothing else records it: keep the cause.
       case AuthFailureLocalDecode(:final cause):

@@ -43,6 +43,8 @@ dev_dependencies:
   injectable_generator: ^3.1.3
   flutter_test:
     sdk: flutter
+  # Test-only: elapsing the provider sign-in's page-leave grace (#583).
+  fake_async: ^1.3.3
   # Test-only: asserting log records emitted through BgeLogger, matching
   # dio_network's dev-dependency on it for the same reason.
   logging: ^1.3.0

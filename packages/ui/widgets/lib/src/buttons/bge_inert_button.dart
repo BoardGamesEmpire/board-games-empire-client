@@ -26,7 +26,9 @@ typedef BgeInertButtonBuilder = Widget Function(
 /// while the pass it started runs, a menu while the write it chose runs, a
 /// row's arrow at the end it moves towards. A control that is unavailable
 /// for a reason no press of its own causes, such as being offline (#49), is
-/// disabled instead.
+/// disabled instead. One group is the exception: while a provider sign-in is
+/// open, its sibling provider buttons are inert with the pressed one, so the
+/// group reads the same whichever a user lands on (#583).
 ///
 /// [builder] gets the focus node and the press handler to give the button.
 /// The handler ignores a press while [inert], so the button can always be

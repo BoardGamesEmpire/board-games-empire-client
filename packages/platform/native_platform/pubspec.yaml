@@ -50,6 +50,7 @@ dependencies:
     path: ../connectivity_platform
 
   app_links: ^7.2.1
+  flutter_web_auth_2: ^5.1.0
   drift: ^2.34.3
   hydrated_bloc: ^11.0.0
   package_info_plus: ^10.2.1

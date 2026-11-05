@@ -52,6 +52,7 @@ void main() {
 
   setUp(() {
     mockBloc = MockAuthBloc();
+    stubProviderSignInAvailability(mockBloc);
   });
 
   Future<void> pumpWithState(WidgetTester tester, AuthBlocState state) async {

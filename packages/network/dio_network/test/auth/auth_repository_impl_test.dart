@@ -108,6 +108,7 @@ void main() {
     mockStorage = MockTokenStorage();
     repo = AuthRepositoryImpl(
       identity: _identity(),
+      serverUrl: 'https://api.example.com',
       tokenStorage: mockStorage,
       dio: mockDio,
     );
@@ -284,6 +285,7 @@ void main() {
               ),
             ],
           ),
+          serverUrl: 'https://api.example.com',
           tokenStorage: mockStorage,
           dio: mockDio,
         );
@@ -597,6 +599,7 @@ void main() {
       test('signIn throws AuthServerException', () {
         final noStrategyRepo = AuthRepositoryImpl(
           identity: _identity().copyWith(strategies: []),
+          serverUrl: 'https://api.example.com',
           tokenStorage: mockStorage,
           dio: mockDio,
         );

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart' show OidcStrategy;
 import 'package:observability/observability.dart';
 
 import 'auth_bloc_state.dart' show SignOutCause;
@@ -154,4 +155,17 @@ final class AuthRepositoryStateChanged extends AuthEvent {
 /// `ServerOnboardingFailureCleared` exists to prevent.
 final class AuthFailureCleared extends AuthEvent {
   const AuthFailureCleared();
+}
+
+/// The user chose a sign-in provider (#583).
+///
+/// Dropped while another sign-in is in flight: a second provider tapped while
+/// the browser is open must not start a second attempt.
+final class AuthProviderSignInRequested extends AuthEvent {
+  const AuthProviderSignInRequested(this.strategy);
+
+  final OidcStrategy strategy;
+
+  @override
+  List<Object?> get props => [strategy];
 }

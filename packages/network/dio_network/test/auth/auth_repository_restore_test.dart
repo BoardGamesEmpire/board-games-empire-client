@@ -103,6 +103,7 @@ void main() {
   AuthRepositoryImpl build({DateTime? clockNow, DateTime? deviceNow}) =>
       AuthRepositoryImpl(
         identity: _identity(),
+        serverUrl: 'https://api.example.com',
         tokenStorage: mockStorage,
         dio: mockDio,
         clock: LocalClockService(() => clockNow ?? now),
@@ -275,6 +276,7 @@ void main() {
         // the confirmed expiry.
         final expired = AuthRepositoryImpl(
           identity: _identity(),
+          serverUrl: 'https://api.example.com',
           tokenStorage: mockStorage,
           dio: mockDio,
           clock: LocalClockService(() => DateTime.utc(2026, 2, 1)),

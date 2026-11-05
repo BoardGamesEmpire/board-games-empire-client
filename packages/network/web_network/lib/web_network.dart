@@ -1,5 +1,6 @@
 library;
 
+export 'src/auth/provider_sign_in_bindings.dart';
 export 'src/auth/session_channel.dart';
 export 'src/auth/web_auth_repository_impl.dart';
 export 'src/auth/web_session_monitor.dart';

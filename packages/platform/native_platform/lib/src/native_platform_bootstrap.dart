@@ -23,6 +23,7 @@ import 'package:storage_interface/storage_interface.dart';
 import 'package:sync_queue/sync_queue.dart';
 
 import 'deep_links/app_links_deep_link_source.dart';
+import 'auth/flutter_web_auth_provider_sign_in_browser.dart';
 import 'logging/rotating_file_log_sink.dart';
 import 'native_root_module.dart';
 
@@ -32,6 +33,12 @@ typedef NativeOrchestratorFactory = ServerOrchestrator Function({
   required DevicePreferencesRepository preferencesRepository,
   required ServerContextFactory contextFactory,
 });
+
+/// The in-app browser tab provider sign-in (#583) opens, shared by every server
+/// scope of this process: it holds no per-server state, and the plugin keeps
+/// one pending call per callback scheme anyway.
+final ProviderSignInBrowser _providerBrowser =
+    FlutterWebAuthProviderSignInBrowser();
 
 /// The per-server scope installers, in activation order: encrypted drift
 /// storage (DB open with one-shot key-recovery), then dio network. Also the
@@ -44,18 +51,25 @@ typedef NativeOrchestratorFactory = ServerOrchestrator Function({
 /// singletons living for the whole server scope, live queries surviving a
 /// same-server user change), which is exactly what the composition test
 /// guards against.
+///
+/// [providerBrowser] defaults to the process-wide flutter_web_auth_2 adapter;
+/// tests pass their own.
 List<ServerScopeInstaller> buildNativeServerScopeInstallers({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
   required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
+  ProviderSignInBrowser? providerBrowser,
 }) => [
   StorageScopeInstaller(
     executorFactory: executorFactory,
     keyService: keyService,
     onRecovery: onRecovery,
   ),
-  NetworkScopeInstaller(sessionTombstones: sessionTombstones),
+  NetworkScopeInstaller(
+    sessionTombstones: sessionTombstones,
+    providerBrowser: providerBrowser ?? _providerBrowser,
+  ),
 ];
 
 /// The per-user session-scope installers (#135), run on every sign-in by
@@ -122,12 +136,14 @@ ServerContextFactory buildNativeServerContextFactory({
   required EncryptionKeyService keyService,
   required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
+  ProviderSignInBrowser? providerBrowser,
 }) {
   final installers = buildNativeServerScopeInstallers(
     executorFactory: executorFactory,
     keyService: keyService,
     sessionTombstones: sessionTombstones,
     onRecovery: onRecovery,
+    providerBrowser: providerBrowser,
   );
   final userInstallers = buildNativeUserScopeInstallers();
   return (ServerConfig config) => ServerContextImpl(

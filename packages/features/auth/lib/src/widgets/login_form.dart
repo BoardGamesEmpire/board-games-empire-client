@@ -14,8 +14,11 @@ import '../bloc/auth_bloc_state.dart';
 /// Email and password sign-in form.
 ///
 /// Submits [AuthSignInRequested] to the ancestor [AuthBloc].
-/// Disables all inputs and shows a loading indicator while [AuthLoading]
-/// is active. Keyboard users can submit with Enter on the password field.
+/// While its own sign-in is in flight ([AuthLoading] with no provider) the
+/// fields go read-only and the submit shows its progress. While a provider
+/// sign-in is open, the fields stay as they are and the submit is disabled,
+/// with no progress shown (#583). Keyboard users can submit with Enter on the
+/// password field.
 ///
 /// i18n (#37): all copy — labels, hints, validation messages, button and
 /// loading semantics — comes from [AuthLocalizations].
@@ -84,6 +87,10 @@ class _LoginFormState extends State<LoginForm> {
   }
 
   void _submit(BuildContext context) {
+    // Nothing starts while a sign-in runs. While a provider's is open the
+    // fields are editable, so their done action reaches here even though the
+    // submit is disabled (#583).
+    if (context.read<AuthBloc>().state is AuthLoading) return;
     if (_form.invalid) {
       _form.rejectSubmit();
       return;
@@ -102,7 +109,14 @@ class _LoginFormState extends State<LoginForm> {
 
     return BlocBuilder<AuthBloc, AuthBlocState>(
       builder: (context, state) {
-        final isLoading = state is AuthLoading;
+        // A provider sign-in is open in the browser (#583). This form's
+        // submission isn't what is running, so it shows no progress and its
+        // fields stay as they are at rest. Its submit is unavailable for a
+        // press that isn't its own, so it has no focus to keep, and is
+        // disabled (STYLE_GUIDE §5).
+        final providerOpen = state is AuthLoading && state.isProviderSignIn;
+        // This form's own submission is in flight.
+        final isLoading = state is AuthLoading && !providerOpen;
 
         return ReactiveForm(
           formGroup: _form,
@@ -152,13 +166,16 @@ class _LoginFormState extends State<LoginForm> {
                     label: l10n.authSignInButton,
                     progressLabel: l10n.authLoadingLabel,
                     submitting: isLoading,
-                    onPressed: () => _submit(context),
+                    onPressed: providerOpen ? null : () => _submit(context),
                   ),
                 ),
                 if (widget.onSwitchToRegister != null) ...[
                   const BgeGap.md(),
                   TextButton(
-                    onPressed: isLoading ? null : widget.onSwitchToRegister,
+                    // Off while any sign-in runs, a provider's included.
+                    onPressed: state is AuthLoading
+                        ? null
+                        : widget.onSwitchToRegister,
                     child: Text(l10n.authSwitchToRegister),
                   ),
                 ],

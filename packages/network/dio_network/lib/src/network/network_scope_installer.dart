@@ -1,5 +1,6 @@
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart' show ProviderSignInBrowser;
 import 'package:models/domain.dart';
 
 import 'register_server_network.dart';
@@ -21,9 +22,16 @@ import 'register_server_network.dart';
 /// The web variant (httpOnly-cookie transport, `web_network`) gets its own
 /// installer; this one must never be composed into a browser build.
 class NetworkScopeInstaller implements ServerScopeInstaller {
-  const NetworkScopeInstaller({required this._sessionTombstones});
+  const NetworkScopeInstaller({
+    required this._sessionTombstones,
+    required this.providerBrowser,
+  });
 
   final SessionTombstoneStore _sessionTombstones;
+
+  /// The in-app browser tab a provider sign-in runs in (#583). Required, so
+  /// a platform composition cannot forget it and silently lose the feature.
+  final ProviderSignInBrowser providerBrowser;
 
   @override
   Future<void> install(
@@ -34,6 +42,7 @@ class NetworkScopeInstaller implements ServerScopeInstaller {
       container: container,
       config: config,
       sessionTombstones: _sessionTombstones,
+      providerBrowser: providerBrowser,
     );
   }
 }

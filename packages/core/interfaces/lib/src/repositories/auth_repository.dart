@@ -1,6 +1,8 @@
 import 'package:models/dto.dart';
 import 'package:models/domain.dart';
 
+import 'provider_sign_in.dart';
+
 /// Per-server authentication repository.
 ///
 /// Scoped to a single BGE server. All endpoint URLs are sourced from the
@@ -192,6 +194,60 @@ abstract class AuthRepository {
   /// (web, whose cookie is opaque) return null unconditionally.
   Future<AuthResponse?> restoreCachedSession();
 
+  /// Signs in through the sign-in provider [strategy] names (#583).
+  ///
+  /// Native: opens the provider in an in-app browser tab, checks what the tab
+  /// returns, and exchanges the code for a session at the token endpoint the
+  /// attempt recorded. Completes with [ProviderSignInCompleted], or with
+  /// [ProviderSignInCancelled] when the user closes the tab. A second call
+  /// replaces the first attempt, whether its tab is still open or its code is
+  /// being exchanged: a late return from the first signs nobody in, and the
+  /// first call throws [AuthSupersededException]. So does one that a
+  /// sign-out, a password sign-in or a sign-up overtakes, and one whose
+  /// repository is disposed, as removing its server or suspending it does.
+  /// Switching servers only backgrounds the server and keeps its repository,
+  /// so an attempt still open across a switch finishes on the server it
+  /// started on, never on the one switched to. These checks hold until the
+  /// grant is being stored. From there it is a credential grant like a
+  /// password one, which only a sign-out supersedes.
+  /// Web: posts to the strategy's authorization endpoint, then navigates the
+  /// page to the URL the server answers with. The sign-in finishes on the
+  /// page that loads when the provider sends the user back, and a failure is
+  /// read there through [takeProviderSignInReturn], so a page that leaves
+  /// never sees this call complete. One the user stops from leaving (Esc, or
+  /// the browser's Stop) is still here a while later, and completes with
+  /// [ProviderSignInCancelled]. A session that lands while the start request
+  /// is out, such as another tab's sign-in, keeps the page where it is, and
+  /// the call throws [AuthSupersededException].
+  ///
+  /// Throws [AuthProviderSignInException] when the provider or the server
+  /// refuses, or when a return fails a check; its reason is mapped from the
+  /// error code, never from text. Throws [AuthRateLimitedException] for a 429
+  /// on the token exchange and [AuthNetworkException] for connectivity
+  /// failures.
+  Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy);
+
+  /// Whether this device can sign in through a provider on this server.
+  ///
+  /// Native: [ProviderSignInUnsupportedDevice] when no in-app browser tab
+  /// exists; [ProviderSignInAddressMismatch] when discovery's issuer is not the
+  /// address discovery was fetched from, once both are normalised (scheme and
+  /// host case, default port, trailing slash); otherwise
+  /// [ProviderSignInAvailable].
+  /// Web: runs no address check, because the server handles the cookie flow
+  /// itself. [ProviderSignInAvailable] whenever the page can leave for a
+  /// provider, otherwise [ProviderSignInUnsupportedDevice].
+  ProviderSignInAvailability get providerSignInAvailability;
+
+  /// A failed provider return that arrived with this page load, or null.
+  ///
+  /// Web only: it is present only when this browser tab left the page for a
+  /// provider and came back with an error. Take-once: the first call returns
+  /// it and later calls return null, so a reload or a second reader never
+  /// shows the same failure twice. Native always returns null, since a native
+  /// return reaches [signInWithProvider] directly.
+  AuthProviderSignInException? takeProviderSignInReturn();
+
   /// Stream of auth state changes. Replays current state on subscribe.
   Stream<AuthState> watchAuthState();
 
@@ -352,6 +408,62 @@ final class AuthEmailNotVerifiedException extends AuthException {
   });
 }
 
+/// The server refused a credential grant because it was made too often (#559).
+///
+/// Classified on the 429 status alone: the body's `RATE_LIMITED` code confirms
+/// it but is not required, since a proxy in front of the server can answer 429
+/// with a different envelope. Definitive and not a fault of the credentials, so
+/// it is neither [AuthInvalidCredentialsException] nor a server error: the
+/// same request succeeds once [retryAfter] has passed.
+final class AuthRateLimitedException extends AuthException {
+  const AuthRateLimitedException({
+    this.retryAfter,
+    super.message = 'Too many attempts.',
+  });
+
+  /// From `X-Retry-After`; null when the header is missing or isn't a whole
+  /// number of seconds.
+  final Duration? retryAfter;
+}
+
+/// A sign-in through a sign-in provider was refused (#583).
+///
+/// [reason] is what the screen words; it comes from the wire [code] through
+/// [ProviderSignInFailureReason.forCode], never from any text the provider or
+/// server sent.
+final class AuthProviderSignInException extends AuthException {
+  const AuthProviderSignInException(
+    this.reason, {
+    this.code,
+    super.message = 'The provider sign-in was refused.',
+    super.cause,
+  });
+
+  final ProviderSignInFailureReason reason;
+
+  /// The wire code, for logs only.
+  final String? code;
+}
+
+/// Reads an `X-Retry-After` header as a whole number of seconds, or null when
+/// it is missing, is anything but a run of digits, or is too large to hold.
+///
+/// Too large to hold means more seconds than a [Duration] can count, not only
+/// more than an `int` can. A [Duration] counts microseconds in an `int`, so
+/// past [_maxRetryAfterSeconds] it would wrap to a negative wait on the VM.
+Duration? parseRetryAfter(String? header) {
+  if (header == null || !RegExp(r'^\d+$').hasMatch(header)) return null;
+
+  final seconds = int.tryParse(header);
+  if (seconds == null || seconds > _maxRetryAfterSeconds) return null;
+  return Duration(seconds: seconds);
+}
+
+/// The most whole seconds a [Duration] holds: the largest 64-bit `int`,
+/// 9223372036854775807, counted in microseconds. Written out because the web
+/// compiler cannot represent that `int` exactly.
+const int _maxRetryAfterSeconds = 9223372036854;
+
 /// Nothing answered: the request failed in transport — a timeout, a refused
 /// connection, a cancellation — so there is no status to classify by.
 ///
@@ -417,16 +529,25 @@ final class AuthSessionNotGrantedException extends AuthException {
   });
 }
 
-/// The operation was overtaken by a sign-out (or another supersession of
-/// the session) while it was in flight (#146).
+/// The operation was overtaken by a newer intent while it was in flight
+/// (#146).
 ///
 /// Thrown by [AuthRepository.signIn]/[signUp] when a sign-out lands during
 /// the credential grant's persist-and-reconcile window. The newer intent
 /// won: state and storage already reflect the sign-out by the time this is
-/// thrown. Callers should treat it as a quiet return to the unauthenticated
-/// surface — NOT as a server fault; the previous behavior reported it as
-/// an [AuthServerException] "server disowned the session" contract
-/// violation, which pointed a user's own sign-out at the server.
+/// thrown. Also thrown by [AuthRepository.signInWithProvider] for an attempt
+/// that something newer overtook before its grant was adopted (#583): a newer
+/// attempt, a sign-out, a password sign-in or a sign-up, a disposal of its
+/// repository, or on web a session that landed while its start request was
+/// out. Nothing was stored for it.
+///
+/// The repository's state already reflects the newer intent, and that may be
+/// a session, not the unauthenticated surface: a password sign-in or another
+/// tab's sign-in can be what overtook a provider attempt. So a caller keeps a
+/// session it holds rather than returning to the sign-in screen. Nor is this a
+/// server fault; the previous behavior reported it as an
+/// [AuthServerException] "server disowned the session" contract violation,
+/// which pointed a user's own sign-out at the server.
 final class AuthSupersededException extends AuthException {
   const AuthSupersededException({
     super.message = 'The operation was superseded by a sign-out.',

@@ -23,6 +23,7 @@ dependencies:
   observability:
     path: ../../core/observability
 
+  crypto: ^3.0.7
   dio: ^5.11.0
   web_socket_channel: ^3.0.3
   oauth2: ^2.0.2

@@ -89,14 +89,63 @@
       }
     }
   },
-  "authOidcComingSoon": "OIDC sign-in with {provider} — coming soon",
-  "@authOidcComingSoon": {
-    "description": "Placeholder shown when an OIDC button is tapped before the flow exists",
+  "authContinueWithInProgress": "Waiting for {provider}…",
+  "@authContinueWithInProgress": {
+    "description": "Label of a sign-in provider's button while that provider's sign-in is open in the browser and the app is waiting for it to finish. Also the button's screen-reader name, so it says why pressing the button does nothing meanwhile. {provider} is the provider's display name, as the server gives it.",
     "placeholders": {
       "provider": {
-        "type": "String"
+        "type": "String",
+        "example": "Authentik"
       }
     }
+  },
+  "authContinueWithUnavailable": "Continue with {provider} (not available on this device yet)",
+  "@authContinueWithUnavailable": {
+    "description": "Label of a sign-in provider's button on a device that can't sign in through a provider yet (Windows and Linux). The button is disabled, and this label is the only place the reason is given. 'Yet' because support is planned. {provider} is the provider's display name, as the server gives it.",
+    "placeholders": {
+      "provider": {
+        "type": "String",
+        "example": "Authentik"
+      }
+    }
+  },
+  "authProviderAddressMismatch": "Sign-in providers only work when this server is reached at {address}.",
+  "@authProviderAddressMismatch": {
+    "description": "Note under the sign-in provider buttons, which are disabled, when this server was added under a different address from the one it reports as its own. The provider would send the user back to that other address, so provider sign-in can't work here; email sign-in still does. {address} is that address, a URL inserted exactly as the server reports it: don't translate, reformat or shorten it.",
+    "placeholders": {
+      "address": {
+        "type": "String",
+        "example": "https://bge.example.com"
+      }
+    }
+  },
+  "authProviderErrorRegistrationDisabled": "This server isn't accepting new accounts. If you already have an account here, you can still sign in with it.",
+  "@authProviderErrorRegistrationDisabled": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider signed the user in, but they have no account on this server and the server doesn't create new ones. Someone who already has an account here can still sign in to it."
+  },
+  "authProviderErrorEmailUnverified": "Your sign-in provider hasn't confirmed your email address. Confirm it with the provider, then try again.",
+  "@authProviderErrorEmailUnverified": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider reports the user's email address as unconfirmed, so this server won't sign them in with it. The fix is with the provider, not this server."
+  },
+  "authProviderErrorAccountNotLinked": "An account with this email already exists here. Sign in with its password instead.",
+  "@authProviderErrorAccountNotLinked": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: an account with the provider's email address already exists on this server, and the provider isn't linked to it. For now the only way in is that account's password. #582 adds the next step later (linking the provider from the account's sign-in methods), and will extend this message when it does."
+  },
+  "authProviderErrorAccessDenied": "The sign-in provider didn't allow this sign-in. If you think it should have, ask this server's administrator.",
+  "@authProviderErrorAccessDenied": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider refused the sign-in, for example because the user isn't given access to this server's app there. Not shown when the user closes the browser, which is a cancel and shows nothing."
+  },
+  "authProviderErrorUnavailable": "This sign-in provider isn't available right now. Try again later.",
+  "@authProviderErrorUnavailable": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the provider the button named isn't working right now, usually because it is down. The server still offers it, and signing in through it works again by itself once the provider is back, which is why the message says to try again later rather than asking the user to change anything."
+  },
+  "authProviderErrorStartAgain": "The sign-in didn't finish, or took too long. Start it again.",
+  "@authProviderErrorStartAgain": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle: the sign-in can't be completed as it stands (it expired, came back incomplete, or was already used), and pressing the provider's button again is the fix."
+  },
+  "authProviderErrorGeneric": "Something went wrong signing in with the provider. Try again.",
+  "@authProviderErrorGeneric": {
+    "description": "Provider sign-in failure, under the heading authSignInErrorTitle, for any cause no other message covers. The server's and the provider's own error text is never shown, so this must not promise a specific reason."
   },
   "authErrorRequired": "This field is required",
   "@authErrorRequired": {
@@ -159,6 +208,19 @@
   "authErrorServer": "Something went wrong on the server. Please try again.",
   "@authErrorServer": {
     "description": "Submission error: unexpected server failure"
+  },
+  "authErrorRateLimited": "Too many attempts. Try again in {seconds, plural, =1{1 second} other{{seconds} seconds}}.",
+  "@authErrorRateLimited": {
+    "description": "Submission error: the server refused a sign-in or sign-up for too many attempts and said how long to wait. Announced once when it appears, with no countdown: a ticking number would be re-announced every second. The submit button stays enabled during the wait.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "authErrorRateLimitedNoWait": "Too many attempts. Wait a moment, then try again.",
+  "@authErrorRateLimitedNoWait": {
+    "description": "Submission error: the server refused a sign-in or sign-up for too many attempts and gave no usable wait (none, or under a second). Announced once, with no countdown."
   },
   "authPasswordVisibilityShow": "Show password",
   "@authPasswordVisibilityShow": {

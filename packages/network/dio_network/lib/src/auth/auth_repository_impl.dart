@@ -6,7 +6,8 @@ import 'package:dio/dio.dart';
 
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:interfaces/services.dart' show ClockService;
+import 'package:interfaces/services.dart'
+    show ClockService, ProviderSignInBrowser, UnsupportedProviderSignInBrowser;
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
@@ -15,6 +16,11 @@ import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 import '../network/redact_uri.dart';
 import '../network/token_interceptor.dart';
+import 'provider_sign_in/app_sign_in_return_address.dart';
+import 'provider_sign_in/pkce.dart';
+import 'provider_sign_in/provider_sign_in_attempt.dart';
+import 'provider_sign_in/server_address.dart';
+import 'rate_limited.dart';
 import 'session_read_status.dart';
 import 'token_storage_service.dart';
 
@@ -32,7 +38,7 @@ import 'token_storage_service.dart';
 ///
 /// This repository does not close the injected [Dio]: it is a shared
 /// per-server resource owned by the container. [onDispose] tears down only the
-/// auth-state stream.
+/// auth-state stream and any provider sign-in still in flight.
 ///
 /// ## Offline-first session restore (#98)
 ///
@@ -45,8 +51,10 @@ import 'token_storage_service.dart';
 class AuthRepositoryImpl implements AuthRepository, Disposable {
   AuthRepositoryImpl({
     required this._identity,
+    required this._serverUrl,
     required this._tokenStorage,
     required this._dio,
+    this._providerBrowser = const UnsupportedProviderSignInBrowser(),
     this._clock = const LocalClockService(),
     this._deviceNowUtc = _systemDeviceNowUtc,
     this._decodeJson = decodeJsonBody,
@@ -55,6 +63,16 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   static DateTime _systemDeviceNowUtc() => DateTime.now().toUtc();
 
   final ServerIdentity _identity;
+
+  /// The address discovery was fetched from (`ServerConfig.serverUrl`).
+  /// Provider sign-in is offered only when [_identity]'s issuer names it, a
+  /// return's `iss` must name it, and the provider routes resolve against it
+  /// (#583).
+  final String _serverUrl;
+
+  /// The in-app browser tab provider sign-in runs in (#583). The default, a
+  /// device with none, leaves provider sign-in unavailable.
+  final ProviderSignInBrowser _providerBrowser;
   final TokenStorageService _tokenStorage;
   final Dio _dio;
   final StreamController<AuthState> _stateController;
@@ -102,6 +120,24 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// disk.
   int _sessionEpoch = 0;
 
+  /// The provider sign-in waiting on its browser tab or its code exchange
+  /// (#583). One per repository: a new attempt replaces it, and a sign-out, a
+  /// password sign-in or sign-up, and [onDispose] retire it, so a return for
+  /// anything but the attempt held here adopts nothing.
+  ///
+  /// Attempts live here, in the per-server repository, so a return is only
+  /// ever adopted by the server its attempt started on. [onDispose] runs when
+  /// that server is removed or suspended. A server switch only backgrounds the
+  /// server and keeps this repository, so an attempt open across a switch
+  /// still finishes here, into this server's own token storage.
+  ProviderSignInAttempt? _pendingAttempt;
+
+  /// Ends the pending provider sign-in, if there is one, for a newer intent
+  /// (#583). Synchronous, so that it lands before the caller's first await:
+  /// the tab's late return then finds no attempt, throws
+  /// [AuthSupersededException] and stores nothing.
+  void _retireProviderAttempt() => _pendingAttempt = null;
+
   @override
   AuthState get currentAuthState => _currentState;
 
@@ -121,6 +157,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required String email,
     required String password,
   }) async {
+    // A password sign-in is newer than any provider tab still open: that tab
+    // must not sign another account in over this one (#583).
+    _retireProviderAttempt();
+
     final strategy = _requireEmailPasswordStrategy();
 
     late final Response<String> response;
@@ -150,6 +190,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     String? firstName,
     String? lastName,
   }) async {
+    // As in [signIn]: the new account wins over a provider tab still open.
+    _retireProviderAttempt();
+
     final strategy = _requireEmailPasswordStrategy();
 
     if (strategy.signUpDisabled || strategy.signUpEndpoint == null) {
@@ -302,6 +345,20 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // Widening the capture would guard a race no caller can produce.
     // Revisit if any screen ever offers sign-out over `AuthLoading` — that,
     // not this line, is what holds the bound.
+    //
+    // Provider sign-in (#583) is the exception, and the bound does not hold
+    // for it. Its window before this method is a whole browser session, and
+    // on macOS the window behind the sheet stays usable, so a password
+    // sign-in, and a sign-out after it, can land while the tab is open. That
+    // window is guarded before this method instead: `signOut`, `signIn` and
+    // `signUp` retire the pending attempt synchronously, and
+    // `_exchangeProviderCode` checks it after the POST and again after the
+    // decode, with nothing that suspends between that last check and this
+    // capture. A provider grant that reaches here is still the newest intent,
+    // and from here the epoch covers it as it covers a password grant. Like a
+    // password grant's, it is not retired by [onDispose] from here on: a
+    // disposal does not move the epoch, and clearing on a retirement could
+    // delete a newer password grant's token instead of this one's.
     final epoch = _sessionEpoch;
 
     await _tokenStorage.store(
@@ -582,6 +639,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // session material or the auth state (see [_sessionEpoch]).
     _sessionEpoch += 1;
 
+    // Likewise a provider tab still open: its return must not sign the user
+    // back in after this (#583).
+    _retireProviderAttempt();
+
     // Capture the bearer token BEFORE clearing. TokenStorageService.clear()
     // sets its sign-out latch synchronously, after which retrieve() — and so
     // the TokenInterceptor — reports no token; a POST left to the interceptor
@@ -754,6 +815,316 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       context: {'reason': reason},
     );
   }
+
+  /// Native app sign-in (#583): a PKCE pair and a `state`, the in-app browser
+  /// tab, the checks on what it returns, then the code exchange at the token
+  /// route the attempt recorded when it started.
+  ///
+  /// The attempt is recorded before the tab opens and dropped when this call
+  /// ends, but only while it is still the one held: a newer attempt that
+  /// replaced it stays pending.
+  @override
+  Future<ProviderSignInOutcome> signInWithProvider(
+    OidcStrategy strategy,
+  ) async {
+    final unavailable = switch (providerSignInAvailability) {
+      ProviderSignInAvailable() => null,
+      ProviderSignInUnsupportedDevice() => 'device',
+      ProviderSignInAddressMismatch() => 'issuer',
+    };
+    if (unavailable != null) {
+      // The screen disables its provider buttons in this case, so reaching
+      // here is a caller that skipped the check. Refused before any request.
+      _log.warn(
+        'Refusing to start a provider sign-in that is not available here',
+        context: {'check': unavailable},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'Provider sign-in is not available here.',
+      );
+    }
+
+    final start = resolveServerEndpoint(_serverUrl, strategy.appSignInEndpoint);
+    final tokenEndpoint = resolveServerEndpoint(
+      _serverUrl,
+      strategy.appTokenEndpoint,
+    );
+    if (start == null || tokenEndpoint == null) {
+      // A discovery path no address can be made from, or an absolute one off
+      // this server's origin. Refused here, before the tab opens or any
+      // request goes out, as a modelled exception: a raw FormatException
+      // would strand the caller on its loading state (#181).
+      _log.warn(
+        'Refusing to start a provider sign-in whose routes are not addresses '
+        'on this server',
+        context: {'check': 'endpoint'},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'The server sent a provider sign-in route that is not valid.',
+      );
+    }
+
+    final attempt = ProviderSignInAttempt(
+      state: randomUrlSafeToken(),
+      codeVerifier: randomUrlSafeToken(),
+      providerId: strategy.providerId,
+      tokenEndpoint: tokenEndpoint,
+      issuerAddress: _serverUrl,
+    );
+    _pendingAttempt = attempt;
+
+    try {
+      return await _runProviderSignIn(attempt, start);
+    } finally {
+      if (identical(_pendingAttempt, attempt)) _pendingAttempt = null;
+    }
+  }
+
+  /// Opens the tab for [attempt] at the start route [start], checks its return
+  /// and exchanges its code.
+  Future<ProviderSignInOutcome> _runProviderSignIn(
+    ProviderSignInAttempt attempt,
+    Uri start,
+  ) async {
+    final url = start.replace(
+      queryParameters: {
+        ...start.queryParameters,
+        'provider': attempt.providerId,
+        'redirect_uri': appSignInReturnAddress,
+        'code_challenge': codeChallengeS256(attempt.codeVerifier),
+        'code_challenge_method': 'S256',
+        'state': attempt.state,
+      },
+    );
+
+    final Uri? returned;
+    try {
+      returned = await _providerBrowser.authenticate(
+        url: url,
+        callbackScheme: appSignInCallbackScheme,
+      );
+    } on AuthException {
+      // A replaced attempt ends quietly, even when its tab failed.
+      _requirePendingAttempt(attempt);
+      rethrow;
+    } on Object catch (error, stackTrace) {
+      _requirePendingAttempt(attempt);
+      // The seam promises an AuthProviderSignInException; anything else is
+      // wrapped, so nothing raw leaves an auth method (#181).
+      Error.throwWithStackTrace(
+        AuthProviderSignInException(
+          ProviderSignInFailureReason.generic,
+          message: 'The in-app browser tab failed.',
+          cause: error,
+        ),
+        stackTrace,
+      );
+    }
+
+    _requirePendingAttempt(attempt);
+
+    if (returned == null) return const ProviderSignInCancelled();
+
+    final failedCheck = _failedReturnCheck(returned, attempt);
+    if (failedCheck != null) {
+      _log.warn(
+        'Refusing a provider sign-in return that failed a check',
+        context: {'check': failedCheck},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'The provider sign-in return failed a check.',
+      );
+    }
+
+    final query = returned.queryParameters;
+
+    // Mapped by the code alone. `error_description` is optional, comes in the
+    // server's fallback locale, and is never shown or logged.
+    final error = query['error'];
+    if (error != null) {
+      _log.warn(
+        'The provider sign-in came back with an error',
+        context: {'code': error},
+      );
+      throw AuthProviderSignInException(
+        ProviderSignInFailureReason.forCode(error),
+        code: error,
+      );
+    }
+
+    final code = query['code'];
+    if (code == null || code.isEmpty) {
+      _log.warn(
+        'Refusing a provider sign-in return that failed a check',
+        context: {'check': 'code'},
+      );
+      throw const AuthProviderSignInException(
+        ProviderSignInFailureReason.generic,
+        message: 'The provider sign-in return carried no code.',
+      );
+    }
+
+    return ProviderSignInCompleted(await _exchangeProviderCode(attempt, code));
+  }
+
+  /// The name of the first check [returned] fails for [attempt], or null when
+  /// it passes them all. Only the name is ever logged, never the address, its
+  /// `state` or its code.
+  ///
+  /// Runs before `error` is read. The server echoes the app's `state` on
+  /// every return it sends, failures included, so an error return that fails
+  /// these is not this attempt's to report.
+  ///
+  /// A query that does not decode, such as one holding `%FF`, which is not
+  /// UTF-8, fails the `query` check. Read raw, its `FormatException` would
+  /// leave the auth method unmodelled and strand the caller on its loading
+  /// state (#181). Once this passes, the query decodes for the reads after it.
+  static String? _failedReturnCheck(
+    Uri returned,
+    ProviderSignInAttempt attempt,
+  ) {
+    if (returned.scheme.toLowerCase() != appSignInCallbackScheme ||
+        returned.host.toLowerCase() != appSignInReturnHost) {
+      return 'return_address';
+    }
+
+    final Map<String, String> query;
+    try {
+      query = returned.queryParameters;
+    } on FormatException {
+      return 'query';
+    }
+    if (query['state'] != attempt.state) return 'state';
+
+    // RFC 9207 section 2.4: compared with the address this attempt was
+    // started against, never with an issuer some other response supplied.
+    final iss = query['iss'];
+    if (iss == null || !isSameServerAddress(iss, attempt.issuerAddress)) {
+      return 'iss';
+    }
+
+    return null;
+  }
+
+  /// Exchanges [code] at the token route [attempt] recorded and adopts the
+  /// grant the way a password sign-in does.
+  Future<AuthResponse> _exchangeProviderCode(
+    ProviderSignInAttempt attempt,
+    String code,
+  ) async {
+    late final Response<String> response;
+    try {
+      // Absolute, so the Dio's base URL plays no part: the recorded route is
+      // the only one this code goes to.
+      response = await _dio.postUri<String>(
+        attempt.tokenEndpoint,
+        data: {'code': code, 'code_verifier': attempt.codeVerifier},
+        options: _plainBody,
+      );
+    } on DioException catch (e) {
+      _requirePendingAttempt(attempt);
+      // A thrown rejection (an injected Dio that throws on a non-2xx) is
+      // worded the same as a resolved one.
+      throw _tokenRouteRefusal(e.response?.statusCode, e.response?.data) ??
+          _mapDioException(e, credentialGrant: true);
+    }
+
+    // The answer may land after the attempt was replaced or its server scope
+    // closed. Either way the grant is not this repository's to adopt.
+    _requirePendingAttempt(attempt);
+
+    final refusal = _tokenRouteRefusal(response.statusCode, response.data);
+    if (refusal != null) throw refusal;
+
+    final body = await _requireGrantBody(
+      response,
+      context: _providerSignInContext,
+    );
+
+    // Again after the decode, which can suspend on a large body.
+    _requirePendingAttempt(attempt);
+
+    return _finalizeCredentialGrant(
+      _parseGrant(
+        body,
+        context: _providerSignInContext,
+        status: response.statusCode,
+      ),
+      context: _providerSignInContext,
+    );
+  }
+
+  static const String _providerSignInContext = 'provider sign-in';
+
+  /// A refusal from the token route that names its reason: a 4xx other than a
+  /// 429 whose envelope carries a `code`, read under the same bound as every
+  /// other rejection envelope. A code outside
+  /// [ProviderSignInFailureReason.forCode]'s table, `BANNED_USER` among them,
+  /// is the generic refusal.
+  ///
+  /// Null for anything else, which is classified as every credential grant
+  /// is: a 429 is a rate limit whatever its body says (#559), and a 5xx or a
+  /// rejection with no readable code is not a refusal the provider flow can
+  /// word.
+  AuthProviderSignInException? _tokenRouteRefusal(int? status, Object? body) {
+    if (status == null ||
+        status == HttpStatusCode.tooManyRequests ||
+        status < HttpStatusCode.badRequest ||
+        status >= HttpStatusCode.internalServerError) {
+      return null;
+    }
+
+    final code = _rejectionCode(body);
+    if (code == null) return null;
+
+    _log.warn(
+      'The server refused the provider sign-in code',
+      context: {'code': code, 'status': status},
+    );
+    return AuthProviderSignInException(
+      ProviderSignInFailureReason.forCode(code),
+      code: code,
+    );
+  }
+
+  /// Throws [AuthSupersededException] unless [attempt] is still the one this
+  /// repository holds: a newer attempt replaced it, or [onDispose] dropped it
+  /// when its server scope closed.
+  void _requirePendingAttempt(ProviderSignInAttempt attempt) {
+    if (identical(_pendingAttempt, attempt)) return;
+
+    _log.info(
+      'Discarding a provider sign-in that was replaced or whose server '
+      'scope closed',
+    );
+    throw const AuthSupersededException(
+      message:
+          'The provider sign-in was replaced by a newer attempt, or its '
+          'server was closed.',
+    );
+  }
+
+  @override
+  ProviderSignInAvailability get providerSignInAvailability {
+    if (!_providerBrowser.isSupported) {
+      return const ProviderSignInUnsupportedDevice();
+    }
+
+    // RFC 8414 section 3.3, checked for provider sign-in only, so a server
+    // reached under another address still offers email sign-in.
+    if (!isSameServerAddress(_identity.issuer, _serverUrl)) {
+      return ProviderSignInAddressMismatch(_identity.issuer);
+    }
+
+    return const ProviderSignInAvailable();
+  }
+
+  /// Always null: a native return reaches [signInWithProvider] directly.
+  @override
+  AuthProviderSignInException? takeProviderSignInReturn() => null;
 
   @override
   Stream<AuthState> watchAuthState() {
@@ -939,7 +1310,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     if (status == null ||
         status < HttpStatusCode.ok ||
         status >= HttpStatusCode.multipleChoices) {
-      _assertSuccess(status, response.data, context: context);
+      _assertSuccess(
+        status,
+        response.data,
+        headers: response.headers,
+        context: context,
+      );
     }
 
     // A 2xx: the body IS the payload, so it earns a real decode.
@@ -952,7 +1328,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // Re-run on the decoded body. The duplicate-email envelope is not
     // status-gated, so a 2xx can carry it too — and here the decode has
     // already happened, so the check is free.
-    _assertSuccess(status, decoded.value, context: context);
+    _assertSuccess(
+      status,
+      decoded.value,
+      headers: response.headers,
+      context: context,
+    );
 
     // An unreadable body on a 2xx fails the grant: as a server fault when it
     // is not JSON, and as a local one when this device could not run the
@@ -1002,12 +1383,26 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  void _assertSuccess(int? status, Object? body, {required String context}) {
+  void _assertSuccess(
+    int? status,
+    Object? body, {
+    required Headers? headers,
+    required String context,
+  }) {
     if (status == HttpStatusCode.unauthorized) {
       throw const AuthInvalidCredentialsException();
     }
 
     if (status == HttpStatusCode.forbidden) throw _forbidden(body);
+
+    // A 429 is a rate limit whatever its body says (#559): classified on the
+    // status alone, with the wait read from `X-Retry-After` when it is there.
+    // It sits before the duplicate-email check, which reads a body code at any
+    // status, and before the generic non-2xx throw, which would file it as a
+    // server fault with nothing to act on.
+    if (status == HttpStatusCode.tooManyRequests) {
+      throw rateLimitedFrom(headers);
+    }
 
     if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
@@ -1125,6 +1520,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
           : const AuthInvalidCredentialsException();
     }
 
+    // Only a credential grant's 429 is a rate-limited grant (#559); a session
+    // read that is throttled stays what it was. Ahead of the duplicate-email
+    // check, as in [_assertSuccess].
+    if (credentialGrant && status == HttpStatusCode.tooManyRequests) {
+      return rateLimitedFrom(e.response?.headers);
+    }
+
     if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
     }
@@ -1174,10 +1576,14 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     );
   }
 
-  /// Tears down auth-state streaming. Does not close the injected [Dio] — that
-  /// is a shared per-server resource owned and disposed by the container.
+  /// Tears down auth-state streaming and drops any provider sign-in still in
+  /// flight. Does not close the injected [Dio] — that is a shared per-server
+  /// resource owned and disposed by the container.
   @override
   Future<void> onDispose() async {
+    // Before the await: a tab or token answer for this server that lands
+    // while the stream closes must already find no attempt to adopt (#583).
+    _pendingAttempt = null;
     await _stateController.close();
   }
 }

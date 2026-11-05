@@ -325,6 +325,59 @@ void main() {
         expect: () => [const AuthLoading(), const AuthFailureNetwork()],
       );
 
+      blocTest<AuthBloc, AuthBlocState>(
+        'sign-in maps AuthRateLimitedException to AuthFailureRateLimited with '
+        'its wait',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(
+            const AuthRateLimitedException(retryAfter: Duration(seconds: 7)),
+          );
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) =>
+            b.add(const AuthSignInRequested(email: 'a@b.com', password: 'p')),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureRateLimited(Duration(seconds: 7)),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'register maps AuthRateLimitedException to AuthFailureRateLimited',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(
+            const AuthRateLimitedException(retryAfter: Duration(seconds: 7)),
+          );
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+            firstName: 'f',
+            lastName: 'l',
+          ),
+        ),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureRateLimited(Duration(seconds: 7)),
+        ],
+      );
+
       // No switch over AuthException exists, so a missing clause would compile
       // and quietly fall to the catch-all's server kind. Each handler pins its
       // own mapping (#357).
@@ -406,6 +459,52 @@ void main() {
           isA<AuthServerException>(),
         ),
       );
+
+      // On web another tab's sign-in reaches this bloc through the
+      // repository while this form's request is in flight. The request's
+      // own failure must not throw that live session back to the form.
+      group('a session that lands while the request is in flight is kept '
+          'when it fails as', () {
+        for (final (name, error) in <(String, AuthException)>[
+          ('superseded', const AuthSupersededException()),
+          ('invalid credentials', const AuthInvalidCredentialsException()),
+          ('a network failure', const AuthNetworkException(message: 'x')),
+        ]) {
+          late StreamController<AuthState> repoStates;
+          late Completer<AuthResponse> gate;
+
+          blocTest<AuthBloc, AuthBlocState>(
+            name,
+            build: () {
+              repoStates = StreamController<AuthState>();
+              addTearDown(repoStates.close);
+              gate = Completer<AuthResponse>();
+              when(() => mockRepo.watchAuthState())
+                  .thenAnswer((_) => repoStates.stream);
+              when(
+                () => mockRepo.signIn(
+                  email: any(named: 'email'),
+                  password: any(named: 'password'),
+                ),
+              ).thenAnswer((_) => gate.future);
+              return AuthBloc(authRepository: mockRepo);
+            },
+            act: (b) async {
+              b.add(
+                const AuthSignInRequested(email: 'a@b.com', password: 'pass'),
+              );
+              await pumpEventQueue();
+              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              await pumpEventQueue();
+              gate.completeError(error);
+            },
+            expect: () => [
+              const AuthLoading(),
+              AuthAuthenticated(session: testSession()),
+            ],
+          );
+        }
+      });
     });
 
     group('AuthRegisterRequested', () {
@@ -543,6 +642,111 @@ void main() {
           const AuthFailureSessionNotGranted(),
         ],
       );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the network kind on a connectivity failure',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(const AuthNetworkException(message: 'timeout'));
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [const AuthLoading(), const AuthFailureNetwork()],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the server kind (cause retained) on an unexpected failure',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(
+            const AuthServerException(message: 'boom', statusCode: 500),
+          );
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [const AuthLoading(), const AuthFailureServer()],
+        verify: (b) => expect(
+          (b.state as AuthFailureServer).cause,
+          isA<AuthServerException>(),
+        ),
+      );
+
+      // See the same group under AuthSignInRequested.
+      group('a session that lands while the request is in flight is kept '
+          'when it fails as', () {
+        for (final (name, error) in <(String, AuthException)>[
+          ('superseded', const AuthSupersededException()),
+          ('an existing email', const AuthEmailAlreadyExistsException()),
+          ('a network failure', const AuthNetworkException(message: 'x')),
+        ]) {
+          late StreamController<AuthState> repoStates;
+          late Completer<AuthResponse> gate;
+
+          blocTest<AuthBloc, AuthBlocState>(
+            name,
+            build: () {
+              repoStates = StreamController<AuthState>();
+              addTearDown(repoStates.close);
+              gate = Completer<AuthResponse>();
+              when(() => mockRepo.watchAuthState())
+                  .thenAnswer((_) => repoStates.stream);
+              when(
+                () => mockRepo.signUp(
+                  email: any(named: 'email'),
+                  password: any(named: 'password'),
+                  username: any(named: 'username'),
+                  firstName: any(named: 'firstName'),
+                  lastName: any(named: 'lastName'),
+                ),
+              ).thenAnswer((_) => gate.future);
+              return AuthBloc(authRepository: mockRepo);
+            },
+            act: (b) async {
+              b.add(
+                const AuthRegisterRequested(
+                  email: 'new@b.com',
+                  password: 'pass',
+                  username: 'newuser',
+                ),
+              );
+              await pumpEventQueue();
+              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              await pumpEventQueue();
+              gate.completeError(error);
+            },
+            expect: () => [
+              const AuthLoading(),
+              AuthAuthenticated(session: testSession()),
+            ],
+          );
+        }
+      });
     });
 
     group('AuthSignOutRequested', () {

@@ -7,6 +7,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
 import 'package:web_network/src/auth/session_channel.dart';
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
@@ -606,6 +607,137 @@ void main() {
       await pumpEventQueue();
 
       expect(announced, isEmpty);
+    });
+  });
+
+  // A provider sign-in's success sets the cookie on the server's callback,
+  // before this page loaded, so no grant here announced it (#583). The other
+  // tabs hear it from the first session read that finds the session.
+  group('a provider sign-in return (#583)', () {
+    WebAuthRepositoryImpl returnedTo(WebProviderSignInReturn? startupReturn) {
+      final returned = WebAuthRepositoryImpl(
+        identity: _identity(),
+        dio: dio,
+        providerSignIn: WebProviderSignInBindings(
+          leavePageFor: (_, _) {},
+          startupReturn: startupReturn,
+        ),
+      );
+      addTearDown(returned.onDispose);
+      return returned;
+    }
+
+    List<SessionChange> announcedBy(WebAuthRepositoryImpl repository) {
+      final announced = <SessionChange>[];
+      repository.localChanges.listen(announced.add);
+      return announced;
+    }
+
+    test('a successful startup return announces signedIn once when the first '
+        'session read finds a session', () async {
+      final returned = returnedTo(const WebProviderSignInReturn());
+      final announced = announcedBy(returned);
+      stubSession('user-a');
+
+      await returned.getSession();
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, [SessionChange.signedIn]);
+    });
+
+    test('a startup without a return announces nothing on its first session '
+        'read', () async {
+      final returned = returnedTo(null);
+      final withoutBindings = announcedBy(repo);
+      final announced = announcedBy(returned);
+      stubSession('user-a');
+
+      await returned.getSession();
+      await repo.getSession();
+      await pumpEventQueue();
+
+      expect(announced, isEmpty);
+      expect(withoutBindings, isEmpty);
+    });
+
+    test('a failed startup return announces nothing', () async {
+      final returned = returnedTo(
+        const WebProviderSignInReturn(errorCode: 'access_denied'),
+      );
+      final announced = announcedBy(returned);
+      stubSession('user-a');
+
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, isEmpty);
+    });
+
+    test('a successful return whose first read finds no session announces '
+        'nothing, then or later', () async {
+      final returned = returnedTo(const WebProviderSignInReturn());
+      final announced = announcedBy(returned);
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await returned.getSession();
+
+      stubSession('user-a');
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, isEmpty);
+    });
+
+    test('a first read that cannot be answered leaves the announcement to '
+        'the read that can', () async {
+      final returned = returnedTo(const WebProviderSignInReturn());
+      final announced = announcedBy(returned);
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenThrow(
+            DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: RequestOptions(path: _kSession),
+            ),
+          );
+      await expectLater(
+        returned.getSession(),
+        throwsA(isA<AuthNetworkException>()),
+      );
+
+      stubSession('user-a');
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, [SessionChange.signedIn]);
+    });
+
+    // The cookie is the other tab's now, and that tab announced it.
+    test('another tab\'s sign-in before the first read is not announced '
+        'back', () async {
+      final returned = returnedTo(const WebProviderSignInReturn());
+      final announced = announcedBy(returned);
+
+      returned.signedInInAnotherTab();
+      stubSession('user-b');
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, isEmpty);
+    });
+
+    test('a sign-in here before the first read is announced by its own grant '
+        'alone', () async {
+      final returned = returnedTo(const WebProviderSignInReturn());
+      final announced = announcedBy(returned);
+      stubSignIn(_grantFor('user-b'));
+      stubSession('user-b');
+
+      await returned.signIn(email: 'b@example.com', password: 'pw');
+      await returned.getSession();
+      await pumpEventQueue();
+
+      expect(announced, [SessionChange.signedIn]);
     });
   });
 }
