@@ -394,39 +394,59 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(AuthLoading(providerId: event.strategy.providerId));
+
+    // An attempt that ends without a session of its own lands only if no
+    // session arrived while it was pending. On web another tab's sign-in
+    // reaches this bloc through the repository during the start request, or
+    // during the grace after a page that did not leave, and a cancel or a
+    // failure settling after it would throw that live session back to the
+    // sign-in screen. Only a live session is protected, as in `_onSignOut`
+    // (#280): an attempt that fails after another tab's sign-out still says
+    // why.
+    final ProviderSignInOutcome outcome;
     try {
-      switch (await _authRepository.signInWithProvider(event.strategy)) {
-        case ProviderSignInCompleted(:final session):
-          emit(AuthAuthenticated(session: session));
-        case ProviderSignInCancelled():
-          // Closing the browser, or stopping a web page from leaving for the
-          // provider, is a cancel, not a failure: no banner. A web page that
-          // does leave never gets here; its sign-in finishes on the next load.
-          emit(const AuthUnauthenticated());
-      }
-    } on AuthSupersededException {
-      // See _onSignIn: the sign-out already won; return quietly.
-      _mirrorUnauthenticated(emit);
-    } on AuthProviderSignInException catch (e) {
-      emit(AuthFailureProviderSignIn(e.reason, cause: e));
-    } on AuthRateLimitedException catch (e) {
-      emit(
-        AuthFailureProviderSignIn(
-          ProviderSignInFailureReason.rateLimited,
-          retryAfter: e.retryAfter,
-        ),
-      );
-    } on AuthNetworkException {
-      emit(
-        const AuthFailureProviderSignIn(ProviderSignInFailureReason.network),
-      );
+      outcome = await _authRepository.signInWithProvider(event.strategy);
     } on AuthException catch (e) {
-      emit(
-        AuthFailureProviderSignIn(
-          ProviderSignInFailureReason.generic,
-          cause: e,
-        ),
-      );
+      if (state is AuthAuthenticated) return;
+      switch (e) {
+        case AuthSupersededException():
+          // See _onSignIn: the sign-out already won; return quietly.
+          _mirrorUnauthenticated(emit);
+        case AuthProviderSignInException(:final reason):
+          emit(AuthFailureProviderSignIn(reason, cause: e));
+        case AuthRateLimitedException(:final retryAfter):
+          emit(
+            AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.rateLimited,
+              retryAfter: retryAfter,
+            ),
+          );
+        case AuthNetworkException():
+          emit(
+            const AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.network,
+            ),
+          );
+        case _:
+          emit(
+            AuthFailureProviderSignIn(
+              ProviderSignInFailureReason.generic,
+              cause: e,
+            ),
+          );
+      }
+      return;
+    }
+
+    switch (outcome) {
+      case ProviderSignInCompleted(:final session):
+        emit(AuthAuthenticated(session: session));
+      case ProviderSignInCancelled():
+        if (state is AuthAuthenticated) return;
+        // Closing the browser, or stopping a web page from leaving for the
+        // provider, is a cancel, not a failure: no banner. A web page that
+        // does leave never gets here; its sign-in finishes on the next load.
+        emit(const AuthUnauthenticated());
     }
   }
 

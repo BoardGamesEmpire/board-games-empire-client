@@ -135,6 +135,51 @@ void main() {
     expect: () => [loading, const AuthUnauthenticated()],
   );
 
+  // On web, another tab's sign-in reaches this bloc through the repository
+  // while the attempt is still settling: during its start request, or the
+  // grace after a page that did not leave. The attempt's own ending must not
+  // throw that live session back to the sign-in screen.
+  group('a session that lands while the attempt is pending is kept when the '
+      'attempt', () {
+    final endings = <String, void Function(Completer<ProviderSignInOutcome>)>{
+      'is cancelled': (gate) => gate.complete(const ProviderSignInCancelled()),
+      'is superseded': (gate) =>
+          gate.completeError(const AuthSupersededException()),
+      'is refused': (gate) => gate.completeError(
+        const AuthProviderSignInException(ProviderSignInFailureReason.generic),
+      ),
+      'fails on the network': (gate) =>
+          gate.completeError(const AuthNetworkException(message: 'offline')),
+    };
+
+    for (final MapEntry(key: name, value: end) in endings.entries) {
+      late StreamController<AuthState> repoStates;
+      late Completer<ProviderSignInOutcome> gate;
+
+      blocTest<AuthBloc, AuthBlocState>(
+        name,
+        build: () {
+          repoStates = StreamController<AuthState>();
+          addTearDown(repoStates.close);
+          gate = Completer<ProviderSignInOutcome>();
+          when(() => repo.watchAuthState())
+              .thenAnswer((_) => repoStates.stream);
+          when(() => repo.signInWithProvider(any()))
+              .thenAnswer((_) => gate.future);
+          return AuthBloc(authRepository: repo);
+        },
+        act: (b) async {
+          b.add(const AuthProviderSignInRequested(kOidcStrategy));
+          await pumpEventQueue();
+          repoStates.add(AuthStateAuthenticated(session: testSession()));
+          await pumpEventQueue();
+          end(gate);
+        },
+        expect: () => [loading, AuthAuthenticated(session: testSession())],
+      );
+    }
+  });
+
   blocTest<AuthBloc, AuthBlocState>(
     'a second request while one is in flight is dropped',
     build: () {
