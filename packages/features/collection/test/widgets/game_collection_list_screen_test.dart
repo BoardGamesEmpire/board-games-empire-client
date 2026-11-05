@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:bge_test_support/images.dart';
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
@@ -12,6 +14,7 @@ import 'package:game_collection/l10n/game_collection_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/list_items.dart';
@@ -1160,6 +1163,313 @@ void main() {
       expect(segment.hasPrimaryFocus, isTrue);
     });
   });
+
+  group('a game owned more than once (#709)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+
+    GameCollectionListItem wingspan(
+      String id,
+      String platformName, {
+      GameMedium medium = GameMedium.physical,
+      bool? favorite,
+    }) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platformName,
+      medium: medium,
+      favorite: favorite,
+    );
+
+    final twice = [wingspan('e-1', 'Tabletop'), wingspan('e-2', 'Steam')];
+
+    // The two views a stack is drawn in: its key there, and the layout store
+    // that opens the screen in it.
+    final views = <(String, Key Function(String), ListLayoutRepository?)>[
+      ('the list', GameCollectionListScreen.stackKey, null),
+      ('thumbnails', GameCollectionListScreen.stackTileKey, thumbs),
+    ];
+
+    Finder pickerTile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId));
+
+    for (final (view, stackKey, layouts) in views) {
+      final stack = find.byKey(stackKey('g-wingspan'));
+
+      testWidgets('a game with two entries shows once, with the marker and '
+          'count, in $view', (tester) async {
+        await show(tester, twice, layouts: layouts);
+
+        expect(stack, findsOneWidget);
+        final badge = find.descendant(
+          of: stack,
+          matching: find.byKey(BgeStackMarker.badgeKey),
+        );
+        expect(badge, findsOneWidget);
+        expect(
+          find.descendant(of: badge, matching: find.text('2')),
+          findsOneWidget,
+        );
+        for (final id in ['e-1', 'e-2']) {
+          expect(find.byKey(GameCollectionListScreen.rowKey(id)), findsNothing);
+          expect(
+            find.byKey(GameCollectionListScreen.tileKey(id)),
+            findsNothing,
+          );
+        }
+      });
+
+      testWidgets('tapping a stack opens the picker; a tile opens that '
+          'entry, in $view', (tester) async {
+        final opened = <String>[];
+        await show(
+          tester,
+          twice,
+          layouts: layouts,
+          onOpen: (_, id) => opened.add(id),
+        );
+
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+
+        expect(opened, isEmpty);
+        expect(pickerTile('e-1'), findsOneWidget);
+        expect(pickerTile('e-2'), findsOneWidget);
+
+        await tester.tap(pickerTile('e-2'));
+        await tester.pump();
+
+        expect(opened, ['e-2']);
+      });
+
+      testWidgets('closing the picker returns focus to the stack, in $view', (
+        tester,
+      ) async {
+        // A touch, which gives a list row no focus of its own: the picker's
+        // route would hand focus back to the page, not to the stack.
+        await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
+
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        expect(pickerTile('e-1'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        expect(pickerTile('e-1'), findsNothing);
+        expect(_focusIsWithin(tester, stack), isTrue);
+      });
+
+      testWidgets('without onOpen a stack is inert, in $view', (tester) async {
+        await show(tester, twice, layouts: layouts);
+
+        expect(
+          tester.getSemantics(stack),
+          isSemantics(isButton: false, hasTapAction: false, isFocusable: false),
+        );
+      });
+    }
+
+    testWidgets('a stack is named with its count and what is owned', (
+      tester,
+    ) async {
+      await show(tester, twice, layouts: thumbs);
+
+      expect(
+        tester
+            .getSemantics(
+              find.byKey(GameCollectionListScreen.stackTileKey('g-wingspan')),
+            )
+            .label,
+        contains('Wingspan, 2 copies: Tabletop, Steam'),
+      );
+    });
+
+    testWidgets("a stack's row is named with its title and its copies", (
+      tester,
+    ) async {
+      await show(tester, twice);
+
+      final label = tester
+          .getSemantics(
+            find.byKey(GameCollectionListScreen.stackKey('g-wingspan')),
+          )
+          .label;
+      // The title first, then the copies, as a screen reader meets them.
+      expect(
+        label,
+        matches(RegExp('Wingspan.*2 copies: Tabletop, Steam', dotAll: true)),
+      );
+      expect(find.text('2 copies: Tabletop, Steam'), findsOneWidget);
+    });
+
+    testWidgets('two mediums on one platform are a stack', (tester) async {
+      await show(tester, [
+        wingspan('e-1', 'Tabletop'),
+        wingspan('e-2', 'Tabletop', medium: GameMedium.digital),
+      ]);
+
+      final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+      expect(stack, findsOneWidget);
+      expect(
+        find.text('2 copies: Tabletop · Physical, Tabletop · Digital'),
+        findsOneWidget,
+      );
+      // No comma inside an entry: it would read as a third copy.
+      expect(
+        tester.getSemantics(stack).label,
+        contains('2 copies: Tabletop Physical, Tabletop Digital'),
+      );
+    });
+
+    final oneFavorite = [
+      wingspan('e-1', 'Tabletop'),
+      wingspan('e-2', 'Steam', favorite: true),
+    ];
+
+    testWidgets("a stack's row is a favorite when any of its entries is", (
+      tester,
+    ) async {
+      await show(tester, oneFavorite);
+
+      final row = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+      expect(
+        find.descendant(of: row, matching: find.byIcon(Icons.favorite)),
+        findsOneWidget,
+      );
+      expect(tester.getSemantics(row).label, contains('Favorite'));
+    });
+
+    testWidgets("a stack's cover is a favorite when any of its entries is", (
+      tester,
+    ) async {
+      await show(tester, oneFavorite, layouts: thumbs);
+
+      expect(
+        find.bySemanticsLabel('Wingspan, 2 copies: Tabletop, Steam, Favorite'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a game with one entry opens it directly', (tester) async {
+      final opened = <String>[];
+      await show(
+        tester,
+        [...twice, listItem('e-3', title: 'Wyrmspan')],
+        layouts: thumbs,
+        onOpen: (_, id) => opened.add(id),
+      );
+
+      await tester.tap(find.byKey(GameCollectionListScreen.tileKey('e-3')));
+      await tester.pumpAndSettle();
+
+      expect(opened, ['e-3']);
+      expect(pickerTile('e-3'), findsNothing);
+    });
+
+    testWidgets('the list counts games, not entries', (tester) async {
+      await show(tester, [...twice, listItem('e-3', title: 'Wyrmspan')]);
+
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        2,
+      );
+    });
+
+    testWidgets('after a mouse click, focus handed back to a row is '
+        'untinted, until it comes back from the keyboard', (tester) async {
+      // A mouse leaves the highlight mode at the keyboard's on a desktop,
+      // so focus the click gave would draw the row's focus tint once the
+      // picker closed, as no keyboard user asked for (#707's cover tile).
+      final boundary = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: harness(onOpen: (_, _) {}),
+        ),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add(twice);
+      await tester.pumpAndSettle();
+
+      final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+      // Inside the row, past its text, where only the row's own tint draws.
+      final rect = tester.getRect(stack);
+      final blank = Offset(rect.right - 8, rect.center.dy);
+
+      Future<Color> pixel() async {
+        final render =
+            boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        return (await tester.runAsync(() async {
+          final image = await render.toImage();
+          final bytes = (await image.toByteData())!;
+          final at = (blank.dy.floor() * image.width + blank.dx.floor()) * 4;
+          return Color.fromARGB(
+            bytes.getUint8(at + 3),
+            bytes.getUint8(at),
+            bytes.getUint8(at + 1),
+            bytes.getUint8(at + 2),
+          );
+        }))!;
+      }
+
+      final unfocused = await pixel();
+      const away = Offset(4, 590);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: away);
+      addTearDown(mouse.removePointer);
+      Future<void> click(Offset at) async {
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+      }
+
+      await click(blank);
+      expect(pickerTile('e-1'), findsOneWidget);
+      // Closed by a click on the barrier, below the dialog.
+      await click(away);
+      expect(pickerTile('e-1'), findsNothing);
+
+      expect(_focusIsWithin(tester, stack), isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      expect(await pixel(), unfocused);
+
+      // The key press ends the pointer's focus. The tint drawn without
+      // strength keeps it, so the row's focus shows from its next focus.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_focusIsWithin(tester, stack), isFalse);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      expect(_focusIsWithin(tester, stack), isTrue);
+      expect(await pixel(), isNot(unfocused));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+}
+
+/// Whether the primary focus is on the widget [finder] finds, or inside it.
+bool _focusIsWithin(WidgetTester tester, Finder finder) {
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) return false;
+  final target = tester.element(finder);
+  var within = identical(context, target);
+  context.visitAncestorElements((ancestor) {
+    within = within || identical(ancestor, target);
+    return !within;
+  });
+  return within;
 }
 
 /// A layout store that answers with [stored], or after [hold].

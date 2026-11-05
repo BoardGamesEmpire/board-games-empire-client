@@ -56,7 +56,7 @@
   },
   "collectionListDetailSpokenSeparator": ", ",
   "@collectionListDetailSpokenSeparator": {
-    "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+    "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items. It also joins the copies listed for a game owned more than once (collectionListStackCopies), where it is shown as well as read."
   },
   "collectionLayoutList": "List",
   "@collectionLayoutList": {
@@ -116,6 +116,20 @@
   "collectionListFavorite": "Favorite",
   "@collectionListFavorite": {
     "description": "Marks a game the user has favorited. Spoken by screen readers for the heart icon on a collection row, and shown beside the same icon on a collection entry's detail."
+  },
+  "collectionListStackCopies": "{count, plural, other{{count} copies}}: {platforms}",
+  "@collectionListStackCopies": {
+    "description": "On the collection row or cover of a game the user owns more than once, on different platforms or as both a physical and a digital copy: how many copies, then which, for example '2 copies: Tabletop, Steam'. Shown under the game's name on a row, and read by screen readers after the game's name on a row and on a cover. {count} is always two or more. {platforms} lists each copy's platform, with its medium where two copies share a platform (collectionPickerEntryWithMedium), joined by collectionListDetailSpokenSeparator.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      },
+      "platforms": {
+        "type": "String",
+        "example": "Tabletop, Steam"
+      }
+    }
   },
   "collectionStatsHeading": "Your stats",
   "@collectionStatsHeading": {

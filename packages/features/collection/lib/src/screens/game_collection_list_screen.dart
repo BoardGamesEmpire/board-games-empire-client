@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
@@ -12,6 +14,8 @@ import 'package:game_collection/l10n/game_collection_localizations.dart';
 import '../bloc/game_collection_list_bloc.dart';
 import '../bloc/game_collection_list_event.dart';
 import '../bloc/game_collection_list_state.dart';
+import '../picker/collection_entry_picker.dart';
+import 'collection_groups.dart';
 
 /// The collection list (#44): every game the signed-in user owns, read
 /// reactively from the local cache.
@@ -43,6 +47,16 @@ import '../bloc/game_collection_list_state.dart';
 /// its entry as a row does, and like a row it is inert without [onOpen]. The
 /// toggle isn't in the app bar: beside the back button, it cut the title
 /// short on a 320dp phone.
+///
+/// ## A game owned more than once is one stack (#709)
+///
+/// An entry is per platform game and medium, so a game owned on Tabletop and
+/// on Steam is two entries. The list and the grid show it once, as a stack:
+/// its cover marked with how many entries there are, and named with their
+/// platforms. A tap on a stack opens a picker of its entries
+/// ([showCollectionEntryPicker]), whose tiles open them through [onOpen]. A
+/// game owned once is a row or a cover of its own, as before, and opens its
+/// entry directly. Without [onOpen] a stack is inert, as a row is.
 ///
 /// ## An empty collection points at the catalog (#45)
 ///
@@ -116,6 +130,18 @@ class GameCollectionListScreen extends StatelessWidget {
   /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String entryId) => Key('collection_list.row_$entryId');
 
+  /// Per-stack key: `collection_list.stack_<gameId>`, on the one row of a
+  /// game owned more than once (#709).
+  ///
+  /// Held by the list's wrapper, as [rowKey] is. A game owned once keeps its
+  /// entry's [rowKey].
+  static Key stackKey(String gameId) => Key('collection_list.stack_$gameId');
+
+  /// Per-stack tile key: `collection_list.stack_tile_<gameId>`, the grid's
+  /// [stackKey].
+  static Key stackTileKey(String gameId) =>
+      Key('collection_list.stack_tile_$gameId');
+
   /// Per-row thumbnail key: `collection_list.thumbnail_<entryId>`.
   static Key thumbnailKey(String entryId) =>
       Key('collection_list.thumbnail_$entryId');
@@ -129,6 +155,9 @@ class GameCollectionListScreen extends StatelessWidget {
 
   /// Opens one entry, or null where there is nowhere to open it. Takes the
   /// id rather than the row, because the destination re-reads the cache.
+  ///
+  /// For an entry in a stack, a tile of the stack's picker calls it, with
+  /// the tile's own context, in a pop-up on the root navigator (#709).
   final void Function(BuildContext context, String entryId)? onOpen;
 
   /// Opens the catalog from the empty state, or null where this composition
@@ -210,11 +239,14 @@ class _GameCollectionListPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
     // The row count, for "item 3 of 9". The page owns the scroll view, so
-    // the page passes it (#210).
+    // the page passes it (#210). A row or a cover per game, as a game owned
+    // more than once is one stack (#709): as many as [groupByGame] makes, so
+    // its games, counted without building the groups on every state.
     final rowCount = context.select<GameCollectionListBloc, int?>(
       (bloc) => switch (bloc.state) {
-        GameCollectionListReady(:final items) when items.isNotEmpty =>
-          items.length,
+        GameCollectionListReady(:final items) when items.isNotEmpty => {
+          for (final item in items) item.gameId,
+        }.length,
         _ => null,
       },
     );
@@ -336,20 +368,35 @@ class GameCollectionListSliver extends StatelessWidget {
               _EmptySliver(onBrowse: onBrowse),
             _ when thumbnails == null => loading,
             GameCollectionListReady(:final items) when thumbnails == true =>
-              BgeKeyedSliverGrid<GameCollectionListItem>(
-                items: items,
-                keyOf: (item) =>
-                    GameCollectionListScreen.tileKey(item.entry.id),
+              BgeKeyedSliverGrid<List<GameCollectionListItem>>(
+                items: groupByGame(items),
+                keyOf: (group) => switch (group) {
+                  [final item] => GameCollectionListScreen.tileKey(
+                    item.entry.id,
+                  ),
+                  _ => GameCollectionListScreen.stackTileKey(
+                    group.first.gameId,
+                  ),
+                },
                 gridDelegate: bgeCoverGridDelegate(context),
-                itemBuilder: (context, item) =>
-                    _CollectionTile(item: item, onOpen: onOpen),
+                itemBuilder: (context, group) => switch (group) {
+                  [final item] => _CollectionTile(item: item, onOpen: onOpen),
+                  _ => _StackTile(items: group, onOpen: onOpen),
+                },
               ),
             GameCollectionListReady(:final items) =>
-              BgeKeyedSliverList<GameCollectionListItem>(
-                items: items,
-                keyOf: (item) => GameCollectionListScreen.rowKey(item.entry.id),
-                itemBuilder: (context, item) =>
-                    _CollectionRow(item: item, onOpen: onOpen),
+              BgeKeyedSliverList<List<GameCollectionListItem>>(
+                items: groupByGame(items),
+                keyOf: (group) => switch (group) {
+                  [final item] => GameCollectionListScreen.rowKey(
+                    item.entry.id,
+                  ),
+                  _ => GameCollectionListScreen.stackKey(group.first.gameId),
+                },
+                itemBuilder: (context, group) => switch (group) {
+                  [final item] => _CollectionRow(item: item, onOpen: onOpen),
+                  _ => _StackRow(items: group, onOpen: onOpen),
+                },
               ),
           },
         ],
@@ -469,6 +516,157 @@ class _CollectionTile extends StatelessWidget {
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: item.thumbnail,
       onTap: open == null ? null : () => open(context, entry.id),
+    );
+  }
+}
+
+/// A stack's copies as shown and as spoken, shared by its row and its tile
+/// (#709): how many, then each entry's platform, with its medium where two
+/// share one ([collectionEntryLabel]), as "2 copies: Tabletop, Steam".
+({String shown, String spoken}) _copies(
+  GameCollectionLocalizations l10n,
+  List<GameCollectionListItem> items,
+) {
+  final labels = [
+    for (final item in items) collectionEntryLabel(l10n, item, items),
+  ];
+  String copies(Iterable<String> platforms) => l10n.collectionListStackCopies(
+    items.length,
+    platforms.join(l10n.collectionListDetailSpokenSeparator),
+  );
+  return (
+    shown: copies(labels.map((label) => label.shown)),
+    spoken: copies(labels.map((label) => label.spoken)),
+  );
+}
+
+/// The entries of one game owned more than once, as one row (#709): the
+/// thumbnail marked with their count, the title line, and the copies in
+/// place of an entry's details. The heart shows when any of them is a
+/// favourite. A tap opens the picker of the entries.
+///
+/// ## Focus
+///
+/// A tap gives the row focus before it opens the picker, so the picker hands
+/// focus back to this row when it closes, as it does after a keyboard
+/// activation. A list tile's ink takes no focus from a tap of its own, and
+/// focus would land back on the page instead.
+///
+/// As on [BgeCoverTile], focus a mouse or a trackpad gave draws no focus tint
+/// ([BgePointerFocus]). On a desktop a mouse leaves the highlight mode at the
+/// keyboard's, so the row would be tinted when the picker closed, for a user
+/// who never touched the keyboard. A touch turns the highlight mode to touch,
+/// which hides the tint anyway.
+///
+/// The next key press ends that, but the row's focus shows again only from
+/// its next focus. Its tint is its only focus feedback, and an ink highlight
+/// keeps the strength it was first drawn with: a Tab away and back draws it,
+/// as does opening the picker again from the keyboard and closing it. The
+/// cover tile's ring covers that gap, and a row has none. Nor can the row
+/// redraw the tint: a list tile passes its ink nothing that makes the ink
+/// draw it afresh, and taking focus off the row and back would move focus.
+class _StackRow extends StatefulWidget {
+  const _StackRow({required this.items, this.onOpen});
+
+  final List<GameCollectionListItem> items;
+  final void Function(BuildContext context, String entryId)? onOpen;
+
+  @override
+  State<_StackRow> createState() => _StackRowState();
+}
+
+class _StackRowState extends State<_StackRow> with BgePointerFocus<_StackRow> {
+  final _focusNode = FocusNode(debugLabel: '_StackRow');
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final items = widget.items;
+    final open = widget.onOpen;
+    final first = items.first;
+    final copies = _copies(l10n, items);
+
+    // MergeSemantics outermost, as on an entry's row, so the row's node is
+    // the first thing under the list's key.
+    return MergeSemantics(
+      child: Listener(
+        // Every pointer's press on the row, as a list tile offers no
+        // tap-down. A keyboard's activation sends none, so its focus shows.
+        onPointerDown: open == null
+            ? null
+            : (event) => notePointerPress(event.kind),
+        child: ListTile(
+          focusNode: _focusNode,
+          // The theme's tint, with no strength while the focus is a pointer's.
+          focusColor: pointerFocusColor,
+          onTap: open == null
+              ? null
+              : () {
+                  _focusNode.requestFocus();
+                  unawaited(
+                    openCollectionEntries(context, items: items, onOpen: open),
+                  );
+                },
+          // The picture is smaller by the marker's offsets, so the marked
+          // whole is an entry's thumbnail's size and the titles line up. A
+          // list tile caps its leading at that height, so a full-size picture
+          // with its offsets would be squeezed.
+          leading: BgeStackMarker(
+            count: items.length,
+            child: BgeThumbnail(
+              url: first.thumbnail,
+              extent: BgeThumbnail.listExtent - BgeStackMarker.reachOf(context),
+              placeholderIcon: Icons.casino_outlined,
+              placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+            ),
+          ),
+          title: Text(_title(l10n, first)),
+          subtitle: Text(copies.shown, semanticsLabel: copies.spoken),
+          trailing: items.any((item) => item.entry.hasFavorited)
+              ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// A stack's cover (#709), marked with the count of its entries and named as
+/// its row is: the title, the copies, then the favourite.
+class _StackTile extends StatelessWidget {
+  const _StackTile({required this.items, this.onOpen});
+
+  final List<GameCollectionListItem> items;
+  final void Function(BuildContext context, String entryId)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final open = onOpen;
+    final first = items.first;
+    return BgeCoverTile(
+      extent: null,
+      stackCount: items.length,
+      label: [
+        _title(l10n, first),
+        _copies(l10n, items).spoken,
+        if (items.any((item) => item.entry.hasFavorited))
+          l10n.collectionListFavorite,
+      ].join(l10n.collectionListDetailSpokenSeparator),
+      imageUrl: first.thumbnail,
+      // The tile takes focus on a tap before this runs, so the picker hands
+      // it back when it closes.
+      onTap: open == null
+          ? null
+          : () => unawaited(
+              openCollectionEntries(context, items: items, onOpen: open),
+            ),
     );
   }
 }

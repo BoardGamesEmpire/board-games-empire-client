@@ -57,8 +57,9 @@ has a **pool**, never a collection.
 _Avoid_: Library, inventory, shelf
 
 **Collection entry**:
-One user's ownership of one game in one medium. Keyed by game and medium, not by game
-alone: the same title owned physically and digitally is two entries.
+One user's ownership of one game on one platform, in one medium. Keyed by platform game
+and medium, not by game alone: the same title owned physically and digitally, or on
+Tabletop and on Steam, is two entries.
 _Avoid_: Item, game (unqualified, when the ownership record is meant)
 
 **Visibility**:

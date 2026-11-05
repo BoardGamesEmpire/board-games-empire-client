@@ -16,8 +16,10 @@
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
 /// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
 /// its events (#615, #669), `BgeFocusRing` by the game covers and the event
-/// cards on them (#669), `BgeCoverTile` by the home shelves' covers and the
-/// Games and Collection grids' tiles (#707, #710), `BgeKeyedSliverGrid`,
+/// cards on them (#669), `BgePointerFocus` by those covers and Collection's
+/// stack rows, which take focus from a tap (#707, #709), `BgeCoverTile` by
+/// the home shelves' covers and the Games and Collection grids' tiles (#707,
+/// #710), `BgeKeyedSliverGrid`,
 /// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
 /// those two grids and their list or thumbnails choice (#710),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
@@ -54,6 +56,7 @@ export 'src/connectivity/bge_online_only.dart';
 export 'src/connectivity/bge_online_only_menu.dart';
 export 'src/connectivity/bge_online_only_popup_menu_item.dart';
 export 'src/focus/bge_focus_ring.dart';
+export 'src/focus/bge_pointer_focus.dart';
 export 'src/focus/focus_is_free.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';

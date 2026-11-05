@@ -1,11 +1,10 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../focus/bge_focus_ring.dart';
+import '../focus/bge_pointer_focus.dart';
 import 'bge_stack_marker.dart';
 import 'bge_thumbnail.dart';
 
@@ -34,14 +33,14 @@ import 'bge_thumbnail.dart';
 /// does after a keyboard activation.
 ///
 /// Neither the ring nor the ink's focus tint shows for focus a pointer gave,
-/// as with a browser's `:focus-visible`. A touch turns the highlight mode to
-/// touch, which hides both anyway. A mouse or a trackpad leaves the mode at
-/// the keyboard's on a desktop, so from the press until the next key press the
-/// tile hides them itself, including on the focus handed back when a pop-up or
-/// a page the click opened closes. That key press brings the ring back at
-/// once, so a user who goes to the keyboard finds the tile. The faint tint
-/// comes back with the tile's next focus: an ink highlight keeps the strength
-/// it was first drawn with (#707).
+/// as with a browser's `:focus-visible` ([BgePointerFocus]). A touch turns
+/// the highlight mode to touch, which hides both anyway. A mouse or a
+/// trackpad leaves the mode at the keyboard's on a desktop, so from the press
+/// until the next key press the tile hides them itself, including on the
+/// focus handed back when a pop-up or a page the click opened closes. That
+/// key press brings the ring back at once, so a user who goes to the keyboard
+/// finds the tile. The faint tint comes back with the tile's next focus: an
+/// ink highlight keeps the strength it was first drawn with (#707).
 ///
 /// Without [onTap] a tile is inert content, not a focus stop, as the list's
 /// rows are (#269).
@@ -87,26 +86,17 @@ class BgeCoverTile extends StatefulWidget {
   State<BgeCoverTile> createState() => _BgeCoverTileState();
 }
 
-class _BgeCoverTileState extends State<BgeCoverTile> {
+class _BgeCoverTileState extends State<BgeCoverTile>
+    with BgePointerFocus<BgeCoverTile> {
   final _focusNode = FocusNode(debugLabel: 'BgeCoverTile');
-
-  /// Whether a pointer pressed the tile since the last key press, which
-  /// hides the ring and the focus tint. Listens for that key press while set.
-  bool _pointerFocus = false;
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onKey);
     _focusNode.dispose();
     super.dispose();
   }
 
   /// A pointer's press, which a keyboard's activation never sends.
-  ///
-  /// Only a mouse's or a trackpad's. A touch or a stylus turns the highlight
-  /// mode to touch, which hides the ring and the tint already, so it needs no
-  /// key handler: a phone, with no keyboard to clear one, would keep one for
-  /// every tile touched, drags across a shelf included, until it went.
   ///
   /// Outside a scrolling shelf a mouse's comes as the button goes down, so the
   /// ink is built without its focus tint before the release's focus reaches
@@ -115,33 +105,7 @@ class _BgeCoverTileState extends State<BgeCoverTile> {
   /// slop delay delivers tap-down and tap together. The focus highlight is
   /// then made at full tint for the moment focus moves into the pop-up; the
   /// focus handed back is clean.
-  void _onTapDown(TapDownDetails details) {
-    if (_pointerFocus) return;
-    if (details.kind
-        case null ||
-            PointerDeviceKind.touch ||
-            PointerDeviceKind.stylus ||
-            PointerDeviceKind.invertedStylus) {
-      return;
-    }
-    HardwareKeyboard.instance.addHandler(_onKey);
-    setState(() => _pointerFocus = true);
-  }
-
-  /// The user is at the keyboard again. A shortcut held with Control, Alt or
-  /// Meta isn't navigation, as a browser's `:focus-visible` has it.
-  bool _onKey(KeyEvent event) {
-    final keyboard = HardwareKeyboard.instance;
-    if (event is! KeyDownEvent ||
-        keyboard.isControlPressed ||
-        keyboard.isAltPressed ||
-        keyboard.isMetaPressed) {
-      return false;
-    }
-    keyboard.removeHandler(_onKey);
-    setState(() => _pointerFocus = false);
-    return false;
-  }
+  void _onTapDown(TapDownDetails details) => notePointerPress(details.kind);
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +133,7 @@ class _BgeCoverTileState extends State<BgeCoverTile> {
             );
             return BgeFocusRing(
               borderRadius: radius,
-              suppressed: _pointerFocus,
+              suppressed: pointerFocus,
               builder: (context, onFocusChange) => SizedBox.square(
                 dimension: side,
                 child: Stack(
@@ -200,10 +164,7 @@ class _BgeCoverTileState extends State<BgeCoverTile> {
                           onFocusChange: onFocusChange,
                           // The theme's tint, with no strength while the
                           // focus is a pointer's.
-                          focusColor: _pointerFocus
-                              ? Theme.of(context).focusColor
-                                    .withValues(alpha: 0)
-                              : null,
+                          focusColor: pointerFocusColor,
                           borderRadius: radius,
                         ),
                       ),
