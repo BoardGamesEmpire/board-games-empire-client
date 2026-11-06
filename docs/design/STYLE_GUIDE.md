@@ -576,6 +576,9 @@ These are not aspirations; each is enforced somewhere.
   style, or the ring keeps the theme's. On a toned container, as in a banner,
   the ring takes the container's
   foreground, since `primary` was never solved against it.
+- **The release-time audit script** is
+  [`ACCESSIBILITY_AUDIT.md`](ACCESSIBILITY_AUDIT.md): what the automated checks
+  cover, and the manual screen-reader walk for each platform.
 - **No meaning by color alone.**
 - **Live regions, not `SemanticsService.announce`** — announcement events are
   deprecated on Android because they force TalkBack to clear its speech queue.
@@ -650,5 +653,7 @@ legible body text on every surface role.
 - [ ] Status uses `BgeStatusColors` **with its icon**
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast
+- [ ] A test file in the screen's package has a `group('accessibility audit')`
+      naming the screen (`melos run check:a11y-audit`)
 - [ ] Strings are ARB-backed with an `@key` description
 - [ ] `melos run test` and `melos run test:goldens` pass
