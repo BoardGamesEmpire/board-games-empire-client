@@ -6,7 +6,6 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
@@ -15,6 +14,7 @@ import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../widgets/event_card.dart';
+import '../widgets/event_section_states.dart';
 import 'upcoming_fallback_cubit.dart';
 
 /// The home page's upcoming events (#613): the user's next few events, or, with
@@ -207,18 +207,13 @@ class _Section extends StatelessWidget {
     );
   }
 
-  /// The upcoming rows still happening: a cancelled event is not, so it stays
-  /// off the shelf and doesn't count against the fallback (#502).
-  static List<EventRow> _shelfRows(EventGroups groups) =>
-      groups.upcoming.where((row) => !row.cancelled).toList();
-
   /// Whether the cache has settled on the user having nothing upcoming. Not
   /// during a first fill, whose later pages may hold them, nor after a failed
   /// pass, which confirms nothing: the user may have events it never reached,
   /// and the fallback's note would be false about them.
   static bool _wantsFallback(EventOverviewState own) =>
       own is EventOverviewReady &&
-      _shelfRows(own.groups).isEmpty &&
+      own.groups.stillHappening.isEmpty &&
       !own.firstFill &&
       !own.refreshFailed;
 
@@ -229,12 +224,15 @@ class _Section extends StatelessWidget {
   ) {
     final l10n = EventsLocalizations.of(context);
     final ownRows = switch (own) {
-      EventOverviewReady(:final groups) => _shelfRows(
-        groups,
-      ).take(UpcomingEventsSection.rowCap).toList(),
+      EventOverviewReady(:final groups) =>
+        groups.stillHappening.take(UpcomingEventsSection.rowCap).toList(),
       _ => const <EventRow>[],
     };
-    final empty = _Message(
+    final spinner = EventSectionSpinner(
+      key: UpcomingEventsSection.loadingKey,
+      label: l10n.eventsLoading,
+    );
+    final empty = EventSectionMessage(
       l10n.eventsHomeEmpty,
       textKey: UpcomingEventsSection.emptyKey,
     );
@@ -244,20 +242,19 @@ class _Section extends StatelessWidget {
         (placeholder, null, const []);
 
     final (placeholder, note, rows) = switch (own) {
-      EventOverviewLoading() => only(const _Spinner()),
+      EventOverviewLoading() => only(spinner),
       EventOverviewError(:final retrying) => only(
         _FailedRead(retrying: retrying),
       ),
       EventOverviewReady() when ownRows.isNotEmpty => (null, null, ownRows),
-      EventOverviewReady(firstFill: true) => only(const _Spinner()),
+      EventOverviewReady(firstFill: true) => only(spinner),
       EventOverviewReady() when !_wantsFallback(own) => only(empty),
       EventOverviewReady() => switch (suggested) {
-        UpcomingFallbackIdle() ||
-        UpcomingFallbackLoading() => only(const _Spinner()),
+        UpcomingFallbackIdle() || UpcomingFallbackLoading() => only(spinner),
         UpcomingFallbackReady(:final rows) when rows.isEmpty => only(empty),
         UpcomingFallbackReady(:final rows) => (
           null,
-          _Message(
+          EventSectionMessage(
             l10n.eventsHomeFallbackNote,
             textKey: UpcomingEventsSection.fallbackNoteKey,
           ),
@@ -324,21 +321,6 @@ class _Link extends StatelessWidget {
   }
 }
 
-class _Spinner extends StatelessWidget {
-  const _Spinner();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    key: UpcomingEventsSection.loadingKey,
-    padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceLg),
-    child: Center(
-      child: BgeLoadingState(
-        label: EventsLocalizations.of(context).eventsLoading,
-      ),
-    ),
-  );
-}
-
 /// The cache couldn't be read, with the retry where a pass can run.
 class _FailedRead extends StatelessWidget {
   const _FailedRead({required this.retrying});
@@ -361,24 +343,4 @@ class _FailedRead extends StatelessWidget {
           : null,
     );
   }
-}
-
-/// A line of text, in line with the heading. A live region, because it takes
-/// the place of the spinner, which said it was loading.
-class _Message extends StatelessWidget {
-  const _Message(this.text, {required this.textKey});
-
-  final String text;
-  final Key textKey;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    liveRegion: true,
-    child: Text(
-      text,
-      key: textKey,
-      style: Theme.of(context).textTheme.bodyMedium,
-    ),
-  );
 }

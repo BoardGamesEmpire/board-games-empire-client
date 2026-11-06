@@ -107,6 +107,11 @@ final class EventGroups extends Equatable {
   bool get isEmpty =>
       upcoming.isEmpty && planning.isEmpty && past.isEmpty && archived.isEmpty;
 
+  /// The [upcoming] rows still happening: a cancelled event is not. Home's
+  /// shelf and a household's section show these and no others (#502, #503).
+  List<EventRow> get stillHappening =>
+      upcoming.where((row) => !row.cancelled).toList();
+
   @override
   List<Object?> get props => [upcoming, planning, past, archived];
 }

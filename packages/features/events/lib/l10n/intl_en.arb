@@ -84,6 +84,10 @@
   "@eventsLoading": {
     "description": "Announced and shown while the user's events are still being fetched for the first time."
   },
+  "householdEventsLoading": "Loading this household's events",
+  "@householdEventsLoading": {
+    "description": "Announced and shown while a household's events are still being fetched for the first time, on the household's screen (#503). Names the household's events, because the user's own events are not what is loading."
+  },
   "eventsEmptyTitle": "No events yet",
   "@eventsEmptyTitle": {
     "description": "Heading of the empty state shown when the user has no events at all."
@@ -106,11 +110,23 @@
   },
   "eventsRefreshRetry": "Try again",
   "@eventsRefreshRetry": {
-    "description": "Button that asks the server again: for the user's events, on the couldn't-refresh banner and when the events could not be read, and for one event, on that event's screen. Kept as a plain retry: nothing here can promise the next attempt will work."
+    "description": "Button that asks the server again: for the user's events, on the couldn't-refresh banner and when the events could not be read, for a household's events, on its screen, and for one event, on that event's screen. Kept as a plain retry: nothing here can promise the next attempt will work."
   },
   "eventsRefreshInProgress": "Refreshing…",
   "@eventsRefreshInProgress": {
-    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled, on the events overview and on one event's screen. Shown ONLY for a refresh the user asked for: one started by reconnecting, by resuming the app or by opening the screen is not narrated."
+    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled, on the events overview, on a household's events and on one event's screen. Shown ONLY for a refresh the user asked for: one started by reconnecting, by resuming the app or by opening the screen is not narrated."
+  },
+  "householdEventsEmpty": "No upcoming events with a confirmed date.",
+  "@householdEventsEmpty": {
+    "description": "Shown in a household's events section, on the household's screen under its Events heading (#503), when the household has no upcoming event this person can see. Says 'with a confirmed date' because the list leaves out events still choosing one, so 'No events' would be false."
+  },
+  "householdEventsRefreshFailed": "Couldn't refresh this household's events. What's shown may be out of date.",
+  "@householdEventsRefreshFailed": {
+    "description": "Banner above a household's events, on the household's screen (#503), when they could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The events already on this device are still shown. Deliberately does not name a cause, because the screen does not know which one it was."
+  },
+  "householdEventsLoadFailed": "Couldn't load this household's events.",
+  "@householdEventsLoadFailed": {
+    "description": "Shown in place of a household's events, on the household's screen (#503), when the events kept on this device could not be read at all, so none can be displayed. Not a network failure."
   },
   "eventsWhen": "{date} · {time}",
   "@eventsWhen": {
