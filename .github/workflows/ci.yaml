@@ -417,13 +417,29 @@ jobs:
       # behind the non-fatal step. Flag config and ignores live in
       # codecov.yml.
       #
-      # Two blind spots, both of which read as HIGHER coverage, not lower:
-      #   - A file no test imports is absent from lcov entirely, so it
-      #     does not count against the package.
-      #   - Code only the browser suites reach (`test-web`) is absent too:
-      #     `flutter test --platform chrome --coverage` writes an empty
-      #     report on the pinned Flutter, so that job does not upload.
-      # Goldens are excluded above, so golden-only widget code reads low.
+      # Four blind spots, measured on 2026-11-05 and accepted in #400. The
+      # first two and the last leave code out of the report rather than
+      # counting it uncovered, so the totals read HIGHER than the truth;
+      # the third mostly reads LOWER:
+      #   - Unimported files. A file no test imports is absent from lcov
+      #     entirely. Of the 165 VM-side files absent then, four held any
+      #     logic: home_placeholder_screen.dart (dead, #195),
+      #     image_host.dart (test support), and the small
+      #     sync_operation_sender.dart and active_server_scope.dart. The
+      #     rest were barrels, interfaces and constants.
+      #   - Browser-only code. What only the `test-web` suites reach is
+      #     absent too: `flutter test --platform chrome --coverage` writes
+      #     an empty report on the pinned Flutter, so that job does not
+      #     upload (#731).
+      #   - Coverage is per package. A package's report counts only its
+      #     own suites, so lines in `core/interfaces` that only other
+      #     packages' tests exercise read as uncovered, or the whole file
+      #     reads as absent when no suite of its own imports it.
+      #   - Packages with no `test/` directory never upload: the apps and
+      #     `platform/desktop` and `platform/mobile`, about 70 lines.
+      # One skew runs the other way: goldens are excluded above, and the
+      # `goldens` job uploads no coverage, so golden-only widget code
+      # reads low.
       - name: Prefix coverage paths with the package dir
         id: coverage
         env:
