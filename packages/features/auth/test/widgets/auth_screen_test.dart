@@ -153,6 +153,44 @@ void main() {
       });
     });
 
+    group('header semantics', () {
+      // The title is the one live region whose child is the page title.
+      final title = find.descendant(
+        of: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.liveRegion == true,
+        ),
+        matching: find.byType(Text),
+      );
+
+      testWidgets('reads the server name once', (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+
+        final node = tester.getSemantics(find.text('Test BGE Server'));
+        expect(node.getSemanticsData().label, 'Server: Test BGE Server');
+        handle.dispose();
+      });
+
+      testWidgets('marks the title as a heading in both modes', (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+
+        var node = tester.getSemantics(title.first);
+        expect(node.getSemanticsData().label, 'Sign In');
+        expect(node.flagsCollection.isHeader, isTrue);
+        expect(node.flagsCollection.isLiveRegion, isTrue);
+
+        await tester.tap(find.text("Don't have an account? Register"));
+        await tester.pumpAndSettle();
+
+        node = tester.getSemantics(title.first);
+        expect(node.getSemanticsData().label, 'Create Account');
+        expect(node.flagsCollection.isHeader, isTrue);
+        handle.dispose();
+      });
+    });
+
     group('sign-in/register toggle', () {
       testWidgets('switches to RegisterForm when toggle tapped', (
         tester,

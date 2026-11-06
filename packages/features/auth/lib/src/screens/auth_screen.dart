@@ -262,6 +262,8 @@ class _AuthScreenState extends State<AuthScreen> {
         // Server attribution — important when user manages multiple servers
         Semantics(
           label: '${l10n.authServerLabel}: ${widget.serverDisplayName}',
+          // The label carries the name; the visible text would repeat it (#50).
+          excludeSemantics: true,
           child: Row(
             children: [
               Icon(
@@ -290,6 +292,7 @@ class _AuthScreenState extends State<AuthScreen> {
         // predated.
         Semantics(
           liveRegion: true,
+          header: true,
           child: Text(
             _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
             style: Theme.of(context).textTheme.headlineMedium

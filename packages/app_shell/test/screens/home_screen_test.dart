@@ -1,6 +1,7 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -213,6 +214,42 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('Sign out')), findsWidgets);
 
     handle.dispose();
+  });
+
+  // Opening the drawer opens a route, and a screen reader says the route's
+  // name. Material names it on Android, Fuchsia, Linux and Windows, and
+  // leaves it empty on iOS and macOS, so there the drawer names it itself,
+  // with the same words (#50).
+  testWidgets("the drawer's route is named on every platform", (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, entries: _entries([]));
+    await _openDrawer(tester);
+
+    final route = find.semantics.ancestor(
+      of: find.semantics.byLabel(RegExp('^Create household')),
+      matching: find.semantics.byFlag(SemanticsFlag.namesRoute),
+    );
+    final data = route.evaluate().single.getSemanticsData();
+    expect(data.flagsCollection.scopesRoute, isTrue);
+    expect(data.label, 'Navigation menu');
+
+    handle.dispose();
+  }, variant: TargetPlatformVariant.all());
+
+  // A drafted finding, skipped until it is fixed (#50). The drawer is a
+  // launcher, so its entries are buttons, and a screen reader should not
+  // read them as tabs.
+  group('the drawer entries are not read as tabs', skip: 'see <A11Y-13>', () {
+    testWidgets('no "Tab n of m" on any entry', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, entries: _entries([]));
+      await _openDrawer(tester);
+
+      expect(find.bySemanticsLabel(RegExp('Create household')), findsWidgets);
+      expect(find.bySemanticsLabel(RegExp(r'Tab \d+ of \d+')), findsNothing);
+
+      handle.dispose();
+    });
   });
 
   testWidgets('drawer header, destinations, and actions share one start '

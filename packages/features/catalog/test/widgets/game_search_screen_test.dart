@@ -944,6 +944,32 @@ void main() {
       }
     });
 
+    // A drafted finding, skipped until it is fixed (#50). Opening the sheet
+    // opens a route, and a screen reader says the route's name. Material
+    // leaves it empty on iOS and macOS, on a node the sheet's builder can't
+    // reach, since the route's children are nodes of their own.
+    group(
+      "the sheet's route is named on every platform",
+      skip: 'see <A11Y-12>',
+      () {
+        testWidgets('its route node', (tester) async {
+          final handle = tester.ensureSemantics();
+          await show(tester);
+          await openFilters(tester);
+
+          final route = find.semantics.ancestor(
+            of: find.semantics.byLabel('Base game'),
+            matching: find.semantics.byFlag(SemanticsFlag.namesRoute),
+          );
+          final data = route.evaluate().single.getSemanticsData();
+          expect(data.flagsCollection.scopesRoute, isTrue);
+          expect(data.label, isNotEmpty);
+
+          handle.dispose();
+        }, variant: TargetPlatformVariant.all());
+      },
+    );
+
     testWidgets('a content-type chip searches again, narrowed', (tester) async {
       await show(tester);
       await search(tester, 'catan');

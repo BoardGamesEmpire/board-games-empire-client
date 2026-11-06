@@ -837,5 +837,89 @@ void main() {
         );
       },
     );
+
+    group(
+      'an extended floating action button is ringed on keyboard focus',
+      skip: 'see <A11Y-10>',
+      () {
+        testWidgets('FloatingActionButton.extended', (tester) async {
+          await host(tester, [
+            FloatingActionButton.extended(
+              key: goKey,
+              onPressed: () {},
+              label: const Text('Create'),
+            ),
+          ]);
+          // The ring may sit on the edge or outside it.
+          final around = tester
+              .getRect(find.byKey(goKey))
+              .inflate(tokens.focusRingGap + tokens.focusOutlineWidth);
+          int ringPixels(Color Function(Offset) pixels) =>
+              pixelsOf(around).where((p) => near(pixels(p), ring)).length;
+          final atRest = ringPixels(await capture(tester));
+
+          await tab(tester);
+          await tester.pumpAndSettle();
+          expect(
+            Focus.of(tester.element(find.text('Create'))).hasPrimaryFocus,
+            isTrue,
+          );
+
+          expect(ringPixels(await capture(tester)), greaterThan(atRest));
+        });
+      },
+    );
+
+    // A drawer entry and a filter chip show focus as a fill alone.
+    group(
+      "a drawer entry's and a filter chip's keyboard focus differs from their "
+      'rest by 3:1',
+      skip: 'see <A11Y-11>',
+      () {
+        // Each labelled "Entry", its only stop.
+        final controls = <String, Widget>{
+          'NavigationDrawerDestination': const SizedBox(
+            height: 200,
+            child: NavigationDrawer(
+              children: [
+                NavigationDrawerDestination(
+                  key: goKey,
+                  icon: Icon(Icons.home),
+                  label: Text('Entry'),
+                ),
+              ],
+            ),
+          ),
+          'FilterChip': FilterChip(
+            key: goKey,
+            label: const Text('Entry'),
+            onSelected: (_) {},
+          ),
+        };
+        for (final MapEntry(key: control, value: widget) in controls.entries) {
+          for (final MapEntry(key: name, value: build) in schemes.entries) {
+            testWidgets('$control, $name', (tester) async {
+              await host(tester, [widget], themeData: build());
+              final rect = tester.getRect(find.byKey(goKey));
+              final atRest = await capture(tester);
+
+              await tab(tester);
+              await tester.pumpAndSettle();
+              expect(
+                Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+                isTrue,
+              );
+              final focused = await capture(tester);
+
+              // Anywhere the focus shows: a fill, a ring, an edge.
+              final strongest = pixelsOf(rect)
+                  .map((p) => Wcag.contrastRatio(atRest(p), focused(p)))
+                  .fold<double>(1, (a, b) => a > b ? a : b);
+              expect(strongest, greaterThanOrEqualTo(3.0));
+            });
+          }
+        }
+      },
+    );
   });
 }
