@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +9,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -41,20 +45,34 @@ void main() {
     String householdId = 'hh_1',
     void Function(BuildContext context)? onInvite,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
-    builder: offline == null
+    theme: theme ?? BgeTheme.light(),
+    builder: offline == null && textScaler == null
         ? null
-        : (context, child) => ValueListenableBuilder<bool>(
-            valueListenable: offline,
-            child: child,
-            builder: (context, isOffline, child) => BgeConnectivityScope(
-              offline: isOffline,
-              noticeShowing: isOffline,
-              onlineOnlyReason: _onlineOnlyCopy,
-              child: child!,
-            ),
-          ),
+        : (context, child) {
+            var app = child!;
+            if (offline != null) {
+              final screen = app;
+              app = ValueListenableBuilder<bool>(
+                valueListenable: offline,
+                child: screen,
+                builder: (context, isOffline, child) => BgeConnectivityScope(
+                  offline: isOffline,
+                  noticeShowing: isOffline,
+                  onlineOnlyReason: _onlineOnlyCopy,
+                  child: child!,
+                ),
+              );
+            }
+            // Null leaves the scale to the test.
+            if (textScaler == null) return app;
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: app,
+            );
+          },
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: HouseholdInviteListScreen(
@@ -328,5 +346,195 @@ void main() {
     expect(remote.calls.last, 'fetchHouseholdInvites(hh_b, null, 1, 25)');
     expect(find.text('For hh_b'), findsOneWidget);
     expect(find.text('For hh_a'), findsNothing);
+  });
+
+  group('accessibility audit', () {
+    /// The screen over the fake as [seed] leaves it; `build` runs before the
+    /// first read, so the state is chosen here. With an Invite action, as the
+    /// shell gives an owner, so its button is audited too.
+    Widget Function(ThemeData, TextScaler) screenWith(
+      void Function() seed, {
+      ValueListenable<bool>? offline,
+    }) => (theme, textScaler) {
+      seed();
+      return harness(
+        offline: offline,
+        theme: theme,
+        textScaler: textScaler,
+        onInvite: (_) {},
+      );
+    };
+
+    /// One of each row shape: pending, awaiting approval (Approve and Turn
+    /// down), the viewer's own (Withdraw), and a settled one.
+    void rows() => remote.listing([
+      invite('i_1', inviteeName: 'Ana', role: HouseholdRole.householdGuest),
+      invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
+      invite('i_3', inviterId: _me, inviteeEmail: 'b@c.d'),
+      invite('i_4', status: HouseholdInviteStatus.accepted),
+    ]);
+
+    final ready = screenWith(rows);
+
+    Future<void> shown(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      rows();
+      await tester.pumpWidget(
+        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = find.byType(HouseholdInviteListScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: ready,
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(HouseholdInviteListScreen.inviteKey), findsOneWidget);
+        expect(find.text('Ana'), findsOneWidget);
+        expect(
+          find.byKey(
+            HouseholdInviteTile.actionKey(
+              HouseholdInviteRowAction.approve,
+              'i_2',
+            ),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: ready,
+      arrange: (tester) async {
+        await shown(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen(
+      'offline',
+      build: screenWith(rows, offline: ValueNotifier(true)),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.text(_onlineOnlyCopy), findsWidgets);
+      },
+      // The nodes that fail are the disabled row buttons, whose label is
+      // drawn dimmed by design; WCAG 1.4.3 exempts inactive controls, and the
+      // enabled buttons pass in 'ready'.
+      textContrast: false,
+    );
+
+    auditScreen(
+      'more to load',
+      build: screenWith(
+        () => remote.onFetchHouseholdInvites = (_, _, page, limit) async =>
+            pageOf(
+              [for (var i = 0; i < 25; i++) invite('i_$i')],
+              limit: limit,
+              hasMore: true,
+            ),
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        await scrollListToEnd(
+          tester,
+          find.byKey(HouseholdInviteListScreen.moreKey),
+        );
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: screenWith(() => remote.listing(const [])),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(HouseholdInviteListScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'denied',
+      build: screenWith(
+        () =>
+            remote.onFetchHouseholdInvites = (_, _, _, _) async =>
+                throw refused(403),
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(HouseholdInviteListScreen.deniedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: screenWith(
+        () =>
+            remote.onFetchHouseholdInvites = (_, _, _, _) async =>
+                throw offline(),
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(HouseholdInviteListScreen.failedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refused action',
+      build: screenWith(() {
+        remote
+          ..listing([
+            invite('i_1', status: HouseholdInviteStatus.awaitingApproval),
+          ])
+          ..onApprove = (_, _) async => throw refused(403);
+      }),
+      arrange: (tester) async {
+        await shown(tester);
+        // At 320dp × 2.0 the row's Approve sits under the Invite button until
+        // the page is scrolled to its end, which leaves the button room.
+        await scrollPageToEnd(tester);
+        await tester.tap(
+          find.byKey(
+            HouseholdInviteTile.actionKey(
+              HouseholdInviteRowAction.approve,
+              'i_1',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            "You can't do this any more. Your role in the household may have "
+            'changed.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The first read never answers, so the spinner never stops.
+    auditScreen(
+      'loading',
+      build: screenWith(() {
+        final read = Completer<PaginatedResult<HouseholdInvite>>();
+        addTearDown(() => read.complete(pageOf(const <HouseholdInvite>[])));
+        remote.onFetchHouseholdInvites = (_, _, _, _) => read.future;
+      }),
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byType(CircularProgressIndicator), findsWidgets);
+      },
+      settle: false,
+    );
   });
 }

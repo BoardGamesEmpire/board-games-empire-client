@@ -419,6 +419,70 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('its focus ring follows its own rounded corners, inside its '
+        'edge (#644)', (tester) async {
+      await show(tester, inHouseholds: const []);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final ring = tester
+          .widgetList<CustomPaint>(
+            find.descendant(
+              of: byKey(StatsCard.promptKey),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .map((paint) => paint.foregroundPainter)
+          .whereType<BgeButtonFocusRingPainter>()
+          .single;
+      const tokens = BgeTokens.standard;
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusSm),
+      );
+      expect(ring.color, BgeTheme.light().colorScheme.primary);
+      expect(ring.shape, shape, reason: 'not the theme stadium');
+      // A `TextButton()` clips to its shape, so its ring is inside the edge.
+      expect(ring.placement, BgeButtonFocusRingPlacement.inside);
+
+      // And it is drawn so: just inside the left edge, a little below the top
+      // corner, is on a rounded rectangle's ring. A stadium this tall would
+      // curve away from the edge there and leave the button's inside showing.
+      RenderObject boundary = tester.renderObject(byKey(StatsCard.promptKey));
+      while (!boundary.isRepaintBoundary) {
+        boundary = boundary.parent!;
+      }
+      final button = tester.renderObject<RenderBox>(
+        find
+            .descendant(
+              of: byKey(StatsCard.promptKey),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final corner = button.localToGlobal(
+        Offset(
+          tokens.focusOutlineWidth / 2,
+          tokens.radiusSm + tokens.focusOutlineWidth / 2,
+        ),
+        ancestor: boundary,
+      );
+      final pixel = (await tester.runAsync(() async {
+        final image = await (boundary.debugLayer! as OffsetLayer).toImage(
+          boundary.paintBounds,
+        );
+        final bytes = (await image.toByteData())!;
+        final at = (corner.dy.floor() * image.width + corner.dx.floor()) * 4;
+        image.dispose();
+        return Color.fromARGB(
+          bytes.getUint8(at + 3),
+          bytes.getUint8(at),
+          bytes.getUint8(at + 1),
+          bytes.getUint8(at + 2),
+        );
+      }))!;
+      expect(pixel, ring.color);
+    });
+
     testWidgets('keeps its element and its focus as the lines above it come '
         'and go', (tester) async {
       await show(tester, inHouseholds: const []);
@@ -883,5 +947,74 @@ void main() {
 
       expect(opened, hasLength(2));
     });
+  });
+
+  // Home composes the card in `BgeApp`, so `HomeScreen`'s own audit hosts a
+  // placeholder in its place; the card is audited here, in a scrolling page
+  // as home holds it (#50). It has no loading or failure UI of its own: it
+  // draws nothing until a line is known, and a household count it can't
+  // vouch for is left out, which the failure call audits.
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) =>
+        harness(theme: theme, textScaler: textScaler, onOpenHouseholds: (_) {});
+
+    /// The collection holds one game, and the user is in [inHouseholds].
+    Future<void> showLines(
+      WidgetTester tester, {
+      required List<Household> inHouseholds,
+    }) async {
+      own.emit([listItem('a')]);
+      households.add(inHouseholds);
+      await tester.pumpAndSettle();
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the card.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final card = find.byType(StatsCard);
+      expect(MediaQuery.textScalerOf(tester.element(card)).scale(10), 20);
+      expect(Theme.of(tester.element(card)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        pool.answer(7);
+        await showLines(tester, inHouseholds: [household('h1')]);
+        expect(byKey(StatsCard.ownedKey), findsOneWidget);
+        expect(byKey(StatsCard.householdsKey), findsOneWidget);
+      },
+    );
+
+    // In no household: the link to the households screen in the count's
+    // place.
+    auditScreen(
+      'ready, in no household',
+      build: build,
+      arrange: (tester) async {
+        await showLines(tester, inHouseholds: const []);
+        expect(byKey(StatsCard.promptKey), findsOneWidget);
+      },
+    );
+
+    // The households' count couldn't be read: the collection's line alone.
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        pool.fail();
+        await showLines(tester, inHouseholds: [household('h1')]);
+        expect(byKey(StatsCard.ownedKey), findsOneWidget);
+        expect(byKey(StatsCard.householdsKey), findsNothing);
+        expect(byKey(StatsCard.promptKey), findsNothing);
+      },
+    );
   });
 }

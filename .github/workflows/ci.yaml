@@ -206,7 +206,9 @@ jobs:
   # above, and the same shared-script arrangement: `check:test-files`
   # runs the identical command. The self-test comes first because this
   # gate's failure mode is a silent pass, which the check itself cannot
-  # see on a tree that holds nothing for it to catch.
+  # see on a tree that holds nothing for it to catch. The same job also
+  # runs `check:a11y-audit` (#50), which fails when a screen has no
+  # accessibility-audit test group.
   test-files:
     name: Test file names
     runs-on: ubuntu-latest
@@ -219,6 +221,10 @@ jobs:
         run: dart run tool/check_test_files.dart --self-test
       - name: Every suite under test/ must be named to run
         run: dart run tool/check_test_files.dart
+      - name: A11y audit check self-test
+        run: dart run tool/check_a11y_audit.dart --self-test
+      - name: Every screen has an accessibility audit
+        run: dart run tool/check_a11y_audit.dart
 
   # ── Codegen (fresh, once) + schema freshness ────────────────────
   # Generated code (.g.dart / .freezed.dart / .config.dart, and the
@@ -682,7 +688,7 @@ jobs:
             echo "created=$created"
             echo "files=sha256:${files%% *}"
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

@@ -346,6 +346,24 @@
   "@catalogSearchRangeTo": {
     "description": "Label of the field for a filter range's highest value: the latest year, the most players or the longest play time. It may be left empty."
   },
+  "catalogSearchRangeFromNamed": "{range}, from",
+  "@catalogSearchRangeFromNamed": {
+    "description": "Accessible name, never shown, of the field for a filter range's lowest value, so a screen reader says which range it belongs to. {range} is the range's heading: Publish year, Players or Play time.",
+    "placeholders": {
+      "range": {
+        "type": "String"
+      }
+    }
+  },
+  "catalogSearchRangeToNamed": "{range}, to",
+  "@catalogSearchRangeToNamed": {
+    "description": "Accessible name, never shown, of the field for a filter range's highest value, so a screen reader says which range it belongs to. {range} is the range's heading: Publish year, Players or Play time.",
+    "placeholders": {
+      "range": {
+        "type": "String"
+      }
+    }
+  },
   "catalogSearchYearHelper": "Use a minus sign for years BCE",
   "@catalogSearchYearHelper": {
     "description": "Help under the publish-year fields: a year before the common era is typed as a negative number, such as -3000."

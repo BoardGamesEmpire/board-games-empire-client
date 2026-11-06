@@ -564,7 +564,24 @@ These are not aspirations; each is enforced somewhere.
   Easing comes from `BgeMotion.enter` / `.exit` / `.standard` / `.emphasized`;
   a duration alone does not describe a motion, and the same 300ms reads as
   mechanical on a linear curve and deliberate on a decelerating one.
-- **Visible focus** — `focusOutlineWidth`, never removed.
+- **Visible focus** — `focusOutlineWidth`, never removed. Text fields get a
+  border that wide. Filled, tonal, icon, text, outlined and elevated buttons
+  get a `primary` ring on keyboard focus only (#644): `focusRingGap` outside
+  the shape on filled, tonal and icon buttons, and inside the edge on text,
+  outlined and elevated buttons, which Flutter clips to their shape. A mouse
+  or trackpad press anywhere hides every ring until the next key press. An
+  outside ring reaches 4dp past the shape. A scroll view's edge is handled:
+  once keyboard focus has brought the button into view, the ring scrolls
+  the rest of itself in. Keep
+  any other clipping edge, such as a clipping card's, at least that far from
+  such a button. A button
+  that sets its own shape passes it to `BgeButtonFocusRing.builder` in its
+  style, or the ring keeps the theme's. On a toned container, as in a banner,
+  the ring takes the container's
+  foreground, since `primary` was never solved against it.
+- **The release-time audit script** is
+  [`ACCESSIBILITY_AUDIT.md`](ACCESSIBILITY_AUDIT.md): what the automated checks
+  cover, and the manual screen-reader walk for each platform.
 - **No meaning by color alone.**
 - **Live regions, not `SemanticsService.announce`** — announcement events are
   deprecated on Android because they force TalkBack to clear its speech queue.
@@ -639,5 +656,7 @@ legible body text on every surface role.
 - [ ] Status uses `BgeStatusColors` **with its icon**
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast
+- [ ] A test file in the screen's package has a `group('accessibility audit')`
+      naming the screen (`melos run check:a11y-audit`)
 - [ ] Strings are ARB-backed with an `@key` description
 - [ ] `melos run test` and `melos run test:goldens` pass

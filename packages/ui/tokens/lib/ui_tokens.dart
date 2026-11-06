@@ -5,6 +5,7 @@
 /// the call-site conventions (no literal colors, no color-only meaning).
 library;
 
+export 'src/accessibility/bge_button_focus_ring.dart';
 export 'src/accessibility/bge_motion.dart';
 export 'src/accessibility/bge_selection.dart';
 export 'src/accessibility/bge_text_scale.dart';

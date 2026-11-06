@@ -31,11 +31,19 @@ void main() {
     stubState(bloc, const ServerOnboardingIdle());
   });
 
-  Widget harness() => MaterialApp(
-    theme: BgeTheme.light(),
+  /// [textScaler] is applied below the app when given. Null leaves the
+  /// scale to a MediaQuery above it, which is how the 200% test sets it.
+  Widget harness({ThemeData? theme, TextScaler? textScaler}) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates:
         ServerOnboardingLocalizations.localizationsDelegates,
     supportedLocales: ServerOnboardingLocalizations.supportedLocales,
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: BlocProvider<ServerOnboardingBloc>.value(
       value: bloc,
       child: const ServerAddScreen(),
@@ -150,6 +158,66 @@ void main() {
         reason:
             'the banner has to come UP into the viewport, not be left '
             'below it because the reveal only ever scrolls backwards',
+      );
+    });
+
+    group('accessibility audit', () {
+      /// The screen with the bloc parked in [state].
+      Widget Function(ThemeData, TextScaler) screenIn(
+        ServerOnboardingState state,
+      ) => (theme, textScaler) {
+        stubState(bloc, state);
+        return harness(theme: theme, textScaler: textScaler);
+      };
+
+      /// Scrolls the page to its end, for what a state leaves below the fold
+      /// at 320dp × 2.0, which the audit can't see from the top.
+      Future<void> scrollToEnd(WidgetTester tester) async {
+        final position = pageScrollOf(tester).position;
+        position.jumpTo(position.maxScrollExtent);
+      }
+
+      auditScreen('ready', build: screenIn(const ServerOnboardingIdle()));
+
+      auditScreen(
+        'ready, scrolled to the end',
+        build: screenIn(const ServerOnboardingIdle()),
+        arrange: scrollToEnd,
+      );
+
+      // Bringing the rejected field into view leaves the page at its end, so
+      // there is no scrolled call.
+      auditScreen(
+        'rejected submit',
+        build: screenIn(const ServerOnboardingIdle()),
+        arrange: (tester) async {
+          // Empty: the address is required.
+          final submit = find.byKey(ServerAddForm.submitButtonKey);
+          await tester.ensureVisible(submit);
+          await tester.pumpAndSettle();
+          await tester.tap(submit);
+        },
+      );
+
+      // The submit's spinner never settles.
+      auditScreen(
+        'connecting',
+        settle: false,
+        build: screenIn(const ServerOnboardingInProgress()),
+      );
+
+      auditScreen(
+        'connecting, scrolled to the end',
+        settle: false,
+        build: screenIn(const ServerOnboardingInProgress()),
+        arrange: scrollToEnd,
+      );
+
+      // The banner reveals itself, which leaves the page at its end, so
+      // there is no scrolled call.
+      auditScreen(
+        'failure',
+        build: screenIn(const ServerOnboardingNotBgeServer()),
       );
     });
   });

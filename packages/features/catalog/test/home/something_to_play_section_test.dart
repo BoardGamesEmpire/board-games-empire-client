@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -47,11 +48,17 @@ void main() {
     Stream<List<Household>>? Function()? households,
     Stream<String>? gone,
     void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
+    ThemeData? theme,
+    TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
     supportedLocales: GameCatalogLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
     home: Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -641,5 +648,68 @@ void main() {
         before,
       );
     });
+  });
+
+  // Home composes this row in `BgeApp`, so `HomeScreen`'s own audit hosts a
+  // placeholder in its place; the row is audited here, in the column home
+  // puts its sections in (#50). With nothing to show it draws nothing, a
+  // failed draw included, so neither has a call.
+  group('accessibility audit', () {
+    /// The row, with the pool answering its first draw, which it makes as it
+    /// is built, with [answer].
+    Widget Function(ThemeData, TextScaler) answering(
+      Future<GamePoolSample> Function() answer,
+    ) => (theme, textScaler) {
+      pool.onSample = (_) => answer();
+      return harness(theme: theme, textScaler: textScaler, onOpen: (_, _) {});
+    };
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the row.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
+      );
+
+      final section = find.byType(SomethingToPlaySection);
+      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
+      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
+    });
+
+    // The first draw never answers: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: answering(() => Completer<GamePoolSample>().future),
+      arrange: (tester) async {
+        expect(find.byKey(SomethingToPlaySection.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: answering(() async => poolOf(['g-1', 'g-2'])),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(cover('g-1'), findsOneWidget);
+        expect(reshuffle, findsOneWidget);
+      },
+    );
+
+    // A reshuffle that landed puts its live node beside the button.
+    auditScreen(
+      'ready, reshuffled',
+      build: answering(() async => poolOf(['g-1'])),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        poolHolds(['g-2']);
+        await tester.tap(reshuffle);
+        await tester.pumpAndSettle();
+        expect(cover('g-2'), findsOneWidget);
+        expect(nodesLabelled(tester, _reshuffled), hasLength(1));
+      },
+    );
   });
 }

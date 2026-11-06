@@ -14,6 +14,7 @@ import 'package:flutter/services.dart' show HardwareKeyboard, KeyUpEvent;
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'banner_action_layout.dart';
+import 'banner_focus_ring.dart';
 
 /// The tone of a [BgeInlineBanner], which selects its color pair and icon.
 enum BgeBannerTone {
@@ -770,16 +771,32 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
             // container because each is a saturated mid-dark surface the
             // accent was never solved against.
             //
+            // Its keyboard focus ring (#644) is the foreground too, for the
+            // same reason: the app's ring is `primary`. The foreground is the
+            // colour this container's text is solved against, so it holds
+            // there. These themes replace the app's button themes, so they
+            // carry the ring themselves, on the app's shape and placement.
+            //
             // Applied as a theme rather than a required parameter so callers
             // keep passing an ordinary button: making legibility opt-in is how
             // it gets missed.
             action: TextButtonTheme(
               data: TextButtonThemeData(
-                style: TextButton.styleFrom(foregroundColor: foreground),
+                style: withBannerFocusRing(
+                  TextButton.styleFrom(foregroundColor: foreground),
+                  app: theme.textButtonTheme.style,
+                  placement: BgeButtonFocusRingPlacement.inside,
+                  color: foreground,
+                ),
               ),
               child: IconButtonTheme(
                 data: IconButtonThemeData(
-                  style: IconButton.styleFrom(foregroundColor: foreground),
+                  style: withBannerFocusRing(
+                    IconButton.styleFrom(foregroundColor: foreground),
+                    app: theme.iconButtonTheme.style,
+                    placement: BgeButtonFocusRingPlacement.outside,
+                    color: foreground,
+                  ),
                 ),
                 child: IconTheme.merge(
                   data: IconThemeData(color: foreground),

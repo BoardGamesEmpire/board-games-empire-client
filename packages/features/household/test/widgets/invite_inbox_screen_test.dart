@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -35,8 +38,9 @@ void main() {
     void Function(BuildContext context)? onOpenSent,
     TextScaler textScaler = TextScaler.noScaling,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) {
@@ -261,5 +265,172 @@ void main() {
     expect(find.byKey(InviteInboxScreen.emptyKey), findsOneWidget);
     expect(find.byKey(InviteInboxScreen.sentKey), findsNothing);
     expect(find.byKey(InviteInboxScreen.sentLinkKey), findsNothing);
+  });
+
+  group('accessibility audit', () {
+    /// The screen over the fake as [seed] leaves it; `build` runs before the
+    /// first read, so the state is chosen here.
+    Widget Function(ThemeData, TextScaler) screenWith(
+      void Function() seed, {
+      ValueListenable<bool>? offline,
+      void Function(BuildContext)? onOpenSent,
+    }) => (theme, textScaler) {
+      seed();
+      return harness(
+        theme: theme,
+        textScaler: textScaler,
+        offline: offline,
+        onOpenSent: onOpenSent,
+      );
+    };
+
+    void rows() => remote.onFetchInbox = (_, _) async => pageOf([
+      _received('i_1'),
+      _received('i_2'),
+      _received('i_3', status: HouseholdInviteStatus.accepted),
+    ]);
+
+    void accepting() {
+      rows();
+      remote.onAccept = (id) async => (
+        invite: _received(id, status: HouseholdInviteStatus.accepted),
+        householdId: 'hh_9',
+      );
+    }
+
+    void declining() {
+      rows();
+      remote.onDecline = (id) async =>
+          _received(id, status: HouseholdInviteStatus.declined);
+    }
+
+    void openSent(BuildContext _) {}
+
+    Future<void> shown(WidgetTester tester) => tester.pumpAndSettle();
+
+    Future<void> accept(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(InviteInboxScreen.acceptKey('i_1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(InviteInboxScreen.outcomeKey), findsOneWidget);
+    }
+
+    Future<void> decline(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(InviteInboxScreen.declineKey('i_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(InviteInboxScreen.declineConfirmKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Invite declined.'), findsOneWidget);
+    }
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      rows();
+      await tester.pumpWidget(
+        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = find.byType(InviteInboxScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: screenWith(rows, onOpenSent: openSent),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(InviteInboxScreen.acceptKey('i_1')), findsOneWidget);
+        expect(find.byKey(InviteInboxScreen.sentKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: screenWith(rows, onOpenSent: openSent),
+      arrange: (tester) async {
+        await shown(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen(
+      'offline',
+      build: screenWith(rows, offline: ValueNotifier(true)),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.text(_onlineOnlyCopy), findsWidgets);
+      },
+      // The failing nodes are the disabled Accept and Decline buttons, drawn
+      // dimmed by design; WCAG 1.4.3 exempts inactive controls, and the
+      // enabled buttons pass in 'ready'.
+      textContrast: false,
+    );
+
+    auditScreen('joined', build: screenWith(accepting), arrange: accept);
+
+    auditScreen(
+      'joined, scrolled to the end',
+      build: screenWith(accepting),
+      arrange: (tester) async {
+        await accept(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen('declined', build: screenWith(declining), arrange: decline);
+
+    auditScreen(
+      'more to load',
+      build: screenWith(
+        () => remote.onFetchInbox = (_, _) async => pageOf([
+          for (var i = 0; i < 25; i++) _received('i_$i'),
+        ], hasMore: true),
+      ),
+      arrange: (tester) =>
+          scrollListToEnd(tester, find.byKey(InviteInboxScreen.moreKey)),
+    );
+
+    auditScreen(
+      'empty',
+      build: screenWith(
+        () => remote.onFetchInbox = (_, _) async => pageOf(const []),
+        onOpenSent: openSent,
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(InviteInboxScreen.emptyKey), findsOneWidget);
+        expect(find.byKey(InviteInboxScreen.sentLinkKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: screenWith(
+        () => remote.onFetchInbox = (_, _) async => throw offline(),
+      ),
+      arrange: (tester) async {
+        await shown(tester);
+        expect(find.byKey(InviteInboxScreen.failedKey), findsOneWidget);
+      },
+    );
+
+    // The first read never answers, so the spinner never stops.
+    auditScreen(
+      'loading',
+      build: screenWith(() {
+        final read = Completer<PaginatedResult<HouseholdInvite>>();
+        addTearDown(() => read.complete(pageOf(const <HouseholdInvite>[])));
+        remote.onFetchInbox = (_, _) => read.future;
+      }),
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(InviteInboxScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
   });
 }

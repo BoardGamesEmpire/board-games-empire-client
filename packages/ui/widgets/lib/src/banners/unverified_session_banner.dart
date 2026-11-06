@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import 'banner_focus_ring.dart';
+
 /// Passive notice that the current session was restored from local material
 /// without server confirmation (#98).
 ///
@@ -138,6 +140,14 @@ class UnverifiedSessionBanner extends StatelessWidget {
               IconButton(
                 onPressed: onDismiss,
                 tooltip: dismissLabel,
+                // Its focus ring (#644) in the banner's foreground: the app's
+                // `primary` ring is 2.92:1 on the dark `tertiaryContainer`.
+                style: withBannerFocusRing(
+                  const ButtonStyle(),
+                  app: Theme.of(context).iconButtonTheme.style,
+                  placement: BgeButtonFocusRingPlacement.outside,
+                  color: colorScheme.onTertiaryContainer,
+                ),
                 icon: Icon(
                   Icons.close,
                   color: colorScheme.onTertiaryContainer,

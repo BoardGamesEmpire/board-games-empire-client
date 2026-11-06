@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, listEquals;
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -199,64 +199,80 @@ class _HomeScreenState extends State<HomeScreen> {
       width: hasSections ? BgePageWidth.pane : BgePageWidth.form,
       centerVertically: !hasSections,
       title: Text(l10n.homeTitle),
-      drawer: NavigationDrawer(
-        key: HomeScreen.drawerKey,
-        // Launcher semantics: entries push routes / fire actions and
-        // return, so nothing is persistently selected yet.
-        selectedIndex: null,
-        // Set explicitly, because it is load-bearing for alignment and
-        // Flutter's default is an untokenized 12.
-        //
-        // A destination's content starts at `tilePadding + 16` — the 16 is a
-        // fixed gutter inside NavigationDrawerDestination that is not
-        // configurable. So the header, the divider, and the action tiles
-        // (whose ListTile adds its own 16) all have to be inset by this same
-        // value to line up. Leaving the default 12 while the surrounding
-        // insets moved onto the token scale is exactly how the two groups
-        // drifted 4dp apart.
-        tilePadding: EdgeInsetsDirectional.symmetric(
-          horizontal: BgeTokens.of(context).spaceSm,
-        ),
-        onDestinationSelected: (index) => _select(destinations[index]),
-        children: [
-          _DrawerHeader(
-            activeServerName: widget.activeServerName,
-            serverLabel: l10n.homeActiveServerLabel,
+      // Opening the drawer opens a route, and a screen reader says its name.
+      // Flutter's `Drawer` names it with `drawerLabel` on Android, Fuchsia,
+      // Linux and Windows, but on iOS and macOS only with a `semanticLabel`,
+      // which `NavigationDrawer` never passes. A label round the drawer lands
+      // on its route's node, so it is named there too, in the same words
+      // (#50). Elsewhere it would be read twice.
+      drawer: Semantics(
+        label: switch (defaultTargetPlatform) {
+          TargetPlatform.iOS ||
+          TargetPlatform.macOS => MaterialLocalizations.of(context).drawerLabel,
+          _ => null,
+        },
+        child: NavigationDrawer(
+          key: HomeScreen.drawerKey,
+          // Launcher semantics: entries push routes / fire actions and
+          // return, so nothing is persistently selected yet.
+          selectedIndex: null,
+          // Set explicitly, because it is load-bearing for alignment and
+          // Flutter's default is an untokenized 12.
+          //
+          // A destination's content starts at `tilePadding + 16` — the 16 is a
+          // fixed gutter inside NavigationDrawerDestination that is not
+          // configurable. So the header, the divider, and the action tiles
+          // (whose ListTile adds its own 16) all have to be inset by this same
+          // value to line up. Leaving the default 12 while the surrounding
+          // insets moved onto the token scale is exactly how the two groups
+          // drifted 4dp apart.
+          tilePadding: EdgeInsetsDirectional.symmetric(
+            horizontal: BgeTokens.of(context).spaceSm,
           ),
-          for (final entry in destinations)
-            NavigationDrawerDestination(
-              key: HomeScreen.entryKey(entry.id),
-              icon: Icon(entry.icon),
-              // Flexible, not a bare Text. `NavigationDrawerDestination`
-              // places the label as a direct, non-flexed child of an internal
-              // Row, so the Text's intrinsic width drives layout and
-              // `overflow: ellipsis` alone never engages — it only applies
-              // once the Text is width-constrained. Flexible supplies that
-              // constraint from the one position that can.
-              //
-              // The hazard is real rather than theoretical: this label fit by
-              // luck under the previous typeface and went 2.4px over when the
-              // type scale gained letter-spacing. A longer localization would
-              // have done the same. SemanticsNode.label keeps the full string.
-              label: Flexible(
-                child: Text(entry.label, overflow: TextOverflow.ellipsis),
-              ),
+          onDestinationSelected: (index) => _select(destinations[index]),
+          children: [
+            _DrawerHeader(
+              activeServerName: widget.activeServerName,
+              serverLabel: l10n.homeActiveServerLabel,
             ),
-          if (actions.isNotEmpty) ...[
-            Padding(
-              // spaceLg (24) = the drawer's content inset: `tilePadding`
-              // (spaceSm) plus the 16 gutter inside each destination. See
-              // `tilePadding` above; `home_screen_test.dart` pins it.
-              padding: EdgeInsets.symmetric(
-                horizontal: BgeTokens.of(context).spaceLg,
-                vertical: BgeTokens.of(context).spaceSm,
+            for (final entry in destinations)
+              NavigationDrawerDestination(
+                key: HomeScreen.entryKey(entry.id),
+                icon: Icon(entry.icon),
+                // Flexible, not a bare Text. `NavigationDrawerDestination`
+                // places the label as a direct, non-flexed child of an internal
+                // Row, so the Text's intrinsic width drives layout and
+                // `overflow: ellipsis` alone never engages — it only applies
+                // once the Text is width-constrained. Flexible supplies that
+                // constraint from the one position that can.
+                //
+                // The hazard is real rather than theoretical: this label fit by
+                // luck under the previous typeface and went 2.4px over when the
+                // type scale gained letter-spacing. A longer localization would
+                // have done the same. SemanticsNode.label keeps the full string.
+                label: Flexible(
+                  child: Text(entry.label, overflow: TextOverflow.ellipsis),
+                ),
               ),
-              child: const Divider(),
-            ),
-            for (final entry in actions)
-              _DrawerActionTile(entry: entry, onSelected: () => _select(entry)),
+            if (actions.isNotEmpty) ...[
+              Padding(
+                // spaceLg (24) = the drawer's content inset: `tilePadding`
+                // (spaceSm) plus the 16 gutter inside each destination. See
+                // `tilePadding` above; `home_screen_test.dart` pins it.
+                padding: EdgeInsets.symmetric(
+                  horizontal: BgeTokens.of(context).spaceLg,
+                  vertical: BgeTokens.of(context).spaceSm,
+                ),
+                child: const Divider(),
+              ),
+              for (final entry in actions)
+                _DrawerActionTile(
+                  entry: entry,
+                  onSelected: () => _select(entry),
+                ),
+            ],
           ],
-        ],
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

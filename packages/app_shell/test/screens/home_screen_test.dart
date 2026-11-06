@@ -1,6 +1,7 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -41,13 +42,26 @@ Future<void> _pump(
   String? activeServerName,
 }) {
   return tester.pumpWidget(
-    MaterialApp(
-      localizationsDelegates: ShellLocalizations.localizationsDelegates,
-      supportedLocales: ShellLocalizations.supportedLocales,
-      home: HomeScreen(entries: entries, activeServerName: activeServerName),
-    ),
+    _app(entries: entries, activeServerName: activeServerName),
   );
 }
+
+/// Home with [entries] in its drawer and no sections, at [textScaler].
+Widget _app({
+  required List<HomeMenuEntry> entries,
+  String? activeServerName,
+  ThemeData? theme,
+  TextScaler textScaler = TextScaler.noScaling,
+}) => MaterialApp(
+  theme: theme,
+  localizationsDelegates: ShellLocalizations.localizationsDelegates,
+  supportedLocales: ShellLocalizations.supportedLocales,
+  builder: (context, child) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+    child: child!,
+  ),
+  home: HomeScreen(entries: entries, activeServerName: activeServerName),
+);
 
 const _events = Key('events_section');
 const _stats = Key('stats_section');
@@ -200,6 +214,42 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('Sign out')), findsWidgets);
 
     handle.dispose();
+  });
+
+  // Opening the drawer opens a route, and a screen reader says the route's
+  // name. Material names it on Android, Fuchsia, Linux and Windows, and
+  // leaves it empty on iOS and macOS, so there the drawer names it itself,
+  // with the same words (#50).
+  testWidgets("the drawer's route is named on every platform", (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, entries: _entries([]));
+    await _openDrawer(tester);
+
+    final route = find.semantics.ancestor(
+      of: find.semantics.byLabel(RegExp('^Create household')),
+      matching: find.semantics.byFlag(SemanticsFlag.namesRoute),
+    );
+    final data = route.evaluate().single.getSemanticsData();
+    expect(data.flagsCollection.scopesRoute, isTrue);
+    expect(data.label, 'Navigation menu');
+
+    handle.dispose();
+  }, variant: TargetPlatformVariant.all());
+
+  // A drafted finding, skipped until it is fixed (#50). The drawer is a
+  // launcher, so its entries are buttons, and a screen reader should not
+  // read them as tabs.
+  group('the drawer entries are not read as tabs', skip: 'see #763', () {
+    testWidgets('no "Tab n of m" on any entry', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, entries: _entries([]));
+      await _openDrawer(tester);
+
+      expect(find.bySemanticsLabel(RegExp('Create household')), findsWidgets);
+      expect(find.bySemanticsLabel(RegExp(r'Tab \d+ of \d+')), findsNothing);
+
+      handle.dispose();
+    });
   });
 
   testWidgets('drawer header, destinations, and actions share one start '
@@ -581,5 +631,24 @@ void main() {
 
       expect(FocusManager.instance.primaryFocus, same(focused));
     });
+  });
+
+  // The sections are other packages' widgets, built only in the shell's
+  // composition; these audit what this screen draws itself.
+  // The sections themselves are composed in `BgeApp`, and each is audited in
+  // its own package, beside its tests (`test/home/` in events, collection and
+  // catalog); this group audits the page round them (#50).
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) => _app(
+      entries: _entries([]),
+      activeServerName: 'My Server',
+      theme: theme,
+      textScaler: textScaler,
+    );
+
+    // Every section slot null: the welcome line.
+    auditScreen('empty', build: build);
+
+    auditScreen('drawer open', build: build, arrange: _openDrawer);
   });
 }

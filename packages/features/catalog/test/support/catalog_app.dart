@@ -14,22 +14,40 @@ const onlineOnlyCopy = "Available when you're online";
 ///
 /// With [offline], the app is under a [BgeConnectivityScope] that follows it,
 /// above the navigator as the shell hosts it, so dialogs read it too.
-Widget catalogApp(Widget home, {ValueListenable<bool>? offline}) => MaterialApp(
-  theme: BgeTheme.light(),
+///
+/// [theme] defaults to the light theme. With [textScaler], the app's text is
+/// scaled by it, as a user's setting would (#50's accessibility audit).
+Widget catalogApp(
+  Widget home, {
+  ValueListenable<bool>? offline,
+  ThemeData? theme,
+  TextScaler? textScaler,
+}) => MaterialApp(
+  theme: theme ?? BgeTheme.light(),
   localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
   supportedLocales: GameCatalogLocalizations.supportedLocales,
-  builder: offline == null
+  builder: offline == null && textScaler == null
       ? null
-      : (context, child) => ValueListenableBuilder<bool>(
-          valueListenable: offline,
-          child: child,
-          builder: (context, isOffline, child) => BgeConnectivityScope(
-            offline: isOffline,
-            noticeShowing: isOffline,
-            onlineOnlyReason: onlineOnlyCopy,
-            child: child!,
-          ),
-        ),
+      : (context, child) {
+          var app = child!;
+          if (textScaler != null) {
+            app = MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: app,
+            );
+          }
+          if (offline == null) return app;
+          return ValueListenableBuilder<bool>(
+            valueListenable: offline,
+            child: app,
+            builder: (context, isOffline, child) => BgeConnectivityScope(
+              offline: isOffline,
+              noticeShowing: isOffline,
+              onlineOnlyReason: onlineOnlyCopy,
+              child: child!,
+            ),
+          );
+        },
   home: home,
 );
 

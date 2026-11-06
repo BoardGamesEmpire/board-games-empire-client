@@ -145,6 +145,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, and the client version |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
+| `check:a11y-audit` | Fail on a `*_screen.dart` with no `group('accessibility audit')` naming it in its package's tests (#50); prints the exempt screens. Mirrors CI. |
 | `schema:dump` | Refresh the committed Drift schema snapshots |
 | `web` / `web:proxy` / `web:server` | Web dev server, dev proxy, or both together |
 | `build-web` | The release web build the published image ships: the drift fetch, then `tool/build_web.dart`, which CI's `build-web` job also runs |
@@ -242,7 +243,7 @@ pushes to `master`, in eleven jobs:
 | `palette` | `derive_palette.dart` re-derives the palette; every contrast target and the ember/error hue separation must hold |
 | `goldens` | `tool/goldens.dart` compares every golden suite against the committed `goldens/ci/` baselines in the golden container; diffs are uploaded on failure |
 | `format` | `dart format --set-exit-if-changed` over the workspace source |
-| `test-files` | `check_test_files.dart --self-test`, then the real check |
+| `test-files` | `check_test_files.dart --self-test`, then the real check; then the same pair for `check_a11y_audit.dart`, the accessibility-audit coverage check (#50) |
 | `generate` | Codegen succeeds; Drift schema snapshots are not stale. Publishes generated sources as an artifact the later jobs restore. |
 | `analyze` | One root `dart analyze --fatal-infos .` across the workspace |
 | `discover-tests` | Builds the test matrix by finding `test/` directories |

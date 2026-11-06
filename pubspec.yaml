@@ -213,6 +213,16 @@ melos:
       run: dart run tool/check_test_files.dart
       description: Fail if a Dart file under test/ declares a main but is not named *_test.dart, so flutter test would never run it.
 
+    # ── Accessibility audit coverage (#50) ────────────────────────
+    # Every `*_screen.dart` under a package's `lib/` needs a
+    # `group('accessibility audit'` naming its class in a test of the
+    # same package, so a new screen cannot ship unaudited. Screens other
+    # units are rewriting are exempt, listed in the script and printed on
+    # every run. CI runs this on every PR.
+    check:a11y-audit:
+      run: dart run tool/check_a11y_audit.dart
+      description: Fail if a screen under packages/*/lib has no accessibility-audit test group naming its class. Prints the exempt screens.
+
     # ── Formatting (#173) ─────────────────────────────────────────
     # The work is in tool/format_workspace.dart, not inline here, for the
     # same reason check:constraints delegates to a script: CI runs the
