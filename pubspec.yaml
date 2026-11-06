@@ -29,22 +29,27 @@ version: 1.0.0+1
 
 # ── Toolchain pin (#153) ───────────────────────────────────────────
 # `flutter:` below is an EXACT version, not a floor. It is the single
-# source of truth for the toolchain: CI reads it directly with
-# `flutter-version-file: pubspec.yaml` (subosito/flutter-action), so a
-# workflow can no longer disagree with the pubspecs. Every Flutter
-# package in the workspace declares `flutter: ">=<this version>"`, and
-# `melos run check:constraints` fails the build if any drifts.
+# source of truth for the toolchain: CI installs the release that
+# tool/flutter_sdk.sha256 names, so a workflow can't disagree with the
+# pubspecs (#426). Every Flutter package in the workspace declares
+# `flutter: ">=<this version>"`, and `melos run check:constraints` fails
+# the build if any drifts, or if that file names any other version.
 #
 # `sdk:` is the Dart floor that pairs with it — Flutter 3.47.1 bundles
 # Dart 3.13.1, and 3.47.0 was the first stable to ship Dart 3.13. The
 # Flutter constraint is deliberately the tighter of the two so it does
 # real work: `sdk: ^3.13.0` alone would still admit Flutter 3.47.0.
 #
-# To bump, edit both values here and run
-#   dart run tool/check_sdk_constraints.dart --fix
-# to propagate the floor to every package. Goldens (#32) run local-only,
-# so also regenerate them (`melos run goldens:update`) and commit the
-# refreshed `goldens/ci/` PNGs in the same PR.
+# To bump:
+#   1. edit both values here;
+#   2. run `dart run tool/check_sdk_constraints.dart --fix` to propagate
+#      the floor to every package;
+#   3. replace tool/flutter_sdk.sha256 with the new archive name and its
+#      sha256 from releases_linux.json (CONTRIBUTING.md has the URL); the
+#      check fails while that file names another version (#159, #426);
+#   4. regenerate the goldens with `melos run goldens:update`, which
+#      renders them in the golden container, and commit the refreshed
+#      `goldens/ci/` PNGs in the same PR.
 #
 # Trade-off of an exact pin: `flutter pub get` fails on any other
 # Flutter version, newer stables included. That is the point — it makes
@@ -73,6 +78,9 @@ dev_dependencies:
   # SHA-256 for tool/fetch_web_assets.dart, which checks each drift
   # runtime file against a committed digest before placing it (#418).
   crypto: ^3.0.7
+  # tool/test runs check_sdk_constraints.dart over fixture workspaces and
+  # pins its exit codes (#201).
+  test: ^1.31.1
   # tool/derive_palette.dart shares the OKLCH hue math, the sRGB transfer
   # function and the ember/error separation floor with `Oklch` (#172). The
   # imported entry point is Flutter-free so `dart run` can load it. `path:`
@@ -300,38 +308,36 @@ melos:
           - web_storage
           - web_platform
 
-    # ── Golden baselines (#32) ─────────────────────────────────────
-    # Only test/**/goldens/ci/ is committed (Ahem-rendered, renderer
-    # stable). The per-host test/**/goldens/<platform>/ variant is
-    # disabled in each package's flutter_test_config.dart, because
-    # alchemist compares it for real and its PNGs are gitignored — a
-    # fresh clone would fail on a missing baseline rather than skip.
+    # ── Golden baselines (#32, #159) ───────────────────────────────
+    # Only test/**/goldens/ci/ is committed (Ahem-rendered). The per-host
+    # test/**/goldens/<platform>/ variant is disabled in each package's
+    # flutter_test_config.dart, because alchemist compares it for real and
+    # its PNGs are gitignored — a fresh clone would fail on a missing
+    # baseline rather than skip.
     #
-    # `test:goldens` compares against the committed ci/ PNGs and so
-    # works on a fresh clone. `goldens:update` rewrites them after an
-    # *intended* visual change — commit only the ci/ PNGs. Neither runs
-    # in CI, which excludes golden tags entirely; see #159 for closing
-    # that gap.
+    # The baselines belong to one host: the Linux container that
+    # tool/goldens.dart builds from tool/goldens/Dockerfile (#159). Even
+    # Ahem shapes anti-alias differently at the edges on macOS, so a host
+    # `flutter test --tags golden` on a Mac fails by design. Both scripts
+    # run the wrapper, which needs Docker running. `test:goldens` compares
+    # against the committed ci/ PNGs, and works on a fresh clone.
+    # `goldens:update` rewrites them after an *intended* visual change —
+    # commit only the ci/ PNGs. CI's `goldens` job runs the same command
+    # as `test:goldens`.
     #
-    # Both filter on test/goldens, i.e. packages that actually own
-    # baselines (ui_tokens and ui/widgets today). A package with a test
-    # dir but no golden-tagged tests does NOT no-op:
-    # `flutter test --tags golden`
-    # exits 79 ("no tests ran"), which melos reports as a failure. The
-    # broader dirExists: test filter therefore failed in 21 of 22
-    # packages — goldens:update had that bug from the start, and the
-    # comment here used to claim exit 0.
+    # The wrapper picks the packages that own files under test/goldens/,
+    # tracked or untracked but not ignored (ui_tokens and ui/widgets
+    # today). A package with a
+    # test dir but no golden-tagged tests must stay out:
+    # `flutter test --tags golden` exits 79 ("no tests ran") there, which
+    # fails the run. Put a new package's goldens under test/goldens/.
     test:goldens:
-      run: melos exec -c 1 -- "flutter test --tags golden"
-      description: Compare golden-tagged tests against the committed test/**/goldens/ci/ baselines.
-      packageFilters:
-        dirExists: test/goldens
+      run: dart run tool/goldens.dart
+      description: Compare golden-tagged tests against the committed test/**/goldens/ci/ baselines, in the golden container (needs Docker).
 
     goldens:update:
-      run: melos exec -c 1 -- "flutter test --update-goldens --tags golden"
-      description: Regenerate golden baselines after an intended visual change. Commit only test/**/goldens/ci/.
-      packageFilters:
-        dirExists: test/goldens
+      run: dart run tool/goldens.dart --update
+      description: Regenerate golden baselines in the golden container after an intended visual change (needs Docker). Commit only test/**/goldens/ci/.
 
     # Clean and get dependencies
     clean:

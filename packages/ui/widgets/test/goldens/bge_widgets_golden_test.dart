@@ -21,8 +21,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// text that fits but is unreadably cramped, an ellipsis that eats the whole
 /// label, a banner whose icon no longer aligns with its first line.
 ///
-/// Local-only, like the token goldens — see `bge_theme_golden_test.dart` and
-/// `flutter_test_config.dart` for why platform variants are disabled (#159).
+/// Rendered in the golden container, like the token goldens — see
+/// `bge_theme_golden_test.dart` for why, and `flutter_test_config.dart` for
+/// why platform variants are disabled (#159).
 void main() {
   // goldenTest returns Future<void>; the framework tracks registration, so
   // these are intentionally not awaited.

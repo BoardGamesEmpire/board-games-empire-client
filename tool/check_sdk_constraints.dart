@@ -1,11 +1,13 @@
 // Verifies the invariants that hold across every package in the
-// workspace. Three of them today:
+// workspace. Four of them today:
 //
 //   1. SDK constraints match the root pubspec (#153) — the bulk of this
 //      file. `--fix` repairs it.
 //   2. Every pubspec, root included, declares `publish_to: none` (#156).
 //   3. Every app reports the root pubspec's `version:` (#73). `--fix`
 //      repairs the pubspecs; the native manifests are check-only.
+//   4. `tool/flutter_sdk.sha256` names the pinned Flutter release
+//      (#159, #426). Check-only.
 //
 // Kept under this filename because CI, the `check:constraints` melos
 // script, and a handful of comments all reference it; the name is
@@ -14,9 +16,9 @@
 // ── 1. SDK constraints ─────────────────────────────────────────────
 //
 // The root `environment.flutter` is an exact version and is the single
-// source of truth for the toolchain — CI installs exactly it via
-// `flutter-version-file: pubspec.yaml`. This script propagates that
-// decision outward:
+// source of truth for the toolchain — CI installs exactly it, through the
+// release digest in `tool/flutter_sdk.sha256` (invariant 4). This script
+// propagates that decision outward:
 //
 //   * every package's `environment.sdk` must match the root's verbatim;
 //   * a package that pulls anything from the Flutter SDK must declare
@@ -61,6 +63,17 @@
 // constraints. The manifests are check-only, like publish_to: the fix is
 // restoring Flutter's own template lines.
 //
+// ── 4. The Flutter release digest ──────────────────────────────────
+//
+// `tool/flutter_sdk.sha256` holds the sha256 of the Linux release archive
+// for the root pin, one line in `sha256sum -c` format. CI's setup action
+// and the golden-test container both install Flutter from it, and refuse
+// an archive that doesn't match. So a toolchain bump that forgets the file
+// would otherwise surface later, as a download for the wrong version. This
+// check holds the version it names to the pin. It can't check the digest
+// itself without the network, and it doesn't rewrite the file: the digest
+// comes from Flutter's release list, not from anything in this repo.
+//
 // ── Coverage ───────────────────────────────────────────────────────
 //
 // Packages are discovered from the root `workspace:` list, not from
@@ -74,8 +87,9 @@
 //   dart run tool/check_sdk_constraints.dart --self-test
 //
 // Bumping the toolchain is therefore: edit the root `environment:`
-// block, then run with `--fix`. Bumping the client version is the same,
-// with the root `version:`.
+// block, run with `--fix`, and replace `tool/flutter_sdk.sha256` with the
+// new archive's line from releases_linux.json. Bumping the client version
+// is the root `version:` and `--fix`.
 
 import 'dart:convert';
 import 'dart:io';
@@ -123,18 +137,25 @@ void main(List<String> args) {
     exit(1);
   }
 
-  // CI resolves the toolchain by reading this value literally, so it has
-  // to stay a bare version. A range here would silently break the
-  // `flutter-version-file` lookup in .github/workflows/ci.yaml.
+  // CI installs one release, the one `tool/flutter_sdk.sha256` names, and
+  // the digest check below holds that file to this value. A range would
+  // name no release to install, so it has to stay a bare version.
   if (!RegExp(r'^\d+\.\d+\.\d+$').hasMatch(pin)) {
     stderr.writeln(
       'Root `environment.flutter` must be an exact version (e.g. 3.44.4), '
-      'not a range — CI reads it via `flutter-version-file`. Found: $pin',
+      'not a range — CI installs the one release that '
+      'tool/flutter_sdk.sha256 names. Found: $pin',
     );
     exit(1);
   }
 
   final expectedFlutter = '>=$pin';
+
+  final digestFile = File(_flutterDigestPath);
+  final digestProblems = _flutterDigestProblems(
+    digestFile.existsSync() ? digestFile.readAsStringSync() : null,
+    pin,
+  );
 
   final expectedVersion = rootYaml['version']?.toString();
   if (expectedVersion == null) {
@@ -242,6 +263,11 @@ void main(List<String> args) {
               '$path: could not locate a top-level `version:` line to '
               'rewrite — fix this one by hand',
             );
+          } else if (!_versionHolds(rewritten, expectedVersion)) {
+            unfixable.add(
+              '$path: rewriting `version:` did not leave '
+              '${_show(expectedVersion)} — fix this one by hand',
+            );
           } else {
             file.writeAsStringSync(rewritten);
             // The environment rewrite below starts from this text, so it
@@ -293,6 +319,11 @@ void main(List<String> args) {
         unfixable.add(
           '$path: could not locate a top-level `environment:` block to '
           'rewrite — fix this one by hand',
+        );
+      } else if (!_environmentHolds(rewritten, expectedSdk, wantFlutter)) {
+        unfixable.add(
+          '$path: rewriting `environment:` still left drift — fix this one '
+          'by hand',
         );
       } else {
         file.writeAsStringSync(rewritten);
@@ -363,8 +394,22 @@ void main(List<String> args) {
     );
   }
 
+  if (digestProblems.isNotEmpty) {
+    stderr.writeln('The Flutter release digest does not match the pin:');
+    for (final p in digestProblems) {
+      stderr.writeln('  $p');
+    }
+    stderr.writeln(
+      '\nTake the sha256 for flutter_linux_$pin-stable.tar.xz from '
+      'https://storage.googleapis.com/flutter_infra_release/releases/'
+      'releases_linux.json — this check does not rewrite it for you.',
+    );
+  }
+
   final checkOnlyFailed =
-      publishProblems.isNotEmpty || manifestProblems.isNotEmpty;
+      publishProblems.isNotEmpty ||
+      manifestProblems.isNotEmpty ||
+      digestProblems.isNotEmpty;
   final problems = [...sdkProblems, ...versionProblems];
 
   if (problems.isEmpty) {
@@ -373,7 +418,7 @@ void main(List<String> args) {
       'Workspace invariants hold across ${members.length} packages plus '
       'the root (Flutter $pin, sdk $expectedSdk, publish_to none, version '
       '$expectedVersion in ${apps.length} apps and $manifestCount native '
-      'manifests).',
+      'manifests, and the Flutter release digest).',
     );
     return;
   }
@@ -432,6 +477,61 @@ void _checkPublishTo(String path, YamlMap pubspec, List<String> problems) {
 }
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';
+
+const _flutterDigestPath = 'tool/flutter_sdk.sha256';
+
+/// What is wrong with `tool/flutter_sdk.sha256`, given its text
+/// ([digestSource], null when the file is absent) and the root pin.
+///
+/// Empty when it is one `sha256sum -c` line for the pinned release's
+/// Linux archive. The digest's value is not checked: that needs the
+/// network, and the install script's `sha256sum -c` does it anyway.
+List<String> _flutterDigestProblems(String? digestSource, String pin) {
+  if (digestSource == null) return ['$_flutterDigestPath does not exist'];
+  final match = RegExp(
+    r'^[0-9a-f]{64}  flutter_linux_(\d+\.\d+\.\d+)-stable\.tar\.xz\n?$',
+  ).firstMatch(digestSource);
+  if (match == null) {
+    return [
+      '$_flutterDigestPath must be one line: <64 hex chars>, two spaces, '
+          'flutter_linux_<version>-stable.tar.xz',
+    ];
+  }
+  final version = match[1];
+  if (version != pin) {
+    return ['$_flutterDigestPath names Flutter $version, expected $pin'];
+  }
+  return const [];
+}
+
+/// Whether [rewritten], a rewriter's output, parses and declares [sdk]
+/// and [flutter] as its environment, [flutter] null meaning no key.
+///
+/// `--fix` writes and claims a rewrite only after this re-read (#201).
+/// A rewriter that returned text still drifting, or text that no longer
+/// parses, would otherwise read as fixed, and the next plain check would
+/// fail on the tree `--fix` called clean.
+bool _environmentHolds(String rewritten, String sdk, String? flutter) {
+  final env = _parsePubspec(rewritten)?['environment'];
+  return env is YamlMap &&
+      env['sdk']?.toString() == sdk &&
+      env['flutter']?.toString() == flutter;
+}
+
+/// Whether [rewritten] parses and declares [version], the same re-read as
+/// [_environmentHolds] for the `version:` rewrite.
+bool _versionHolds(String rewritten, String version) =>
+    _parsePubspec(rewritten)?['version']?.toString() == version;
+
+/// [source] parsed, or null when it is not a YAML map.
+YamlMap? _parsePubspec(String source) {
+  try {
+    final yaml = loadYaml(source);
+    return yaml is YamlMap ? yaml : null;
+  } on YamlException {
+    return null;
+  }
+}
 
 /// Fixture tests for the rewriters ([_rewriteEnvironment],
 /// [_rewriteVersion]) and the manifest checks.
@@ -953,6 +1053,86 @@ void _selfTest() {
       '\t<string>\$(FLUTTER_BUILD_NUMBER)</string>\n</dict>\n',
     ),
     <String>[],
+  );
+
+  const digestLine =
+      'a1d8166c0309267cb7dc99f1424eecf08b86946ad3b50723c6f59945964aea45  '
+      'flutter_linux_3.47.1-stable.tar.xz\n';
+
+  expect(
+    'digest: accepts the pinned archive',
+    _flutterDigestProblems(digestLine, '3.47.1'),
+    <String>[],
+  );
+
+  expect(
+    'digest: names the stale version',
+    _flutterDigestProblems(
+      digestLine.replaceFirst('3.47.1', '3.44.4'),
+      '3.47.1',
+    ),
+    ['tool/flutter_sdk.sha256 names Flutter 3.44.4, expected 3.47.1'],
+  );
+
+  expect('digest: missing file', _flutterDigestProblems(null, '3.47.1'), [
+    'tool/flutter_sdk.sha256 does not exist',
+  ]);
+
+  expect(
+    'digest: malformed line',
+    _flutterDigestProblems('abc  flutter.tar.xz\n', '3.47.1'),
+    [
+      'tool/flutter_sdk.sha256 must be one line: <64 hex chars>, two '
+          'spaces, flutter_linux_<version>-stable.tar.xz',
+    ],
+  );
+
+  expect(
+    'rewrite re-read: holds once both keys match',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n',
+      sdk,
+      flutter,
+    ),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: holds with no flutter key when none is wanted',
+    _environmentHolds('name: a\nenvironment:\n  sdk: ^3.12.0\n', sdk, null),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: refuses a rewrite that left drift',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n  flutter: ">=3.0.0"\n',
+      sdk,
+      flutter,
+    ),
+    false,
+  );
+
+  expect(
+    'rewrite re-read: refuses a rewrite that no longer parses',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n flutter: [\n',
+      sdk,
+      flutter,
+    ),
+    false,
+  );
+
+  expect(
+    'rewrite re-read: version holds once it matches',
+    _versionHolds('name: a\nversion: 1.2.3+4\n', '1.2.3+4'),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: refuses a version rewrite that left the old value',
+    _versionHolds('name: a\nversion: 1.2.3+3\n', '1.2.3+4'),
+    false,
   );
 
   if (failures > 0) {

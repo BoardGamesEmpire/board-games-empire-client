@@ -6,9 +6,13 @@
 
 coverage:
   # Report only, for now: nothing here fails a PR. The numbers need a
-  # few runs of history before a target means anything, and two known
-  # blind spots skew them (see the `test` job) — tighten once they are
-  # understood, not before.
+  # few runs of history before a target means anything, and known blind
+  # spots skew them (see the `test` job's blind-spot comment in ci.yaml).
+  #
+  # Before either status stops being `informational`, re-measure the
+  # files absent from lcov (#400). Most of those blind spots leave code
+  # out of the report rather than counting it uncovered, so a gate on
+  # these numbers would under-report risk.
   status:
     project:
       default:

@@ -19,24 +19,40 @@ environment:
 ```
 
 **This means `flutter pub get` fails on any other version, newer stables
-included.** That is deliberate: CI installs the toolchain by reading this exact
-value (`flutter-version-file: pubspec.yaml`), so a moving constraint would let
-local and CI silently diverge. A resolve error here is the pin working, not a
-bug — check `flutter --version` first.
+included.** That is deliberate: CI installs exactly this release, through the
+digest in [tool/flutter_sdk.sha256](tool/flutter_sdk.sha256), so a moving
+constraint would let local and CI silently diverge. A resolve error here is the
+pin working, not a bug — check `flutter --version` first.
 
 Use [fvm](https://fvm.app) or your own version manager to keep 3.47.1 available.
 
 ### Bumping the toolchain
 
-Every package repeats the constraint, so bumping is a two-step operation:
+Every package repeats the constraint, and CI installs the release by its
+digest, so a bump touches three things:
 
 ```bash
 # 1. edit the root environment: block, then
 dart run tool/check_sdk_constraints.dart --fix
+# 2. replace tool/flutter_sdk.sha256 with the new release's line (below)
+# 3. re-render the golden baselines in the container
+melos run goldens:update --no-select
 ```
 
 `--fix` propagates the new values to all 28 workspace pubspecs and preserves the
 comments in each `environment:` block. Then `flutter pub get` to re-resolve.
+
+[tool/flutter_sdk.sha256](tool/flutter_sdk.sha256) is one `sha256sum -c` line:
+the sha256 of `flutter_linux_<version>-stable.tar.xz`, two spaces, and that file
+name. Take both from
+[releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json)
+(the release's `sha256` and the file name in its `archive`). CI and the golden
+container download exactly that archive and refuse one that doesn't match, and
+`check_sdk_constraints` fails while the file names a different version than the
+pin (#159, #426). It never rewrites the file for you.
+
+A new Flutter can move the golden renders, so commit the refreshed `goldens/ci/`
+PNGs from step 3 in the same PR. See [Goldens](#goldens).
 
 Never hand-edit the per-package constraints. The whole point of
 [tool/check_sdk_constraints.dart](tool/check_sdk_constraints.dart) is that they
@@ -172,27 +188,38 @@ cd packages/core/models && flutter test  # one package
 ### Goldens
 
 Golden tests carry the `golden` tag and are excluded from `melos run test`, which
-mirrors CI. Run them deliberately:
+mirrors CI's `test` job. Run them deliberately:
 
 ```bash
 melos run test:goldens --no-select     # compare against committed baselines
 melos run goldens:update --no-select   # rewrite baselines after an intended change
 ```
 
-Only `test/**/goldens/ci/` is committed — Ahem-rendered and renderer-stable. The
-per-host `goldens/<platform>/` output is gitignored, and the platform variant is
-disabled in each package's `flutter_test_config.dart`; see the comment there for
-why, and #159 for the open question of which host should own the baseline.
+Both run [tool/goldens.dart](tool/goldens.dart), which runs the golden suites in
+a Linux container (`dart run tool/goldens.dart [--update]` is the same thing).
+**Docker is required.** The first run builds the image, which takes minutes, and
+longer under emulation on Apple silicon. Later runs reuse it until the toolchain
+or the image changes.
+
+The container owns the baselines (#159). Even Ahem-rendered goldens anti-alias
+shape edges differently on macOS, so a host `flutter test --tags golden` on a Mac
+fails against the committed PNGs by design. CI's `goldens` job runs the same
+command you do. When a comparison fails, the diff images land in each package's
+`test/goldens/failures/` (gitignored), and CI uploads them as the
+`golden-failures` artifact.
+
+Only `test/**/goldens/ci/` is committed. The per-host `goldens/<platform>/`
+output is gitignored, and the platform variant is disabled in each package's
+`flutter_test_config.dart`; see the comment there for why.
 
 Commit only the `ci/` PNGs.
 
-Both golden scripts filter on `dirExists: test/goldens`, so they run only in
-packages that actually own baselines — `ui_tokens` and `ui`
-(`packages/ui/widgets`) today. If you add goldens
-to another package, put them under `test/goldens/` or the scripts will skip it —
-and note that `flutter test --tags golden` exits 79 ("no tests ran") in a package
-with no golden-tagged tests, which melos reports as a failure rather than a
-no-op. That is why the filter is narrow.
+The wrapper runs only the packages that own files under `test/goldens/`, tracked
+or untracked but not ignored — `ui_tokens` and `ui` (`packages/ui/widgets`)
+today. If you add goldens to another package, put them under `test/goldens/` or
+the run will skip it. Running
+every package with a `test/` instead would fail: `flutter test --tags golden`
+exits 79 ("no tests ran") in a package with no golden-tagged tests.
 
 ### Drift schemas
 
@@ -209,23 +236,24 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in ten jobs:
+pushes to `master`, in eleven jobs:
 
 | Job | Gate |
 | --- | --- |
-| `constraints` | `check_sdk_constraints.dart --self-test`, then the real check |
+| `constraints` | `check_sdk_constraints.dart --self-test`, its exit-code suite (`dart test tool/test`), then the real check |
 | `palette` | `derive_palette.dart` re-derives the palette; every contrast target and the ember/error hue separation must hold |
+| `goldens` | `tool/goldens.dart` compares every golden suite against the committed `goldens/ci/` baselines in the golden container; diffs are uploaded on failure |
 | `format` | `dart format --set-exit-if-changed` over the workspace source |
 | `test-files` | `check_test_files.dart --self-test`, then the real check; then the same pair for `check_a11y_audit.dart`, the accessibility-audit coverage check (#50) |
 | `generate` | Codegen succeeds; Drift schema snapshots are not stale. Publishes generated sources as an artifact the later jobs restore. |
 | `analyze` | One root `dart analyze --fatal-infos .` across the workspace |
 | `discover-tests` | Builds the test matrix by finding `test/` directories |
-| `test` | One job per package, golden tags excluded |
+| `test` | One job per package, golden tags excluded (the `goldens` job runs those) |
 | `test-web` | The browser-only (`@TestOn('browser')`) suites in Chrome, for the packages that have them |
 | `build-web` | The release web build succeeds, its drift runtime files match their committed checksums, it holds no dotfile, and the files the app boots from are present |
 
-On a push to `master`, an eleventh job, `publish-web`, publishes that build as
-an image once all ten have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
+On a push to `master`, a twelfth job, `publish-web`, publishes that build as an
+image once all eleven have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
 covers its tags and contents.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline

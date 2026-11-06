@@ -6,14 +6,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// Visual regression coverage for the four themes (#32).
 ///
-/// Local check only — see the `test` job in `.github/workflows/ci.yaml`
-/// for why goldens are excluded from CI (`--exclude-tags golden`):
-/// Alchemist's CI goldens obscure text but still rasterize shapes and
-/// anti-aliased edges per-platform, so a macOS-generated baseline does
-/// not match a Linux CI render. Regenerate with
-/// `flutter test --update-goldens` (or `melos run goldens:update`). Only
-/// the CI variant (`goldens/ci/`) is committed; platform goldens are
-/// gitignored. Tagged `golden` by alchemist.
+/// Rendered and compared in the golden container, never on the host
+/// (#159): Alchemist's CI goldens obscure text but still rasterize shapes
+/// and anti-aliased edges per-platform, so a macOS render does not match
+/// the Linux baseline. Compare with `dart run tool/goldens.dart` (or
+/// `melos run test:goldens`) and regenerate with `--update` (or
+/// `melos run goldens:update`); CI's `goldens` job runs the same
+/// comparison. Only the CI variant (`goldens/ci/`) is committed; platform
+/// goldens are gitignored. Tagged `golden` by alchemist.
 void main() {
   // goldenTest returns Future<void>; the test framework tracks the
   // registration itself, so we intentionally don't await it here.

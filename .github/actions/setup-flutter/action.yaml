@@ -1,0 +1,64 @@
+name: Set up Flutter
+description: >-
+  Installs the Flutter release that tool/flutter_sdk.sha256 names, checked
+  against that committed digest, with the SDK and the pub cache cached.
+  Replaces subosito's Flutter setup action, whose nested actions/cache@v5
+  can't be pinned to a commit SHA (#426). Run it after actions/checkout;
+  afterwards `flutter` and `dart` are on PATH and PUB_CACHE is set.
+
+# Linux x64 runners only, like the archive the digest names.
+# tool/install_flutter.sh does the download and the check, and
+# tool/goldens/Dockerfile calls the same script, so CI and the golden
+# container install Flutter one way (#159).
+#
+# The SDK cache key hashes the digest file, so a cache saved for another
+# release can't be restored; on a hit the install script doesn't run at
+# all. On a miss the script installs into a directory the cache just
+# failed to fill, and it refuses one that is already there.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the pinned release
+      id: pin
+      shell: bash
+      # The install script is the one reader of the digest line, and it
+      # refuses a malformed one.
+      run: |
+        version=$(tool/install_flutter.sh --print-version)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "dir=$RUNNER_TOOL_CACHE/flutter/$version" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the Flutter SDK
+      id: sdk
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.pin.outputs.dir }}
+        key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tool/flutter_sdk.sha256') }}
+
+    - name: Install Flutter ${{ steps.pin.outputs.version }}
+      if: steps.sdk.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        FLUTTER_DIR: ${{ steps.pin.outputs.dir }}
+      run: tool/install_flutter.sh "$FLUTTER_DIR"
+
+    - name: Put Flutter on PATH
+      shell: bash
+      env:
+        FLUTTER_DIR: ${{ steps.pin.outputs.dir }}
+      run: |
+        echo "$FLUTTER_DIR/bin" >> "$GITHUB_PATH"
+        echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+        echo "PUB_CACHE=$HOME/.pub-cache" >> "$GITHUB_ENV"
+
+    - name: Restore the pub cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.pub-cache
+        key: flutter-pub-${{ runner.os }}-${{ hashFiles('tool/flutter_sdk.sha256', 'pubspec.lock') }}
+        restore-keys: flutter-pub-${{ runner.os }}-
+
+    - name: Show the toolchain
+      shell: bash
+      run: flutter --disable-analytics && flutter --version

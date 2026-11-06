@@ -29,18 +29,23 @@ permissions:
 # (.github/renovate.json) moves the pins and their comments together.
 #
 # The Flutter pin lives in the ROOT pubspec's `environment.flutter`, not
-# here (#153). Every job below installs it with `flutter-version-file`,
-# which reads that field literally — so a workflow can no longer disagree
-# with the pubspecs about which toolchain this repo builds on. Pinning
-# (rather than tracking `stable`) keeps codegen, analysis, and tests
-# deterministic across runs.
+# here (#153). Every job below sets Flutter up with the local
+# `.github/actions/setup-flutter`, which installs the release that
+# `tool/flutter_sdk.sha256` names and refuses an archive that doesn't
+# match its digest. `check_sdk_constraints` holds that file to the root
+# pin, so a workflow can't disagree with the pubspecs about which
+# toolchain this repo builds on. No third-party action sets Flutter up
+# (#426): the one this replaced nested a cache action that couldn't be
+# pinned to a SHA. Pinning (rather than tracking `stable`) keeps codegen,
+# analysis, and tests deterministic across runs.
 #
 # To bump: edit `environment:` in the root pubspec.yaml, run
 # `dart run tool/check_sdk_constraints.dart --fix` to propagate the floor
-# to all 28 workspace packages, and — because goldens (#32) run
-# local-only, see the `test` job — regenerate them
-# (`melos run goldens:update`) and commit the refreshed `goldens/ci/`
-# PNGs in the same PR.
+# to all 28 workspace packages, replace `tool/flutter_sdk.sha256` with the
+# new archive name and sha256 from Flutter's releases_linux.json, and
+# regenerate the goldens (`melos run goldens:update`, which renders them
+# in the golden container) and commit the refreshed `goldens/ci/` PNGs in
+# the same PR.
 
 jobs:
   # ── Workspace invariants (#153, #156, #73) ───────────────────────
@@ -58,20 +63,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # A rewriter's failure mode is a silent no-op, which the workspace
       # check below cannot see (it only ever reads correct pubspecs), so
       # the drift shapes it must survive are pinned as fixtures. The
       # manifest checks only ever read correct manifests, so the
-      # hand-set versions they must catch are pinned the same way.
+      # hand-set versions they must catch are pinned the same way. The
+      # self-test pins the rewriters, and `tool/test` pins `main`'s exit
+      # codes by running both modes over fixture workspaces (#201).
       - name: Invariant tooling self-test
         run: dart run tool/check_sdk_constraints.dart --self-test
+      - name: Invariant tooling exit codes
+        run: dart test tool/test
       - name: Invariants must hold against the root pubspec
         run: dart run tool/check_sdk_constraints.dart
 
@@ -87,15 +92,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Palette must satisfy its own contrast and hue targets
         run: dart run tool/derive_palette.dart
+
+  # ── Golden baselines (#159) ──────────────────────────────────────
+  # Compares every package's golden suites against the committed
+  # `goldens/ci/` PNGs. They run in the golden container
+  # (tool/goldens/Dockerfile), not on the runner, because that container
+  # owns the baselines: even Ahem-rendered goldens anti-alias edges
+  # differently from host to host, so only one renderer can agree with
+  # them. This is the same command contributors run (`melos run
+  # test:goldens`), so a local pass and a CI pass mean the same thing.
+  # Codegen-free like `palette`: the golden suites import no generated
+  # code.
+  #
+  # The runner sets Flutter up like every other job: the wrapper is a
+  # Dart script, and it computes the image tag. The container doesn't
+  # download the workspace again, because GOLDENS_PUB_CACHE hands it the
+  # runner's pub cache, which the resolve here has already filled.
+  #
+  # The image is cached as a tarball under its tag, which hashes the
+  # Dockerfile, the install script and the Flutter digest, so it is built
+  # once per toolchain and loaded after that. It is saved whether or not
+  # the goldens matched. The image is the same either way, and a PR whose
+  # goldens fail would otherwise rebuild it on every push. On a failure
+  # the diff images are uploaded as `golden-failures`.
+  goldens:
+    name: Goldens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-flutter
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Name the golden image
+        id: image
+        run: echo "tag=$(dart run tool/goldens.dart --image-tag)" >> "$GITHUB_OUTPUT"
+      # Restore and save are separate steps because the combined cache
+      # action saves only after a green job.
+      - name: Restore the golden image
+        id: image-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bge-goldens.tar
+          key: goldens-image-${{ steps.image.outputs.tag }}
+      - name: Load the golden image
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load -i "$RUNNER_TEMP/bge-goldens.tar"
+      - name: Goldens must match the committed baselines
+        run: GOLDENS_PUB_CACHE="$PUB_CACHE" dart run tool/goldens.dart
+      # Exports nothing when the image was never built.
+      - name: Export the golden image
+        id: image-export
+        if: ${{ !cancelled() && steps.image-cache.outputs.cache-hit != 'true' }}
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+        run: |
+          if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker save "$IMAGE" -o "$RUNNER_TEMP/bge-goldens.tar"
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the golden image
+        if: ${{ !cancelled() && steps.image-export.outputs.saved == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bge-goldens.tar
+          key: ${{ steps.image-cache.outputs.cache-primary-key }}
+      - name: Upload golden failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-failures
+          path: packages/**/test/goldens/failures/
+          if-no-files-found: ignore
 
   # ── Formatting (#173) ────────────────────────────────────────────
   # Standalone and codegen-free, like `constraints`: formatting parses,
@@ -120,11 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Dart source must be formatted
@@ -146,11 +214,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Test-file check self-test
@@ -190,11 +254,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       # Restore build_runner's incremental state (asset graph + cached
       # outputs) so unchanged sources skip regeneration. The lockfile
       # hash scopes the cache to a dependency set; the SHA suffix makes
@@ -288,11 +348,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Analyze whole workspace
@@ -323,13 +379,10 @@ jobs:
   # runs pure-Dart suites cleanly too. Restores generated code first.
   # fail-fast off so one red package doesn't cancel the rest.
   #
-  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) and run
-  # local-only. Alchemist's CI goldens obscure text but still rasterize
-  # shapes/anti-aliasing per-platform, so a macOS-generated baseline
-  # won't match a Linux runner — the version pin removes engine skew but
-  # not OS skew. Restoring CI coverage means generating the committed
-  # `goldens/ci/` baselines on Linux (e.g. a Docker/CI --update-goldens
-  # job) and disabling the CI-golden variant locally; deferred for now.
+  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) because the
+  # `goldens` job runs them, in the golden container that renders the
+  # committed baselines (#159). On the runner itself they would compare
+  # one host's anti-aliasing against another's.
   test:
     name: Test ${{ matrix.package }}
     needs: [generate, discover-tests]
@@ -346,11 +399,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: flutter test
@@ -374,13 +423,29 @@ jobs:
       # behind the non-fatal step. Flag config and ignores live in
       # codecov.yml.
       #
-      # Two blind spots, both of which read as HIGHER coverage, not lower:
-      #   - A file no test imports is absent from lcov entirely, so it
-      #     does not count against the package.
-      #   - Code only the browser suites reach (`test-web`) is absent too:
-      #     `flutter test --platform chrome --coverage` writes an empty
-      #     report on the pinned Flutter, so that job does not upload.
-      # Goldens are excluded above, so golden-only widget code reads low.
+      # Four blind spots, measured on 2026-11-05 and accepted in #400. The
+      # first two and the last leave code out of the report rather than
+      # counting it uncovered, so the totals read HIGHER than the truth;
+      # the third mostly reads LOWER:
+      #   - Unimported files. A file no test imports is absent from lcov
+      #     entirely. Of the 165 VM-side files absent then, four held any
+      #     logic: home_placeholder_screen.dart (dead, #195),
+      #     image_host.dart (test support), and the small
+      #     sync_operation_sender.dart and active_server_scope.dart. The
+      #     rest were barrels, interfaces and constants.
+      #   - Browser-only code. What only the `test-web` suites reach is
+      #     absent too: `flutter test --platform chrome --coverage` writes
+      #     an empty report on the pinned Flutter, so that job does not
+      #     upload (#731).
+      #   - Coverage is per package. A package's report counts only its
+      #     own suites, so lines in `core/interfaces` that only other
+      #     packages' tests exercise read as uncovered, or the whole file
+      #     reads as absent when no suite of its own imports it.
+      #   - Packages with no `test/` directory never upload: the apps and
+      #     `platform/desktop` and `platform/mobile`, about 70 lines.
+      # One skew runs the other way: goldens are excluded above, and the
+      # `goldens` job uploads no coverage, so golden-only widget code
+      # reads low.
       - name: Prefix coverage paths with the package dir
         id: coverage
         env:
@@ -457,11 +522,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # The wasm binaries are versioned artifacts of the drift release and
@@ -513,11 +574,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # Each file is checked against its committed SHA-256 before it is
@@ -580,7 +637,7 @@ jobs:
   # again.
   publish-web:
     name: Publish web image
-    needs: [constraints, palette, format, test-files, generate, analyze, test, test-web, build-web]
+    needs: [constraints, palette, goldens, format, test-files, generate, analyze, test, test-web, build-web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     # One publish at a time, across every master run. The last step reads
     # the tags and then writes `edge`, which is safe only if no other run
