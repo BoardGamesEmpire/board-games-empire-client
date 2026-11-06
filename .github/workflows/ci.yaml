@@ -29,11 +29,15 @@ permissions:
 # (.github/renovate.json) moves the pins and their comments together.
 #
 # The Flutter pin lives in the ROOT pubspec's `environment.flutter`, not
-# here (#153). Every job below installs it with `flutter-version-file`,
-# which reads that field literally — so a workflow can no longer disagree
-# with the pubspecs about which toolchain this repo builds on. Pinning
-# (rather than tracking `stable`) keeps codegen, analysis, and tests
-# deterministic across runs.
+# here (#153). Every job below sets Flutter up with the local
+# `.github/actions/setup-flutter`, which installs the release that
+# `tool/flutter_sdk.sha256` names and refuses an archive that doesn't
+# match its digest. `check_sdk_constraints` holds that file to the root
+# pin, so a workflow can't disagree with the pubspecs about which
+# toolchain this repo builds on. No third-party action sets Flutter up
+# (#426): the one this replaced nested a cache action that couldn't be
+# pinned to a SHA. Pinning (rather than tracking `stable`) keeps codegen,
+# analysis, and tests deterministic across runs.
 #
 # To bump: edit `environment:` in the root pubspec.yaml, run
 # `dart run tool/check_sdk_constraints.dart --fix` to propagate the floor
@@ -59,11 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # A rewriter's failure mode is a silent no-op, which the workspace
@@ -92,11 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Palette must satisfy its own contrast and hue targets
@@ -125,11 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Dart source must be formatted
@@ -149,11 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Test-file check self-test
@@ -189,11 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       # Restore build_runner's incremental state (asset graph + cached
       # outputs) so unchanged sources skip regeneration. The lockfile
       # hash scopes the cache to a dependency set; the SHA suffix makes
@@ -287,11 +271,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: Analyze whole workspace
@@ -345,11 +325,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       - name: flutter test
@@ -456,11 +432,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # The wasm binaries are versioned artifacts of the drift release and
@@ -512,11 +484,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version-file: pubspec.yaml
-          channel: stable
-          cache: true
+      - uses: ./.github/actions/setup-flutter
       - name: Resolve workspace
         run: flutter pub get
       # Each file is checked against its committed SHA-256 before it is

@@ -16,9 +16,9 @@
 // ── 1. SDK constraints ─────────────────────────────────────────────
 //
 // The root `environment.flutter` is an exact version and is the single
-// source of truth for the toolchain — CI installs exactly it via
-// `flutter-version-file: pubspec.yaml`. This script propagates that
-// decision outward:
+// source of truth for the toolchain — CI installs exactly it, through the
+// release digest in `tool/flutter_sdk.sha256` (invariant 4). This script
+// propagates that decision outward:
 //
 //   * every package's `environment.sdk` must match the root's verbatim;
 //   * a package that pulls anything from the Flutter SDK must declare
@@ -137,13 +137,14 @@ void main(List<String> args) {
     exit(1);
   }
 
-  // CI resolves the toolchain by reading this value literally, so it has
-  // to stay a bare version. A range here would silently break the
-  // `flutter-version-file` lookup in .github/workflows/ci.yaml.
+  // CI installs one release, the one `tool/flutter_sdk.sha256` names, and
+  // the digest check below holds that file to this value. A range would
+  // name no release to install, so it has to stay a bare version.
   if (!RegExp(r'^\d+\.\d+\.\d+$').hasMatch(pin)) {
     stderr.writeln(
       'Root `environment.flutter` must be an exact version (e.g. 3.44.4), '
-      'not a range — CI reads it via `flutter-version-file`. Found: $pin',
+      'not a range — CI installs the one release that '
+      'tool/flutter_sdk.sha256 names. Found: $pin',
     );
     exit(1);
   }

@@ -29,11 +29,11 @@ version: 1.0.0+1
 
 # ── Toolchain pin (#153) ───────────────────────────────────────────
 # `flutter:` below is an EXACT version, not a floor. It is the single
-# source of truth for the toolchain: CI reads it directly with
-# `flutter-version-file: pubspec.yaml` (subosito/flutter-action), so a
-# workflow can no longer disagree with the pubspecs. Every Flutter
-# package in the workspace declares `flutter: ">=<this version>"`, and
-# `melos run check:constraints` fails the build if any drifts.
+# source of truth for the toolchain: CI installs the release that
+# tool/flutter_sdk.sha256 names, so a workflow can't disagree with the
+# pubspecs (#426). Every Flutter package in the workspace declares
+# `flutter: ">=<this version>"`, and `melos run check:constraints` fails
+# the build if any drifts, or if that file names any other version.
 #
 # `sdk:` is the Dart floor that pairs with it — Flutter 3.47.1 bundles
 # Dart 3.13.1, and 3.47.0 was the first stable to ship Dart 3.13. The

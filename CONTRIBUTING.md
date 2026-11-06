@@ -19,10 +19,10 @@ environment:
 ```
 
 **This means `flutter pub get` fails on any other version, newer stables
-included.** That is deliberate: CI installs the toolchain by reading this exact
-value (`flutter-version-file: pubspec.yaml`), so a moving constraint would let
-local and CI silently diverge. A resolve error here is the pin working, not a
-bug — check `flutter --version` first.
+included.** That is deliberate: CI installs exactly this release, through the
+digest in [tool/flutter_sdk.sha256](tool/flutter_sdk.sha256), so a moving
+constraint would let local and CI silently diverge. A resolve error here is the
+pin working, not a bug — check `flutter --version` first.
 
 Use [fvm](https://fvm.app) or your own version manager to keep 3.47.1 available.
 

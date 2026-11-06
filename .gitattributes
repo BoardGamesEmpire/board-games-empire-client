@@ -3,3 +3,4 @@
 # them: check_sdk_constraints refuses the digest line as malformed, and
 # sha256sum and install_flutter.sh read the archive name with \r on it.
 tool/flutter_sdk.sha256 text eol=lf
+*.sh text eol=lf
