@@ -325,8 +325,9 @@ melos:
     # commit only the ci/ PNGs. CI's `goldens` job runs the same command
     # as `test:goldens`.
     #
-    # The wrapper picks the packages that own tracked files under
-    # test/goldens/ (ui_tokens and ui/widgets today). A package with a
+    # The wrapper picks the packages that own files under test/goldens/,
+    # tracked or untracked but not ignored (ui_tokens and ui/widgets
+    # today). A package with a
     # test dir but no golden-tagged tests must stay out:
     # `flutter test --tags golden` exits 79 ("no tests ran") there, which
     # fails the run. Put a new package's goldens under test/goldens/.
