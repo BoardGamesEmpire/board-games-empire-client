@@ -98,6 +98,48 @@ void main() {
       expect(await fixThenCheck(), (1, 1), reason: lastOutput);
     });
 
+    test('rewritable drift beside a check-only problem', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'packages/a': validMemberPubspec
+              .replaceFirst('^3.13.0', '^3.12.0')
+              .replaceFirst('publish_to: none\n', ''),
+        },
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      // The rewrite still happened: only the check-only problem is left.
+      expect(lastOutput, isNot(contains('SDK constraint drift')));
+    });
+
+    test('app version drift', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'apps/app_a':
+              'name: app_a\npublish_to: none\nversion: 0.9.0+1\n'
+              'environment:\n  sdk: ^3.13.0\nresolution: workspace\n',
+        },
+      );
+
+      expect(await runTool(workspace), 1, reason: lastOutput);
+      expect(await fixThenCheck(), (0, 0), reason: lastOutput);
+    });
+
+    test('app version drift beside sdk drift in the same pubspec', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'apps/app_a':
+              'name: app_a\npublish_to: none\nversion: 0.9.0+1\n'
+              'environment:\n  sdk: ^3.12.0\nresolution: workspace\n',
+        },
+      );
+
+      expect(await runTool(workspace), 1, reason: lastOutput);
+      // The environment rewrite starts from the version rewrite's text, so
+      // both survive.
+      expect(await fixThenCheck(), (0, 0), reason: lastOutput);
+    });
+
     test('stale digest', () async {
       workspace = await createFixtureWorkspace(
         flutterDigest: validFlutterDigest.replaceFirst('3.47.1', '3.44.4'),
