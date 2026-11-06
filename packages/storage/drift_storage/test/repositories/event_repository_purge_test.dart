@@ -202,6 +202,7 @@ void main() {
         userId: _kUserA,
         eventId: 'e-1',
         source: eventAccessSourceRead,
+        rosterShown: false,
       ),
       EventAccessTableData(
         userId: _kUserB,
@@ -210,6 +211,7 @@ void main() {
         attendeeId: 'att-b',
         attendanceStatus: 'Attending',
         attendanceRole: 'EventHost',
+        rosterShown: false,
       ),
     ]);
     expect(

@@ -2,13 +2,13 @@ import 'package:drift/drift.dart';
 
 import 'event_table.dart';
 
-/// A cached copy of one of an event's occurrences, as `GET /events` and
-/// `GET /events/:id` embed them (#496): when it happens, and where if that
-/// differs from the event's own place.
+/// A cached copy of one of an event's occurrences, as `GET /events`,
+/// `GET /events/:id` and the household list embed them (#496): when it
+/// happens, and where if that differs from the event's own place.
 ///
-/// Both reads serve all of an event's occurrences, so every write of the event
-/// replaces its rows here wholesale, and one the server no longer returns
-/// doesn't linger.
+/// Every read serves all of an event's occurrences, so every write of the
+/// event replaces its rows here wholesale, and one the server no longer
+/// returns doesn't linger.
 ///
 /// Indexed on [eventId], because an event's occurrences are read and replaced
 /// by event, and SQLite looks up an `events` key's child rows on every change

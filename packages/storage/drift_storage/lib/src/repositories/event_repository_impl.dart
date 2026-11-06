@@ -20,7 +20,8 @@ import 'watch_disposal.dart';
 /// that brought it, and every read returns only events recorded for that
 /// user. So a user signed in to the same server on this device after another
 /// can't list or look up what the server sent only to the other. The roster
-/// is narrower still: [getEvent] serves it only to a user it names.
+/// is narrower still: [getEvent] serves it only to a user it names, or one
+/// whose own detail read the server showed it to (#567).
 ///
 /// The user is fixed at construction, as `GameRepositoryImpl`'s is. A page
 /// the hydrate writes after its session has ended, before the scope finishes
@@ -71,6 +72,14 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// or read from `event_moves` ([reconciledEventId]). Never shrinks: a move
   /// is never undone.
   final Map<String, String> _moves = {};
+
+  /// The access sources whose rows keep the user's own answer: the two lists
+  /// that carry one (#667, #503). Every write of an answer goes on both, where
+  /// the rows exist, so a list item reads the same answer from either.
+  static const List<String> _answerSources = [
+    eventAccessSourceAttending,
+    eventAccessSourceHousehold,
+  ];
 
   @override
   String get disposedRepositoryName => 'EventRepository';
@@ -215,8 +224,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           if (s.policy case final policy?) _policyToCompanion(policy),
       ]);
 
-      // Both reads carry every occurrence, and the server hard-deletes one,
-      // so an empty list clears them.
+      // Every read, list, detail or household, carries all of an event's
+      // occurrences, and the server hard-deletes one, so an empty list
+      // clears them.
       b.deleteWhere(
         _db.eventOccurrencesTable,
         (t) => t.eventId.isIn(byId.keys),
@@ -236,11 +246,11 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         ]);
         // The roster is shared by every user on this device, so it replaces
         // other users' rows too, and is the newer news for their answers. Each
-        // goes on that user's `attending` row, where they have one, so their
-        // list doesn't show what it said before. This user's comes from the
-        // read's own answer, below. A user the roster leaves off keeps theirs:
-        // a roster is read under the reader's ceiling, so it doesn't say they
-        // left.
+        // goes on that user's `attending` and `household` rows, where they
+        // have them, so their lists don't show what they said before. This
+        // user's comes from the read's own answer, below. A user the roster
+        // leaves off keeps theirs: a roster is read under the reader's
+        // ceiling, so it doesn't say they left.
         for (final MapEntry(key: eventId, value: roster) in rosters.entries) {
           for (final attendee in roster) {
             final userId = attendee.userId;
@@ -251,7 +261,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               where: (t) =>
                   t.userId.equals(userId) &
                   t.eventId.equals(eventId) &
-                  t.source.equals(eventAccessSourceAttending),
+                  t.source.isIn(_answerSources),
             );
           }
         }
@@ -308,20 +318,41 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                   ),
             ),
           );
+          // And onto the user's `household` row, where there is one, so the
+          // household's list doesn't show an answer this list replaced.
+          for (final s in written) {
+            b.update(
+              _db.eventAccessTable,
+              _answerToCompanion(s.attendance),
+              where: (t) =>
+                  t.userId.equals(_userId) &
+                  t.eventId.equals(s.event.id) &
+                  t.source.equals(eventAccessSourceHousehold),
+            );
+          }
         // A detail read speaks for what the user may read, not for their
         // list, so it adds no `attending` row. But its answer is as new as a
-        // list row's, and goes on the row the list wrote, where there is one,
-        // null included: the server sends none for a user who left or was
-        // removed, and a list item reading an answer kept from before would
-        // go on showing it. Cleared, the item falls back to the roster this
-        // same read wrote.
-        case EventAccessSource.read:
+        // list row's, and goes on the rows the lists wrote, where there are
+        // any, null included: the server sends none for a user who left or
+        // was removed, and a list item reading an answer kept from before
+        // would go on showing it. Cleared, the item falls back to the roster
+        // this same read wrote.
+        //
+        // A household's list is the same kind of read for this: it adds its
+        // own `household` row, and no `attending` one (#503). Its answer goes
+        // on both, so the household's item has one where the attending list
+        // has yet to write the event, as after a failed hydrate.
+        case EventAccessSource.read || EventAccessSource.household:
+          final name = switch (source) {
+            EventAccessSource.household => eventAccessSourceHousehold,
+            _ => eventAccessSourceRead,
+          };
           b.insertAll(_db.eventAccessTable, [
             for (final eventId in byId.keys)
               EventAccessTableCompanion.insert(
                 userId: _userId,
                 eventId: eventId,
-                source: eventAccessSourceRead,
+                source: name,
               ),
           ], mode: InsertMode.insertOrIgnore);
           for (final s in written) {
@@ -331,8 +362,34 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               where: (t) =>
                   t.userId.equals(_userId) &
                   t.eventId.equals(s.event.id) &
-                  t.source.equals(eventAccessSourceAttending),
+                  t.source.isIn(_answerSources),
             );
+          }
+          // Whether the server showed this user the roster is a fact about
+          // their detail read alone. A household's list row carries
+          // `attendees: null`, which says nothing either way, so it leaves
+          // the flag as it was (#567).
+          if (source == EventAccessSource.read) {
+            if (rosters.isNotEmpty) {
+              b.update(
+                _db.eventAccessTable,
+                const EventAccessTableCompanion(rosterShown: Value(true)),
+                where: (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceRead) &
+                    t.eventId.isIn(rosters.keys),
+              );
+            }
+            if (refused.isNotEmpty) {
+              b.update(
+                _db.eventAccessTable,
+                const EventAccessTableCompanion(rosterShown: Value(false)),
+                where: (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceRead) &
+                    t.eventId.isIn(refused),
+              );
+            }
           }
       }
     });
@@ -727,9 +784,74 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // still lets them read the event, their old row would answer with
       // their role and RSVP, and pass the roster rule. Everyone else's rows
       // stay.
+      //
+      // And the flag on their `read` row (#567). It can't tell whether the
+      // server showed them the roster because they attended, and this purge
+      // is the server saying they no longer do, so the cache fails closed on
+      // other people's names. The detail screen reads on open, so a user the
+      // server still shows it, such as a household member, gets it back from
+      // that read. The household purge leaves the flag: a household's list
+      // says nothing of the roster.
+      await (_db.update(_db.eventAccessTable)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.source.equals(eventAccessSourceRead) &
+                t.eventId.isIn(purged),
+          ))
+          .write(const EventAccessTableCompanion(rosterShown: Value(false)));
+      // And the answer on their `household` rows, which the household's
+      // list goes on showing them: the list holds every event they answered,
+      // so they have no answer on these now. The row stays, as the household
+      // still lists the event (#503).
+      await (_db.update(_db.eventAccessTable)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.source.equals(eventAccessSourceHousehold) &
+                t.eventId.isIn(purged),
+          ))
+          .write(_answerToCompanion(null));
       await (_db.delete(
         _db.eventAttendeesTable,
       )..where((t) => t.userId.equals(_userId) & t.eventId.isIn(purged))).go();
+
+      await _deleteUnreachable(purged);
+      return purged;
+    });
+  }
+
+  @override
+  Future<Map<String, int>> purgeableHouseholdEvents(String householdId) async {
+    checkNotDisposed();
+    return _purgeableHousehold(householdId);
+  }
+
+  @override
+  Future<Set<String>> purgeHouseholdEventsAbsentFrom(
+    String householdId,
+    Set<String> snapshotIds, {
+    required Map<String, int> purgeable,
+  }) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      // Read again, as the attendance purge does: an event in [purgeable] may
+      // have been edited or written again since.
+      final current = await _purgeableHousehold(householdId);
+      final purged = {
+        for (final MapEntry(key: id, value: generation) in current.entries)
+          if (purgeable[id] == generation && !snapshotIds.contains(id)) id,
+      };
+      if (purged.isEmpty) return const <String>{};
+
+      // This user's `household` row alone. The household list says nothing
+      // of their attendance, so their roster row, and their `attending` and
+      // `read` access, stay.
+      await (_db.delete(_db.eventAccessTable)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.source.equals(eventAccessSourceHousehold) &
+                t.eventId.isIn(purged),
+          ))
+          .go();
 
       await _deleteUnreachable(purged);
       return purged;
@@ -762,9 +884,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // than its 404, as the purge leaves one alone.
       if (event.generation != lastWrite) return false;
 
-      // Both sources, where the purge removes `attending` alone. The list
+      // Every source, where the purge removes `attending` alone. The list
       // speaks for a user's attendance and nothing else, but an event the
-      // server refuses this user by id is closed to them by either route.
+      // server refuses this user by id is closed to them by any of the three
+      // routes.
       // Theirs only: another user's access stays, and the event with it.
       await (_db.delete(
         _db.eventAccessTable,
@@ -840,23 +963,24 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                 ),
               );
 
-      // The user's own answer also lives on their `attending` row, which the
-      // list reads first (#667). Only theirs, and only where the row exists.
-      var attendingRows = 0;
+      // The user's own answer also lives on their `attending` and `household`
+      // rows, which the lists read first (#667, #503). Only theirs, and only
+      // where the rows exist.
+      var answerRows = 0;
       if (attendee.userId == _userId) {
-        attendingRows =
+        answerRows =
             await (_db.update(_db.eventAccessTable)..where(
                   (t) =>
                       t.eventId.equals(eventId) &
                       t.userId.equals(_userId) &
-                      t.source.equals(eventAccessSourceAttending),
+                      t.source.isIn(_answerSources),
                 ))
                 .write(
                   _answerToCompanion(EventAttendance.fromAttendee(attendee)),
                 );
       }
 
-      if (rosterRows == 0 && attendingRows == 0) return false;
+      if (rosterRows == 0 && answerRows == 0) return false;
       await _db.batch((b) => _stampGeneration(b, [eventId]));
       return true;
     });
@@ -969,6 +1093,26 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     };
   }
 
+  /// The events this user has `household` access to whose household is
+  /// [householdId], less any carrying local changes, each with its
+  /// `generation`. There is no window: the household purge runs only when
+  /// page 1 is the whole list (#503).
+  Future<Map<String, int>> _purgeableHousehold(String householdId) async {
+    final t = _db.eventsTable;
+    final query = _db.selectOnly(t)
+      ..addColumns([t.id, t.generation])
+      ..where(
+        t.id.isInQuery(_accessedEventIds(eventAccessSourceHousehold)) &
+            t.householdId.equals(householdId) &
+            t.isDirty.equals(false) &
+            t.isLocalOnly.equals(false),
+      );
+    return {
+      for (final row in await query.get())
+        row.read(t.id)!: row.read(t.generation)!,
+    };
+  }
+
   /// Whether [eventId] is one of [eventIds] that no user, by any source, has
   /// an access row for any longer.
   Expression<bool> _unreachable(
@@ -999,31 +1143,43 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   /// Whether every event read may return the `events` row [t]: one the
-  /// server sent this user, through either read. Rows cached only for other
-  /// users are hidden, because the server never sent them to this one.
+  /// server sent this user, through the list, a detail read or a household's
+  /// list. Rows cached only for other users are hidden, because the server
+  /// never sent them to this one.
   Expression<bool> _readableEvent($EventsTableTable t) =>
       t.id.isInQuery(_accessedEventIds());
 
   /// Whether a roster read may return the `event_attendees` row [t]: one on
-  /// a roster that names this user.
+  /// a roster that names this user, or on one this user's own detail read was
+  /// shown (#567).
   ///
   /// The rows are shared by every user signed in to this server on this
   /// device, and they hold other people's names and notes. The server shows
-  /// a roster to the event's attendees and to its household's members, and
-  /// an empty one to anyone else who may read the event (backend#560). This
-  /// gate deliberately consults only the roster for now, though
-  /// `household_members` is cached in the same database, so everyone the
-  /// roster doesn't name reads it empty, as the server's empty roster reads.
-  /// That includes a household member who doesn't attend, and staff, who
-  /// read every roster on the server through `read:public_content`. #567
-  /// widens it.
+  /// a roster to the event's attendees, to its household's members and to
+  /// staff, and an empty one to anyone else who may read the event
+  /// (backend#560). So the gate answers from what the server sent this user,
+  /// not from a copy of its role table: the user's row on the roster, or the
+  /// `roster_shown` flag on their `read` row, which their detail read sets
+  /// when it carried a roster and clears when it carried none. Everyone else
+  /// reads it empty, as the server's empty roster reads. The flag follows a
+  /// role change the next time the detail is read.
   Expression<bool> _readableAttendee($EventAttendeesTableTable t) {
     final me = _db.alias(_db.eventAttendeesTable, 'me');
+    final shown = _db.alias(_db.eventAccessTable, 'shown');
     return t.eventId.isInQuery(
-      _db.selectOnly(me)
-        ..addColumns([me.eventId])
-        ..where(me.userId.equals(_userId)),
-    );
+          _db.selectOnly(me)
+            ..addColumns([me.eventId])
+            ..where(me.userId.equals(_userId)),
+        ) |
+        t.eventId.isInQuery(
+          _db.selectOnly(shown)
+            ..addColumns([shown.eventId])
+            ..where(
+              shown.userId.equals(_userId) &
+                  shown.source.equals(eventAccessSourceRead) &
+                  shown.rosterShown,
+            ),
+        );
   }
 
   @override
@@ -1064,8 +1220,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       _db.eventPoliciesTable,
     )..where((t) => t.eventId.equals(id))).getSingleOrNull();
 
-    // The snapshot's three states: the roster for a user on it, empty for
-    // one it doesn't name, and null where no read has cached one.
+    // The snapshot's three states: the roster for a user it names or one
+    // whose own detail read was shown it (#567), empty for anyone else, and
+    // null where no read has cached one.
     final List<EventAttendee>? roster;
     if (attendees.isNotEmpty) {
       roster = attendees.map(_mapAttendee).toList();
@@ -1142,9 +1299,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// The event and the user's own row on its roster, as [getEvent] and
   /// [getCurrentUserAttendance] answer them.
   ///
-  /// The row is the snapshot's own: a roster is read only by a user it
-  /// names, so it holds theirs wherever one is cached, and one state of the
-  /// cache gives both.
+  /// The row is the snapshot's own: a roster is read by a user it names or
+  /// one it was shown to (#567), and the user's own row is on it only where
+  /// they attend, so it is found there when it is, and one state of the cache
+  /// gives both.
   Future<EventDetail?> _readDetail(String id) async {
     final snapshot = await _db.transaction(() async {
       final snapshot = await _readSnapshot(id);
@@ -1202,103 +1360,129 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   );
 
   /// One query joining each attending event to its occurrences, this user's
-  /// `attending` row and their own attendee row, so Drift re-runs it when any
-  /// of them changes (#497), as `watchCollectionListItems` does for the
-  /// collection.
+  /// `attending` and `household` rows and their own attendee row, so Drift
+  /// re-runs it when any of them changes (#497), as `watchCollectionListItems`
+  /// does for the collection.
   ///
-  /// The attendance is the answer the `attending` row keeps, else the user's
-  /// row on the cached roster (#667). [_writeBatch] keeps the two in step
-  /// where it can, and where they still differ, as when the list answered
-  /// for an attendee id the roster doesn't hold, the list is the newer news.
+  /// The attendance is the answer the `attending` row keeps, else the one the
+  /// `household` row keeps (#503), else the user's row on the cached roster
+  /// (#667). [_writeBatch] writes an answer onto both access rows wherever
+  /// both exist, so they agree, and keeps the roster in step where it can.
+  /// Where the roster still differs, as when the list answered for an
+  /// attendee id the roster doesn't hold, the list is the newer news.
   ///
-  /// Left outer joins: an event can have no occurrences, and most have no
-  /// cached roster. Neither of the other two joins can repeat the
-  /// occurrences. The access join matches the row's whole key, user, event
-  /// and source, so it joins one row, and never another user's or a `read`
-  /// row. The attendee join matches on this user, so another user's row on a
-  /// shared roster never joins. The server holds one row per user per event,
-  /// a roster is replaced wholesale, and a list row only updates the user's
-  /// row in place, so it joins at most one row.
+  /// Left outer joins: an event can have no occurrences, most have no cached
+  /// roster, and most have only one of the two access rows. None of the other
+  /// joins can repeat the occurrences. Each access join matches the row's
+  /// whole key, user, event and source, so it joins one row, and never another
+  /// user's or a `read` row.
+  /// The attendee join matches on this user, so another user's row on a shared
+  /// roster never joins. The server holds one row per user per event, a roster
+  /// is replaced wholesale, and a list row only updates the user's row in
+  /// place, so it joins at most one row.
   @override
-  Stream<List<EventListItem>> watchAttendingEventListItems() => untilDisposed(
-    () {
-      final events = _db.eventsTable;
-      final occurrences = _db.eventOccurrencesTable;
-      final attending = _db.alias(_db.eventAccessTable, 'own_access');
-      final mine = _db.alias(_db.eventAttendeesTable, 'own_attendance');
-
-      final query =
-          _db.select(events).join([
-              leftOuterJoin(
-                occurrences,
-                occurrences.eventId.equalsExp(events.id),
-              ),
-              leftOuterJoin(
-                attending,
-                attending.userId.equals(_userId) &
-                    attending.eventId.equalsExp(events.id) &
-                    attending.source.equals(eventAccessSourceAttending),
-              ),
-              leftOuterJoin(
-                mine,
-                mine.eventId.equalsExp(events.id) & mine.userId.equals(_userId),
-              ),
-            ])
-            ..where(
-              events.id.isInQuery(
-                _accessedEventIds(eventAccessSourceAttending),
-              ),
-            )
-            // [watchAttendingEvents]'s order, then the detail read's order
-            // within each event.
-            ..orderBy([
-              OrderingTerm.desc(events.createdAt.julianday),
-              OrderingTerm.desc(events.id),
-              OrderingTerm.asc(occurrences.sortOrder),
-              OrderingTerm.asc(occurrences.id),
-            ]);
-
-      return query.watch().map((rows) {
-        // One row per occurrence, so each event's rows fold into one item.
-        // A map keeps the events in the order they came.
-        final rowsByEvent = <String, List<TypedResult>>{};
-        for (final row in rows) {
-          rowsByEvent.putIfAbsent(row.readTable(events).id, () => []).add(row);
-        }
-        return [
-          for (final eventRows in rowsByEvent.values)
-            EventListItem(
-              event: _mapEvent(eventRows.first.readTable(events)),
-              occurrences: [
-                for (final row in eventRows)
-                  if (row.readTableOrNull(occurrences) case final o?)
-                    _mapOccurrence(o),
-              ],
-              // The same on every row of the event.
-              attendance: _listAttendance(
-                eventRows.first.readTableOrNull(attending),
-                eventRows.first.readTableOrNull(mine),
-              ),
-            ),
-        ];
-      });
-    },
+  Stream<List<EventListItem>> watchAttendingEventListItems() => _watchListItems(
+    (events) =>
+        events.id.isInQuery(_accessedEventIds(eventAccessSourceAttending)),
   );
 
+  @override
+  Stream<List<EventListItem>> watchHouseholdEventListItems(
+    String householdId,
+  ) => _watchListItems(
+    (events) =>
+        events.id.isInQuery(_accessedEventIds(eventAccessSourceHousehold)) &
+        events.householdId.equals(householdId),
+  );
+
+  /// The list-item query for the events [where] selects, which the attending
+  /// and household lists share.
+  Stream<List<EventListItem>> _watchListItems(
+    Expression<bool> Function($EventsTableTable events) where,
+  ) => untilDisposed(() {
+    final events = _db.eventsTable;
+    final occurrences = _db.eventOccurrencesTable;
+    final attending = _db.alias(_db.eventAccessTable, 'own_access');
+    final household = _db.alias(_db.eventAccessTable, 'own_household');
+    final mine = _db.alias(_db.eventAttendeesTable, 'own_attendance');
+
+    final query =
+        _db.select(events).join([
+            leftOuterJoin(
+              occurrences,
+              occurrences.eventId.equalsExp(events.id),
+            ),
+            leftOuterJoin(
+              attending,
+              attending.userId.equals(_userId) &
+                  attending.eventId.equalsExp(events.id) &
+                  attending.source.equals(eventAccessSourceAttending),
+            ),
+            leftOuterJoin(
+              household,
+              household.userId.equals(_userId) &
+                  household.eventId.equalsExp(events.id) &
+                  household.source.equals(eventAccessSourceHousehold),
+            ),
+            leftOuterJoin(
+              mine,
+              mine.eventId.equalsExp(events.id) & mine.userId.equals(_userId),
+            ),
+          ])
+          ..where(where(events))
+          // [watchAttendingEvents]'s order, then the detail read's order
+          // within each event.
+          ..orderBy([
+            OrderingTerm.desc(events.createdAt.julianday),
+            OrderingTerm.desc(events.id),
+            OrderingTerm.asc(occurrences.sortOrder),
+            OrderingTerm.asc(occurrences.id),
+          ]);
+
+    return query.watch().map((rows) {
+      // One row per occurrence, so each event's rows fold into one item.
+      // A map keeps the events in the order they came.
+      final rowsByEvent = <String, List<TypedResult>>{};
+      for (final row in rows) {
+        rowsByEvent.putIfAbsent(row.readTable(events).id, () => []).add(row);
+      }
+      return [
+        for (final eventRows in rowsByEvent.values)
+          EventListItem(
+            event: _mapEvent(eventRows.first.readTable(events)),
+            occurrences: [
+              for (final row in eventRows)
+                if (row.readTableOrNull(occurrences) case final o?)
+                  _mapOccurrence(o),
+            ],
+            // The same on every row of the event.
+            attendance: _listAttendance(
+              eventRows.first.readTableOrNull(attending),
+              eventRows.first.readTableOrNull(household),
+              eventRows.first.readTableOrNull(mine),
+            ),
+          ),
+      ];
+    });
+  });
+
   /// A list item's attendance (#667): the answer the user's [attending] row
-  /// keeps, else their [own] row on the cached roster, else null.
+  /// keeps, else the one their [household] row keeps (#503), else their [own]
+  /// row on the cached roster, else null.
   EventAttendance? _listAttendance(
     EventAccessTableData? attending,
+    EventAccessTableData? household,
     EventAttendeesTableData? own,
   ) =>
       _mapAnswer(attending) ??
+      _mapAnswer(household) ??
       (own == null ? null : EventAttendance.fromAttendee(_mapAttendee(own)));
 
   // ── Mappers ────────────────────────────────────────────────────────────
 
-  /// The answer the `attending` access [row] keeps, or null where there is
-  /// no row or it keeps none (#667). Its names read back as a roster row's
-  /// do, so one this client can't read is `unknown`.
+  /// The answer the `attending` or `household` access [row] keeps, or null
+  /// where there is no row or it keeps none (#667, #503). Its names read back
+  /// as a roster row's do, so one this client can't read is `unknown`.
   static EventAttendance? _mapAnswer(EventAccessTableData? row) {
     if (row == null) return null;
     final (attendeeId, status) = (row.attendeeId, row.attendanceStatus);
@@ -1312,9 +1496,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     );
   }
 
-  /// The four columns of an `attending` access row that keep [a], the
-  /// user's own answer, or clear it where [a] is null (#667). Stored as a
-  /// roster row stores them.
+  /// The four columns of an `attending` or `household` access row that keep
+  /// [a], the user's own answer, or clear it where [a] is null (#667, #503).
+  /// Stored as a roster row stores them.
   static EventAccessTableCompanion _answerToCompanion(EventAttendance? a) =>
       EventAccessTableCompanion(
         attendeeId: Value(a?.attendeeId),

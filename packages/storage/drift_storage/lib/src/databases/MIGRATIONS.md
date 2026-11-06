@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 16`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 17`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -117,6 +117,15 @@ Server schema history:
   as not known, until the next hydrate writes it. Additive (one nullable
   column, no rebuild), so #54 stays deferred. No earlier step creates
   `platform_games` from the live table, so none needs to drop the column.
+- **v16 → v17 (#567):** adds `event_access.roster_shown`, a boolean defaulting
+  to false, on the user's `read` row: whether their own detail read was shown
+  the event's roster, so a cached roster is served to a user it names and to
+  one it was shown to. One `addColumn` call. A row cached before it holds
+  false, read as not shown until the user's next detail read. Additive (one
+  defaulted column, no rebuild), so #54 stays deferred. The v6 → v7 step
+  creates `event_access` from the live table, which now has the column, so it
+  drops it again right after, beside the four v15 columns, from the empty
+  table, and this step adds it back.
 
 Meta schema history:
 
@@ -127,7 +136,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v16.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v17.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live

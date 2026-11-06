@@ -15,14 +15,22 @@ enum EventAccessSource {
   /// They read it by id, through `GET /events/:id`, whether or not they
   /// attend it. No purge removes it.
   read,
+
+  /// The household list sent it to them: `GET /households/:id/events` (#503).
+  /// Only [EventRepository.purgeHouseholdEventsAbsentFrom] removes it, never
+  /// the `GET /events` purge. It keeps their answer too, as [attending] does,
+  /// for an event their list has yet to cache, but the `GET /events` purge
+  /// clears it: the list holds every event they answered.
+  household,
 }
 
 /// Read cache of the events the server sent each user, for a single server,
 /// read as one user (#496), and the local half of creating one (#499).
 ///
-/// The repository caches what the two event reads return, the list
-/// (`GET /events`) and the detail (`GET /events/:id`), and serves reads from
-/// that. [create] is its one local write: it writes a local-only event and
+/// The repository caches what the three event reads return, the list
+/// (`GET /events`), the detail (`GET /events/:id`) and the household list
+/// (`GET /households/:householdId/events`), and serves reads from that.
+/// [create] is its one local write: it writes a local-only event and
 /// queues its create, and the sync queue owns that event until
 /// [reconcileCreatedEvent] replaces it with the server's. Answering an
 /// invitation or voting is #527, and editing an event #500.
@@ -40,28 +48,30 @@ enum EventAccessSource {
 /// After the session ends the `Future` methods throw [StateError], and
 /// [watchAttendingEvents] streams close. [reconciledEventId] still answers.
 ///
-/// ## The roster, only to a user on it
+/// ## The roster, to whom the server showed it
 ///
 /// The roster is stored once per event the same way, and it holds other
 /// people's names, guests' names and their notes. The server shows an event's
-/// attendee list to its attendees, since every event role may read it, and
-/// to members of the event's household. Anyone else who may read the event,
+/// attendee list to its attendees, since every event role may read it, to
+/// members of the event's household, and to staff, through
+/// `read:public_content`. Anyone else who may read the event,
 /// such as a friend, a household guest or a public reader, is served an empty
 /// list (backend#560).
 ///
-/// [getEvent] serves a cached roster only to a user it names, and an empty
-/// list to everyone else, meaning what the server's empty list means: this
-/// user may not read it. Where no read has cached a roster, it answers null
-/// instead: not known. The rule deliberately consults only the roster for
-/// now, though `household_members` is cached in the same database, so a
-/// household member who doesn't attend reads an empty roster where the
-/// server would show them the list. So do staff, who read every roster on
-/// the server through `read:public_content`. #567 widens the rule.
+/// [getEvent] serves a cached roster to a user it names, and to one whose own
+/// detail read the server showed it to (#567), and an empty list to everyone
+/// else, meaning what the server's empty list means: this user may not read
+/// it. Where no read has cached a roster, it answers null instead: not known.
+/// The rule answers from what the server sent this user, not from the
+/// household roles cached in the same database, so it covers a household's
+/// members and staff alike. A detail read that carries a roster records that
+/// it was shown, and one that carries none clears it, so a role change takes
+/// effect the next time the detail is read.
 ///
-/// The list carries no roster, only each user's own answer (#667). That is
-/// kept with the user's own `attending` access, which no other user reads,
-/// and never put on the roster as a row: one row on an event with no roster
-/// cached would read as a roster of one.
+/// The lists carry no roster, only each user's own answer (#667). That is
+/// kept with the user's own `attending` and `household` access, which no
+/// other user reads, and never put on the roster as a row: one row on an
+/// event with no roster cached would read as a roster of one.
 ///
 /// The occurrences and the policy need no such rule: the server checks their
 /// reads apart from the event's, but grants them wherever it grants the
@@ -81,8 +91,9 @@ enum EventAccessSource {
 ///   bumped by attendee, occurrence or vote writes, so it can't be used to
 ///   skip one.
 /// - **Occurrences** are replaced wholesale on every read, an empty list
-///   included. Both reads serve all of an event's occurrences, and the server
-///   hard-deletes one, so a merge would keep dates that no longer exist.
+///   included. Every read, list, detail or household, serves all of an
+///   event's occurrences, and the server hard-deletes one, so a merge would
+///   keep dates that no longer exist.
 /// - **The roster** is replaced only by a snapshot carrying at least one
 ///   attendee. The list carries none, and an empty roster is one the caller
 ///   may not read, so neither says anyone else left. An empty one does say
@@ -93,13 +104,14 @@ enum EventAccessSource {
 /// - **The policy** is replaced only by a snapshot carrying one. A read serves
 ///   none to a caller its own check refuses, and the server has no policy
 ///   delete, so a missing one is never news.
-/// - **The user's own answer** is kept twice, on their `attending` access and
-///   on their row of a cached roster, and each read writes both where it can,
-///   so a later read of either kind replaces it (#667, #589). A list row
-///   writes the answer it carries to that access, a null one included, and
-///   updates their roster row with the same attendee id in place, adding
-///   none. A detail read writes the roster as above, and its answer, a null
-///   one included, to that access where they already have it, adding none.
+/// - **The user's own answer** is kept on their `attending` and `household`
+///   access and on their row of a cached roster, and each read writes all
+///   three where it can, so a later read of any kind replaces it (#667, #589,
+///   #503). A list row writes the answer it carries to its own access, a null
+///   one included, and to the other where they already have it, and updates
+///   their roster row with the same attendee id in place, adding none. A
+///   detail read writes the roster as above, and its answer, a null one
+///   included, to whichever of the two they already have, adding neither.
 ///
 /// ## Removals made elsewhere
 ///
@@ -109,6 +121,13 @@ enum EventAccessSource {
 /// to many pages, and only its first page is one consistent read, so a pass
 /// purges only within the range that page spans: an event created before it
 /// stays cached until the list fits on one page.
+///
+/// The household list removes a household's rows by
+/// [purgeHouseholdEventsAbsentFrom] (#503), and only on one of two licences: a
+/// page 1 that is the whole list, or a 404 for the household itself, which the
+/// pass purges against an empty set on any page. It removes the user's
+/// `household` access alone: their `attending` and `read` access and their
+/// roster row stay.
 abstract class EventRepository {
   /// Writes one read's [snapshot] for the current user, in one transaction:
   ///
@@ -118,12 +137,18 @@ abstract class EventRepository {
   ///   removes the current user's own row from it when it is empty;
   /// - records [source] access for the current user, beside any access they
   ///   already have;
+  /// - for a detail read ([source] read), records on that access whether the
+  ///   server showed the user the roster: shown when `snapshot.attendees` is
+  ///   non-empty, not shown when it is empty, and unchanged when it is null
+  ///   (#567);
   /// - writes the current user's own answer, as "What each read may change"
-  ///   above says. A list row ([source] attending) writes the answer it
-  ///   carries onto their `attending` access, a null one included, and a
-  ///   non-null one onto their own row on a cached roster, adding none. A
-  ///   detail read copies its answer, a null one included, onto an
-  ///   `attending` access they already have, and never adds one.
+  ///   above says. A list row ([source] attending or household) writes the
+  ///   answer it carries onto the access it records, a null one included, and
+  ///   onto the other list's access where they already have it. A detail read
+  ///   copies its answer, a null one included, onto either list's access they
+  ///   already have. Neither adds an `attending` access, and a household row
+  ///   leaves the user off the attending list. A non-null answer also updates
+  ///   their own row on a cached roster in place, adding none.
   ///
   /// For one read, such as the detail read #498 makes. The hydrate writes a
   /// page at a time, through [cacheEvents].
@@ -204,7 +229,14 @@ abstract class EventRepository {
   /// keeps the event readable, their row would still give
   /// [getCurrentUserAttendance] their old role and RSVP, and let [getEvent]
   /// show them the roster, though the server now serves them none. Every
-  /// other row on the roster stays.
+  /// other row on the roster stays. So does the `read` access, but its record
+  /// that the server showed them the roster is cleared (#567): the flag can't
+  /// tell whether they were shown it because they attended, so they read it
+  /// empty until their next detail read, which gives it back to a user the
+  /// server still shows it, such as a household member. Their `household`
+  /// access stays too, since the household still lists the event, but the
+  /// answer it keeps is cleared (#503): the list holds every event they
+  /// answered, so they have none on these.
   ///
   /// An event left with no access row at all, from any user, is deleted with
   /// its occurrences, roster and policy, since no read can reach it.
@@ -212,6 +244,44 @@ abstract class EventRepository {
     Set<String> snapshotIds, {
     required Map<String, int> purgeable,
     DateTime? newerThan,
+  });
+
+  /// The events [purgeHouseholdEventsAbsentFrom] could remove the current
+  /// user's `household` access to right now, as event id to a value naming the
+  /// last write of the cached event, which no later write repeats: every event
+  /// they have `household` access to whose `householdId` is [householdId],
+  /// less any that are `isDirty` or `isLocalOnly`.
+  ///
+  /// Read it **before** requesting the first page, and pass it to the purge,
+  /// for the reason [purgeableAttendance] gives.
+  Future<Map<String, int>> purgeableHouseholdEvents(String householdId);
+
+  /// Removes the current user's `household` access to each event of
+  /// [householdId] in [purgeable] that [snapshotIds] doesn't name, in one
+  /// transaction, and returns the ids of the events it removed it from.
+  ///
+  /// [snapshotIds] must be the events on the household list's first page, and
+  /// that page must be the whole list: unlike [purgeAttendanceAbsentFrom] this
+  /// has no window, so a caller whose list goes on past page 1 doesn't call
+  /// it with that page. The one other licence is the household route answering
+  /// 404 with the API's envelope, because the household is missing or deleted:
+  /// the caller then passes an empty set, on any page. Either way, the
+  /// generation check still keeps any event written since the [purgeable]
+  /// read.
+  ///
+  /// [purgeable] is a [purgeableHouseholdEvents] read taken before that page
+  /// was requested. Nothing outside it is removed, and neither is an event
+  /// that has become `isDirty` or `isLocalOnly` since, nor one written since.
+  ///
+  /// Only this user's `household` access is removed. The list speaks for
+  /// what the household shows them and nothing else, so their `attending`
+  /// and `read` access, their row on each roster and every other user's
+  /// access stay. An event left with no access row at all, from any user, is
+  /// deleted with its occurrences, roster and policy.
+  Future<Set<String>> purgeHouseholdEventsAbsentFrom(
+    String householdId,
+    Set<String> snapshotIds, {
+    required Map<String, int> purgeable,
   });
 
   /// The cached event [id] as one snapshot, or null when it isn't cached or
@@ -222,14 +292,15 @@ abstract class EventRepository {
   /// read carries one.
   ///
   /// `attendees` keeps "not asked" apart from "may not read", as
-  /// [EventSnapshot.attendees] does (see "The roster, only to a user on it"
-  /// above):
+  /// [EventSnapshot.attendees] does (see "The roster, to whom the server
+  /// showed it" above):
   ///
   /// - null when no roster is cached for the event, as for one cached only
   ///   from the list: not known, so read the detail;
-  /// - empty when a roster is cached that doesn't name the current user,
-  ///   meaning what the server's empty roster means: they may not read it;
-  /// - the cached roster when it names them.
+  /// - empty when a roster is cached that neither names the current user nor
+  ///   was shown to them by their own detail read, meaning what the server's
+  ///   empty roster means: they may not read it;
+  /// - the cached roster when it names them or was shown to them.
   Future<EventSnapshot?> getEvent(String id);
 
   /// The current user's own row on the cached roster of [eventId], or null
@@ -279,7 +350,7 @@ abstract class EventRepository {
   /// again and cached, or after a hydrate cached it once the user was
   /// invited back.
   ///
-  /// In one transaction it removes their access rows of both sources, then
+  /// In one transaction it removes their access rows of every source, then
   /// their own row on the event's roster, and then deletes the event with its
   /// occurrences, roster and policy if no user has an access row left, as
   /// [purgeAttendanceAbsentFrom] does. Another user's access and their row
@@ -334,11 +405,11 @@ abstract class EventRepository {
   Future<bool> cacheOccurrence(EventOccurrence occurrence);
 
   /// Writes [attendee], which an RSVP answered, over the cached roster row
-  /// with its id, and onto the current user's `attending` row when it is
-  /// theirs (#508, #667). Never adds a row to a roster.
+  /// with its id, and onto the current user's `attending` and `household`
+  /// rows when it is theirs (#508, #667, #503). Never adds a row to a roster.
   ///
   /// Returns false, writing nothing, when the event isn't cached or is
-  /// `isDirty` or `isLocalOnly`, or when neither row is cached. Stamps the
+  /// `isDirty` or `isLocalOnly`, or when no such row is cached. Stamps the
   /// generation, and [watchEvent] emits. Last-write-wins (#589).
   Future<bool> cacheAttendee(EventAttendee attendee);
 
@@ -388,8 +459,9 @@ abstract class EventRepository {
   ///
   /// The occurrences come in the server's order, `sortOrder` then id, and an
   /// event with none has an empty list. The attendance is the answer the list
-  /// carried, kept with their `attending` access (#667), else their own row
-  /// on the cached roster, as [getCurrentUserAttendance] answers it. Null
+  /// carried, kept with their `attending` access (#667), else the one kept
+  /// with their `household` access (#503), else their own row on the cached
+  /// roster, as [getCurrentUserAttendance] answers it. Null
   /// where neither names them, which means not known. Each read keeps the two
   /// in step where it can, and where they still differ, as when the list
   /// answered for an attendee id a roster cached before the user left and
@@ -401,6 +473,14 @@ abstract class EventRepository {
   /// for. As there, a write that changes nothing here may still emit the list
   /// unchanged.
   Stream<List<EventListItem>> watchAttendingEventListItems();
+
+  /// Watches the events the current user has `household` access to whose
+  /// `householdId` is [householdId] (#503), each as
+  /// [watchAttendingEventListItems] builds an item: with its occurrences and
+  /// the user's own answer. An event the user's own list has yet to cache,
+  /// as after a failed hydrate, still carries the answer the household's list
+  /// sent. In the same order, newest created first; the caller sorts by date.
+  Stream<List<EventListItem>> watchHouseholdEventListItems(String householdId);
 
   // ── The queued create (#499) ───────────────────────────────────────────
 

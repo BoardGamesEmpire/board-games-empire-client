@@ -218,6 +218,9 @@ void main() {
           listCache ??
           Stream.value([for (var n = 0; n < events; n++) _upcoming('e-$n')]),
     );
+    // The household screen's events block (#503) lists its household's.
+    when(() => repository.watchHouseholdEventListItems(any()))
+        .thenAnswer((_) => Stream.value(const <EventListItem>[]));
     when(() => repository.watchEvent(any())).thenAnswer(
       (call) =>
           detailCache ??

@@ -186,6 +186,17 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// Each browse read, in order, recorded before it is answered.
   final List<EventListRequest> browseRequests = [];
 
+  /// Scripted household pages, keyed by household id and served in page order
+  /// (#503).
+  final Map<String, List<PaginatedResult<EventSnapshot>>> householdPages = {};
+
+  /// Each household read, in order, recorded before it is answered.
+  final List<({String householdId, int page, int limit})> householdRequests =
+      [];
+
+  /// Thrown by each household read when set.
+  Object? householdError;
+
   /// The id of each detail read, in order.
   final List<String> detailRequests = [];
 
@@ -233,6 +244,24 @@ class FakeEventRemote implements EventRemoteDataSource {
       throw UnimplementedError('browseEvents is not faked');
     }
     return browse(request);
+  }
+
+  @override
+  Future<PaginatedResult<EventSnapshot>> fetchHouseholdEvents(
+    String householdId, {
+    int page = 1,
+    int limit = EventRemoteDataSource.maxPageSize,
+  }) async {
+    householdRequests.add((householdId: householdId, page: page, limit: limit));
+    final error = householdError;
+    if (error != null) throw error;
+    final pages = householdPages[householdId];
+    if (pages == null || page < 1 || page > pages.length) {
+      throw UnimplementedError(
+        'household $householdId page $page is not faked',
+      );
+    }
+    return pages[page - 1];
   }
 
   @override

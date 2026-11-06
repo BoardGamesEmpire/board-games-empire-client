@@ -795,6 +795,55 @@ void main() {
     });
   });
 
+  group('another list of events', () {
+    // A household's section reads that household's events rather than the
+    // user's own list (#503).
+    late List<StreamController<List<EventListItem>>> reads;
+
+    setUp(() => reads = []);
+
+    tearDown(() {
+      for (final read in reads) {
+        unawaited(read.close());
+      }
+    });
+
+    test(
+      'reads the injected items, and a retry from an error subscribes again',
+      () async {
+        final bloc = EventOverviewBloc(
+          repository: repository,
+          items: () {
+            final read = StreamController<List<EventListItem>>();
+            reads.add(read);
+            return read.stream;
+          },
+          hydration: status.watch(),
+          onRetry: () async {},
+          now: () => kNow,
+        );
+        addTearDown(bloc.close);
+
+        reads.single.add([upcoming('e-1')]);
+        await settle();
+        expect(bloc.state, readyWith(upcoming: ['e-1']));
+
+        bloc.add(const EventOverviewCacheFailed());
+        await settle();
+        expect(bloc.state, isA<EventOverviewError>());
+
+        bloc.add(const EventOverviewRetryRequested());
+        await settle();
+        expect(reads, hasLength(2));
+
+        reads.last.add([upcoming('e-2')]);
+        await settle();
+        expect(bloc.state, readyWith(upcoming: ['e-2']));
+        verifyNever(repository.watchAttendingEventListItems);
+      },
+    );
+  });
+
   group('values', () {
     test('states compare by value', () {
       // A bloc drops an emit equal to its current state, so re-deriving

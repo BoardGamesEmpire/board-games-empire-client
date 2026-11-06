@@ -16,13 +16,18 @@ import 'package:models/domain.dart';
 final kFixtureEventInstant = DateTime.utc(2026, 10, 1, 12, 0, 0, 123);
 
 /// The event [id], created at [createdAt].
-Event testEvent(String id, {DateTime? createdAt, String title = 'Game night'}) {
+Event testEvent(
+  String id, {
+  DateTime? createdAt,
+  String title = 'Game night',
+  String householdId = 'household-1',
+}) {
   final at = createdAt ?? kFixtureEventInstant;
   return Event(
     id: id,
     title: title,
     createdById: 'user-host',
-    householdId: 'household-1',
+    householdId: householdId,
     description: 'Bring snacks.',
     image: 'https://example.com/events/$id.png',
     location: 'Kitchen table',
@@ -133,12 +138,18 @@ EventSnapshot testSnapshot(
   String id, {
   DateTime? createdAt,
   String title = 'Game night',
+  String householdId = 'household-1',
   List<EventOccurrence>? occurrences,
   EventPolicy? policy,
   List<EventAttendee>? attendees,
   EventAttendance? attendance,
 }) => EventSnapshot(
-  event: testEvent(id, createdAt: createdAt, title: title),
+  event: testEvent(
+    id,
+    createdAt: createdAt,
+    title: title,
+    householdId: householdId,
+  ),
   occurrences: occurrences ?? [testOccurrence('$id-o1', eventId: id)],
   policy: policy,
   attendees: attendees,

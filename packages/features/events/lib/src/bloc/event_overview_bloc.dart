@@ -10,7 +10,8 @@ import '../overview/event_groups.dart';
 import 'event_overview_event.dart';
 import 'event_overview_state.dart';
 
-/// Drives the events overview and each group's page (#497): the cached
+/// Drives the events overview and each group's page (#497), home's upcoming
+/// section (#613) and a household's events on its screen (#503): the cached
 /// events, grouped against the clock, plus what the hydrate is doing to
 /// them.
 ///
@@ -36,6 +37,13 @@ import 'event_overview_state.dart';
 ///
 /// A null [hydration] stream means there is no hydrate to wait for, which
 /// reads as settled rather than as loading forever.
+///
+/// ## Whose events
+///
+/// The cache read is the user's own list unless [items] makes another. A
+/// household's section reads that household's events through it (#503),
+/// with that household's pass as its hydrate. A retry's new subscription
+/// is made by the same function, so it reads the same events again.
 ///
 /// ## The households annotate
 ///
@@ -94,12 +102,14 @@ import 'event_overview_state.dart';
 class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   EventOverviewBloc({
     required this._repository,
+    Stream<List<EventListItem>> Function()? items,
     Stream<List<Household>>? households,
     Stream<Hydration>? hydration,
     this._onRetry,
     DateTime Function()? now,
     BgeLogger? logger,
-  }) : _now = now ?? DateTime.now,
+  }) : _readItems = items,
+       _now = now ?? DateTime.now,
        _logger = logger ?? BgeLogger('bge.events.overview'),
        super(const EventOverviewLoading()) {
     on<EventOverviewCacheUpdated>(_onCacheUpdated);
@@ -138,6 +148,11 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   }
 
   final EventRepository _repository;
+
+  /// Makes a new subscription's cache stream, or null for the user's own
+  /// list.
+  final Stream<List<EventListItem>> Function()? _readItems;
+
   final DateTime Function() _now;
   final BgeLogger _logger;
 
@@ -187,7 +202,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   bool _closing = false;
 
   StreamSubscription<List<EventListItem>> _watchCache() =>
-      _repository.watchAttendingEventListItems().listen(
+      (_readItems?.call() ?? _repository.watchAttendingEventListItems()).listen(
         (items) => add(EventOverviewCacheUpdated(items)),
         onError: (Object error, StackTrace stackTrace) {
           _logger.warn(
