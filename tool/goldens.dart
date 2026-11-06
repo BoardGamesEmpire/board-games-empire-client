@@ -137,7 +137,7 @@ Future<void> main(List<String> args) async {
 
   final packages = await _goldenPackages();
   if (packages.isEmpty) {
-    stderr.writeln('No package has tracked files under test/goldens/.');
+    stderr.writeln('No package has files under test/goldens/.');
     exit(1);
   }
 
@@ -285,14 +285,22 @@ Future<bool> _imageExists(String image) async {
   return result.exitCode == 0;
 }
 
-/// The packages that own tracked files under `test/goldens/`, sorted.
+/// The packages that own files under `test/goldens/`, sorted: tracked
+/// ones, and untracked ones git doesn't ignore.
 ///
 /// Discovered from git rather than from every package with a `test/`:
 /// `flutter test --tags golden` exits 79 ("no tests ran") in a package with
 /// no golden-tagged tests, which would fail the run. Put a new package's
-/// goldens under `test/goldens/` or it is skipped.
+/// goldens under `test/goldens/` or it is skipped. Untracked files count,
+/// so a new package's first `--update` finds its suite before it is staged.
 Future<List<String>> _goldenPackages() async {
-  final result = await Process.run('git', ['ls-files', '*/test/goldens/*']);
+  final result = await Process.run('git', [
+    'ls-files',
+    '--cached',
+    '--others',
+    '--exclude-standard',
+    '*/test/goldens/*',
+  ]);
   if (result.exitCode != 0) {
     stderr.writeln('git ls-files failed:\n${result.stderr}');
     exit(1);

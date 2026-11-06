@@ -214,9 +214,10 @@ output is gitignored, and the platform variant is disabled in each package's
 
 Commit only the `ci/` PNGs.
 
-The wrapper runs only the packages that own tracked files under `test/goldens/`
-— `ui_tokens` and `ui` (`packages/ui/widgets`) today. If you add goldens to
-another package, put them under `test/goldens/` or the run will skip it. Running
+The wrapper runs only the packages that own files under `test/goldens/`, tracked
+or untracked but not ignored — `ui_tokens` and `ui` (`packages/ui/widgets`)
+today. If you add goldens to another package, put them under `test/goldens/` or
+the run will skip it. Running
 every package with a `test/` instead would fail: `flutter test --tags golden`
 exits 79 ("no tests ran") in a package with no golden-tagged tests.
 
