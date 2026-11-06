@@ -46,7 +46,7 @@ const OutlinedBorder _buttonShape = StadiumBorder();
 /// `ElevatedButton()` to its shape, content and all (#644). A label that
 /// wraps to two lines reaches the stadium's curved ends and loses glyph
 /// pixels there: at 320dp and 2.0 text, "Loading more games…" lost a 4 by 4
-/// block off its "L" and off its "g"'s descender (`<A11Y-16>`, pinned by a
+/// block off its "L" and off its "g"'s descender (#764, pinned by a
 /// skipped test in `bge_button_focus_ring_test.dart`).
 ButtonStyle _buttonStyle(BgeButtonFocusRingPlacement placement) => ButtonStyle(
   shape: const WidgetStatePropertyAll(_buttonShape),

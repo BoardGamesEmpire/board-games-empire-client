@@ -131,15 +131,15 @@ Know these limits before trusting a green run.
   state is audited as a whole page in a tall view instead, as above.
 - **Dialogs** opened from a screen are mostly not audited.
 - **The offline notice** the shell draws isn't in the screen audits.
-- **The drawer entries** read "Tab n of m" (`<A11Y-13>`).
+- **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
   `TextButton()`, `OutlinedButton()` and `ElevatedButton()` to their shape, so
   a label that wraps to two lines loses a few glyph pixels at the curved ends
-  (`<A11Y-16>`).
+  (#764).
 - **Shift+Tab round a long lazy list.** Back at the top of a lazily built
   list, its last children are no longer built, so Shift+Tab from the first
   control wraps to the last one still built rather than the list's end
-  (`<A11Y-17>`).
+  (#765).
 - **Focus ring after mouse use.** A mouse press anywhere hides every ring
   until the next key press. The tests drive it with Flutter's own pointer
   and key events. On web with semantics on, a click can reach a button as a
@@ -201,7 +201,7 @@ The same flows as the keyboard tests, plus the screens they don't reach:
   with the keyboard alone too.
 - The drawer is named "Navigation menu" on iOS and macOS as elsewhere. The
   filter sheet and `AlertDialog` routes are unnamed there today
-  (`<A11Y-12>`). Check that each is read as something.
+  (#762). Check that each is read as something.
 - Check the focus hand-offs from #479 and #478 (below).
 
 ### A browser screen reader (web)
@@ -359,21 +359,20 @@ Enter and Escape with semantics on and off.
 
 ### Findings
 
-A drafted finding has no issue yet: its token becomes an issue number at
-reconciliation. Where a widget test can express what the finding wants, that
-check is in the suite, skipped with `skip: 'see <A11Y-n>'`, so the gap stays
-visible.
+Each finding not fixed in the run is filed as an issue. Where a widget test
+can express what the finding wants, that check is in the suite, skipped with
+`skip: 'see #NNN'`, so the gap stays visible.
 
-| Token | Summary | Skipped check |
+| Issue | Summary | Skipped check |
 |---|---|---|
-| `<A11Y-1>` | Every list row (`ListTile`): the focused row's only indicator is the InkWell highlight, 1.27 to 1.40:1 against the resting row (WCAG 1.4.11) | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
-| `<A11Y-2>` | `SegmentedButton` segments get no #644 ring; only Material's focus overlay marks them | the same file |
-| `<A11Y-10>` | `FloatingActionButton.extended` gets no #644 ring; its focus overlay is 1.17:1 on its fill (five screens) | the same file |
-| `<A11Y-11>` | Drawer entries, filter chips and the date and time pickers show focus as a fill only, 1.14 to 1.40:1 | the same file, for the drawer entry and the filter chip |
-| `<A11Y-12>` | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
-| `<A11Y-13>` | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
-| `<A11Y-16>` | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
-| `<A11Y-17>` | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
+| #758 | Every list row (`ListTile`): the focused row's only indicator is the InkWell highlight, 1.27 to 1.40:1 against the resting row (WCAG 1.4.11) | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
+| #759 | `SegmentedButton` segments get no #644 ring; only Material's focus overlay marks them | the same file |
+| #760 | `FloatingActionButton.extended` gets no #644 ring; its focus overlay is 1.17:1 on its fill (five screens) | the same file |
+| #761 | Drawer entries, filter chips and the date and time pickers show focus as a fill only, 1.14 to 1.40:1 | the same file, for the drawer entry and the filter chip |
+| #762 | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
+| #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
+| #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
+| #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
 
 Fixed in this run, each with a regression test in the PR:
 

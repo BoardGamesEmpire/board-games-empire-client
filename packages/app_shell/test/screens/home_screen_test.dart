@@ -239,7 +239,7 @@ void main() {
   // A drafted finding, skipped until it is fixed (#50). The drawer is a
   // launcher, so its entries are buttons, and a screen reader should not
   // read them as tabs.
-  group('the drawer entries are not read as tabs', skip: 'see <A11Y-13>', () {
+  group('the drawer entries are not read as tabs', skip: 'see #763', () {
     testWidgets('no "Tab n of m" on any entry', (tester) async {
       final handle = tester.ensureSemantics();
       await _pump(tester, entries: _entries([]));

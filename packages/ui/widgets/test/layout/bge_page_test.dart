@@ -872,7 +872,7 @@ void main() {
     });
 
     // Few enough fields that the list scrolls but stays built at either end:
-    // Tab can't reach a child the list hasn't built (<A11Y-17>, below).
+    // Tab can't reach a child the list hasn't built (#765, below).
     const builtFields = 8;
 
     testWidgets('a scrolled slivers page is walked in order both ways, the '
@@ -913,7 +913,7 @@ void main() {
     // gap stays visible until it is fixed.
     group(
       'Shift+Tab wraps to the end of a lazily built list',
-      skip: 'see <A11Y-17>',
+      skip: 'see #765',
       () {
         testWidgets('a long slivers page', (tester) async {
           final handle = tester.ensureSemantics();

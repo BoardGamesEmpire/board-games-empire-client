@@ -222,7 +222,7 @@ void main() {
 
     // The drawer, from the menu button. Its destinations, then its action
     // under the divider. Material reads each destination with "Tab n of m"
-    // (<A11Y-13>).
+    // (#763).
     final menu = find.byIcon(Icons.menu);
     final menuNode = Focus.of(tester.element(menu));
     await activateByKeyboard(tester, menu);

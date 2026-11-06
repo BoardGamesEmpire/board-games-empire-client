@@ -717,7 +717,7 @@ void main() {
 
     group(
       "a list row's keyboard focus differs from its rest by 3:1",
-      skip: 'see <A11Y-1>',
+      skip: 'see #758',
       () {
         for (final MapEntry(key: name, value: build) in schemes.entries) {
           testWidgets(
@@ -752,7 +752,7 @@ void main() {
 
     group(
       "a segmented button's segment is ringed on keyboard focus",
-      skip: 'see <A11Y-2>',
+      skip: 'see #759',
       () {
         testWidgets(
           'its first segment',
@@ -797,7 +797,7 @@ void main() {
     group(
       'a text button label that wraps at 320dp and 2.0 text keeps every '
       'glyph pixel',
-      skip: 'see <A11Y-16>',
+      skip: 'see #764',
       () {
         testWidgets(
           'against the same button with Clip.none',
@@ -872,7 +872,7 @@ void main() {
 
     group(
       'an extended floating action button is ringed on keyboard focus',
-      skip: 'see <A11Y-10>',
+      skip: 'see #760',
       () {
         testWidgets('FloatingActionButton.extended', (tester) async {
           await host(tester, [
@@ -906,7 +906,7 @@ void main() {
     group(
       "a drawer entry's and a filter chip's keyboard focus differs from their "
       'rest by 3:1',
-      skip: 'see <A11Y-11>',
+      skip: 'see #761',
       () {
         // Each labelled "Entry", its only stop.
         final controls = <String, Widget>{
