@@ -30,6 +30,12 @@ final Directory repoRoot = () {
   return root;
 }();
 
+/// The pinned Flutter archive's line from `tool/flutter_sdk.sha256`, in
+/// `sha256sum -c` format.
+const validFlutterDigest =
+    'a1d8166c0309267cb7dc99f1424eecf08b86946ad3b50723c6f59945964aea45  '
+    'flutter_linux_3.47.1-stable.tar.xz\n';
+
 /// A member pubspec that passes every invariant: the root's sdk, no
 /// Flutter dependency (so no `flutter:` key), and `publish_to: none`.
 const validMemberPubspec = '''
@@ -47,10 +53,14 @@ resolution: workspace
 /// directory without creating it. A valid `apps/app_a` is always present,
 /// because the tool refuses a workspace with no app.
 ///
+/// [flutterDigest] is the content of `tool/flutter_sdk.sha256`, a valid
+/// line for Flutter 3.47.1 by default; `''` writes no file at all.
+///
 /// Registers no teardown: the caller deletes the directory.
 Future<Directory> createFixtureWorkspace({
   Map<String, String?> members = const {},
   String rootPubspecExtra = '',
+  String flutterDigest = validFlutterDigest,
 }) async {
   final root = await Directory.systemTemp.createTemp('check_sdk_fixture_');
   final all = <String, String?>{
@@ -85,6 +95,12 @@ workspace:
     final file = File('${root.path}/$dir/pubspec.yaml');
     await file.parent.create(recursive: true);
     await file.writeAsString(pubspec);
+  }
+
+  if (flutterDigest.isNotEmpty) {
+    final file = File('${root.path}/tool/flutter_sdk.sha256');
+    await file.parent.create(recursive: true);
+    await file.writeAsString(flutterDigest);
   }
 
   return root;

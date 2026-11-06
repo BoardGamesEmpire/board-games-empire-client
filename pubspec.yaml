@@ -40,11 +40,16 @@ version: 1.0.0+1
 # Flutter constraint is deliberately the tighter of the two so it does
 # real work: `sdk: ^3.13.0` alone would still admit Flutter 3.47.0.
 #
-# To bump, edit both values here and run
-#   dart run tool/check_sdk_constraints.dart --fix
-# to propagate the floor to every package. Goldens (#32) run local-only,
-# so also regenerate them (`melos run goldens:update`) and commit the
-# refreshed `goldens/ci/` PNGs in the same PR.
+# To bump:
+#   1. edit both values here;
+#   2. run `dart run tool/check_sdk_constraints.dart --fix` to propagate
+#      the floor to every package;
+#   3. replace tool/flutter_sdk.sha256 with the new archive name and its
+#      sha256 from releases_linux.json (CONTRIBUTING.md has the URL); the
+#      check fails while that file names another version (#159, #426);
+#   4. regenerate the goldens with `melos run goldens:update`, which
+#      renders them in the golden container, and commit the refreshed
+#      `goldens/ci/` PNGs in the same PR.
 #
 # Trade-off of an exact pin: `flutter pub get` fails on any other
 # Flutter version, newer stables included. That is the point — it makes

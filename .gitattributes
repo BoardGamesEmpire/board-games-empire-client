@@ -1,0 +1,5 @@
+# Line endings for files read byte-for-byte on Linux. A checkout with
+# core.autocrlf would otherwise turn them CRLF, and the stray \r breaks
+# them: check_sdk_constraints refuses the digest line as malformed, and
+# sha256sum and install_flutter.sh read the archive name with \r on it.
+tool/flutter_sdk.sha256 text eol=lf

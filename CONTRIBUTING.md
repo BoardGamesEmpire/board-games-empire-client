@@ -28,15 +28,31 @@ Use [fvm](https://fvm.app) or your own version manager to keep 3.47.1 available.
 
 ### Bumping the toolchain
 
-Every package repeats the constraint, so bumping is a two-step operation:
+Every package repeats the constraint, and CI installs the release by its
+digest, so a bump touches three things:
 
 ```bash
 # 1. edit the root environment: block, then
 dart run tool/check_sdk_constraints.dart --fix
+# 2. replace tool/flutter_sdk.sha256 with the new release's line (below)
+# 3. re-render the golden baselines in the container
+melos run goldens:update --no-select
 ```
 
 `--fix` propagates the new values to all 28 workspace pubspecs and preserves the
 comments in each `environment:` block. Then `flutter pub get` to re-resolve.
+
+[tool/flutter_sdk.sha256](tool/flutter_sdk.sha256) is one `sha256sum -c` line:
+the sha256 of `flutter_linux_<version>-stable.tar.xz`, two spaces, and that file
+name. Take both from
+[releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json)
+(the release's `sha256` and the file name in its `archive`). CI and the golden
+container download exactly that archive and refuse one that doesn't match, and
+`check_sdk_constraints` fails while the file names a different version than the
+pin (#159, #426). It never rewrites the file for you.
+
+A new Flutter can move the golden renders, so commit the refreshed `goldens/ci/`
+PNGs from step 3 in the same PR. See [Goldens](#goldens).
 
 Never hand-edit the per-package constraints. The whole point of
 [tool/check_sdk_constraints.dart](tool/check_sdk_constraints.dart) is that they

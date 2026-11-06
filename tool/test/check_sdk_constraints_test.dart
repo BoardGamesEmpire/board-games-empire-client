@@ -97,5 +97,22 @@ void main() {
 
       expect(await fixThenCheck(), (1, 1), reason: lastOutput);
     });
+
+    test('stale digest', () async {
+      workspace = await createFixtureWorkspace(
+        flutterDigest: validFlutterDigest.replaceFirst('3.47.1', '3.44.4'),
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      // A bump that forgot the file says where the new digest comes from,
+      // rather than failing later as a download mismatch in CI.
+      expect(lastOutput, contains('releases_linux.json'));
+    });
+
+    test('missing digest', () async {
+      workspace = await createFixtureWorkspace(flutterDigest: '');
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+    });
   });
 }

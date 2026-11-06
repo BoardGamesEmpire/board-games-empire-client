@@ -37,10 +37,11 @@ permissions:
 #
 # To bump: edit `environment:` in the root pubspec.yaml, run
 # `dart run tool/check_sdk_constraints.dart --fix` to propagate the floor
-# to all 28 workspace packages, and — because goldens (#32) run
-# local-only, see the `test` job — regenerate them
-# (`melos run goldens:update`) and commit the refreshed `goldens/ci/`
-# PNGs in the same PR.
+# to all 28 workspace packages, replace `tool/flutter_sdk.sha256` with the
+# new archive name and sha256 from Flutter's releases_linux.json, and
+# regenerate the goldens (`melos run goldens:update`, which renders them
+# in the golden container) and commit the refreshed `goldens/ci/` PNGs in
+# the same PR.
 
 jobs:
   # ── Workspace invariants (#153, #156, #73) ───────────────────────
