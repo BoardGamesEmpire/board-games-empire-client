@@ -296,7 +296,9 @@ class GameCollectionRemoteDataSourceImpl
 
   /// Maps the embedded `platformGame` object to a [PlatformGameSummary].
   ///
-  /// The platform `slug` is not read: no table has a column for it.
+  /// The platform `slug` is not read: no table has a column for it. An empty
+  /// image URL is none, as the columns can hold one: kept, it would stand in
+  /// front of the artwork a list falls back to.
   static PlatformGameSummary _mapSummary(Map<String, dynamic> json) {
     final platformGame = json['platformGame'] as Map<String, dynamic>;
     final platform = platformGame['platform'] as Map<String, dynamic>;
@@ -305,17 +307,20 @@ class GameCollectionRemoteDataSourceImpl
       id: platformGame['id'] as String,
       platformId: platform['id'] as String,
       platformName: platform['name'] as String,
-      image: platformGame['image'] as String?,
-      thumbnail: platformGame['thumbnail'] as String?,
+      image: _nonEmpty(platformGame['image']),
+      thumbnail: _nonEmpty(platformGame['thumbnail']),
       game: GameSummary(
         id: game['id'] as String,
         title: game['title'] as String,
         subtitle: game['subtitle'] as String?,
-        image: game['image'] as String?,
-        thumbnail: game['thumbnail'] as String?,
+        image: _nonEmpty(game['image']),
+        thumbnail: _nonEmpty(game['thumbnail']),
       ),
     );
   }
+
+  static String? _nonEmpty(Object? wire) =>
+      wire is String && wire.isNotEmpty ? wire : null;
 
   /// Maps a server collection payload to the domain [GameCollection].
   ///

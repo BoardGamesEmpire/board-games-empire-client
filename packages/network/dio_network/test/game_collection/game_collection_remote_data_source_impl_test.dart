@@ -402,6 +402,31 @@ void main() {
       expect(summary.thumbnail, isNull);
     });
 
+    // The columns can hold an empty string. Kept, one would stand in front
+    // of the artwork a list falls back to (platform game's, then the game's).
+    test('empty image URLs map to null', () async {
+      final json = _entryJson();
+      final platformGame = json['platformGame'] as Map<String, dynamic>;
+      json['platformGame'] = <String, dynamic>{
+        ...platformGame,
+        'image': '',
+        'thumbnail': '',
+        'game': <String, dynamic>{
+          ...platformGame['game'] as Map<String, dynamic>,
+          'image': '',
+          'thumbnail': '',
+        },
+      };
+      stubGet(_resp({'collection': json}));
+
+      final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+      expect(summary.image, isNull);
+      expect(summary.thumbnail, isNull);
+      expect(summary.game.image, isNull);
+      expect(summary.game.thumbnail, isNull);
+    });
+
     // Without these the entry cannot be stored, so a page lacking them is a
     // 2xx this source cannot map, like any other malformed row.
     for (final (label, strip)
