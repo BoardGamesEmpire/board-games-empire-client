@@ -177,8 +177,9 @@ void main() {
     String? householdId,
     TextScaler textScaler = TextScaler.noScaling,
     bool offline = false,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: [
       ...EventsLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
@@ -223,6 +224,7 @@ void main() {
     String? householdId,
     TextScaler textScaler = TextScaler.noScaling,
     bool offline = false,
+    ThemeData? theme,
   }) async {
     await tester.pumpWidget(
       harness(
@@ -230,6 +232,7 @@ void main() {
         householdId: householdId,
         textScaler: textScaler,
         offline: offline,
+        theme: theme,
       ),
     );
     await tester.tap(find.text('open'));
@@ -949,5 +952,141 @@ void main() {
     await tester.tap(find.text('Advanced: rules'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) => harness(
+      households: Stream.value([_home, _club]),
+      textScaler: textScaler,
+      theme: theme,
+    );
+
+    // The harness shows the screen from a button, so the page is open only
+    // once that is tapped.
+    Future<void> show(WidgetTester tester) async {
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(CreateEventScreen), findsOneWidget);
+    }
+
+    Future<void> rejectBlankTitle(WidgetTester tester) async {
+      await show(tester);
+      await fill(tester, title: '   ');
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.text(_titleRequired), findsOneWidget);
+    }
+
+    Future<void> refuseInvitee(WidgetTester tester) async {
+      stubDeliveries([_unknownInvitee('u_1')]);
+      await show(tester);
+      await fill(tester);
+      await invite(tester, _ana);
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(CreateEventScreen.refusedKey), findsOneWidget);
+    }
+
+    Future<void> failCreate(WidgetTester tester) async {
+      when(() => repo.create(any())).thenThrow(StateError('database locked'));
+      await show(tester);
+      await fill(tester);
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(CreateEventScreen.errorKey), findsOneWidget);
+    }
+
+    Future<void> submitInFlight(WidgetTester tester) async {
+      final delivery = Completer<SyncDelivery>();
+      addTearDown(() => delivery.complete(const SyncDelivered(eventId: 'e')));
+      when(() => sender.deliver(any(), any()))
+          .thenAnswer((_) => delivery.future);
+      await show(tester);
+      await fill(tester);
+      await submit(tester);
+      await tester.pump();
+      expect(find.text('Creating…'), findsOneWidget);
+    }
+
+    // The form runs several screens tall at 320dp × 2.0, and every scroll
+    // position that shows its end leaves a field half under the top edge,
+    // which Flutter's tap-target check fails at its clipped size, a limit of
+    // the tool (`docs/design/ACCESSIBILITY_AUDIT.md` §3). So each state is
+    // audited at the top, as a user first sees it, and in a view tall enough
+    // for the whole page.
+    Future<void> wholePage(
+      WidgetTester tester,
+      Future<void> Function(WidgetTester) reach,
+    ) async {
+      await useWholePage(tester);
+      await reach(tester);
+      await tester.pumpAndSettle();
+      expectWholePage(tester);
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the screen.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+      await show(tester);
+
+      final form = find.byType(CreateEventScreen);
+      expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
+      expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
+    });
+
+    auditScreen('ready', build: build, arrange: show);
+
+    auditScreen(
+      'ready, whole page',
+      build: build,
+      arrange: (tester) => wholePage(tester, show),
+    );
+
+    auditScreen('rejected submit', build: build, arrange: rejectBlankTitle);
+
+    auditScreen(
+      'rejected submit, whole page',
+      build: build,
+      arrange: (tester) => wholePage(tester, rejectBlankTitle),
+    );
+
+    // No 'refused' call at the top: the sent form scrolls to the submit
+    // button, and Flutter's tap-target check fails the field the scroll
+    // leaves half under the top edge, the same limit of the tool. The
+    // whole-page call below audits it.
+    auditScreen(
+      'refused, whole page',
+      build: build,
+      arrange: (tester) => wholePage(tester, refuseInvitee),
+    );
+
+    auditScreen('failure', build: build, arrange: failCreate);
+
+    auditScreen(
+      'failure, whole page',
+      build: build,
+      arrange: (tester) => wholePage(tester, failCreate),
+    );
+
+    // The busy submit button spins, so the page never settles. The scheduling
+    // mode's segments are disabled while the create is on its way; their
+    // dimmed labels fail contrast, which WCAG 1.4.3 exempts for an inactive
+    // control. A false finding: see `docs/design/ACCESSIBILITY_AUDIT.md` §3.
+    auditScreen(
+      'submitting, whole page',
+      build: build,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await submitInFlight(tester);
+        expectWholePage(tester);
+      },
+      textContrast: false,
+      settle: false,
+    );
   });
 }

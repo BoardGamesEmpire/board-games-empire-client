@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
@@ -40,12 +41,21 @@ void main() {
     EventGroup group, {
     Future<void> Function()? onRetry,
     void Function(BuildContext context)? onCreate,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates: EventsLocalizations.localizationsDelegates,
         supportedLocales: EventsLocalizations.supportedLocales,
+        // Null leaves the scale as the test view has it.
+        builder: textScaler == null
+            ? null
+            : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              ),
         home: EventGroupScreen(
           group: group,
           repository: repository,
@@ -263,5 +273,130 @@ void main() {
         lessThanOrEqualTo(tester.getRect(button).top),
       );
     });
+  });
+
+  group('accessibility audit', () {
+    // The screen is pumped by `pumpGroup`, which wants the tester, so each
+    // call's build only records the theme and scale and returns a
+    // placeholder, and its arrange pumps the screen over it with them.
+    late ThemeData theme;
+    late TextScaler scaler;
+
+    Future<void> show(
+      WidgetTester tester,
+      EventGroup group,
+      List<EventListItem>? rows, {
+      Object? error,
+      EventHydrateOutcome outcome = EventHydrateOutcome.complete,
+    }) async {
+      await pumpGroup(
+        tester,
+        group,
+        onRetry: () async {},
+        onCreate: (_) {},
+        theme: theme,
+        textScaler: scaler,
+      );
+      status.finished(outcome);
+      if (error != null) items.addError(error);
+      if (rows != null) items.add(rows);
+      await tester.pump();
+    }
+
+    Widget record(ThemeData t, TextScaler s) {
+      theme = t;
+      scaler = s;
+      return const SizedBox.shrink();
+    }
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      theme = BgeTheme.dark();
+      scaler = const TextScaler.linear(2);
+      await show(tester, EventGroup.past, past(1));
+
+      final page = find.byType(EventGroupScreen);
+      expect(MediaQuery.textScalerOf(tester.element(page)).scale(10), 20);
+      expect(Theme.of(tester.element(page)).brightness, Brightness.dark);
+    });
+
+    // Nothing has answered: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: record,
+      arrange: (tester) async {
+        await pumpGroup(
+          tester,
+          EventGroup.upcoming,
+          onCreate: (_) {},
+          theme: theme,
+          textScaler: scaler,
+        );
+        await tester.pump();
+        expect(find.byKey(EventOverviewScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: record,
+      arrange: (tester) async {
+        await show(tester, EventGroup.past, past(12));
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventOverviewScreen.rowKey('e-past-0')), findsOne);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: record,
+      arrange: (tester) async {
+        await show(tester, EventGroup.past, past(12));
+        await scrollListToEnd(
+          tester,
+          find.byKey(EventOverviewScreen.rowKey('e-past-11')),
+        );
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: record,
+      arrange: (tester) async {
+        await show(tester, EventGroup.past, const []);
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventGroupScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: record,
+      arrange: (tester) async {
+        await show(tester, EventGroup.past, null, error: StateError('x'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventOverviewScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refresh failed',
+      build: record,
+      arrange: (tester) async {
+        await show(
+          tester,
+          EventGroup.past,
+          past(3),
+          outcome: EventHydrateOutcome.failed,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(EventOverviewScreen.refreshBannerKey),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }

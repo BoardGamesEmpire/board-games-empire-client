@@ -174,8 +174,9 @@ void main() {
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
     bool boldText = false,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     locale: const Locale('en', 'US'),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
@@ -1093,5 +1094,126 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  group('accessibility audit', () {
+    Widget build(
+      ThemeData theme,
+      TextScaler textScaler, {
+      bool remote = true,
+    }) => harness(
+      remote: remote ? serving() : null,
+      theme: theme,
+      textScaler: textScaler,
+    );
+
+    // Eight people on four dates, one with a long label: taller and wider
+    // than the narrow window at 2.0 text.
+    final people = [
+      for (var n = 1; n <= 8; n++) _person('att-$n', 'Person number $n'),
+    ];
+    final dates = [
+      _date('o-1', label: 'The first and longest evening of the tournament'),
+      for (var n = 2; n <= 4; n++)
+        _date('o-$n', day: 6 + (n - 1) * 7, sortOrder: n),
+    ];
+    final bigSummary = AvailabilitySummary(
+      occurrences: [
+        for (final date in dates)
+          _tally(date.id, [
+            _voter('att-1', _unavailable),
+            _voter('att-8', _available, eligible: false),
+          ]),
+      ],
+    );
+
+    // The harness gets no cache answer until the arrange gives one, so
+    // each state is reached by what the cache and the server say.
+    Future<void> feed(WidgetTester tester, EventDetail? detail) async {
+      cache.add(detail);
+      await settle(tester);
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the screen.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final screen = find.byType(EventAvailabilityScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    // Nothing has answered yet: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: build,
+      arrange: (tester) async {
+        await settle(tester);
+        expect(find.byKey(EventAvailabilityScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        await feed(tester, _poll(_dates, roster: _roster));
+        expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+        expect(find.byKey(EventAvailabilityScreen.legendKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: (theme, textScaler) => harness(
+        remote: serving(summary: (_) => bigSummary),
+        theme: theme,
+        textScaler: textScaler,
+      ),
+      arrange: (tester) async {
+        await feed(tester, _poll(dates, roster: people));
+        expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+        // Down the page (at the narrow window; the wider one fits)...
+        await scrollPageToEnd(tester);
+        // ...and along the dates, at both.
+        final sideways = tester
+            .stateList<ScrollableState>(find.byType(Scrollable))
+            .firstWhere((state) => state.position.axis == Axis.horizontal)
+            .position;
+        sideways.jumpTo(sideways.maxScrollExtent);
+        await tester.pumpAndSettle();
+        expect(sideways.maxScrollExtent, greaterThan(0));
+        expect(sideways.pixels, sideways.maxScrollExtent);
+      },
+    );
+
+    auditScreen(
+      'hidden',
+      build: build,
+      arrange: (tester) async {
+        await feed(tester, _poll(_dates, roster: _roster, mode: .fixed));
+        expect(find.byKey(EventAvailabilityScreen.hiddenKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: (theme, textScaler) => harness(
+        remote: serving(summary: (_) => throw _offline),
+        theme: theme,
+        textScaler: textScaler,
+      ),
+      arrange: (tester) async {
+        await feed(tester, _poll(_dates, roster: _roster));
+        expect(find.text(_loadFailedCopy), findsOneWidget);
+        expect(find.byKey(EventAvailabilityScreen.retryKey), findsOneWidget);
+      },
+    );
   });
 }
