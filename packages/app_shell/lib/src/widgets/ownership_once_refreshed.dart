@@ -3,10 +3,14 @@ import 'dart:async';
 import 'package:game_collection/game_collection.dart';
 import 'package:models/domain.dart';
 
-/// What the detail page is told when the collection has never been
-/// refreshed and the pass that would have refreshed it failed (#708): the
-/// cache holds only what this device wrote, so what it says the user owns is
-/// unknown.
+/// What the detail page is told when no pass this session has refreshed the
+/// collection and one has failed (#708), so what the cache says the user
+/// owns is unknown.
+///
+/// After a fresh sign-in the cache holds only what this device wrote. After
+/// an offline cold start it may also hold rows an earlier session's refresh
+/// landed, but the hydration status starts fresh each session and keeps no
+/// record of that refresh, so those rows read as unconfirmed too.
 final class CollectionNotRefreshedException implements Exception {
   const CollectionNotRefreshedException();
 
@@ -30,7 +34,7 @@ final class CollectionNotRefreshedException implements Exception {
 ///   pass will bring anything), or once the status stream ends. From then on
 ///   every answer the cache gives goes through, the latest one held back
 ///   first.
-/// - **A failed pass before any landed rows** is a
+/// - **A failed pass before any this session landed rows** is a
 ///   [CollectionNotRefreshedException] on the stream, once for that
 ///   failure. The page reads it as ownership unknown: plain chips, and an
 ///   add offering every platform in either medium. A later pass that lands
