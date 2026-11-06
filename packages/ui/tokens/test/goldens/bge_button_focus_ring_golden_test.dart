@@ -10,8 +10,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// buttons, and inside the edge on the text, outlined and elevated ones.
 ///
 /// Each golden shows the same button twice, with keyboard focus and at
-/// rest, so the ring reads against the button without it. Local check only,
-/// like `bge_theme_golden_test.dart`: see there for why CI excludes goldens.
+/// rest, so the ring reads against the button without it. Rendered in the
+/// golden container, like `bge_theme_golden_test.dart`: see there for why.
 void main() {
   final buttons = <String, Widget Function({required bool autofocus})>{
     'filled': ({required autofocus}) => FilledButton(
