@@ -3,6 +3,8 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import 'page_one.dart';
+
 /// What one [EventHydrator.hydrate] pass achieved.
 ///
 /// As with households (#268), what matters is how much of the list the
@@ -297,41 +299,29 @@ class EventHydrator {
       'total': meta.total,
       'limit': meta.limit,
     };
-    // The purge deletes whatever page 1 leaves out, so `hasMore` alone does
-    // not license it. A page 1 contradicts itself when it is numbered as
-    // another page, counts other than one page, counts more events than one
-    // page holds, or counts fewer events than it sent. The server derives
-    // `totalPages` from `total` over `limit`, rounded up, so a single page
-    // counts one, or none when it is empty.
-    if (meta.page != 1 ||
-        meta.totalPages != (meta.total == 0 ? 0 : 1) ||
-        meta.total > meta.limit ||
-        rows > meta.total) {
-      _logger.warn(
-        'Event list reports page 1 as its last but contradicts itself; '
-        'purging nothing. The cached set is NOT complete.',
-        context: counts,
-      );
-      return EventHydrateOutcome.failed;
+    // `judgeWholeList` gives the reasoning for each verdict. A short page
+    // still had every row it sent cached, so the pass did not fail, but it
+    // purges nothing.
+    switch (judgeWholeList(meta, rows)) {
+      case WholeListVerdict.contradicts:
+        _logger.warn(
+          'Event list reports page 1 as its last but contradicts itself; '
+          'purging nothing. The cached set is NOT complete.',
+          context: counts,
+        );
+        return EventHydrateOutcome.failed;
+      case WholeListVerdict.short:
+        _logger.warn(
+          'Event list sent fewer events than it counts on its only page; '
+          'caching them and purging nothing.',
+          context: counts,
+        );
+        return EventHydrateOutcome.drained;
+      case WholeListVerdict.whole:
+        return await _purge(pageOne.items, purgeable)
+            ? EventHydrateOutcome.complete
+            : EventHydrateOutcome.failed;
     }
-    // A page short of its count does not contradict itself, but it is not
-    // the API's own answer: the server reads the rows and the count in one
-    // REPEATABLE READ, under the same filter, and filters nothing after, so
-    // its only page holds every event it counts. A shorter one came through
-    // something else, a proxy or a truncated response, and a count it
-    // doesn't back up proves nothing about the rows it left out. Every row
-    // it sent is cached, so the pass did not fail, but it purges nothing.
-    if (rows < meta.total) {
-      _logger.warn(
-        'Event list sent fewer events than it counts on its only page; '
-        'caching them and purging nothing.',
-        context: counts,
-      );
-      return EventHydrateOutcome.drained;
-    }
-    return await _purge(pageOne.items, purgeable)
-        ? EventHydrateOutcome.complete
-        : EventHydrateOutcome.failed;
   }
 
   /// The `createdAt` of page 1's last row, which bounds the range a list

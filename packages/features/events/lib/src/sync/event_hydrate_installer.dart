@@ -10,8 +10,12 @@ import 'package:observability/observability.dart';
 import 'event_hydration_status.dart';
 import 'event_hydrator.dart';
 import 'event_refresher.dart';
+import 'household_events_hydrator.dart';
+import 'household_events_sync.dart';
 
-/// Starts the event hydrate when a user session activates (#496).
+/// Starts the event hydrate when a user session activates (#496), and
+/// registers the [HouseholdEventsSync] the household screen reads a
+/// household's events through (#503).
 ///
 /// Shared by both composition roots, `buildNativeUserScopeInstallers` and
 /// `buildWebUserScopeInstallers`, as `GameCollectionHydrateInstaller` is. It
@@ -51,8 +55,9 @@ import 'event_refresher.dart';
 /// empty, and show when the last pass failed. So this registers an
 /// [EventHydrationStatus] in the session scope, and a `HydratePass` drives it
 /// around every drain. Where a collaborator is missing, nothing is
-/// registered: a screen reads an absent status as idle and an absent
-/// refresher as no retry to offer, which is the truth; a registered pair
+/// registered: a screen reads an absent status as idle, an absent refresher
+/// as no retry to offer, and an absent [HouseholdEventsSync] as a household
+/// section with only the cache to read, which is the truth; a registered one
 /// would claim a hydrate that cannot run.
 ///
 /// ## What the pass does, and what this decides (#302, #563)
@@ -70,11 +75,21 @@ import 'event_refresher.dart';
 ///   type. The pass closes over it. Once the session pops, the repository it
 ///   writes through is disposed and the next write ends the pass.
 ///
+/// ## A household's events (#503)
+///
+/// The [HouseholdEventsSync] runs a pass per household, when that
+/// household's screen opens and on its retry. It is deliberately **not**
+/// registered with the `SessionRehydrator`, and nothing here starts it, for
+/// the reason its class doc gives. Its hydrator is not registered either: the
+/// sync closes over it, over the same repository and remote. The scope
+/// closes the sync with its statuses.
+///
 /// ## Whose session a pass reads as (#432)
 ///
 /// The pass asks the [SessionIdentityGuard] once per drain, and the hydrator
 /// asks again after each page it reads, before it writes it; this builds that
-/// per-page closure from the same guard. On web another tab can move the
+/// per-page closure from the same guard, and gives both to the household
+/// sync too, about the same user. On web another tab can move the
 /// shared cookie to another user, and a page read then holds that user's
 /// events, with nothing on the rows to say whose list they are. A refused
 /// pass reads as `failed`, so the next trigger tries again. No guard, as on
@@ -115,14 +130,18 @@ class EventHydrateInstaller implements UserScopeInstaller {
     final guard = container.isRegistered<SessionIdentityGuard>()
         ? container.get<SessionIdentityGuard>()
         : null;
+    final confirmSession = guard == null
+        ? null
+        : () async =>
+              await guard.confirm(userId) == SessionConfirmation.confirmed;
+
+    final repository = container.get<EventRepository>();
+    final remote = container.get<EventRemoteDataSource>();
 
     final hydrator = EventHydrator(
-      repository: container.get<EventRepository>(),
-      remote: container.get<EventRemoteDataSource>(),
-      confirmSession: guard == null
-          ? null
-          : () async =>
-                await guard.confirm(userId) == SessionConfirmation.confirmed,
+      repository: repository,
+      remote: remote,
+      confirmSession: confirmSession,
     );
 
     final status = EventHydrationStatus(now: now);
@@ -147,6 +166,22 @@ class EventHydrateInstaller implements UserScopeInstaller {
     pass.registerRehydrate(container, 'events', staleAfter: staleAfter);
 
     container.registerSingleton<EventRefresher>(EventRefresher(pass.run));
+
+    container.registerSingleton<HouseholdEventsSync>(
+      HouseholdEventsSync(
+        hydrator: HouseholdEventsHydrator(
+          repository: repository,
+          remote: remote,
+          confirmSession: confirmSession,
+        ),
+        userId: userId,
+        guard: guard,
+        now: now,
+      ),
+      // As the event status: a pass in flight at teardown reports into a
+      // closed status, which drops it.
+      dispose: (s) => s.close(),
+    );
 
     // Unawaited, and the status is running before this returns: a screen
     // built in that window must not read idle.

@@ -56,14 +56,16 @@ const _server = ScopedServer(serverId: 'server-1', displayName: 'My Server');
 const _kUserId = 'user-1';
 
 /// The event [id] as the list returns it, created [minute] minutes past a
-/// fixed hour. No roster, since the list carries none.
-EventSnapshot _row(String id, int minute) {
+/// fixed hour, in [householdId] when set. No roster, since the list carries
+/// none.
+EventSnapshot _row(String id, int minute, {String? householdId}) {
   final createdAt = DateTime.utc(2026, 10, 1, 12, minute);
   return EventSnapshot(
     event: Event(
       id: id,
       title: 'Event $id',
       createdById: 'user-host',
+      householdId: householdId,
       type: EventType.casualGathering,
       reach: Reach.friends,
       status: EventStatus.scheduled,
@@ -204,6 +206,12 @@ void main() {
       );
       expect(
         bare.isRegistered<EventRefresher>(),
+        isFalse,
+        reason: 'without $label',
+      );
+      // An absent sync is a household section with only the cache to read.
+      expect(
+        bare.isRegistered<HouseholdEventsSync>(),
         isFalse,
         reason: 'without $label',
       );
@@ -553,6 +561,81 @@ void main() {
 
       expect(refreshed, isTrue);
       expect(status.state, HydrationState.refreshed);
+    });
+  });
+
+  group('the household events sync (#503)', () {
+    test('registers a HouseholdEventsSync beside the refresher', () async {
+      final rehydrator = _RecordingRehydrator();
+      container.registerSingleton<SessionRehydrator>(rehydrator);
+      register();
+      remote.householdPages['h-1'] = [
+        _page([_row('e-h', 10, householdId: 'h-1')]),
+      ];
+
+      await install();
+      await settled();
+
+      expect(container.isRegistered<EventRefresher>(), isTrue);
+      final sync = container.get<HouseholdEventsSync>();
+      // Read when a household's screen opens, not in the hydrate, so
+      // nothing asks for a household's events until one does.
+      expect(remote.householdRequests, isEmpty);
+      expect(rehydrator.entries.keys, ['events']);
+
+      await sync.refresh('h-1');
+
+      expect(remote.householdRequests, [
+        (householdId: 'h-1', page: 1, limit: 100),
+      ]);
+      expect((await sync.watch('h-1').first).state, HydrationState.refreshed);
+      final listed = await events.watchHouseholdEventListItems('h-1').first;
+      expect([for (final item in listed) item.event.id], ['e-h']);
+    });
+
+    test('closes it with the scope', () async {
+      register();
+      await install();
+      await settled();
+      final watching = container
+          .get<HouseholdEventsSync>()
+          .watch('h-1')
+          .toList();
+
+      await container.dispose();
+
+      expect(await watching.timeout(const Duration(seconds: 5)), [
+        const Hydration(),
+      ]);
+    });
+
+    test('asks the scope\'s guard about the scope\'s user, before a pass and '
+        'before writing its page', () async {
+      register();
+      // The install-time event pass asks twice: before its pass, and before
+      // writing its one page. The household pass is asked third and fourth.
+      final guard = _FakeIdentityGuard([
+        SessionConfirmation.confirmed,
+        SessionConfirmation.confirmed,
+        SessionConfirmation.confirmed,
+        SessionConfirmation.notThisUser,
+      ]);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      remote.householdPages['h-1'] = [
+        _page([_row('e-h', 10, householdId: 'h-1')]),
+      ];
+      await install();
+      await settled();
+      expect(guard.askedFor, hasLength(2));
+      final sync = container.get<HouseholdEventsSync>();
+
+      await sync.refresh('h-1');
+
+      expect(guard.askedFor, [_kUserId, _kUserId, _kUserId, _kUserId]);
+      expect(remote.householdRequests, hasLength(1));
+      expect((await sync.watch('h-1').first).state, HydrationState.failed);
+      // The page was read as whoever holds the session now.
+      expect(await events.getEvent('e-h'), isNull);
     });
   });
 }

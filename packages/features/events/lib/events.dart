@@ -31,4 +31,6 @@ export 'src/sync/event_hydrate_installer.dart';
 export 'src/sync/event_hydration_status.dart';
 export 'src/sync/event_hydrator.dart';
 export 'src/sync/event_refresher.dart';
+export 'src/sync/household_events_hydrator.dart';
+export 'src/sync/household_events_sync.dart';
 export 'src/widgets/event_row.dart';
