@@ -56,7 +56,7 @@ final _catan = Game(
   updatedAt: DateTime.utc(2026),
 );
 
-/// Catan's one platform.
+/// Catan's platform.
 final _tabletop = PlatformGame(
   id: 'pg_1',
   gameId: 'g_catan',
@@ -66,11 +66,50 @@ final _tabletop = PlatformGame(
   updatedAt: DateTime.utc(2026),
 );
 
-/// A collection repository with nothing in it, whose adds succeed.
-_MockGameCollectionRepository _emptyCollection() {
+/// A second platform, for a Catan on two.
+final _steam = PlatformGame(
+  id: 'pg_2',
+  gameId: 'g_catan',
+  platformId: 'plat_steam',
+  platformName: 'Steam',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
+/// The user's copy [id] of Catan on Tabletop, in [medium].
+GameCollection _copy(String id, GameMedium medium) => GameCollection(
+  id: id,
+  userId: 'u1',
+  platformGameId: 'pg_1',
+  medium: medium,
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
+/// A collection repository whose adds succeed. What the user owns of a game
+/// is what [owned] reports, and nothing without it: an add lands on
+/// [owned], as a write to the cache reaches its watches.
+_MockGameCollectionRepository _collection({
+  StreamController<List<GameCollection>>? owned,
+}) {
   final repository = _MockGameCollectionRepository();
   when(repository.watchCollectionListItems)
       .thenAnswer((_) => Stream.value(const []));
+  when(() => repository.watchEntriesForPlatformGames(any()))
+      .thenAnswer((_) => owned?.stream ?? Stream.value(const []));
+  when(() => repository.watchCollectionListItem(any())).thenAnswer(
+    (invocation) => Stream.value(
+      GameCollectionListItem(
+        entry: _copy(
+          invocation.positionalArguments.single as String,
+          GameMedium.physical,
+        ),
+        gameId: 'g_catan',
+        title: 'Catan',
+        platformName: 'Tabletop',
+      ),
+    ),
+  );
   when(
     () => repository.getCollectionEntry(
       platformGameId: any(named: 'platformGameId'),
@@ -87,15 +126,10 @@ _MockGameCollectionRepository _emptyCollection() {
     ),
   ).thenAnswer((invocation) async {
     final medium = invocation.namedArguments[#medium] as GameMedium;
+    final entry = _copy('gc_1', medium);
+    owned?.add([entry]);
     return (
-      entry: GameCollection(
-        id: 'gc_1',
-        userId: 'u1',
-        platformGameId: 'pg_1',
-        medium: medium,
-        createdAt: DateTime.utc(2026),
-        updatedAt: DateTime.utc(2026),
-      ),
+      entry: entry,
       syncQueueId: 'sq_1',
       operation: AddToCollectionOperation(
         localId: 'gc_1',
@@ -125,6 +159,9 @@ class _GamesRemote implements GamesRemoteDataSource {
 
   /// Where every poll says the import's base game stands.
   ImportJobStatus importStatus = ImportJobStatus.completed;
+
+  /// The platforms every detail read gives Catan.
+  List<PlatformGame> platformGames = [_tabletop];
 
   @override
   Future<PaginatedResult<Game>> fetchPage({
@@ -156,7 +193,7 @@ class _GamesRemote implements GamesRemoteDataSource {
     final held = this.held;
     if (held != null) return held.future;
     if (gone.contains(id)) throw const GameNotFoundException('404');
-    return (game: _catan, platformGames: [_tabletop]);
+    return (game: _catan, platformGames: platformGames);
   }
 
   @override
@@ -270,6 +307,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(GameMedium.physical);
+    registerFallbackValue(<String>{});
     registerFallbackValue(
       const AddToCollectionOperation(
         localId: 'gc_fallback',
@@ -698,10 +736,28 @@ void main() {
     expect(find.byType(GameSearchScreen), findsOneWidget);
   });
 
-  group('adding to the collection (#45)', () {
+  group("the detail page's collection (#45, #708)", () {
+    final addButton = find.byKey(GameDetailScreen.addKey);
+    final ownedLegend = find.byKey(GameDetailScreen.ownedLegendKey);
+    const tabletopOwned = 'Tabletop, in your collection, opens your copy';
+    const tabletopNotOwned = 'Tabletop, not in your collection, add';
+
+    /// The picker's tile for [entryId], built or not.
+    Finder tile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId), skipOffstage: false);
+
     Future<void> openCatan(WidgetTester tester) async {
       await openGames(tester);
       await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pumpAndSettle();
+    }
+
+    /// Presses the detail page's chip for [platformGameId].
+    Future<void> tapChip(WidgetTester tester, String platformGameId) async {
+      final chip = find.byKey(GameDetailScreen.platformKey(platformGameId));
+      await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
+      await tester.tap(chip);
       await tester.pumpAndSettle();
     }
 
@@ -723,16 +779,21 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a platform opens the add sheet, which adds through the '
-        'session', (tester) async {
-      final collection = _emptyCollection();
+    /// The entry page open now.
+    CollectionEntryScreen entryPage(WidgetTester tester) => tester
+        .widget<CollectionEntryScreen>(find.byType(CollectionEntryScreen));
+
+    testWidgets('Add opens the add sheet, which adds through the session', (
+      tester,
+    ) async {
+      final collection = _collection();
       final sender = _deliveringSender();
       await pumpHome(tester, collection: collection, sender: sender);
       await openCatan(tester);
 
-      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.tap(addButton);
       await tester.pumpAndSettle();
-      expect(find.text('Add Catan (Tabletop)'), findsOneWidget);
+      expect(find.text('Add Catan'), findsOneWidget);
       await addPhysical(tester);
 
       verify(
@@ -749,29 +810,236 @@ void main() {
       expect(find.text('Added Catan to your collection.'), findsOneWidget);
     });
 
+    testWidgets('detail → Add → the add lands and the chip turns owned', (
+      tester,
+    ) async {
+      final owned = StreamController<List<GameCollection>>()..add(const []);
+      addTearDown(owned.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
+      expect(ownedLegend, findsNothing);
+
+      await tester.tap(addButton);
+      await tester.pumpAndSettle();
+      await addPhysical(tester);
+
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
+      expect(ownedLegend, findsOneWidget);
+      // Digital is still free on Tabletop.
+      expect(addButton, findsOneWidget);
+    });
+
+    testWidgets('an unowned chip opens the add on its platform', (
+      tester,
+    ) async {
+      games.platformGames = [_tabletop, _steam];
+      await pumpHome(
+        tester,
+        collection: _collection(),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      await tapChip(tester, 'pg_2');
+
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(AddToCollectionSheet.platformKey),
+          matching: find.text('Steam'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('detail → owned chip with one entry opens the entry page', (
+      tester,
+    ) async {
+      final owned = StreamController<List<GameCollection>>()
+        ..add([_copy('gc_1', GameMedium.physical)]);
+      addTearDown(owned.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+
+      await tapChip(tester, 'pg_1');
+
+      expect(entryPage(tester).entryId, 'gc_1');
+      expect(tile('gc_1'), findsNothing);
+
+      // A push, so back returns to the game.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+    });
+
+    testWidgets('detail → owned chip with two entries opens the picker; a tile '
+        'opens that entry, and back lands on the detail page with no picker', (
+      tester,
+    ) async {
+      final owned = StreamController<List<GameCollection>>()
+        ..add([
+          _copy('gc_1', GameMedium.physical),
+          _copy('gc_2', GameMedium.digital),
+        ]);
+      addTearDown(owned.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      await tapChip(tester, 'pg_1');
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+      expect(tile('gc_1'), findsOneWidget);
+      expect(tile('gc_2'), findsOneWidget);
+
+      await tester.tap(find.byKey(CollectionEntryPicker.tileKey('gc_2')));
+      await tester.pumpAndSettle();
+      expect(entryPage(tester).entryId, 'gc_2');
+      // Gone once the page has arrived, not just hidden under it.
+      expect(tile('gc_1'), findsNothing);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(CollectionEntryScreen), findsNothing);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(tile('gc_1'), findsNothing);
+      expect(tile('gc_2'), findsNothing);
+    });
+
+    // Opened from an owned chip, the picker goes with the detail's page, as
+    // Collection's does with its own.
+    testWidgets('the picker over the detail page closes as the session ends', (
+      tester,
+    ) async {
+      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final owned = StreamController<List<GameCollection>>()
+        ..add([
+          _copy('gc_1', GameMedium.physical),
+          _copy('gc_2', GameMedium.digital),
+        ]);
+      addTearDown(owned.close);
+      final app = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          activeServerScope: FakeActiveServerScope(
+            buildActiveServer(
+              repo,
+              gamesRemoteDataSource: games,
+              dataGatewayRemoteDataSource: dataGateways,
+              callerAccess: access,
+              gameCollectionRepository: _collection(owned: owned),
+              syncOperationSender: _deliveringSender(),
+            ),
+          ),
+        ),
+        hydratedStorageInitializer: (_) async {},
+      );
+      addTearDown(app.close);
+      await tester.pumpWidget(BgeApp(bootstrapCubit: app));
+      await app.initialize();
+      await tester.pumpAndSettle();
+      await openCatan(tester);
+      await tapChip(tester, 'pg_1');
+      expect(tile('gc_1'), findsOneWidget);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(tile('gc_1'), findsNothing);
+      expect(tile('gc_2'), findsNothing);
+    });
+
     testWidgets('no collection repository offers no add', (tester) async {
       await pumpHome(tester, sender: _deliveringSender());
       await openCatan(tester);
 
       expect(find.byKey(GameDetailScreen.platformKey('pg_1')), findsOneWidget);
-      expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
+      expect(addButton, findsNothing);
     });
 
-    testWidgets('no sender to send the add through offers no add', (
-      tester,
-    ) async {
-      await pumpHome(tester, collection: _emptyCollection());
+    testWidgets('no sender to send the add through offers no add, and watches '
+        'nothing', (tester) async {
+      final collection = _collection();
+      await pumpHome(tester, collection: collection);
       await openCatan(tester);
 
       expect(find.byKey(GameDetailScreen.platformKey('pg_1')), findsOneWidget);
-      expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
+      expect(addButton, findsNothing);
+      verifyNever(() => collection.watchEntriesForPlatformGames(any()));
+    });
+
+    testWidgets('the watch reads the repository active when the page asks, '
+        'not the one the detail was built with', (tester) async {
+      final built = _collection();
+      final owned = StreamController<List<GameCollection>>()
+        ..add([_copy('gc_1', GameMedium.physical)]);
+      addTearDown(owned.close);
+      final current = _collection(owned: owned);
+      final currentSender = _deliveringSender();
+      await pumpHome(tester, collection: built, sender: _deliveringSender());
+      // The detail's route is built, and its game is still loading.
+      final held = games.held = Completer();
+      await openGames(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+      expect(find.byKey(GameDetailScreen.loadingKey), findsOneWidget);
+
+      when(() => cubit.activeServerScope)
+          .thenReturn(activeServer(collection: current, sender: currentSender));
+      held.complete((game: _catan, platformGames: [_tabletop]));
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      verify(() => current.watchEntriesForPlatformGames({'pg_1'})).called(1);
+      verifyNever(() => built.watchEntriesForPlatformGames(any()));
+    });
+
+    testWidgets('with no repository active when the page asks, nothing reads '
+        'as owned', (tester) async {
+      // Not closed after the test: its close waits for a listener, and the
+      // test is that there is none.
+      final owned = StreamController<List<GameCollection>>()
+        ..add([_copy('gc_1', GameMedium.physical)]);
+      final built = _collection(owned: owned);
+      await pumpHome(tester, collection: built, sender: _deliveringSender());
+      final held = games.held = Completer();
+      await openGames(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+
+      when(() => cubit.activeServerScope).thenReturn(activeServer());
+      held.complete((game: _catan, platformGames: [_tabletop]));
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsOneWidget);
+      verifyNever(() => built.watchEntriesForPlatformGames(any()));
     });
 
     testWidgets('the add goes through the repository active at the press, '
         'not the one the detail was built with', (tester) async {
-      final built = _emptyCollection();
+      final built = _collection();
       final builtSender = _deliveringSender();
-      final current = _emptyCollection();
+      final current = _collection();
       final currentSender = _deliveringSender();
       await pumpHome(tester, collection: built, sender: builtSender);
       await openCatan(tester);
@@ -780,7 +1048,7 @@ void main() {
       // repository and sender it was built with are disposed by then.
       when(() => cubit.activeServerScope)
           .thenReturn(activeServer(collection: current, sender: currentSender));
-      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.tap(addButton);
       await tester.pumpAndSettle();
       await addPhysical(tester);
 
@@ -808,16 +1076,36 @@ void main() {
         'nothing', (tester) async {
       await pumpHome(
         tester,
-        collection: _emptyCollection(),
+        collection: _collection(),
         sender: _deliveringSender(),
       );
       await openCatan(tester);
 
       when(() => cubit.activeServerScope).thenReturn(activeServer());
-      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.tap(addButton);
       await tester.pumpAndSettle();
 
       expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+    });
+
+    testWidgets('an owned chip pressed once the session has no collection '
+        'repository opens nothing', (tester) async {
+      final owned = StreamController<List<GameCollection>>()
+        ..add([_copy('gc_1', GameMedium.physical)]);
+      addTearDown(owned.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+
+      when(() => cubit.activeServerScope).thenReturn(activeServer());
+      await tapChip(tester, 'pg_1');
+
+      expect(find.byType(CollectionEntryScreen), findsNothing);
       expect(find.byType(GameDetailScreen), findsOneWidget);
     });
   });

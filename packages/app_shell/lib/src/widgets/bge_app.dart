@@ -1530,10 +1530,7 @@ class _BgeAppState extends State<BgeApp> {
     return GameCollectionListScreen(
       repository: container.get<GameCollectionRepository>(),
       hydration: hydration,
-      onOpen: _canWriteCollection(container)
-          ? (ctx, id) =>
-                unawaited(ctx.push<void>(AppRoutes.collectionEntryOf(id)))
-          : null,
+      onOpen: _canWriteCollection(container) ? _openCollectionEntry : null,
       onBrowse: _catalogContainer() == null
           ? null
           : (ctx) => unawaited(ctx.push<void>(AppRoutes.games)),
@@ -1574,39 +1571,84 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// The detail's add (#45): opens the add sheet over the detail, or null,
-  /// so the detail offers no add, where [container] has no
-  /// [GameCollectionRepository] or no [SyncOperationSender] to send the add
-  /// through at once. Both platforms register both in a user session.
+  /// What the detail can do with the collection (#45, #708): watch what the
+  /// user owns of the game, add it, and open an owned copy. Null, so the
+  /// detail shows its platforms as plain labels and offers no add, where
+  /// [container] has no [GameCollectionRepository] or no
+  /// [SyncOperationSender] to send the add through at once. Both platforms
+  /// register both in a user session.
   ///
-  /// Both are resolved again at each press, from the server active then, not
-  /// held from the route's build: a reference held across a session change
-  /// is disposed (#45's 2026-08-20 amendment, from #150), and a mounted route
-  /// keeps this callback until it is rebuilt. A press once the active
-  /// container lacks either does nothing.
-  void Function(BuildContext context, Game game, PlatformGame platformGame)?
-  _collectionAdd(DependencyContainer container) {
+  /// Nothing is held from the route's build: a reference held across a
+  /// session change is disposed (#45's 2026-08-20 amendment, from #150), and
+  /// a mounted route keeps these callbacks until it is rebuilt.
+  ///
+  /// - **The watch** resolves the repository from the server active when the
+  ///   page asks for it, once its platforms are known. With none there, it
+  ///   reports nothing owned. The page keeps that one stream while it is
+  ///   open, and a session's end routes the page away.
+  /// - **The add** resolves the repository and the sender again at each
+  ///   press. A press once the active container lacks either does nothing.
+  /// - **An owned copy** opens its entry's page, through
+  ///   [openCollectionEntries]: two, the physical and the digital copy on one
+  ///   platform, open the picker (#709), whose tiles open theirs. Gated at
+  ///   each press as the add is.
+  GameDetailCollection? _detailCollection(DependencyContainer container) {
     if (!_canWriteCollection(container)) return null;
-    return (context, game, platformGame) {
-      final active = widget.bootstrapCubit.activeServerScope?.active?.container;
-      if (active == null || !_canWriteCollection(active)) return;
-      unawaited(
-        showAddToCollectionSheet(
-          context,
-          repository: active.get<GameCollectionRepository>(),
-          sender: active.get<SyncOperationSender>(),
-          game: game,
-          platformGame: platformGame,
-        ),
-      );
-    };
+    DependencyContainer? active() =>
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    return GameDetailCollection(
+      watchOwned: (platformGameIds) {
+        final current = active();
+        if (current == null ||
+            !current.isRegistered<GameCollectionRepository>()) {
+          return Stream.value(const []);
+        }
+        return current
+            .get<GameCollectionRepository>()
+            .watchEntriesForPlatformGames(platformGameIds);
+      },
+      onAdd: (context, game, options, {platformGameId}) {
+        final current = active();
+        if (current == null || !_canWriteCollection(current)) return;
+        unawaited(
+          showAddToCollectionSheet(
+            context,
+            repository: current.get<GameCollectionRepository>(),
+            sender: current.get<SyncOperationSender>(),
+            game: game,
+            options: options,
+            platformGameId: platformGameId,
+          ),
+        );
+      },
+      onOpenOwned: (context, items) {
+        // The entry's page is built from the active container, and shows
+        // nothing where it can't write the collection.
+        final current = active();
+        if (current == null || !_canWriteCollection(current)) return;
+        unawaited(
+          openCollectionEntries(
+            context,
+            items: items,
+            onOpen: _openCollectionEntry,
+          ),
+        );
+      },
+    );
   }
+
+  /// Opens one collection entry's page (#46). A push, so leaving it returns
+  /// to where it was opened from. From a picker's tile, the page removes the
+  /// picker once it has arrived (#709).
+  static void _openCollectionEntry(BuildContext context, String entryId) =>
+      unawaited(context.push<void>(AppRoutes.collectionEntryOf(entryId)));
 
   /// Whether [container] can write the collection and send what it writes
   /// at once: it has the user-session [GameCollectionRepository] and a
   /// [SyncOperationSender]. Gates every collection write the shell offers:
-  /// the detail's add (#45), and opening, editing and removing an entry
-  /// (#46). Both platforms register both in a user session.
+  /// the detail's collection, with its add (#45, #708), and opening, editing
+  /// and removing an entry (#46). Both platforms register both in a user
+  /// session.
   static bool _canWriteCollection(DependencyContainer container) =>
       container.isRegistered<GameCollectionRepository>() &&
       container.isRegistered<SyncOperationSender>();
@@ -1747,10 +1789,11 @@ class _BgeAppState extends State<BgeApp> {
   /// The #42 detail screen for [gameId]. Same gate as
   /// [_buildGameBrowseRoute].
   ///
-  /// Its add opens the collection's add sheet where the session has a
-  /// collection, through [_collectionAdd], which resolves the repository per
-  /// press (#45). Without one, as on a signed-out server, the screen offers
-  /// no add.
+  /// Where the session has a collection, the screen's platforms say which
+  /// the user owns the game on, open the copies they own, and add it on the
+  /// rest, through [_detailCollection], which resolves the repository when
+  /// it is used (#45, #708). Without one, as on a signed-out server, the
+  /// platforms are plain labels and the screen offers no add.
   Widget? _buildGameDetailRoute(BuildContext context, String gameId) {
     final container = _catalogContainer();
     if (container == null) return null;
@@ -1760,7 +1803,7 @@ class _BgeAppState extends State<BgeApp> {
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
       onGone: _reportGameGone,
-      onAdd: _collectionAdd(container),
+      collection: _detailCollection(container),
     );
   }
 
