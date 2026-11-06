@@ -86,6 +86,20 @@ const _statusFailedCopy =
     'need to try again.';
 const _statusFailedUnexpectedCopy =
     "Something went wrong. Check the event's status before trying again.";
+const _rsvpNotGoingBodyCopy =
+    "Any games you nominated will be paused, and the games you're bringing "
+    "will come off every date still to come. Saying you're coming later "
+    "won't put those games back.";
+const _rsvpSavedCopy = 'Your answer is saved.';
+const _rsvpGoneCopy = "You're no longer on this event, or it was deleted.";
+const _rsvpRefusedCopy = "You can't answer for this event any more.";
+const _rsvpChangedCopy =
+    'This event changed before your answer went through. Check it below '
+    'before trying again.';
+const _rsvpFailedCopy =
+    'An error occurred while sending your answer. You may need to try again.';
+const _rsvpFailedUnexpectedCopy =
+    'Something went wrong. Check your answer below before trying again.';
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -179,8 +193,8 @@ EventOccurrence _ahead() =>
 /// header, the dates, who's coming and the games, and the refresh banner it
 /// shares with the overview. Then Delete (#501), from the menu to the screen
 /// leaving, the event's status writes (#502), the dates' menus and dialogs
-/// (#506), the poll on the dates (#507), and the page moving on with the
-/// clock (#502, #655).
+/// (#506), the poll on the dates (#507), the viewer's own answer (#508), and
+/// the page moving on with the clock (#502, #655).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -3386,6 +3400,12 @@ void main() {
 
     Finder inDates(String text) => inSection(EventDetailScreen.datesKey, text);
 
+    /// The dates' answer chips: who's coming has the viewer's own (#508).
+    Finder chipsInDates() => find.descendant(
+      of: find.byKey(EventDetailScreen.datesKey),
+      matching: find.byType(ChoiceChip),
+    );
+
     /// Expects [finder] wholly inside a 320 by 640 window once scrolled to,
     /// and hit by a tap there.
     Future<void> expectReachable(
@@ -3604,7 +3624,7 @@ void main() {
 
       expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
       expect(leaderOf(tester, 'o-1'), 'Most available');
-      expect(find.byType(ChoiceChip), findsNothing);
+      expect(chipsInDates(), findsNothing);
       expect(find.bySemanticsLabel(RegExp('Your answer for')), findsNothing);
     });
 
@@ -4175,7 +4195,7 @@ void main() {
       );
       expect(remote.detailRequests, ['e-1']);
       expect(remote.summaryRequests, isEmpty);
-      expect(find.byType(ChoiceChip), findsNothing);
+      expect(chipsInDates(), findsNothing);
 
       // Created offline: the server has never heard of its id.
       cache.add(
@@ -4191,7 +4211,7 @@ void main() {
       expect(remote.summaryRequests, isEmpty);
       // So it shows no poll either: nothing to answer, and no page of
       // answers to open, though its roster can be read.
-      expect(find.byType(ChoiceChip), findsNothing);
+      expect(chipsInDates(), findsNothing);
       expect(find.byKey(EventDetailScreen.whoAnsweredKey), findsNothing);
     });
 
@@ -4709,6 +4729,794 @@ void main() {
     });
   });
 
+  group('RSVP (#508)', () {
+    const going = EventParticipationStatus.attending;
+    const maybe = EventParticipationStatus.maybe;
+    const notGoing = EventParticipationStatus.notAttending;
+    const invited = EventParticipationStatus.invited;
+    const answers = [going, maybe, notGoing];
+
+    /// What the cache holds: the detail a test shows, then each answer's
+    /// row over it.
+    late EventDetail cached;
+
+    setUpAll(() => registerFallbackValue(attendance(invited)));
+
+    setUp(() {
+      // The viewer's row on the roster and as their attendance, and the
+      // watch delivers it, as the repository does (#508).
+      when(() => repository.cacheAttendee(any()))
+          .thenAnswer((invocation) async {
+            final row = invocation.positionalArguments.single as EventAttendee;
+            cached = EventDetail(
+              snapshot: cached.snapshot.copyWith(
+                attendees: [
+                  for (final attendee
+                      in cached.snapshot.attendees ?? const <EventAttendee>[])
+                    attendee.id == row.id ? row : attendee,
+                ],
+              ),
+              attendance: row,
+            );
+            cache.add(cached);
+            return true;
+          });
+    });
+
+    /// The viewer's own row on `e-1`, `att-me`, named Me, holding [role] and
+    /// answered [status], with [notes].
+    EventAttendee me({
+      EventRole role = EventRole.participant,
+      EventParticipationStatus status = invited,
+      String? notes,
+    }) => attendance(status)
+        .copyWith(eventId: 'e-1', displayName: 'Me', role: role, notes: notes);
+
+    /// Event `e-1`, Scheduled by a date ahead unless [status] or
+    /// [occurrences] say otherwise, with [viewer] and Ada, who is going, on
+    /// its roster. A null [viewer] isn't on it.
+    EventDetail viewed(
+      EventAttendee? viewer, {
+      EventStatus status = EventStatus.scheduled,
+      EventSchedulingMode schedulingMode = EventSchedulingMode.fixed,
+      List<EventOccurrence>? occurrences,
+      String? householdId,
+    }) => _detail(
+      event: _event(
+        status: status,
+        schedulingMode: schedulingMode,
+        householdId: householdId,
+      ),
+      occurrences: occurrences ?? [_ahead()],
+      attendees: [
+        ?viewer,
+        _member('att-2', displayName: 'Ada'),
+      ],
+      attendance: viewer,
+    );
+
+    /// The viewer's row as the server holds it after [request]: its answer,
+    /// and the note it sent, else the one it had.
+    EventAttendee answer(RsvpRequest request) {
+      final mine = cached.attendance!;
+      return mine.copyWith(
+        status: request.status,
+        notes: request.notes ?? mine.notes,
+      );
+    }
+
+    /// A server whose reads serve what the cache holds, or answer from
+    /// [read], whose RSVPs answer from [answered] ([answer] by default), and
+    /// whose poll reads find nobody has answered.
+    FakeEventRemote answering({
+      FutureOr<EventSnapshot> Function(String id)? read,
+      FutureOr<EventAttendee> Function(RsvpRequest request)? answered,
+    }) => FakeEventRemote.detail(
+      read ?? (_) => cached.snapshot,
+      rsvp: answered ?? answer,
+      summary: (_) => AvailabilitySummary(occurrences: const []),
+    );
+
+    /// Shows [detail] from [remote], with a way back.
+    Future<void> showRsvp(
+      WidgetTester tester,
+      EventDetail detail,
+      FakeEventRemote remote, {
+      Future<HouseholdRole?> Function(String householdId)? householdRole,
+      TextScaler textScaler = TextScaler.noScaling,
+      ValueListenable<bool>? offline,
+    }) async {
+      cached = detail;
+      await show(
+        tester,
+        detail,
+        remote: remote,
+        householdRole: householdRole,
+        onBack: (_) {},
+        textScaler: textScaler,
+        offline: offline,
+      );
+      // The household role's lookup, and the poll's read.
+      await settle(tester);
+    }
+
+    /// Lets the screen go, so the next [showRsvp] starts with new blocs.
+    Future<void> leave(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+    }
+
+    Finder chip(EventParticipationStatus status) =>
+        find.byKey(EventDetailScreen.rsvpAnswerKey(status));
+
+    ChoiceChip chipOf(WidgetTester tester, EventParticipationStatus status) =>
+        tester.widget(chip(status));
+
+    Finder note() => find.byKey(EventDetailScreen.rsvpNoteKey);
+
+    TextButton noteOf(WidgetTester tester) => tester.widget(note());
+
+    Finder noteField() => find.byKey(EventDetailScreen.rsvpNoteFieldKey);
+
+    Finder inGroup(EventParticipationStatus status, String text) =>
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeeGroupKey(status)),
+          matching: find.text(text),
+        );
+
+    Future<void> press(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pump();
+      await tester.tap(finder);
+      await animate(tester);
+    }
+
+    /// Moves focus to [finder]'s control and presses Enter on it, as a
+    /// keyboard user would, and answers its focus node.
+    Future<FocusNode> pressWithKeys(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pump();
+      final node = switch (tester.widget(finder)) {
+        final ChoiceChip chip => chip.focusNode!,
+        final ButtonStyleButton button => button.focusNode!,
+        final widget => throw ArgumentError.value(widget),
+      };
+      node.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      return node;
+    }
+
+    Future<void> saveNote(WidgetTester tester, String text) async {
+      await tester.enterText(noteField(), text);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNoteSaveKey));
+      await animate(tester);
+    }
+
+    testWidgets('Going sends at once, and the banner says it is saved', (
+      tester,
+    ) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me()), remote);
+      expect(find.text('Are you coming?'), findsOneWidget);
+      expect(chipOf(tester, going).selected, isFalse);
+
+      await press(tester, chip(going));
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, [
+        (eventId: 'e-1', attendeeId: 'att-me', status: going, notes: null),
+      ]);
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(chipOf(tester, going).selected, isTrue);
+      expect(inGroup(going, 'Me'), findsOneWidget);
+
+      // Maybe asks nothing either.
+      await press(tester, chip(maybe));
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps.map((request) => request.status), [going, maybe]);
+      expect(remote.rsvps.last.notes, isNull);
+      expect(chipOf(tester, maybe).selected, isTrue);
+      expect(inGroup(maybe, 'Me'), findsOneWidget);
+    });
+
+    testWidgets('Not going asks first, and Keep sends nothing', (tester) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+
+      await press(tester, chip(notGoing));
+
+      expect(find.text('Not going?'), findsOneWidget);
+      expect(find.text(_rsvpNotGoingBodyCopy), findsOneWidget);
+      // In the error colour, as a decline's is: the games it takes off the
+      // dates don't come back.
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey),
+            )
+            .style
+            ?.foregroundColor
+            ?.resolve(const {}),
+        Theme.of(tester.element(find.byType(AlertDialog))).colorScheme.error,
+      );
+      await tester.tap(find.text('Keep my answer'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(chipOf(tester, going).selected, isTrue);
+      // Nothing is held: every control takes a press.
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull);
+      }
+      expect(noteOf(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('Not going confirmed sends notAttending', (tester) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+
+      await press(tester, chip(notGoing));
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey));
+      await animate(tester);
+
+      expect(remote.rsvps, [
+        (eventId: 'e-1', attendeeId: 'att-me', status: notGoing, notes: null),
+      ]);
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(chipOf(tester, notGoing).selected, isTrue);
+      expect(inGroup(notGoing, 'Me'), findsOneWidget);
+    });
+
+    testWidgets('the note dialog sends the current answer with the note, and '
+        "an emptied note sends ''", (tester) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: maybe)), remote);
+      expect(find.text('Add a note'), findsOneWidget);
+
+      await press(tester, note());
+      expect(find.text('Your note'), findsOneWidget);
+      await saveNote(tester, '  Running late  ');
+
+      expect(remote.rsvps, [
+        (
+          eventId: 'e-1',
+          attendeeId: 'att-me',
+          status: maybe,
+          notes: 'Running late',
+        ),
+      ]);
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(find.text('Edit note'), findsOneWidget);
+      expect(inGroup(maybe, 'Running late'), findsOneWidget);
+
+      // The dialog opens on the note, and emptied it clears it.
+      await press(tester, note());
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: noteField(),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .controller
+            .text,
+        'Running late',
+      );
+      await saveNote(tester, '');
+
+      expect(remote.rsvps.last, (
+        eventId: 'e-1',
+        attendeeId: 'att-me',
+        status: maybe,
+        notes: '',
+      ));
+      expect(find.text('Add a note'), findsOneWidget);
+      expect(find.text('Running late'), findsNothing);
+    });
+
+    testWidgets('a note saved unchanged sends nothing', (tester) async {
+      // The server takes every send as a new answer, and tells the host.
+      for (final (notes, saved) in [
+        (null, ''),
+        ('', ''),
+        ('Running late', 'Running late'),
+        ('Running late', '  Running late  '),
+      ]) {
+        final remote = answering();
+        await showRsvp(tester, viewed(me(status: going, notes: notes)), remote);
+        final reason = '$notes -> "$saved"';
+
+        await press(tester, note());
+        await saveNote(tester, saved);
+
+        expect(find.byType(AlertDialog), findsNothing, reason: reason);
+        expect(remote.rsvps, isEmpty, reason: reason);
+        expect(outcome(), findsNothing, reason: reason);
+        // Nothing is held: every control takes a press.
+        for (final status in answers) {
+          expect(chipOf(tester, status).onSelected, isNotNull, reason: reason);
+        }
+        expect(noteOf(tester).onPressed, isNotNull, reason: reason);
+        await leave(tester);
+      }
+    });
+
+    testWidgets('a note saved as the dialog showed it, or as a sync left it '
+        'while the dialog was open, sends nothing', (tester) async {
+      // Saving what the dialog opened on would put it back over the note
+      // another device saved meanwhile.
+      for (final saved in ['Running late', 'Stuck in traffic']) {
+        final remote = answering();
+        await showRsvp(
+          tester,
+          viewed(me(status: going, notes: 'Running late')),
+          remote,
+        );
+        await press(tester, note());
+
+        cached = viewed(me(status: going, notes: 'Stuck in traffic'));
+        cache.add(cached);
+        await settle(tester);
+        await saveNote(tester, saved);
+
+        expect(remote.rsvps, isEmpty, reason: saved);
+        expect(outcome(), findsNothing, reason: saved);
+        expect(inGroup(going, 'Stuck in traffic'), findsOneWidget);
+        expect(noteOf(tester).onPressed, isNotNull, reason: saved);
+        await leave(tester);
+      }
+    });
+
+    testWidgets('Not going confirmed after a sync answered it sends nothing', (
+      tester,
+    ) async {
+      // The server takes it as a new answer all the same.
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+      await press(tester, chip(notGoing));
+
+      cached = viewed(me(status: notGoing));
+      cache.add(cached);
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inGroup(notGoing, 'Me'), findsOneWidget);
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull);
+      }
+    });
+
+    testWidgets('a host is offered Not going', (tester) async {
+      final remote = answering();
+      await showRsvp(
+        tester,
+        viewed(me(role: EventRole.host, status: going)),
+        remote,
+      );
+      expect(chipOf(tester, notGoing).onSelected, isNotNull);
+
+      await press(tester, chip(notGoing));
+      expect(find.text(_rsvpNotGoingBodyCopy), findsOneWidget);
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey));
+      await animate(tester);
+
+      expect(remote.rsvps.single.status, notGoing);
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+    });
+
+    testWidgets('offers no answer on a cancelled or archived event', (
+      tester,
+    ) async {
+      for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+        await showRsvp(
+          tester,
+          viewed(me(status: going), status: status),
+          answering(),
+        );
+
+        expect(find.text('Are you coming?'), findsNothing, reason: '$status');
+        for (final answer in answers) {
+          expect(chip(answer), findsNothing, reason: '$status');
+        }
+        expect(note(), findsNothing, reason: '$status');
+        // Their row still shows their answer, as everyone's does.
+        expect(inGroup(going, 'Me'), findsOneWidget, reason: '$status');
+        expect(
+          inGroup(going, 'Participant · Going'),
+          findsNWidgets(2),
+          reason: '$status',
+        );
+        await leave(tester);
+      }
+    });
+
+    testWidgets("offers no answer to a household admin who isn't on the "
+        'roster', (tester) async {
+      await showRsvp(
+        tester,
+        viewed(null, householdId: 'h-1'),
+        answering(),
+        householdRole: (_) async => HouseholdRole.householdAdmin,
+      );
+
+      // The household's role gives them Cancel, so it was read.
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsOneWidget);
+      expect(find.text('Are you coming?'), findsNothing);
+      for (final answer in answers) {
+        expect(chip(answer), findsNothing);
+      }
+      expect(note(), findsNothing);
+    });
+
+    testWidgets("offers no answer without the viewer's row", (tester) async {
+      // Opened from the list before any read cached its roster. The answer
+      // the list keeps for the viewer is not part of the detail, so the
+      // cache gives the page no roster and no row of theirs to send an
+      // answer for, and the read that would bring one hasn't ended.
+      final remote = answering(read: (_) => Completer<EventSnapshot>().future);
+      await showRsvp(tester, _detail(occurrences: [_ahead()]), remote);
+
+      expect(
+        inSection(EventDetailScreen.attendeesKey, 'Not loaded yet.'),
+        findsOneWidget,
+      );
+      expect(find.text('Are you coming?'), findsNothing);
+      for (final answer in answers) {
+        expect(chip(answer), findsNothing);
+      }
+      expect(note(), findsNothing);
+    });
+
+    testWidgets('a dialog closed after the event was cancelled drops the '
+        'write', (tester) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+      final reads = remote.detailRequests.length;
+      await press(tester, chip(notGoing));
+
+      // From another device, through a sync.
+      cached = viewed(me(status: going), status: EventStatus.cancelled);
+      cache.add(cached);
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      // The banner is a live region, so a screen reader hears why nothing
+      // happened. The page already shows the event as cached, so nothing is
+      // read again.
+      expect(inOutcome(_rsvpChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, hasLength(reads));
+    });
+
+    testWidgets('a note dialog closed after the viewer left the roster, or '
+        "their answer or role became one this client doesn't know, drops "
+        'the write', (tester) async {
+      for (final (name, synced) in [
+        ('left the roster', viewed(null)),
+        (
+          'an unknown answer',
+          viewed(me(status: EventParticipationStatus.unknown)),
+        ),
+        ('an unknown role', viewed(me(role: EventRole.unknown))),
+      ]) {
+        final remote = answering();
+        await showRsvp(tester, viewed(me(status: going)), remote);
+        await press(tester, note());
+
+        cached = synced;
+        cache.add(cached);
+        await settle(tester);
+        await saveNote(tester, 'Running late');
+
+        expect(find.byType(AlertDialog), findsNothing, reason: name);
+        expect(remote.rsvps, isEmpty, reason: name);
+        expect(inOutcome(_rsvpChangedCopy), findsOneWidget, reason: name);
+        await leave(tester);
+      }
+    });
+
+    testWidgets('403 says the answer was refused and reads again', (
+      tester,
+    ) async {
+      final remote = answering(
+        answered: (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403),
+      );
+      await showRsvp(tester, viewed(me()), remote);
+      final reads = remote.detailRequests.length;
+
+      await press(tester, chip(going));
+
+      expect(remote.rsvps, hasLength(1));
+      expect(inOutcome(_rsvpRefusedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, hasLength(reads + 1));
+      verifyNever(() => repository.cacheAttendee(any()));
+    });
+
+    group('each other end has its copy and tone', () {
+      final ends = [
+        (
+          // The event, or the viewer's row on it: the read tells which.
+          name: 'a 404',
+          thrown: const EventRemoteNotFoundException('gone') as Object,
+          copy: _rsvpGoneCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a 400',
+          thrown: const EventWriteConflictException('no', statusCode: 400),
+          copy: _rsvpChangedCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a transient failure',
+          thrown: _offline,
+          copy: _rsvpFailedCopy,
+          tone: BgeBannerTone.error,
+          rereads: false,
+        ),
+        (
+          // A 2xx whose body didn't parse: the answer may have landed, so
+          // the copy points at it, and the read shows it.
+          name: 'any other failure',
+          thrown: const EventRemotePermanentException(
+            'unreadable',
+            statusCode: 200,
+          ),
+          copy: _rsvpFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+          rereads: true,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          final remote = answering(answered: (_) => throw end.thrown);
+          await showRsvp(tester, viewed(me()), remote);
+          final reads = remote.detailRequests.length;
+
+          await press(tester, chip(going));
+
+          expect(inOutcome(end.copy), findsOneWidget);
+          expect(toneOf(tester), end.tone);
+          expect(
+            remote.detailRequests,
+            hasLength(reads + (end.rereads ? 1 : 0)),
+          );
+        });
+      }
+    });
+
+    testWidgets('a done answer reads the poll again', (tester) async {
+      final remote = answering();
+      final proposed = confirmed(
+        'o-1',
+        DateTime(2026, 11, 6, 19),
+      ).copyWith(eventId: 'e-1', status: OccurrenceStatus.proposed);
+      await showRsvp(
+        tester,
+        viewed(
+          me(),
+          schedulingMode: EventSchedulingMode.poll,
+          occurrences: [proposed],
+        ),
+        remote,
+      );
+      final reads = remote.detailRequests.length;
+      final polls = remote.summaryRequests.length;
+      expect(polls, greaterThan(0));
+
+      await press(tester, chip(going));
+
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(remote.detailRequests, hasLength(reads + 1));
+      // After the RSVP's read, so the poll counts the answer.
+      expect(remote.summaryRequests, hasLength(polls + 1));
+    });
+
+    testWidgets('offline, the chips are disabled', (tester) async {
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      await showRsvp(
+        tester,
+        viewed(me(status: going, notes: 'Running late')),
+        answering(),
+        offline: offline,
+      );
+
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNull);
+      // Once, under the group.
+      expect(
+        inSection(EventDetailScreen.attendeesKey, _onlineOnlyCopy),
+        findsOneWidget,
+      );
+
+      offline.value = false;
+      await tester.pump();
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('the answered chip keeps focus through the write and the '
+        'read it starts', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final written = Completer<EventAttendee>();
+      final remote = answering(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+        answered: (_) => written.future,
+      );
+      await showRsvp(tester, viewed(me()), remote);
+      reads.single.complete(cached.snapshot);
+      await settle(tester);
+
+      final focus = await pressWithKeys(tester, chip(going));
+      expect(remote.rsvps, hasLength(1));
+
+      void expectHeld(String reason) {
+        expect(focus.hasPrimaryFocus, isTrue, reason: reason);
+        expect(chipOf(tester, going).onSelected, isNotNull, reason: reason);
+        expect(chipOf(tester, maybe).onSelected, isNull, reason: reason);
+        expect(chipOf(tester, notGoing).onSelected, isNull, reason: reason);
+        expect(noteOf(tester).onPressed, isNull, reason: reason);
+      }
+
+      expectHeld('the write is out');
+      // Pressed again meanwhile, it sends nothing.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(remote.rsvps, hasLength(1));
+
+      // The answer is in, and the read its outcome starts is out.
+      written.complete(answer(remote.rsvps.single));
+      await settle(tester);
+      expect(reads, hasLength(2));
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(chipOf(tester, going).selected, isTrue);
+      expectHeld('the read is out');
+
+      // The read has ended: focus stayed, and every control takes a press.
+      reads[1].complete(cached.snapshot);
+      await settle(tester);
+      expect(focus.hasPrimaryFocus, isTrue);
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('a second answer pressed before the first is out sends '
+        'nothing, and the first stays held', (tester) async {
+      final written = Completer<EventAttendee>();
+      final remote = answering(answered: (_) => written.future);
+      await showRsvp(tester, viewed(me()), remote);
+      await tester.ensureVisible(chip(going));
+      await tester.pump();
+
+      // Both before a frame shows the first one out.
+      await tester.tap(chip(going));
+      await tester.tap(chip(maybe));
+      await tester.pump();
+
+      expect(remote.rsvps.map((request) => request.status), [going]);
+      // Going's write is out, and Going is the one held: it still takes a
+      // press, and ignores it. Maybe's press was ignored, so it is disabled,
+      // as the rest are while another control's request is out.
+      expect(chipOf(tester, going).onSelected, isNotNull);
+      expect(chipOf(tester, maybe).onSelected, isNull);
+      expect(chipOf(tester, notGoing).onSelected, isNull);
+      expect(noteOf(tester).onPressed, isNull);
+      await tester.tap(chip(going));
+      await tester.pump();
+      expect(remote.rsvps, hasLength(1));
+
+      written.complete(answer(remote.rsvps.single));
+      await settle(tester);
+      expect(chipOf(tester, going).selected, isTrue);
+      expect(remote.rsvps, hasLength(1));
+    });
+
+    testWidgets('a dialog gives focus back to the control that opened it', (
+      tester,
+    ) async {
+      final remote = answering();
+      await showRsvp(tester, viewed(me(status: going)), remote);
+
+      // Kept: nothing is sent, and Not going has it back.
+      final notGoingFocus = await pressWithKeys(tester, chip(notGoing));
+      expect(find.text('Not going?'), findsOneWidget);
+      await tester.tap(find.text('Keep my answer'));
+      await animate(tester);
+      expect(remote.rsvps, isEmpty);
+      expect(notGoingFocus.hasPrimaryFocus, isTrue);
+
+      // Saved: the note button has it back, and keeps it through the write
+      // and the read.
+      final noteFocus = await pressWithKeys(tester, note());
+      expect(find.text('Your note'), findsOneWidget);
+      await saveNote(tester, 'Running late');
+      expect(remote.rsvps.single.notes, 'Running late');
+      expect(inOutcome(_rsvpSavedCopy), findsOneWidget);
+      expect(noteFocus.hasPrimaryFocus, isTrue);
+
+      // Cancelled: so does Edit note.
+      await pressWithKeys(tester, note());
+      await tester.tap(find.text('Cancel'));
+      await animate(tester);
+      expect(remote.rsvps, hasLength(1));
+      expect(noteFocus.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('the Not going and note dialogs fit at 320dp and 2.0 text', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      await showRsvp(
+        tester,
+        viewed(me(status: going, notes: 'Running late')),
+        answering(),
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      expect(tester.takeException(), isNull);
+
+      // Each dialog's title and body scroll, and its buttons stay on screen.
+      for (final (opener, confirm, keep) in [
+        (
+          chip(notGoing),
+          EventDetailScreen.rsvpNotGoingConfirmKey,
+          'Keep my answer',
+        ),
+        (note(), EventDetailScreen.rsvpNoteSaveKey, 'Cancel'),
+      ]) {
+        await press(tester, opener);
+        expect(tester.takeException(), isNull);
+        final dialog = tester.getRect(find.byType(AlertDialog));
+        for (final button in [
+          find.byKey(confirm),
+          find.ancestor(
+            of: find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.text(keep),
+            ),
+            matching: find.byType(TextButton),
+          ),
+        ]) {
+          final rect = tester.getRect(button);
+          expect(dialog.intersect(rect), rect);
+          expect(rect.bottom, lessThanOrEqualTo(640));
+        }
+        await tester.tap(find.text(keep));
+        await animate(tester);
+      }
+    });
+  });
+
   group('the clock (#502, #655)', () {
     /// What the screen's clock reads, which each test moves on.
     late DateTime clock;
@@ -5123,8 +5931,22 @@ void main() {
         }
       }
       // Once under Add a date, once under Confirm this date, and once under
-      // each date's three chips, not once a chip.
-      expect(reason(), findsNWidgets(4));
+      // each date's three chips, not once a chip. Who's coming says it once
+      // more, under the viewer's own answer (#508).
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.datesKey),
+          matching: reason(),
+        ),
+        findsNWidgets(4),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeesKey),
+          matching: reason(),
+        ),
+        findsOneWidget,
+      );
 
       offline.value = false;
       await tester.pump();

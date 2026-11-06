@@ -47,15 +47,17 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [cancelOccurrence] | `POST /api/events/:id/occurrences/:oid/cancel` | `{ message, occurrence }` |
 /// | [removeOccurrence] | `DELETE /api/events/:id/occurrences/:oid` | `{ message, ... }`, not read |
 /// | [submitAvailability] | `POST /api/events/:id/occurrences/:oid/availability` | `{ message, vote }` |
+/// | [updateAttendeeStatus] | `PATCH /api/events/:id/attendees/:aid/status` | `{ message, attendee }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
 /// which it got:
 ///
 /// - **The list** serves each event with its `occurrences`, always a list, and
-///   its `policy`, an object or null. No row carries a roster, so every
-///   snapshot from [fetchEvents] has `attendees: null`. That says nothing about
-///   who is on the event.
+///   its `policy`, an object or null, and the caller's own `attendance`, an
+///   object or null (#667). No row carries a roster, so every snapshot from
+///   [fetchEvents] has `attendees: null`. That says nothing about who is on the
+///   event.
 /// - **The detail** serves the event with its `occurrences`, `attendees` and
 ///   `policy`. Each of the three is read under its own permission
 ///   (backend#560): a caller who may not read the roster is served
@@ -229,7 +231,7 @@ abstract class EventRemoteDataSource {
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
-  /// roster.
+  /// roster, and the caller's own answer as `attendance`.
   ///
   /// Follow [PaginationMeta.hasMore] to the end of the list, never by inferring
   /// the end from a page shorter than [limit]. [page] is 1-based and [limit] is
@@ -254,7 +256,8 @@ abstract class EventRemoteDataSource {
   /// Upcoming events only: a confirmed date that hasn't ended, not cancelled or
   /// archived. The order is soonest first, then by id, so the first page is the
   /// next few. Rows have the shape of [fetchEvents]' rows, each snapshot with
-  /// `attendees: null`, and no row carries an RSVP because the caller has none.
+  /// `attendees: null`, and `attendance: null` because the caller has no RSVP on
+  /// an event they don't attend.
   ///
   /// [page] is 1-based and [limit] is in `1..maxPageSize`. Failures classify as
   /// [fetchEvents]' do.
@@ -476,6 +479,30 @@ abstract class EventRemoteDataSource {
     String occurrenceId,
     AvailabilityResponse response,
   );
+
+  /// `PATCH /api/events/:eventId/attendees/:attendeeId/status`: answers an
+  /// RSVP, sets the attendee's status to [status] (#508). Answers 200
+  /// `{ message, attendee }`, and the attendee carries its `user` and `role`
+  /// as a roster row of [fetchEvent] does.
+  ///
+  /// [notes] left null is left out of the body and the server keeps the old
+  /// note; an empty string clears it. Wire names come from
+  /// [EventParticipationStatus.toWire].
+  ///
+  /// The write is classified as the date writes are: a 404 carrying the
+  /// envelope is [EventRemoteNotFoundException], a 403 carrying it is
+  /// [EventWriteRefusedException], and a 400 carrying it with one message is
+  /// [EventWriteConflictException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id or for
+  /// [EventParticipationStatus.unknown], which has no wire name, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventAttendee> updateAttendeeStatus(
+    String eventId,
+    String attendeeId,
+    EventParticipationStatus status, {
+    String? notes,
+  });
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
   /// every date of the event stands in its availability poll. Answers 200

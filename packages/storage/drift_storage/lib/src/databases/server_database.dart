@@ -56,7 +56,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **14**.
+/// `schemaVersion` is **15**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -143,6 +143,12 @@ part 'server_database.g.dart';
 /// - **v13 → v14 (#710):** adds `list_layouts`, the layout each user left
 ///   each list screen in, kept per user on this device and never synced. A
 ///   new table with no foreign keys, created empty by one `createTable`.
+/// - **v14 → v15 (#667):** adds a nullable `event_access.attendee_id`,
+///   `attendance_status`, `attendance_role` and `rsvp_date`, the user's own
+///   answer as the `GET /events` row carries it, kept on their `attending`
+///   row. Additive: four `addColumn` calls, no table rebuilt. A row cached
+///   before it holds null for all four, which the list reads as no answer
+///   kept, falling back to the user's row on a cached roster.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -159,7 +165,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v14.json`, and
+/// `drift_schemas/server/drift_schema_v15.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -206,7 +212,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -311,6 +317,14 @@ class ServerDatabase extends _$ServerDatabase {
         await m.createTable(eventAttendeesTable);
         await m.createTable(eventPoliciesTable);
         await m.createTable(eventAccessTable);
+        // The live table has the columns v15 adds (#667), and adding them
+        // again would fail, so they go here and v15 puts them back. Dropped
+        // in place from a table that is empty. None is in a key or an index,
+        // which DROP COLUMN would refuse.
+        await m.dropColumn(eventAccessTable, 'attendee_id');
+        await m.dropColumn(eventAccessTable, 'attendance_status');
+        await m.dropColumn(eventAccessTable, 'attendance_role');
+        await m.dropColumn(eventAccessTable, 'rsvp_date');
         await m.createTable(eventGenerationTable);
         // createTable does not create a table's indexes.
         await m.createIndex(eventOccurrencesEventIdIdx);
@@ -387,6 +401,17 @@ class ServerDatabase extends _$ServerDatabase {
         // with no FK edges and no rows to carry, so no FK-off wrapper is
         // needed (#54 stays deferred).
         await m.createTable(listLayoutsTable);
+      }
+      if (from < 15 && to >= 15) {
+        // v14 → v15 (#667): the user's own answer as the list carries it, on
+        // their `attending` row. Additive and nullable: every existing row
+        // holds null until the next hydrate writes it, and the list falls
+        // back to the cached roster meanwhile, so there is nothing to
+        // backfill.
+        await m.addColumn(eventAccessTable, eventAccessTable.attendeeId);
+        await m.addColumn(eventAccessTable, eventAccessTable.attendanceStatus);
+        await m.addColumn(eventAccessTable, eventAccessTable.attendanceRole);
+        await m.addColumn(eventAccessTable, eventAccessTable.rsvpDate);
       }
     },
   );

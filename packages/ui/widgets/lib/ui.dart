@@ -22,13 +22,13 @@
 /// those two grids and their list or thumbnails choice (#710),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
-/// quick look (#573, #607), `BgeInertButton` by the 4 buttons that
+/// quick look (#573, #607), `BgeInertButton` by the 7 buttons that
 /// keep focus while they can do nothing (#607), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
 /// empty and denied surfaces of the feature screens, at 23, 23 and 39 call
 /// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
-/// are on the controls that write straight to the server, at 14, 6, 4, 3 and
+/// are on the controls that write straight to the server, at 16, 6, 5, 3 and
 /// 4 call sites in `lib/` (#49).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and

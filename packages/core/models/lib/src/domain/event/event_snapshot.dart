@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'event.dart';
+import 'event_attendance.dart';
 import 'event_attendee.dart';
 import 'event_occurrence.dart';
 import 'event_policy.dart';
@@ -32,5 +33,9 @@ abstract class EventSnapshot with _$EventSnapshot {
     /// This is nullable rather than defaulting to an empty list for that
     /// reason: a default would turn "not asked" into "nobody".
     List<EventAttendee>? attendees,
+
+    /// The caller's own attendance as the read carried it. Null when the read
+    /// carried none, or carried `null`.
+    EventAttendance? attendance,
   }) = _EventSnapshot;
 }

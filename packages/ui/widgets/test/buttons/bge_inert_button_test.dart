@@ -8,8 +8,9 @@ const _key = ValueKey('button');
 
 Widget _host({
   required bool inert,
-  required VoidCallback onPressed,
+  required VoidCallback? onPressed,
   bool? expanded,
+  bool? selected,
   bool ignoreKeyRepeats = true,
 }) => MaterialApp(
   theme: BgeTheme.light(),
@@ -19,6 +20,7 @@ Widget _host({
         inert: inert,
         label: inert ? 'Working' : 'Go',
         expanded: expanded,
+        selected: selected,
         ignoreKeyRepeats: ignoreKeyRepeats,
         onPressed: onPressed,
         builder: (context, focusNode, onPressed) => TextButton(
@@ -112,6 +114,78 @@ void main() {
         hasFocusAction: true,
       ),
     );
+    handle.dispose();
+  });
+
+  testWidgets('says whether it is selected, inert or not', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _host(inert: false, selected: true, onPressed: () {}),
+    );
+    expect(
+      tester.getSemantics(find.byKey(_key)),
+      matchesSemantics(
+        label: 'Go',
+        isButton: true,
+        isFocusable: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasSelectedState: true,
+        isSelected: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _host(inert: true, selected: false, onPressed: () {}),
+    );
+    expect(
+      tester.getSemantics(find.byKey(_key)),
+      matchesSemantics(
+        label: 'Working',
+        isButton: true,
+        isFocusable: true,
+        hasEnabledState: true,
+        hasSelectedState: true,
+        hasFocusAction: true,
+      ),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('with no onPressed it is disabled in place: the button gets no '
+      'handler and drops focus, and the same node reads as not enabled, with '
+      'no tap and no focus', (tester) async {
+    final handle = tester.ensureSemantics();
+    var presses = 0;
+    await tester.pumpWidget(_host(inert: false, onPressed: () => presses++));
+    _focus(tester).requestFocus();
+    await tester.pump();
+    final rest = tester.getSemantics(find.byKey(_key));
+
+    for (final inert in [false, true]) {
+      await tester.pumpWidget(_host(inert: inert, onPressed: null));
+      expect(tester.widget<TextButton>(find.byKey(_key)).onPressed, isNull);
+      expect(_focus(tester).hasFocus, isFalse);
+      final disabled = tester.getSemantics(find.byKey(_key));
+      expect(disabled.id, rest.id);
+      expect(
+        disabled,
+        matchesSemantics(
+          label: inert ? 'Working' : 'Go',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+    }
+
+    await tester.pumpWidget(_host(inert: false, onPressed: () => presses++));
+    _focus(tester).requestFocus();
+    await tester.pump();
+    expect(_focus(tester).hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(presses, 1);
     handle.dispose();
   });
 

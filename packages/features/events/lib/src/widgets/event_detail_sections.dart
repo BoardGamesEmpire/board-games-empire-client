@@ -513,33 +513,149 @@ class _OccurrenceEntry extends StatelessWidget {
 ///
 /// An empty roster is the server saying this user may not read it, not that
 /// nobody is coming, so it says so rather than "nobody".
+///
+/// The viewer's own answer, where they may give one, sits under the heading
+/// above whichever of the three shows (#508): it needs only their own row,
+/// not a roster they may read.
 class EventAttendeesSection extends StatelessWidget {
-  const EventAttendeesSection({required this.attendees, super.key});
+  const EventAttendeesSection({
+    required this.attendees,
+    this.controls,
+    super.key,
+  });
 
   /// Null where no read has carried a roster, empty where the read carried
   /// one this user may not see.
   final List<EventAttendee>? attendees;
 
+  /// The viewer's answer to the invitation, or null where none is offered.
+  final Widget? controls;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    final controls = this.controls;
 
     return _Section(
       key: EventDetailScreen.attendeesKey,
       title: l10n.eventsDetailAttendees,
-      children: switch (attendees) {
-        null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
-        [] => [_Note(l10n.eventsDetailAttendeesHidden)],
-        final attendees => [
-          for (final attendee in attendees) _AttendeeEntry(attendee: attendee),
-        ],
-      },
+      children: [
+        if (controls != null) ...[controls, const BgeGap.md()],
+        ...switch (attendees) {
+          null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
+          [] => [_Note(l10n.eventsDetailAttendeesHidden)],
+          // A gap between the groups, so each heading reads as the start of
+          // its group and not as a line of the row above it.
+          final attendees => [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: BgeTokens.of(context).spaceMd,
+              children: [
+                for (final MapEntry(key: status, value: group) in _grouped(
+                  l10n,
+                  attendees,
+                ).entries)
+                  _AttendeeGroup(status: status, attendees: group),
+              ],
+            ),
+          ],
+        },
+      ],
     );
   }
 }
 
-/// One person on the roster, with their role and their answer, as one
-/// semantics node.
+/// The order the groups come in. A status this client doesn't know goes last.
+const _groupOrder = [
+  EventParticipationStatus.attending,
+  EventParticipationStatus.maybe,
+  EventParticipationStatus.invited,
+  EventParticipationStatus.notAttending,
+  EventParticipationStatus.unknown,
+];
+
+/// [attendees] by answer, in [_groupOrder], each group in the roster's order
+/// and none empty. A row that would show nothing is left out, so no heading
+/// counts someone it doesn't show.
+Map<EventParticipationStatus, List<EventAttendee>> _grouped(
+  EventsLocalizations l10n,
+  List<EventAttendee> attendees,
+) {
+  final byStatus = <EventParticipationStatus, List<EventAttendee>>{};
+  for (final attendee in attendees) {
+    if (_showsNothing(l10n, attendee)) continue;
+    (byStatus[attendee.status] ??= []).add(attendee);
+  }
+  return {for (final status in _groupOrder) status: ?byStatus[status]};
+}
+
+/// [attendee]'s role and answer, as their row names them. Either is left
+/// out where this client has no word for it.
+List<String> _attendeeDetails(
+  EventsLocalizations l10n,
+  EventAttendee attendee,
+) => [
+  if (attendee.role case final role?) ?eventRoleLabel(l10n, role),
+  ?eventRsvpLabel(l10n, attendee.status),
+];
+
+/// Whether [attendee]'s row would show nothing: no name, no role or answer
+/// with a word, and no note. Only a status this client doesn't know has no
+/// word, so only an Other answers row can.
+bool _showsNothing(EventsLocalizations l10n, EventAttendee attendee) =>
+    attendee.name == null &&
+    _attendeeDetails(l10n, attendee).isEmpty &&
+    _noteOf(attendee) == null;
+
+/// [attendee]'s note as their row shows it: trimmed, or null where that
+/// leaves nothing. The server keeps a note as it was sent, and another
+/// client can send spaces.
+String? _noteOf(EventAttendee attendee) {
+  final note = attendee.notes?.trim();
+  return note == null || note.isEmpty ? null : note;
+}
+
+/// The people who gave one answer: a heading with their count, over their
+/// rows in the roster's order.
+class _AttendeeGroup extends StatelessWidget {
+  const _AttendeeGroup({required this.status, required this.attendees});
+
+  final EventParticipationStatus status;
+  final List<EventAttendee> attendees;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final count = attendees.length;
+    final heading = switch (status) {
+      EventParticipationStatus.attending => l10n.eventsAttendeesGoing(count),
+      EventParticipationStatus.maybe => l10n.eventsAttendeesMaybe(count),
+      EventParticipationStatus.invited => l10n.eventsAttendeesNotAnswered(
+        count,
+      ),
+      EventParticipationStatus.notAttending => l10n.eventsAttendeesNotGoing(
+        count,
+      ),
+      EventParticipationStatus.unknown => l10n.eventsAttendeesOther(count),
+    };
+
+    return Column(
+      key: EventDetailScreen.attendeeGroupKey(status),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(heading, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        for (final attendee in attendees) _AttendeeEntry(attendee: attendee),
+      ],
+    );
+  }
+}
+
+/// One person on the roster, with their role and their answer and, under
+/// them, the note they left, as one semantics node. Never one of whom it
+/// would show nothing: [_grouped] leaves them out.
 class _AttendeeEntry extends StatelessWidget {
   const _AttendeeEntry({required this.attendee});
 
@@ -550,12 +666,8 @@ class _AttendeeEntry extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
     final name = attendee.name;
-    final role = attendee.role;
-    final details = [
-      if (role != null) ?eventRoleLabel(l10n, role),
-      ?eventRsvpLabel(l10n, attendee.status),
-    ];
-    if (name == null && details.isEmpty) return const SizedBox.shrink();
+    final note = _noteOf(attendee);
+    final details = _attendeeDetails(l10n, attendee);
 
     return _Entry(
       children: [
@@ -566,6 +678,7 @@ class _AttendeeEntry extends StatelessWidget {
             semanticsLabel: details.join(l10n.eventsDetailSpokenSeparator),
             style: _quiet(theme),
           ),
+        if (note != null) Text(note, style: _quiet(theme)),
       ],
     );
   }

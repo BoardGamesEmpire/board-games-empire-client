@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'event.dart';
-import 'event_attendee.dart';
+import 'event_attendance.dart';
 import 'event_occurrence.dart';
 
 part 'event_list_item.freezed.dart';
@@ -21,10 +21,9 @@ abstract class EventListItem with _$EventListItem {
     /// Every cached occurrence, in the server's order: sortOrder, then id.
     required List<EventOccurrence> occurrences,
 
-    /// The current user's own row on the cached roster. Null when no cached
-    /// roster names them, which means not known: only the detail read
-    /// carries a roster until backend#867 puts the caller's attendance on
-    /// every list row.
-    EventAttendee? attendance,
+    /// The current user's own attendance: what the list read carried for
+    /// them, else their own row on the cached roster. Null when neither
+    /// names them, which means not known.
+    EventAttendance? attendance,
   }) = _EventListItem;
 }

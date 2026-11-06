@@ -701,7 +701,7 @@ void main() {
         title: 'A' * 60,
         householdId: 'h-1',
         location: 'The back room of the board game café',
-        attendance: attendance(EventParticipationStatus.notAttending),
+        attendance: listAttendance(EventParticipationStatus.notAttending),
         // Local, so the day it shows doesn't depend on the test machine's
         // zone.
         occurrences: [confirmed('o', DateTime(2027, 12, 29, 19))],

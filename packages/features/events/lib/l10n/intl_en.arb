@@ -188,6 +188,142 @@
   "@eventsDetailAttendees": {
     "description": "Heading of the section of an event's screen listing the people invited to it, each with their role and their answer."
   },
+  "eventsAttendeesGoing": "Going ({count})",
+  "@eventsAttendeesGoing": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Going, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesMaybe": "Maybe ({count})",
+  "@eventsAttendeesMaybe": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Maybe, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesNotAnswered": "Not answered ({count})",
+  "@eventsAttendeesNotAnswered": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who were invited and have not answered yet, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesNotGoing": "Not going ({count})",
+  "@eventsAttendeesNotGoing": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people who answered Not going, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsAttendeesOther": "Other answers ({count})",
+  "@eventsAttendeesOther": {
+    "description": "Heading of a group in the who's-coming section of an event's screen, over the people whose answer this version of the app does not recognise, with how many they are. Screen readers announce it as a heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsRsvpQuestion": "Are you coming?",
+  "@eventsRsvpQuestion": {
+    "description": "In the who's-coming section of an event's screen, above the user's own three answer chips (Going, Maybe, Not going). Also the accessible name of that group of chips, which screen readers read before its chips."
+  },
+  "eventsRsvpAddNote": "Add a note",
+  "@eventsRsvpAddNote": {
+    "description": "Button under the user's own answer chips in the who's-coming section of an event's screen, when they have left no note with their answer. Opens a dialog to write a short note for the host and the others invited to read, such as 'Running late'."
+  },
+  "eventsRsvpEditNote": "Edit note",
+  "@eventsRsvpEditNote": {
+    "description": "The same button as eventsRsvpAddNote, when the user has already left a note with their answer. Opens a dialog to change or remove it."
+  },
+  "eventsRsvpAnswerInProgress": "{answer}, saving your answer…",
+  "@eventsRsvpAnswerInProgress": {
+    "description": "What a screen reader says for one of the user's own answer chips (Going, Maybe, Not going) on an event's screen while the answer it sent is being saved. The chip still shows only the answer, with a spinner, and can't be pressed until saving ends. The answer is one of eventsRsvpAttending, eventsRsvpMaybe or eventsRsvpNotAttending.",
+    "placeholders": {
+      "answer": {
+        "type": "String",
+        "example": "Maybe"
+      }
+    }
+  },
+  "eventsRsvpNoteInProgress": "Saving your note…",
+  "@eventsRsvpNoteInProgress": {
+    "description": "Shown in place of eventsRsvpAddNote or eventsRsvpEditNote on the note button, beside a spinner, while the note the user saved is being sent. The button can't be pressed until saving ends."
+  },
+  "eventsRsvpNotGoingTitle": "Not going?",
+  "@eventsRsvpNotGoingTitle": {
+    "description": "Title of the dialog that opens when the user taps Not going among their own answer chips on an event's screen, asking them to confirm that answer before it is sent."
+  },
+  "eventsRsvpNotGoingBody": "Any games you nominated will be paused, and the games you're bringing will come off every date still to come. Saying you're coming later won't put those games back.",
+  "@eventsRsvpNotGoingBody": {
+    "description": "Body of the Not going dialog on an event's screen. Says three things, and a translation must keep all three: the games the user nominated for the event are paused, the games they offered to bring are taken off each of the event's dates that hasn't happened yet, and answering Going or Maybe later does not put the games they offered back on those dates. 'Those games' in the last sentence are the offered games only: the paused nominations do come back when the user answers Going or Maybe."
+  },
+  "eventsRsvpNotGoingKeep": "Keep my answer",
+  "@eventsRsvpNotGoingKeep": {
+    "description": "Button in the Not going dialog on an event's screen that closes it, sends nothing, and leaves the user's answer as it was. Deliberately not 'Cancel', which here could read as cancelling the event."
+  },
+  "eventsRsvpNotGoingConfirm": "Not going",
+  "@eventsRsvpNotGoingConfirm": {
+    "description": "Confirm button of the Not going dialog on an event's screen, shown in the error colour. Sends the user's answer that they are not going, with the consequences the dialog's body describes."
+  },
+  "eventsRsvpNoteTitle": "Your note",
+  "@eventsRsvpNoteTitle": {
+    "description": "Title of the dialog on an event's screen where the user writes, changes or removes the short note that goes with their answer to the invitation, such as 'Running late'."
+  },
+  "eventsRsvpNoteBody": "Everyone who can see who's coming can read it.",
+  "@eventsRsvpNoteBody": {
+    "description": "Body of the note dialog on an event's screen, above the note's field: the note shows on the user's row in the who's-coming section, to everyone allowed to see that section, such as the host and the others invited."
+  },
+  "eventsRsvpNoteLabel": "Note",
+  "@eventsRsvpNoteLabel": {
+    "description": "Label of the text field in the note dialog on an event's screen, holding the note that goes with the user's answer. Left empty, saving removes the note."
+  },
+  "eventsRsvpNoteKeep": "Cancel",
+  "@eventsRsvpNoteKeep": {
+    "description": "Button in the note dialog on an event's screen that closes it and leaves the note as it was."
+  },
+  "eventsRsvpNoteSave": "Save note",
+  "@eventsRsvpNoteSave": {
+    "description": "Button in the note dialog on an event's screen that sends the note, with the user's current answer, to the server. An empty field removes the note."
+  },
+  "eventsRsvpSaved": "Your answer is saved.",
+  "@eventsRsvpSaved": {
+    "description": "Banner on an event's screen once the server has saved the user's answer to the invitation (Going, Maybe or Not going) or the note that goes with it."
+  },
+  "eventsRsvpGone": "You're no longer on this event, or it was deleted.",
+  "@eventsRsvpGone": {
+    "description": "Banner on an event's screen when sending the user's answer found neither the event nor the user's place on it: the event was deleted, or someone removed the user from it, perhaps on another device. The server doesn't say which, and the screen reads the event again, which shows which. A warning, not an error."
+  },
+  "eventsRsvpRefused": "You can't answer for this event any more.",
+  "@eventsRsvpRefused": {
+    "description": "Banner on an event's screen when the server refused the user's answer to the invitation: they are no longer allowed to answer, for example because their role on the event changed on another device. The screen reads the event again."
+  },
+  "eventsRsvpChanged": "This event changed before your answer went through. Check it below before trying again.",
+  "@eventsRsvpChanged": {
+    "description": "Banner on an event's screen when the user's answer to the invitation wasn't sent or was turned down because the event had changed since the screen showed it: for example, it was cancelled or archived, or the user was taken off it, on another device while the Not going or note dialog was open. The screen may be reading the event again as it shows, and the copy must not say the event below is up to date. A warning, not an error."
+  },
+  "eventsRsvpFailed": "An error occurred while sending your answer. You may need to try again.",
+  "@eventsRsvpFailed": {
+    "description": "Banner on an event's screen when sending the user's answer to the invitation, or their note, ended without an answer that says what happened, most often because there was no connection. It may or may not have been saved, so the copy must not say it wasn't."
+  },
+  "eventsRsvpFailedUnexpected": "Something went wrong. Check your answer below before trying again.",
+  "@eventsRsvpFailedUnexpected": {
+    "description": "Banner on an event's screen when sending the user's answer to the invitation, or their note, failed for any reason other than the connection: the server rejected it, the server answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. An answer the app could not read may follow one that was saved, and the screen reads the event again, so the copy must not say it wasn't saved. Unlike the connection failure it does not invite a retry straight away."
+  },
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {
     "description": "Heading of the section of an event's screen that will list the games planned for it."

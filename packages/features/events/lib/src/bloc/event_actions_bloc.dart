@@ -182,6 +182,15 @@ typedef _Write = Future<void> Function();
 /// Closing stops none of the declines, as it stops neither request of a
 /// cancel then remove: the person asked for them with the confirm.
 ///
+/// ## The viewer's RSVP
+///
+/// An RSVP (#508) runs one request through the same runner as a status
+/// write, and ends as one does: the same answers, the same read after. The
+/// returned attendee is cached by [EventRepository.cacheAttendee] before
+/// the outcome, so the read it starts doesn't meet an older copy of the
+/// viewer's answer. A 404 means the event or the viewer's row, and the read
+/// tells which.
+///
 /// ## The session
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
@@ -231,6 +240,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     on<EventReopenRequested>(_onReopenRequested);
     on<EventArchiveRequested>(_onArchiveRequested);
     on<EventUnarchiveRequested>(_onUnarchiveRequested);
+    on<EventRsvpRequested>(_onRsvpRequested);
     on<EventWriteDropped>(_onWriteDropped);
     on<EventActionOutcomeDismissed>(_onOutcomeDismissed);
   }
@@ -408,6 +418,24 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         reason: event.reason,
       ),
       _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onRsvpRequested(
+    EventRsvpRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendWrite(
+      EventAction.rsvp,
+      'RSVP',
+      () => _remote.updateAttendeeStatus(
+        event.eventId,
+        event.attendeeId,
+        event.status,
+        notes: event.notes,
+      ),
+      _repository.cacheAttendee,
     ),
   );
 

@@ -19,8 +19,9 @@ abstract class EventDetail with _$EventDetail {
 
     /// What `EventRepository.getCurrentUserAttendance` answers: null where
     /// no cached roster names the current user. That is not the same as not
-    /// attending, since only a detail read carries a roster until
-    /// backend#867 puts the caller's attendance on every list row.
+    /// attending, since only a detail read caches a roster. The answer a list
+    /// row carries (#667) updates the user's row on a cached roster but adds
+    /// none, and is kept for `EventListItem.attendance` to read.
     EventAttendee? attendance,
   }) = _EventDetail;
 }

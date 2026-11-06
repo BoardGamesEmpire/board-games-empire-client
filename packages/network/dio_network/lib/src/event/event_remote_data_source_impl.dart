@@ -383,6 +383,45 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<EventAttendee> updateAttendeeStatus(
+    String eventId,
+    String attendeeId,
+    EventParticipationStatus status, {
+    String? notes,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+    if (status == EventParticipationStatus.unknown) {
+      // It stands for a name this client could not read, and has none to send.
+      throw ArgumentError.value(
+        status,
+        'status',
+        'has no wire name, so it cannot be sent',
+      );
+    }
+
+    const action = 'RSVP';
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.patch<String>(
+        '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}'
+        '/status',
+        options: _plainBody,
+        // A note left out is kept by the server, and an empty one clears it.
+        data: {'status': status.toWire(), 'notes': ?notes},
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapAttendee(_attendeeObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
@@ -462,11 +501,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// list embeds.
   ///
   /// No `attendees` key is read. The list serves no roster, so the snapshot
-  /// says it was not asked, whatever a row carries.
+  /// says it was not asked, whatever a row carries. The caller's own
+  /// `attendance` is read (#667).
   static EventSnapshot _mapListRow(Map<String, dynamic> json) => EventSnapshot(
     event: _mapEvent(json),
     occurrences: _mapOccurrences(json['occurrences']),
     policy: _mapPolicy(json['policy']),
+    attendance: _mapAttendance(json['attendance']),
   );
 
   /// Maps the detail's event: the parts of a list row, and the roster.
@@ -484,6 +525,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       field: 'attendees',
       item: _mapAttendee,
     ),
+    attendance: _mapAttendance(json['attendance']),
   );
 
   /// Reads the event out of a detail body, `{ "event": { ... } }`.
@@ -502,6 +544,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       throw const FormatException('response is missing an "occurrence" object');
     }
     return occurrence;
+  }
+
+  /// Reads the attendee out of an RSVP's body, `{ "attendee": { ... } }`.
+  static Map<String, dynamic> _attendeeObject(Map<String, dynamic> body) {
+    final attendee = body['attendee'];
+    if (attendee is! Map<String, dynamic>) {
+      throw const FormatException('response is missing an "attendee" object');
+    }
+    return attendee;
   }
 
   /// Reads the vote out of a vote's body, `{ "vote": { ... } }`.
@@ -624,6 +675,34 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       rsvpDate: _dateOrNull(json['rsvpDate']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  /// Reads the caller's own answer off a list or detail row, `{ attendeeId,
+  /// status, role, rsvpDate }`.
+  ///
+  /// Null, or a missing key, is a caller with no attendee row, and so is every
+  /// browse row. `role` here is the role's name, a string, not the roster's
+  /// nested projection that [_mapRole] reads. A shape that is wrong is a
+  /// contract breach and throws, rather than passing for "no answer".
+  static EventAttendance? _mapAttendance(Object? raw) {
+    if (raw == null) return null;
+    if (raw is! Map<String, dynamic>) {
+      throw FormatException(
+        'event "attendance" is ${raw.runtimeType}, expected an object or null',
+      );
+    }
+    final role = raw['role'];
+    if (role != null && role is! String) {
+      throw FormatException(
+        'attendance "role" is ${role.runtimeType}, expected a role name or null',
+      );
+    }
+    return EventAttendance(
+      attendeeId: raw['attendeeId'] as String,
+      status: EventParticipationStatus.fromWire(raw['status'] as String),
+      role: role == null ? null : EventRole.fromWire(role as String),
+      rsvpDate: _dateOrNull(raw['rsvpDate']),
     );
   }
 

@@ -1754,4 +1754,169 @@ void main() {
       verify(() => repository.cacheEventRow(first)).called(1);
     });
   });
+
+  group('an RSVP (#508)', () {
+    final answered = attendance(EventParticipationStatus.notAttending);
+
+    setUpAll(() => registerFallbackValue(answered));
+
+    setUp(() {
+      when(() => repository.cacheAttendee(any())).thenAnswer((_) async {
+        calls.add('cache');
+        return true;
+      });
+    });
+
+    /// A server whose RSVPs answer as [answer] does.
+    FakeEventRemote rsvping(
+      FutureOr<EventAttendee> Function(RsvpRequest request) answer,
+    ) => FakeEventRemote.detail(
+      (_) => throw UnimplementedError('the actions read nothing'),
+      rsvp: (request) {
+        calls.add('rsvp');
+        return answer(request);
+      },
+    );
+
+    EventActionsState ended(EventActionResult result, {Object? error}) =>
+        EventActionsState(
+          outcome: EventActionOutcome(
+            action: EventAction.rsvp,
+            result: result,
+            error: error,
+          ),
+        );
+
+    const request = EventRsvpRequested(
+      'e-1',
+      'att-me',
+      EventParticipationStatus.notAttending,
+    );
+
+    test('is sent once the session says yes, cached, and ends done', () async {
+      final remote = rsvping((_) async => answered);
+      final bloc = build(remote, confirmSession: answering([true]));
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      bloc.add(request);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+      await pumpEventQueue();
+
+      expect(remote.rsvps, [
+        (
+          eventId: 'e-1',
+          attendeeId: 'att-me',
+          status: EventParticipationStatus.notAttending,
+          notes: null,
+        ),
+      ]);
+      verify(() => repository.cacheAttendee(answered)).called(1);
+      expect(calls, ['session', 'rsvp', 'cache']);
+      expect(states, [busy, ended(EventActionResult.done)]);
+      expect(state.outcome!.rereads, isTrue);
+    });
+
+    test('a note goes out with the answer', () async {
+      final remote = rsvping((_) async => answered);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(
+        const EventRsvpRequested(
+          'e-1',
+          'att-me',
+          EventParticipationStatus.maybe,
+          notes: '',
+        ),
+      );
+      await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(remote.rsvps.single.notes, '');
+      expect(remote.rsvps.single.status, EventParticipationStatus.maybe);
+    });
+
+    test('a session that says no sends nothing and ends failed, with no '
+        'error', () async {
+      final remote = rsvping((_) async => answered);
+      final bloc = build(remote, confirmSession: () async => false);
+      addTearDown(bloc.close);
+
+      bloc.add(request);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(state, ended(EventActionResult.failed));
+      expect(state.outcome!.error, isNull);
+      expect(state.outcome!.rereads, isFalse);
+      expect(remote.rsvps, isEmpty);
+      verifyNever(() => repository.cacheAttendee(any()));
+    });
+
+    final failures = <(String, Object, EventActionResult, bool)>[
+      ('404 ends gone', _gone, EventActionResult.gone, true),
+      ('403 ends refused', _refused, EventActionResult.refused, true),
+      (
+        'a 400 conflict ends changed',
+        _conflict,
+        EventActionResult.changed,
+        true,
+      ),
+      (
+        'a network failure ends failed',
+        _offline,
+        EventActionResult.failed,
+        false,
+      ),
+    ];
+    for (final (name, error, result, rereads) in failures) {
+      test('$name, with the error', () async {
+        final bloc = build(rsvping((_) async => throw error));
+        addTearDown(bloc.close);
+
+        bloc.add(request);
+        final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+        expect(state, ended(result, error: error));
+        expect(state.outcome!.rereads, rereads);
+        verifyNever(() => repository.cacheAttendee(any()));
+      });
+    }
+
+    test('while another request is out is dropped', () async {
+      final release = Completer<EventAttendee>();
+      final remote = rsvping((_) => release.future);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc
+        ..add(request)
+        ..add(
+          const EventRsvpRequested(
+            'e-1',
+            'att-me',
+            EventParticipationStatus.attending,
+          ),
+        );
+      await pumpEventQueue();
+      expect(remote.rsvps, hasLength(1));
+      release.complete(answered);
+      await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(remote.rsvps, hasLength(1));
+    });
+
+    test('a cache write that throws still ends done, and is logged', () async {
+      when(() => repository.cacheAttendee(any()))
+          .thenAnswer((_) async => throw StateError('closed'));
+      final bloc = build(rsvping((_) async => answered));
+      addTearDown(bloc.close);
+
+      bloc.add(request);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+      await pumpEventQueue();
+
+      expect(state, ended(EventActionResult.done));
+      verifyWarnings(1);
+    });
+  });
 }

@@ -225,7 +225,7 @@ void main() {
         item(
           'e-known',
           occurrences: [confirmed('o', day(24))],
-          attendance: attendance(EventParticipationStatus.attending),
+          attendance: listAttendance(EventParticipationStatus.attending),
         ),
         item('e-unknown', occurrences: [confirmed('o', day(25))]),
       ]);
@@ -245,7 +245,7 @@ void main() {
         item(
           'e-no',
           occurrences: [confirmed('o', day(24))],
-          attendance: attendance(EventParticipationStatus.notAttending),
+          attendance: listAttendance(EventParticipationStatus.notAttending),
         ),
       ]);
 
@@ -334,7 +334,7 @@ void main() {
             location: 'Back room',
             householdId: 'h-1',
             occurrences: [confirmed('o', day(24))],
-            attendance: attendance(EventParticipationStatus.attending),
+            attendance: listAttendance(EventParticipationStatus.attending),
           ),
           item('e-bare', occurrences: [confirmed('o', day(25))]),
         ],
