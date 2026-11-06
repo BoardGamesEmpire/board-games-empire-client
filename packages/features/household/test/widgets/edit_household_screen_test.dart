@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -93,8 +94,14 @@ void main() {
 
   tearDown(() => unawaited(members.close()));
 
-  Widget harness() => MaterialApp(
-    theme: BgeTheme.light(),
+  Widget harness({ThemeData? theme, TextScaler? textScaler}) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: EditHouseholdScreen(
@@ -325,5 +332,159 @@ void main() {
 
     expect(find.text('This household no longer exists.'), findsOneWidget);
     expect(refreshes, 1);
+  });
+
+  group('accessibility audit', () {
+    /// The screen over the fakes as [seed] leaves them. `build` runs in the
+    /// test body before the first read, so the state is chosen here, not in
+    /// `arrange`.
+    Widget Function(ThemeData, TextScaler) screenWith([
+      void Function()? seed,
+    ]) => (theme, textScaler) {
+      seed?.call();
+      return harness(theme: theme, textScaler: textScaler);
+    };
+
+    final build = screenWith();
+
+    Finder submit() => find.byKey(EditHouseholdForm.submitButtonKey);
+
+    Future<void> rejectBlankName(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(EditHouseholdForm.nameFieldKey), '');
+      await tester.ensureVisible(submit());
+      await tester.tap(submit());
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a name for your household.'), findsOneWidget);
+    }
+
+    Future<void> failSave(WidgetTester tester) async {
+      remote.onUpdate = (_, _) async =>
+          throw const HouseholdRemoteTransientException('down');
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(EditHouseholdForm.nameFieldKey),
+        'Annex',
+      );
+      await save(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(EditHouseholdScreen.errorKey), findsOneWidget);
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the screen.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+
+      final form = find.byType(EditHouseholdForm);
+      expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
+      expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
+    });
+
+    // The read never answers, so the spinner never stops.
+    auditScreen(
+      'loading',
+      build: screenWith(() {
+        final read = Completer<Household?>();
+        addTearDown(() => read.complete(_household()));
+        when(() => repository.getHousehold(_id)).thenAnswer((_) => read.future);
+      }),
+      arrange: (tester) async {
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byType(EditHouseholdForm), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: build,
+      arrange: scrollPageToEnd,
+    );
+
+    // At 390dp the end of the page leaves the description field a sliver high
+    // under the top edge, which Flutter's tap-target check fails at its
+    // clipped size (#50); the scrolled calls skip that width. These audit
+    // both states in a view with nothing below the fold.
+    auditScreen(
+      'ready, whole page',
+      build: build,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'rejected submit, whole page',
+      build: build,
+      arrange: (tester) async {
+        await rejectBlankName(tester);
+        await useWholePage(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'not allowed',
+      build: screenWith(() => role = HouseholdRole.householdMember),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.text(_notAllowedCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'not yet synced',
+      build: screenWith(() => household = _household(isLocalOnly: true)),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.text(_notYetSyncedCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'not found',
+      build: screenWith(() => household = null),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.text(_notFoundCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen('rejected submit', build: build, arrange: rejectBlankName);
+
+    auditScreen(
+      'rejected submit, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await rejectBlankName(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen('failure', build: build, arrange: failSave);
+
+    auditScreen(
+      'failure, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await failSave(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
   });
 }
