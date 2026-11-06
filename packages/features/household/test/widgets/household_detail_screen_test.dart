@@ -106,6 +106,7 @@ void main() {
     void Function(BuildContext context, String householdId)? onEdit,
     void Function(BuildContext context, String householdId)? onInvite,
     void Function(BuildContext context, String householdId)? onNewEvent,
+    Widget Function(BuildContext context, String householdId)? eventsSection,
     HouseholdMemberRemoteDataSource? members,
     Future<void> Function()? onMembershipChanged,
     ValueListenable<bool>? offline,
@@ -143,6 +144,7 @@ void main() {
       onEdit: onEdit,
       onInvite: onInvite,
       onNewEvent: onNewEvent,
+      eventsSection: eventsSection,
       members: members,
       onMembershipChanged: onMembershipChanged,
     ),
@@ -1381,6 +1383,211 @@ void main() {
     });
   });
 
+  group('the Events block (#503)', () {
+    const sectionKey = Key('section');
+    late List<String> built;
+
+    setUp(() => built = []);
+
+    Widget section(BuildContext context, String householdId) {
+      built.add(householdId);
+      return const Placeholder(key: sectionKey, fallbackHeight: 40);
+    }
+
+    Widget withSection({
+      void Function(BuildContext, String)? onInvite,
+      void Function(BuildContext, String)? onNewEvent,
+    }) => harness(
+      eventsSection: section,
+      onInvite: onInvite,
+      onNewEvent: onNewEvent ?? (_, _) {},
+    );
+
+    testWidgets('passes the household id to the events section, after the '
+        'roster and before Leave', (tester) async {
+      await tester.pumpWidget(
+        harness(
+          eventsSection: section,
+          members: _MockMemberRemote(),
+          onMembershipChanged: () async {},
+          onBack: (_) {},
+        ),
+      );
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdMember)],
+      );
+
+      expect(built, everyElement(_id));
+      expect(built, isNotEmpty);
+      expect(find.byKey(sectionKey), findsOneWidget);
+      expect(find.text('Events'), findsOneWidget);
+      final top = tester.getTopLeft(find.byKey(sectionKey)).dy;
+      expect(
+        top,
+        greaterThan(
+          tester
+              .getBottomLeft(find.byKey(HouseholdDetailScreen.memberCountKey))
+              .dy,
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(HouseholdDetailScreen.leaveKey)).dy,
+        greaterThan(tester.getBottomLeft(find.byKey(sectionKey)).dy),
+      );
+    });
+
+    testWidgets('the heading is a header', (tester) async {
+      await tester.pumpWidget(withSection());
+      await settleWith(tester);
+
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdDetailScreen.eventsHeadingKey),
+      );
+      expect(semantics.flagsCollection.isHeader, isTrue);
+    });
+
+    testWidgets('New event sits under the section, with the same gate', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withSection());
+      await settleWith(tester);
+
+      expect(
+        tester.getTopLeft(find.byKey(HouseholdDetailScreen.newEventKey)).dy,
+        greaterThan(tester.getBottomLeft(find.byKey(sectionKey)).dy),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(withSection());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdGuest)],
+      );
+
+      expect(find.byKey(sectionKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.newEventKey), findsNothing);
+    });
+
+    testWidgets("no section for a household the server doesn't know yet", (
+      tester,
+    ) async {
+      await tester.pumpWidget(withSection());
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(isLocalOnly: true),
+      );
+
+      expect(find.byKey(sectionKey), findsNothing);
+      expect(find.byKey(HouseholdDetailScreen.eventsHeadingKey), findsNothing);
+      expect(built, isEmpty);
+    });
+
+    testWidgets("a reconcile builds a new section for the server's id", (
+      tester,
+    ) async {
+      String? reconciledTo;
+      when(() => repository.reconciledHouseholdId(_id))
+          .thenAnswer((_) => reconciledTo);
+      status.finished(HydrateOutcome.complete);
+      var disposed = 0;
+      await tester.pumpWidget(
+        harness(
+          eventsSection: (context, id) {
+            built.add(id);
+            return _Probe(key: sectionKey, onDispose: () => disposed++);
+          },
+        ),
+      );
+      await settleWith(tester);
+      expect(built, [_id]);
+
+      reconciledTo = 'h-srv';
+      members.add(const []);
+      await tester.pump();
+      households.add([_household('h-srv')]);
+      await tester.pump();
+      members.add([_member('u-me')]);
+      await tester.pumpAndSettle();
+
+      expect(built, contains('h-srv'));
+      expect(disposed, 1);
+      expect(find.byKey(sectionKey), findsOneWidget);
+    });
+
+    testWidgets('sits beside the invites entry', (tester) async {
+      // Both are keyed on the household's id, in the same Column.
+      final invites = FakeHouseholdInviteRemote()
+        ..onFetchHouseholdInvites = (_, _, _, limit) async =>
+            pageOf(const [], limit: limit, total: 2, hasMore: true);
+      await tester.pumpWidget(
+        harness(
+          eventsSection: section,
+          invites: invites,
+          onOpenInvites: (_, _) {},
+        ),
+      );
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsOneWidget);
+      expect(find.byKey(sectionKey), findsOneWidget);
+    });
+
+    testWidgets('without a section the screen is as before', (tester) async {
+      await tester.pumpWidget(
+        harness(onInvite: (_, _) {}, onNewEvent: (_, _) {}),
+      );
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(
+          settings: const HouseholdSettings(
+            memberInvitePolicy: MemberInvitePolicy.direct,
+          ),
+        ),
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.eventsHeadingKey), findsNothing);
+      expect(find.text('Events'), findsNothing);
+      expect(
+        tester.getTopLeft(find.byKey(HouseholdDetailScreen.newEventKey)).dy,
+        greaterThan(
+          tester.getBottomLeft(find.byKey(HouseholdDetailScreen.inviteKey)).dy,
+        ),
+      );
+    });
+
+    testWidgets('lays out at 320dp and 2.0 text', (tester) async {
+      tester.view.physicalSize = const Size(320, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        harness(
+          textScaler: const TextScaler.linear(2),
+          onNewEvent: (_, _) {},
+          eventsSection: (_, _) => const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Saturday night marathon of very long board games'),
+              Text('Sunday afternoon gathering with an extremely long title'),
+            ],
+          ),
+        ),
+      );
+      await settleWith(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(HouseholdDetailScreen.eventsHeadingKey),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('the Edit entry (#476)', () {
     late List<String> edited;
 
@@ -2605,4 +2812,24 @@ void main() {
       });
     });
   });
+}
+
+class _Probe extends StatefulWidget {
+  const _Probe({required this.onDispose, super.key});
+
+  final VoidCallback onDispose;
+
+  @override
+  State<_Probe> createState() => _ProbeState();
+}
+
+class _ProbeState extends State<_Probe> {
+  @override
+  void dispose() {
+    widget.onDispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: 40);
 }

@@ -126,15 +126,23 @@ import '../sync/household_hydration_status.dart';
 /// It is left out for a household the server does not know yet, and where
 /// the composition passes no [onInvite].
 ///
-/// ## New event (#499)
+/// ## Events (#503)
 ///
-/// To an owner, an admin or a member, as the role table allows (#483), the
-/// screen offers a New event row, after the Invite row. It opens the form for
-/// creating an event with this household picked. A guest lacks
-/// `create:event:household`, so the row is left out for a guest, and for a
-/// role this app does not recognise. It is left out for a household the
-/// server does not know yet, whose id it would not recognise, and where the
-/// composition passes no [onNewEvent].
+/// Where the composition passes an [eventsSection], a household the server
+/// knows shows an Events block to every role, guests included: a heading,
+/// the section the composition builds for this household, and under it the
+/// New event row. The household package doesn't depend on the events
+/// package, so the section arrives as a builder. It is left out for a
+/// household the server does not know yet, and where the composition passes
+/// none; the New event row then stays after the Invite row.
+///
+/// The New event row (#499) goes to an owner, an admin or a member, as the
+/// role table allows (#483), under the section or, without one, after the
+/// Invite row. It opens the form for creating an event with this household
+/// picked. A guest lacks `create:event:household`, so the row is left out for
+/// a guest, and for a role this app does not recognise. It is left out for a
+/// household the server does not know yet, whose id it would not recognise,
+/// and where the composition passes no [onNewEvent].
 ///
 /// ## Not-found is an answer, not an error
 ///
@@ -156,10 +164,14 @@ class HouseholdDetailScreen extends StatelessWidget {
     this.onEdit,
     this.onInvite,
     this.onNewEvent,
+    this.eventsSection,
     this.members,
     this.onMembershipChanged,
     super.key,
   });
+
+  /// Key on the Events heading (#503).
+  static const Key eventsHeadingKey = Key('household_detail.events_heading');
 
   /// Key on the first-read spinner.
   static const Key loadingKey = Key('household_detail.loading');
@@ -303,6 +315,12 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// or a member. Null leaves the New event row out (#499).
   final void Function(BuildContext context, String householdId)? onNewEvent;
 
+  /// Builds the household's events section, with the household's current id
+  /// (#503). Null leaves the Events block out, and the New event row where it
+  /// was.
+  final Widget Function(BuildContext context, String householdId)?
+  eventsSection;
+
   /// The per-server member client, for changing a member's role, removing
   /// them or making them owner (#480, #478), and for leaving the household
   /// (#479). Null, or a null [onMembershipChanged], leaves every row
@@ -381,6 +399,7 @@ class HouseholdDetailScreen extends StatelessWidget {
         onEdit: onEdit,
         onInvite: onInvite,
         onNewEvent: onNewEvent,
+        eventsSection: eventsSection,
         hasMemberActionsBloc: memberActions != null,
       ),
     );
@@ -405,6 +424,7 @@ class _HouseholdDetailView extends StatelessWidget {
     this.onEdit,
     this.onInvite,
     this.onNewEvent,
+    this.eventsSection,
     this.hasMemberActionsBloc = false,
   });
 
@@ -418,6 +438,12 @@ class _HouseholdDetailView extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onEdit;
   final void Function(BuildContext context, String householdId)? onInvite;
   final void Function(BuildContext context, String householdId)? onNewEvent;
+
+  /// Builds the household's events section, with the household's current id
+  /// (#503). Null leaves the Events block out, and the New event row where it
+  /// was.
+  final Widget Function(BuildContext context, String householdId)?
+  eventsSection;
 
   /// Whether a [HouseholdMemberActionsBloc] and a [LeaveHouseholdBloc] are
   /// provided above, which is whether the composition passed a member
@@ -469,6 +495,7 @@ class _HouseholdDetailView extends StatelessWidget {
             onEdit: onEdit,
             onInvite: onInvite,
             onNewEvent: onNewEvent,
+            eventsSection: eventsSection,
             hasMemberActionsBloc: hasMemberActionsBloc,
           ),
         };
@@ -574,6 +601,7 @@ class _ReadyPage extends StatelessWidget {
     this.onEdit,
     this.onInvite,
     this.onNewEvent,
+    this.eventsSection,
     this.hasMemberActionsBloc = false,
   });
 
@@ -592,6 +620,12 @@ class _ReadyPage extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onInvite;
   final void Function(BuildContext context, String householdId)? onNewEvent;
 
+  /// Builds the household's events section, with the household's current id
+  /// (#503). Null leaves the Events block out, and the New event row where it
+  /// was.
+  final Widget Function(BuildContext context, String householdId)?
+  eventsSection;
+
   /// Whether a [HouseholdMemberActionsBloc] and a [LeaveHouseholdBloc] are
   /// provided above.
   final bool hasMemberActionsBloc;
@@ -607,6 +641,7 @@ class _ReadyPage extends StatelessWidget {
     final edit = onEdit;
     final invite = onInvite;
     final newEvent = onNewEvent;
+    final eventsSection = this.eventsSection;
     final back = onBack;
     // Empty for a household the server does not know yet, so none of the
     // controls below is offered for one.
@@ -679,8 +714,29 @@ class _ReadyPage extends StatelessWidget {
               onTap: () => invite(context, state.household.id),
             ),
           ],
-          // After the Invite row, for an owner, an admin or a member: a guest
-          // may not create an event here (#499).
+          // Every role sees the events of a household the server knows (#503).
+          if (eventsSection != null && !state.household.isLocalOnly) ...[
+            const BgeGap.lg(),
+            Semantics(
+              header: true,
+              child: Text(
+                key: HouseholdDetailScreen.eventsHeadingKey,
+                l10n.householdDetailEvents,
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+            const BgeGap.xs(),
+            // Keyed on the id, which a reconcile changes (#306): the events
+            // belong to the household the server knows by that id. Tagged,
+            // since the invites entry in this Column is keyed on the id too.
+            KeyedSubtree(
+              key: ValueKey<(String, String)>(('events', state.household.id)),
+              child: eventsSection(context, state.household.id),
+            ),
+          ],
+          // Under the events, or after the Invite row where there is no
+          // section, for an owner, an admin or a member: a guest may not
+          // create an event here (#499).
           if (newEvent != null &&
               actions.contains(HouseholdAction.createEvent)) ...[
             const BgeGap.lg(),
