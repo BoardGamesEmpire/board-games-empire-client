@@ -1577,7 +1577,11 @@ class GameCollectionRepositoryImpl
     title: game.title,
     subtitle: game.subtitle,
     platformName: platformGame.platformName,
-    thumbnail: platformGame.thumbnail ?? game.thumbnail,
+    thumbnail:
+        platformGame.thumbnail ??
+        platformGame.image ??
+        game.thumbnail ??
+        game.image,
   );
 
   GameCollectionsTableCompanion _modelToCompanion(GameCollection m) =>

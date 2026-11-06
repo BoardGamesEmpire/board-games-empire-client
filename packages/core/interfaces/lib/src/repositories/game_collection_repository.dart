@@ -552,7 +552,8 @@ abstract class GameCollectionRepository {
   /// the join never drops a row.
   ///
   /// The thumbnail is resolved here, once: the platform game's own
-  /// thumbnail when it has one, otherwise the game's. That is the
+  /// picture when it has one, otherwise the game's, each one's thumbnail
+  /// before its full image (#709). The platform game first is the
   /// fallback [PlatformGame] states for all its overrides.
   ///
   /// Ordered by title, ignoring case, then by entry id, so entries with

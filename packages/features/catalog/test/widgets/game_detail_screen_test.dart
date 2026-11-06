@@ -637,6 +637,29 @@ void main() {
       expect(adds, isEmpty);
     });
 
+    testWidgets("an owned copy's picture falls back through each one's full "
+        'image (#709)', (tester) async {
+      // Steam has only a full image of its own, which beats the game's
+      // thumbnail; Tabletop has none, and the game has only a full image.
+      await showOwning(
+        tester,
+        [entry('pg_1', GameMedium.physical), entry('pg_2', GameMedium.digital)],
+        platforms: [
+          tabletop,
+          steam.copyWith(thumbnail: null, image: 'https://example.com/s.png'),
+        ],
+        game: catan.copyWith(image: 'https://example.com/catan_full.png'),
+      );
+
+      await tapChip(tester, 'pg_1');
+      await tapChip(tester, 'pg_2');
+
+      expect(openedOwned.map((items) => items.single.thumbnail), [
+        'https://example.com/catan_full.png',
+        'https://example.com/s.png',
+      ]);
+    });
+
     testWidgets('tapping an unowned chip opens the add with that platform '
         'chosen', (tester) async {
       await showOwning(tester, [entry('pg_1', GameMedium.physical)]);

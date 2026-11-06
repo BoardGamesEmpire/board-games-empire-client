@@ -343,7 +343,11 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
               title: game.title,
               subtitle: game.subtitle,
               platformName: name,
-              thumbnail: platformGame.thumbnail ?? game.thumbnail,
+              thumbnail:
+                  platformGame.thumbnail ??
+                  platformGame.image ??
+                  game.thumbnail ??
+                  game.image,
             ),
         ]),
       );
