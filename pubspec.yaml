@@ -73,6 +73,9 @@ dev_dependencies:
   # SHA-256 for tool/fetch_web_assets.dart, which checks each drift
   # runtime file against a committed digest before placing it (#418).
   crypto: ^3.0.7
+  # tool/test runs check_sdk_constraints.dart over fixture workspaces and
+  # pins its exit codes (#201).
+  test: ^1.31.1
   # tool/derive_palette.dart shares the OKLCH hue math, the sRGB transfer
   # function and the ember/error separation floor with `Oklch` (#172). The
   # imported entry point is Flutter-free so `dart run` can load it. `path:`

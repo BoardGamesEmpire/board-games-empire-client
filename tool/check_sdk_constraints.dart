@@ -242,6 +242,11 @@ void main(List<String> args) {
               '$path: could not locate a top-level `version:` line to '
               'rewrite — fix this one by hand',
             );
+          } else if (!_versionHolds(rewritten, expectedVersion)) {
+            unfixable.add(
+              '$path: rewriting `version:` did not leave '
+              '${_show(expectedVersion)} — fix this one by hand',
+            );
           } else {
             file.writeAsStringSync(rewritten);
             // The environment rewrite below starts from this text, so it
@@ -293,6 +298,11 @@ void main(List<String> args) {
         unfixable.add(
           '$path: could not locate a top-level `environment:` block to '
           'rewrite — fix this one by hand',
+        );
+      } else if (!_environmentHolds(rewritten, expectedSdk, wantFlutter)) {
+        unfixable.add(
+          '$path: rewriting `environment:` still left drift — fix this one '
+          'by hand',
         );
       } else {
         file.writeAsStringSync(rewritten);
@@ -432,6 +442,35 @@ void _checkPublishTo(String path, YamlMap pubspec, List<String> problems) {
 }
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';
+
+/// Whether [rewritten], a rewriter's output, parses and declares [sdk]
+/// and [flutter] as its environment, [flutter] null meaning no key.
+///
+/// `--fix` writes and claims a rewrite only after this re-read (#201).
+/// A rewriter that returned text still drifting, or text that no longer
+/// parses, would otherwise read as fixed, and the next plain check would
+/// fail on the tree `--fix` called clean.
+bool _environmentHolds(String rewritten, String sdk, String? flutter) {
+  final env = _parsePubspec(rewritten)?['environment'];
+  return env is YamlMap &&
+      env['sdk']?.toString() == sdk &&
+      env['flutter']?.toString() == flutter;
+}
+
+/// Whether [rewritten] parses and declares [version], the same re-read as
+/// [_environmentHolds] for the `version:` rewrite.
+bool _versionHolds(String rewritten, String version) =>
+    _parsePubspec(rewritten)?['version']?.toString() == version;
+
+/// [source] parsed, or null when it is not a YAML map.
+YamlMap? _parsePubspec(String source) {
+  try {
+    final yaml = loadYaml(source);
+    return yaml is YamlMap ? yaml : null;
+  } on YamlException {
+    return null;
+  }
+}
 
 /// Fixture tests for the rewriters ([_rewriteEnvironment],
 /// [_rewriteVersion]) and the manifest checks.
@@ -953,6 +992,54 @@ void _selfTest() {
       '\t<string>\$(FLUTTER_BUILD_NUMBER)</string>\n</dict>\n',
     ),
     <String>[],
+  );
+
+  expect(
+    'rewrite re-read: holds once both keys match',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n',
+      sdk,
+      flutter,
+    ),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: holds with no flutter key when none is wanted',
+    _environmentHolds('name: a\nenvironment:\n  sdk: ^3.12.0\n', sdk, null),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: refuses a rewrite that left drift',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n  flutter: ">=3.0.0"\n',
+      sdk,
+      flutter,
+    ),
+    false,
+  );
+
+  expect(
+    'rewrite re-read: refuses a rewrite that no longer parses',
+    _environmentHolds(
+      'name: a\nenvironment:\n  sdk: ^3.12.0\n flutter: [\n',
+      sdk,
+      flutter,
+    ),
+    false,
+  );
+
+  expect(
+    'rewrite re-read: version holds once it matches',
+    _versionHolds('name: a\nversion: 1.2.3+4\n', '1.2.3+4'),
+    true,
+  );
+
+  expect(
+    'rewrite re-read: refuses a version rewrite that left the old value',
+    _versionHolds('name: a\nversion: 1.2.3+3\n', '1.2.3+4'),
+    false,
   );
 
   if (failures > 0) {
