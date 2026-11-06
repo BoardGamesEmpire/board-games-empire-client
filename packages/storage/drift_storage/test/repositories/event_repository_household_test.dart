@@ -157,6 +157,140 @@ void main() {
     expect(items.single.attendance?.status, EventParticipationStatus.attending);
   });
 
+  group('with no attending row, the answer is kept on the household row', () {
+    const mine = EventAttendance(
+      attendeeId: 'att-a',
+      status: EventParticipationStatus.maybe,
+    );
+
+    Future<EventAttendance?> householdAnswer({
+      EventRepositoryImpl? repo,
+    }) async =>
+        (await (repo ?? a).watchHouseholdEventListItems('household-1').first)
+            .single
+            .attendance;
+
+    test(
+      'and the item carries it, without joining the attending list',
+      () async {
+        await cache('e-1', attendance: mine);
+
+        expect(await householdAnswer(), mine);
+        expect(await a.watchAttendingEventListItems().first, isEmpty);
+      },
+    );
+
+    test("over the user's row on a cached roster", () async {
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [testAttendee('att-a', userId: _kUserA)],
+        ),
+        source: EventAccessSource.read,
+      );
+      await cache('e-1', attendance: mine);
+
+      expect(await householdAnswer(), mine);
+    });
+
+    test('and a later list write of null clears it', () async {
+      await cache('e-1', attendance: mine);
+      await cache('e-1');
+
+      expect(await householdAnswer(), isNull);
+    });
+
+    test("a detail read's answer replaces it, null included", () async {
+      await cache('e-1', attendance: mine);
+      const going = EventAttendance(
+        attendeeId: 'att-a',
+        status: EventParticipationStatus.attending,
+      );
+
+      await a.cacheEvent(
+        testSnapshot('e-1', attendance: going),
+        source: EventAccessSource.read,
+      );
+      expect(await householdAnswer(), going);
+
+      await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+      expect(await householdAnswer(), isNull);
+    });
+
+    test("the attending list's answer replaces it, null included", () async {
+      await cache('e-1', attendance: mine);
+      const notGoing = EventAttendance(
+        attendeeId: 'att-a',
+        status: EventParticipationStatus.notAttending,
+      );
+
+      await a.cacheEvent(
+        testSnapshot('e-1', attendance: notGoing),
+        source: EventAccessSource.attending,
+      );
+      expect(await householdAnswer(), notGoing);
+
+      // The `attending` row's null is read past, so this shows only if the
+      // household row was cleared too.
+      await a.cacheEvent(
+        testSnapshot('e-1'),
+        source: EventAccessSource.attending,
+      );
+      expect(await householdAnswer(), isNull);
+    });
+
+    test("an RSVP's answer replaces it", () async {
+      await cache('e-1', attendance: mine);
+      final rsvp = testAttendee(
+        'att-a',
+        userId: _kUserA,
+      ).copyWith(status: EventParticipationStatus.notAttending);
+
+      expect(await a.cacheAttendee(rsvp), isTrue);
+
+      expect(await householdAnswer(), EventAttendance.fromAttendee(rsvp));
+    });
+
+    test("a roster's row replaces another user's", () async {
+      final b = repoFor(_kUserB);
+      await cache(
+        'e-1',
+        repo: b,
+        attendance: const EventAttendance(
+          attendeeId: 'att-b',
+          status: EventParticipationStatus.maybe,
+        ),
+      );
+      final rostered = testAttendee('att-b', userId: _kUserB);
+
+      await a.cacheEvent(
+        testSnapshot('e-1', attendees: [rostered]),
+        source: EventAccessSource.read,
+      );
+
+      expect(
+        await householdAnswer(repo: b),
+        EventAttendance.fromAttendee(rostered),
+      );
+    });
+
+    test('the attendance purge clears it, and keeps the row', () async {
+      await a.cacheEvent(
+        testSnapshot('e-1', attendance: mine),
+        source: EventAccessSource.attending,
+      );
+      await cache('e-1', attendance: mine);
+      final p = await a.purgeableAttendance();
+
+      expect(await a.purgeAttendanceAbsentFrom(const {}, purgeable: p), {
+        'e-1',
+      });
+
+      expect(await listed('household-1'), ['e-1']);
+      expect(await householdAnswer(), isNull);
+    });
+  });
+
   test('the purge removes absent rows of this household only', () async {
     await cache('e-1');
     await cache('e-2');
