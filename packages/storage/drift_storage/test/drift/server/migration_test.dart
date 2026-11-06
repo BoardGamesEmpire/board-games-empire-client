@@ -21,6 +21,7 @@ import 'generated/schema_v13.dart' as v13;
 import 'generated/schema_v14.dart' as v14;
 import 'generated/schema_v15.dart' as v15;
 import 'generated/schema_v16.dart' as v16;
+import 'generated/schema_v17.dart' as v17;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1464,4 +1465,78 @@ void main() {
       );
     },
   );
+
+  // Data-integrity coverage for v16 → v17 (#567): the step adds
+  // `event_access.roster_shown`, false until a detail read shows the user a
+  // roster. Rows cached before it must come through unchanged and read false.
+  test('v16 to v17 adds roster_shown, false on every existing row', () async {
+    await verifier.testWithDataIntegrity(
+      oldVersion: 16,
+      newVersion: 17,
+      createOld: v16.DatabaseAtV16.new,
+      createNew: v17.DatabaseAtV17.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v16.EventsData(
+            id: 'e_v16_1',
+            title: 'Game night',
+            createdById: 'user_v16_1',
+            householdId: 'hh_v16_1',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: '2024-01-15T10:30:00.000Z',
+            updatedAt: '2024-01-15T10:30:00.000Z',
+          ),
+        );
+        batch.insertAll(oldDb.eventAccess, const [
+          v16.EventAccessData(
+            userId: 'user_v16_1',
+            eventId: 'e_v16_1',
+            source: 'attending',
+            attendeeId: 'att_v16_1',
+            attendanceStatus: 'Attending',
+            attendanceRole: 'Participant',
+            rsvpDate: '2024-01-16T10:30:00.000Z',
+          ),
+          v16.EventAccessData(
+            userId: 'user_v16_1',
+            eventId: 'e_v16_1',
+            source: 'read',
+          ),
+        ]);
+      },
+      validateItems: (newDb) async {
+        expect(
+          await (newDb.select(
+            newDb.eventAccess,
+          )..orderBy([(t) => OrderingTerm.asc(t.source)])).get(),
+          const [
+            v17.EventAccessData(
+              userId: 'user_v16_1',
+              eventId: 'e_v16_1',
+              source: 'attending',
+              attendeeId: 'att_v16_1',
+              attendanceStatus: 'Attending',
+              attendanceRole: 'Participant',
+              rsvpDate: '2024-01-16T10:30:00.000Z',
+              rosterShown: 0,
+            ),
+            v17.EventAccessData(
+              userId: 'user_v16_1',
+              eventId: 'e_v16_1',
+              source: 'read',
+              rosterShown: 0,
+            ),
+          ],
+        );
+      },
+    );
+  });
 }

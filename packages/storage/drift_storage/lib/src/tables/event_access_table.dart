@@ -46,12 +46,31 @@ class EventAccessTable extends Table {
   /// Set only on `attending` rows, all four from one answer. Null on a row the
   /// list carried no answer for, or hasn't written since v15, and the list
   /// item then falls back to the user's own row on a cached roster. A detail
-  /// read that carries an answer writes it here where the row exists, and
-  /// adds none.
+  /// read, or a household's list row, that carries an answer writes it here
+  /// where the row exists, and adds none.
   TextColumn get attendeeId => text().nullable()();
   TextColumn get attendanceStatus => text().nullable()();
   TextColumn get attendanceRole => text().nullable()();
   DateTimeColumn get rsvpDate => dateTime().nullable()();
+
+  /// Whether this user's own detail read was shown the event's roster (#567):
+  /// true when it carried at least one attendee, false when it carried none.
+  ///
+  /// Set only on `read` rows, by a write under the `read` source: a detail
+  /// read, which is the one read that speaks for the roster, and the reconcile
+  /// of a queued create, which writes the server's copy by a read's rules. A
+  /// list row, which carries none, never touches it. A cached roster is served
+  /// to a user it names and to one whose `read` row has this set, so it covers
+  /// household members and staff without the client copying the server's role
+  /// table. A row written before v17 holds false until the user's next detail
+  /// read.
+  ///
+  /// The attendance purge also clears it, on the events it purges (#567): the
+  /// flag can't tell whether the server showed the roster because the user
+  /// attended, and the purge is the server saying they no longer do. A
+  /// household's purge leaves it, as a household's list says nothing of the
+  /// roster.
+  BoolColumn get rosterShown => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {userId, eventId, source};

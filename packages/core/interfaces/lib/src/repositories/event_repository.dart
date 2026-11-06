@@ -46,23 +46,25 @@ enum EventAccessSource {
 /// After the session ends the `Future` methods throw [StateError], and
 /// [watchAttendingEvents] streams close. [reconciledEventId] still answers.
 ///
-/// ## The roster, only to a user on it
+/// ## The roster, to whom the server showed it
 ///
 /// The roster is stored once per event the same way, and it holds other
 /// people's names, guests' names and their notes. The server shows an event's
-/// attendee list to its attendees, since every event role may read it, and
-/// to members of the event's household. Anyone else who may read the event,
+/// attendee list to its attendees, since every event role may read it, to
+/// members of the event's household, and to staff, through
+/// `read:public_content`. Anyone else who may read the event,
 /// such as a friend, a household guest or a public reader, is served an empty
 /// list (backend#560).
 ///
-/// [getEvent] serves a cached roster only to a user it names, and an empty
-/// list to everyone else, meaning what the server's empty list means: this
-/// user may not read it. Where no read has cached a roster, it answers null
-/// instead: not known. The rule deliberately consults only the roster for
-/// now, though `household_members` is cached in the same database, so a
-/// household member who doesn't attend reads an empty roster where the
-/// server would show them the list. So do staff, who read every roster on
-/// the server through `read:public_content`. #567 widens the rule.
+/// [getEvent] serves a cached roster to a user it names, and to one whose own
+/// detail read the server showed it to (#567), and an empty list to everyone
+/// else, meaning what the server's empty list means: this user may not read
+/// it. Where no read has cached a roster, it answers null instead: not known.
+/// The rule answers from what the server sent this user, not from the
+/// household roles cached in the same database, so it covers a household's
+/// members and staff alike. A detail read that carries a roster records that
+/// it was shown, and one that carries none clears it, so a role change takes
+/// effect the next time the detail is read.
 ///
 /// The list carries no roster, only each user's own answer (#667). That is
 /// kept with the user's own `attending` access, which no other user reads,
@@ -132,6 +134,10 @@ abstract class EventRepository {
   ///   removes the current user's own row from it when it is empty;
   /// - records [source] access for the current user, beside any access they
   ///   already have;
+  /// - for a detail read ([source] read), records on that access whether the
+  ///   server showed the user the roster: shown when `snapshot.attendees` is
+  ///   non-empty, not shown when it is empty, and unchanged when it is null
+  ///   (#567);
   /// - writes the current user's own answer, as "What each read may change"
   ///   above says. A list row ([source] attending) writes the answer it
   ///   carries onto their `attending` access, a null one included, and a
@@ -220,7 +226,11 @@ abstract class EventRepository {
   /// keeps the event readable, their row would still give
   /// [getCurrentUserAttendance] their old role and RSVP, and let [getEvent]
   /// show them the roster, though the server now serves them none. Every
-  /// other row on the roster stays.
+  /// other row on the roster stays. So does the `read` access, but its record
+  /// that the server showed them the roster is cleared (#567): the flag can't
+  /// tell whether they were shown it because they attended, so they read it
+  /// empty until their next detail read, which gives it back to a user the
+  /// server still shows it, such as a household member.
   ///
   /// An event left with no access row at all, from any user, is deleted with
   /// its occurrences, roster and policy, since no read can reach it.
@@ -276,14 +286,15 @@ abstract class EventRepository {
   /// read carries one.
   ///
   /// `attendees` keeps "not asked" apart from "may not read", as
-  /// [EventSnapshot.attendees] does (see "The roster, only to a user on it"
-  /// above):
+  /// [EventSnapshot.attendees] does (see "The roster, to whom the server
+  /// showed it" above):
   ///
   /// - null when no roster is cached for the event, as for one cached only
   ///   from the list: not known, so read the detail;
-  /// - empty when a roster is cached that doesn't name the current user,
-  ///   meaning what the server's empty roster means: they may not read it;
-  /// - the cached roster when it names them.
+  /// - empty when a roster is cached that neither names the current user nor
+  ///   was shown to them by their own detail read, meaning what the server's
+  ///   empty roster means: they may not read it;
+  /// - the cached roster when it names them or was shown to them.
   Future<EventSnapshot?> getEvent(String id);
 
   /// The current user's own row on the cached roster of [eventId], or null

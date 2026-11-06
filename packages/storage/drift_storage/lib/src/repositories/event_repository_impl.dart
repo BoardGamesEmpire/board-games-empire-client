@@ -20,7 +20,8 @@ import 'watch_disposal.dart';
 /// that brought it, and every read returns only events recorded for that
 /// user. So a user signed in to the same server on this device after another
 /// can't list or look up what the server sent only to the other. The roster
-/// is narrower still: [getEvent] serves it only to a user it names.
+/// is narrower still: [getEvent] serves it only to a user it names, or one
+/// whose own detail read the server showed it to (#567).
 ///
 /// The user is fixed at construction, as `GameRepositoryImpl`'s is. A page
 /// the hydrate writes after its session has ended, before the scope finishes
@@ -215,8 +216,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           if (s.policy case final policy?) _policyToCompanion(policy),
       ]);
 
-      // Both reads carry every occurrence, and the server hard-deletes one,
-      // so an empty list clears them.
+      // Every read, list, detail or household, carries all of an event's
+      // occurrences, and the server hard-deletes one, so an empty list
+      // clears them.
       b.deleteWhere(
         _db.eventOccurrencesTable,
         (t) => t.eventId.isIn(byId.keys),
@@ -341,6 +343,32 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                   t.eventId.equals(s.event.id) &
                   t.source.equals(eventAccessSourceAttending),
             );
+          }
+          // Whether the server showed this user the roster is a fact about
+          // their detail read alone. A household's list row carries
+          // `attendees: null`, which says nothing either way, so it leaves
+          // the flag as it was (#567).
+          if (source == EventAccessSource.read) {
+            if (rosters.isNotEmpty) {
+              b.update(
+                _db.eventAccessTable,
+                const EventAccessTableCompanion(rosterShown: Value(true)),
+                where: (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceRead) &
+                    t.eventId.isIn(rosters.keys),
+              );
+            }
+            if (refused.isNotEmpty) {
+              b.update(
+                _db.eventAccessTable,
+                const EventAccessTableCompanion(rosterShown: Value(false)),
+                where: (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceRead) &
+                    t.eventId.isIn(refused),
+              );
+            }
           }
       }
     });
@@ -735,6 +763,21 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // still lets them read the event, their old row would answer with
       // their role and RSVP, and pass the roster rule. Everyone else's rows
       // stay.
+      //
+      // And the flag on their `read` row (#567). It can't tell whether the
+      // server showed them the roster because they attended, and this purge
+      // is the server saying they no longer do, so the cache fails closed on
+      // other people's names. The detail screen reads on open, so a user the
+      // server still shows it, such as a household member, gets it back from
+      // that read. The household purge leaves the flag: a household's list
+      // says nothing of the roster.
+      await (_db.update(_db.eventAccessTable)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.source.equals(eventAccessSourceRead) &
+                t.eventId.isIn(purged),
+          ))
+          .write(const EventAccessTableCompanion(rosterShown: Value(false)));
       await (_db.delete(
         _db.eventAttendeesTable,
       )..where((t) => t.userId.equals(_userId) & t.eventId.isIn(purged))).go();
@@ -811,7 +854,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
 
       // Every source, where the purge removes `attending` alone. The list
       // speaks for a user's attendance and nothing else, but an event the
-      // server refuses this user by id is closed to them by either route.
+      // server refuses this user by id is closed to them by any of the three
+      // routes.
       // Theirs only: another user's access stays, and the event with it.
       await (_db.delete(
         _db.eventAccessTable,
@@ -1066,31 +1110,43 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   /// Whether every event read may return the `events` row [t]: one the
-  /// server sent this user, through either read. Rows cached only for other
-  /// users are hidden, because the server never sent them to this one.
+  /// server sent this user, through the list, a detail read or a household's
+  /// list. Rows cached only for other users are hidden, because the server
+  /// never sent them to this one.
   Expression<bool> _readableEvent($EventsTableTable t) =>
       t.id.isInQuery(_accessedEventIds());
 
   /// Whether a roster read may return the `event_attendees` row [t]: one on
-  /// a roster that names this user.
+  /// a roster that names this user, or on one this user's own detail read was
+  /// shown (#567).
   ///
   /// The rows are shared by every user signed in to this server on this
   /// device, and they hold other people's names and notes. The server shows
-  /// a roster to the event's attendees and to its household's members, and
-  /// an empty one to anyone else who may read the event (backend#560). This
-  /// gate deliberately consults only the roster for now, though
-  /// `household_members` is cached in the same database, so everyone the
-  /// roster doesn't name reads it empty, as the server's empty roster reads.
-  /// That includes a household member who doesn't attend, and staff, who
-  /// read every roster on the server through `read:public_content`. #567
-  /// widens it.
+  /// a roster to the event's attendees, to its household's members and to
+  /// staff, and an empty one to anyone else who may read the event
+  /// (backend#560). So the gate answers from what the server sent this user,
+  /// not from a copy of its role table: the user's row on the roster, or the
+  /// `roster_shown` flag on their `read` row, which their detail read sets
+  /// when it carried a roster and clears when it carried none. Everyone else
+  /// reads it empty, as the server's empty roster reads. The flag follows a
+  /// role change the next time the detail is read.
   Expression<bool> _readableAttendee($EventAttendeesTableTable t) {
     final me = _db.alias(_db.eventAttendeesTable, 'me');
+    final shown = _db.alias(_db.eventAccessTable, 'shown');
     return t.eventId.isInQuery(
-      _db.selectOnly(me)
-        ..addColumns([me.eventId])
-        ..where(me.userId.equals(_userId)),
-    );
+          _db.selectOnly(me)
+            ..addColumns([me.eventId])
+            ..where(me.userId.equals(_userId)),
+        ) |
+        t.eventId.isInQuery(
+          _db.selectOnly(shown)
+            ..addColumns([shown.eventId])
+            ..where(
+              shown.userId.equals(_userId) &
+                  shown.source.equals(eventAccessSourceRead) &
+                  shown.rosterShown,
+            ),
+        );
   }
 
   @override
@@ -1131,8 +1187,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       _db.eventPoliciesTable,
     )..where((t) => t.eventId.equals(id))).getSingleOrNull();
 
-    // The snapshot's three states: the roster for a user on it, empty for
-    // one it doesn't name, and null where no read has cached one.
+    // The snapshot's three states: the roster for a user it names or one
+    // whose own detail read was shown it (#567), empty for anyone else, and
+    // null where no read has cached one.
     final List<EventAttendee>? roster;
     if (attendees.isNotEmpty) {
       roster = attendees.map(_mapAttendee).toList();
@@ -1209,9 +1266,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// The event and the user's own row on its roster, as [getEvent] and
   /// [getCurrentUserAttendance] answer them.
   ///
-  /// The row is the snapshot's own: a roster is read only by a user it
-  /// names, so it holds theirs wherever one is cached, and one state of the
-  /// cache gives both.
+  /// The row is the snapshot's own: a roster is read by a user it names or
+  /// one it was shown to (#567), and the user's own row is on it only where
+  /// they attend, so it is found there when it is, and one state of the cache
+  /// gives both.
   Future<EventDetail?> _readDetail(String id) async {
     final snapshot = await _db.transaction(() async {
       final snapshot = await _readSnapshot(id);
@@ -1279,13 +1337,13 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// for an attendee id the roster doesn't hold, the list is the newer news.
   ///
   /// Left outer joins: an event can have no occurrences, and most have no
-  /// cached roster. Neither of the other two joins can repeat the
-  /// occurrences. The access join matches the row's whole key, user, event
-  /// and source, so it joins one row, and never another user's or a `read`
-  /// row. The attendee join matches on this user, so another user's row on a
-  /// shared roster never joins. The server holds one row per user per event,
-  /// a roster is replaced wholesale, and a list row only updates the user's
-  /// row in place, so it joins at most one row.
+  /// cached roster. Neither of the other two joins can repeat the occurrences.
+  /// The access join matches the row's whole key, user, event and source, so it
+  /// joins one row, and never another user's, a `read` or a `household` row.
+  /// The attendee join matches on this user, so another user's row on a shared
+  /// roster never joins. The server holds one row per user per event, a roster
+  /// is replaced wholesale, and a list row only updates the user's row in
+  /// place, so it joins at most one row.
   @override
   Stream<List<EventListItem>> watchAttendingEventListItems() => _watchListItems(
     (events) =>
