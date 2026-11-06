@@ -818,6 +818,136 @@ void main() {
     });
   });
 
+  // Flutter orders Tab stops by where they are on screen. Content scrolled up
+  // under the app bar sits above the back button, and rows scrolled under a
+  // floating button or down to a footer sit level with it. Before the page
+  // grouped its content, Tab from the last field skipped the back button,
+  // Shift+Tab up a scrolled form went to it between every two fields, and the
+  // floating button or the footer came up halfway down the page (#50).
+  group('BgePage keyboard order (#50)', () {
+    const fields = 12;
+    final fieldNames = [for (var i = 0; i < fields; i++) 'field $i'];
+
+    /// Pushes [page] over a first page, so its app bar has a back button, in
+    /// a window too short for its content.
+    Future<void> pushPage(WidgetTester tester, Widget page) async {
+      useViewSize(tester, const Size(400, 600));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () =>
+                  Navigator.of(context)
+                      .push(MaterialPageRoute<void>(builder: (_) => page)),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    Widget field(int index) =>
+        TextField(decoration: InputDecoration(labelText: 'field $index'));
+
+    testWidgets('a scrolled box page is walked in order both ways, the back '
+        'button once', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pushPage(
+        tester,
+        BgePage(
+          title: const Text('t'),
+          child: Column(
+            children: [
+              for (var i = 0; i < fields; i++) ...[field(i), const BgeGap.xl()],
+            ],
+          ),
+        ),
+      );
+
+      await expectTraversable(tester, expectedOrder: ['Back', ...fieldNames]);
+      handle.dispose();
+    });
+
+    testWidgets('a scrolled slivers page is walked in order both ways, the '
+        'back button once', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pushPage(
+        tester,
+        BgePage.slivers(
+          title: const Text('t'),
+          slivers: [
+            SliverList.list(
+              children: [
+                for (var i = 0; i < fields; i++) ...[
+                  field(i),
+                  const BgeGap.xl(),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await expectTraversable(tester, expectedOrder: ['Back', ...fieldNames]);
+      handle.dispose();
+    });
+
+    testWidgets('a floating button comes after the content, however far '
+        'down the list it floats', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pushPage(
+        tester,
+        BgePage.slivers(
+          title: const Text('t'),
+          floatingActionButton: FloatingActionButton(
+            tooltip: 'add',
+            onPressed: () {},
+            child: const Icon(Icons.add),
+          ),
+          slivers: [
+            SliverList.list(
+              children: [
+                for (var i = 0; i < fields; i++) ...[
+                  field(i),
+                  const BgeGap.xl(),
+                ],
+              ],
+            ),
+          ],
+        ),
+      );
+      await expectTraversable(
+        tester,
+        expectedOrder: ['Back', ...fieldNames, 'add'],
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a footer comes after the content', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pushPage(
+        tester,
+        BgePage(
+          title: const Text('t'),
+          footer: TextButton(onPressed: () {}, child: const Text('send')),
+          child: Column(
+            children: [
+              for (var i = 0; i < fields; i++) ...[field(i), const BgeGap.xl()],
+            ],
+          ),
+        ),
+      );
+      await expectTraversable(
+        tester,
+        expectedOrder: ['Back', ...fieldNames, 'send'],
+      );
+      handle.dispose();
+    });
+  });
+
   group('BgePage floating button room (#467)', () {
     for (final (label, window) in _windows) {
       testWidgets(

@@ -4,6 +4,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -1465,5 +1466,63 @@ void main() {
         );
       },
     );
+  });
+
+  group('keyboard', () {
+    late SemanticsHandle semantics;
+
+    setUp(() => semantics = SemanticsBinding.instance.ensureSemantics());
+    tearDown(() => semantics.dispose());
+
+    /// Results in both sections, each row a control: a game on the server
+    /// opens, one only a data source holds is an import.
+    Future<void> showResults(WidgetTester tester) async {
+      remote.onSearch = (_, _) async => results;
+      await show(
+        tester,
+        sourceNames: () async => {'dg_bgg': 'BoardGameGeek'},
+        onOpen: (_, _) {},
+        onImport: (_, _, _) {},
+      );
+      await search(tester, 'catan');
+    }
+
+    /// The order the screen reads in, top to bottom and start to end: the
+    /// field and its clear button, the Filters button beside them, then this
+    /// server's results and the data sources'. A data source's row reads the
+    /// source's name under the title.
+    const readingOrder = [
+      'Search by title',
+      'Clear search',
+      'Filters',
+      'Catan',
+      'Catan: Seafarers\nBoardGameGeek',
+      'Catan Junior\nBoardGameGeek',
+    ];
+
+    testWidgets('Tab follows reading order, Shift+Tab reverses it, and '
+        'nothing traps focus', (tester) async {
+      await showResults(tester);
+
+      await expectTraversable(tester, expectedOrder: readingOrder);
+    });
+
+    testWidgets('the filter sheet, closed with Escape, gives focus back to '
+        'the Filters button', (tester) async {
+      await showResults(tester);
+
+      await expectFocusReturnsAfterDialog(
+        tester,
+        opener: find.descendant(
+          of: find.byKey(GameSearchScreen.filtersButtonKey),
+          matching: find.byType(Text),
+        ),
+        dismiss: () async {
+          expect(find.byKey(GameSearchScreen.filterSheetKey), findsOneWidget);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        },
+      );
+      expect(find.byKey(GameSearchScreen.filterSheetKey), findsNothing);
+    });
   });
 }

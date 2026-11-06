@@ -356,6 +356,19 @@ class BgePage extends StatelessWidget {
       content = Center(child: content);
     }
 
+    // One traversal group for the scrolling content, so Tab orders it among
+    // itself, and places it among the app bar, the floating button and the
+    // footer by where the whole view sits (#50). Flutter orders Tab stops by
+    // where they are on screen, and content scrolled up under the app bar
+    // sits above the back button. Without the group, Shift+Tab up a scrolled
+    // form went to the back button between every two fields, Tab from the
+    // last field skipped it, and a floating button or the footer came up
+    // halfway down a long page. Inside the group the content moves as one,
+    // so its own order never changes as it scrolls.
+    final page = FocusTraversalGroup(
+      child: _pageContent(content, contentPadding, maxWidth),
+    );
+
     return Scaffold(
       key: scaffoldKey,
       drawer: drawer,
@@ -374,9 +387,9 @@ class BgePage extends StatelessWidget {
             // No footer is the common case — 10 of the 12 page screens. Skip
             // the flex entirely rather than make every one of them lay out a
             // Column with a single child.
-            ? _pageContent(content, contentPadding, maxWidth)
+            ? page
             : _PageWithFooter(
-                page: _pageContent(content, contentPadding, maxWidth),
+                page: page,
                 // Scrollable, because the cap alone only trades one
                 // unreachable region for another: a note plus a button
                 // at 200% text scale overflowed the cap and put the

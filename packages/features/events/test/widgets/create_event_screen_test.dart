@@ -1089,4 +1089,110 @@ void main() {
       settle: false,
     );
   });
+
+  group('keyboard', () {
+    late SemanticsHandle semantics;
+
+    setUp(() => semantics = SemanticsBinding.instance.ensureSemantics());
+    tearDown(() => semantics.dispose());
+
+    /// The screen open, with the households answered, so the household picker
+    /// is a stop as it is for a user who has some.
+    Future<void> openForm(WidgetTester tester) =>
+        open(tester, households: Stream.value([_home, _club]));
+
+    /// The order the form reads in, top to bottom: the back button, the
+    /// basics, the scheduling mode's three segments, when the first date
+    /// starts and ends, the invitee search, the rules and the submit. A menu
+    /// reads its label and what it shows; the rules read their title and the
+    /// note under it.
+    const readingOrder = [
+      'Back',
+      'Title',
+      'Household\nNo household',
+      'Type\nCasual gathering',
+      'Who can see it\nFriends',
+      'Description (optional)',
+      'Location (optional)',
+      'Link (optional)',
+      'One date',
+      'Several days',
+      'Poll',
+      'Starts',
+      'Ends (optional)',
+      'Search by name or username',
+      "Advanced: rules\nRules can't be changed after the event is created.",
+      'Create event',
+    ];
+
+    /// The field [key] holds, as `expectFocusReturnsAfterDialog` needs it:
+    /// below the field's own focus node, so `Focus.of` finds that node.
+    Finder whenField(Key key) => find.descendant(
+      of: find.byKey(key),
+      matching: find.byType(InputDecorator),
+    );
+
+    /// Tabs to the [label] button in the open [dialog], and presses Enter.
+    Future<void> pressInDialog(
+      WidgetTester tester,
+      Type dialog,
+      String label,
+    ) => activateByKeyboard(
+      tester,
+      find.descendant(of: find.byType(dialog), matching: find.text(label)),
+    );
+
+    /// Cancels the open date picker by keyboard.
+    Future<void> cancelDate(WidgetTester tester) async {
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await pressInDialog(tester, DatePickerDialog, 'Cancel');
+      expect(find.byType(DatePickerDialog), findsNothing);
+    }
+
+    /// Takes the open date picker's date by keyboard, then cancels the time
+    /// picker that follows it.
+    Future<void> cancelTime(WidgetTester tester) async {
+      await pressInDialog(tester, DatePickerDialog, 'OK');
+      expect(find.byType(TimePickerDialog), findsOneWidget);
+      await pressInDialog(tester, TimePickerDialog, 'Cancel');
+      expect(find.byType(TimePickerDialog), findsNothing);
+    }
+
+    testWidgets('Tab follows reading order, Shift+Tab reverses it, and '
+        'nothing traps focus', (tester) async {
+      await openForm(tester);
+
+      await expectTraversable(tester, expectedOrder: readingOrder);
+    });
+
+    for (final (name, key) in [
+      ('start', EventCreateDatesSection.startKey(0)),
+      ('end', EventCreateDatesSection.endKey(0)),
+    ]) {
+      testWidgets("the $name's date picker, cancelled, gives focus back to the "
+          'field', (tester) async {
+        await openForm(tester);
+
+        await expectFocusReturnsAfterDialog(
+          tester,
+          opener: whenField(key),
+          dismiss: () => cancelDate(tester),
+        );
+        expect(tester.widget<InputDecorator>(whenField(key)).isEmpty, isTrue);
+      });
+
+      testWidgets("the $name's time picker, cancelled, gives focus back to the "
+          'field', (tester) async {
+        await openForm(tester);
+
+        await expectFocusReturnsAfterDialog(
+          tester,
+          opener: whenField(key),
+          dismiss: () => cancelTime(tester),
+        );
+        // A date taken and its time cancelled leave the field as it was.
+        expect(tester.widget<InputDecorator>(whenField(key)).isEmpty, isTrue);
+      });
+    }
+  });
 }
