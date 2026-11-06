@@ -17,24 +17,54 @@ import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/wasm.dart' show WasmStorageImplementation;
 import 'package:drift_storage/drift_storage.dart' show ServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/orchestration.dart' show UserSessionScope;
+import 'package:interfaces/repositories.dart' show AuthRepository;
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:logging/logging.dart';
 import 'package:models/domain.dart' show ServerIdentity;
-import 'package:observability/observability.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:network_interface/network_interface.dart'
+    show HouseholdRemoteDataSource;
+import 'package:observability/observability.dart';
+import 'package:web_network/web_network.dart' show WebAuthRepositoryImpl;
 import 'package:web_platform/web.dart';
 import 'package:web_platform/web_storage_composition.dart';
 import 'package:web_storage/web_storage.dart';
 
+import 'support/web_origin.dart';
+
 void main() {
   group('bgeWebPlatformBootstrap', () {
-    test('is a WebPlatformBootstrap with the storage-composed scope', () {
-      // The wiring the app depends on. `WebPlatformBootstrap()` would
-      // also boot — without a database — so what matters is that the app has
-      // a single named thing to reach for, and that it is this type.
+    test('is a WebPlatformBootstrap that cannot reset', () {
       expect(bgeWebPlatformBootstrap(), isA<WebPlatformBootstrap>());
       expect(bgeWebPlatformBootstrap().supportsReset, isFalse);
+    });
+
+    test('initialize() builds the scope with web storage, the per-user tier '
+        'and the origin\'s remotes (#325)', () async {
+      // Until this test, dropping `serverScopeBuilder` from
+      // `bgeWebPlatformBootstrap` (or `installStorage` / `userInstallers` from
+      // the scope it builds) passed every suite: the app would boot with no
+      // database or no per-user tier. Only the well-known client and the
+      // origin are faked; everything the scope installs is real.
+      //
+      // A fresh server id: the web database is named by it, and IndexedDB
+      // outlives the test.
+      final bootstrap = bgeWebPlatformBootstrap(
+        wellKnownClient: wellKnownAnswering(freshIdentity('web-bootstrap')),
+        originProvider: () => kWebTestOrigin,
+      );
+      addTearDown(bootstrap.dispose);
+
+      final result = await bootstrap.initialize();
+      final container = result.activeServerScope!.active!.container;
+
+      expect(container.isRegistered<ServerDatabase>(), isTrue);
+      expect(container.isRegistered<UserSessionScope>(), isTrue);
+      expect(container.isRegistered<HouseholdRemoteDataSource>(), isTrue);
+      expect(container.isRegistered<CrossTabLock>(), isTrue);
+      expect(container.get<AuthRepository>(), isA<WebAuthRepositoryImpl>());
     });
 
     test('its root container carries the DURABLE feedback sink, not the '

@@ -4,6 +4,7 @@ import 'dart:ui_web' as ui_web;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:models/domain.dart' show ServerIdentity;
+import 'package:network_interface/network_interface.dart' show WellKnownClient;
 import 'package:observability/observability.dart' show BgeLogger, FeedbackSink;
 import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart';
@@ -39,8 +40,17 @@ import 'web_user_scope_installers.dart';
 /// [providerSignIn] is this page load's capture ([captureWebProviderSignIn]),
 /// taken once by [bgeWebPlatformBootstrap] and handed to every scope it
 /// builds. Without it the scope offers no provider sign-in (#583).
+///
+/// [wellKnownClient] and [originProvider] replace the same-origin well-known
+/// fetch and the page's origin. They are production API whose only caller is
+/// a test, kept because they are the only way to drive this real composition
+/// without that fetch; `bootstrapWebServerScope` has had the same two seams
+/// since #96. Production passes neither, and `null` means the real client
+/// and `WebDioFactory.currentOrigin`.
 Future<ActiveServerScope> buildWebServerScope({
   WebProviderSignInBindings? providerSignIn,
+  WellKnownClient? wellKnownClient,
+  String Function()? originProvider,
 }) {
   return bootstrapWebServerScope(
     installStorage: installWebStorage,
@@ -54,6 +64,8 @@ Future<ActiveServerScope> buildWebServerScope({
     // #583: leaving the page for a sign-in provider, and what this page load
     // brought back from one.
     providerSignIn: providerSignIn,
+    wellKnownClient: wellKnownClient,
+    originProvider: originProvider ?? WebDioFactory.currentOrigin,
   );
 }
 
@@ -109,14 +121,27 @@ void registerWebCrossTabLock(
 /// Building it reads what this page load brought back from a sign-in
 /// provider (#583), and consumes it: call it once, in `main()`, where it runs
 /// before `runBgeApp` builds the router that could rewrite the address.
-WebPlatformBootstrap bgeWebPlatformBootstrap() {
+///
+/// [wellKnownClient] and [originProvider] are handed to every scope this
+/// builds; see [buildWebServerScope]. They are production API whose only
+/// caller is a test, kept because they are the only way to drive the real
+/// composition without the same-origin well-known fetch, and
+/// `bootstrapWebServerScope` has had the same two seams since #96. Production
+/// passes neither.
+WebPlatformBootstrap bgeWebPlatformBootstrap({
+  WellKnownClient? wellKnownClient,
+  String Function()? originProvider,
+}) {
   final providerSignIn = captureWebProviderSignIn();
   return WebPlatformBootstrap(
     rootModule: buildWebRootModule,
     // A closure rather than the tear-off, so that every attempt, a retry's
     // included, builds its scope over this page load's one capture.
-    serverScopeBuilder: () =>
-        buildWebServerScope(providerSignIn: providerSignIn),
+    serverScopeBuilder: () => buildWebServerScope(
+      providerSignIn: providerSignIn,
+      wellKnownClient: wellKnownClient,
+      originProvider: originProvider,
+    ),
   );
 }
 

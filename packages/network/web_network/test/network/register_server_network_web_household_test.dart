@@ -65,7 +65,7 @@ String _envelopeBody(int status) => jsonEncode({
 /// prove is that the *registered* remote over the *registered* Dio classifies
 /// a given status and body the way the contract says. A browser-specific
 /// failure shape — an XHR abort or a CORS rejection arriving as some other
-/// `DioExceptionType` — would pass this file unchanged. #369 owns that gap;
+/// `DioExceptionType` — would pass this file unchanged. #731 owns that gap;
 /// it is why the reuse is not fully proved by any test today.
 void main() {
   late DependencyContainerImpl container;

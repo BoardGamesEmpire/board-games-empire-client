@@ -1,7 +1,7 @@
 // `dart:io` is a test-only import: these tests run on the VM, and it is
 // only used to *format* a Date header. The web production path stays
 // `dart:io`-free — parsing goes through the pure-Dart `tryParseHttpDate`.
-// It is also what keeps this suite off the browser matrix (#369).
+// It is also what keeps this suite off the browser matrix (#731).
 import 'dart:async';
 import 'dart:io';
 

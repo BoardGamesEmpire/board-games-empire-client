@@ -8,6 +8,7 @@
 // Plain `test()`, not `testWidgets`: drift and the real async work under the
 // root need real time, and the widget tester's fake async would stall them.
 
+import 'package:bge_test_support/waits.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
@@ -108,7 +109,7 @@ void main() {
           'kept', () async {
         final access = harness.container.get<CallerAccessRepository>();
 
-        await harness.pollUntil(
+        await pollUntil(
           () => access.current.isKnown,
           describe: () =>
               'No caller access answer was kept. Requests: '

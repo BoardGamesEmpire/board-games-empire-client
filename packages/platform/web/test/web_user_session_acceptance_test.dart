@@ -6,24 +6,21 @@
 // (`drift_storage/test/composition/user_session_acceptance_test.dart`) runs on
 // the VM over an in-memory database; web cannot, because
 // `inMemoryServerDatabase` lives in `drift_storage_native.dart` and the
-// drift/wasm executor reaches `dart:js_interop`. So this is the only place
-// the web path can be proved end to end, over a real database.
+// drift/wasm executor reaches `dart:js_interop`. So this runs in the browser,
+// over a real database.
 //
-// What it composes is what production composes — the `WebServerScopeContainer`
-// facade, a `UserScopeHost`, `ContainerUserSessionScope`, and the *shared*
-// `UserSessionScopeInstaller`, wired together in the same order and with the
-// same arguments as `bootstrapWebServerScope`. It does not go *through* that
-// function: it registers a fake `AuthRepository`, which the real bootstrap
-// would already have filled with `WebAuthRepositoryImpl` over a real `Dio`,
-// and the installer reads `currentAuthState` to resolve the session's user —
-// the same reason native's equivalent fakes it.
+// It hand-assembles the scope — the `WebServerScopeContainer` facade, a
+// `UserScopeHost`, `ContainerUserSessionScope` and the shared
+// `UserSessionScopeInstaller` — over a fake `AuthRepository`, to drive user
+// changes that the real auth would need a server for. The installer reads
+// `currentAuthState` to resolve the session's user, which is also why native's
+// equivalent fakes it.
 //
-// So this suite proves the *scope behaves*, not that the bootstrap *wires it*.
-// The wiring — the well-known fetch, the real Dio, and which arguments
-// `bootstrapWebServerScope` actually passes — is pinned on the VM by
+// So this suite proves the scope *behaves*: that a same-origin user change
+// rebuilds the per-user singletons and closes a live stream. That the
+// bootstrap *wires* it is proved by `web_composed_session_test.dart`, which
+// runs the real bootstrap. The VM-side wiring is pinned by
 // `web_network/test/orchestration/bootstrap_web_server_scope_test.dart`.
-// Keep the assembly below matching that function; a divergence here weakens
-// the parity this file claims without failing anything.
 //
 // Needs `sqlite3.wasm` and `drift_worker.js` beside this file — fetch them
 // with `melos run web:assets` (gitignored; #288). Run with
@@ -34,14 +31,11 @@ library;
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:game_collection/game_collection.dart';
-import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
-import 'package:sync_queue/sync_queue.dart';
 import 'package:web_network/web_network.dart';
 import 'package:web_storage/web_storage.dart';
 
@@ -186,23 +180,10 @@ void main() {
     host = UserScopeHost(parent: () => origin);
     session = ContainerUserSessionScope(
       host: host,
-      // `buildWebUserScopeInstallers()`'s membership, in its order, per the
-      // note at the top of this file. Five of the six are inert against
-      // this origin container and are here to keep the assembly honest rather
-      // than to be exercised: the re-hydrate seam has nothing registering
-      // with it that this suite drives, both hydrate installers and the sync
-      // queue sender no-op because no `HouseholdRemoteDataSource` or
-      // `GameCollectionRemoteDataSource` is registered here, and the drain
-      // no-ops because no sender is. Driving the hydrates for real over this
-      // database is #369.
-      installers: const [
-        SessionRehydratorInstaller(),
-        UserSessionScopeInstaller(),
-        HouseholdHydrateInstaller(),
-        GameCollectionHydrateInstaller(),
-        SyncSenderInstaller(),
-        SyncQueueDrainInstaller(),
-      ],
+      // The one installer this suite exercises. The full list the bootstrap
+      // ships, opened, closed and opened again, is proved by
+      // `web_composed_session_test.dart`.
+      installers: const [UserSessionScopeInstaller()],
       server: _server,
     );
     container = WebServerScopeContainer(

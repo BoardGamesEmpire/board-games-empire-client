@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bge_test_support/network.dart';
+import 'package:bge_test_support/waits.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
@@ -283,21 +284,17 @@ class NativeRootHarness {
   ///
   /// The user tier sends its first requests after [activateUser] returns, so
   /// a test that reads the cache or counts requests waits on this first. It
-  /// waits on the condition, not a delay, and fails with a [TimeoutException]
-  /// after [timeout] so a hydrate that never ran fails fast, not at the
-  /// runner's limit.
+  /// waits on the condition, not a delay. A pass that fails fails it at once,
+  /// and one that never runs fails it after [timeout], each naming the
+  /// status; see [awaitRefreshed].
   Future<void> awaitHydrated({
     Duration timeout = const Duration(seconds: 10),
-  }) => Future.wait([
-    for (final status in [
-      container.get<HouseholdHydrationStatus>().watch(),
-      container.get<GameCollectionHydrationStatus>().watch(),
-      container.get<EventHydrationStatus>().watch(),
-    ])
-      status
-          .firstWhere((h) => h.state == HydrationState.refreshed)
-          .timeout(timeout),
-  ]);
+  }) => awaitRefreshed({
+    'HouseholdHydrationStatus': container.get<HouseholdHydrationStatus>(),
+    'GameCollectionHydrationStatus': container
+        .get<GameCollectionHydrationStatus>(),
+    'EventHydrationStatus': container.get<EventHydrationStatus>(),
+  }, timeout: timeout);
 
   /// Waits until [server] has recorded at least [count] requests to
   /// [method] [pathSuffix], and returns them. Throws a [TimeoutException]
@@ -319,35 +316,6 @@ class NativeRootHarness {
       timeout: timeout,
     );
     return server.requestsTo(method, pathSuffix);
-  }
-
-  /// Checks [condition] every 10 ms until it holds, and throws a
-  /// [TimeoutException] with what [describe] says after [timeout].
-  ///
-  /// For a state the root reaches after the call that started it returns,
-  /// with no stream or status that reports it. [describe] runs only on the
-  /// timeout, so it can name what the state was instead.
-  ///
-  /// The deadline also bounds a check still pending, such as a read on a
-  /// database that never answers, so that too fails with [describe] rather
-  /// than at the runner's limit.
-  Future<void> pollUntil(
-    FutureOr<bool> Function() condition, {
-    required String Function() describe,
-    Duration timeout = const Duration(seconds: 10),
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    Never timedOut() => throw TimeoutException(describe(), timeout);
-    while (true) {
-      final remaining = deadline.difference(DateTime.now());
-      final holds = await Future.sync(condition).timeout(
-        remaining.isNegative ? Duration.zero : remaining,
-        onTimeout: timedOut,
-      );
-      if (holds) return;
-      if (DateTime.now().isAfter(deadline)) timedOut();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
   }
 
   /// Joins the user tier's [SyncQueueDrain] pass in flight, or runs one, and
@@ -491,7 +459,7 @@ const _emptyCollectionPage = {
     'page': 1,
     'limit': 100,
     'total': 0,
-    'totalPages': 1,
+    'totalPages': 0,
     'hasMore': false,
   },
 };

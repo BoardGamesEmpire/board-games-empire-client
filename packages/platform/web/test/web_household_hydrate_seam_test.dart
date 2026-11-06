@@ -16,7 +16,8 @@
 //
 // VM, not browser, and with a mock repository: what is under test is the
 // *resolution path*, which needs no database. Driving the same drain over the
-// real drift/wasm database in a browser is #369.
+// real drift/wasm database in a browser is covered by
+// `web_composed_session_test.dart`.
 @TestOn('vm')
 library;
 
