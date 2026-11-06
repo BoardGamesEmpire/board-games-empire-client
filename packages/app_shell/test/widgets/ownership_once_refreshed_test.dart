@@ -152,6 +152,64 @@ void main() {
     ]);
   });
 
+  test('a later pass running when the page listens holds nothing back, as '
+      'an earlier one landed rows', () async {
+    status
+      ..started()
+      ..finished(CollectionHydrateOutcome.complete)
+      ..started();
+    listen();
+    entries.add([copy]);
+    await pumpEventQueue();
+    expect(events, [
+      [copy],
+    ]);
+  });
+
+  test('an answer held back when the cache then fails is not given after '
+      'the error', () async {
+    status.started();
+    listen();
+    entries
+      ..add(const [])
+      ..addError(StateError('the read failed'));
+    await pumpEventQueue();
+    expect(events.single, isA<StateError>());
+
+    status.finished(CollectionHydrateOutcome.complete);
+    await pumpEventQueue();
+    expect(events, hasLength(1));
+
+    entries.add([copy]);
+    await pumpEventQueue();
+    expect(events.last, [copy]);
+  });
+
+  test('a status that settles as the cache ends adds nothing after the '
+      'end', () async {
+    final hydration = StreamController<Hydration>(sync: true);
+    addTearDown(hydration.close);
+    var done = false;
+    subscription = ownershipOnceRefreshed(entries.stream, hydration.stream)
+        .listen(
+          events.add,
+          onError: (Object error) => events.add(error),
+          onDone: () => done = true,
+        );
+    hydration.add(const Hydration(state: HydrationState.running));
+    entries.add([copy]);
+    await pumpEventQueue();
+
+    // The cache's end closes the stream; the status settling in the same
+    // turn, before the close has reached the listener, must not add to it.
+    await entries.close();
+    hydration.add(const Hydration(state: HydrationState.idle));
+    await hydration.close();
+    await pumpEventQueue();
+    expect(done, isTrue);
+    expect(events, isEmpty);
+  });
+
   test('a status stream that ends releases the answer', () async {
     status.started();
     listen();

@@ -36,8 +36,10 @@ final class CollectionNotRefreshedException implements Exception {
 ///   add offering every platform in either medium. A later pass that lands
 ///   rows releases the cache's answer then.
 ///
-/// An error from [entries] goes through as it is, and the stream ends when
-/// [entries] does. Cancelling it cancels both.
+/// An error from [entries] goes through as it is, and drops the answer held
+/// back before it: the read that failed may have been the one to change it.
+/// The stream ends when [entries] does, and stops listening to [hydration]
+/// then. Cancelling it cancels both.
 Stream<List<GameCollection>> ownershipOnceRefreshed(
   Stream<List<GameCollection>> entries,
   Stream<Hydration> hydration,
@@ -52,8 +54,10 @@ Stream<List<GameCollection>> ownershipOnceRefreshed(
   void releaseIfSettled() {
     if (released) return;
     final current = reading;
-    if (current == null || current.state == HydrationState.running) return;
-    if (!current.everRefreshed && current.state == HydrationState.failed) {
+    if (current == null) return;
+    if (!current.everRefreshed &&
+        (current.state == HydrationState.running ||
+            current.state == HydrationState.failed)) {
       return;
     }
     released = true;
@@ -89,8 +93,16 @@ Stream<List<GameCollection>> ownershipOnceRefreshed(
           latest = next;
           if (released) out.add(next);
         },
-        onError: out.addError,
-        onDone: out.close,
+        onError: (Object error, StackTrace stackTrace) {
+          latest = null;
+          out.addError(error, stackTrace);
+        },
+        // The status stops first: one settling before the close reaches the
+        // listener would add to a closed stream.
+        onDone: () {
+          unawaited(hydrationSubscription?.cancel());
+          unawaited(out.close());
+        },
       );
     },
     onCancel: () async {
