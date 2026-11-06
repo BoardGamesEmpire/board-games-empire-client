@@ -37,8 +37,9 @@
 // Only the files under `test/goldens/` that the run created or changed
 // come back: new baselines with `--update`, the diff images on a failure.
 // The container writes them to `.dart_tool/goldens_out/` and hands that
-// directory to the host user. This script then copies them into place and
-// deletes it.
+// directory to the host user. This script then copies them into place,
+// refusing anything outside a golden package's `test/goldens/`, and deletes
+// it.
 //
 // Pub's downloads go to a named volume, so later runs skip them. When
 // GOLDENS_PUB_CACHE names a directory, that is mounted as the pub cache
@@ -195,10 +196,21 @@ Future<void> main(List<String> args) async {
     _containerScript,
   ]);
 
-  final handedBack = _copyIntoCheckout(handBack);
+  final handedBack = _copyIntoCheckout(handBack, packages);
   handBack.deleteSync(recursive: true);
-  if (handedBack > 0) {
-    stdout.writeln('Wrote $handedBack file(s) under test/goldens/.');
+  if (handedBack.copied > 0) {
+    stdout.writeln('Wrote ${handedBack.copied} file(s) under test/goldens/.');
+  }
+  if (handedBack.refused.isNotEmpty) {
+    stderr.writeln(
+      '\nThe container handed back ${handedBack.refused.length} path(s) '
+      'outside a golden package\'s test/goldens/, or not a plain file. '
+      'None were copied:',
+    );
+    for (final path in handedBack.refused) {
+      stderr.writeln('  $path');
+    }
+    exit(1);
   }
 
   if (code != 0) {
@@ -212,18 +224,37 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// Copies every file under [handBack] to the same relative path in the
-/// checkout, and returns how many there were.
-int _copyIntoCheckout(Directory handBack) {
-  var count = 0;
-  for (final entity in handBack.listSync(recursive: true)) {
-    if (entity is! File) continue;
+/// Copies each file under [handBack] that sits in one of [packages]'
+/// `test/goldens/` to the same relative path in the checkout. Returns how
+/// many it copied, and the paths it refused.
+///
+/// The container script only hands back files from there, but `/out` is
+/// writable from anything the container runs, tests and their
+/// dependencies included. So the host holds the same line rather than
+/// trusting it: anything else, or anything that isn't a plain file, such
+/// as a link, stays out of the checkout.
+({int copied, List<String> refused}) _copyIntoCheckout(
+  Directory handBack,
+  List<String> packages,
+) {
+  var copied = 0;
+  final refused = <String>[];
+  for (final entity in handBack.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
     final relative = entity.path.substring(handBack.path.length + 1);
+    final posix = relative.replaceAll(Platform.pathSeparator, '/');
+    final allowed =
+        entity is File &&
+        packages.any((p) => posix.startsWith('$p/test/goldens/'));
+    if (!allowed) {
+      refused.add(posix);
+      continue;
+    }
     File(relative).parent.createSync(recursive: true);
     entity.copySync(relative);
-    count++;
+    copied++;
   }
-  return count;
+  return (copied: copied, refused: refused);
 }
 
 /// The first 12 hex characters of a sha256 over [_imageInputs].
