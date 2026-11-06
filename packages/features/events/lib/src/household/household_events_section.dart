@@ -48,11 +48,19 @@ import '../widgets/event_section_states.dart';
 ///
 /// ## When it reads
 ///
-/// Opening the section starts a pass through [sync], and the retries start
-/// another. Nothing else does: it isn't part of the session's hydrate, which
-/// would read every household's events at each sign-in for a screen the user
-/// may never open. Offline, it shows what's cached. Without a [sync] it shows
-/// the cache and offers no retry.
+/// Opening the section starts a pass through [sync], and so does coming back
+/// to it from a route that covered it, as the household's invites entry
+/// reads again. An event made from the New event row below it is then
+/// listed on the way back, where the household's list sends it. The retries
+/// start another pass. Nothing else does: it isn't part of the session's
+/// hydrate, which would read every household's events at each sign-in for a
+/// screen the user may never open. Offline, it shows what's cached. Without a
+/// [sync] it shows the cache, offers no retry, and reads nothing when
+/// uncovered.
+///
+/// A pass started by uncovering is one the user didn't ask for, so the
+/// couldn't-refresh banner keeps its button as it was, and says nothing of
+/// it until it lands.
 ///
 /// [repository], [householdId], [sync] and [now] are read once, when the
 /// section is first built, and new ones on a later build change nothing. A
@@ -148,20 +156,24 @@ class _HouseholdEventsSectionState extends State<HouseholdEventsSection> {
   late final DateTime Function() _now;
   late final EventOverviewBloc _bloc;
 
+  /// Starts a pass for the household, or null without a sync.
+  late final Future<void> Function()? _refresh;
+
   @override
   void initState() {
     super.initState();
     final HouseholdEventsSection(:repository, :householdId, :sync) = widget;
     _now = widget.now ?? DateTime.now;
+    _refresh = sync == null ? null : () => sync.refresh(householdId);
     _bloc = EventOverviewBloc(
       repository: repository,
       logger: BgeLogger('bge.events.household'),
       items: () => repository.watchHouseholdEventListItems(householdId),
       hydration: sync?.watch(householdId),
-      onRetry: sync == null ? null : () => sync.refresh(householdId),
+      onRetry: _refresh,
       now: _now,
     );
-    unawaited(sync?.refresh(householdId));
+    unawaited(_refresh?.call());
   }
 
   @override
@@ -173,11 +185,18 @@ class _HouseholdEventsSectionState extends State<HouseholdEventsSection> {
   void _retry() => _bloc.add(const EventOverviewRetryRequested());
 
   @override
-  Widget build(BuildContext context) =>
-      BlocBuilder<EventOverviewBloc, EventOverviewState>(
-        bloc: _bloc,
-        builder: _content,
-      );
+  Widget build(BuildContext context) {
+    final section = BlocBuilder<EventOverviewBloc, EventOverviewState>(
+      bloc: _bloc,
+      builder: _content,
+    );
+    final refresh = _refresh;
+    if (refresh == null) return section;
+    return ReadAgainWhenUncovered(
+      onUncovered: () => unawaited(refresh()),
+      child: section,
+    );
+  }
 
   Widget _content(BuildContext context, EventOverviewState state) {
     final l10n = EventsLocalizations.of(context);

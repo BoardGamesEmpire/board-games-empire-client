@@ -89,8 +89,10 @@ void main() {
   late _MockEventRepository repository;
   late StreamController<List<EventListItem>> items;
   late _FakeSync sync;
+  late GlobalKey<NavigatorState> navigatorKey;
 
   setUp(() {
+    navigatorKey = GlobalKey<NavigatorState>();
     clock = start;
     repository = _MockEventRepository();
     items = StreamController<List<EventListItem>>.broadcast();
@@ -109,6 +111,7 @@ void main() {
     void Function(BuildContext context, String eventId)? onOpen,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
+    navigatorKey: navigatorKey,
     theme: BgeTheme.light(),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
@@ -173,6 +176,29 @@ void main() {
     expect(sync.watched, ['h-1']);
     verify(() => repository.watchHouseholdEventListItems('h-1')).called(1);
     verifyNever(repository.watchAttendingEventListItems);
+  });
+
+  /// Pushes an opaque page over the section, then pops it.
+  Future<void> coverAndUncover(WidgetTester tester) async {
+    unawaited(
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(sync.refreshes, hasLength(1), reason: 'covering it reads nothing');
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('reads the household again when uncovered', (tester) async {
+    await show(tester, [upcoming('e-1', 30)]);
+    expect(sync.refreshes, ['h-1']);
+
+    await coverAndUncover(tester);
+
+    expect(sync.refreshes, ['h-1', 'h-1']);
+    expect(rowOf('e-1'), findsOneWidget);
   });
 
   testWidgets('shows only upcoming events, soonest first', (tester) async {
@@ -400,6 +426,27 @@ void main() {
 
       sync.finish(HouseholdEventsOutcome.complete);
       await tester.pump();
+
+      expect(find.byKey(HouseholdEventsSection.refreshRetryKey), findsNothing);
+      expect(rowOf('e-1'), findsOneWidget);
+    });
+
+    testWidgets('a pass begun by uncovering leaves the banner as it was', (
+      tester,
+    ) async {
+      await show(tester, [
+        upcoming('e-1', 25),
+      ], outcome: HouseholdEventsOutcome.failed);
+
+      await coverAndUncover(tester);
+
+      expect(sync.refreshes, ['h-1', 'h-1']);
+      expect(find.text(_refreshing), findsNothing);
+      expect(find.text(_refreshFailed), findsOneWidget);
+      expect(rowOf('e-1'), findsOneWidget);
+
+      sync.finish(HouseholdEventsOutcome.complete);
+      await tester.pumpAndSettle();
 
       expect(find.byKey(HouseholdEventsSection.refreshRetryKey), findsNothing);
       expect(rowOf('e-1'), findsOneWidget);
