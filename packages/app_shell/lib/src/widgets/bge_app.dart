@@ -1177,6 +1177,33 @@ class _BgeAppState extends State<BgeApp> {
       // the server (#122), so the household list is read again afterwards,
       // as after a join.
       onMembershipChanged: _afterMembershipChange(container),
+      // #503: the household's upcoming events. The screen itself leaves the
+      // block out for a household the server does not know yet; here it is
+      // only whether this composition has an event cache to list from.
+      eventsSection: _householdEventsSection(container),
+    );
+  }
+
+  /// The household screen's events block (#503), or null where [container]
+  /// holds no user-session [EventRepository], which leaves the block out.
+  ///
+  /// Keyed on the repository, as home's section is (#613): the section reads
+  /// its inputs once, so another user's session must be a new one. The sync
+  /// is optional: without it the section shows the cache and reads nothing.
+  Widget Function(BuildContext context, String householdId)?
+  _householdEventsSection(DependencyContainer container) {
+    if (!container.isRegistered<EventRepository>()) return null;
+
+    final repository = container.get<EventRepository>();
+    final sync = container.isRegistered<HouseholdEventsSync>()
+        ? container.get<HouseholdEventsSync>()
+        : null;
+    return (context, householdId) => HouseholdEventsSection(
+      key: ObjectKey(repository),
+      repository: repository,
+      householdId: householdId,
+      sync: sync,
+      onOpen: _openEvent,
     );
   }
 

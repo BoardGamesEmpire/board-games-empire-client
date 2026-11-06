@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:events/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +21,10 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 class _MockStorage extends Mock implements Storage {}
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+class _MockEventRepository extends Mock implements EventRepository {}
+
+class _MockEventRemote extends Mock implements EventRemoteDataSource {}
 
 class _MockMemberRemote extends Mock
     implements HouseholdMemberRemoteDataSource {}
@@ -94,6 +99,8 @@ void main() {
     HouseholdMemberRemoteDataSource? memberRemote,
     HouseholdRefresher? refresher,
     HouseholdHydrationStatus? status,
+    EventRepository? eventRepository,
+    HouseholdEventsSync? eventsSync,
   }) async {
     final repository = _MockHouseholdRepository();
     when(repository.watchHouseholds).thenAnswer((_) async* {
@@ -127,6 +134,8 @@ void main() {
           householdMemberRemoteDataSource: memberRemote,
           householdRefresher: refresher,
           householdHydrationStatus: status,
+          eventRepository: eventRepository,
+          householdEventsSync: eventsSync,
         ),
       ),
     );
@@ -405,6 +414,132 @@ void main() {
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);
       expect(find.byType(HouseholdDetailScreen), findsNothing);
+    });
+  });
+
+  group('BgeApp household events (#503)', () {
+    final upcoming = EventListItem(
+      event: Event(
+        id: 'e-1',
+        title: 'Game night',
+        createdById: 'u-me',
+        householdId: _id,
+        type: EventType.casualGathering,
+        reach: Reach.friends,
+        status: EventStatus.planning,
+        schedulingMode: EventSchedulingMode.fixed,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+      occurrences: [
+        EventOccurrence(
+          id: 'o-1',
+          eventId: 'e-1',
+          startDate: DateTime.utc(2099, 1, 1, 18),
+          status: OccurrenceStatus.confirmed,
+          sortOrder: 0,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      ],
+    );
+
+    late _MockEventRepository events;
+    late _MockEventRemote remote;
+    late HouseholdEventsSync sync;
+
+    setUpAll(() => registerFallbackValue(EventAccessSource.household));
+
+    setUp(() {
+      events = _MockEventRepository();
+      when(() => events.watchHouseholdEventListItems(_id))
+          .thenAnswer((_) => Stream.value([upcoming]));
+      // Home sits beneath the detail and lists the user's own events.
+      when(events.watchAttendingEventListItems)
+          .thenAnswer((_) => Stream.value(const <EventListItem>[]));
+      when(() => events.watchEvent(any()))
+          .thenAnswer((_) => Stream<EventDetail?>.value(null));
+      when(() => events.purgeableHouseholdEvents(any()))
+          .thenAnswer((_) async => <String, int>{});
+      when(() => events.cacheEvents(any(), source: any(named: 'source')))
+          .thenAnswer((_) async {});
+      when(
+        () => events.purgeHouseholdEventsAbsentFrom(
+          any(),
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      ).thenAnswer((_) async => <String>{});
+      remote = _MockEventRemote();
+      when(
+        () => remote.fetchHouseholdEvents(
+          any(),
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => const PaginatedResult<EventSnapshot>(
+          items: [],
+          meta: PaginationMeta(
+            page: 1,
+            limit: 50,
+            total: 0,
+            totalPages: 1,
+            hasMore: false,
+          ),
+        ),
+      );
+      sync = HouseholdEventsSync(
+        hydrator: HouseholdEventsHydrator(repository: events, remote: remote),
+        userId: 'u-me',
+      );
+    });
+
+    tearDown(() => sync.close());
+
+    testWidgets('the household screen shows its events and reads them on '
+        'open', (tester) async {
+      await pumpHome(tester, eventRepository: events, eventsSync: sync);
+
+      await openDetailFromTheList(tester);
+
+      expect(
+        find.byKey(HouseholdDetailScreen.eventsHeadingKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(HouseholdEventsSection.rowKey('e-1')), findsOneWidget);
+      verify(
+        () => remote.fetchHouseholdEvents(
+          _id,
+          page: 1,
+          limit: any(named: 'limit'),
+        ),
+      ).called(1);
+    });
+
+    testWidgets('tapping a household event opens its detail', (tester) async {
+      await pumpHome(tester, eventRepository: events, eventsSync: sync);
+      await openDetailFromTheList(tester);
+
+      await tester.tap(find.byKey(HouseholdEventsSection.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final router =
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+      expect(
+        router.routerDelegate.currentConfiguration.last.matchedLocation,
+        AppRoutes.eventDetailOf('e-1'),
+      );
+    });
+
+    testWidgets('no event cache, no section', (tester) async {
+      await pumpHome(tester);
+
+      await openDetailFromTheList(tester);
+
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.eventsHeadingKey), findsNothing);
     });
   });
 }

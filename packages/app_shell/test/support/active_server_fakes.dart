@@ -210,6 +210,7 @@ ActiveServer buildActiveServer(
   EventHydrationStatus? eventHydrationStatus,
   EventRefresher? eventRefresher,
   EventRemoteDataSource? eventRemoteDataSource,
+  HouseholdEventsSync? householdEventsSync,
   UserSessionScope? userSessionScope,
   SessionIdentityGuard? sessionIdentityGuard,
   SessionRehydrator? sessionRehydrator,
@@ -283,6 +284,9 @@ ActiveServer buildActiveServer(
   }
   if (eventRemoteDataSource != null) {
     container.registerSingleton<EventRemoteDataSource>(eventRemoteDataSource);
+  }
+  if (householdEventsSync != null) {
+    container.registerSingleton<HouseholdEventsSync>(householdEventsSync);
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);
