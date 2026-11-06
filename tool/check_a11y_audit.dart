@@ -78,7 +78,10 @@ const _deferred = {
       '#708/#709/#735 in flight',
 };
 
-const _groupLiteral = "group('accessibility audit'";
+/// An audit group's opening. Whitespace may come between `group(` and the
+/// name: the formatter puts the name on a line of its own once the call has a
+/// `skip:` reason too long for one line.
+final _groupOpening = RegExp(r"group\(\s*'accessibility audit'");
 
 /// A screen with no audit group.
 class Uncovered {
@@ -270,7 +273,7 @@ AuditResult checkAudit(
     final name = classNameOf(basename);
     final word = RegExp('\\b$name\\b');
     final audited = suitesOf(package)
-        .any((src) => src.contains(_groupLiteral) && word.hasMatch(src));
+        .any((src) => _groupOpening.hasMatch(src) && word.hasMatch(src));
     if (!audited) uncovered.add(Uncovered(path, name));
   }
 
@@ -335,6 +338,19 @@ void _selfTest() {
     write(
       'packages/a/test/covered_screen_test.dart',
       auditTest('CoveredScreen'),
+    );
+    // Covered by a group the formatter split over lines, as it does one
+    // with a long skip reason.
+    write(
+      'packages/a/lib/src/skipped_screen.dart',
+      screen.replaceAll('{C}', 'SkippedScreen'),
+    );
+    write(
+      'packages/a/test/skipped_screen_test.dart',
+      "void main() {\n  group(\n    'accessibility audit',\n"
+          "    skip: 'a finding',\n    () {\n"
+          "      testWidgets('x', (t) async { await pump(SkippedScreen()); });\n"
+          '    },\n  );\n}\n',
     );
     // Uncovered: nothing names it.
     write(
@@ -405,6 +421,10 @@ void _selfTest() {
       !listed.contains('packages/a/lib/src/covered_screen.dart'),
     );
     expect(
+      'passes a screen whose group name is on its own line',
+      !listed.contains('packages/a/lib/src/skipped_screen.dart'),
+    );
+    expect(
       'flags an uncovered screen',
       listed.contains('packages/a/lib/src/lonely_screen.dart'),
     );
@@ -447,7 +467,7 @@ void _selfTest() {
     );
     expect(
       'does not count non-screens or deleted files',
-      result.screens == 10 && listed.length == 8,
+      result.screens == 11 && listed.length == 8,
       'screens=${result.screens} uncovered=${listed.length}',
     );
     expect(

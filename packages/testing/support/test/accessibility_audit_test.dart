@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 // auditScreen declares. `WidgetTester.testDescription` holds only the
 // testWidgets' own.
 import 'package:test_api/hooks.dart' show TestHandle;
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// The failure [body] throws, or null. Not `expectLater(body(), throwsA(..))`:
 /// that makes the tester's guarded `expectLater` overlap the helper's own.
@@ -73,6 +74,28 @@ void main() {
       await expectMeetsAccessibilityGuidelines(tester);
       handle.dispose();
     });
+
+    // The negative control for contrast, as the IconButton is for labels: a
+    // check that stopped running would leave every screen audit green.
+    testWidgets('pale text fails the contrast check', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(const Text('faint', style: TextStyle(color: Color(0xFFCCCCCC)))),
+      );
+
+      final failure = await _failureOf(
+        () => expectMeetsAccessibilityGuidelines(tester),
+      );
+      expect(failure?.message, contains(textContrastGuideline.description));
+      expect(
+        await _failureOf(
+          () => expectMeetsAccessibilityGuidelines(tester, textContrast: false),
+        ),
+        isNull,
+        reason: 'textContrast: false skips it',
+      );
+      handle.dispose();
+    });
   });
 
   group('audit matrix', () {
@@ -104,12 +127,19 @@ void main() {
   });
 
   group('auditScreen', () {
-    final names = <String>[];
+    /// What each cell was given, by its test's name: the view's logical
+    /// size, the theme, and what the scaler makes of 10.
+    final cells = <String, (Size, ThemeData, double)>{};
 
     auditScreen(
       'probe',
       build: (theme, textScaler) {
-        names.add(TestHandle.current.name);
+        final view = WidgetsBinding.instance.platformDispatcher.implicitView!;
+        cells[TestHandle.current.name] = (
+          view.physicalSize / view.devicePixelRatio,
+          theme,
+          textScaler.scale(10),
+        );
         return MaterialApp(
           theme: theme,
           builder: (context, child) => MediaQuery(
@@ -122,9 +152,13 @@ void main() {
     );
 
     // Runs once the group's tests have finished, in whatever order they ran.
+    // The expected cells are written out rather than read from the matrix,
+    // so a change to what a cell is given can't pass unnoticed.
     tearDownAll(() {
+      final light = BgeTheme.light();
+      final dark = BgeTheme.dark();
       expect(
-        names.toSet(),
+        cells.keys.toSet(),
         {
           'auditScreen probe — 320dp × 2.0, light',
           'auditScreen probe — 320dp × 2.0, dark',
@@ -133,7 +167,24 @@ void main() {
         },
         reason: 'one test per viewport x theme, each named by both',
       );
-      expect(names, hasLength(4));
+      for (final MapEntry(key: name, value: (size, theme, scaled))
+          in cells.entries) {
+        expect(
+          size,
+          name.contains('320dp') ? const Size(320, 800) : const Size(390, 844),
+          reason: '$name: view size',
+        );
+        expect(
+          scaled,
+          name.contains('× 2.0') ? 20 : 10,
+          reason: '$name: text scale',
+        );
+        expect(
+          theme,
+          same(name.endsWith('light') ? light : dark),
+          reason: '$name: theme',
+        );
+      }
     });
   });
 }

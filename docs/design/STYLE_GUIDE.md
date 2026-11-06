@@ -570,8 +570,11 @@ These are not aspirations; each is enforced somewhere.
   the shape on filled, tonal and icon buttons, and inside the edge on text,
   outlined and elevated buttons, which Flutter clips to their shape. A mouse
   or trackpad press anywhere hides every ring until the next key press. An
-  outside ring reaches 4dp past the shape, so keep a clipping edge (a scroll
-  view's, a clipping card's) at least that far from such a button. A button
+  outside ring reaches 4dp past the shape. A scroll view's edge is handled:
+  once keyboard focus has brought the button into view, the ring scrolls
+  the rest of itself in. Keep
+  any other clipping edge, such as a clipping card's, at least that far from
+  such a button. A button
   that sets its own shape passes it to `BgeButtonFocusRing.builder` in its
   style, or the ring keeps the theme's. On a toned container, as in a banner,
   the ring takes the container's

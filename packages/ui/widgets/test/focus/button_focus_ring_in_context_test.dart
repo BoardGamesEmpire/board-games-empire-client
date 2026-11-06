@@ -114,6 +114,139 @@ void main() {
     expectRingInside(lastKey, 'last');
   });
 
+  // Tab scrolls only the button's own box into view, flush against the
+  // viewport's edge, which left the outside ring's last 4dp clipped. The ring
+  // scrolls the rest of itself in as it appears (#50).
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('ring of a button Tab scrolls to mid-page is inside the '
+        'viewport, at $scale text', (tester) async {
+      const midKey = Key('mid');
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage(
+            title: const Text('Page'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < 30; i++) Text('Paragraph $i of the page.'),
+                FilledButton(
+                  key: midKey,
+                  onPressed: () {},
+                  child: const Text('Mid'),
+                ),
+                for (var i = 0; i < 30; i++) Text('Paragraph $i of the page.'),
+              ],
+            ),
+          ),
+          size: const Size(320, 640),
+          textScale: scale,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(pageScrollOf(tester).position.pixels, 0);
+
+      await tab(tester);
+      await tester.pumpAndSettle();
+      expect(focusIsIn(midKey), isTrue);
+      expect(ringed(tester, midKey), isTrue);
+      expect(
+        pageScrollOf(tester).position.pixels,
+        greaterThan(0),
+        reason: 'Tab scrolled to it',
+      );
+      final viewport = scrollViewportOf(tester);
+      final viewportRect = viewport.localToGlobal(Offset.zero) & viewport.size;
+      final ring = buttonRect(
+        tester,
+        midKey,
+      ).inflate(tokens.focusOutlineWidth + tokens.focusRingGap);
+      expect(ring.bottom, lessThanOrEqualTo(viewportRect.bottom));
+      expect(ring.top, greaterThanOrEqualTo(viewportRect.top));
+    });
+  }
+
+  // A press moves focus but shows no ring, so it scrolls nothing for one.
+  testWidgets('a button focused by a touch does not scroll for its ring', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      hostAtSize(
+        tester,
+        BgePage(
+          title: const Text('Page'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < 4; i++) Text('Paragraph $i of the page.'),
+              FilledButton(
+                key: firstKey,
+                onPressed: () {},
+                child: const Text('Tapped'),
+              ),
+              for (var i = 0; i < 40; i++) Text('Paragraph $i of the page.'),
+            ],
+          ),
+        ),
+        size: const Size(320, 640),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final position = pageScrollOf(tester).position;
+    position.jumpTo(
+      tester.getRect(find.byKey(firstKey)).bottom -
+          scrollViewportOf(tester).localToGlobal(Offset.zero).dy -
+          scrollViewportOf(tester).size.height +
+          position.pixels,
+    );
+    await tester.pumpAndSettle();
+    final before = position.pixels;
+
+    Focus.of(tester.element(find.text('Tapped'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(ringed(tester, firstKey), isFalse, reason: 'touch mode');
+    expect(position.pixels, before);
+  });
+
+  // The ring finishes Tab's scroll; it doesn't start one. Focus moved in code
+  // to a button the user has scrolled away from leaves the page where it is.
+  testWidgets('focus moved in code to a button out of view scrolls nothing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      hostAtSize(
+        tester,
+        BgePage(
+          title: const Text('Page'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton(
+                key: firstKey,
+                onPressed: () {},
+                child: const Text('Away'),
+              ),
+              for (var i = 0; i < 40; i++) Text('Paragraph $i of the page.'),
+            ],
+          ),
+        ),
+        size: const Size(320, 640),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The keyboard's highlight mode, so the ring would show.
+    await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+    final position = pageScrollOf(tester).position;
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    final before = position.pixels;
+
+    Focus.of(tester.element(find.text('Away'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(ringed(tester, firstKey), isTrue);
+    expect(position.pixels, before);
+  });
+
   testWidgets('a busy BgeInertButton keeps its ring; a disabled button has '
       'none', (tester) async {
     const inertKey = Key('inert');

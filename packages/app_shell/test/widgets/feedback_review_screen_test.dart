@@ -748,9 +748,7 @@ void main() {
   });
 
   group('accessibility audit', () {
-    // A crash's trace, as the reporter hands one in: many frames. The suite's
-    // one-line fixture would make the selectable trace an 18dp-tall
-    // long-press target that no real report draws.
+    // A crash's trace, as the reporter hands one in: many frames.
     const crashTrace =
         '#0      AddGameBloc._onSubmitted '
         '(package:game_catalog/src/bloc/add_game_bloc.dart:88:7)\n'
@@ -767,9 +765,10 @@ void main() {
       ThemeData theme,
       TextScaler textScaler, {
       Future<FeedbackSubmitResult> Function(FeedbackReport)? onSubmit,
+      String trace = crashTrace,
     }) => reviewApp(
       preview: FeedbackReportPreview.fromReport(
-        buildReport().copyWith(stackTrace: crashTrace),
+        buildReport().copyWith(stackTrace: trace),
       ),
       onSubmit: onSubmit,
       theme: theme,
@@ -800,28 +799,39 @@ void main() {
       arrange: scrollToEnd,
     );
 
-    // The end of the list, which the ready state leaves below the fold, with
-    // both read-only sections open.
+    /// Opens both read-only sections and scrolls to the end of the list,
+    /// which the ready state leaves below the fold.
+    Future<void> expandDiagnostics(WidgetTester tester) async {
+      final page = find.byType(Scrollable).first;
+      for (final key in [
+        FeedbackReviewScreen.stackTraceSectionKey,
+        FeedbackReviewScreen.breadcrumbsSectionKey,
+      ]) {
+        final section = find.byKey(key);
+        await tester.scrollUntilVisible(section, 100, scrollable: page);
+        await tester.ensureVisible(section);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(of: section, matching: find.byType(ListTile)),
+        );
+        await tester.pumpAndSettle();
+      }
+      await scrollToEnd(tester);
+    }
+
     auditScreen(
       'ready, diagnostics expanded',
       build: build,
-      arrange: (tester) async {
-        final page = find.byType(Scrollable).first;
-        for (final key in [
-          FeedbackReviewScreen.stackTraceSectionKey,
-          FeedbackReviewScreen.breadcrumbsSectionKey,
-        ]) {
-          final section = find.byKey(key);
-          await tester.scrollUntilVisible(section, 100, scrollable: page);
-          await tester.ensureVisible(section);
-          await tester.pumpAndSettle();
-          await tester.tap(
-            find.descendant(of: section, matching: find.byType(ListTile)),
-          );
-          await tester.pumpAndSettle();
-        }
-        await scrollToEnd(tester);
-      },
+      arrange: expandDiagnostics,
+    );
+
+    // A trace of one frame, as an error thrown near the top of a call can
+    // leave: one line of text, but still a long-press target to select it.
+    auditScreen(
+      'ready, a one-line trace expanded',
+      build: (theme, textScaler) =>
+          build(theme, textScaler, trace: '#0 main (file.dart:1)'),
+      arrange: expandDiagnostics,
     );
 
     // The send never completes, so its spinner never settles.

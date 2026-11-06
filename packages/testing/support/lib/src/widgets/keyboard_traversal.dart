@@ -6,9 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// [maxSteps] (#50). Returns one name per stop, the one a screen reader reads
 /// for it. That is the label of the semantics node at or above the focused
 /// element (`tester.getSemantics`), with whatever is merged into it from below,
-/// else that node's tooltip. Without either, the stop is named by its
-/// `FocusNode`'s `debugLabel`, else `<unnamed>`, so `<unnamed>` means a screen
-/// reader has no name to read for it.
+/// else that node's tooltip. Without either, the stop is `<unnamed>`: a screen
+/// reader has no name to read for it. Never the `FocusNode`'s `debugLabel`,
+/// which no screen reader reads, so an `expectedOrder` can't be met by one.
 ///
 /// Needs `tester.ensureSemantics()` held by the caller, or no label can be
 /// read. [reverse] walks with Shift held, i.e. Shift+Tab.
@@ -94,43 +94,50 @@ Future<void> expectTraversable(
 }) async {
   await _focusPage(tester);
   final forward = await _walk(tester, maxSteps, false);
-
-  final repeated = forward.repeated;
-  if (repeated != null) {
-    final name = forward.names[forward.nodes.indexOf(repeated)];
-    fail(
-      'Keyboard trap: "$name" repeats before focus wraps. '
-      'Order: ${forward.names}',
-    );
-  }
-  if (forward.escaped) {
-    final to = forward.escapedTo;
-    final from = forward.names.isEmpty
-        ? 'the start'
-        : '"${forward.names.last}"';
-    final onto = to == null ? 'nothing' : 'the scope ${to.debugLabel ?? to}';
-    fail(
-      'Focus left the page instead of wrapping: Tab after $from put it on '
-      '$onto. Order: ${forward.names}',
-    );
-  }
-  if (!forward.wrapped) {
-    fail(
-      'Focus never wrapped within $maxSteps Tab presses. '
-      'Order so far: ${forward.names}',
-    );
-  }
+  _expectWrapped(forward, maxSteps, 'Tab');
   if (expectedOrder != null) {
     expect(forward.names, expectedOrder, reason: 'Tab order');
   }
 
+  // Held to the same terms as the forward walk. Its names alone can match
+  // while it is stuck on, or leaves from, the first stop (#50).
   await _focusPage(tester);
-  final backward = await tabOrder(tester, maxSteps: maxSteps, reverse: true);
+  final backward = await _walk(tester, maxSteps, true);
+  _expectWrapped(backward, maxSteps, 'Shift+Tab');
   expect(
-    backward,
+    backward.names,
     forward.names.reversed.toList(),
     reason: 'Shift+Tab must walk Tab order backwards',
   );
+}
+
+/// Fails unless [walk], made by pressing [keys], wrapped back to its first
+/// stop: not trapped on a stop, not off the page's controls, and not still
+/// going after [maxSteps].
+void _expectWrapped(_Walk walk, int maxSteps, String keys) {
+  final repeated = walk.repeated;
+  if (repeated != null) {
+    final name = walk.names[walk.nodes.indexOf(repeated)];
+    fail(
+      'Keyboard trap: "$name" repeats under $keys before focus wraps. '
+      'Order: ${walk.names}',
+    );
+  }
+  if (walk.escaped) {
+    final to = walk.escapedTo;
+    final from = walk.names.isEmpty ? 'the start' : '"${walk.names.last}"';
+    final onto = to == null ? 'nothing' : 'the scope ${to.debugLabel ?? to}';
+    fail(
+      'Focus left the page instead of wrapping: $keys after $from put it on '
+      '$onto. Order: ${walk.names}',
+    );
+  }
+  if (!walk.wrapped) {
+    fail(
+      'Focus never wrapped within $maxSteps $keys presses. '
+      'Order so far: ${walk.names}',
+    );
+  }
 }
 
 /// Presses Tab until [control]'s focus node has primary focus, then presses
@@ -253,5 +260,5 @@ String _nameOf(WidgetTester tester, FocusNode focus) {
     if (data.label.isNotEmpty) return data.label;
     if (data.tooltip.isNotEmpty) return data.tooltip;
   }
-  return focus.debugLabel ?? '<unnamed>';
+  return '<unnamed>';
 }

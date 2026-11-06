@@ -136,6 +136,10 @@ Know these limits before trusting a green run.
   `TextButton()`, `OutlinedButton()` and `ElevatedButton()` to their shape, so
   a label that wraps to two lines loses a few glyph pixels at the curved ends
   (`<A11Y-16>`).
+- **Shift+Tab round a long lazy list.** Back at the top of a lazily built
+  list, its last children are no longer built, so Shift+Tab from the first
+  control wraps to the last one still built rather than the list's end
+  (`<A11Y-17>`).
 - **Focus ring after mouse use.** A mouse press anywhere hides every ring
   until the next key press. The tests drive it with Flutter's own pointer
   and key events. On web with semantics on, a click can reach a button as a
@@ -369,6 +373,7 @@ visible.
 | `<A11Y-12>` | The filter sheet and every `AlertDialog` without `semanticLabel` have no accessible name on iOS and macOS | `packages/features/catalog/test/widgets/game_search_screen_test.dart`, for the sheet |
 | `<A11Y-13>` | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | `<A11Y-16>` | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
+| `<A11Y-17>` | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
 
 Fixed in this run, each with a regression test in the PR:
 
@@ -385,6 +390,14 @@ Fixed in this run, each with a regression test in the PR:
 - The filter sheet's range fields were named only "From" and "To", three
   times each. Each now carries its range, as in "Players, from".
 - `AuthScreen`'s server line was read twice, and its title was not a heading.
+- A `BgePage` footer that scrolled within its cap broke Tab's order: Tab
+  from its last control came back to its first. The footer is a traversal
+  group of its own now.
+- Tab scrolled a mid-page button flush against the viewport's edge, which
+  clipped the last 4dp of its outside ring. Once focus brings a button into
+  view, its ring now scrolls the rest of itself in.
+- The feedback review's stack trace, one frame long, was a long-press target
+  under 48dp tall. It now has the minimum height.
 
 Two failures the guidelines report are not defects, and §3 describes both: a
 disabled control's dimmed label, and a control clipped by the viewport's top

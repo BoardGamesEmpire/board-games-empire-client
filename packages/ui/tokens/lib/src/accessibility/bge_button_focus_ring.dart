@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
 
 import 'package:ui_tokens/src/bge_tokens.dart';
@@ -15,11 +16,10 @@ enum BgeButtonFocusRingPlacement {
   /// ring under that clip is cut away whole.
   ///
   /// The ring reaches `focusRingGap + focusOutlineWidth` past the button's
-  /// shape. The button's tap-target padding holds that where the shape is
-  /// under 48dp (above and below a filled button, all round an icon button),
-  /// but not beside a filled button, nor above and below one taller than
-  /// 48dp, as at 2.0 text. A clip that close, such as a scroll view's edge
-  /// with no padding or a clipping card, cuts the ring there.
+  /// shape. Tab scrolls only the button itself into view, flush against the
+  /// scroll view's edge, so once the button is in view the ring scrolls the
+  /// rest of itself in. A clip that is not a scroll view's, such as a
+  /// clipping card, can still cut the ring where it is that close.
   outside,
 
   /// Inside the shape's edge, with no gap: for a button that clips, and
@@ -130,6 +130,10 @@ class _BgeButtonFocusRing extends StatefulWidget {
 }
 
 class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
+  /// How far the ring reaches past the button's box, as the last build had
+  /// the tokens.
+  double _reach = 0;
+
   @override
   void initState() {
     super.initState();
@@ -137,6 +141,13 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
     _PointerLastPressed.instance
       ..attach()
       ..addListener(_onPointerLastPressedChange);
+    if (widget.focused) _revealAfterLayout();
+  }
+
+  @override
+  void didUpdateWidget(_BgeButtonFocusRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focused && !oldWidget.focused) _revealAfterLayout();
   }
 
   @override
@@ -158,13 +169,57 @@ class _BgeButtonFocusRingState extends State<_BgeButtonFocusRing> {
     if (widget.focused) setState(() {});
   }
 
+  bool get _shown =>
+      widget.focused &&
+      FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
+      !_PointerLastPressed.instance.value;
+
+  /// Once focus has arrived, scrolls an outside ring wholly into view (#50).
+  ///
+  /// Focus traversal scrolls a scroll view only until the focused button's
+  /// box is in view, so a button Tab reaches mid-page lands flush against
+  /// the edge, with the ring past it clipped away. After the frame, when
+  /// that scroll is done and the button laid out, this asks for the box
+  /// grown by the ring's reach.
+  ///
+  /// Only to finish that scroll: the button's own box must be in view
+  /// already. Focus moved in code to a button out of view, as a list hands
+  /// it on after a row goes while the user has scrolled elsewhere, leaves
+  /// the page where its mover chose. A ring that isn't shown, as after a
+  /// touch or a click, moves nothing, and an inside ring is within the box.
+  void _revealAfterLayout() {
+    if (widget.placement != BgeButtonFocusRingPlacement.outside) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_shown) return;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize || !_inView(box)) return;
+      box.showOnScreen(rect: (Offset.zero & box.size).inflate(_reach));
+    });
+  }
+
+  /// Whether [box] lies wholly within its nearest scroll view's viewport,
+  /// to within half a pixel. Without one there is nothing to scroll.
+  static bool _inView(RenderBox box) {
+    final viewport = switch (RenderAbstractViewport.maybeOf(box)) {
+      final RenderBox v when v.hasSize => v,
+      _ => null,
+    };
+    if (viewport == null) return false;
+    Rect global(RenderBox b) =>
+        MatrixUtils.transformRect(b.getTransformTo(null), Offset.zero & b.size);
+    final view = global(viewport).inflate(0.5);
+    final own = global(box);
+    return own.left >= view.left &&
+        own.top >= view.top &&
+        own.right <= view.right &&
+        own.bottom <= view.bottom;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = BgeTokens.of(context);
-    final shown =
-        widget.focused &&
-        FocusManager.instance.highlightMode == FocusHighlightMode.traditional &&
-        !_PointerLastPressed.instance.value;
+    _reach = tokens.focusRingGap + tokens.focusOutlineWidth;
+    final shown = _shown;
     return CustomPaint(
       foregroundPainter: BgeButtonFocusRingPainter(
         shape: widget.shape,
@@ -224,10 +279,12 @@ class _PointerLastPressed extends ValueNotifier<bool> {
   }
 
   /// The user is at the keyboard again. A shortcut held with Control, Alt or
-  /// Meta isn't navigation, as a browser's `:focus-visible` has it.
+  /// Meta isn't navigation, as a browser's `:focus-visible` has it. A held
+  /// key's repeats count as presses, as a browser's repeated `keydown`s do:
+  /// Tab held down through a click goes on moving focus.
   bool _onKey(KeyEvent event) {
     final keyboard = HardwareKeyboard.instance;
-    if (event is KeyDownEvent &&
+    if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
         !keyboard.isControlPressed &&
         !keyboard.isAltPressed &&
         !keyboard.isMetaPressed) {

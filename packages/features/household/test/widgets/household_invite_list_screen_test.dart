@@ -350,13 +350,19 @@ void main() {
 
   group('accessibility audit', () {
     /// The screen over the fake as [seed] leaves it; `build` runs before the
-    /// first read, so the state is chosen here.
+    /// first read, so the state is chosen here. With an Invite action, as the
+    /// shell gives an owner, so its button is audited too.
     Widget Function(ThemeData, TextScaler) screenWith(
       void Function() seed, {
       ValueListenable<bool>? offline,
     }) => (theme, textScaler) {
       seed();
-      return harness(offline: offline, theme: theme, textScaler: textScaler);
+      return harness(
+        offline: offline,
+        theme: theme,
+        textScaler: textScaler,
+        onInvite: (_) {},
+      );
     };
 
     /// One of each row shape: pending, awaiting approval (Approve and Turn
@@ -393,6 +399,7 @@ void main() {
       build: ready,
       arrange: (tester) async {
         await shown(tester);
+        expect(find.byKey(HouseholdInviteListScreen.inviteKey), findsOneWidget);
         expect(find.text('Ana'), findsOneWidget);
         expect(
           find.byKey(
@@ -493,6 +500,9 @@ void main() {
       }),
       arrange: (tester) async {
         await shown(tester);
+        // At 320dp × 2.0 the row's Approve sits under the Invite button until
+        // the page is scrolled to its end, which leaves the button room.
+        await scrollPageToEnd(tester);
         await tester.tap(
           find.byKey(
             HouseholdInviteTile.actionKey(

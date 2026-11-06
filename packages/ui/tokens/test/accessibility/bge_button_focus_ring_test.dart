@@ -568,6 +568,38 @@ void main() {
     );
 
     testWidgets(
+      'a held key that repeats after a click brings the ring back',
+      (tester) async {
+        const otherKey = Key('other');
+        await host(tester, [
+          FilledButton(key: goKey, onPressed: () {}, child: const Text('Go')),
+          FilledButton(
+            key: otherKey,
+            onPressed: () {},
+            child: const Text('Other'),
+          ),
+        ]);
+        // Tab goes down, and stays down through a click.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(ringOf(tester, goKey).color, ring, reason: 'Tab rings it');
+        await click(tester, find.byKey(goKey));
+        expect(ringOf(tester, goKey).color, isNull, reason: 'the click');
+
+        // Its repeat moves focus on, and the ring with it.
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(
+          Focus.of(tester.element(find.text('Other'))).hasPrimaryFocus,
+          isTrue,
+        );
+        expect(ringOf(tester, otherKey).color, ring, reason: 'the repeat');
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
+
+    testWidgets(
       'holds no pointer route or key handler once no button is built',
       (tester) async {
         final routes =

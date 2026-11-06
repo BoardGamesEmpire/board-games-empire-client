@@ -397,38 +397,46 @@ class BgePage extends StatelessWidget {
                 // the page's own scroll view — a footer that fits at
                 // 1.0 does not at 2.0 — so it shrink-wraps when short
                 // and scrolls when it is not.
-                footer: SingleChildScrollView(
-                  // Never the route's primary scroll view, which on
-                  // Android and iOS is the page's own. A second one
-                  // there leaves the keyboard's page scrolling two
-                  // positions to choose from with focus on the page,
-                  // as it is when a screen opens: it threw, and the
-                  // page didn't move (#457).
-                  primary: false,
-                  child: Padding(
-                    // The content's own horizontal inset so the footer
-                    // lines up with the column above it, and its bottom
-                    // inset so the action is not flush against the
-                    // window edge. The top is dropped because the footer
-                    // is a band against the content, not a floating
-                    // card — a page that wants a visible separation
-                    // should put a Divider in the footer, since the
-                    // scroll view's own bottom padding scrolls away with
-                    // the content and cannot supply one.
-                    padding: resolvedPadding
-                        .resolve(Directionality.of(context))
-                        .copyWith(top: 0),
-                    // `heightFactor: 1` so this shrink-wraps vertically.
-                    // Without it the Align fills the cap above, and the
-                    // footer band is always half the viewport — a 48dp
-                    // button stranded mid-band with the content squeezed
-                    // into the top half. The cap bounds the footer; it
-                    // must not size it.
-                    child: Align(
-                      heightFactor: 1,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxWidth),
-                        child: footer,
+                //
+                // A traversal group of its own, as the page's content has,
+                // and for the same reason (#50): a footer scrolled within
+                // its cap puts its first controls up level with the page's,
+                // and Tab then went from the page to the footer's second
+                // control and back to its first.
+                footer: FocusTraversalGroup(
+                  child: SingleChildScrollView(
+                    // Never the route's primary scroll view, which on
+                    // Android and iOS is the page's own. A second one
+                    // there leaves the keyboard's page scrolling two
+                    // positions to choose from with focus on the page,
+                    // as it is when a screen opens: it threw, and the
+                    // page didn't move (#457).
+                    primary: false,
+                    child: Padding(
+                      // The content's own horizontal inset so the footer
+                      // lines up with the column above it, and its bottom
+                      // inset so the action is not flush against the
+                      // window edge. The top is dropped because the footer
+                      // is a band against the content, not a floating
+                      // card — a page that wants a visible separation
+                      // should put a Divider in the footer, since the
+                      // scroll view's own bottom padding scrolls away with
+                      // the content and cannot supply one.
+                      padding: resolvedPadding
+                          .resolve(Directionality.of(context))
+                          .copyWith(top: 0),
+                      // `heightFactor: 1` so this shrink-wraps vertically.
+                      // Without it the Align fills the cap above, and the
+                      // footer band is always half the viewport — a 48dp
+                      // button stranded mid-band with the content squeezed
+                      // into the top half. The cap bounds the footer; it
+                      // must not size it.
+                      child: Align(
+                        heightFactor: 1,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: footer,
+                        ),
                       ),
                     ),
                   ),

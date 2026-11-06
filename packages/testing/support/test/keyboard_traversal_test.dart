@@ -128,6 +128,28 @@ void main() {
       expect(await tabOrder(tester), ['<unnamed>']);
       handle.dispose();
     });
+
+    // A debug label is for the developer; no screen reader reads it, so it
+    // can't stand in for a name (#50).
+    testWidgets('reads <unnamed> for a control named only by its debug label', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final node = FocusNode(debugLabel: 'Clear');
+      addTearDown(node.dispose);
+      await tester.pumpWidget(
+        _host(
+          IconButton(
+            focusNode: node,
+            onPressed: () {},
+            icon: const Icon(Icons.clear),
+          ),
+        ),
+      );
+
+      expect(await tabOrder(tester), ['<unnamed>']);
+      handle.dispose();
+    });
   });
 
   group('expectTraversable', () {
@@ -256,6 +278,39 @@ void main() {
 
       final failure = await _failureOf(() => expectTraversable(tester));
       expect(failure?.message, contains('"B" repeats'));
+      handle.dispose();
+    });
+
+    // Tab walks A, B, C and wraps, and Shift+Tab walks C, B, A, the reverse,
+    // then sticks on A. Its names alone match; its end doesn't (#50).
+    testWidgets('detects a trap only Shift+Tab falls into', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          Column(
+            children: [
+              // Not a scope, which Tab would wrap within: a key handler on
+              // A's way up the focus chain that takes no focus itself.
+              Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onKeyEvent: (node, event) =>
+                    event.logicalKey == LogicalKeyboardKey.tab &&
+                        HardwareKeyboard.instance.isShiftPressed
+                    ? KeyEventResult.handled
+                    : KeyEventResult.ignored,
+                child: TextButton(onPressed: () {}, child: const Text('A')),
+              ),
+              TextButton(onPressed: () {}, child: const Text('B')),
+              TextButton(onPressed: () {}, child: const Text('C')),
+            ],
+          ),
+        ),
+      );
+      expect(await tabOrder(tester), ['A', 'B', 'C']);
+
+      final failure = await _failureOf(() => expectTraversable(tester));
+      expect(failure?.message, contains('"A" repeats under Shift+Tab'));
       handle.dispose();
     });
   });

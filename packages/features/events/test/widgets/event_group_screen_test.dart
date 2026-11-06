@@ -41,6 +41,7 @@ void main() {
     EventGroup group, {
     Future<void> Function()? onRetry,
     void Function(BuildContext context)? onCreate,
+    void Function(BuildContext context, String eventId)? onOpen,
     ThemeData? theme,
     TextScaler? textScaler,
   }) async {
@@ -62,6 +63,7 @@ void main() {
           hydration: status.watch(),
           onRetry: onRetry,
           onCreate: onCreate,
+          onOpen: onOpen,
           now: () => now,
         ),
       ),
@@ -289,11 +291,14 @@ void main() {
       Object? error,
       EventHydrateOutcome outcome = EventHydrateOutcome.complete,
     }) async {
+      // Rows that open, as the shell's do, so they are audited as the tap
+      // targets they are rather than as inert text.
       await pumpGroup(
         tester,
         group,
         onRetry: () async {},
         onCreate: (_) {},
+        onOpen: (_, _) {},
         theme: theme,
         textScaler: scaler,
       );
