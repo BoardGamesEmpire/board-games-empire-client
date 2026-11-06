@@ -12,11 +12,13 @@ import 'event_table.dart';
 ///
 /// - **[source] is part of the key.** An event a user both attends and has
 ///   read keeps both reasons, so removing one can't take away the other.
-/// - **`attending` rows come from the list, `read` rows from a detail read.**
+/// - **`attending` rows come from the list, `read` rows from a detail read,
+///   `household` rows from a household's list.**
 ///   The `GET /events` hydrate writes `attending` rows, and its purge removes
 ///   only the signed-in user's: their list speaks for their own attendance,
 ///   not anyone else's. A `GET /events/:id` the user made writes a `read` row,
-///   which that purge leaves alone.
+///   which that purge leaves alone. A household's list writes `household`
+///   rows (#503), which only its own purge removes.
 /// - **An `attending` row keeps the list's answer (#667).** The list carries
 ///   the user's own attendance on every row, and the hydrate writes it here,
 ///   on the row it already writes for them. The purge removes the row, and
@@ -33,7 +35,8 @@ class EventAccessTable extends Table {
   TextColumn get userId => text()();
   TextColumn get eventId => text().references(EventsTable, #id)();
 
-  /// [eventAccessSourceAttending] or [eventAccessSourceRead].
+  /// [eventAccessSourceAttending], [eventAccessSourceRead] or
+  /// [eventAccessSourceHousehold].
   TextColumn get source => text()();
 
   /// The user's own answer as the `GET /events` row carried it (#667): their
@@ -65,3 +68,8 @@ const String eventAccessSourceAttending = 'attending';
 /// The source of an access row a `GET /events/:id` the user made wrote: an
 /// event they read by id, whether or not they attend it.
 const String eventAccessSourceRead = 'read';
+
+/// The source of an access row a household's event list wrote (#503): an
+/// event the household showed the user. Only that household's purge removes
+/// it, and only from the signed-in user's rows.
+const String eventAccessSourceHousehold = 'household';
