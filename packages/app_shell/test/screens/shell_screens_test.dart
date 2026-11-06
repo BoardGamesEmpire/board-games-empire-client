@@ -6,12 +6,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-Widget _wrap(Widget child, {ThemeData? theme}) => MaterialApp(
+Widget _wrap(
+  Widget child, {
+  ThemeData? theme,
+  TextScaler textScaler = TextScaler.noScaling,
+}) => MaterialApp(
   theme: theme,
   localizationsDelegates: ShellLocalizations.localizationsDelegates,
   supportedLocales: ShellLocalizations.supportedLocales,
+  builder: (context, child) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+    child: child!,
+  ),
   home: child,
 );
+
+/// Scrolls the page to its end, for what a state leaves below the fold at
+/// 320dp × 2.0, which the audit can't see from the top (#50).
+Future<void> _scrollToEnd(WidgetTester tester) async {
+  final position = pageScrollOf(tester).position;
+  position.jumpTo(position.maxScrollExtent);
+}
 
 void main() {
   group('SplashScreen', () {
@@ -28,6 +43,16 @@ void main() {
         findsOneWidget,
       );
       semantics.dispose();
+    });
+
+    group('accessibility audit', () {
+      // The spinner never settles.
+      auditScreen(
+        'loading',
+        settle: false,
+        build: (theme, textScaler) =>
+            _wrap(const SplashScreen(), theme: theme, textScaler: textScaler),
+      );
     });
   });
 
@@ -92,6 +117,30 @@ void main() {
       expect(find.byType(NotYetAvailableScreen), findsNothing);
       expect(find.text('open'), findsOneWidget);
     });
+
+    group('accessibility audit', () {
+      // Pushed, as most routes that fall back to it are, so the app bar's
+      // back button is audited too.
+      auditScreen(
+        'ready, pushed over another screen',
+        build: (theme, textScaler) => _wrap(
+          const SizedBox.shrink(),
+          theme: theme,
+          textScaler: textScaler,
+        ),
+        arrange: (tester) async {
+          unawaited(
+            tester
+                .state<NavigatorState>(find.byType(Navigator))
+                .push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const NotYetAvailableScreen(),
+                  ),
+                ),
+          );
+        },
+      );
+    });
   });
 
   group('ShellPlaceholderScreen', () {
@@ -107,6 +156,19 @@ void main() {
         expect(find.textContaining('under construction'), findsOneWidget);
       });
     }
+
+    group('accessibility audit', () {
+      for (final kind in ShellPlaceholderKind.values) {
+        auditScreen(
+          'ready (${kind.name})',
+          build: (theme, textScaler) => _wrap(
+            ShellPlaceholderScreen(kind: kind),
+            theme: theme,
+            textScaler: textScaler,
+          ),
+        );
+      }
+    });
   });
 
   group('BootstrapErrorScreen', () {
@@ -114,12 +176,16 @@ void main() {
       bool canOfferReset = false,
       VoidCallback? onRetry,
       VoidCallback? onReset,
+      ThemeData? theme,
+      TextScaler textScaler = TextScaler.noScaling,
     }) => _wrap(
       BootstrapErrorScreen(
         canOfferReset: canOfferReset,
         onRetry: onRetry ?? () {},
         onReset: onReset ?? () {},
       ),
+      theme: theme,
+      textScaler: textScaler,
     );
 
     testWidgets('announces the failure to screen readers as a live region', (
@@ -266,6 +332,57 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(size.width, 240);
       });
+    });
+
+    group('accessibility audit', () {
+      Widget failure(ThemeData theme, TextScaler textScaler) =>
+          buildScreen(theme: theme, textScaler: textScaler);
+      Widget resetOffered(ThemeData theme, TextScaler textScaler) =>
+          buildScreen(
+            canOfferReset: true,
+            theme: theme,
+            textScaler: textScaler,
+          );
+
+      auditScreen('failure', build: failure);
+
+      auditScreen(
+        'failure, scrolled to the end',
+        build: failure,
+        arrange: _scrollToEnd,
+      );
+
+      auditScreen('failure, reset offered', build: resetOffered);
+
+      auditScreen(
+        'failure, reset offered, scrolled to the end',
+        build: resetOffered,
+        arrange: _scrollToEnd,
+      );
+
+      auditScreen(
+        'reset confirmation',
+        build: resetOffered,
+        arrange: (tester) async {
+          final reset = find.byKey(BootstrapErrorScreen.resetButtonKey);
+          await tester.ensureVisible(reset);
+          await tester.pumpAndSettle();
+          await tester.tap(reset);
+        },
+      );
+    });
+  });
+
+  group('RouteNotFoundScreen', () {
+    group('accessibility audit', () {
+      auditScreen(
+        'ready',
+        build: (theme, textScaler) => _wrap(
+          const RouteNotFoundScreen(),
+          theme: theme,
+          textScaler: textScaler,
+        ),
+      );
     });
   });
 }

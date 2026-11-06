@@ -948,4 +948,73 @@ void main() {
       expect(opened, hasLength(2));
     });
   });
+
+  // Home composes the card in `BgeApp`, so `HomeScreen`'s own audit hosts a
+  // placeholder in its place; the card is audited here, in a scrolling page
+  // as home holds it (#50). It has no loading or failure UI of its own: it
+  // draws nothing until a line is known, and a household count it can't
+  // vouch for is left out, which the failure call audits.
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) =>
+        harness(theme: theme, textScaler: textScaler, onOpenHouseholds: (_) {});
+
+    /// The collection holds one game, and the user is in [inHouseholds].
+    Future<void> showLines(
+      WidgetTester tester, {
+      required List<Household> inHouseholds,
+    }) async {
+      own.emit([listItem('a')]);
+      households.add(inHouseholds);
+      await tester.pumpAndSettle();
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the card.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final card = find.byType(StatsCard);
+      expect(MediaQuery.textScalerOf(tester.element(card)).scale(10), 20);
+      expect(Theme.of(tester.element(card)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        pool.answer(7);
+        await showLines(tester, inHouseholds: [household('h1')]);
+        expect(byKey(StatsCard.ownedKey), findsOneWidget);
+        expect(byKey(StatsCard.householdsKey), findsOneWidget);
+      },
+    );
+
+    // In no household: the link to the households screen in the count's
+    // place.
+    auditScreen(
+      'ready, in no household',
+      build: build,
+      arrange: (tester) async {
+        await showLines(tester, inHouseholds: const []);
+        expect(byKey(StatsCard.promptKey), findsOneWidget);
+      },
+    );
+
+    // The households' count couldn't be read: the collection's line alone.
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        pool.fail();
+        await showLines(tester, inHouseholds: [household('h1')]);
+        expect(byKey(StatsCard.ownedKey), findsOneWidget);
+        expect(byKey(StatsCard.householdsKey), findsNothing);
+        expect(byKey(StatsCard.promptKey), findsNothing);
+      },
+    );
+  });
 }

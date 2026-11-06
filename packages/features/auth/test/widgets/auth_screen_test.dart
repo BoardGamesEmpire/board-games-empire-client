@@ -25,10 +25,24 @@ import '../support/auth_test_fixtures.dart';
 // #37 i18n: AuthScreen resolves all copy from AuthLocalizations, so the
 // harness must provide the delegates; assertions keep matching the
 // English template values.
-Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
-  theme: BgeTheme.light(),
+//
+// [textScaler] is applied below the app when given. Null leaves the scale to
+// a MediaQuery above it, which is how the 200% tests here set theirs.
+Widget _wrap(
+  Widget child,
+  MockAuthBloc bloc, {
+  ThemeData? theme,
+  TextScaler? textScaler,
+}) => MaterialApp(
+  theme: theme ?? BgeTheme.light(),
   localizationsDelegates: AuthLocalizations.localizationsDelegates,
   supportedLocales: AuthLocalizations.supportedLocales,
+  builder: textScaler == null
+      ? null
+      : (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        ),
   home: BlocProvider<AuthBloc>.value(value: bloc, child: child),
 );
 
@@ -993,6 +1007,211 @@ void main() {
         expect(reads, 2);
         expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
       });
+    });
+
+    group('accessibility audit', () {
+      /// Both strategies, so the form, the divider and a provider button are
+      /// all on the page.
+      final both = testServerIdentity(hasOidc: true);
+
+      /// The screen for [identity], with the bloc parked in [state].
+      Widget Function(ThemeData, TextScaler) screenIn(
+        AuthBlocState state, {
+        ServerIdentity? identity,
+        Future<int> Function()? unsentChangesCount,
+      }) => (theme, textScaler) {
+        whenListen(
+          mockBloc,
+          const Stream<AuthBlocState>.empty(),
+          initialState: state,
+        );
+        return _wrap(
+          AuthScreen(
+            identity: identity ?? both,
+            serverDisplayName: 'Test BGE Server',
+            unsentChangesCount: unsentChangesCount,
+          ),
+          mockBloc,
+          theme: theme,
+          textScaler: textScaler,
+        );
+      };
+
+      Future<void> tapText(WidgetTester tester, Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> toRegister(WidgetTester tester) =>
+          tapText(tester, find.text("Don't have an account? Register"));
+
+      Future<void> rejectSignIn(WidgetTester tester) =>
+          tapText(tester, find.widgetWithText(FilledButton, 'Sign In'));
+
+      Future<void> rejectRegister(WidgetTester tester) async {
+        await toRegister(tester);
+        await tapText(
+          tester,
+          find.widgetWithText(FilledButton, 'Create Account'),
+        );
+      }
+
+      /// Scrolls the page to its end, for what a state leaves below the fold
+      /// at 320dp × 2.0, which the audit can't see from the top.
+      Future<void> scrollToEnd(WidgetTester tester) async {
+        final position = pageScrollOf(tester).position;
+        position.jumpTo(position.maxScrollExtent);
+      }
+
+      /// [arrange], then [scrollToEnd].
+      Future<void> Function(WidgetTester) thenScrollToEnd(
+        Future<void> Function(WidgetTester) arrange,
+      ) => (tester) async {
+        await arrange(tester);
+        await scrollToEnd(tester);
+      };
+
+      /// Settled first: the email field's autofocus brings its caret into
+      /// view, which pulls a page scrolled before it back up.
+      final settleThenScrollToEnd = thenScrollToEnd(
+        (tester) => tester.pumpAndSettle(),
+      );
+
+      /// At rest: sign-in, which the register states switch away from.
+      final initial = screenIn(const AuthInitial());
+
+      auditScreen('sign-in', build: initial);
+
+      auditScreen(
+        'sign-in, scrolled to the end',
+        build: initial,
+        arrange: settleThenScrollToEnd,
+      );
+
+      auditScreen(
+        'sign-in, rejected submit',
+        build: initial,
+        arrange: rejectSignIn,
+      );
+
+      auditScreen(
+        'sign-in, rejected submit, scrolled to the end',
+        build: initial,
+        arrange: thenScrollToEnd(rejectSignIn),
+      );
+
+      auditScreen('register', build: initial, arrange: toRegister);
+
+      auditScreen(
+        'register, scrolled to the end',
+        build: initial,
+        arrange: thenScrollToEnd(toRegister),
+      );
+
+      auditScreen(
+        'register, rejected submit',
+        build: initial,
+        arrange: rejectRegister,
+      );
+
+      auditScreen(
+        'register, rejected submit, scrolled to the end',
+        build: initial,
+        arrange: thenScrollToEnd(rejectRegister),
+      );
+
+      final signInFailure = screenIn(const AuthFailureInvalidCredentials());
+
+      auditScreen('sign-in failure', build: signInFailure);
+
+      auditScreen(
+        'sign-in failure, scrolled to the end',
+        build: signInFailure,
+        arrange: settleThenScrollToEnd,
+      );
+
+      // The banner reveals itself, which leaves the page at its end, so
+      // there is no scrolled call.
+      auditScreen(
+        'provider sign-in failure',
+        build: screenIn(
+          const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
+        ),
+      );
+
+      // The submit's spinner never settles.
+      final signingIn = screenIn(const AuthLoading());
+
+      auditScreen('signing in', settle: false, build: signingIn);
+
+      auditScreen(
+        'signing in, scrolled to the end',
+        settle: false,
+        build: signingIn,
+        arrange: scrollToEnd,
+      );
+
+      // Nor does the provider button's.
+      final providerOpen = screenIn(
+        AuthLoading(providerId: kOidcStrategy.providerId),
+      );
+
+      auditScreen('provider sign-in open', settle: false, build: providerOpen);
+
+      auditScreen(
+        'provider sign-in open, scrolled to the end',
+        settle: false,
+        build: providerOpen,
+        arrange: scrollToEnd,
+      );
+
+      Widget addressMismatch(ThemeData theme, TextScaler textScaler) {
+        stubProviderSignInAvailability(
+          mockBloc,
+          const ProviderSignInAddressMismatch('https://auth.example.com'),
+        );
+        return initial(theme, textScaler);
+      }
+
+      auditScreen(
+        'provider sign-in unavailable (address mismatch)',
+        build: addressMismatch,
+      );
+
+      auditScreen(
+        'provider sign-in unavailable (address mismatch), scrolled to the end',
+        build: addressMismatch,
+        arrange: settleThenScrollToEnd,
+      );
+
+      final unsentChanges = screenIn(
+        const AuthInitial(),
+        unsentChangesCount: () async => 3,
+      );
+
+      auditScreen('unsent changes', build: unsentChanges);
+
+      auditScreen(
+        'unsent changes, scrolled to the end',
+        build: unsentChanges,
+        // Also because the page is built only once the count is in.
+        arrange: settleThenScrollToEnd,
+      );
+
+      final noStrategies = screenIn(
+        const AuthInitial(),
+        identity: testServerIdentity(hasEmailPassword: false),
+      );
+
+      auditScreen('no strategies', build: noStrategies);
+
+      auditScreen(
+        'no strategies, scrolled to the end',
+        build: noStrategies,
+        arrange: settleThenScrollToEnd,
+      );
     });
   });
 }

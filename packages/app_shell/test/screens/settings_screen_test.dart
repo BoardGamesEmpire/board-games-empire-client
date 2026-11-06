@@ -39,6 +39,27 @@ void main() {
     localeCubit.close();
   });
 
+  Widget settingsApp({
+    required List<SettingsSection> sections,
+    String? activeServerAlias,
+    ThemeData? theme,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    // The real theme, so a measure assertion tests the wiring rather
+    // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
+    theme: theme ?? BgeTheme.light(),
+    localizationsDelegates: ShellLocalizations.localizationsDelegates,
+    supportedLocales: ShellLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: SettingsScreen(
+      sections: sections,
+      activeServerAlias: activeServerAlias,
+    ),
+  );
+
   Future<void> pumpSettings(
     WidgetTester tester, {
     required List<SettingsSection> sections,
@@ -52,17 +73,7 @@ void main() {
       useViewSize(tester, size);
     }
     await tester.pumpWidget(
-      MaterialApp(
-        // The real theme, so a measure assertion tests the wiring rather
-        // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
-        theme: BgeTheme.light(),
-        localizationsDelegates: ShellLocalizations.localizationsDelegates,
-        supportedLocales: ShellLocalizations.supportedLocales,
-        home: SettingsScreen(
-          sections: sections,
-          activeServerAlias: activeServerAlias,
-        ),
-      ),
+      settingsApp(sections: sections, activeServerAlias: activeServerAlias),
     );
     await tester.pumpAndSettle();
   }
@@ -331,5 +342,20 @@ void main() {
         360,
       );
     });
+  });
+
+  group('accessibility audit', () {
+    // Both app-level entries: the language one shows only with more than one
+    // locale. No feature contributes a per-server entry yet.
+    auditScreen(
+      'ready',
+      build: (theme, textScaler) => settingsApp(
+        sections: appSections(
+          supportedLocales: const [Locale('en'), Locale('es')],
+        ),
+        theme: theme,
+        textScaler: textScaler,
+      ),
+    );
   });
 }
