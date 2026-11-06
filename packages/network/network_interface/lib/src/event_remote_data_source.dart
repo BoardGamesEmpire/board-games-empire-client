@@ -33,6 +33,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// |---|---|---|
 /// | [fetchEvents] | `GET /api/events` | `{ events: [...], pagination }` |
 /// | [browseEvents] | `GET /api/events/browse` | `{ events: [...], pagination }` |
+/// | [fetchHouseholdEvents] | `GET /api/households/:householdId/events` | `{ events: [...], pagination }` |
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
 /// | [createEvent] | `POST /api/events` | `{ message, event }` |
 /// | [deleteEvent] | `DELETE /api/events/:id` | `{ message, event }`, not read |
@@ -84,10 +85,17 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// missing from the list is not necessarily one that [fetchEvent] answers 404
 /// for.
 ///
+/// `GET /api/households/:householdId/events` lists a household's events, and
+/// each row is a `GET /api/events` row (#503). A household that is missing or
+/// deleted answers 404, and the path names it, so unlike the other lists an
+/// enveloped 404 there is [EventRemoteNotFoundException].
+///
 /// ## Who may call what
 ///
-/// Both reads need the caller's `read:event` permission. A caller without it
-/// is refused with a 403 carrying the API's error envelope, which surfaces as
+/// All three reads need the caller's `read:event` permission, the household
+/// list's route included, which checks the same ability behind its guard that
+/// the household is live. A caller without it is refused with a 403 carrying
+/// the API's error envelope, which surfaces as
 /// [EventRemoteForbiddenException]. Past that gate the caller's standing
 /// decides what each read returns rather than whether it is allowed: the
 /// events the caller attends, and the parts of one the caller may read.
@@ -109,9 +117,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
-///   [fetchEvent], [fetchAvailabilitySummary] or [deleteEvent]. From
-///   [fetchEvent] the event is gone, or the caller may not read it. From
-///   [deleteEvent] no live event has the id.
+///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent] or
+///   [fetchHouseholdEvents]. From [fetchEvent] the event is gone, or the
+///   caller may not read it. From [deleteEvent] no live event has the id. From
+///   [fetchHouseholdEvents] the household is missing or deleted.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
@@ -262,6 +271,23 @@ abstract class EventRemoteDataSource {
   /// [page] is 1-based and [limit] is in `1..maxPageSize`. Failures classify as
   /// [fetchEvents]' do.
   Future<PaginatedResult<EventSnapshot>> browseEvents({
+    int page = 1,
+    int limit = maxPageSize,
+  });
+
+  /// `GET /api/households/:householdId/events`: one page of a household's
+  /// events (#503). Rows have the shape of [fetchEvents]' rows, each snapshot
+  /// with `attendees: null`, and the caller's own answer as `attendance`. That
+  /// is null when the caller does not attend the event or was removed from it,
+  /// and also when the caller may not read the event's attendees, so a null
+  /// `attendance` is not proof of no RSVP.
+  ///
+  /// [householdId] must not be empty. [page] is 1-based and [limit] is in
+  /// `1..maxPageSize`. A missing or deleted household is a 404 carrying the
+  /// envelope, which is [EventRemoteNotFoundException]; a 403 carrying it is
+  /// [EventRemoteForbiddenException]. Without the envelope either is transient.
+  Future<PaginatedResult<EventSnapshot>> fetchHouseholdEvents(
+    String householdId, {
     int page = 1,
     int limit = maxPageSize,
   });

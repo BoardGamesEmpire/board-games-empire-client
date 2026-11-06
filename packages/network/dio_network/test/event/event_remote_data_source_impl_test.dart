@@ -765,6 +765,91 @@ void main() {
     });
   });
 
+  group('fetchHouseholdEvents', () {
+    test("requests the household's route with page and limit", () async {
+      final remote = answering(_listBody([]));
+
+      await remote.fetchHouseholdEvents('h/1', page: 2, limit: 50);
+
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/households/h%2F1/events');
+      expect(adapter.sent.single.query, {'page': 2, 'limit': 50});
+    });
+
+    test('reads rows as list rows', () async {
+      final remote = answering(
+        _listBody([
+          _eventRow()
+            ..['attendance'] = {
+              'attendeeId': 'a1',
+              'status': 'Maybe',
+              'role': 'EventGuest',
+              'rsvpDate': null,
+            },
+        ]),
+      );
+
+      final snapshot = (await remote.fetchHouseholdEvents('h1')).items.single;
+
+      expect(snapshot.attendees, isNull);
+      expect(
+        snapshot.attendance,
+        EventAttendance(
+          attendeeId: 'a1',
+          status: EventParticipationStatus.maybe,
+          role: EventRole.guest,
+        ),
+      );
+    });
+
+    test('a 404 with the envelope is not found', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Household not found'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.fetchHouseholdEvents('h1'),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test('a 404 without it is transient', () async {
+      final remote = answering('', status: 404);
+
+      await expectLater(
+        remote.fetchHouseholdEvents('h1'),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('a 403 with the envelope is forbidden', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'You are not allowed to do that.'),
+        status: 403,
+      );
+
+      await expectLater(
+        remote.fetchHouseholdEvents('h1'),
+        throwsA(isA<EventRemoteForbiddenException>()),
+      );
+    });
+
+    test('rejects a limit out of range before sending', () async {
+      final remote = answering(_listBody([]));
+
+      await expectLater(
+        remote.fetchHouseholdEvents('h1', limit: 101),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchHouseholdEvents('h1', limit: 0),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
+
   group('fetchEvent', () {
     test('reads the event with its roster', () async {
       final remote = answering(

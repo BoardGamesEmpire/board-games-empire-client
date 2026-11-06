@@ -39,6 +39,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     page: page,
     limit: limit,
     action: 'Event list',
+    route: _Route.list,
     includeArchived: includeArchived,
   );
 
@@ -51,7 +52,24 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     page: page,
     limit: limit,
     action: 'Event browse',
+    route: _Route.list,
   );
+
+  @override
+  Future<PaginatedResult<EventSnapshot>> fetchHouseholdEvents(
+    String householdId, {
+    int page = 1,
+    int limit = EventRemoteDataSource.maxPageSize,
+  }) {
+    _checkId(householdId, name: 'householdId');
+    return _fetchList(
+      '/api/households/${Uri.encodeComponent(householdId)}/events',
+      page: page,
+      limit: limit,
+      action: 'Household event list',
+      route: _Route.householdList,
+    );
+  }
 
   /// One page of event rows from the list route at [path].
   Future<PaginatedResult<EventSnapshot>> _fetchList(
@@ -59,11 +77,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     required int page,
     required int limit,
     required String action,
+    required _Route route,
     bool includeArchived = false,
   }) async {
     _checkPaging(page: page, limit: limit);
 
-    const failures = _EventFailures(_Route.list);
+    final failures = _EventFailures(route);
     final response = await sendForJson(
       () => _dio.get<String>(
         path,
@@ -77,7 +96,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       action: action,
       // A list route is never absent for a caller who reached it: no events is
       // a 200 with an empty page. So a 404 here means the route is not
-      // deployed, such as on a server older than the events routes.
+      // deployed, such as on a server older than the events routes. A
+      // household's list is the exception: its path names the household, so
+      // an enveloped 404 says the household is missing or deleted (#503).
       family: failures,
     );
 
@@ -972,7 +993,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
           statusCode: status,
           apiMessage: apiErrorField(body, 'message'),
         ),
-        _Route.list || _Route.row => EventRemoteForbiddenException(
+        _Route.list ||
+        _Route.householdList ||
+        _Route.row => EventRemoteForbiddenException(
           message,
           cause: cause,
           statusCode: status,
@@ -981,7 +1004,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     }
     if (status == 404) {
       return switch (route) {
-        _Route.row || _Route.write => EventRemoteNotFoundException(
+        _Route.row ||
+        _Route.householdList ||
+        _Route.write => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -1015,6 +1040,10 @@ enum _Route {
   /// `GET /api/events`, a route that is never absent for a caller who reached
   /// it.
   list,
+
+  /// `GET /api/households/:householdId/events`, whose path names a household:
+  /// an enveloped 404 says it is missing or deleted (#503).
+  householdList,
 
   /// `GET /api/events/:id` and the poll's summary under it, which name one
   /// event.
