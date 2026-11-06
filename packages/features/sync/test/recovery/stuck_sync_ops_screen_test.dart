@@ -51,8 +51,11 @@ void main() {
 
   tearDown(() => unawaited(stuck.close()));
 
-  Widget harness({TextScaler textScaler = TextScaler.noScaling}) => MaterialApp(
-    theme: BgeTheme.light(),
+  Widget harness({
+    ThemeData? theme,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: SyncLocalizations.localizationsDelegates,
     supportedLocales: SyncLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
@@ -283,6 +286,147 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(StuckSyncOpsScreen.retryKey('q1')), findsOneWidget);
     expect(discard, findsOneWidget);
+  });
+
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) =>
+        harness(theme: theme, textScaler: textScaler);
+
+    testWidgets('the harness applies the theme and the text scaler', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+      stuck.add(_ops.take(1).toList());
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byType(StuckSyncOpsScreen));
+      expect(Theme.of(context).brightness, Brightness.dark);
+      expect(MediaQuery.textScalerOf(context).scale(10), 20);
+    });
+
+    // At 320dp × 2.0 the intro alone fills most of the view, so the rows can
+    // sit below the fold and unbuilt; the intro is what proves the state.
+    Future<void> ready(WidgetTester tester, List<StuckSyncOp> ops) async {
+      stuck.add(ops);
+      await tester.pumpAndSettle();
+      expect(find.textContaining("These changes didn't reach"), findsOneWidget);
+    }
+
+    // Scrolls to the row's [button], taps it, and settles.
+    Future<void> tapRowButton(WidgetTester tester, Key button) async {
+      await scrollListToEnd(tester, find.byKey(button), mustScroll: false);
+      await tester.tap(find.byKey(button));
+      await tester.pumpAndSettle();
+    }
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) => ready(tester, _ops),
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await ready(tester, _ops);
+        await scrollListToEnd(
+          tester,
+          find.byKey(StuckSyncOpsScreen.discardKey('q5')),
+        );
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: build,
+      arrange: (tester) async {
+        stuck.add(const []);
+        await tester.pumpAndSettle();
+        expect(find.byKey(StuckSyncOpsScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        stuck.addError(StateError('read failed'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(StuckSyncOpsScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    // Nothing has been added to the stream, so the first read never answers.
+    auditScreen(
+      'loading',
+      build: build,
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(StuckSyncOpsScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'retrying',
+      build: build,
+      arrange: (tester) async {
+        final sending = Completer<bool>();
+        addTearDown(() => sending.complete(true));
+        when(() => recovery.retry('q1')).thenAnswer((_) => sending.future);
+        await ready(tester, _ops.take(1).toList());
+        await tapRowButton(tester, StuckSyncOpsScreen.retryKey('q1'));
+        await scrollListToEnd(
+          tester,
+          find.byKey(StuckSyncOpsScreen.discardKey('q1')),
+          mustScroll: false,
+        );
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(StuckSyncOpsScreen.retryKey('q1')))
+              .onPressed,
+          isNull,
+        );
+        expect(find.text('Sending…'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'retry refused again',
+      build: build,
+      arrange: (tester) async {
+        when(() => recovery.retry('q1')).thenAnswer((_) async => false);
+        await ready(tester, _ops.take(1).toList());
+        await tapRowButton(tester, StuckSyncOpsScreen.retryKey('q1'));
+        await scrollPageToTop(tester);
+        expect(find.byKey(StuckSyncOpsScreen.refusedAgainKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'action failed',
+      build: build,
+      arrange: (tester) async {
+        when(() => recovery.retry('q1')).thenThrow(StateError('disposed'));
+        await ready(tester, _ops.take(1).toList());
+        await tapRowButton(tester, StuckSyncOpsScreen.retryKey('q1'));
+        await scrollPageToTop(tester);
+        expect(find.byKey(StuckSyncOpsScreen.actionFailedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'discard dialog open',
+      build: build,
+      arrange: (tester) async {
+        await ready(tester, _ops.take(1).toList());
+        await tapRowButton(tester, StuckSyncOpsScreen.discardKey('q1'));
+        expect(find.text('Discard this change?'), findsOneWidget);
+      },
+    );
   });
 }
 
