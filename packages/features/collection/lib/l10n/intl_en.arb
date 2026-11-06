@@ -56,7 +56,7 @@
   },
   "collectionListDetailSpokenSeparator": ", ",
   "@collectionListDetailSpokenSeparator": {
-    "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+    "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items. It also joins the copies listed for a game owned more than once (collectionListStackCopies), where it is shown as well as read."
   },
   "collectionLayoutList": "List",
   "@collectionLayoutList": {
@@ -68,11 +68,11 @@
   },
   "collectionListMediumPhysical": "Physical",
   "@collectionListMediumPhysical": {
-    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's Medium field."
   },
   "collectionListMediumDigital": "Digital",
   "@collectionListMediumDigital": {
-    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's Medium field."
   },
   "collectionListQuantity": "{count, plural, =1{1 copy} other{{count} copies}}",
   "@collectionListQuantity": {
@@ -117,6 +117,20 @@
   "@collectionListFavorite": {
     "description": "Marks a game the user has favorited. Spoken by screen readers for the heart icon on a collection row, and shown beside the same icon on a collection entry's detail."
   },
+  "collectionListStackCopies": "{count, plural, other{{count} copies}}: {platforms}",
+  "@collectionListStackCopies": {
+    "description": "On the collection row or cover of a game the user owns more than once, on different platforms or as both a physical and a digital copy: how many copies, then which, for example '2 copies: Tabletop, Steam'. Shown under the game's name on a row, and read by screen readers after the game's name on a row and on a cover. {count} is always two or more. {platforms} lists each copy's platform, with its medium where two copies share a platform (collectionPickerEntryWithMedium), joined by collectionListDetailSpokenSeparator.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      },
+      "platforms": {
+        "type": "String",
+        "example": "Tabletop, Steam"
+      }
+    }
+  },
   "collectionStatsHeading": "Your stats",
   "@collectionStatsHeading": {
     "description": "Heading of the home page's card of game counts."
@@ -143,31 +157,39 @@
   "@collectionStatsCreateOrJoin": {
     "description": "A link on the home page's stats card, shown to a user who is in no household. It opens the households screen, where they can start one."
   },
-  "addToCollectionTitle": "Add {title} ({platform})",
+  "addToCollectionTitle": "Add {title}",
   "@addToCollectionTitle": {
-    "description": "Heading of the sheet that adds a game to the user's collection, naming the game and the platform it is added on, for example \"Add Wingspan (Switch)\". Read by screen readers as the sheet's heading.",
+    "description": "Heading of the sheet that adds a game to the user's collection, naming the game only, for example \"Add Wingspan\". The platform it is added on is the sheet's first field, not part of the heading. Read by screen readers as the sheet's heading.",
     "placeholders": {
       "title": {
         "type": "String",
         "example": "Wingspan"
-      },
-      "platform": {
-        "type": "String",
-        "example": "Switch"
       }
     }
   },
-  "addToCollectionMediumLabel": "Physical or digital",
+  "addToCollectionPlatformLabel": "Platform",
+  "@addToCollectionPlatformLabel": {
+    "description": "Label of the add sheet's required choice of platform (for example Tabletop, Steam or Switch) to add the game on. It lists only the platforms where the user doesn't yet own the game both physically and digitally."
+  },
+  "addToCollectionPlatformHint": "Choose one",
+  "@addToCollectionPlatformHint": {
+    "description": "Shown in the add sheet's platform field until the user picks one, as the medium field below it shows until a medium is picked."
+  },
+  "addToCollectionPlatformRequired": "Choose a platform.",
+  "@addToCollectionPlatformRequired": {
+    "description": "Error under the add sheet's platform field when the user submits without picking one."
+  },
+  "addToCollectionMediumLabel": "Medium",
   "@addToCollectionMediumLabel": {
-    "description": "Label of the add sheet's required choice between a physical copy (a boxed game, a disc) and a digital one (a download, an app)."
+    "description": "Label of the add sheet's required choice between a physical copy (a boxed game, a disc) and a digital one (a download, an app). \"Medium\" is the form the copy takes, not a size. It offers only the media the user doesn't yet own on the platform chosen, and can start on a likely one, which the user can change."
   },
   "addToCollectionMediumHint": "Choose one",
   "@addToCollectionMediumHint": {
-    "description": "Shown in the add sheet's physical-or-digital field until the user picks one."
+    "description": "Shown in the add sheet's Medium field until the user picks one."
   },
   "addToCollectionMediumRequired": "Choose physical or digital.",
   "@addToCollectionMediumRequired": {
-    "description": "Error under the add sheet's physical-or-digital field when the user submits without picking one."
+    "description": "Error under the add sheet's Medium field when the user submits without picking one."
   },
   "addToCollectionQuantityLabel": "Copies",
   "@addToCollectionQuantityLabel": {
@@ -501,6 +523,44 @@
   "@collectionEntryMediumSpoken": {
     "description": "What a screen reader says for whether the copy is physical or digital on a collection entry's detail, in place of the word shown alone. {medium} is collectionListMediumPhysical or collectionListMediumDigital, for example \"Format: Physical\".",
     "placeholders": {
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
+  },
+  "collectionPickerTitle": "{title}: your copies",
+  "@collectionPickerTitle": {
+    "description": "Heading of the pop-up that opens from a game the user owns more than one copy of, on different platforms or as both a physical and a digital copy. It lists the copies, and tapping one opens it. A screen reader also announces it as the pop-up's name when it opens. {title} is the game's name.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "collectionPickerEntryWithMedium": "{platform} · {medium}",
+  "@collectionPickerEntryWithMedium": {
+    "description": "Shown under one copy's cover in the pop-up listing a game's copies, when the user owns the game twice on the same platform, so the physical and the digital copy can be told apart, for example 'Tabletop · Physical'. Where a platform has only one copy, its name is shown alone. {medium} is collectionListMediumPhysical or collectionListMediumDigital. Keep or drop the spaces around the dot as your language's punctuation needs.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
+  },
+  "collectionPickerEntryWithMediumSpoken": "{platform} {medium}",
+  "@collectionPickerEntryWithMediumSpoken": {
+    "description": "What a screen reader says for one copy in the pop-up listing a game's copies, in place of collectionPickerEntryWithMedium, whose dot would be read out, for example 'Tabletop Physical'. It is the name of the button that opens that copy. Keep a comma out of it: a list of copies, such as the collection's name for a game owned twice, 'Wingspan, 2 copies: Tabletop Physical, Tabletop Digital', joins these with collectionListDetailSpokenSeparator, and a comma inside each would make two copies sound like four.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
       "medium": {
         "type": "String",
         "example": "Physical"

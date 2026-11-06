@@ -249,7 +249,7 @@ void main() {
     setUp(() => remote.onFetchGame = (_) async => throw unreachable());
 
     blocTest<GameDetailBloc, GameDetailState>(
-      'shows the cached game, with no platform games to offer',
+      'shows the cached game, with no platform games when none are cached',
       setUp: () => cache.cacheGame(catan),
       build: build,
       act: (bloc) => bloc.add(const GameDetailLoadRequested()),
@@ -258,6 +258,47 @@ void main() {
         GameDetailReady(game: catan, fromCache: true),
       ],
     );
+
+    // So the page can say what the user owns and offer an add offline
+    // (#708).
+    blocTest<GameDetailBloc, GameDetailState>(
+      'shows the cached game with the platform games cached for it',
+      setUp: () async {
+        await cache.cacheGame(catan);
+        await cache.cachePlatformGames([tabletop]);
+      },
+      build: build,
+      act: (bloc) => bloc.add(const GameDetailLoadRequested()),
+      expect: () => [
+        const GameDetailLoading(),
+        isA<GameDetailReady>()
+            .having((s) => s.game, 'game', catan)
+            .having((s) => s.fromCache, 'fromCache', isTrue)
+            .having(
+              (s) => s.platformGames.map((p) => p.id),
+              'platform game ids',
+              ['pg_1'],
+            ),
+      ],
+    );
+
+    test('shows the cached game with no platform games when reading them '
+        'fails', () async {
+      final failing = _GatedCache(db, userId: 'user-a')
+        ..platformGamesReadError = StateError('the read failed');
+      await failing.cacheGame(catan);
+      final bloc = GameDetailBloc(
+        gameId: 'g_catan',
+        remote: remote,
+        cache: failing,
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const GameDetailLoadRequested());
+      await pumpEventQueue();
+
+      expect(bloc.state, GameDetailReady(game: catan, fromCache: true));
+    });
 
     blocTest<GameDetailBloc, GameDetailState>(
       'fails when the game is not cached',
@@ -298,6 +339,15 @@ class _GatedCache extends GameRepositoryImpl {
   Future<void> Function()? beforeCachePlatformGames;
   int gameWrites = 0;
   int platformGameWrites = 0;
+
+  /// Thrown by [getPlatformGamesForGame] when set.
+  Object? platformGamesReadError;
+
+  @override
+  Future<List<PlatformGame>> getPlatformGamesForGame(String gameId) async {
+    if (platformGamesReadError case final error?) throw error;
+    return super.getPlatformGamesForGame(gameId);
+  }
 
   @override
   Future<void> cacheGame(Game game) async {

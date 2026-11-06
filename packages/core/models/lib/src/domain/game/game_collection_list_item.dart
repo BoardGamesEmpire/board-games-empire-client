@@ -22,8 +22,9 @@ abstract class GameCollectionListItem with _$GameCollectionListItem {
     String? subtitle,
     required String platformName,
 
-    /// The platform game's thumbnail when it has one, otherwise the game's.
-    /// Null when neither does.
+    /// The platform game's own picture when it has one, otherwise the
+    /// game's: each one's thumbnail, else its full image (#709). Null when
+    /// none of the four is set.
     String? thumbnail,
   }) = _GameCollectionListItem;
 }

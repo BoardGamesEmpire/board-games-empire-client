@@ -15,6 +15,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_platform_bootstrap.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -77,16 +78,21 @@ class _RecordingRehydrator implements SessionRehydrator {
   Future<void> rehydrateStale() async => passes++;
 }
 
-GameCollectionListItem _item(String id) => GameCollectionListItem(
+/// The entry [id], of its own game unless [gameId] names one.
+GameCollectionListItem _item(
+  String id, {
+  String? gameId,
+  GameMedium medium = GameMedium.physical,
+}) => GameCollectionListItem(
   entry: GameCollection(
     id: id,
     userId: 'u1',
     platformGameId: 'pg-$id',
-    medium: GameMedium.physical,
+    medium: medium,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   ),
-  gameId: 'g-$id',
+  gameId: gameId ?? 'g-$id',
   title: 'Catan',
   platformName: 'Board game',
 );
@@ -498,6 +504,56 @@ void main() {
         find.byKey(CollectionEntryScreen.gameDetailsKey, skipOffstage: false),
         findsNothing,
       );
+    });
+  });
+
+  group('the picker (#709)', () {
+    // A stack's picker lists the departing user's copies. It is a pop-up on
+    // the root navigator, with no page of its own, so it goes with
+    // Collection's page as the session's end routes away from it.
+    testWidgets('the picker closes as the session ends', (tester) async {
+      final repository = _MockGameCollectionRepository();
+      when(repository.watchCollectionListItems).thenAnswer(
+        (_) => Stream.value([
+          _item('e-1'),
+          _item('e-2', gameId: 'g-e-1', medium: GameMedium.digital),
+        ]),
+      );
+      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final app = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          activeServerScope: FakeActiveServerScope(
+            buildActiveServer(
+              repo,
+              gameCollectionRepository: repository,
+              // Without one a stack is inert.
+              syncOperationSender: _MockSyncOperationSender(),
+            ),
+          ),
+        ),
+        hydratedStorageInitializer: (_) async {},
+      );
+      addTearDown(app.close);
+      await tester.pumpWidget(BgeApp(bootstrapCubit: app));
+      await app.initialize();
+      await tester.pumpAndSettle();
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.stackKey('g-e-1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(CollectionEntryPicker.tileKey('e-1')), findsOneWidget);
+      expect(find.byKey(CollectionEntryPicker.tileKey('e-2')), findsOneWidget);
+
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameCollectionListScreen), findsNothing);
+      for (final id in ['e-1', 'e-2']) {
+        expect(
+          find.byKey(CollectionEntryPicker.tileKey(id), skipOffstage: false),
+          findsNothing,
+        );
+      }
     });
   });
 }

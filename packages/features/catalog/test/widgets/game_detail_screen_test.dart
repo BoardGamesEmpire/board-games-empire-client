@@ -1,15 +1,26 @@
+import 'dart:async';
+
 import 'package:bge_test_support/images.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:game_catalog/src/widgets/game_detail_platforms.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
 
 void main() {
+  // The header tests measure the title in its own face; see #735.
+  setUpAll(loadDisplayFont);
+
   late FakeGamesRemote remote;
   late List<Uri> opened;
 
@@ -47,8 +58,7 @@ void main() {
     WidgetTester tester, {
     String gameId = 'g_catan',
     FakeGamesCache? cache,
-    void Function(BuildContext context, Game game, PlatformGame platformGame)?
-    onAdd,
+    GameDetailCollection? collection,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -56,7 +66,7 @@ void main() {
           gameId: gameId,
           remote: remote,
           cache: cache,
-          onAdd: onAdd,
+          collection: collection,
           openLink: (uri) async => opened.add(uri),
         ),
       ),
@@ -193,25 +203,6 @@ void main() {
     tapLink(tester, 'the rules');
 
     expect(opened, [Uri.parse('https://example.com/rules')]);
-  });
-
-  testWidgets('lists the platforms, with an add for each where adding is '
-      'offered', (tester) async {
-    remote.onFetchGame = (_) async => (game: catan, platformGames: [tabletop]);
-    final added = <String>[];
-
-    await show(tester);
-    expect(find.text('Tabletop'), findsOneWidget);
-    expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
-
-    await show(
-      tester,
-      onAdd: (_, game, platformGame) =>
-          added.add('${game.id}/${platformGame.id}'),
-    );
-    await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
-
-    expect(added, ['g_catan/pg_1']);
   });
 
   testWidgets('rebuilt in place for another game, reads that game', (
@@ -466,6 +457,1017 @@ void main() {
           expect(fetches, 1);
         });
       });
+    });
+  });
+
+  group('the platforms and the collection (#708)', () {
+    final steam = PlatformGame(
+      id: 'pg_2',
+      gameId: 'g_catan',
+      platformId: 'plat_steam',
+      platformName: 'Steam',
+      thumbnail: 'https://example.com/steam.png',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+    final nintendoSwitch = PlatformGame(
+      id: 'pg_3',
+      gameId: 'g_catan',
+      platformId: 'plat_switch',
+      platformName: 'Nintendo Switch 2',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    GameCollection entry(String platformGameId, GameMedium medium) =>
+        GameCollection(
+          id: 'e_${platformGameId}_${medium.name}',
+          userId: 'u_1',
+          platformGameId: platformGameId,
+          medium: medium,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+    const ownedSpoken = 'Tabletop, in your collection, opens your copy';
+    const notOwnedSpoken = 'Steam, not in your collection, add';
+
+    late List<({List<CollectionAddOption> options, String? platformGameId})>
+    adds;
+    late List<List<GameCollectionListItem>> openedOwned;
+    late List<Set<String>> watched;
+
+    setUp(() {
+      adds = [];
+      openedOwned = [];
+      watched = [];
+    });
+
+    /// A collection whose ownership is [owned]'s stream, recording what the
+    /// page asks of it.
+    GameDetailCollection collectionOf(
+      Stream<List<GameCollection>> Function() owned,
+    ) => GameDetailCollection(
+      watchOwned: (ids) {
+        watched.add(ids);
+        return owned();
+      },
+      onAdd: (context, game, options, {platformGameId}) {
+        expect(game.id, 'g_catan');
+        adds.add((options: options, platformGameId: platformGameId));
+      },
+      onOpenOwned: (context, items) => openedOwned.add(items),
+    );
+
+    /// The page for Catan on [platforms], owning [entries].
+    Future<void> showOwning(
+      WidgetTester tester,
+      List<GameCollection> entries, {
+      List<PlatformGame>? platforms,
+      Game? game,
+    }) async {
+      remote.onFetchGame = (_) async =>
+          (game: game ?? catan, platformGames: platforms ?? [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => Stream.value(entries)));
+    }
+
+    Finder chip(String platformGameId) =>
+        find.byKey(GameDetailScreen.platformKey(platformGameId));
+    Finder checkOn(String platformGameId) => find.descendant(
+      of: chip(platformGameId),
+      matching: find.byIcon(Icons.check),
+    );
+    Finder actionChipOf(String platformGameId) => find.descendant(
+      of: chip(platformGameId),
+      matching: find.byType(ActionChip),
+    );
+    final addButton = find.byKey(GameDetailScreen.addKey);
+    final ownedLegend = find.byKey(GameDetailScreen.ownedLegendKey);
+
+    Future<void> tapChip(WidgetTester tester, String platformGameId) async {
+      await tester.ensureVisible(chip(platformGameId));
+      await tester.pumpAndSettle();
+      await tester.tap(chip(platformGameId));
+      await tester.pump();
+    }
+
+    /// Expects the chips plain, as labels: no action, no check, and nothing
+    /// said of ownership.
+    void expectPlain(WidgetTester tester) {
+      expect(find.byType(ActionChip), findsNothing);
+      expect(find.byType(Chip), findsNWidgets(2));
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(ownedLegend, findsNothing);
+      expect(addButton, findsNothing);
+      expect(find.bySemanticsLabel(RegExp('collection')), findsNothing);
+      expect(find.bySemanticsLabel('Tabletop'), findsOneWidget);
+    }
+
+    testWidgets('owned chips carry the check and say so; unowned ones say '
+        'add', (tester) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(checkOn('pg_2'), findsNothing);
+
+      // One node each, a button that a reader can press, named in full: the
+      // shown platform name is not read again on its own.
+      for (final spoken in [ownedSpoken, notOwnedSpoken]) {
+        expect(
+          tester.getSemantics(find.bySemanticsLabel(spoken)),
+          isSemantics(
+            label: spoken,
+            isButton: true,
+            hasTapAction: true,
+            isFocusable: true,
+          ),
+        );
+      }
+      expect(find.bySemanticsLabel('Tabletop'), findsNothing);
+      expect(find.bySemanticsLabel('Steam'), findsNothing);
+
+      // Filled against outlined, from the roles the contrast test checks.
+      final scheme = Theme.of(tester.element(chip('pg_1'))).colorScheme;
+      final owned = tester.widget<ActionChip>(actionChipOf('pg_1'));
+      expect(owned.backgroundColor, scheme.primary);
+      expect(owned.side, BorderSide.none);
+      expect(owned.labelStyle?.color, scheme.onPrimary);
+      expect(tester.widget<Icon>(checkOn('pg_1')).color, scheme.onPrimary);
+      final notOwned = tester.widget<ActionChip>(actionChipOf('pg_2'));
+      expect(notOwned.backgroundColor?.a ?? 0, 0);
+      expect(notOwned.side?.color, scheme.primary);
+      expect(notOwned.labelStyle?.color, scheme.primary);
+    });
+
+    testWidgets('tapping an owned chip opens its entries', (tester) async {
+      // Tabletop has no picture of its own, so its copies show the game's;
+      // Steam's show Steam's.
+      await showOwning(tester, [
+        entry('pg_1', GameMedium.physical),
+        entry('pg_1', GameMedium.digital),
+        entry('pg_2', GameMedium.digital),
+      ], game: catan.copyWith(thumbnail: 'https://example.com/catan.png'));
+
+      await tapChip(tester, 'pg_1');
+      await tapChip(tester, 'pg_2');
+
+      expect(openedOwned, [
+        [
+          for (final medium in [GameMedium.physical, GameMedium.digital])
+            GameCollectionListItem(
+              entry: entry('pg_1', medium),
+              gameId: 'g_catan',
+              title: 'Catan',
+              subtitle: 'Trade, build, settle',
+              platformName: 'Tabletop',
+              thumbnail: 'https://example.com/catan.png',
+            ),
+        ],
+        [
+          GameCollectionListItem(
+            entry: entry('pg_2', GameMedium.digital),
+            gameId: 'g_catan',
+            title: 'Catan',
+            subtitle: 'Trade, build, settle',
+            platformName: 'Steam',
+            thumbnail: 'https://example.com/steam.png',
+          ),
+        ],
+      ]);
+      expect(adds, isEmpty);
+    });
+
+    testWidgets("an owned copy's picture falls back through each one's full "
+        'image (#709)', (tester) async {
+      // Steam has only a full image of its own, which beats the game's
+      // thumbnail; Tabletop has none, and the game has only a full image.
+      await showOwning(
+        tester,
+        [entry('pg_1', GameMedium.physical), entry('pg_2', GameMedium.digital)],
+        platforms: [
+          tabletop,
+          steam.copyWith(thumbnail: null, image: 'https://example.com/s.png'),
+        ],
+        game: catan.copyWith(image: 'https://example.com/catan_full.png'),
+      );
+
+      await tapChip(tester, 'pg_1');
+      await tapChip(tester, 'pg_2');
+
+      expect(openedOwned.map((items) => items.single.thumbnail), [
+        'https://example.com/catan_full.png',
+        'https://example.com/s.png',
+      ]);
+    });
+
+    testWidgets('tapping an unowned chip opens the add with that platform '
+        'chosen', (tester) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+
+      await tapChip(tester, 'pg_2');
+
+      expect(adds, hasLength(1));
+      expect(adds.single.platformGameId, 'pg_2');
+      expect(adds.single.options, [
+        CollectionAddOption(
+          platformGame: tabletop,
+          freeMediums: {GameMedium.digital},
+        ),
+        CollectionAddOption(
+          platformGame: steam,
+          freeMediums: {GameMedium.physical, GameMedium.digital},
+        ),
+      ]);
+      expect(openedOwned, isEmpty);
+    });
+
+    testWidgets('the Add button offers only platforms with a free medium', (
+      tester,
+    ) async {
+      await showOwning(tester, [
+        entry('pg_1', GameMedium.physical),
+        entry('pg_1', GameMedium.digital),
+        entry('pg_2', GameMedium.digital),
+      ]);
+
+      expect(
+        find.descendant(
+          of: addButton,
+          matching: find.text('Add to collection'),
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+      await tester.tap(addButton);
+      await tester.pump();
+
+      expect(adds, hasLength(1));
+      expect(adds.single.platformGameId, isNull);
+      expect(adds.single.options, [
+        CollectionAddOption(
+          platformGame: steam,
+          freeMediums: {GameMedium.physical},
+        ),
+      ]);
+    });
+
+    testWidgets('the Add button is absent when everything is owned in both '
+        'mediums', (tester) async {
+      await showOwning(tester, [
+        for (final id in ['pg_1', 'pg_2'])
+          for (final medium in GameMedium.values) entry(id, medium),
+      ]);
+
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(checkOn('pg_2'), findsOneWidget);
+      expect(addButton, findsNothing);
+    });
+
+    testWidgets('the legend shows only when something is owned', (
+      tester,
+    ) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => owned.stream));
+
+      owned.add(const []);
+      await tester.pumpAndSettle();
+      expect(ownedLegend, findsNothing);
+      expect(addButton, findsOneWidget);
+
+      owned.add([entry('pg_2', GameMedium.digital)]);
+      await tester.pumpAndSettle();
+      expect(ownedLegend, findsOneWidget);
+      expect(
+        find.descendant(
+          of: ownedLegend,
+          matching: find.text('In your collection'),
+        ),
+        findsOneWidget,
+      );
+
+      // The legend shows the chips' own mark, as large, in the surface's ink,
+      // and says only its words: the mark is decoration.
+      final legendCheck = tester.widget<Icon>(
+        find.descendant(of: ownedLegend, matching: find.byIcon(Icons.check)),
+      );
+      final chipCheck = tester.widget<Icon>(checkOn('pg_2'));
+      final scheme = Theme.of(tester.element(ownedLegend)).colorScheme;
+      expect(legendCheck.size, isNotNull);
+      expect(legendCheck.size, chipCheck.size);
+      expect(legendCheck.color, scheme.onSurface);
+      expect(legendCheck.semanticLabel, isNull);
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('In your collection')),
+        isSemantics(label: 'In your collection'),
+      );
+    });
+
+    testWidgets('a chip focused from the keyboard is ringed, owned or not', (
+      tester,
+    ) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+
+      /// The ring [BgeFocusRing] draws around [platformGameId]'s chip, or
+      /// null while it draws none.
+      Border? ringOn(String platformGameId) {
+        final ring = find.descendant(
+          of: find.descendant(
+            of: chip(platformGameId),
+            matching: find.byType(BgeFocusRing),
+          ),
+          matching: find.byType(DecoratedBox),
+        );
+        return (tester.widget<DecoratedBox>(ring.first).decoration
+                    as BoxDecoration)
+                .border
+            as Border?;
+      }
+
+      /// Tabs until [platformGameId]'s chip has the focus.
+      Future<void> tabTo(String platformGameId) async {
+        for (var i = 0; i < 10; i++) {
+          final focused = FocusManager.instance.primaryFocus?.context;
+          if (focused != null &&
+              find
+                  .descendant(
+                    of: chip(platformGameId),
+                    matching: find.byWidget(focused.widget),
+                  )
+                  .evaluate()
+                  .isNotEmpty) {
+            return;
+          }
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+        }
+        fail('Tab never reached $platformGameId');
+      }
+
+      expect(ringOn('pg_1'), isNull);
+      expect(ringOn('pg_2'), isNull);
+
+      await tabTo('pg_1');
+      final scheme = Theme.of(tester.element(chip('pg_1'))).colorScheme;
+      expect(ringOn('pg_1')?.top.color, scheme.primary);
+      expect(ringOn('pg_2'), isNull);
+      // Drawn a margin out from the chip's own edge, where it stands on the
+      // surface rather than on a filled chip's own colour.
+      final margin = BgeTokens.of(tester.element(chip('pg_1'))).spaceXs;
+      final ringRect = tester.getRect(
+        find
+            .descendant(
+              of: find.descendant(
+                of: chip('pg_1'),
+                matching: find.byType(BgeFocusRing),
+              ),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      expect(ringRect, tester.getRect(actionChipOf('pg_1')).inflate(margin));
+      // The margin moves no chip: the first lines up with the heading.
+      expect(
+        tester.getRect(actionChipOf('pg_1')).left,
+        tester.getRect(find.text('Available on')).left,
+      );
+
+      await tabTo('pg_2');
+      expect(ringOn('pg_1'), isNull);
+      expect(ringOn('pg_2')?.top.color, scheme.primary);
+
+      // A touch hides it, though the chip keeps the focus.
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(ringOn('pg_2'), isNull);
+    });
+
+    testWidgets('the ring follows the chip\'s own corners, a margin out', (
+      tester,
+    ) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+      final margin = BgeTokens.of(tester.element(chip('pg_1'))).spaceXs;
+
+      // The corners the chip is drawn with, whatever the theme or Material
+      // makes them, owned and not.
+      for (final id in ['pg_1', 'pg_2']) {
+        final shape = tester
+            .widget<Material>(
+              find
+                  .descendant(
+                    of: actionChipOf(id),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            )
+            .shape;
+        expect(shape, isA<RoundedRectangleBorder>(), reason: id);
+        final corner = (shape! as RoundedRectangleBorder).borderRadius
+            .resolve(TextDirection.ltr)
+            .topLeft;
+        final ring = tester
+            .widget<BgeFocusRing>(
+              find.descendant(
+                of: chip(id),
+                matching: find.byType(BgeFocusRing),
+              ),
+            )
+            .borderRadius
+            .topLeft;
+        expect(ring.x, corner.x + margin, reason: id);
+        expect(ring.y, corner.y + margin, reason: id);
+      }
+    });
+
+    testWidgets('a one-letter platform keeps a 48 dp square tap target', (
+      tester,
+    ) async {
+      final letter = PlatformGame(
+        id: 'pg_4',
+        gameId: 'g_catan',
+        platformId: 'plat_i',
+        platformName: 'I',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+      // The test font draws every letter an em wide, so it takes small text
+      // to make a one-letter chip narrower than the target, as an "I" is in
+      // a real face at the normal size.
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(0.25)),
+          child: catalogApp(
+            Scaffold(
+              body: GameDetailPlatforms(
+                game: catan,
+                // Second in its row, clear of the row's start, where the
+                // slot's margin is drawn into the page's padding.
+                platformGames: [tabletop, letter],
+                collection: collectionOf(() => Stream.value(const [])),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final target = tester.getRect(chip('pg_4'));
+      final drawn = tester.getRect(actionChipOf('pg_4'));
+      expect(target.width, greaterThanOrEqualTo(48));
+      expect(target.height, greaterThanOrEqualTo(48));
+      expect(drawn.width, lessThan(target.width - 2 * 4));
+
+      // Beside the chip, inside its target.
+      await tester.tapAt(Offset(target.left + 1, target.center.dy));
+      await tester.pump();
+
+      expect(adds.single.platformGameId, 'pg_4');
+    });
+
+    testWidgets('a one-letter platform starting its row keeps 48 dp of its '
+        'tap target where a press reaches it', (tester) async {
+      final letter = PlatformGame(
+        id: 'pg_4',
+        gameId: 'g_catan',
+        platformId: 'plat_i',
+        platformName: 'I',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(0.25)),
+          child: catalogApp(
+            Scaffold(
+              body: Padding(
+                padding: const EdgeInsets.all(16),
+                child: GameDetailPlatforms(
+                  game: catan,
+                  platformGames: [letter, tabletop],
+                  collection: collectionOf(() => Stream.value(const [])),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The slot's start margin lies in the padding, outside the section,
+      // where no press reaches it.
+      final section = tester.getRect(find.byType(GameDetailPlatforms));
+      final target = tester.getRect(chip('pg_4'));
+      expect(target.left, lessThan(section.left));
+      expect(target.right - section.left, greaterThanOrEqualTo(48));
+
+      await tester.tapAt(Offset(target.left + 1, target.center.dy));
+      await tester.pump();
+      expect(adds, isEmpty);
+
+      await tester.tapAt(Offset(section.left + 1, target.center.dy));
+      await tester.pump();
+      expect(adds.single.platformGameId, 'pg_4');
+    });
+
+    testWidgets('a press beside a chip, inside its tap target, presses it', (
+      tester,
+    ) async {
+      await showOwning(tester, [entry('pg_1', GameMedium.physical)]);
+      await tester.ensureVisible(chip('pg_2'));
+      await tester.pumpAndSettle();
+
+      final drawn = tester.getRect(actionChipOf('pg_2'));
+      final target = tester.getRect(chip('pg_2'));
+      expect(target.height, greaterThanOrEqualTo(48));
+      expect(target.top, lessThan(drawn.top));
+      await tester.tapAt(Offset(drawn.center.dx, target.top + 1));
+      await tester.pump();
+
+      expect(adds.single.platformGameId, 'pg_2');
+    });
+
+    testWidgets('chips follow the ownership stream', (tester) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => owned.stream));
+
+      owned.add(const []);
+      await tester.pumpAndSettle();
+      expect(checkOn('pg_1'), findsNothing);
+      expect(ownedLegend, findsNothing);
+      expect(addButton, findsOneWidget);
+      expect(find.bySemanticsLabel(notOwnedSpoken), findsOneWidget);
+
+      owned.add([entry('pg_1', GameMedium.physical)]);
+      await tester.pumpAndSettle();
+      expect(checkOn('pg_1'), findsOneWidget);
+      expect(find.bySemanticsLabel(ownedSpoken), findsOneWidget);
+      expect(ownedLegend, findsOneWidget);
+      expect(addButton, findsOneWidget);
+
+      owned.add([
+        for (final id in ['pg_1', 'pg_2'])
+          for (final medium in GameMedium.values) entry(id, medium),
+      ]);
+      await tester.pumpAndSettle();
+      expect(checkOn('pg_2'), findsOneWidget);
+      expect(addButton, findsNothing);
+
+      // The entry page removes the copies: the chips say add again, the legend
+      // goes and the button comes back.
+      owned.add(const []);
+      await tester.pumpAndSettle();
+      expect(checkOn('pg_1'), findsNothing);
+      expect(checkOn('pg_2'), findsNothing);
+      expect(
+        find.bySemanticsLabel('Tabletop, not in your collection, add'),
+        findsOneWidget,
+      );
+      expect(ownedLegend, findsNothing);
+      expect(addButton, findsOneWidget);
+
+      // One watch over the page's platforms, whatever it answers.
+      expect(watched, [
+        {'pg_1', 'pg_2'},
+      ]);
+    });
+
+    testWidgets('the watch follows the platforms, not each rebuild', (
+      tester,
+    ) async {
+      final streams = <StreamController<List<GameCollection>>>[];
+      Stream<List<GameCollection>> next() {
+        final owned = StreamController<List<GameCollection>>();
+        addTearDown(owned.close);
+        streams.add(owned);
+        return owned.stream;
+      }
+
+      Future<void> platforms(
+        List<PlatformGame> platformGames, {
+        bool collection = true,
+      }) async {
+        await tester.pumpWidget(
+          catalogApp(
+            Scaffold(
+              body: GameDetailPlatforms(
+                game: catan,
+                platformGames: platformGames,
+                collection: collection ? collectionOf(next) : null,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await platforms([tabletop, steam]);
+      streams.single.add([entry('pg_1', GameMedium.physical)]);
+      await tester.pumpAndSettle();
+
+      // A new list of the same platforms and a new collection, as a rebuild
+      // from above hands over: the watch and its answer stay.
+      await platforms([steam, tabletop]);
+      expect(watched, [
+        {'pg_1', 'pg_2'},
+      ]);
+      expect(checkOn('pg_1'), findsOneWidget);
+
+      // A platform more, which the last answer says nothing of.
+      await platforms([tabletop, steam, nintendoSwitch]);
+      expect(watched.last, {'pg_1', 'pg_2', 'pg_3'});
+      expect(streams.first.hasListener, isFalse);
+      expect(find.byType(ActionChip), findsNothing);
+      streams.last.add([entry('pg_3', GameMedium.digital)]);
+      await tester.pumpAndSettle();
+      expect(checkOn('pg_3'), findsOneWidget);
+
+      // No collection, no watch.
+      await platforms([tabletop, steam, nintendoSwitch], collection: false);
+      expect(streams[1].hasListener, isFalse);
+      expect(find.byType(ActionChip), findsNothing);
+
+      // And none once the page goes.
+      await platforms([tabletop, steam, nintendoSwitch]);
+      expect(watched, hasLength(3));
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(streams.last.hasListener, isFalse);
+    });
+
+    testWidgets('before ownership answers, chips are plain and nothing is '
+        'offered', (tester) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => owned.stream));
+
+      expectPlain(tester);
+      await tester.tap(chip('pg_2'));
+      await tester.pump();
+      expect(adds, isEmpty);
+      expect(openedOwned, isEmpty);
+    });
+
+    testWidgets('after the ownership watch fails, chips are plain again and '
+        'the add offers every platform in either medium', (tester) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => owned.stream));
+      owned.add([
+        for (final id in ['pg_1', 'pg_2'])
+          for (final medium in GameMedium.values) entry(id, medium),
+      ]);
+      await tester.pumpAndSettle();
+      expect(ownedLegend, findsOneWidget);
+      expect(addButton, findsNothing);
+
+      owned.addError(StateError('the cache is gone'));
+      await tester.pumpAndSettle();
+
+      // Ownership is unknown, so nothing is said of it.
+      expect(find.byType(ActionChip), findsNothing);
+      expect(find.byType(Chip), findsNWidgets(2));
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(ownedLegend, findsNothing);
+      expect(find.bySemanticsLabel(RegExp('in your collection')), findsNothing);
+      expect(find.bySemanticsLabel('Tabletop'), findsOneWidget);
+
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+      await tester.tap(addButton);
+      await tester.pump();
+      expect(adds.single.platformGameId, isNull);
+      expect(adds.single.options, [
+        for (final platformGame in [tabletop, steam])
+          CollectionAddOption(
+            platformGame: platformGame,
+            freeMediums: GameMedium.values.toSet(),
+          ),
+      ]);
+    });
+
+    /// Whether the primary focus is on a node built inside [finder].
+    bool focusIn(Finder finder) {
+      final focused = FocusManager.instance.primaryFocus?.context;
+      return focused != null &&
+          find
+              .descendant(
+                of: finder,
+                matching: find.byElementPredicate((e) => identical(e, focused)),
+              )
+              .evaluate()
+              .isNotEmpty;
+    }
+
+    /// Everything on Tabletop, and Steam's physical copy: the Add button
+    /// offers Steam's digital copy alone.
+    final allButSteamDigital = [
+      entry('pg_1', GameMedium.physical),
+      entry('pg_1', GameMedium.digital),
+      entry('pg_2', GameMedium.physical),
+    ];
+    final everything = [
+      ...allButSteamDigital,
+      entry('pg_2', GameMedium.digital),
+    ];
+
+    testWidgets('focus on the Add button as it goes moves to the chip of the '
+        'platform just filled', (tester) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      await show(tester, collection: collectionOf(() => owned.stream));
+      owned.add(allButSteamDigital);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: addButton,
+            matching: find.text('Add to collection'),
+          ),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      expect(focusIn(addButton), isTrue);
+
+      owned.add(everything);
+      await tester.pumpAndSettle();
+
+      expect(addButton, findsNothing);
+      expect(focusIn(chip('pg_2')), isTrue);
+    });
+
+    testWidgets('the Add button going under the open add leaves focus to come '
+        'back to the chip before it', (tester) async {
+      final owned = StreamController<List<GameCollection>>();
+      addTearDown(owned.close);
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+      late BuildContext addContext;
+      await show(
+        tester,
+        collection: GameDetailCollection(
+          watchOwned: (_) => owned.stream,
+          onAdd: (context, game, options, {platformGameId}) => unawaited(
+            showDialog<void>(
+              context: context,
+              builder: (context) {
+                addContext = context;
+                return const AlertDialog(content: Text('The add'));
+              },
+            ),
+          ),
+          onOpenOwned: (context, items) {},
+        ),
+      );
+      owned.add(allButSteamDigital);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+
+      // From the keyboard: Steam's chip, Tab to the button, Enter.
+      Focus.of(
+        tester.element(
+          find.descendant(of: chip('pg_2'), matching: find.text('Steam')),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(focusIn(addButton), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('The add'), findsOneWidget);
+
+      owned.add(everything);
+      await tester.pumpAndSettle();
+      expect(addButton, findsNothing);
+      Navigator.of(addContext).pop();
+      await tester.pumpAndSettle();
+
+      expect(focusIn(chip('pg_2')), isTrue);
+    });
+
+    testWidgets('without a collection, chips are plain and there is no '
+        'button', (tester) async {
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+
+      await show(tester);
+
+      expectPlain(tester);
+      expect(watched, isEmpty);
+    });
+
+    testWidgets('at 320 dp and 2.0 text the chips, key and button fit', (
+      tester,
+    ) async {
+      const view = Size(320, 640);
+      useViewSize(tester, view);
+      final longest = PlatformGame(
+        id: 'pg_4',
+        gameId: 'g_catan',
+        platformId: 'plat_nes',
+        platformName: 'Nintendo Entertainment System Classic Edition',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+      remote.onFetchGame = (_) async => (
+        game: catan,
+        platformGames: [tabletop, steam, nintendoSwitch, longest],
+      );
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: view,
+            textScaler: TextScaler.linear(2),
+          ),
+          child: catalogApp(
+            GameDetailScreen(
+              gameId: 'g_catan',
+              remote: remote,
+              collection: collectionOf(
+                () => Stream.value([
+                  entry('pg_1', GameMedium.physical),
+                  entry('pg_3', GameMedium.physical),
+                  entry('pg_3', GameMedium.digital),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(checkOn('pg_3'), findsOneWidget);
+      for (final target in [
+        chip('pg_1'),
+        chip('pg_2'),
+        chip('pg_3'),
+        chip('pg_4'),
+        ownedLegend,
+        addButton,
+      ]) {
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(target);
+        expect(rect.left, greaterThanOrEqualTo(0), reason: '$target');
+        expect(rect.right, lessThanOrEqualTo(view.width), reason: '$target');
+      }
+      // A name too long for any chip at this size is scaled down to fit:
+      // laid out at full width, and drawn inside its chip.
+      final fitted = find.descendant(
+        of: chip('pg_4'),
+        matching: find.byType(FittedBox),
+      );
+      final fullWidth = tester
+          .renderObject<RenderBox>(
+            find.descendant(of: fitted, matching: find.byType(RichText)),
+          )
+          .size
+          .width;
+      expect(fullWidth, greaterThan(tester.getSize(fitted).width));
+      expect(
+        tester.getRect(fitted).right,
+        lessThanOrEqualTo(tester.getRect(actionChipOf('pg_4')).right),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('the header (#735)', () {
+    Future<void> showAt(
+      WidgetTester tester, {
+      required double scale,
+      double width = 320,
+      String title = 'Wingspan',
+    }) async {
+      final view = Size(width, 640);
+      useViewSize(tester, view);
+      remote.onFetchGame = (_) async => (
+        game: catan.copyWith(title: title),
+        platformGames: const <PlatformGame>[],
+      );
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(
+            size: view,
+            textScaler: TextScaler.linear(scale),
+          ),
+          child: catalogApp(
+            GameDetailScreen(gameId: 'g_catan', remote: remote),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder cover() => find.byType(BgeThumbnail);
+
+    /// Expects the page's title under the cover, on one line at [scale].
+    void expectUnderCoverOnOneLine(WidgetTester tester, double scale) {
+      // The app bar repeats the title, after the page's own in the tree.
+      final title = find.text('Wingspan').first;
+      expect(
+        tester.getTopLeft(title).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(cover()).dy),
+      );
+      final paragraph = tester.renderObject<RenderParagraph>(title);
+      final style = tester.widget<Text>(title).style!;
+      final oneLine = TextPainter(
+        text: TextSpan(text: 'Wingspan', style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: TextScaler.linear(scale),
+      )..layout();
+      addTearDown(oneLine.dispose);
+      expect(paragraph.size.height, moreOrLessEquals(oneLine.height));
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('at 320 dp and 2.0 text the title sits under the cover and no '
+        'word breaks', (tester) async {
+      await showAt(tester, scale: 2);
+
+      expectUnderCoverOnOneLine(tester, 2);
+    });
+
+    testWidgets('at 320 dp and 1.0 text the title goes under the cover and no '
+        'word breaks', (tester) async {
+      await showAt(tester, scale: 1);
+
+      expectUnderCoverOnOneLine(tester, 1);
+    });
+
+    testWidgets('at 1.0 text the title stays beside the cover where it has 8 '
+        'ems', (tester) async {
+      await showAt(tester, scale: 1, width: 430);
+
+      expect(
+        tester.getTopLeft(find.text('Wingspan').first).dx,
+        greaterThanOrEqualTo(tester.getTopRight(cover()).dx),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('reading order stays cover, title, subtitle, facts', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // Disposed in the test body: flutter_test checks for live handles
+      // before its tear-downs run.
+      try {
+        for (final scale in [1.0, 2.0]) {
+          await showAt(tester, scale: scale);
+
+          // The cover is drawn without semantics, so a reader passes it, and
+          // what it hears is the title, then the subtitle, then the facts.
+          final heard = <String>[];
+          void walk(SemanticsNode node) {
+            final label = node.getSemanticsData().label;
+            if (label.isNotEmpty) heard.add(label);
+            node.visitChildren((child) {
+              walk(child);
+              return true;
+            });
+          }
+
+          var root = tester.getSemantics(find.text('Wingspan').first);
+          while (root.parent != null) {
+            root = root.parent!;
+          }
+          walk(root);
+          // The app bar repeats the title elsewhere in the tree, so the
+          // header's own is the one right before the subtitle.
+          expect(
+            heard.where((l) => l == 'Wingspan'),
+            hasLength(2),
+            reason: '$heard at $scale',
+          );
+          final subtitle = heard.indexOf('Trade, build, settle');
+          expect(subtitle, greaterThan(0), reason: '$heard at $scale');
+          expect(heard[subtitle - 1], 'Wingspan', reason: '$heard at $scale');
+          expect(
+            heard[subtitle + 1],
+            startsWith('Base game'),
+            reason: '$heard at $scale',
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      } finally {
+        handle.dispose();
+      }
     });
   });
 }

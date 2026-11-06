@@ -23,18 +23,22 @@ enum AddToCollectionStatus {
 /// What the add sheet is showing (#45).
 final class AddToCollectionState extends Equatable {
   const AddToCollectionState({
+    this.platformGameId,
     this.medium,
     this.existing,
     this.status = AddToCollectionStatus.editing,
     this.sync,
   });
 
+  /// The platform game chosen, or null until one is.
+  final String? platformGameId;
+
   /// The medium chosen, or null until one is.
   final GameMedium? medium;
 
-  /// The live entry already in the collection for [medium], or null: none
-  /// is, the lookup hasn't answered, or it failed. An add on it raises its
-  /// quantity.
+  /// The live entry already in the collection for [platformGameId] on
+  /// [medium], or null: none is, the lookup hasn't answered, or it failed.
+  /// An add on it raises its quantity.
   final GameCollection? existing;
 
   final AddToCollectionStatus status;
@@ -42,12 +46,13 @@ final class AddToCollectionState extends Equatable {
   /// What became of the add's send, set with [AddToCollectionStatus.added].
   final CollectionSync? sync;
 
-  /// This state at [next], keeping the medium and the entry found. [sync]
+  /// This state at [next], keeping the choice and the entry found. [sync]
   /// goes with [AddToCollectionStatus.added].
   AddToCollectionState withStatus(
     AddToCollectionStatus next, {
     CollectionSync? sync,
   }) => AddToCollectionState(
+    platformGameId: platformGameId,
     medium: medium,
     existing: existing,
     status: next,
@@ -55,5 +60,5 @@ final class AddToCollectionState extends Equatable {
   );
 
   @override
-  List<Object?> get props => [medium, existing, status, sync];
+  List<Object?> get props => [platformGameId, medium, existing, status, sync];
 }

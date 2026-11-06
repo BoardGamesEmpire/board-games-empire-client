@@ -23,6 +23,7 @@ export 'src/entry/edit_collection_entry_sheet.dart';
 export 'src/entry/remove_from_collection_dialog.dart';
 export 'src/home/stats_card.dart';
 export 'src/home/stats_cubit.dart';
+export 'src/picker/collection_entry_picker.dart';
 export 'src/screens/game_collection_list_screen.dart';
 export 'src/sync/collection_sync.dart';
 export 'src/sync/game_collection_hydrate_installer.dart';

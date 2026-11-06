@@ -137,6 +137,23 @@ void main() {
       },
     );
 
+    test(
+      'watchEntriesForPlatformGames after disposal returns an already-closed '
+      'stream, for no platform games too',
+      () async {
+        await repoA.onDispose();
+
+        await expectLater(
+          repoA.watchEntriesForPlatformGames({'pg1'}),
+          emitsDone,
+        );
+        await expectLater(
+          repoA.watchEntriesForPlatformGames(const {}),
+          emitsDone,
+        );
+      },
+    );
+
     test('watch* never throw synchronously after disposal — subscribers can '
         'only observe what arrives on the stream', () async {
       await repoA.onDispose();

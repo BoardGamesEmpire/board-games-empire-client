@@ -22,17 +22,21 @@ PlatformGameSummary _summary({
   String? subtitle,
   String platformName = 'Tabletop',
   String? platformThumbnail,
+  String? platformImage,
   String? gameThumbnail,
+  String? gameImage,
 }) => PlatformGameSummary(
   id: id,
   platformId: 'plat-1',
   platformName: platformName,
   thumbnail: platformThumbnail,
+  image: platformImage,
   game: GameSummary(
     id: gameId,
     title: title,
     subtitle: subtitle,
     thumbnail: gameThumbnail,
+    image: gameImage,
   ),
 );
 
@@ -175,6 +179,60 @@ void main() {
       final item = (await collection.watchCollectionListItems().first).single;
       expect(item.thumbnail, 'g_thumb.png');
     });
+
+    // #709: a platform game's own picture wins even when it is only a full
+    // image, and the game's image stands in when nothing has a thumbnail.
+    test("prefers the platform game's image over the game's thumbnail when "
+        'the platform game has no thumbnail', () async {
+      await hydrate(
+        _summary(
+          id: 'pg-1',
+          gameId: 'g-1',
+          title: 'Brass',
+          platformImage: 'pg_image.png',
+          gameThumbnail: 'g_thumb.png',
+          gameImage: 'g_image.png',
+        ),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final item = (await collection.watchCollectionListItems().first).single;
+      expect(item.thumbnail, 'pg_image.png');
+    });
+
+    test("prefers the platform game's thumbnail over its image", () async {
+      await hydrate(
+        _summary(
+          id: 'pg-1',
+          gameId: 'g-1',
+          title: 'Brass',
+          platformThumbnail: 'pg_thumb.png',
+          platformImage: 'pg_image.png',
+        ),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final item = (await collection.watchCollectionListItems().first).single;
+      expect(item.thumbnail, 'pg_thumb.png');
+    });
+
+    test(
+      "falls back to the game's image when nothing has a thumbnail",
+      () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameImage: 'g_image.png',
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+        expect(item.thumbnail, 'g_image.png');
+      },
+    );
 
     test('re-emits when a later summary changes the title', () async {
       await hydrate(

@@ -1771,6 +1771,153 @@ void main() {
       });
     });
 
+    group('watchEntriesForPlatformGames()', () {
+      Future<GameCollection> add(
+        GameCollectionRepositoryImpl r,
+        String platformGameId,
+        GameMedium medium,
+      ) async => (await r.addToCollection(
+        platformGameId: platformGameId,
+        medium: medium,
+      )).entry;
+
+      test("watches only the named platform games' live entries", () async {
+        await seedPlatformGame(db, id: 'pg1');
+        await seedPlatformGame(db, id: 'pg2');
+        final physical = await add(repo, 'pg1', GameMedium.physical);
+        final digital = await add(repo, 'pg1', GameMedium.digital);
+        await add(repo, 'pg2', GameMedium.physical);
+
+        final entries = await repo.watchEntriesForPlatformGames({'pg1'}).first;
+
+        expect(entries.map((e) => e.id).toSet(), {physical.id, digital.id});
+      });
+
+      test('emits the entries in entry id order, not the order they were '
+          'stored in', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        final now = DateTime.now().toUtc();
+        for (final (id, medium) in [
+          ('gc_b', 'Digital'),
+          ('gc_a', 'Physical'),
+        ]) {
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: id,
+                  userId: _kUserId,
+                  platformGameId: 'pg1',
+                  medium: medium,
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              );
+        }
+
+        final entries = await repo.watchEntriesForPlatformGames({'pg1'}).first;
+
+        expect(entries.map((e) => e.id), ['gc_a', 'gc_b']);
+      });
+
+      test('an entry marked for removal drops out', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        final physical = await add(repo, 'pg1', GameMedium.physical);
+        final digital = await add(repo, 'pg1', GameMedium.digital);
+
+        final emissions = repo
+            .watchEntriesForPlatformGames({'pg1'})
+            .take(2)
+            .toList();
+        await pumpEventQueue();
+        await repo.removeFromCollection(physical.id);
+
+        final all = await emissions.timeout(const Duration(seconds: 5));
+        expect(all.last.map((e) => e.id), [digital.id]);
+      });
+
+      test('an add on a watched platform game is emitted', () async {
+        await seedPlatformGame(db, id: 'pg1');
+
+        final emissions = repo
+            .watchEntriesForPlatformGames({'pg1'})
+            .take(2)
+            .toList();
+        await pumpEventQueue();
+        final added = await add(repo, 'pg1', GameMedium.physical);
+
+        final all = await emissions.timeout(const Duration(seconds: 5));
+        expect(all.first, isEmpty);
+        expect(all.last.map((e) => e.id), [added.id]);
+      });
+
+      test("another user's entry is never emitted", () async {
+        await seedPlatformGame(db, id: 'pg1');
+        final otherRepo = GameCollectionRepositoryImpl(
+          db: db,
+          syncQueue: mockSync,
+          currentUserId: 'other-user',
+          clock: const SystemClockService(),
+        );
+        await add(otherRepo, 'pg1', GameMedium.physical);
+        final mine = await add(repo, 'pg1', GameMedium.digital);
+
+        final entries = await repo.watchEntriesForPlatformGames({'pg1'}).first;
+
+        expect(entries.map((e) => e.id), [mine.id]);
+      });
+
+      test('a write to an entry on another platform game emits nothing, '
+          'a later one on a watched platform game does', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        await seedPlatformGame(db, id: 'pg2');
+        final emissions = <List<GameCollection>>[];
+        final sub = repo
+            .watchEntriesForPlatformGames({'pg1'})
+            .listen(emissions.add);
+        addTearDown(sub.cancel);
+        await pumpEventQueue();
+        expect(emissions, hasLength(1));
+
+        final other = await add(repo, 'pg2', GameMedium.physical);
+        await repo.updateCollectionEntry(id: other.id, rating: 7);
+        await pumpEventQueue();
+        expect(emissions, hasLength(1));
+
+        final added = await add(repo, 'pg1', GameMedium.physical);
+        await pumpEventQueue();
+        expect(emissions, hasLength(2));
+        expect(emissions.last.map((e) => e.id), [added.id]);
+      });
+
+      test('a change to a watched entry emits it changed', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        final added = await add(repo, 'pg1', GameMedium.physical);
+        final emissions = <List<GameCollection>>[];
+        final sub = repo
+            .watchEntriesForPlatformGames({'pg1'})
+            .listen(emissions.add);
+        addTearDown(sub.cancel);
+        await pumpEventQueue();
+        expect(emissions.single.single.rating, isNull);
+
+        await repo.updateCollectionEntry(id: added.id, rating: 7);
+        await pumpEventQueue();
+        expect(emissions, hasLength(2));
+        expect(emissions.last.single.rating, 7);
+      });
+
+      test('an empty set emits an empty list', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        await add(repo, 'pg1', GameMedium.physical);
+
+        await expectLater(
+          repo.watchEntriesForPlatformGames(const {}),
+          emits(isEmpty),
+        );
+      });
+    });
+
     group('clock injection (#12)', () {
       final t1 = DateTime.utc(2026, 7, 21, 12);
 

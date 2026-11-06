@@ -17,6 +17,7 @@ import '../screens/game_detail_screen.dart';
 import '../widgets/catalog_chip_label.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_slivers.dart';
+import '../widgets/cover_beside_title.dart';
 import '../widgets/folded_description.dart';
 import 'game_quick_look_seed.dart';
 
@@ -213,17 +214,6 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
   /// is a glance.
   static const double _coverExtent = 96;
 
-  /// The narrowest the title may be beside the cover, in ems of its own
-  /// scaled size. Narrower, the cover goes above the title instead.
-  ///
-  /// Rendered for #707 at 320dp and 2.0 text, the title beside the cover had
-  /// 176dp, and "Wingspan" broke in the middle of the word. Eight ems is
-  /// about a dozen letters of the title's face, so a long word in a title
-  /// fits. In ems, as `BgeInlineBanner.minMessageWidthEms` is, so it follows
-  /// the text size: at 1.0 the title stays beside the cover from 320dp up,
-  /// and at 2.0 it goes under it on a phone.
-  static const double _minTitleWidthEms = 8;
-
   /// Keeps the description's state, More or Less, as the platforms and the
   /// banner arrive above it.
   static const Key _descriptionKey = ValueKey('description');
@@ -403,7 +393,7 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
 
   /// The cover beside the title, with the subtitle and the publish year
   /// under the title, or the cover above them all where the title would
-  /// have too little room beside it: see [_minTitleWidthEms].
+  /// have too little room beside it: see [CoverBesideTitle].
   ///
   /// [game] is the read's, or the seed's until it lands; see "The header
   /// follows the read".
@@ -430,37 +420,15 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       ],
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final gap = BgeTokens.of(context).spaceMd;
-        final minTitleWidth =
-            _minTitleWidthEms *
-            MediaQuery.textScalerOf(context)
-                .scale(titleStyle?.fontSize ?? BgeTypography.titleLarge);
-        final direction =
-            constraints.maxWidth - _coverExtent - gap >= minTitleWidth
-            ? Axis.horizontal
-            : Axis.vertical;
-        // One Flex either way, so the cover keeps its element, and its
-        // image, when the text size or the width moves it.
-        return Flex(
-          direction: direction,
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            BgeThumbnail(
-              url: cover,
-              extent: _coverExtent,
-              placeholderIcon: Icons.casino_outlined,
-            ),
-            BgeGap.md(axis: direction),
-            if (direction == Axis.horizontal)
-              Expanded(child: titles)
-            else
-              titles,
-          ],
-        );
-      },
+    return CoverBesideTitle(
+      cover: BgeThumbnail(
+        url: cover,
+        extent: _coverExtent,
+        placeholderIcon: Icons.casino_outlined,
+      ),
+      coverExtent: _coverExtent,
+      titles: titles,
+      titleFontSize: titleStyle?.fontSize ?? BgeTypography.titleLarge,
     );
   }
 }

@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 15`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 16`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -112,6 +112,11 @@ Server schema history:
   from the live table, which now has the columns, so it drops all four again
   right after, from the empty table, and this step adds them back. None is
   in a key or an index, which `DROP COLUMN` would refuse.
+- **v15 → v16 (#708):** adds a nullable `platform_games.platform_type`, the
+  platform's type, by one `addColumn`. A row cached before it holds null, read
+  as not known, until the next hydrate writes it. Additive (one nullable
+  column, no rebuild), so #54 stays deferred. No earlier step creates
+  `platform_games` from the live table, so none needs to drop the column.
 
 Meta schema history:
 
@@ -122,7 +127,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v15.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v16.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live

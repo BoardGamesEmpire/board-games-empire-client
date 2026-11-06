@@ -38,6 +38,38 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('with stackCount it keeps one tap target and its label', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    var taps = 0;
+    await tester.pumpWidget(
+      _host(
+        tester,
+        SizedBox(
+          width: 120,
+          child: BgeCoverTile(
+            label: 'Azul, 3 copies',
+            stackCount: 3,
+            extent: null,
+            onTap: () => taps++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(BgeStackMarker), findsOneWidget);
+    expect(find.byType(InkWell), findsOneWidget);
+    expect(find.bySemanticsLabel('3'), findsNothing);
+    final tile = tester.getSemantics(find.byType(BgeCoverTile));
+    expect(tile, isSemantics(label: 'Azul, 3 copies', hasTapAction: true));
+    expect(tile.childrenCount, 0);
+    expect(tester.getSize(find.byType(BgeCoverTile)), const Size.square(120));
+    await tester.tap(find.byType(BgeCoverTile));
+    expect(taps, 1);
+    handle.dispose();
+  });
+
   testWidgets('a tap calls onTap', (tester) async {
     var taps = 0;
     await tester.pumpWidget(

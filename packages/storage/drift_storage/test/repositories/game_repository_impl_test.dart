@@ -66,6 +66,7 @@ PlatformGame _makePlatformGame({
   bool hasAsyncPlay = false,
   bool hasRealtime = false,
   bool hasTutorial = false,
+  PlatformType? platformType,
 }) {
   final t = _now();
   return PlatformGame(
@@ -73,6 +74,7 @@ PlatformGame _makePlatformGame({
     gameId: gameId,
     platformId: platformId,
     platformName: platformName,
+    platformType: platformType,
     supportsSolo: supportsSolo,
     supportsLocal: supportsLocal,
     supportsOnline: supportsOnline,
@@ -727,6 +729,56 @@ void main() {
           expect(await repo.getPlatformGamesForGame('nonexistent'), isEmpty);
         },
       );
+
+      test('a platform game\'s type survives the cache', () async {
+        await repo.cachePlatformGames([
+          _makePlatformGame(
+            id: 'pg-t',
+            gameId: 'g-1',
+            platformType: PlatformType.tabletop,
+          ),
+          _makePlatformGame(
+            id: 'pg-u',
+            gameId: 'g-1',
+            platformType: PlatformType.unknown,
+          ),
+          _makePlatformGame(id: 'pg-n', gameId: 'g-1'),
+        ]);
+
+        final byId = {
+          for (final pg in await repo.getPlatformGamesForGame('g-1'))
+            pg.id: pg.platformType,
+        };
+        expect(byId, {
+          'pg-t': PlatformType.tabletop,
+          'pg-u': PlatformType.unknown,
+          'pg-n': null,
+        });
+      });
+
+      test('a summary write leaves a stored type alone', () async {
+        await repo.cachePlatformGames([
+          _makePlatformGame(
+            id: 'pg-1',
+            gameId: 'g-1',
+            platformType: PlatformType.tabletop,
+          ),
+        ]);
+
+        await repo.cachePlatformGameSummaries([
+          const PlatformGameSummary(
+            id: 'pg-1',
+            platformId: 'plat-1',
+            platformName: 'Tabletop',
+            game: GameSummary(id: 'g-1', title: 'Catan'),
+          ),
+        ]);
+
+        expect(
+          (await repo.getPlatformGame('pg-1'))!.platformType,
+          PlatformType.tabletop,
+        );
+      });
 
       test('cachePlatformGames upserts in batch', () async {
         await repo.cachePlatformGames([

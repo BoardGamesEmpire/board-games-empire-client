@@ -12,6 +12,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_collection/l10n/game_collection_localizations.dart';
 
+import '../medium_label.dart';
 import '../sync/collection_sync.dart';
 import 'collection_entry_bloc.dart';
 import 'collection_entry_event.dart';
@@ -496,10 +497,7 @@ class _Entry extends StatelessWidget {
       final text? when text.trim().isNotEmpty => text,
       _ => null,
     };
-    final medium = switch (entry.medium) {
-      GameMedium.physical => l10n.collectionListMediumPhysical,
-      GameMedium.digital => l10n.collectionListMediumDigital,
-    };
+    final medium = mediumLabel(l10n, entry.medium);
     final open = onOpenGame;
 
     return Column(

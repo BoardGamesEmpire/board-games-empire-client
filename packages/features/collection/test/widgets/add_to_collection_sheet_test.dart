@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
@@ -25,8 +26,10 @@ const _queuedOp = AddToCollectionOperation(
 
 const _openKey = Key('test.open_sheet');
 const _homeKey = Key('test.home');
-const _heading = 'Add Wingspan (Switch)';
+const _heading = 'Add Wingspan';
 const _mediumRequired = 'Choose physical or digital.';
+const _platformRequired = 'Choose a platform.';
+const _both = {GameMedium.physical, GameMedium.digital};
 const _quantityInvalid = 'Enter a whole number, 1 or more.';
 const _quantityTooMany = "That's more copies than can be stored.";
 const _failedTitle = "Couldn't add the game";
@@ -49,22 +52,39 @@ void main() {
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   );
-  final onSwitch = PlatformGame(
-    id: 'pg_1',
-    gameId: 'g_wingspan',
-    platformId: 'plat_switch',
-    platformName: 'Switch',
-    createdAt: DateTime.utc(2026),
-    updatedAt: DateTime.utc(2026),
+  PlatformGame platformGame(String id, String name, PlatformType? type) =>
+      PlatformGame(
+        id: id,
+        gameId: 'g_wingspan',
+        platformId: 'plat_$id',
+        platformName: name,
+        platformType: type,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+
+  // No type stored, so the medium starts on nothing and the user picks.
+  final onSwitch = platformGame('pg_1', 'Switch', null);
+  final onTabletop = platformGame(
+    'pg_tabletop',
+    'Tabletop',
+    PlatformType.tabletop,
   );
+  final onSteam = platformGame('pg_steam', 'Steam', PlatformType.pc);
+
+  CollectionAddOption option(
+    PlatformGame platformGame, [
+    Set<GameMedium> free = _both,
+  ]) => CollectionAddOption(platformGame: platformGame, freeMediums: free);
 
   GameCollection entry({
+    String platformGameId = 'pg_1',
     GameMedium medium = GameMedium.physical,
     int quantity = 1,
   }) => GameCollection(
     id: 'gc_1',
     userId: 'user-a',
-    platformGameId: 'pg_1',
+    platformGameId: platformGameId,
     medium: medium,
     quantity: quantity,
     createdAt: DateTime.utc(2026),
@@ -102,9 +122,23 @@ void main() {
     );
   });
 
-  void owning(GameMedium medium, int quantity) => when(
-    () => repository.getCollectionEntry(platformGameId: 'pg_1', medium: medium),
-  ).thenAnswer((_) async => entry(medium: medium, quantity: quantity));
+  void owning(
+    GameMedium medium,
+    int quantity, {
+    String platformGameId = 'pg_1',
+  }) =>
+      when(
+        () => repository.getCollectionEntry(
+          platformGameId: platformGameId,
+          medium: medium,
+        ),
+      ).thenAnswer(
+        (_) async => entry(
+          platformGameId: platformGameId,
+          medium: medium,
+          quantity: quantity,
+        ),
+      );
 
   void verifyNoAdd() => verifyNever(
     () => repository.addToCollection(
@@ -116,12 +150,15 @@ void main() {
     ),
   );
 
-  /// A screen with a button that opens the sheet.
+  /// A screen with a button that opens the sheet on [options], Switch alone
+  /// unless given, with [platformGameId] chosen.
   ///
   /// With [pushed], that screen is pushed over a home screen, so a pop the
   /// sheet doesn't own shows as that screen gone.
   Future<void> open(
     WidgetTester tester, {
+    List<CollectionAddOption>? options,
+    String? platformGameId,
     TextScaler textScaler = TextScaler.noScaling,
     bool pushed = false,
   }) async {
@@ -135,7 +172,8 @@ void main() {
               repository: repository,
               sender: sender,
               game: wingspan,
-              platformGame: onSwitch,
+              options: options ?? [option(onSwitch)],
+              platformGameId: platformGameId,
             );
             resolved = true;
           },
@@ -205,16 +243,294 @@ void main() {
   Future<void> submit(WidgetTester tester) =>
       tapInView(tester, find.byKey(AddToCollectionSheet.submitKey));
 
-  testWidgets('names the game and platform as a heading', (tester) async {
+  /// [text] drawn in the closed field keyed [field].
+  Finder shows(Key field, String text) =>
+      find.descendant(of: find.byKey(field), matching: find.text(text));
+
+  /// [label] offered in the open menu.
+  Finder offered(String label) => find.descendant(
+    of: find.byType(MenuItemButton),
+    matching: find.text(label),
+  );
+
+  Future<void> dismiss(WidgetTester tester) async {
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+  }
+
+  void verifyAdded(String platformGameId, GameMedium medium) => verify(
+    () => repository.addToCollection(
+      platformGameId: platformGameId,
+      medium: medium,
+      quantity: 1,
+    ),
+  ).called(1);
+
+  testWidgets('the field reads Medium and the title names the game only', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     await open(tester);
 
     expect(find.text(_heading), findsOneWidget);
+    expect(find.text('Add Wingspan (Switch)'), findsNothing);
     expect(
       find.semantics.byLabel(_heading).evaluate().single,
       isSemantics(isHeader: true),
     );
+    expect(shows(AddToCollectionSheet.platformKey, 'Platform'), findsOneWidget);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Medium'), findsOneWidget);
+    expect(find.text('Physical or digital'), findsNothing);
     semantics.dispose();
+  });
+
+  testWidgets('the platform field lists the options; one option is '
+      'preselected', (tester) async {
+    await open(tester, options: [option(onTabletop), option(onSteam)]);
+
+    // Two to choose from, and neither chosen for the user: the field reads
+    // as an empty medium field does.
+    expect(
+      shows(AddToCollectionSheet.platformKey, 'Choose one'),
+      findsOneWidget,
+    );
+    expect(shows(AddToCollectionSheet.platformKey, 'Tabletop'), findsNothing);
+    expect(shows(AddToCollectionSheet.platformKey, 'Steam'), findsNothing);
+    await tapInView(tester, find.byKey(AddToCollectionSheet.platformKey));
+    expect(offered('Tabletop'), findsOneWidget);
+    expect(offered('Steam'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await dismiss(tester);
+
+    await open(tester, options: [option(onSteam)]);
+
+    expect(shows(AddToCollectionSheet.platformKey, 'Steam'), findsOneWidget);
+    await submit(tester);
+    verifyAdded('pg_steam', GameMedium.digital);
+  });
+
+  testWidgets('submitting with no platform chosen adds nothing and says why', (
+    tester,
+  ) async {
+    await open(tester, options: [option(onTabletop), option(onSteam)]);
+
+    // With no platform there are no mediums to offer yet.
+    await tapInView(tester, find.byKey(AddToCollectionSheet.mediumKey));
+    expect(find.byType(MenuItemButton), findsNothing);
+
+    await submit(tester);
+
+    expect(find.text(_platformRequired), findsOneWidget);
+    expect(find.text(_mediumRequired), findsOneWidget);
+    verifyNoAdd();
+  });
+
+  // Read-only, never disabled or hidden (STYLE_GUIDE §4): a keyboard or
+  // screen-reader user finds the field in its place before it has anything
+  // to offer, and no menu opens empty.
+  testWidgets('before a platform is chosen, the medium field shows, '
+      'read-only and focusable, and opens no menu', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await open(tester, options: [option(onTabletop), option(onSteam)]);
+
+    final field = find.byKey(AddToCollectionSheet.mediumKey);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsOneWidget);
+    expect(
+      tester
+          .widget<InputDecorator>(
+            find.descendant(of: field, matching: find.byType(InputDecorator)),
+          )
+          .decoration
+          .enabled,
+      isTrue,
+    );
+    expect(
+      find.semantics.byLabel(RegExp('^Medium')).evaluate().single,
+      isSemantics(
+        isButton: true,
+        isReadOnly: true,
+        isFocusable: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasTapAction: false,
+      ),
+    );
+
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    final menu = tester.widget<MenuAnchor>(
+      find.descendant(of: field, matching: find.byType(MenuAnchor)),
+    );
+    expect(menu.controller!.isOpen, isFalse);
+    expect(
+      find.descendant(of: field, matching: find.byIcon(Icons.arrow_drop_up)),
+      findsNothing,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('a preselected platform from a chip is chosen', (tester) async {
+    await open(
+      tester,
+      options: [option(onTabletop), option(onSteam)],
+      platformGameId: 'pg_steam',
+    );
+
+    expect(shows(AddToCollectionSheet.platformKey, 'Steam'), findsOneWidget);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+    await submit(tester);
+    verifyAdded('pg_steam', GameMedium.digital);
+  });
+
+  testWidgets('the medium field lists only the free mediums', (tester) async {
+    await open(
+      tester,
+      options: [
+        option(onTabletop, {GameMedium.digital}),
+      ],
+    );
+
+    // Tabletop would start on Physical, which is owned already.
+    expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+    await tapInView(tester, find.byKey(AddToCollectionSheet.mediumKey));
+    expect(offered('Digital'), findsOneWidget);
+    expect(offered('Physical'), findsNothing);
+  });
+
+  testWidgets('Tabletop starts on Physical, Steam on Digital, an untyped '
+      'platform on nothing', (tester) async {
+    for (final (platform, start) in [
+      (onTabletop, 'Physical'),
+      (onSteam, 'Digital'),
+      (onSwitch, 'Choose one'),
+    ]) {
+      await open(tester, options: [option(platform)]);
+      expect(
+        shows(AddToCollectionSheet.mediumKey, start),
+        findsOneWidget,
+        reason: platform.platformName,
+      );
+      await dismiss(tester);
+    }
+
+    // The bloc is told each start, so a note can follow it.
+    verify(
+      () => repository.getCollectionEntry(
+        platformGameId: 'pg_tabletop',
+        medium: GameMedium.physical,
+      ),
+    ).called(1);
+    verify(
+      () => repository.getCollectionEntry(
+        platformGameId: 'pg_steam',
+        medium: GameMedium.digital,
+      ),
+    ).called(1);
+    verifyNever(
+      () => repository.getCollectionEntry(
+        platformGameId: 'pg_1',
+        medium: any(named: 'medium'),
+      ),
+    );
+  });
+
+  testWidgets('the user can change the starting medium', (tester) async {
+    await open(tester, options: [option(onTabletop)]);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+
+    // A board game bought as an app.
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+
+    expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+    await submit(tester);
+    verifyAdded('pg_tabletop', GameMedium.digital);
+  });
+
+  testWidgets('platform change re-applies the start unless the user picked a '
+      'medium', (tester) async {
+    await open(
+      tester,
+      options: [option(onTabletop), option(onSteam), option(onSwitch)],
+    );
+
+    await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+    // The sheet chose Physical, not the user, so Steam's start applies.
+    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+
+    // A Steam game bought on a disc.
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    // Switch would start on nothing and Steam on Digital: the pick stands.
+    await pick(tester, AddToCollectionSheet.platformKey, 'Switch');
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+
+    await submit(tester);
+    verifyAdded('pg_steam', GameMedium.physical);
+  });
+
+  testWidgets('platform change drops a medium the new platform has no room '
+      'for', (tester) async {
+    await open(
+      tester,
+      options: [
+        option(onTabletop),
+        option(onSteam, {GameMedium.digital}),
+      ],
+      platformGameId: 'pg_tabletop',
+    );
+    // Picked by the user, not left at the start.
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+
+    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+    expect(shows(AddToCollectionSheet.mediumKey, 'Digital'), findsOneWidget);
+    expect(shows(AddToCollectionSheet.mediumKey, 'Choose one'), findsNothing);
+    // What the field shows is what is sent.
+    await submit(tester);
+    verifyAdded('pg_steam', GameMedium.digital);
+  });
+
+  testWidgets('a medium the sheet had to change is no longer kept as the '
+      "user's pick", (tester) async {
+    await open(
+      tester,
+      options: [
+        option(onTabletop),
+        option(onSteam, {GameMedium.digital}),
+      ],
+      platformGameId: 'pg_tabletop',
+    );
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Digital');
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await pick(tester, AddToCollectionSheet.platformKey, 'Steam');
+
+    // Digital was Steam's only room, not the user's choice, so Tabletop
+    // starts again.
+    await pick(tester, AddToCollectionSheet.platformKey, 'Tabletop');
+
+    expect(shows(AddToCollectionSheet.mediumKey, 'Physical'), findsOneWidget);
+  });
+
+  testWidgets('a medium owned after opening shows the existing note', (
+    tester,
+  ) async {
+    // Free when the detail page looked, owned by the time the sheet asks.
+    owning(GameMedium.physical, 1, platformGameId: 'pg_tabletop');
+    await open(tester, options: [option(onTabletop)]);
+
+    expect(find.byKey(AddToCollectionSheet.existingKey), findsOneWidget);
+    expect(
+      find.text('You have 1 physical copy. Adding 1 makes 2.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('submitting with no medium chosen adds nothing and says why', (

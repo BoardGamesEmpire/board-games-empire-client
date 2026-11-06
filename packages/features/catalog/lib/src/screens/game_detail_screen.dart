@@ -15,19 +15,24 @@ import '../bloc/game_detail_event.dart';
 import '../bloc/game_detail_state.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_slivers.dart';
+import '../widgets/cover_beside_title.dart';
 import '../widgets/game_description.dart';
+import '../widgets/game_detail_platforms.dart';
+import 'game_detail_collection.dart';
 
 /// One game (#42): its facts, its description as Markdown (#472), and the
 /// platforms it is available on.
 ///
-/// ## Adding to the collection is a callback
+/// ## The collection comes as callbacks
 ///
-/// Picking a platform calls [onAdd] with the game and that platform game,
-/// which #45 supplies: the game because the add names it, and a
-/// [PlatformGame] has no title. Null, there is no add button, as the
-/// household list offers no create without a way to send one (#269). An
-/// empty list means the game is on no platform, or the caller may not read
-/// its platform games.
+/// Each platform is a chip that says whether the user owns the game there,
+/// and one button under the chips adds it on another (#708): see
+/// [GameDetailPlatforms]. What the user owns, the add and the opening of an
+/// owned copy all come from [collection], which the shell supplies, so the
+/// catalog needs nothing of the collection feature. Null, the chips are
+/// plain labels and there is no add button, as the household list offers no
+/// create without a way to send one (#269). An empty list of platforms means
+/// the game is on none, or the caller may not read its platform games.
 ///
 /// ## A game found gone
 ///
@@ -46,7 +51,7 @@ class GameDetailScreen extends StatelessWidget {
     required this.remote,
     this.cache,
     this.onGone,
-    this.onAdd,
+    this.collection,
     this.openLink = openLinkExternally,
     super.key,
   });
@@ -62,9 +67,11 @@ class GameDetailScreen extends StatelessWidget {
   static Key platformKey(String platformGameId) =>
       Key('catalog_detail.platform_$platformGameId');
 
-  /// The add button for one platform game.
-  static Key addKey(String platformGameId) =>
-      Key('catalog_detail.add_$platformGameId');
+  /// The legend under the platforms that says what the check means.
+  static const Key ownedLegendKey = Key('catalog_detail.owned_legend');
+
+  /// The one add button, under the platforms.
+  static const Key addKey = Key('catalog_detail.add');
 
   static final BgeLogger _log = BgeLogger('bge.catalog.detail.link');
 
@@ -95,14 +102,9 @@ class GameDetailScreen extends StatelessWidget {
   /// Told the game's id when it turns out to be gone. Null tells no one.
   final void Function(String gameId)? onGone;
 
-  /// Adds the game on one platform to the collection (#45). Null offers no
-  /// add.
-  final void Function(
-    BuildContext context,
-    Game game,
-    PlatformGame platformGame,
-  )?
-  onAdd;
+  /// What the page can do with the user's collection (#708). Null offers no
+  /// add and says nothing of ownership.
+  final GameDetailCollection? collection;
 
   /// Opens a description link outside the app.
   final Future<void> Function(Uri uri) openLink;
@@ -119,19 +121,14 @@ class GameDetailScreen extends StatelessWidget {
       cache: cache,
       onGone: onGone,
     )..add(const GameDetailLoadRequested()),
-    child: _GameDetailPage(onAdd: onAdd, openLink: openLink),
+    child: _GameDetailPage(collection: collection, openLink: openLink),
   );
 }
 
 class _GameDetailPage extends StatelessWidget {
-  const _GameDetailPage({required this.openLink, this.onAdd});
+  const _GameDetailPage({required this.openLink, this.collection});
 
-  final void Function(
-    BuildContext context,
-    Game game,
-    PlatformGame platformGame,
-  )?
-  onAdd;
+  final GameDetailCollection? collection;
   final Future<void> Function(Uri uri) openLink;
 
   @override
@@ -197,7 +194,7 @@ class _GameDetailPage extends StatelessWidget {
                 platformGames: platformGames,
                 fromCache: fromCache,
                 onRetry: retry,
-                onAdd: onAdd,
+                collection: collection,
                 openLink: openLink,
               ),
             ),
@@ -214,7 +211,7 @@ class _GameDetailBody extends StatelessWidget {
     required this.fromCache,
     required this.onRetry,
     required this.openLink,
-    this.onAdd,
+    this.collection,
   });
 
   /// The largest the game's image may be drawn.
@@ -224,12 +221,7 @@ class _GameDetailBody extends StatelessWidget {
   final List<PlatformGame> platformGames;
   final bool fromCache;
   final VoidCallback onRetry;
-  final void Function(
-    BuildContext context,
-    Game game,
-    PlatformGame platformGame,
-  )?
-  onAdd;
+  final GameDetailCollection? collection;
   final Future<void> Function(Uri uri) openLink;
 
   @override
@@ -239,7 +231,6 @@ class _GameDetailBody extends StatelessWidget {
     final facts = _facts(l10n);
     final subtitle = game.subtitle;
     final description = game.description;
-    final add = onAdd;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,54 +243,39 @@ class _GameDetailBody extends StatelessWidget {
           ),
           const BgeGap.md(),
         ],
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            BgeThumbnail(
-              url: game.image ?? game.thumbnail,
-              extent: _imageExtent,
-              placeholderIcon: Icons.casino_outlined,
-            ),
-            const BgeGap.md(axis: Axis.horizontal),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      game.title,
-                      style: theme.textTheme.headlineSmall,
-                    ),
-                  ),
-                  if (subtitle != null && subtitle.isNotEmpty)
-                    Text(subtitle, style: theme.textTheme.titleMedium),
-                  if (facts.isNotEmpty) ...[
-                    const BgeGap.sm(),
-                    CatalogFactsText(facts, key: GameDetailScreen.factsKey),
-                  ],
-                ],
+        CoverBesideTitle(
+          cover: BgeThumbnail(
+            url: game.image ?? game.thumbnail,
+            extent: _imageExtent,
+            placeholderIcon: Icons.casino_outlined,
+          ),
+          coverExtent: _imageExtent,
+          titleFontSize:
+              theme.textTheme.headlineSmall?.fontSize ??
+              BgeTypography.headlineSmall,
+          titles: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(game.title, style: theme.textTheme.headlineSmall),
               ),
-            ),
-          ],
+              if (subtitle != null && subtitle.isNotEmpty)
+                Text(subtitle, style: theme.textTheme.titleMedium),
+              if (facts.isNotEmpty) ...[
+                const BgeGap.sm(),
+                CatalogFactsText(facts, key: GameDetailScreen.factsKey),
+              ],
+            ],
+          ),
         ),
         if (platformGames.isNotEmpty) ...[
           CatalogSectionHeading(l10n.catalogDetailAvailableOn),
-          for (final platformGame in platformGames)
-            MergeSemantics(
-              key: GameDetailScreen.platformKey(platformGame.id),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(platformGame.platformName),
-                trailing: add == null
-                    ? null
-                    : TextButton(
-                        key: GameDetailScreen.addKey(platformGame.id),
-                        onPressed: () => add(context, game, platformGame),
-                        child: Text(l10n.catalogDetailAddToCollection),
-                      ),
-              ),
-            ),
+          GameDetailPlatforms(
+            game: game,
+            platformGames: platformGames,
+            collection: collection,
+          ),
         ],
         if (description != null && description.trim().isNotEmpty) ...[
           CatalogSectionHeading(l10n.catalogDetailDescription),

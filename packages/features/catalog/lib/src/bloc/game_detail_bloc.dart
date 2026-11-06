@@ -1,6 +1,7 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
@@ -22,9 +23,6 @@ import 'game_detail_state.dart';
 /// have found the game gone and forgotten it, and this older answer would
 /// make it readable again. That holds between the two writes as well.
 ///
-/// A detail read offline still shows no platform games, because nothing reads
-/// them back here yet.
-///
 /// ## Unavailable
 ///
 /// A missing game (404) and one this user may not read (403) are both
@@ -44,7 +42,10 @@ import 'game_detail_state.dart';
 /// ## When the read fails
 ///
 /// Any other failure reads the cached copy instead, as
-/// [GameDetailReady.fromCache], with no platform games to offer. Without one,
+/// [GameDetailReady.fromCache], with the platform games cached for it
+/// ([GameRepository.getPlatformGamesForGame]), so the page can still say what
+/// the user owns and offer an add (#708). A failed read of those is logged
+/// and shows the game without them. Without a cached game,
 /// [GameDetailFailed].
 class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
   GameDetailBloc({
@@ -104,10 +105,13 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     if (cache == null) return emit(const GameDetailFailed());
     try {
       final game = await cache.getGame(gameId);
+      if (game == null) return emit(const GameDetailFailed());
       emit(
-        game == null
-            ? const GameDetailFailed()
-            : GameDetailReady(game: game, fromCache: true),
+        GameDetailReady(
+          game: game,
+          platformGames: await _cachedPlatformGames(cache),
+          fromCache: true,
+        ),
       );
     } on Object catch (error, stackTrace) {
       _logger.warn(
@@ -116,6 +120,19 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
         stackTrace: stackTrace,
       );
       emit(const GameDetailFailed());
+    }
+  }
+
+  Future<List<PlatformGame>> _cachedPlatformGames(GameRepository cache) async {
+    try {
+      return await cache.getPlatformGamesForGame(gameId);
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Reading the cached platform games failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return const [];
     }
   }
 

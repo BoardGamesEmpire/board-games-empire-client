@@ -14,6 +14,11 @@ class PlatformGamesTable extends Table {
   TextColumn get platformId => text()();
   TextColumn get platformName => text()();
 
+  /// The platform's type, by its wire name (#708). Null when none was
+  /// stored, which is a row cached before v16 or from a server that sent
+  /// none.
+  TextColumn get platformType => text().nullable()();
+
   IntColumn get minPlayers => integer().nullable()();
   IntColumn get maxPlayers => integer().nullable()();
 

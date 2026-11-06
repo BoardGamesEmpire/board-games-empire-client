@@ -17,8 +17,9 @@ final class GameDetailLoading extends GameDetailState {
 /// The game, with the platform games a collection add picks from (#45).
 ///
 /// [platformGames] is empty when the game is on no platform or the caller may
-/// not read them, and always empty [fromCache], when the server's read failed
-/// and [game] is the copy cached on this device.
+/// not read them. [fromCache] when the server's read failed and [game] is the
+/// copy cached on this device; its platform games are then those cached for
+/// it, so possibly not all of them.
 final class GameDetailReady extends GameDetailState {
   const GameDetailReady({
     required this.game,

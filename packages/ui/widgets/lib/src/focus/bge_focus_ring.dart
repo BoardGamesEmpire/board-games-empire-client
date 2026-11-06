@@ -15,7 +15,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The ring is drawn over the content, so an opaque picture can't hide it, and
 /// appears and goes at once rather than fading: a focus ring that lags the
 /// focus is no help, and this way it needs nothing from the motion settings.
-/// The content keeps its element as the ring comes and goes.
+/// The content keeps its element as the ring comes and goes. It takes no
+/// press of its own, shown or not: where the content leaves a margin inside
+/// the ring, a press there hits nothing in it.
 ///
 /// A mouse or a trackpad leaves the highlight mode as it was, which on a
 /// desktop is the keyboard's, so a control that takes focus from a click would
@@ -81,14 +83,27 @@ class _BgeFocusRingState extends State<BgeFocusRing> {
   Widget build(BuildContext context) => DecoratedBox(
     position: DecorationPosition.foreground,
     decoration: _showRing && !widget.suppressed
-        ? BoxDecoration(
+        ? _RingDecoration(
             borderRadius: widget.borderRadius,
             border: Border.all(
               color: Theme.of(context).colorScheme.primary,
               width: BgeTokens.of(context).focusOutlineWidth,
             ),
           )
-        : const BoxDecoration(),
+        : const _RingDecoration(),
     child: widget.builder(context, _onFocusChange),
   );
+}
+
+/// A [BoxDecoration] that a press goes through. A [DecoratedBox] takes a
+/// press anywhere its decoration covers, so a plain one would claim it on the
+/// margin between the ring and its content, and a caller that sends a missed
+/// press on elsewhere, as the game detail's chip tap target sends it to the
+/// chip, would never see the miss (#708).
+class _RingDecoration extends BoxDecoration {
+  const _RingDecoration({super.border, super.borderRadius});
+
+  @override
+  bool hitTest(Size size, Offset position, {TextDirection? textDirection}) =>
+      false;
 }
