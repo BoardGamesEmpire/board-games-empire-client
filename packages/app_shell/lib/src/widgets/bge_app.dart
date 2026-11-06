@@ -59,6 +59,7 @@ import 'crash_report_prompt.dart';
 import 'database_recovery_notice.dart';
 import 'feedback_review_screen.dart';
 import 'offline_strip_host.dart';
+import 'ownership_once_refreshed.dart';
 import 'router_back_interceptor.dart';
 import 'detached_rehydrate.dart';
 import 'session_rehydrate_trigger.dart';
@@ -1584,7 +1585,9 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// - **The watch** resolves the repository from the server active when the
   ///   page asks for it, once its platforms are known. With none there, it
-  ///   reports nothing owned. The page keeps that one stream while it is
+  ///   reports nothing owned. The cache's answer waits for the collection's
+  ///   first refresh, and a failed one reads as ownership unknown, through
+  ///   [ownershipOnceRefreshed]. The page keeps that one stream while it is
   ///   open, and a session's end routes the page away.
   /// - **The add** resolves the repository and the sender again at each
   ///   press. A press once the active container lacks either does nothing.
@@ -1603,9 +1606,15 @@ class _BgeAppState extends State<BgeApp> {
             !current.isRegistered<GameCollectionRepository>()) {
           return Stream.value(const []);
         }
-        return current
+        final entries = current
             .get<GameCollectionRepository>()
             .watchEntriesForPlatformGames(platformGameIds);
+        return current.isRegistered<GameCollectionHydrationStatus>()
+            ? ownershipOnceRefreshed(
+                entries,
+                current.get<GameCollectionHydrationStatus>().watch(),
+              )
+            : entries;
       },
       onAdd: (context, game, options, {platformGameId}) {
         final current = active();

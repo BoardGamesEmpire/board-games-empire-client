@@ -337,6 +337,7 @@ void main() {
     bool withGames = true,
     ListLayoutRepository? layouts,
     GameCollectionRepository? collection,
+    GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
   }) => FakeActiveServerScope(
     buildActiveServer(
@@ -346,6 +347,7 @@ void main() {
       dataGatewayRemoteDataSource: dataGateways,
       callerAccess: access,
       gameCollectionRepository: collection,
+      gameCollectionHydrationStatus: collectionHydration,
       syncOperationSender: sender,
     ),
   );
@@ -355,6 +357,7 @@ void main() {
     bool withGames = true,
     ListLayoutRepository? layouts,
     GameCollectionRepository? collection,
+    GameCollectionHydrationStatus? collectionHydration,
     SyncOperationSender? sender,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
@@ -362,6 +365,7 @@ void main() {
         withGames: withGames,
         layouts: layouts,
         collection: collection,
+        collectionHydration: collectionHydration,
         sender: sender,
       ),
     );
@@ -834,6 +838,59 @@ void main() {
       expect(ownedLegend, findsOneWidget);
       // Digital is still free on Tabletop.
       expect(addButton, findsOneWidget);
+    });
+
+    testWidgets("until the collection's first refresh lands, the detail says "
+        'nothing of ownership; then the chip turns owned', (tester) async {
+      final owned = StreamController<List<GameCollection>>()..add(const []);
+      addTearDown(owned.close);
+      final status = GameCollectionHydrationStatus()..started();
+      addTearDown(status.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        collectionHydration: status,
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      // The empty cache is unknown, not "not owned".
+      expect(find.byKey(GameDetailScreen.platformKey('pg_1')), findsOneWidget);
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
+      expect(addButton, findsNothing);
+
+      owned.add([_copy('gc_1', GameMedium.physical)]);
+      status.finished(CollectionHydrateOutcome.complete);
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel(tabletopOwned), findsOneWidget);
+      expect(ownedLegend, findsOneWidget);
+    });
+
+    testWidgets('after a failed first refresh, ownership is unknown: plain '
+        'chips, and the add still opens', (tester) async {
+      final owned = StreamController<List<GameCollection>>()..add(const []);
+      addTearDown(owned.close);
+      final status = GameCollectionHydrationStatus()
+        ..started()
+        ..finished(CollectionHydrateOutcome.failed);
+      addTearDown(status.close);
+      await pumpHome(
+        tester,
+        collection: _collection(owned: owned),
+        collectionHydration: status,
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      expect(find.bySemanticsLabel(tabletopNotOwned), findsNothing);
+      expect(find.bySemanticsLabel(tabletopOwned), findsNothing);
+      expect(ownedLegend, findsNothing);
+      await tester.ensureVisible(addButton);
+      await tester.pumpAndSettle();
+      await tester.tap(addButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Add Catan'), findsOneWidget);
     });
 
     testWidgets('an unowned chip opens the add on its platform', (
