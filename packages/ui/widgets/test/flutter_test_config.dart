@@ -23,8 +23,9 @@ import 'package:alchemist/alchemist.dart';
 /// with "Could not be compared against non-existent file" — a missing
 /// baseline is a hard failure, not a skip.
 ///
-/// Re-enable only alongside a decision about which host renders the
-/// baseline; see #159.
+/// It stays off because one host owns the baselines: the Linux container
+/// `tool/goldens.dart` runs these suites in renders `goldens/ci/` (#159),
+/// so a second, per-host set would have nothing to agree with.
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   return AlchemistConfig.runWithConfig(
     config: const AlchemistConfig(

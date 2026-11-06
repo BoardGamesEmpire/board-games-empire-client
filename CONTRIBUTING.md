@@ -187,27 +187,37 @@ cd packages/core/models && flutter test  # one package
 ### Goldens
 
 Golden tests carry the `golden` tag and are excluded from `melos run test`, which
-mirrors CI. Run them deliberately:
+mirrors CI's `test` job. Run them deliberately:
 
 ```bash
 melos run test:goldens --no-select     # compare against committed baselines
 melos run goldens:update --no-select   # rewrite baselines after an intended change
 ```
 
-Only `test/**/goldens/ci/` is committed — Ahem-rendered and renderer-stable. The
-per-host `goldens/<platform>/` output is gitignored, and the platform variant is
-disabled in each package's `flutter_test_config.dart`; see the comment there for
-why, and #159 for the open question of which host should own the baseline.
+Both run [tool/goldens.dart](tool/goldens.dart), which runs the golden suites in
+a Linux container (`dart run tool/goldens.dart [--update]` is the same thing).
+**Docker is required.** The first run builds the image, which takes minutes, and
+longer under emulation on Apple silicon. Later runs reuse it until the toolchain
+or the image changes.
+
+The container owns the baselines (#159). Even Ahem-rendered goldens anti-alias
+shape edges differently on macOS, so a host `flutter test --tags golden` on a Mac
+fails against the committed PNGs by design. CI's `goldens` job runs the same
+command you do. When a comparison fails, the diff images land in each package's
+`test/goldens/failures/` (gitignored), and CI uploads them as the
+`golden-failures` artifact.
+
+Only `test/**/goldens/ci/` is committed. The per-host `goldens/<platform>/`
+output is gitignored, and the platform variant is disabled in each package's
+`flutter_test_config.dart`; see the comment there for why.
 
 Commit only the `ci/` PNGs.
 
-Both golden scripts filter on `dirExists: test/goldens`, so they run only in
-packages that actually own baselines — `ui_tokens` and `ui`
-(`packages/ui/widgets`) today. If you add goldens
-to another package, put them under `test/goldens/` or the scripts will skip it —
-and note that `flutter test --tags golden` exits 79 ("no tests ran") in a package
-with no golden-tagged tests, which melos reports as a failure rather than a
-no-op. That is why the filter is narrow.
+The wrapper runs only the packages that own tracked files under `test/goldens/`
+— `ui_tokens` and `ui` (`packages/ui/widgets`) today. If you add goldens to
+another package, put them under `test/goldens/` or the run will skip it. Running
+every package with a `test/` instead would fail: `flutter test --tags golden`
+exits 79 ("no tests ran") in a package with no golden-tagged tests.
 
 ### Drift schemas
 
