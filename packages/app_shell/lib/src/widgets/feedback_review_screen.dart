@@ -472,14 +472,23 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
         title: Text(i18n.feedbackReviewStackTrace),
         childrenPadding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
         children: [
-          SelectableText(
-            trace,
-            // Monospace is load-bearing here — a stack trace's alignment is
-            // information — so this legitimately sits outside the type scale.
-            // It still derives from it: bodySmall supplies the size and the
-            // scheme supplies the color, and only the family is overridden.
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(fontFamily: BgeTypography.monospaceFamily),
+          // At least a tap target tall: the text is selected by a long
+          // press, and a trace of a frame or two is a single short line
+          // (#50).
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: kMinInteractiveDimension,
+            ),
+            child: SelectableText(
+              trace,
+              // Monospace is load-bearing here — a stack trace's alignment is
+              // information — so this legitimately sits outside the type
+              // scale. It still derives from it: bodySmall supplies the size
+              // and the scheme supplies the color, and only the family is
+              // overridden.
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(fontFamily: BgeTypography.monospaceFamily),
+            ),
           ),
         ],
       );

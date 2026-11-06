@@ -48,6 +48,24 @@ void main() {
     ),
   );
 
+  /// The flow on its own, as the router builds it, at [textScaler].
+  Widget flowApp({
+    ThemeData? theme,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    localizationsDelegates: [
+      ...ShellLocalizations.localizationsDelegates,
+      FeedbackLocalizations.delegate,
+    ],
+    supportedLocales: ShellLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: FeedbackFlowScreen(feedbackService: service),
+  );
+
   Future<void> open(WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.tap(find.text('launch'));
@@ -107,17 +125,7 @@ void main() {
 
     Future<void> pumpFlow(WidgetTester tester, {double width = 320}) async {
       useViewSize(tester, Size(width, 800));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: BgeTheme.light(),
-          localizationsDelegates: [
-            ...ShellLocalizations.localizationsDelegates,
-            FeedbackLocalizations.delegate,
-          ],
-          supportedLocales: ShellLocalizations.supportedLocales,
-          home: FeedbackFlowScreen(feedbackService: service),
-        ),
-      );
+      await tester.pumpWidget(flowApp());
       await tester.pumpAndSettle();
     }
 
@@ -385,6 +393,48 @@ void main() {
       expect(find.byType(FeedbackComposeForm), findsOneWidget);
       expect(find.text('it broke'), findsOneWidget);
     });
+  });
+
+  // The review step is FeedbackReviewScreen, audited in its own suite.
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) =>
+        flowApp(theme: theme, textScaler: textScaler);
+
+    Future<void> rejectSubmit(WidgetTester tester) async {
+      // Empty, so severity and message are both rejected.
+      await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
+      await tester.pumpAndSettle();
+    }
+
+    /// Scrolls the form to its end, for the fields below the fold at
+    /// 320dp × 2.0, which the audit can't see from the top.
+    Future<void> scrollToEnd(WidgetTester tester) async {
+      final position = pageScrollOf(tester).position;
+      position.jumpTo(position.maxScrollExtent);
+    }
+
+    auditScreen('compose', build: build);
+
+    auditScreen(
+      'compose, scrolled to the end',
+      build: build,
+      arrange: scrollToEnd,
+    );
+
+    auditScreen(
+      'compose, rejected submit',
+      build: build,
+      arrange: rejectSubmit,
+    );
+
+    auditScreen(
+      'compose, rejected submit, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await rejectSubmit(tester);
+        await scrollToEnd(tester);
+      },
+    );
   });
 }
 

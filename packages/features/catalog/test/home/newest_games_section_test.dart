@@ -53,11 +53,21 @@ void main() {
     void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
     void Function(BuildContext context)? onConnectDataGateway,
     Widget? above,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
     supportedLocales: GameCatalogLocalizations.supportedLocales,
+    // Only when given, so that a scale set round the whole app reaches the
+    // row too.
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -978,5 +988,97 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
       expect(find.text('Trying again…'), findsNothing);
     });
+  });
+
+  // Home composes this row in `BgeApp`, so `HomeScreen`'s own audit hosts a
+  // placeholder in its place; the row is audited here, in the column home
+  // puts its sections in (#50). A refused user is shown nothing, so has no
+  // call.
+  group('accessibility audit', () {
+    Widget build(
+      ThemeData theme,
+      TextScaler textScaler, {
+      bool canConnect = false,
+    }) => harness(
+      theme: theme,
+      textScaler: textScaler,
+      onOpen: (_, _) {},
+      onConnectDataGateway: canConnect ? (_) {} : null,
+    );
+
+    /// [build], with the server answering the row's first read, which it
+    /// makes as it is built, with [answer].
+    Widget Function(ThemeData, TextScaler) answering(
+      Future<PaginatedResult<Game>> Function() answer, {
+      bool canConnect = false,
+    }) => (theme, textScaler) {
+      remote.onFetchPage = (_, _) => answer();
+      return build(theme, textScaler, canConnect: canConnect);
+    };
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the row.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final section = find.byType(NewestGamesSection);
+      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
+      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
+    });
+
+    // The first read never answers: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: answering(() => Completer<PaginatedResult<Game>>().future),
+      arrange: (tester) async {
+        expect(find.byKey(NewestGamesSection.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: answering(() async => pageOf(_newest(3))),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(cover(0), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: answering(() async => throw unreachable()),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(NewestGamesSection.failedKey), findsOneWidget);
+        expect(find.byKey(NewestGamesSection.retryKey), findsOneWidget);
+      },
+    );
+
+    // A server with no games, to a user who can connect a DataGateway: the
+    // card and its button (#617).
+    auditScreen(
+      'empty, with the connect card',
+      build: answering(() async => pageOf(const []), canConnect: true),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(NewestGamesSection.emptyActionKey), findsOneWidget);
+      },
+    );
+
+    // The same, to everyone else: the plain message.
+    auditScreen(
+      'empty',
+      build: answering(() async => pageOf(const [])),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(NewestGamesSection.emptyKey), findsOneWidget);
+        expect(find.byKey(NewestGamesSection.emptyActionKey), findsNothing);
+      },
+    );
   });
 }

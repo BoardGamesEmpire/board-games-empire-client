@@ -88,12 +88,13 @@ void main() {
     void Function(BuildContext context)? onOpenEvents,
     void Function(BuildContext context, String eventId)? onOpen,
     Future<void> Function()? onRetry,
+    ThemeData? theme,
     TextScaler textScaler = TextScaler.noScaling,
     bool hasRemote = true,
     Stream<List<Household>>? Function()? households,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
@@ -1080,5 +1081,106 @@ void main() {
         expect(find.byKey(BgeShelf.nextKey), findsOneWidget);
       });
     }
+  });
+
+  // Home composes this section in `BgeApp`, so `HomeScreen`'s own audit
+  // hosts a placeholder in its place; the section is audited here, in a
+  // page as home's column holds it (#50).
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler) => harness(
+      theme: theme,
+      textScaler: textScaler,
+      onOpen: (_, _) {},
+      onRetry: () async {},
+    );
+
+    /// The cache answers [rows], with the hydrate settled.
+    Future<void> showRows(WidgetTester tester, List<EventListItem> rows) async {
+      status.finished(EventHydrateOutcome.complete);
+      items.add(rows);
+      await tester.pumpAndSettle();
+    }
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the section.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final section = find.byType(UpcomingEventsSection);
+      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
+      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
+    });
+
+    // The first hydrate is filling an empty cache: the spinner never
+    // settles.
+    auditScreen(
+      'loading',
+      build: build,
+      arrange: (tester) async {
+        status.started();
+        items.add(const []);
+        await settle(tester);
+        expect(find.byKey(UpcomingEventsSection.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, upcoming(3));
+        expect(rowOf('e-up-0'), findsOneWidget);
+        expect(find.text(_seeAll), findsOneWidget);
+      },
+    );
+
+    // Nothing of the user's own upcoming: what's coming up that they could
+    // see, under its note.
+    auditScreen(
+      'ready, suggested events',
+      build: build,
+      arrange: (tester) async {
+        remote.browse = (_) => browsePage(offered(3));
+        await showRows(tester, const []);
+        expect(rowOf('e-offer-0'), findsOneWidget);
+        expect(find.text(_note), findsOneWidget);
+      },
+    );
+
+    // At 320dp × 2.0 the note pushes the card's foot below the fold.
+    auditScreen(
+      'ready, suggested events, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        remote.browse = (_) => browsePage(offered(3));
+        await showRows(tester, const []);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, const []);
+        expect(find.byKey(UpcomingEventsSection.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        items.addError(StateError('no read'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(UpcomingEventsSection.errorKey), findsOneWidget);
+        expect(find.byKey(UpcomingEventsSection.retryKey), findsOneWidget);
+      },
+    );
   });
 }

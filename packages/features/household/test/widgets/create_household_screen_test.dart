@@ -101,8 +101,20 @@ void main() {
   // to it, the tap on submit cut that scroll short (#233), and the banner
   // stopped at -227. The banner now sits above the submit (#211), so a tap
   // there has its answer in place and the case passes themed.
-  Widget harness({required void Function(String) onCreated}) => MaterialApp(
-    theme: BgeTheme.light(),
+  Widget harness({
+    required void Function(String) onCreated,
+    ThemeData? theme,
+    TextScaler? textScaler,
+  }) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    // Null leaves the scale to a MediaQuery above the app, which is how the
+    // 200% tests here set theirs.
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: Builder(
@@ -600,6 +612,118 @@ void main() {
         created,
         'hh_server',
         reason: 'no route beneath is not a special case any more (#162)',
+      );
+    });
+
+    group('accessibility audit', () {
+      Widget build(ThemeData theme, TextScaler textScaler) =>
+          harness(onCreated: (_) {}, theme: theme, textScaler: textScaler);
+
+      Future<void> submitFilled(WidgetTester tester) async {
+        await openScreen(tester);
+        await tester.enterText(
+          find.byKey(CreateHouseholdForm.nameFieldKey),
+          'HQ',
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(CreateHouseholdForm.submitButtonKey),
+        );
+        await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> rejectBlankName(WidgetTester tester) async {
+        await openScreen(tester);
+        await tester.ensureVisible(
+          find.byKey(CreateHouseholdForm.submitButtonKey),
+        );
+        await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
+        await tester.pumpAndSettle();
+        expect(find.text('Enter a name for your household.'), findsOneWidget);
+      }
+
+      Future<void> failCreate(WidgetTester tester) async {
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenThrow(StateError('db is down'));
+        await submitFilled(tester);
+        expect(
+          find.byKey(CreateHouseholdScreen.errorBannerKey),
+          findsOneWidget,
+        );
+      }
+
+      Future<void> submitInFlight(WidgetTester tester) async {
+        final gate = Completer<_Draft>();
+        addTearDown(() => gate.complete(_draft()));
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenAnswer((_) => gate.future);
+        await openScreen(tester);
+        await tester.enterText(
+          find.byKey(CreateHouseholdForm.nameFieldKey),
+          'HQ',
+        );
+        await tester.ensureVisible(
+          find.byKey(CreateHouseholdForm.submitButtonKey),
+        );
+        await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
+        await tester.pump();
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      }
+
+      // The audit's 320dp × 2.0 cells are only worth running if the harness
+      // passes the scale and theme on to the screen.
+      testWidgets('the harness applies the theme and the text scale', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          build(BgeTheme.dark(), const TextScaler.linear(2)),
+        );
+        await openScreen(tester);
+
+        final form = find.byType(CreateHouseholdForm);
+        expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
+        expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
+      });
+
+      auditScreen('ready', build: build, arrange: openScreen);
+
+      // No 'ready, scrolled to the end' or 'rejected submit, scrolled to the
+      // end': both fit both viewports, so there is nothing below the fold.
+
+      auditScreen('rejected submit', build: build, arrange: rejectBlankName);
+
+      auditScreen('failure', build: build, arrange: failCreate);
+
+      // The banner makes the page taller than the viewport, and every scroll
+      // position that shows the submit button leaves the name field half
+      // under the top edge, which Flutter's tap-target check fails at its
+      // clipped size (#50). So the state is audited in a view tall enough for
+      // the whole page.
+      auditScreen(
+        'failure, whole page',
+        build: build,
+        arrange: (tester) async {
+          await useWholePage(tester);
+          await failCreate(tester);
+          expectWholePage(tester);
+        },
+      );
+
+      // The busy submit button spins, so the page never settles.
+      auditScreen(
+        'submitting',
+        build: build,
+        arrange: submitInFlight,
+        settle: false,
       );
     });
   });

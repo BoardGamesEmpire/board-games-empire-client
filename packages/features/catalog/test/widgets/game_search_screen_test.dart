@@ -1,13 +1,16 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -39,9 +42,13 @@ void main() {
     void Function(BuildContext context, String sourceId, GameSearchHit hit)?
     onImport,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       catalogApp(
+        theme: theme,
+        textScaler: textScaler,
         GameSearchScreen(
           remote: remote,
           cache: cache,
@@ -937,6 +944,28 @@ void main() {
       }
     });
 
+    // A drafted finding, skipped until it is fixed (#50). Opening the sheet
+    // opens a route, and a screen reader says the route's name. Material
+    // leaves it empty on iOS and macOS, on a node the sheet's builder can't
+    // reach, since the route's children are nodes of their own.
+    group("the sheet's route is named on every platform", skip: 'see #762', () {
+      testWidgets('its route node', (tester) async {
+        final handle = tester.ensureSemantics();
+        await show(tester);
+        await openFilters(tester);
+
+        final route = find.semantics.ancestor(
+          of: find.semantics.byLabel('Base game'),
+          matching: find.semantics.byFlag(SemanticsFlag.namesRoute),
+        );
+        final data = route.evaluate().single.getSemanticsData();
+        expect(data.flagsCollection.scopesRoute, isTrue);
+        expect(data.label, isNotEmpty);
+
+        handle.dispose();
+      }, variant: TargetPlatformVariant.all());
+    });
+
     testWidgets('a content-type chip searches again, narrowed', (tester) async {
       await show(tester);
       await search(tester, 'catan');
@@ -1243,5 +1272,279 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
+  });
+
+  group('accessibility audit', () {
+    // `show` pumps the screen and wants the tester, so each call's build
+    // only records the theme and scale and returns a placeholder; its
+    // arrange pumps the screen over it with them.
+    late ThemeData theme;
+    late TextScaler scaler;
+
+    Widget record(ThemeData t, TextScaler s) {
+      theme = t;
+      scaler = s;
+      return const SizedBox.shrink();
+    }
+
+    Future<void> showAudited(
+      WidgetTester tester, {
+      FakeGamesCache? cache,
+      ValueListenable<bool>? offline,
+      Future<Map<String, String>> Function()? sourceNames,
+    }) => show(
+      tester,
+      cache: cache,
+      offline: offline,
+      sourceNames: sourceNames,
+      onOpen: (_, _) {},
+      onImport: (_, _, _) {},
+      theme: theme,
+      textScaler: scaler,
+    );
+
+    // Six hits on the server and six from a source, with a source that
+    // didn't answer: taller than the narrow window at 2.0 text.
+    final many = GameSearchResults(
+      local: [
+        for (var n = 0; n < 6; n++)
+          hit('g_$n', gameId: 'g_$n', title: 'Server game number $n'),
+      ],
+      byDataGateway: {
+        'dg_bgg': [
+          for (var n = 0; n < 6; n++) hit('x_$n', title: 'Source game $n'),
+        ],
+      },
+      unavailableDataGateways: const {'dg_down'},
+    );
+
+    final names = {'dg_bgg': 'BoardGameGeek', 'dg_down': 'Steam'};
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      theme = BgeTheme.dark();
+      scaler = const TextScaler.linear(2);
+      await showAudited(tester);
+
+      final screen = find.byType(GameSearchScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'idle',
+      build: record,
+      arrange: (tester) async {
+        await showAudited(tester);
+        expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
+      },
+    );
+
+    // The search is still being read: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: record,
+      arrange: (tester) async {
+        final pending = Completer<GameSearchResults>();
+        addTearDown(() => pending.complete(const GameSearchResults()));
+        remote.onSearch = (_, _) => pending.future;
+        await showAudited(tester);
+        await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'catan');
+        await tester.pump(GameSearchBloc.defaultDebounce);
+        await tester.pump();
+        expect(find.byKey(GameSearchScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => many;
+        await showAudited(tester, sourceNames: () async => names);
+        await search(tester, 'game');
+        expect(find.byKey(GameSearchScreen.countKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => many;
+        await showAudited(tester, sourceNames: () async => names);
+        await search(tester, 'game');
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameSearchScreen.missingSourcesKey),
+        );
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => const GameSearchResults();
+        await showAudited(tester);
+        await search(tester, 'zzz');
+        expect(find.byKey(GameSearchScreen.noResultsKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure, saved games under a banner',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => throw unreachable();
+        await showAudited(
+          tester,
+          cache: FakeGamesCache([game('g_catan', title: 'Catan')]),
+        );
+        await search(tester, 'catan');
+        expect(find.byKey(GameSearchScreen.fromCacheBannerKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => throw unreachable();
+        // No saved games to fall back on: an empty cache reads as no hits.
+        await showAudited(tester);
+        await search(tester, 'catan');
+        expect(find.byKey(GameSearchScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'denied',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async =>
+            throw const GamesForbiddenException('403');
+        await showAudited(tester, cache: FakeGamesCache());
+        await search(tester, 'catan');
+        expect(find.byKey(GameSearchScreen.deniedKey), findsOneWidget);
+      },
+    );
+
+    // The import rows are disabled while offline; their dimmed labels fail
+    // contrast, which WCAG 1.4.3 exempts for an inactive control. A false
+    // finding: see `docs/design/ACCESSIBILITY_AUDIT.md` §3.
+    auditScreen(
+      'offline',
+      build: record,
+      arrange: (tester) async {
+        final offline = ValueNotifier(true);
+        addTearDown(offline.dispose);
+        remote.onSearch = (_, _) async => results;
+        await showAudited(tester, offline: offline);
+        await search(tester, 'catan');
+        expect(find.text(onlineOnlyCopy), findsWidgets);
+      },
+      textContrast: false,
+    );
+
+    auditScreen(
+      'filter sheet',
+      build: record,
+      arrange: (tester) async {
+        remote.onSearch = (_, _) async => const GameSearchResults();
+        await showAudited(tester);
+        await openFilters(tester);
+        expect(find.byKey(GameSearchScreen.filterSheetKey), findsOneWidget);
+      },
+    );
+
+    // Scrolled to its end, the sheet leaves a control half under its top
+    // edge, which Flutter's tap-target check fails at its clipped size, a
+    // limit of the tool (`docs/design/ACCESSIBILITY_AUDIT.md` §3). So the
+    // sheet is audited in a view tall enough to hold it whole.
+    auditScreen(
+      'filter sheet, whole page',
+      build: record,
+      arrange: (tester) async {
+        useViewSize(
+          tester,
+          Size(
+            tester.view.physicalSize.width / tester.view.devicePixelRatio,
+            6000,
+          ),
+        );
+        remote.onSearch = (_, _) async => const GameSearchResults();
+        await showAudited(tester);
+        await openFilters(tester);
+        final position = tester
+            .state<ScrollableState>(sheetScrollable())
+            .position;
+        expect(position.maxScrollExtent, 0, reason: 'the sheet still scrolls');
+        expect(
+          find.byKey(GameSearchScreen.bandKey(GameLengthBand.values.last)),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  group('keyboard', () {
+    late SemanticsHandle semantics;
+
+    setUp(() => semantics = SemanticsBinding.instance.ensureSemantics());
+    tearDown(() => semantics.dispose());
+
+    /// Results in both sections, each row a control: a game on the server
+    /// opens, one only a data source holds is an import.
+    Future<void> showResults(WidgetTester tester) async {
+      remote.onSearch = (_, _) async => results;
+      await show(
+        tester,
+        sourceNames: () async => {'dg_bgg': 'BoardGameGeek'},
+        onOpen: (_, _) {},
+        onImport: (_, _, _) {},
+      );
+      await search(tester, 'catan');
+    }
+
+    /// The order the screen reads in, top to bottom and start to end: the
+    /// field and its clear button, the Filters button beside them, then this
+    /// server's results and the data sources'. A data source's row reads the
+    /// source's name under the title.
+    const readingOrder = [
+      'Search by title',
+      'Clear search',
+      'Filters',
+      'Catan',
+      'Catan: Seafarers\nBoardGameGeek',
+      'Catan Junior\nBoardGameGeek',
+    ];
+
+    testWidgets('Tab follows reading order, Shift+Tab reverses it, and '
+        'nothing traps focus', (tester) async {
+      await showResults(tester);
+
+      await expectTraversable(tester, expectedOrder: readingOrder);
+    });
+
+    testWidgets('the filter sheet, closed with Escape, gives focus back to '
+        'the Filters button', (tester) async {
+      await showResults(tester);
+
+      await expectFocusReturnsAfterDialog(
+        tester,
+        opener: find.descendant(
+          of: find.byKey(GameSearchScreen.filtersButtonKey),
+          matching: find.byType(Text),
+        ),
+        dismiss: () async {
+          expect(find.byKey(GameSearchScreen.filterSheetKey), findsOneWidget);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        },
+      );
+      expect(find.byKey(GameSearchScreen.filterSheetKey), findsNothing);
+    });
   });
 }

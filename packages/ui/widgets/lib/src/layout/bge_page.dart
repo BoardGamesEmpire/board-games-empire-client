@@ -356,6 +356,19 @@ class BgePage extends StatelessWidget {
       content = Center(child: content);
     }
 
+    // One traversal group for the scrolling content, so Tab orders it among
+    // itself, and places it among the app bar, the floating button and the
+    // footer by where the whole view sits (#50). Flutter orders Tab stops by
+    // where they are on screen, and content scrolled up under the app bar
+    // sits above the back button. Without the group, Shift+Tab up a scrolled
+    // form went to the back button between every two fields, Tab from the
+    // last field skipped it, and a floating button or the footer came up
+    // halfway down a long page. Inside the group the content moves as one,
+    // so its own order never changes as it scrolls.
+    final page = FocusTraversalGroup(
+      child: _pageContent(content, contentPadding, maxWidth),
+    );
+
     return Scaffold(
       key: scaffoldKey,
       drawer: drawer,
@@ -374,9 +387,9 @@ class BgePage extends StatelessWidget {
             // No footer is the common case — 10 of the 12 page screens. Skip
             // the flex entirely rather than make every one of them lay out a
             // Column with a single child.
-            ? _pageContent(content, contentPadding, maxWidth)
+            ? page
             : _PageWithFooter(
-                page: _pageContent(content, contentPadding, maxWidth),
+                page: page,
                 // Scrollable, because the cap alone only trades one
                 // unreachable region for another: a note plus a button
                 // at 200% text scale overflowed the cap and put the
@@ -384,38 +397,46 @@ class BgePage extends StatelessWidget {
                 // the page's own scroll view — a footer that fits at
                 // 1.0 does not at 2.0 — so it shrink-wraps when short
                 // and scrolls when it is not.
-                footer: SingleChildScrollView(
-                  // Never the route's primary scroll view, which on
-                  // Android and iOS is the page's own. A second one
-                  // there leaves the keyboard's page scrolling two
-                  // positions to choose from with focus on the page,
-                  // as it is when a screen opens: it threw, and the
-                  // page didn't move (#457).
-                  primary: false,
-                  child: Padding(
-                    // The content's own horizontal inset so the footer
-                    // lines up with the column above it, and its bottom
-                    // inset so the action is not flush against the
-                    // window edge. The top is dropped because the footer
-                    // is a band against the content, not a floating
-                    // card — a page that wants a visible separation
-                    // should put a Divider in the footer, since the
-                    // scroll view's own bottom padding scrolls away with
-                    // the content and cannot supply one.
-                    padding: resolvedPadding
-                        .resolve(Directionality.of(context))
-                        .copyWith(top: 0),
-                    // `heightFactor: 1` so this shrink-wraps vertically.
-                    // Without it the Align fills the cap above, and the
-                    // footer band is always half the viewport — a 48dp
-                    // button stranded mid-band with the content squeezed
-                    // into the top half. The cap bounds the footer; it
-                    // must not size it.
-                    child: Align(
-                      heightFactor: 1,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxWidth),
-                        child: footer,
+                //
+                // A traversal group of its own, as the page's content has,
+                // and for the same reason (#50): a footer scrolled within
+                // its cap puts its first controls up level with the page's,
+                // and Tab then went from the page to the footer's second
+                // control and back to its first.
+                footer: FocusTraversalGroup(
+                  child: SingleChildScrollView(
+                    // Never the route's primary scroll view, which on
+                    // Android and iOS is the page's own. A second one
+                    // there leaves the keyboard's page scrolling two
+                    // positions to choose from with focus on the page,
+                    // as it is when a screen opens: it threw, and the
+                    // page didn't move (#457).
+                    primary: false,
+                    child: Padding(
+                      // The content's own horizontal inset so the footer
+                      // lines up with the column above it, and its bottom
+                      // inset so the action is not flush against the
+                      // window edge. The top is dropped because the footer
+                      // is a band against the content, not a floating
+                      // card — a page that wants a visible separation
+                      // should put a Divider in the footer, since the
+                      // scroll view's own bottom padding scrolls away with
+                      // the content and cannot supply one.
+                      padding: resolvedPadding
+                          .resolve(Directionality.of(context))
+                          .copyWith(top: 0),
+                      // `heightFactor: 1` so this shrink-wraps vertically.
+                      // Without it the Align fills the cap above, and the
+                      // footer band is always half the viewport — a 48dp
+                      // button stranded mid-band with the content squeezed
+                      // into the top half. The cap bounds the footer; it
+                      // must not size it.
+                      child: Align(
+                        heightFactor: 1,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: footer,
+                        ),
                       ),
                     ),
                   ),

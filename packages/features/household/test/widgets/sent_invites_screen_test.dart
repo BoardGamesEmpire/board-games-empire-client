@@ -38,8 +38,9 @@ void main() {
   Widget harness({
     TextScaler textScaler = TextScaler.noScaling,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) {
@@ -499,4 +500,168 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  group('accessibility audit', () {
+    /// The screen over the fake as [seed] leaves it; `build` runs before the
+    /// first read, so the state is chosen here.
+    Widget Function(ThemeData, TextScaler) screenWith(
+      void Function() seed, {
+      ValueListenable<bool>? offline,
+    }) => (theme, textScaler) {
+      seed();
+      return harness(theme: theme, textScaler: textScaler, offline: offline);
+    };
+
+    /// A pending row, an awaiting-approval one, an expired one and a settled
+    /// one, so every row shape is on the page.
+    void rows() => listing([
+      _sent('i_1').copyWith(message: 'Bring snacks'),
+      _sent(
+        'i_2',
+        status: HouseholdInviteStatus.awaitingApproval,
+        householdName: 'Game Night',
+      ).copyWith(role: HouseholdRole.householdGuest),
+      _sent('i_3', status: HouseholdInviteStatus.expired),
+      _sent('i_4', status: HouseholdInviteStatus.declined),
+    ]);
+
+    Future<void> withdrawOne(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(SentInvitesScreen.withdrawKey('i_1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(SentInvitesScreen.outcomeKey), findsOneWidget);
+    }
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      rows();
+      await tester.pumpWidget(
+        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = find.byType(SentInvitesScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: screenWith(rows),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(SentInvitesScreen.withdrawKey('i_1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: screenWith(rows),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen(
+      'filter menu open',
+      build: screenWith(rows),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(SentInvitesScreen.filterKey));
+        await tester.pumpAndSettle();
+        expect(find.byType(MenuItemButton), findsWidgets);
+      },
+    );
+
+    auditScreen(
+      'offline',
+      build: screenWith(rows, offline: ValueNotifier(true)),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.text(_onlineOnlyCopy), findsWidgets);
+      },
+      // The failing nodes are the disabled Withdraw buttons, drawn dimmed by
+      // design; WCAG 1.4.3 exempts inactive controls, and the enabled ones
+      // pass in 'ready'.
+      textContrast: false,
+    );
+
+    auditScreen(
+      'withdrawn',
+      build: screenWith(() {
+        var current = [_sent('i_1'), _sent('i_2')];
+        remote
+          ..onFetchSent = ((_, _, _) async => pageOf(current))
+          ..onWithdraw = (id) async {
+            current = [_sent('i_2')];
+            return _sent(id, status: HouseholdInviteStatus.withdrawn);
+          };
+      }),
+      arrange: withdrawOne,
+    );
+
+    auditScreen(
+      'withdraw refused',
+      build: screenWith(() {
+        var current = [_sent('i_1')];
+        remote
+          ..onFetchSent = ((_, _, _) async => pageOf(current))
+          ..onWithdraw = (_) async {
+            current = [_sent('i_1', status: HouseholdInviteStatus.expired)];
+            throw refused(410);
+          };
+      }),
+      arrange: withdrawOne,
+    );
+
+    auditScreen(
+      'more to load',
+      build: screenWith(
+        () => remote.onFetchSent = (_, _, _) async =>
+            pageOf([for (var i = 0; i < 25; i++) _sent('i_$i')], hasMore: true),
+      ),
+      arrange: (tester) =>
+          scrollListToEnd(tester, find.byKey(SentInvitesScreen.moreKey)),
+    );
+
+    auditScreen(
+      'empty',
+      build: screenWith(() => listing(const [])),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(SentInvitesScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: screenWith(
+        () => remote.onFetchSent = (_, _, _) async => throw offline(),
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(SentInvitesScreen.failedKey), findsOneWidget);
+      },
+    );
+
+    // The first read never answers, so the spinner never stops.
+    auditScreen(
+      'loading',
+      build: screenWith(() {
+        final read = Completer<PaginatedResult<HouseholdInvite>>();
+        addTearDown(() => read.complete(pageOf(const <HouseholdInvite>[])));
+        remote.onFetchSent = (_, _, _) => read.future;
+      }),
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(SentInvitesScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+  });
 }

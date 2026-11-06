@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +39,31 @@ void main() {
     ],
   );
 
+  Widget reviewApp({
+    FeedbackReportPreview? preview,
+    Future<FeedbackSubmitResult> Function(FeedbackReport)? onSubmit,
+    VoidCallback? onCancel,
+    VoidCallback? onClose,
+    ThemeData? theme,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    // The real theme, so a measure assertion tests the wiring rather
+    // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
+    theme: theme ?? BgeTheme.light(),
+    localizationsDelegates: ShellLocalizations.localizationsDelegates,
+    supportedLocales: ShellLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: FeedbackReviewScreen(
+      preview: preview ?? FeedbackReportPreview.fromReport(buildReport()),
+      onSubmit: onSubmit ?? (_) async => FeedbackSubmitResult.sent,
+      onCancel: onCancel ?? () {},
+      onClose: onClose ?? () {},
+    ),
+  );
+
   Future<void> pumpReview(
     WidgetTester tester, {
     FeedbackReportPreview? preview,
@@ -55,18 +82,11 @@ void main() {
     // the same fix.
     useViewSize(tester, const Size(1200, 2400));
     await tester.pumpWidget(
-      MaterialApp(
-        // The real theme, so a measure assertion tests the wiring rather
-        // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
-        theme: BgeTheme.light(),
-        localizationsDelegates: ShellLocalizations.localizationsDelegates,
-        supportedLocales: ShellLocalizations.supportedLocales,
-        home: FeedbackReviewScreen(
-          preview: preview ?? FeedbackReportPreview.fromReport(buildReport()),
-          onSubmit: onSubmit ?? (_) async => FeedbackSubmitResult.sent,
-          onCancel: onCancel ?? () {},
-          onClose: onClose ?? () {},
-        ),
+      reviewApp(
+        preview: preview,
+        onSubmit: onSubmit,
+        onCancel: onCancel,
+        onClose: onClose,
       ),
     );
     await tester.pumpAndSettle();
@@ -725,5 +745,134 @@ void main() {
         findsWidgets,
       );
     });
+  });
+
+  group('accessibility audit', () {
+    // A crash's trace, as the reporter hands one in: many frames.
+    const crashTrace =
+        '#0      AddGameBloc._onSubmitted '
+        '(package:game_catalog/src/bloc/add_game_bloc.dart:88:7)\n'
+        '#1      Bloc.on.<anonymous closure>.handleEvent '
+        '(package:bloc/src/bloc.dart:226:26)\n'
+        '#2      Bloc.on.<anonymous closure> '
+        '(package:bloc/src/bloc.dart:235:9)\n'
+        '#3      _MapStream._handleData (dart:async/stream_pipe.dart:213:31)\n'
+        '#4      _ForwardingStreamSubscription._handleData '
+        '(dart:async/stream_pipe.dart:153:13)\n'
+        '#5      _rootRunUnary (dart:async/zone.dart:1538:47)';
+
+    Widget build(
+      ThemeData theme,
+      TextScaler textScaler, {
+      Future<FeedbackSubmitResult> Function(FeedbackReport)? onSubmit,
+      String trace = crashTrace,
+    }) => reviewApp(
+      preview: FeedbackReportPreview.fromReport(
+        buildReport().copyWith(stackTrace: trace),
+      ),
+      onSubmit: onSubmit,
+      theme: theme,
+      textScaler: textScaler,
+    );
+
+    Future<void> send(WidgetTester tester) =>
+        tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+
+    /// Scrolls the list to its end, for the rows below the fold at
+    /// 320dp × 2.0, which the audit can't see from the top. The list is lazy,
+    /// so its extent is an estimate until its last rows are built: jump until
+    /// the end stops moving.
+    Future<void> scrollToEnd(WidgetTester tester) async {
+      final position = pageScrollOf(tester).position;
+      while (position.pixels < position.maxScrollExtent) {
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pump();
+      }
+    }
+
+    auditScreen('ready', build: build);
+
+    // Diagnostics collapsed: their headers are the last rows.
+    auditScreen(
+      'ready, scrolled to the end',
+      build: build,
+      arrange: scrollToEnd,
+    );
+
+    /// Opens both read-only sections and scrolls to the end of the list,
+    /// which the ready state leaves below the fold.
+    Future<void> expandDiagnostics(WidgetTester tester) async {
+      final page = find.byType(Scrollable).first;
+      for (final key in [
+        FeedbackReviewScreen.stackTraceSectionKey,
+        FeedbackReviewScreen.breadcrumbsSectionKey,
+      ]) {
+        final section = find.byKey(key);
+        await tester.scrollUntilVisible(section, 100, scrollable: page);
+        await tester.ensureVisible(section);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(of: section, matching: find.byType(ListTile)),
+        );
+        await tester.pumpAndSettle();
+      }
+      await scrollToEnd(tester);
+    }
+
+    auditScreen(
+      'ready, diagnostics expanded',
+      build: build,
+      arrange: expandDiagnostics,
+    );
+
+    // A trace of one frame, as an error thrown near the top of a call can
+    // leave: one line of text, but still a long-press target to select it.
+    auditScreen(
+      'ready, a one-line trace expanded',
+      build: (theme, textScaler) =>
+          build(theme, textScaler, trace: '#0 main (file.dart:1)'),
+      arrange: expandDiagnostics,
+    );
+
+    // The send never completes, so its spinner never settles.
+    auditScreen(
+      'sending',
+      settle: false,
+      build: (theme, textScaler) => build(
+        theme,
+        textScaler,
+        onSubmit: (_) => Completer<FeedbackSubmitResult>().future,
+      ),
+      arrange: send,
+    );
+
+    auditScreen(
+      'sending, scrolled to the end',
+      settle: false,
+      build: (theme, textScaler) => build(
+        theme,
+        textScaler,
+        onSubmit: (_) => Completer<FeedbackSubmitResult>().future,
+      ),
+      arrange: (tester) async {
+        await send(tester);
+        await scrollToEnd(tester);
+      },
+    );
+
+    // The outcome fills the view; only the page's bottom padding runs past
+    // it, so there is no scrolled call for sent or failed.
+    auditScreen('sent', build: build, arrange: send);
+
+    auditScreen(
+      'failed',
+      build: (theme, textScaler) => build(
+        theme,
+        textScaler,
+        onSubmit: (_) async =>
+            throw const FeedbackPersistenceException('everything failed'),
+      ),
+      arrange: send,
+    );
   });
 }

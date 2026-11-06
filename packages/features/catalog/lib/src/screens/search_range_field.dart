@@ -34,6 +34,7 @@ class SearchRangeField extends StatefulWidget {
     required this.value,
     required this.onCommit,
     required this.lowest,
+    required this.name,
     this.highest = GamesRemoteDataSource.maxRangeBound,
     this.allowNegative = false,
     this.helper,
@@ -46,6 +47,10 @@ class SearchRangeField extends StatefulWidget {
 
   final GameSearchRange value;
   final ValueChanged<GameSearchRange> onCommit;
+
+  /// The range's heading, such as "Players": part of each field's accessible
+  /// name, so a screen reader says which range a From or To belongs to (#50).
+  final String name;
 
   /// The lowest bound the server accepts.
   final int lowest;
@@ -242,39 +247,45 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
       required TextEditingController controller,
       required FocusNode focusNode,
       required String label,
+      required String semanticLabel,
       required _Problem? problem,
       required TextInputAction action,
-    }) => TextField(
-      key: key,
-      controller: controller,
-      focusNode: focusNode,
-      keyboardType: TextInputType.numberWithOptions(
-        signed: widget.allowNegative,
+    }) => Semantics(
+      label: semanticLabel,
+      child: TextField(
+        key: key,
+        controller: controller,
+        focusNode: focusNode,
+        keyboardType: TextInputType.numberWithOptions(
+          signed: widget.allowNegative,
+        ),
+        textInputAction: action,
+        // A number, not prose (docs/design/STYLE_GUIDE.md).
+        autocorrect: false,
+        enableSuggestions: false,
+        inputFormatters: widget.allowNegative
+            ? [
+                // A whole-text check: an edit that would leave anything but an
+                // optional minus and digits is refused, not stripped.
+                TextInputFormatter.withFunction(
+                  (previous, next) =>
+                      _signedBound.hasMatch(next.text) ? next : previous,
+                ),
+              ]
+            : [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(_maxDigits),
+              ],
+        decoration: InputDecoration(
+          // The name above carries the range; the visible From or To would
+          // be read again after it.
+          label: ExcludeSemantics(child: Text(label)),
+          errorText: _message(problem),
+          errorMaxLines: 3,
+        ),
+        onChanged: (_) => _recheck(),
+        onSubmitted: (_) => _commit(),
       ),
-      textInputAction: action,
-      // A number, not prose (docs/design/STYLE_GUIDE.md).
-      autocorrect: false,
-      enableSuggestions: false,
-      inputFormatters: widget.allowNegative
-          ? [
-              // A whole-text check: an edit that would leave anything but an
-              // optional minus and digits is refused, not stripped.
-              TextInputFormatter.withFunction(
-                (previous, next) =>
-                    _signedBound.hasMatch(next.text) ? next : previous,
-              ),
-            ]
-          : [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(_maxDigits),
-            ],
-      decoration: InputDecoration(
-        labelText: label,
-        errorText: _message(problem),
-        errorMaxLines: 3,
-      ),
-      onChanged: (_) => _recheck(),
-      onSubmitted: (_) => _commit(),
     );
 
     final from = field(
@@ -282,6 +293,7 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
       controller: _from,
       focusNode: _fromFocus,
       label: l10n.catalogSearchRangeFrom,
+      semanticLabel: l10n.catalogSearchRangeFromNamed(widget.name),
       problem: _fromProblem,
       action: TextInputAction.next,
     );
@@ -290,6 +302,7 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
       controller: _to,
       focusNode: _toFocus,
       label: l10n.catalogSearchRangeTo,
+      semanticLabel: l10n.catalogSearchRangeToNamed(widget.name),
       problem: _toProblem,
       action: TextInputAction.done,
     );

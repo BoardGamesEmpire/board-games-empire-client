@@ -180,6 +180,7 @@ class _GameSearchFilterSheetState extends State<_GameSearchFilterSheet> {
               field: SearchRangeField(
                 fromKey: GameSearchScreen.rangeFieldKey('year', 'from'),
                 toKey: GameSearchScreen.rangeFieldKey('year', 'to'),
+                name: l10n.catalogSearchFilterYear,
                 generation: _clears,
                 value: filter.publishYear,
                 lowest: GamesRemoteDataSource.minRangeBound,
@@ -213,6 +214,7 @@ class _GameSearchFilterSheetState extends State<_GameSearchFilterSheet> {
               field: SearchRangeField(
                 fromKey: GameSearchScreen.rangeFieldKey('players', 'from'),
                 toKey: GameSearchScreen.rangeFieldKey('players', 'to'),
+                name: l10n.catalogSearchFilterPlayers,
                 generation: _clears,
                 value: filter.playerCount,
                 lowest: GamesRemoteDataSource.minPlayerCount,
@@ -267,6 +269,7 @@ class _GameSearchFilterSheetState extends State<_GameSearchFilterSheet> {
               field: SearchRangeField(
                 fromKey: GameSearchScreen.rangeFieldKey('time', 'from'),
                 toKey: GameSearchScreen.rangeFieldKey('time', 'to'),
+                name: l10n.catalogSearchFilterPlayTime,
                 generation: _clears,
                 value: filter.playTime,
                 lowest: GamesRemoteDataSource.minPlayTime,

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,20 +40,34 @@ void main() {
     MemberInvitePolicy? policy,
     Future<void> Function()? onRefresh,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
-    builder: offline == null
+    theme: theme ?? BgeTheme.light(),
+    builder: offline == null && textScaler == null
         ? null
-        : (context, child) => ValueListenableBuilder<bool>(
-            valueListenable: offline,
-            child: child,
-            builder: (context, isOffline, child) => BgeConnectivityScope(
-              offline: isOffline,
-              noticeShowing: isOffline,
-              onlineOnlyReason: _onlineOnlyCopy,
-              child: child!,
-            ),
-          ),
+        : (context, child) {
+            var app = child!;
+            if (offline != null) {
+              final screen = app;
+              app = ValueListenableBuilder<bool>(
+                valueListenable: offline,
+                child: screen,
+                builder: (context, isOffline, child) => BgeConnectivityScope(
+                  offline: isOffline,
+                  noticeShowing: isOffline,
+                  onlineOnlyReason: _onlineOnlyCopy,
+                  child: child!,
+                ),
+              );
+            }
+            // Null leaves the scale to the test.
+            if (textScaler == null) return app;
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: app,
+            );
+          },
     localizationsDelegates: [
       ...HouseholdLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
@@ -841,5 +856,275 @@ void main() {
     answer.complete(invite('i_1'));
     await sentAndSpinning(tester);
     expect(sent, 1);
+  });
+
+  group('accessibility audit', () {
+    const member = HouseholdRole.householdMember;
+
+    /// The screen as [viewerRole] and [policy] leave it, over the fakes as
+    /// [seed] leaves them.
+    Widget Function(ThemeData, TextScaler) screenWith({
+      HouseholdRole? viewerRole = HouseholdRole.householdOwner,
+      MemberInvitePolicy? policy,
+      Future<void> Function()? onRefresh,
+      ValueListenable<bool>? offline,
+      void Function()? seed,
+    }) => (theme, textScaler) {
+      seed?.call();
+      return harness(
+        viewerRole: viewerRole,
+        policy: policy,
+        onRefresh: onRefresh,
+        offline: offline,
+        theme: theme,
+        textScaler: textScaler,
+      );
+    };
+
+    final owner = screenWith();
+
+    Future<void> typeEmail(WidgetTester tester, String email) async {
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        email,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> rejectEmail(WidgetTester tester) async {
+      await typeEmail(tester, 'not an address');
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a valid email address.'), findsOneWidget);
+      await scrollPageToTop(tester);
+    }
+
+    void refusing() => remote.onSend = (_, _) async => throw refused(409);
+
+    Future<void> refusedSend(WidgetTester tester) async {
+      await typeEmail(tester, 'ana@example.com');
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(SendHouseholdInviteScreen.errorKey), findsOneWidget);
+      await scrollPageToTop(tester);
+    }
+
+    Future<void> pickPerson(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Person'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.searchKey),
+        'ana',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(SendHouseholdInviteScreen.resultKey('u_2')),
+      );
+      await tester.tap(find.byKey(SendHouseholdInviteScreen.resultKey('u_2')));
+      await tester.pumpAndSettle();
+    }
+
+    void people() => users.onSearchUsers = (_, _, _) async => pageOf(const [
+      UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
+      UserSummary(id: 'u_3', username: 'anabel'),
+    ]);
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
+      );
+      await tester.pumpAndSettle();
+
+      final screen = find.byType(SendHouseholdInviteScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    auditScreen(
+      'ready',
+      build: owner,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'member, needs approval',
+      build: screenWith(
+        viewerRole: member,
+        policy: MemberInvitePolicy.needsApproval,
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(SendHouseholdInviteScreen.approvalNoteKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'person mode, picked',
+      build: screenWith(seed: people),
+      arrange: pickPerson,
+    );
+
+    auditScreen(
+      'person mode, picked, scrolled to the end',
+      build: screenWith(seed: people),
+      arrange: (tester) async {
+        await pickPerson(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen('rejected submit', build: owner, arrange: rejectEmail);
+
+    auditScreen(
+      'failure',
+      build: screenWith(seed: refusing),
+      arrange: refusedSend,
+    );
+
+    // The end of the page leaves the mode toggle or the address field half
+    // under the top edge, which Flutter's tap-target check fails at its
+    // clipped size (#50). These audit the states in a view with nothing below
+    // the fold.
+    auditScreen(
+      'ready, whole page',
+      build: owner,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'rejected submit, whole page',
+      build: owner,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await rejectEmail(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'failure, whole page',
+      build: screenWith(seed: refusing),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await refusedSend(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    // The send never answers, so the button keeps spinning.
+    auditScreen(
+      'submitting',
+      build: screenWith(
+        seed: () {
+          final answer = Completer<HouseholdInvite>();
+          addTearDown(() => answer.complete(invite('i_1')));
+          remote.onSend = (_, _) => answer.future;
+        },
+      ),
+      arrange: (tester) async {
+        await typeEmail(tester, 'ana@example.com');
+        await submit(tester);
+        await tester.pump();
+        expect(
+          tester
+              .widget<BgeSubmitButton>(
+                find.byKey(SendHouseholdInviteScreen.submitKey),
+              )
+              .submitting,
+          isTrue,
+        );
+      },
+      // The failing nodes are the mode segments and the Send button, all
+      // disabled while the send is in flight and drawn dimmed by design;
+      // WCAG 1.4.3 exempts inactive controls, and the enabled ones pass in
+      // 'ready'.
+      textContrast: false,
+      settle: false,
+    );
+
+    auditScreen(
+      'offline',
+      build: screenWith(offline: ValueNotifier(true)),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.text(_onlineOnlyCopy), findsOneWidget);
+      },
+      // The failing node is the disabled Send button, drawn dimmed by design;
+      // WCAG 1.4.3 exempts inactive controls, and the enabled button passes
+      // in 'ready'.
+      textContrast: false,
+    );
+
+    auditScreen(
+      'not allowed, role unknown, with retry',
+      build: screenWith(viewerRole: null, onRefresh: counted),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(notAllowed(_unknownCopy), findsOneWidget);
+        expect(
+          find.byKey(SendHouseholdInviteScreen.refreshKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The read never ends, so the retry keeps saying it is refreshing.
+    auditScreen(
+      'not allowed, refreshing',
+      build: screenWith(
+        viewerRole: null,
+        onRefresh: () => Completer<void>().future,
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(SendHouseholdInviteScreen.refreshKey));
+        await tester.pump();
+        expect(find.text('Refreshing\u{2026}'), findsWidgets);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'not allowed, members switched off',
+      build: screenWith(viewerRole: member, policy: MemberInvitePolicy.off),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(SendHouseholdInviteScreen.notAllowedKey),
+          findsOneWidget,
+        );
+        expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsNothing);
+      },
+    );
+
+    auditScreen(
+      'not allowed, guest',
+      build: screenWith(
+        viewerRole: HouseholdRole.householdGuest,
+        policy: MemberInvitePolicy.direct,
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(
+          notAllowed("Guests can't invite people to this household."),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }

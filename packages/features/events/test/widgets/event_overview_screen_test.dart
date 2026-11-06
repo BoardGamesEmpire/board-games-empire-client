@@ -760,4 +760,117 @@ void main() {
     expect(find.byType(AppBar), findsNothing);
     expect(find.byType(BgePage), findsNothing);
   });
+
+  group('accessibility audit', () {
+    Widget build(ThemeData theme, TextScaler textScaler, {bool retry = true}) =>
+        harness(
+          theme: theme,
+          textScaler: textScaler,
+          onOpen: (_, _) {},
+          onOpenGroup: (_, _) {},
+          onCreate: (_) {},
+          onRetry: retry ? () async {} : null,
+        );
+
+    Future<void> showRows(
+      WidgetTester tester,
+      List<EventListItem> rows, {
+      EventHydrateOutcome outcome = EventHydrateOutcome.complete,
+    }) async {
+      status.finished(outcome);
+      items.add(rows);
+      await tester.pumpAndSettle();
+    }
+
+    // Seven upcoming, one planning and one past: every group, and a see all.
+    List<EventListItem> many() => [
+      ...upcoming(7),
+      item('e-plan'),
+      item('e-past', occurrences: [confirmed('o', day(20))]),
+    ];
+
+    // The audit's 320dp × 2.0 cells are only worth running if the harness
+    // passes the scale and theme on to the screen.
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        build(BgeTheme.dark(), const TextScaler.linear(2)),
+      );
+
+      final screen = find.byType(EventOverviewScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    // The hydrate has started and nothing has arrived: the spinner never
+    // settles.
+    auditScreen(
+      'loading',
+      build: build,
+      arrange: (tester) async {
+        status.started();
+        await tester.pump();
+        expect(find.byKey(EventOverviewScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, many());
+        expect(
+          find.byKey(EventOverviewScreen.seeAllKey(EventGroup.upcoming)),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, many());
+        await scrollListToEnd(
+          tester,
+          find.byKey(EventOverviewScreen.rowKey('e-past')),
+        );
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, const []);
+        expect(find.text(_emptyTitleCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        items.addError(StateError('no authenticated user'));
+        await tester.pumpAndSettle();
+        expect(find.text(_errorCopy), findsOneWidget);
+        expect(find.text(_retryCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refresh failed',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, many(), outcome: EventHydrateOutcome.failed);
+        expect(
+          find.byKey(EventOverviewScreen.refreshBannerKey),
+          findsOneWidget,
+        );
+        expect(find.byKey(EventOverviewScreen.refreshRetryKey), findsOneWidget);
+      },
+    );
+  });
 }

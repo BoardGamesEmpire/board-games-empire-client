@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:game_catalog/game_catalog.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -43,9 +45,13 @@ void main() {
     ListLayoutRepository? layouts,
     void Function(BuildContext context, GameQuickLookSeed seed)? onQuickLook,
     bool settle = true,
+    ThemeData? theme,
+    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       catalogApp(
+        theme: theme,
+        textScaler: textScaler,
         GameBrowseScreen(
           remote: remote,
           cache: cache,
@@ -862,6 +868,154 @@ void main() {
       expect(find.text('Catan: Seafarers'), findsOneWidget);
       expect(segment.hasPrimaryFocus, isTrue);
     });
+  });
+
+  group('accessibility audit', () {
+    // `show` pumps the screen and wants the tester, so each call's build
+    // only records the theme and scale and returns a placeholder; its
+    // arrange pumps the screen over it with them.
+    late ThemeData theme;
+    late TextScaler scaler;
+
+    Widget record(ThemeData t, TextScaler s) {
+      theme = t;
+      scaler = s;
+      return const SizedBox.shrink();
+    }
+
+    Future<void> showAudited(
+      WidgetTester tester, {
+      FakeGamesCache? cache,
+      ListLayout? layout,
+      bool settle = true,
+    }) => show(
+      tester,
+      cache: cache,
+      layouts: layout == null ? null : (_FakeLayouts()..stored = layout),
+      onOpen: (_, _) {},
+      onSearch: (_) {},
+      onQuickLook: (_, _) {},
+      settle: settle,
+      theme: theme,
+      textScaler: scaler,
+    );
+
+    // Enough games for a page taller than the narrow window at 2.0 text.
+    List<Game> many() => [
+      azul,
+      seafarers,
+      for (var n = 0; n < 10; n++) game('g_$n', title: 'Game number $n'),
+    ];
+
+    testWidgets('the harness applies the theme and the text scale', (
+      tester,
+    ) async {
+      theme = BgeTheme.dark();
+      scaler = const TextScaler.linear(2);
+      remote.onFetchPage = (_, _) async => pageOf([azul]);
+      await showAudited(tester);
+
+      final screen = find.byType(GameBrowseScreen);
+      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
+      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
+    });
+
+    // The first page is still being read: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: record,
+      arrange: (tester) async {
+        final pending = Completer<PaginatedResult<Game>>();
+        addTearDown(() => pending.complete(pageOf([])));
+        remote.onFetchPage = (_, _) => pending.future;
+        await showAudited(tester, settle: false);
+        await tester.pump();
+        expect(find.byKey(GameBrowseScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'ready',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf(many(), hasMore: true);
+        await showAudited(tester);
+        expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf(many(), hasMore: true);
+        await showAudited(tester);
+        await scrollListToEnd(tester, find.byKey(GameBrowseScreen.moreKey));
+      },
+    );
+
+    auditScreen(
+      'thumbnails',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf(many(), hasMore: true);
+        await showAudited(tester, layout: ListLayout.thumbnails);
+        expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'thumbnails, scrolled to the end',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf(many(), hasMore: true);
+        await showAudited(tester, layout: ListLayout.thumbnails);
+        await scrollListToEnd(tester, find.byKey(GameBrowseScreen.moreKey));
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => pageOf([]);
+        await showAudited(tester);
+        expect(find.byKey(GameBrowseScreen.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        await showAudited(tester, cache: FakeGamesCache());
+        expect(find.byKey(GameBrowseScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'denied',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async =>
+            throw const GamesForbiddenException('403');
+        await showAudited(tester, cache: FakeGamesCache([azul]));
+        expect(find.byKey(GameBrowseScreen.deniedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'saved games under a banner',
+      build: record,
+      arrange: (tester) async {
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        await showAudited(tester, cache: FakeGamesCache(many()));
+        expect(find.byKey(GameBrowseScreen.fromCacheBannerKey), findsOneWidget);
+        expect(find.text('Azul'), findsOneWidget);
+      },
+    );
   });
 }
 
