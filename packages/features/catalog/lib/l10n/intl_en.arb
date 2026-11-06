@@ -977,7 +977,31 @@
   },
   "catalogDetailAddToCollection": "Add to collection",
   "@catalogDetailAddToCollection": {
-    "description": "Button beside one platform of a game that adds the game, on that platform, to the user's collection."
+    "description": "Button under a game's platforms that opens a form to add the game to the user's collection, on a platform chosen in the form. Not shown once the user owns the game on every platform, as both a physical and a digital copy."
+  },
+  "catalogDetailPlatformOwnedSpoken": "{platform}, in your collection, opens your copy",
+  "@catalogDetailPlatformOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user owns the game on, in the list of platforms on a game's page. Pressing it opens the user's copy, or a choice of copies when they own it there as both a physical and a digital copy. Shown on screen as the platform's name with a check mark.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      }
+    }
+  },
+  "catalogDetailPlatformNotOwnedSpoken": "{platform}, not in your collection, add",
+  "@catalogDetailPlatformNotOwnedSpoken": {
+    "description": "What a screen reader says for a platform the user does not own the game on, in the list of platforms on a game's page. Pressing it opens a form to add the game to the user's collection on that platform. Shown on screen as the platform's name alone.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Android"
+      }
+    }
+  },
+  "catalogDetailOwnedLegend": "In your collection",
+  "@catalogDetailOwnedLegend": {
+    "description": "A legend under a game's platforms, shown when the user owns the game on at least one of them. A check mark is drawn as an icon before it: the same mark drawn on each platform the user owns the game on, so the legend says what that mark means. The icon is not part of this text."
   },
   "catalogImportStarting": "Sending the import to the server…",
   "@catalogImportStarting": {

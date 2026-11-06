@@ -179,6 +179,46 @@ void main() {
     expect(await onTheRing(tester, content), Colors.black);
   });
 
+  testWidgets('the ring claims no press on a margin inside it, ringed or '
+      'not, and the content still takes its own', (tester) async {
+    await tester.pumpWidget(
+      hostAtSize(
+        tester,
+        Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: BgeFocusRing(
+              borderRadius: BorderRadius.zero,
+              builder: (context, onFocusChange) => Padding(
+                padding: const EdgeInsets.all(8),
+                child: _Content(
+                  onFocusChange: onFocusChange,
+                  onMount: () => mounts++,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final content = tester.getRect(find.byKey(_contentKey));
+    final ring = tester.renderObject<RenderBox>(find.byType(BgeFocusRing));
+    // What a caller that sends a missed press on elsewhere, as the game
+    // detail's chip tap target does, asks of it.
+    bool claims(Offset at) =>
+        ring.hitTest(BoxHitTestResult(), position: ring.globalToLocal(at));
+    final margin = Offset(content.left - 4, content.center.dy);
+
+    expect(claims(margin), isFalse);
+    expect(claims(content.center), isTrue);
+
+    await tab(tester);
+    await tester.pump();
+    expect(claims(margin), isFalse);
+    expect(claims(content.center), isTrue);
+  });
+
   testWidgets('the content keeps its state as the ring comes and goes', (
     tester,
   ) async {

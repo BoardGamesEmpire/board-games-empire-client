@@ -32,6 +32,10 @@ replaced, and it is why dark mode is the mode the app looks best in.
 | `tertiary` | Ember | **Rare** high-attention accents — badges, "new", "pending" | Warnings that are really errors |
 | `error` | Crimson | Failures the user must act on | Emphasis |
 
+Chips are `secondary` unless they show the active state, which is `primary`'s:
+the game detail page's ownership chips are filled in `primary` where the user
+owns the game, and outlined in it where they don't (#708).
+
 Ember is `tertiary` rather than `secondary` **on purpose**: M3 treats tertiary
 as the rare contrasting accent, so keeping ember there keeps it sparse, and
 sparse is what keeps it from being confused with `error`.
