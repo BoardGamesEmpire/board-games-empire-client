@@ -268,6 +268,21 @@ void main() {
       );
     });
 
+    test('a refresh after a change waiting out a pass at close starts no '
+        'other', () async {
+      // The screen came back into view during the open's pass, and the
+      // session ended before that pass did.
+      final held = hydrator.hold('h-1');
+      final open = sync.refresh('h-1');
+      final back = sync.refreshAfterChange('h-1');
+
+      await sync.close();
+      held.complete(HouseholdEventsOutcome.complete);
+      await Future.wait([open, back]);
+
+      expect(hydrator.passes, ['h-1']);
+    });
+
     test('a pass still in flight at close lands without throwing', () async {
       // The screen's open is unawaited, so its pass can outlive the session
       // scope that closes this.

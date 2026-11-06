@@ -53,7 +53,8 @@ typedef _HouseholdPass = ({
 /// last reading, idle for one it never named, and ends: what a closed
 /// [HydrationStatus] gives a new watcher. No status is made after close, so
 /// none is left open. A pass still in flight at close reports into its
-/// closed status, which drops the update.
+/// closed status, which drops the update, and a [refreshAfterChange] waiting
+/// it out starts no other.
 class HouseholdEventsSync {
   /// [userId] is the session's user, whom [guard] is asked about; no guard,
   /// as on native, is a confirmed session. [now] is the statuses' clock, the
@@ -104,9 +105,17 @@ class HouseholdEventsSync {
   /// join a pass begun before the user left it, whose answer may predate an
   /// event they made meanwhile, and that pass landing would leave the event
   /// out with no retry to press.
+  ///
+  /// A [close] while it waits starts nothing after the wait: the session's
+  /// reads are over, so it returns once the running pass ends.
   Future<void> refreshAfterChange(String householdId) async {
     if (_closed) return;
-    await _passFor(householdId).pass.runAfterSettled();
+    // `settled` then `run` rather than `runAfterSettled`, so the close
+    // check can sit between the two.
+    final pass = _passFor(householdId).pass;
+    await pass.settled;
+    if (_closed) return;
+    await pass.run();
   }
 
   /// Closes every household's status. Idempotent; wired as the registration's
