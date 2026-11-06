@@ -234,23 +234,24 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in ten jobs:
+pushes to `master`, in eleven jobs:
 
 | Job | Gate |
 | --- | --- |
-| `constraints` | `check_sdk_constraints.dart --self-test`, then the real check |
+| `constraints` | `check_sdk_constraints.dart --self-test`, its exit-code suite (`dart test tool/test`), then the real check |
 | `palette` | `derive_palette.dart` re-derives the palette; every contrast target and the ember/error hue separation must hold |
+| `goldens` | `tool/goldens.dart` compares every golden suite against the committed `goldens/ci/` baselines in the golden container; diffs are uploaded on failure |
 | `format` | `dart format --set-exit-if-changed` over the workspace source |
 | `test-files` | `check_test_files.dart --self-test`, then the real check |
 | `generate` | Codegen succeeds; Drift schema snapshots are not stale. Publishes generated sources as an artifact the later jobs restore. |
 | `analyze` | One root `dart analyze --fatal-infos .` across the workspace |
 | `discover-tests` | Builds the test matrix by finding `test/` directories |
-| `test` | One job per package, golden tags excluded |
+| `test` | One job per package, golden tags excluded (the `goldens` job runs those) |
 | `test-web` | The browser-only (`@TestOn('browser')`) suites in Chrome, for the packages that have them |
 | `build-web` | The release web build succeeds, its drift runtime files match their committed checksums, it holds no dotfile, and the files the app boots from are present |
 
-On a push to `master`, an eleventh job, `publish-web`, publishes that build as
-an image once all ten have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
+On a push to `master`, a twelfth job, `publish-web`, publishes that build as an
+image once all eleven have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
 covers its tags and contents.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline

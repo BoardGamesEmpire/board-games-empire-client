@@ -98,6 +98,77 @@ jobs:
       - name: Palette must satisfy its own contrast and hue targets
         run: dart run tool/derive_palette.dart
 
+  # ── Golden baselines (#159) ──────────────────────────────────────
+  # Compares every package's golden suites against the committed
+  # `goldens/ci/` PNGs. They run in the golden container
+  # (tool/goldens/Dockerfile), not on the runner, because that container
+  # owns the baselines: even Ahem-rendered goldens anti-alias edges
+  # differently from host to host, so only one renderer can agree with
+  # them. This is the same command contributors run (`melos run
+  # test:goldens`), so a local pass and a CI pass mean the same thing.
+  # Codegen-free like `palette`: the golden suites import no generated
+  # code.
+  #
+  # The runner sets Flutter up like every other job: the wrapper is a
+  # Dart script, and it computes the image tag. The container doesn't
+  # download the workspace again, because GOLDENS_PUB_CACHE hands it the
+  # runner's pub cache, which the resolve here has already filled.
+  #
+  # The image is cached as a tarball under its tag, which hashes the
+  # Dockerfile, the install script and the Flutter digest, so it is built
+  # once per toolchain and loaded after that. It is saved whether or not
+  # the goldens matched. The image is the same either way, and a PR whose
+  # goldens fail would otherwise rebuild it on every push. On a failure
+  # the diff images are uploaded as `golden-failures`.
+  goldens:
+    name: Goldens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-flutter
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Name the golden image
+        id: image
+        run: echo "tag=$(dart run tool/goldens.dart --image-tag)" >> "$GITHUB_OUTPUT"
+      # Restore and save are separate steps because the combined cache
+      # action saves only after a green job.
+      - name: Restore the golden image
+        id: image-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bge-goldens.tar
+          key: goldens-image-${{ steps.image.outputs.tag }}
+      - name: Load the golden image
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load -i "$RUNNER_TEMP/bge-goldens.tar"
+      - name: Goldens must match the committed baselines
+        run: GOLDENS_PUB_CACHE="$PUB_CACHE" dart run tool/goldens.dart
+      # Exports nothing when the image was never built.
+      - name: Export the golden image
+        id: image-export
+        if: ${{ !cancelled() && steps.image-cache.outputs.cache-hit != 'true' }}
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+        run: |
+          if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker save "$IMAGE" -o "$RUNNER_TEMP/bge-goldens.tar"
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the golden image
+        if: ${{ !cancelled() && steps.image-export.outputs.saved == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bge-goldens.tar
+          key: ${{ steps.image-cache.outputs.cache-primary-key }}
+      - name: Upload golden failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: golden-failures
+          path: packages/**/test/goldens/failures/
+          if-no-files-found: ignore
+
   # ── Formatting (#173) ────────────────────────────────────────────
   # Standalone and codegen-free, like `constraints`: formatting parses,
   # it does not resolve types, so no generated sources are needed. They
@@ -302,13 +373,10 @@ jobs:
   # runs pure-Dart suites cleanly too. Restores generated code first.
   # fail-fast off so one red package doesn't cancel the rest.
   #
-  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) and run
-  # local-only. Alchemist's CI goldens obscure text but still rasterize
-  # shapes/anti-aliasing per-platform, so a macOS-generated baseline
-  # won't match a Linux runner — the version pin removes engine skew but
-  # not OS skew. Restoring CI coverage means generating the committed
-  # `goldens/ci/` baselines on Linux (e.g. a Docker/CI --update-goldens
-  # job) and disabling the CI-golden variant locally; deferred for now.
+  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) because the
+  # `goldens` job runs them, in the golden container that renders the
+  # committed baselines (#159). On the runner itself they would compare
+  # one host's anti-aliasing against another's.
   test:
     name: Test ${{ matrix.package }}
     needs: [generate, discover-tests]
@@ -547,7 +615,7 @@ jobs:
   # again.
   publish-web:
     name: Publish web image
-    needs: [constraints, palette, format, test-files, generate, analyze, test, test-web, build-web]
+    needs: [constraints, palette, goldens, format, test-files, generate, analyze, test, test-web, build-web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     # One publish at a time, across every master run. The last step reads
     # the tags and then writes `edge`, which is safe only if no other run
