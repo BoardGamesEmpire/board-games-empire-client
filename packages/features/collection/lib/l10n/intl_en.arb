@@ -68,11 +68,11 @@
   },
   "collectionListMediumPhysical": "Physical",
   "@collectionListMediumPhysical": {
-    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's Medium field."
   },
   "collectionListMediumDigital": "Digital",
   "@collectionListMediumDigital": {
-    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
+    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row and on a collection entry's detail for a copy the user owns, and as a choice in the add sheet's Medium field."
   },
   "collectionListQuantity": "{count, plural, =1{1 copy} other{{count} copies}}",
   "@collectionListQuantity": {
@@ -157,31 +157,39 @@
   "@collectionStatsCreateOrJoin": {
     "description": "A link on the home page's stats card, shown to a user who is in no household. It opens the households screen, where they can start one."
   },
-  "addToCollectionTitle": "Add {title} ({platform})",
+  "addToCollectionTitle": "Add {title}",
   "@addToCollectionTitle": {
-    "description": "Heading of the sheet that adds a game to the user's collection, naming the game and the platform it is added on, for example \"Add Wingspan (Switch)\". Read by screen readers as the sheet's heading.",
+    "description": "Heading of the sheet that adds a game to the user's collection, naming the game only, for example \"Add Wingspan\". The platform it is added on is the sheet's first field, not part of the heading. Read by screen readers as the sheet's heading.",
     "placeholders": {
       "title": {
         "type": "String",
         "example": "Wingspan"
-      },
-      "platform": {
-        "type": "String",
-        "example": "Switch"
       }
     }
   },
-  "addToCollectionMediumLabel": "Physical or digital",
+  "addToCollectionPlatformLabel": "Platform",
+  "@addToCollectionPlatformLabel": {
+    "description": "Label of the add sheet's required choice of platform (for example Tabletop, Steam or Switch) to add the game on. It lists only the platforms where the user doesn't yet own the game both physically and digitally."
+  },
+  "addToCollectionPlatformHint": "Choose one",
+  "@addToCollectionPlatformHint": {
+    "description": "Shown in the add sheet's platform field until the user picks one, as the medium field below it shows until a medium is picked."
+  },
+  "addToCollectionPlatformRequired": "Choose a platform.",
+  "@addToCollectionPlatformRequired": {
+    "description": "Error under the add sheet's platform field when the user submits without picking one."
+  },
+  "addToCollectionMediumLabel": "Medium",
   "@addToCollectionMediumLabel": {
-    "description": "Label of the add sheet's required choice between a physical copy (a boxed game, a disc) and a digital one (a download, an app)."
+    "description": "Label of the add sheet's required choice between a physical copy (a boxed game, a disc) and a digital one (a download, an app). \"Medium\" is the form the copy takes, not a size. It offers only the media the user doesn't yet own on the platform chosen, and can start on a likely one, which the user can change."
   },
   "addToCollectionMediumHint": "Choose one",
   "@addToCollectionMediumHint": {
-    "description": "Shown in the add sheet's physical-or-digital field until the user picks one."
+    "description": "Shown in the add sheet's Medium field until the user picks one."
   },
   "addToCollectionMediumRequired": "Choose physical or digital.",
   "@addToCollectionMediumRequired": {
-    "description": "Error under the add sheet's physical-or-digital field when the user submits without picking one."
+    "description": "Error under the add sheet's Medium field when the user submits without picking one."
   },
   "addToCollectionQuantityLabel": "Copies",
   "@addToCollectionQuantityLabel": {

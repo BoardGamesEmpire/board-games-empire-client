@@ -13,12 +13,22 @@ import 'package:game_collection/l10n/game_collection_localizations.dart';
 
 import '../form/collection_quantity_field.dart';
 import '../form/collection_rating_field.dart';
+import '../medium_label.dart';
 import '../sync/collection_sync.dart';
 import 'add_to_collection_bloc.dart';
 import 'add_to_collection_event.dart';
 import 'add_to_collection_state.dart';
+import 'starting_medium.dart';
 
-/// Opens the add sheet over [context] for [game] on [platformGame] (#45).
+/// Opens the add sheet over [context] for [game] (#45), offering the
+/// platforms in [options] and, on each, only the mediums still free (#708).
+///
+/// [options] is the caller's snapshot of what the user owns at the press, and
+/// must not be empty: the sheet lists it as it was then, because a dropdown
+/// whose items change under a chosen value shows its hint while the form keeps
+/// the value. [platformGameId] chooses one of them, as a platform's own add
+/// does. Without it, a lone option is chosen, and among several the user
+/// picks.
 ///
 /// Resolves to what became of the add's send, or null when the sheet closed
 /// without an add. On an add the sheet closes, and a SnackBar on [context]'s
@@ -41,19 +51,27 @@ Future<CollectionSync?> showAddToCollectionSheet(
   required GameCollectionRepository repository,
   required SyncOperationSender sender,
   required Game game,
-  required PlatformGame platformGame,
+  required List<CollectionAddOption> options,
+  String? platformGameId,
 }) async {
+  assert(options.isNotEmpty, 'The sheet needs a platform to offer.');
+  assert(
+    options.every((option) => option.freeMediums.isNotEmpty),
+    "An option's free mediums are never empty: a platform owned in every "
+    'medium is left out.',
+  );
+  assert(
+    platformGameId == null ||
+        options.any((option) => option.platformGame.id == platformGameId),
+    'The platform chosen must be one the sheet offers.',
+  );
   // Captured now: the sheet's own context is gone by the time the add
   // settles.
   final messenger = ScaffoldMessenger.of(context);
   final l10n = GameCollectionLocalizations.of(context);
   // Held here rather than by the sheet, so an add still running when the
   // sheet is dismissed settles and says so.
-  final bloc = AddToCollectionBloc(
-    repository: repository,
-    sender: sender,
-    platformGameId: platformGame.id,
-  );
+  final bloc = AddToCollectionBloc(repository: repository, sender: sender);
   try {
     await showModalBottomSheet<void>(
       context: context,
@@ -62,7 +80,11 @@ Future<CollectionSync?> showAddToCollectionSheet(
       showDragHandle: true,
       builder: (_) => BlocProvider<AddToCollectionBloc>.value(
         value: bloc,
-        child: _AddToCollectionSheet(game: game, platformGame: platformGame),
+        child: _AddToCollectionSheet(
+          game: game,
+          options: options,
+          platformGameId: platformGameId,
+        ),
       ),
     );
     final dismissedMidAdd =
@@ -100,18 +122,30 @@ Future<CollectionSync?> showAddToCollectionSheet(
 ///
 /// ## What the sheet asks
 ///
-/// Physical or digital, required. Copies, from 1. An optional rating from 1
-/// to 10, with "No rating" as a choice of its own, and an optional comment
-/// (#45). A rating left at "No rating" and a comment left blank are sent as
-/// none, so an entry removed and added again keeps its old ones.
+/// The platform, required: the platforms the caller offers, each with a
+/// medium still free (#708). One offered alone, or one the caller names, is
+/// chosen already.
+///
+/// The medium, required, offering only the mediums free on the platform
+/// chosen. It waits, read-only, for a platform. Each platform starts it
+/// where [startingMedium] says, and a new platform starts it again, unless
+/// the user picked the medium and the new platform has it free too. A
+/// medium the new platform has no room for is never kept, since the field
+/// would show its hint while the form kept the value.
+///
+/// Copies, from 1. An optional rating from 1 to 10, with "No rating" as a
+/// choice of its own, and an optional comment (#45). A rating left at "No
+/// rating" and a comment left blank are sent as none, so an entry removed
+/// and added again keeps its old ones.
 ///
 /// ## What is already there
 ///
-/// Once a medium is chosen, a note under it says how many copies of this
+/// Once a medium is chosen, a note under it says how many copies of the
 /// platform game on that medium are already in the collection, and what the
-/// add makes: an add on a medium already owned raises its quantity. It is a
-/// live region, so a screen reader hears it change. An entry removed earlier
-/// gets no note.
+/// add makes: an add on a medium already owned raises its quantity. The
+/// sheet offers only the mediums free when it opened, so the note is for an
+/// entry added since. It is a live region, so a screen reader hears it
+/// change. An entry removed earlier gets no note.
 ///
 /// ## Copies
 ///
@@ -136,6 +170,7 @@ Future<CollectionSync?> showAddToCollectionSheet(
 /// view.
 abstract final class AddToCollectionSheet {
   static const Key sheetKey = Key('collection_add.sheet');
+  static const Key platformKey = Key('collection_add.platform');
   static const Key mediumKey = Key('collection_add.medium');
   static const Key quantityKey = Key('collection_add.quantity');
   static const Key quantityDecreaseKey = Key(
@@ -151,10 +186,15 @@ abstract final class AddToCollectionSheet {
 }
 
 class _AddToCollectionSheet extends StatefulWidget {
-  const _AddToCollectionSheet({required this.game, required this.platformGame});
+  const _AddToCollectionSheet({
+    required this.game,
+    required this.options,
+    required this.platformGameId,
+  });
 
   final Game game;
-  final PlatformGame platformGame;
+  final List<CollectionAddOption> options;
+  final String? platformGameId;
 
   @override
   State<_AddToCollectionSheet> createState() => _AddToCollectionSheetState();
@@ -165,6 +205,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
   /// enforces too.
   static const int _storedMax = GameCollectionRepository.maxQuantity;
 
+  static const String _platform = 'platform';
   static const String _medium = 'medium';
   static const String _quantity = 'quantity';
   static const String _rating = 'rating';
@@ -177,31 +218,70 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
   /// quantity's bound counts.
   int _existing = 0;
 
-  late final FormGroup _form = FormGroup({
-    _medium: FormControl<GameMedium>(validators: [Validators.required]),
-    _quantity: FormControl<String>(
-      value: '1',
-      validators: [Validators.delegate(_validateQuantity)],
-    ),
-    _rating: FormControl<int>(),
-    _comment: FormControl<String>(),
-  });
+  /// The option chosen, or null until one is. Set with the medium it starts,
+  /// so the medium field is never built with one option's items and the
+  /// other's value.
+  CollectionAddOption? _option;
+
+  /// Whether the medium in the form is one the user picked, which a new
+  /// platform keeps if it has it free. The sheet sets the medium itself
+  /// without an event, so every change the medium control reports is a pick:
+  /// a flag set around the sheet's own change would be cleared before its
+  /// event arrived, since the control reports changes asynchronously.
+  bool _userPickedMedium = false;
+
+  late final FormGroup _form;
 
   final List<StreamSubscription<Object?>> _subscriptions = [];
 
   AddToCollectionBloc get _bloc => context.read<AddToCollectionBloc>();
 
+  FormControl<String> get _platformControl =>
+      _form.control(_platform) as FormControl<String>;
+
+  FormControl<GameMedium> get _mediumControl =>
+      _form.control(_medium) as FormControl<GameMedium>;
+
   @override
   void initState() {
     super.initState();
+    final chosen =
+        widget.platformGameId ??
+        (widget.options.length == 1
+            ? widget.options.single.platformGame.id
+            : null);
+    final option = chosen == null ? null : _optionFor(chosen);
+    final medium = option == null ? null : _startFor(option);
+    _option = option;
+    _form = FormGroup({
+      _platform: FormControl<String>(
+        value: option?.platformGame.id,
+        validators: [Validators.required],
+      ),
+      _medium: FormControl<GameMedium>(
+        value: medium,
+        validators: [Validators.required],
+      ),
+      _quantity: FormControl<String>(
+        value: '1',
+        validators: [Validators.delegate(_validateQuantity)],
+      ),
+      _rating: FormControl<int>(),
+      _comment: FormControl<String>(),
+    });
+    if (option != null) {
+      // So a start already owned, since the caller looked, gets its note.
+      _bloc.add(
+        AddToCollectionChoiceChanged(
+          platformGameId: option.platformGame.id,
+          medium: medium,
+        ),
+      );
+    }
+
     _subscriptions
-      ..add(
-        _form.control(_medium).valueChanges.listen((medium) {
-          if (mounted && medium is GameMedium) {
-            _bloc.add(AddToCollectionMediumChanged(medium));
-          }
-        }),
-      )
+      ..add(_platformControl.valueChanges.listen(_onPlatformPicked))
+      ..add(_mediumControl.valueChanges.listen(_onMediumPicked))
       // Every change, the bloc keeping only the one that retires a failure,
       // as `CreateHouseholdForm` does.
       ..add(
@@ -218,6 +298,52 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     }
     _form.dispose();
     super.dispose();
+  }
+
+  CollectionAddOption? _optionFor(String platformGameId) => widget.options
+      .where((option) => option.platformGame.id == platformGameId)
+      .firstOrNull;
+
+  GameMedium? _startFor(CollectionAddOption option) =>
+      startingMedium(option.platformGame.platformType, option.freeMediums);
+
+  /// Starts the medium for the platform picked, unless the user picked the
+  /// medium and the new platform has it free.
+  void _onPlatformPicked(String? platformGameId) {
+    if (!mounted || platformGameId == null) return;
+    final option = _optionFor(platformGameId);
+    if (option == null) return;
+
+    final current = _mediumControl.value;
+    final keep =
+        _userPickedMedium &&
+        current != null &&
+        option.freeMediums.contains(current);
+    final medium = keep ? current : _startFor(option);
+    // A medium the sheet replaced is no longer the user's.
+    _userPickedMedium = keep;
+    // No event: only the user's picks are reported, see [_userPickedMedium].
+    _mediumControl.updateValue(medium, emitEvent: false);
+    setState(() => _option = option);
+    _bloc.add(
+      AddToCollectionChoiceChanged(
+        platformGameId: platformGameId,
+        medium: medium,
+      ),
+    );
+  }
+
+  void _onMediumPicked(GameMedium? medium) {
+    if (!mounted || medium == null) return;
+    _userPickedMedium = true;
+    final option = _option;
+    if (option == null) return;
+    _bloc.add(
+      AddToCollectionChoiceChanged(
+        platformGameId: option.platformGame.id,
+        medium: medium,
+      ),
+    );
   }
 
   Map<String, dynamic>? _validateQuantity(AbstractControl<dynamic> control) {
@@ -238,7 +364,8 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     final comment = (_form.control(_comment).value as String?)?.trim();
     _bloc.add(
       AddToCollectionSubmitted(
-        medium: _form.control(_medium).value! as GameMedium,
+        platformGameId: _platformControl.value!,
+        medium: _mediumControl.value!,
         quantity: CollectionQuantityField.parseCopies(
           _form.control(_quantity).value,
         )!,
@@ -308,6 +435,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
         state.status == AddToCollectionStatus.submitting ||
         state.status == AddToCollectionStatus.added;
     final existing = state.existing;
+    final option = _option;
 
     return ReactiveForm(
       formGroup: _form,
@@ -318,34 +446,56 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
           Semantics(
             header: true,
             child: Text(
-              l10n.addToCollectionTitle(
-                widget.game.title,
-                widget.platformGame.platformName,
-              ),
+              l10n.addToCollectionTitle(widget.game.title),
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
           const BgeGap.md(),
-          BgeDropdownField<GameMedium>(
-            key: AddToCollectionSheet.mediumKey,
-            formControlName: _medium,
-            label: l10n.addToCollectionMediumLabel,
-            hint: l10n.addToCollectionMediumHint,
+          BgeDropdownField<String>(
+            key: AddToCollectionSheet.platformKey,
+            formControlName: _platform,
+            label: l10n.addToCollectionPlatformLabel,
+            hint: l10n.addToCollectionPlatformHint,
             readOnly: busy,
             items: [
-              for (final medium in GameMedium.values)
+              for (final option in widget.options)
                 BgeDropdownItem(
-                  value: medium,
-                  label: switch (medium) {
-                    GameMedium.physical => l10n.collectionListMediumPhysical,
-                    GameMedium.digital => l10n.collectionListMediumDigital,
-                  },
+                  value: option.platformGame.id,
+                  label: option.platformGame.platformName,
                 ),
             ],
             validationMessages: {
               ValidationMessage.required: (_) =>
-                  l10n.addToCollectionMediumRequired,
+                  l10n.addToCollectionPlatformRequired,
             },
+          ),
+          const BgeGap.md(),
+          // A new platform is a new field, built from the medium the sheet
+          // set without an event, so a menu open on the old platform's
+          // mediums never offers them for the new one.
+          KeyedSubtree(
+            key: ValueKey<String?>(option?.platformGame.id),
+            child: BgeDropdownField<GameMedium>(
+              key: AddToCollectionSheet.mediumKey,
+              formControlName: _medium,
+              label: l10n.addToCollectionMediumLabel,
+              hint: l10n.addToCollectionMediumHint,
+              // Nothing to offer until a platform is chosen.
+              readOnly: busy || option == null,
+              items: [
+                // In the order the enum gives, whatever the set's.
+                for (final medium in GameMedium.values)
+                  if (option?.freeMediums.contains(medium) ?? false)
+                    BgeDropdownItem(
+                      value: medium,
+                      label: mediumLabel(l10n, medium),
+                    ),
+              ],
+              validationMessages: {
+                ValidationMessage.required: (_) =>
+                    l10n.addToCollectionMediumRequired,
+              },
+            ),
           ),
           if (existing != null) ...[
             const BgeGap.sm(),

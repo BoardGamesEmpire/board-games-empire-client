@@ -9,35 +9,52 @@ sealed class AddToCollectionEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// The user chose [medium], so the bloc looks for the entry already in the
-/// collection on it.
-final class AddToCollectionMediumChanged extends AddToCollectionEvent {
-  const AddToCollectionMediumChanged(this.medium);
+/// The sheet's platform and medium are now [platformGameId] and [medium],
+/// so the bloc looks for the entry already in the collection on them (#708).
+///
+/// Sent when the user picks either, and by the sheet for the start it
+/// chooses itself. A null [medium] is no choice yet: a platform with no type
+/// stored starts on none.
+final class AddToCollectionChoiceChanged extends AddToCollectionEvent {
+  const AddToCollectionChoiceChanged({
+    required this.platformGameId,
+    this.medium,
+  });
 
-  final GameMedium medium;
+  final String platformGameId;
+  final GameMedium? medium;
 
   @override
-  List<Object?> get props => [medium];
+  List<Object?> get props => [platformGameId, medium];
 }
 
-/// The user submitted the sheet's form, which has validated it: [quantity]
-/// is at least 1, [rating] is null or 1 to 10, and [comment] is null or
-/// not blank.
+/// The user submitted the sheet's form, which has validated it: a platform
+/// game and a medium are chosen, [quantity] is at least 1, [rating] is null
+/// or 1 to 10, and [comment] is null or not blank.
 final class AddToCollectionSubmitted extends AddToCollectionEvent {
   const AddToCollectionSubmitted({
+    required this.platformGameId,
     required this.medium,
     required this.quantity,
     this.rating,
     this.comment,
   });
 
+  /// The platform game the add is on, as the form holds it at the submit.
+  final String platformGameId;
   final GameMedium medium;
   final int quantity;
   final int? rating;
   final String? comment;
 
   @override
-  List<Object?> get props => [medium, quantity, rating, comment];
+  List<Object?> get props => [
+    platformGameId,
+    medium,
+    quantity,
+    rating,
+    comment,
+  ];
 }
 
 /// The user changed the form, which retires a failure it showed: it was

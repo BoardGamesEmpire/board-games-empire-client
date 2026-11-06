@@ -47,6 +47,7 @@ export 'src/domain/event/vote_eligibility.dart';
 export 'src/domain/event/vote_quorum_type.dart';
 export 'src/domain/event/vote_threshold_type.dart';
 
+export 'src/domain/game/collection_add_option.dart';
 export 'src/domain/game/content_type.dart';
 export 'src/domain/game/game_collection.dart';
 export 'src/domain/game/game_collection_list_item.dart';

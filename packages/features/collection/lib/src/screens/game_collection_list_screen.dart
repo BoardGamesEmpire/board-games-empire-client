@@ -14,6 +14,7 @@ import 'package:game_collection/l10n/game_collection_localizations.dart';
 import '../bloc/game_collection_list_bloc.dart';
 import '../bloc/game_collection_list_event.dart';
 import '../bloc/game_collection_list_state.dart';
+import '../medium_label.dart';
 import '../picker/collection_entry_picker.dart';
 import 'collection_groups.dart';
 
@@ -477,10 +478,7 @@ List<({String shown, String spoken})> _details(
   final lastPlayed = entry.lastPlayed;
   return [
     _same(item.platformName),
-    _same(switch (entry.medium) {
-      GameMedium.physical => l10n.collectionListMediumPhysical,
-      GameMedium.digital => l10n.collectionListMediumDigital,
-    }),
+    _same(mediumLabel(l10n, entry.medium)),
     if (entry.quantity > 1) _same(l10n.collectionListQuantity(entry.quantity)),
     if (rating != null)
       (

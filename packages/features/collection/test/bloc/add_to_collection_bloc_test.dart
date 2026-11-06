@@ -43,19 +43,17 @@ void main() {
     ).thenAnswer((_) async => null);
   });
 
-  AddToCollectionBloc build() => AddToCollectionBloc(
-    repository: repository,
-    sender: sender,
-    platformGameId: 'pg_1',
-  );
+  AddToCollectionBloc build() =>
+      AddToCollectionBloc(repository: repository, sender: sender);
 
   GameCollection entry({
+    String platformGameId = 'pg_1',
     GameMedium medium = GameMedium.physical,
     int quantity = 2,
   }) => GameCollection(
     id: 'gc_1',
     userId: 'user-a',
-    platformGameId: 'pg_1',
+    platformGameId: platformGameId,
     medium: medium,
     quantity: quantity,
     createdAt: DateTime.utc(2026),
@@ -64,10 +62,23 @@ void main() {
 
   void answerLookup(
     GameMedium medium,
-    Future<GameCollection?> Function() answer,
-  ) => when(
-    () => repository.getCollectionEntry(platformGameId: 'pg_1', medium: medium),
+    Future<GameCollection?> Function() answer, {
+    String platformGameId = 'pg_1',
+  }) => when(
+    () => repository.getCollectionEntry(
+      platformGameId: platformGameId,
+      medium: medium,
+    ),
   ).thenAnswer((_) => answer());
+
+  /// The user's choice of [medium] on `pg_1`, or on [platformGameId].
+  AddToCollectionChoiceChanged choice(
+    GameMedium? medium, {
+    String platformGameId = 'pg_1',
+  }) => AddToCollectionChoiceChanged(
+    platformGameId: platformGameId,
+    medium: medium,
+  );
 
   /// Answers the add with [answer]'s entry, queued as `sq_1` with
   /// [_queuedOp].
@@ -100,11 +111,17 @@ void main() {
     'choosing a medium finds the entry already in the collection',
     setUp: () => answerLookup(GameMedium.physical, () async => entry()),
     build: build,
-    act: (bloc) =>
-        bloc.add(const AddToCollectionMediumChanged(GameMedium.physical)),
+    act: (bloc) => bloc.add(choice(GameMedium.physical)),
     expect: () => [
-      const AddToCollectionState(medium: GameMedium.physical),
-      AddToCollectionState(medium: GameMedium.physical, existing: entry()),
+      const AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+      ),
+      AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        existing: entry(),
+      ),
     ],
   );
 
@@ -113,12 +130,17 @@ void main() {
     setUp: () => answerLookup(GameMedium.physical, () async => entry()),
     build: build,
     act: (bloc) async {
-      bloc.add(const AddToCollectionMediumChanged(GameMedium.physical));
+      bloc.add(choice(GameMedium.physical));
       await pumpEventQueue();
-      bloc.add(const AddToCollectionMediumChanged(GameMedium.digital));
+      bloc.add(choice(GameMedium.digital));
     },
     skip: 2,
-    expect: () => [const AddToCollectionState(medium: GameMedium.digital)],
+    expect: () => [
+      const AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.digital,
+      ),
+    ],
   );
 
   group('a later medium wins over a slow lookup for an earlier one', () {
@@ -134,14 +156,20 @@ void main() {
       build: build,
       act: (bloc) async {
         bloc
-          ..add(const AddToCollectionMediumChanged(GameMedium.physical))
-          ..add(const AddToCollectionMediumChanged(GameMedium.digital));
+          ..add(choice(GameMedium.physical))
+          ..add(choice(GameMedium.digital));
         await pumpEventQueue();
         physical.complete(entry());
       },
       expect: () => [
-        const AddToCollectionState(medium: GameMedium.physical),
-        const AddToCollectionState(medium: GameMedium.digital),
+        const AddToCollectionState(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+        ),
+        const AddToCollectionState(
+          platformGameId: 'pg_1',
+          medium: GameMedium.digital,
+        ),
       ],
       verify: (bloc) {
         expect(bloc.state.medium, GameMedium.digital);
@@ -151,6 +179,86 @@ void main() {
   });
 
   blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'a choice looks up the entry on that platform and medium',
+    setUp: () => answerLookup(
+      GameMedium.digital,
+      () async => entry(platformGameId: 'pg_2', medium: GameMedium.digital),
+      platformGameId: 'pg_2',
+    ),
+    build: build,
+    act: (bloc) => bloc.add(choice(GameMedium.digital, platformGameId: 'pg_2')),
+    expect: () => [
+      const AddToCollectionState(
+        platformGameId: 'pg_2',
+        medium: GameMedium.digital,
+      ),
+      AddToCollectionState(
+        platformGameId: 'pg_2',
+        medium: GameMedium.digital,
+        existing: entry(platformGameId: 'pg_2', medium: GameMedium.digital),
+      ),
+    ],
+    verify: (_) => verify(
+      () => repository.getCollectionEntry(
+        platformGameId: 'pg_2',
+        medium: GameMedium.digital,
+      ),
+    ).called(1),
+  );
+
+  group('a lookup answering after the platform changed is dropped', () {
+    late Completer<GameCollection?> first;
+
+    setUp(() {
+      first = Completer<GameCollection?>();
+      answerLookup(GameMedium.physical, () => first.future);
+    });
+
+    blocTest<AddToCollectionBloc, AddToCollectionState>(
+      'physical on pg_1, then physical on pg_2, then the pg_1 answer',
+      build: build,
+      act: (bloc) async {
+        bloc
+          ..add(choice(GameMedium.physical))
+          ..add(choice(GameMedium.physical, platformGameId: 'pg_2'));
+        await pumpEventQueue();
+        first.complete(entry());
+      },
+      expect: () => [
+        const AddToCollectionState(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+        ),
+        const AddToCollectionState(
+          platformGameId: 'pg_2',
+          medium: GameMedium.physical,
+        ),
+      ],
+      verify: (bloc) => expect(bloc.state.existing, isNull),
+    );
+  });
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    'a choice with no medium clears the existing entry',
+    setUp: () => answerLookup(GameMedium.physical, () async => entry()),
+    build: build,
+    act: (bloc) async {
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(choice(null, platformGameId: 'pg_2'));
+    },
+    skip: 2,
+    expect: () => [const AddToCollectionState(platformGameId: 'pg_2')],
+    // With no medium there is nothing to look up.
+    verify: (_) => verify(
+      () => repository.getCollectionEntry(
+        platformGameId: any(named: 'platformGameId'),
+        medium: any(named: 'medium'),
+      ),
+    ).called(1),
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
     'a failed lookup shows no entry, and throws nothing out of the bloc',
     // A disposed session scope's repository throws this.
     setUp: () => answerLookup(
@@ -158,9 +266,13 @@ void main() {
       () async => throw StateError('disposed'),
     ),
     build: build,
-    act: (bloc) =>
-        bloc.add(const AddToCollectionMediumChanged(GameMedium.physical)),
-    expect: () => [const AddToCollectionState(medium: GameMedium.physical)],
+    act: (bloc) => bloc.add(choice(GameMedium.physical)),
+    expect: () => [
+      const AddToCollectionState(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+      ),
+    ],
     errors: () => isEmpty,
   );
 
@@ -170,6 +282,7 @@ void main() {
     build: build,
     act: (bloc) => bloc.add(
       const AddToCollectionSubmitted(
+        platformGameId: 'pg_1',
         medium: GameMedium.physical,
         quantity: 3,
         rating: 7,
@@ -225,6 +338,7 @@ void main() {
       build: build,
       act: (bloc) => bloc.add(
         const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
           medium: GameMedium.physical,
           quantity: 3,
         ),
@@ -245,7 +359,11 @@ void main() {
     },
     build: build,
     act: (bloc) => bloc.add(
-      const AddToCollectionSubmitted(medium: GameMedium.physical, quantity: 3),
+      const AddToCollectionSubmitted(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+        quantity: 3,
+      ),
     ),
     expect: () => [
       const AddToCollectionState(status: AddToCollectionStatus.submitting),
@@ -262,7 +380,11 @@ void main() {
     setUp: () => answerAdd(() async => entry(quantity: 1)),
     build: build,
     act: (bloc) => bloc.add(
-      const AddToCollectionSubmitted(medium: GameMedium.digital, quantity: 1),
+      const AddToCollectionSubmitted(
+        platformGameId: 'pg_1',
+        medium: GameMedium.digital,
+        quantity: 1,
+      ),
     ),
     verify: (_) => verify(
       () => repository.addToCollection(
@@ -271,6 +393,42 @@ void main() {
         quantity: 1,
       ),
     ).called(1),
+  );
+
+  blocTest<AddToCollectionBloc, AddToCollectionState>(
+    "submit adds on the event's platform game",
+    setUp: () => answerAdd(() async => entry(platformGameId: 'pg_2')),
+    build: build,
+    act: (bloc) async {
+      // The choice the bloc last saw is not what decides it.
+      bloc.add(choice(GameMedium.physical));
+      await pumpEventQueue();
+      bloc.add(
+        const AddToCollectionSubmitted(
+          platformGameId: 'pg_2',
+          medium: GameMedium.digital,
+          quantity: 1,
+        ),
+      );
+    },
+    verify: (_) {
+      verify(
+        () => repository.addToCollection(
+          platformGameId: 'pg_2',
+          medium: GameMedium.digital,
+          quantity: 1,
+        ),
+      ).called(1);
+      verifyNever(
+        () => repository.addToCollection(
+          platformGameId: 'pg_1',
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      );
+    },
   );
 
   group('a second submit while one is running', () {
@@ -286,6 +444,7 @@ void main() {
       build: build,
       act: (bloc) async {
         const submit = AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
           medium: GameMedium.physical,
           quantity: 1,
         );
@@ -322,6 +481,7 @@ void main() {
     act: (bloc) async {
       bloc.add(
         const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
           medium: GameMedium.physical,
           quantity: 1,
         ),
@@ -353,10 +513,11 @@ void main() {
     },
     build: build,
     act: (bloc) async {
-      bloc.add(const AddToCollectionMediumChanged(GameMedium.physical));
+      bloc.add(choice(GameMedium.physical));
       await pumpEventQueue();
       bloc.add(
         const AddToCollectionSubmitted(
+          platformGameId: 'pg_1',
           medium: GameMedium.physical,
           quantity: 1,
         ),
@@ -365,11 +526,13 @@ void main() {
     skip: 2,
     expect: () => [
       AddToCollectionState(
+        platformGameId: 'pg_1',
         medium: GameMedium.physical,
         existing: entry(),
         status: AddToCollectionStatus.submitting,
       ),
       AddToCollectionState(
+        platformGameId: 'pg_1',
         medium: GameMedium.physical,
         existing: entry(),
         status: AddToCollectionStatus.added,

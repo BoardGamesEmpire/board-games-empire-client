@@ -5,6 +5,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_collection/l10n/game_collection_localizations.dart';
 
+import '../medium_label.dart';
+
 /// Opens a picker over [items], the entries of one game, through
 /// [showBgePopup]: a sheet on a phone and a dialog on a wider window, on the
 /// root navigator (#709).
@@ -93,10 +95,7 @@ Future<void> openCollectionEntries(
         other.entry.id != item.entry.id && other.platformName == platform,
   );
   if (!shared) return (shown: platform, spoken: platform);
-  final medium = switch (item.entry.medium) {
-    GameMedium.physical => l10n.collectionListMediumPhysical,
-    GameMedium.digital => l10n.collectionListMediumDigital,
-  };
+  final medium = mediumLabel(l10n, item.entry.medium);
   return (
     shown: l10n.collectionPickerEntryWithMedium(platform, medium),
     spoken: l10n.collectionPickerEntryWithMediumSpoken(platform, medium),

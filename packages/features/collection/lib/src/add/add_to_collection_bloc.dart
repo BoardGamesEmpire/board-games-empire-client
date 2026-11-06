@@ -8,21 +8,29 @@ import '../sync/collection_sync.dart';
 import 'add_to_collection_event.dart';
 import 'add_to_collection_state.dart';
 
-/// Drives the add sheet (#45): adds one platform game to the user's
-/// collection, and says what is already there on the medium chosen.
+/// Drives the add sheet (#45): adds a game to the user's collection on the
+/// platform game chosen (#708), and says what is already there on the
+/// platform and medium chosen.
+///
+/// The platform travels in the events rather than in the bloc, since the
+/// sheet chooses it: [AddToCollectionChoiceChanged] says what is chosen, and
+/// [AddToCollectionSubmitted] what to add.
 ///
 /// ## The entry already there
 ///
-/// Choosing a medium looks up the live entry for it
+/// Choosing a platform and a medium looks up the live entry for them
 /// ([GameCollectionRepository.getCollectionEntry]), so the sheet can say what
 /// the add makes: an add on a medium already owned raises its quantity. The
-/// lookup reads live entries only, so an entry removed earlier reads as
-/// absent and gets no note. Its add overwrites the old quantity.
+/// sheet offers only the mediums free when it opened, so this is the rare
+/// case of one added since (#708). The lookup reads live entries only, so an
+/// entry removed earlier reads as absent and gets no note. Its add
+/// overwrites the old quantity. A choice with no medium has nothing to look
+/// up, and clears the entry shown.
 ///
-/// A lookup answering after the medium changed again is dropped, so the
-/// entry shown is always the one for the medium on screen. A failed lookup is
-/// logged and shows no entry: the add itself still works, or fails on its
-/// own.
+/// A lookup answering after the platform or the medium changed again is
+/// dropped, so the entry shown is always the one for the choice on screen. A
+/// failed lookup is logged and shows no entry: the add itself still works,
+/// or fails on its own.
 ///
 /// ## The add
 ///
@@ -39,37 +47,42 @@ import 'add_to_collection_state.dart';
 /// as a failed lookup or add.
 ///
 /// The bloc doesn't validate what it is sent. The sheet's form does: a
-/// medium, a quantity of 1 or more that the stored total can hold, a rating
-/// from 1 to 10 or none, and a comment that is not blank or none. The form's
-/// total counts the lookup's entry, which may not have answered yet, so the
-/// repository checks the total again and throws: a failed add.
+/// platform game and a medium, a quantity of 1 or more that the stored total
+/// can hold, a rating from 1 to 10 or none, and a comment that is not blank
+/// or none. The form's total counts the lookup's entry, which may not have
+/// answered yet, so the repository checks the total again and throws: a
+/// failed add.
 class AddToCollectionBloc
     extends Bloc<AddToCollectionEvent, AddToCollectionState> {
   AddToCollectionBloc({
     required this._repository,
     required this._sender,
-    required this.platformGameId,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.collection.add'),
        super(const AddToCollectionState()) {
-    on<AddToCollectionMediumChanged>(_onMediumChanged);
+    on<AddToCollectionChoiceChanged>(_onChoiceChanged);
     on<AddToCollectionSubmitted>(_onSubmitted);
     on<AddToCollectionFailureCleared>(_onFailureCleared);
   }
-
-  /// The platform game the sheet adds.
-  final String platformGameId;
 
   final GameCollectionRepository _repository;
   final SyncOperationSender _sender;
   final BgeLogger _logger;
 
-  Future<void> _onMediumChanged(
-    AddToCollectionMediumChanged event,
+  Future<void> _onChoiceChanged(
+    AddToCollectionChoiceChanged event,
     Emitter<AddToCollectionState> emit,
   ) async {
+    final platformGameId = event.platformGameId;
     final medium = event.medium;
-    emit(AddToCollectionState(medium: medium, status: state.status));
+    emit(
+      AddToCollectionState(
+        platformGameId: platformGameId,
+        medium: medium,
+        status: state.status,
+      ),
+    );
+    if (medium == null) return;
 
     final GameCollection? existing;
     try {
@@ -86,9 +99,14 @@ class AddToCollectionBloc
     }
 
     // A later choice's lookup owns the note now.
-    if (existing == null || state.medium != medium) return;
+    if (existing == null ||
+        state.platformGameId != platformGameId ||
+        state.medium != medium) {
+      return;
+    }
     emit(
       AddToCollectionState(
+        platformGameId: platformGameId,
         medium: medium,
         existing: existing,
         status: state.status,
@@ -112,7 +130,7 @@ class AddToCollectionBloc
     added;
     try {
       added = await _repository.addToCollection(
-        platformGameId: platformGameId,
+        platformGameId: event.platformGameId,
         medium: event.medium,
         quantity: event.quantity,
         rating: event.rating,
