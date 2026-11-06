@@ -1890,6 +1890,23 @@ void main() {
         expect(emissions.last.map((e) => e.id), [added.id]);
       });
 
+      test('a change to a watched entry emits it changed', () async {
+        await seedPlatformGame(db, id: 'pg1');
+        final added = await add(repo, 'pg1', GameMedium.physical);
+        final emissions = <List<GameCollection>>[];
+        final sub = repo
+            .watchEntriesForPlatformGames({'pg1'})
+            .listen(emissions.add);
+        addTearDown(sub.cancel);
+        await pumpEventQueue();
+        expect(emissions.single.single.rating, isNull);
+
+        await repo.updateCollectionEntry(id: added.id, rating: 7);
+        await pumpEventQueue();
+        expect(emissions, hasLength(2));
+        expect(emissions.last.single.rating, 7);
+      });
+
       test('an empty set emits an empty list', () async {
         await seedPlatformGame(db, id: 'pg1');
         await add(repo, 'pg1', GameMedium.physical);

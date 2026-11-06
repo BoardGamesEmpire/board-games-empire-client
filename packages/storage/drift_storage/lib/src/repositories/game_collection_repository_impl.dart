@@ -1402,7 +1402,9 @@ class GameCollectionRepositoryImpl
   Stream<List<GameCollection>> watchEntriesForPlatformGames(
     Set<String> platformGameIds,
   ) {
-    if (platformGameIds.isEmpty) return Stream.value(const []);
+    if (platformGameIds.isEmpty) {
+      return untilDisposed(() => Stream.value(const []));
+    }
 
     return untilDisposed(
       () =>
