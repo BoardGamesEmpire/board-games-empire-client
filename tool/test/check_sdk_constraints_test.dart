@@ -140,6 +140,39 @@ void main() {
       expect(await fixThenCheck(), (0, 0), reason: lastOutput);
     });
 
+    // The rewriters edit lines, so a folded value's continuation survives
+    // them and joins the new value. Only re-reading the rewrite catches
+    // that, and these two cases are what fail if `main` stops doing so.
+    test('folded sdk value the rewrite cannot replace', () async {
+      const pubspec =
+          'name: a\npublish_to: none\nenvironment:\n  sdk: >-\n'
+          '    ^3.12.0\nresolution: workspace\n';
+      workspace = await createFixtureWorkspace(
+        members: {'packages/a': pubspec},
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(
+        File('${workspace.path}/packages/a/pubspec.yaml').readAsStringSync(),
+        pubspec,
+      );
+    });
+
+    test('folded app version the rewrite cannot replace', () async {
+      const pubspec =
+          'name: app_a\npublish_to: none\nversion: >-\n  0.9.0+1\n'
+          'environment:\n  sdk: ^3.13.0\nresolution: workspace\n';
+      workspace = await createFixtureWorkspace(
+        members: {'apps/app_a': pubspec},
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(
+        File('${workspace.path}/apps/app_a/pubspec.yaml').readAsStringSync(),
+        pubspec,
+      );
+    });
+
     test('stale digest', () async {
       workspace = await createFixtureWorkspace(
         flutterDigest: validFlutterDigest.replaceFirst('3.47.1', '3.44.4'),
