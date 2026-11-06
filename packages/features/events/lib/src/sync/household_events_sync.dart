@@ -19,8 +19,9 @@ typedef _HouseholdPass = ({
 /// ## Read on open, not in the hydrate
 ///
 /// It is **not** registered with the `SessionRehydrator`, and nothing runs a
-/// pass at sign-in. Only the household screen's open and its retry call
-/// [refresh]. A hydrate would read every household's events at each sign-in,
+/// pass at sign-in. Only the household screen reads: its open and its retry
+/// call [refresh], and its coming back into view calls [refreshAfterChange].
+/// A hydrate would read every household's events at each sign-in,
 /// one call per household, for a screen the user may never open, and the
 /// rehydrator's triggers would re-read households nobody is looking at.
 /// Offline, the screen shows what is cached.
@@ -31,7 +32,9 @@ typedef _HouseholdPass = ({
 /// first time [watch] or [refresh] names it and kept until [close]. The pass
 /// runs one drain at a time, so a [refresh] while that household's pass runs
 /// joins it, which is what a retry pressed during the open's pass wants.
-/// Two households' passes run side by side: each purges only its own
+/// [refreshAfterChange] waits that pass out and runs another instead: the
+/// running one may have read the list before the change the caller has just
+/// seen made, such as an event created from the screen. Two households' passes run side by side: each purges only its own
 /// household's rows. And each status is its household's own, so a failure on
 /// one household's screen never reads as another's.
 ///
@@ -46,7 +49,7 @@ typedef _HouseholdPass = ({
 ///
 /// ## After [close]
 ///
-/// [refresh] runs nothing and returns, and [watch] delivers the household's
+/// [refresh] and [refreshAfterChange] run nothing and return, and [watch] delivers the household's
 /// last reading, idle for one it never named, and ends: what a closed
 /// [HydrationStatus] gives a new watcher. No status is made after close, so
 /// none is left open. A pass still in flight at close reports into its
@@ -92,6 +95,18 @@ class HouseholdEventsSync {
   Future<void> refresh(String householdId) async {
     if (_closed) return;
     await _passFor(householdId).pass.run();
+  }
+
+  /// Runs a pass over [householdId] that starts after this call, waiting out
+  /// the one running, and completes when it ends. Never throws.
+  ///
+  /// For the household screen coming back into view (#503): [refresh] would
+  /// join a pass begun before the user left it, whose answer may predate an
+  /// event they made meanwhile, and that pass landing would leave the event
+  /// out with no retry to press.
+  Future<void> refreshAfterChange(String householdId) async {
+    if (_closed) return;
+    await _passFor(householdId).pass.runAfterSettled();
   }
 
   /// Closes every household's status. Idempotent; wired as the registration's

@@ -58,6 +58,11 @@ import '../widgets/event_section_states.dart';
 /// [sync] it shows the cache, offers no retry, and reads nothing when
 /// uncovered.
 ///
+/// The pass on the way back is one that starts then. A pass still running
+/// from the open is waited out, not joined, as its answer may predate the
+/// event: landing, it would leave the event out with no retry to press. The
+/// retries join a running pass, which is what one pressed during it wants.
+///
 /// A pass started by uncovering is one the user didn't ask for, so the
 /// couldn't-refresh banner keeps its button as it was, and says nothing of
 /// it until it lands.
@@ -159,12 +164,19 @@ class _HouseholdEventsSectionState extends State<HouseholdEventsSection> {
   /// Starts a pass for the household, or null without a sync.
   late final Future<void> Function()? _refresh;
 
+  /// Starts a pass for the household once any running one ends, or null
+  /// without a sync.
+  late final Future<void> Function()? _refreshAfterChange;
+
   @override
   void initState() {
     super.initState();
     final HouseholdEventsSection(:repository, :householdId, :sync) = widget;
     _now = widget.now ?? DateTime.now;
     _refresh = sync == null ? null : () => sync.refresh(householdId);
+    _refreshAfterChange = sync == null
+        ? null
+        : () => sync.refreshAfterChange(householdId);
     _bloc = EventOverviewBloc(
       repository: repository,
       logger: BgeLogger('bge.events.household'),
@@ -190,7 +202,7 @@ class _HouseholdEventsSectionState extends State<HouseholdEventsSection> {
       bloc: _bloc,
       builder: _content,
     );
-    final refresh = _refresh;
+    final refresh = _refreshAfterChange;
     if (refresh == null) return section;
     return ReadAgainWhenUncovered(
       onUncovered: () => unawaited(refresh()),

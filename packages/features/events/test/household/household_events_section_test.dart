@@ -18,14 +18,17 @@ import '../support/event_list_items.dart';
 class _MockEventRepository extends Mock implements EventRepository {}
 
 /// A household's passes as the section sees them: a real status the test
-/// drives, and a record of every household [refresh] named. A [refresh]
-/// while a pass runs joins it, as the real sync's does.
+/// drives, and a record of every household [refresh] and
+/// [refreshAfterChange] named. A [refresh] while a pass runs joins it, and a
+/// [refreshAfterChange] waits it out and starts another, as the real sync's
+/// do.
 class _FakeSync implements HouseholdEventsSync {
   final status = HydrationStatus<HouseholdEventsOutcome>(
     landed: (outcome) => outcome != HouseholdEventsOutcome.failed,
   );
 
   final refreshes = <String>[];
+  final afterChanges = <String>[];
   final watched = <String>[];
 
   Completer<void>? _pass;
@@ -50,6 +53,14 @@ class _FakeSync implements HouseholdEventsSync {
     if (running != null) return running.future;
     status.started();
     return (_pass = Completer<void>()).future;
+  }
+
+  @override
+  Future<void> refreshAfterChange(String householdId) async {
+    afterChanges.add(householdId);
+    await _pass?.future;
+    status.started();
+    await (_pass = Completer<void>()).future;
   }
 
   @override
@@ -197,7 +208,10 @@ void main() {
 
     await coverAndUncover(tester);
 
-    expect(sync.refreshes, ['h-1', 'h-1']);
+    // A pass that starts now, not the open's joined: that one may predate an
+    // event made while the section was covered.
+    expect(sync.refreshes, ['h-1']);
+    expect(sync.afterChanges, ['h-1']);
     expect(rowOf('e-1'), findsOneWidget);
   });
 
@@ -440,7 +454,7 @@ void main() {
 
       await coverAndUncover(tester);
 
-      expect(sync.refreshes, ['h-1', 'h-1']);
+      expect(sync.afterChanges, ['h-1']);
       expect(find.text(_refreshing), findsNothing);
       expect(find.text(_refreshFailed), findsOneWidget);
       expect(rowOf('e-1'), findsOneWidget);

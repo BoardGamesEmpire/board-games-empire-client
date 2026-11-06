@@ -125,6 +125,29 @@ void main() {
     expect(hydrator.passes, ['h-1', 'h-1']);
   });
 
+  test('a refresh after a change waits out the running pass and starts '
+      'another', () async {
+    // Coming back to the screen: the open's pass may have read the list
+    // before an event made meanwhile, so joining it would leave that out.
+    final held = hydrator.hold('h-1');
+
+    final open = sync.refresh('h-1');
+    final back = sync.refreshAfterChange('h-1');
+    await pumpEventQueue();
+    expect(hydrator.passes, ['h-1'], reason: 'nothing starts mid-pass');
+
+    held.complete(HouseholdEventsOutcome.complete);
+    await Future.wait([open, back]);
+
+    expect(hydrator.passes, ['h-1', 'h-1']);
+  });
+
+  test('a refresh after a change with no pass running starts one', () async {
+    await sync.refreshAfterChange('h-1');
+
+    expect(hydrator.passes, ['h-1']);
+  });
+
   test('households have separate passes and statuses', () async {
     final held = hydrator.hold('h-1');
     hydrator.answers['h-2'] = HouseholdEventsOutcome.failed;
@@ -225,6 +248,7 @@ void main() {
       await sync.close();
 
       await sync.refresh('h-1');
+      await sync.refreshAfterChange('h-1');
 
       expect(hydrator.passes, isEmpty);
     });
