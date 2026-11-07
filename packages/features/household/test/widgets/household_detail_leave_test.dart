@@ -103,7 +103,8 @@ void main() {
 
   Widget harness({
     void Function(BuildContext context)? onBack,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
     void Function(BuildContext context, String householdId)? onNewEvent,
     HouseholdMemberRemoteDataSource? members,
     Future<void> Function()? onMembershipChanged,
@@ -120,14 +121,17 @@ void main() {
       onMembershipChanged: onMembershipChanged,
     );
     return MaterialApp(
-      theme: BgeTheme.light(),
+      theme: theme ?? BgeTheme.light(),
       localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
       supportedLocales: HouseholdLocalizations.supportedLocales,
       builder: (context, child) {
-        final app = MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        );
+        // No scale of its own unless asked: an audit cell sets the view's.
+        final app = textScaler == null
+            ? child!
+            : MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              );
         if (offline == null) return app;
         // As the shell hosts it, above the navigator, so dialogs read it too.
         return ValueListenableBuilder<bool>(
@@ -156,12 +160,14 @@ void main() {
 
   /// Everything Leave needs: a member client, its refresh, and a way back.
   Widget withLeave({
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
     ValueListenable<bool>? offline,
     void Function(BuildContext context, String householdId)? onNewEvent,
   }) => harness(
     onBack: (_) => backs++,
     textScaler: textScaler,
+    theme: theme,
     onNewEvent: onNewEvent,
     members: remote,
     onMembershipChanged: () async => refreshes++,
@@ -1174,5 +1180,112 @@ void main() {
       expect(inRow(_lastOwnerCopy), findsOneWidget);
       expectFocusOnDismiss(tester);
     });
+  });
+
+  group('accessibility audit', () {
+    /// The screen in [theme]. [offline] holds the connection down through a
+    /// notifier of the cell's own, which goes with it.
+    Widget Function(ThemeData) screen({bool offline = false}) => (theme) {
+      final notifier = offline ? ValueNotifier(true) : null;
+      if (notifier != null) addTearDown(notifier.dispose);
+      return withLeave(theme: theme, offline: notifier);
+    };
+
+    /// Brings the Leave row, which ends the page, on screen, and checks it got
+    /// there: at 320dp × 2.0 it can sit below the fold.
+    Future<void> toLeaveRow(WidgetTester tester) async {
+      await tester.ensureVisible(leaveRow());
+      await tester.pumpAndSettle();
+      expect(leaveRow().hitTestable(), findsOneWidget);
+    }
+
+    auditScreen(
+      'Leave disabled, the last owner',
+      build: screen(),
+      arrange: (tester) async {
+        await settleWith(tester, roster: [_owner, _zed]);
+        await toLeaveRow(tester);
+        expect(leaveTile(tester).enabled, isFalse);
+        expect(inRow(_lastOwnerCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'Leave disabled, the only member',
+      build: screen(),
+      arrange: (tester) async {
+        await settleWith(tester, roster: [_owner]);
+        await toLeaveRow(tester);
+        expect(leaveTile(tester).enabled, isFalse);
+        expect(inRow(_onlyMemberCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'Leave disabled, offline',
+      build: screen(offline: true),
+      arrange: (tester) async {
+        await settleWith(tester, roster: [_member('u-me'), _coOwner]);
+        await toLeaveRow(tester);
+        expect(leaveTile(tester).enabled, isFalse);
+        expect(inRow(_onlineOnlyCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'leave confirm',
+      build: screen(),
+      arrange: (tester) async {
+        await settleWith(tester, roster: [_member('u-me'), _coOwner]);
+        await openLeave(tester);
+        expect(find.text('Leave Sunday Crew?'), findsOneWidget);
+        expect(confirm().hitTestable(), findsOneWidget);
+      },
+    );
+
+    // The leave never answers, so the row keeps spinning.
+    auditScreen(
+      'leaving',
+      build: screen(),
+      settle: false,
+      arrange: (tester) async {
+        when(() => remote.leave(any()))
+            .thenAnswer((_) => Completer<HouseholdMember>().future);
+        await settleWith(tester, roster: [_member('u-me'), _coOwner]);
+        await confirmPending(tester);
+        expect(inRow(_leavingCopy), findsOneWidget);
+        expect(
+          find.descendant(
+            of: leaveRow(),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        expect(leaveRow().hitTestable(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'a refused leave',
+      build: screen(),
+      arrange: (tester) async {
+        when(() => remote.leave(any())).thenThrow(
+          const HouseholdMemberRefusedException('no', statusCode: 400),
+        );
+        await settleWith(tester, roster: [_owner, _coOwner]);
+        await confirmLeave(tester);
+        expect(failure(), findsOneWidget);
+        expect(toneOf(tester), BgeBannerTone.warning);
+        await tester.ensureVisible(failure());
+        await tester.pumpAndSettle();
+        expect(
+          find
+              .descendant(of: failure(), matching: find.text('Dismiss'))
+              .hitTestable(),
+          findsOneWidget,
+        );
+        expect(leaveRow().hitTestable(), findsOneWidget);
+      },
+    );
   });
 }
