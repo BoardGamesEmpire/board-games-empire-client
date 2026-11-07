@@ -76,8 +76,10 @@ it, but the helpers don't fail on it by themselves. The flows:
 
 - Server add, sign-in, and home → create household:
   `packages/app_shell/test/widgets/bge_app_keyboard_flow_test.dart`. The home
-  leg walks the signed-in home, the open drawer and the create-household form,
-  and checks that Escape closes the drawer with focus back on its menu button.
+  leg walks the signed-in home with its upcoming events section (the menu
+  button, the See all link and the event card), the open drawer, the household
+  list (back, the row, Create household) and the create-household form, and
+  checks that Escape closes the drawer with focus back on its menu button.
 - Create event: the `keyboard` group of
   `packages/features/events/test/widgets/create_event_screen_test.dart`
 - Game search: the `keyboard` group of
