@@ -48,21 +48,14 @@ void main() {
     ),
   );
 
-  /// The flow on its own, as the router builds it, at [textScaler].
-  Widget flowApp({
-    ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
-  }) => MaterialApp(
+  /// The flow on its own, as the router builds it.
+  Widget flowApp({ThemeData? theme}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: [
       ...ShellLocalizations.localizationsDelegates,
       FeedbackLocalizations.delegate,
     ],
     supportedLocales: ShellLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
     home: FeedbackFlowScreen(feedbackService: service),
   );
 
@@ -397,8 +390,7 @@ void main() {
 
   // The review step is FeedbackReviewScreen, audited in its own suite.
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler) =>
-        flowApp(theme: theme, textScaler: textScaler);
+    Widget build(ThemeData theme) => flowApp(theme: theme);
 
     Future<void> rejectSubmit(WidgetTester tester) async {
       // Empty, so severity and message are both rejected.

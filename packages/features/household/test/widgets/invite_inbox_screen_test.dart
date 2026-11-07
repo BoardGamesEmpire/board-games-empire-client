@@ -34,9 +34,10 @@ void main() {
     opened = [];
   });
 
+  /// [textScaler], when given, overrides the scale the view gives the app.
   Widget harness({
     void Function(BuildContext context)? onOpenSent,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ValueListenable<bool>? offline,
     ThemeData? theme,
   }) => MaterialApp(
@@ -44,10 +45,12 @@ void main() {
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) {
-      final app = MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      );
+      final app = textScaler == null
+          ? child!
+          : MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            );
       if (offline == null) return app;
       return ValueListenableBuilder<bool>(
         valueListenable: offline,
@@ -270,18 +273,13 @@ void main() {
   group('accessibility audit', () {
     /// The screen over the fake as [seed] leaves it; `build` runs before the
     /// first read, so the state is chosen here.
-    Widget Function(ThemeData, TextScaler) screenWith(
+    Widget Function(ThemeData) screenWith(
       void Function() seed, {
       ValueListenable<bool>? offline,
       void Function(BuildContext)? onOpenSent,
-    }) => (theme, textScaler) {
+    }) => (theme) {
       seed();
-      return harness(
-        theme: theme,
-        textScaler: textScaler,
-        offline: offline,
-        onOpenSent: onOpenSent,
-      );
+      return harness(theme: theme, offline: offline, onOpenSent: onOpenSent);
     };
 
     void rows() => remote.onFetchInbox = (_, _) async => pageOf([
@@ -323,20 +321,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Invite declined.'), findsOneWidget);
     }
-
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      rows();
-      await tester.pumpWidget(
-        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
-      );
-      await tester.pumpAndSettle();
-
-      final screen = find.byType(InviteInboxScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
 
     auditScreen(
       'ready',

@@ -84,12 +84,13 @@ void main() {
 
   final navigatorKey = GlobalKey<NavigatorState>();
 
+  /// [textScaler], when given, overrides the scale the view gives the app.
   Widget harness({
     void Function(BuildContext context)? onOpenEvents,
     void Function(BuildContext context, String eventId)? onOpen,
     Future<void> Function()? onRetry,
     ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool hasRemote = true,
     Stream<List<Household>>? Function()? households,
   }) => MaterialApp(
@@ -97,10 +98,12 @@ void main() {
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: BgePage(
       width: BgePageWidth.pane,
       // The column the home page puts its sections in.
@@ -137,7 +140,7 @@ void main() {
     List<EventListItem> rows, {
     void Function(BuildContext context)? onOpenEvents,
     void Function(BuildContext context, String eventId)? onOpen,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     Stream<List<Household>>? Function()? households,
   }) async {
     await tester.pumpWidget(
@@ -1087,12 +1090,8 @@ void main() {
   // hosts a placeholder in its place; the section is audited here, in a
   // page as home's column holds it (#50).
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler) => harness(
-      theme: theme,
-      textScaler: textScaler,
-      onOpen: (_, _) {},
-      onRetry: () async {},
-    );
+    Widget build(ThemeData theme) =>
+        harness(theme: theme, onOpen: (_, _) {}, onRetry: () async {});
 
     /// The cache answers [rows], with the hydrate settled.
     Future<void> showRows(WidgetTester tester, List<EventListItem> rows) async {
@@ -1100,20 +1099,6 @@ void main() {
       items.add(rows);
       await tester.pumpAndSettle();
     }
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the section.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-
-      final section = find.byType(UpcomingEventsSection);
-      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
-      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
-    });
 
     // The first hydrate is filling an empty cache: the spinner never
     // settles.

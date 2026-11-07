@@ -49,16 +49,11 @@ void main() {
     Stream<String>? gone,
     void Function(BuildContext context, GameQuickLookSeed seed)? onOpen,
     ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
     supportedLocales: GameCatalogLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
     home: Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -657,26 +652,12 @@ void main() {
   group('accessibility audit', () {
     /// The row, with the pool answering its first draw, which it makes as it
     /// is built, with [answer].
-    Widget Function(ThemeData, TextScaler) answering(
+    Widget Function(ThemeData) answering(
       Future<GamePoolSample> Function() answer,
-    ) => (theme, textScaler) {
+    ) => (theme) {
       pool.onSample = (_) => answer();
-      return harness(theme: theme, textScaler: textScaler, onOpen: (_, _) {});
+      return harness(theme: theme, onOpen: (_, _) {});
     };
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the row.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
-      );
-
-      final section = find.byType(SomethingToPlaySection);
-      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
-      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
-    });
 
     // The first draw never answers: the spinner never settles.
     auditScreen(

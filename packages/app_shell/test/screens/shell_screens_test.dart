@@ -6,18 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-Widget _wrap(
-  Widget child, {
-  ThemeData? theme,
-  TextScaler textScaler = TextScaler.noScaling,
-}) => MaterialApp(
+Widget _wrap(Widget child, {ThemeData? theme}) => MaterialApp(
   theme: theme,
   localizationsDelegates: ShellLocalizations.localizationsDelegates,
   supportedLocales: ShellLocalizations.supportedLocales,
-  builder: (context, child) => MediaQuery(
-    data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-    child: child!,
-  ),
   home: child,
 );
 
@@ -50,8 +42,7 @@ void main() {
       auditScreen(
         'loading',
         settle: false,
-        build: (theme, textScaler) =>
-            _wrap(const SplashScreen(), theme: theme, textScaler: textScaler),
+        build: (theme) => _wrap(const SplashScreen(), theme: theme),
       );
     });
   });
@@ -123,11 +114,7 @@ void main() {
       // back button is audited too.
       auditScreen(
         'ready, pushed over another screen',
-        build: (theme, textScaler) => _wrap(
-          const SizedBox.shrink(),
-          theme: theme,
-          textScaler: textScaler,
-        ),
+        build: (theme) => _wrap(const SizedBox.shrink(), theme: theme),
         arrange: (tester) async {
           unawaited(
             tester
@@ -161,11 +148,8 @@ void main() {
       for (final kind in ShellPlaceholderKind.values) {
         auditScreen(
           'ready (${kind.name})',
-          build: (theme, textScaler) => _wrap(
-            ShellPlaceholderScreen(kind: kind),
-            theme: theme,
-            textScaler: textScaler,
-          ),
+          build: (theme) =>
+              _wrap(ShellPlaceholderScreen(kind: kind), theme: theme),
         );
       }
     });
@@ -177,7 +161,6 @@ void main() {
       VoidCallback? onRetry,
       VoidCallback? onReset,
       ThemeData? theme,
-      TextScaler textScaler = TextScaler.noScaling,
     }) => _wrap(
       BootstrapErrorScreen(
         canOfferReset: canOfferReset,
@@ -185,7 +168,6 @@ void main() {
         onReset: onReset ?? () {},
       ),
       theme: theme,
-      textScaler: textScaler,
     );
 
     testWidgets('announces the failure to screen readers as a live region', (
@@ -335,14 +317,9 @@ void main() {
     });
 
     group('accessibility audit', () {
-      Widget failure(ThemeData theme, TextScaler textScaler) =>
-          buildScreen(theme: theme, textScaler: textScaler);
-      Widget resetOffered(ThemeData theme, TextScaler textScaler) =>
-          buildScreen(
-            canOfferReset: true,
-            theme: theme,
-            textScaler: textScaler,
-          );
+      Widget failure(ThemeData theme) => buildScreen(theme: theme);
+      Widget resetOffered(ThemeData theme) =>
+          buildScreen(canOfferReset: true, theme: theme);
 
       auditScreen('failure', build: failure);
 
@@ -377,11 +354,7 @@ void main() {
     group('accessibility audit', () {
       auditScreen(
         'ready',
-        build: (theme, textScaler) => _wrap(
-          const RouteNotFoundScreen(),
-          theme: theme,
-          textScaler: textScaler,
-        ),
+        build: (theme) => _wrap(const RouteNotFoundScreen(), theme: theme),
       );
     });
   });

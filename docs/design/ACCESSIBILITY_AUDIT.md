@@ -39,9 +39,11 @@ Flutter's accessibility guidelines on a screen in one state:
 - `iOSTapTargetGuideline` is left out: its 44pt bar is under the 48dp one.
 
 Each call checks the state at **320dp × 2.0** and **390dp × 1.0**, in **light
-and dark**. High contrast stays with the token tests. A test calls it for
-every state its screen has (ready, empty, failure, loading and the rest), in
-a `group('accessibility audit')`. Loading states pass `settle: false`. A long
+and dark**. The helper applies each cell's text scale itself, and fails a cell
+whose screen didn't draw at that scale and in that theme, as when a harness
+sets its own (#767). High contrast stays with the token tests. A test calls it
+for every state its screen has (ready, empty, failure, loading and the rest),
+in a `group('accessibility audit')`. Loading states pass `settle: false`. A long
 state is audited a second time, either scrolled to its end or as a whole page
 in a tall view.
 

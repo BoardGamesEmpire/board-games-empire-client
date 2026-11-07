@@ -41,12 +41,13 @@ void main() {
     unawaited(householdHydration.close());
   });
 
-  /// The card, in a scrolling page as the home page holds it.
+  /// The card, in a scrolling page as the home page holds it. [textScaler],
+  /// when given, overrides the scale the view gives the app.
   Widget harness({
     void Function(BuildContext context)? onOpenHouseholds,
     Stream<List<Household>>? Function()? householdsOf,
     bool householdHydrate = false,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ThemeData? theme,
     TextDirection direction = TextDirection.ltr,
   }) => MaterialApp(
@@ -54,10 +55,14 @@ void main() {
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: GameCollectionLocalizations.localizationsDelegates,
     supportedLocales: GameCollectionLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: Directionality(textDirection: direction, child: child!),
-    ),
+    builder: (context, child) {
+      final app = Directionality(textDirection: direction, child: child!);
+      if (textScaler == null) return app;
+      return MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: app,
+      );
+    },
     home: Scaffold(
       body: SingleChildScrollView(
         child: StatsCard(
@@ -80,7 +85,7 @@ void main() {
     List<Household>? inHouseholds,
     void Function(BuildContext context)? onOpenHouseholds,
     bool householdHydrate = false,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ThemeData? theme,
     TextDirection direction = TextDirection.ltr,
   }) async {
@@ -955,8 +960,8 @@ void main() {
   // draws nothing until a line is known, and a household count it can't
   // vouch for is left out, which the failure call audits.
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler) =>
-        harness(theme: theme, textScaler: textScaler, onOpenHouseholds: (_) {});
+    Widget build(ThemeData theme) =>
+        harness(theme: theme, onOpenHouseholds: (_) {});
 
     /// The collection holds one game, and the user is in [inHouseholds].
     Future<void> showLines(
@@ -967,20 +972,6 @@ void main() {
       households.add(inHouseholds);
       await tester.pumpAndSettle();
     }
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the card.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-
-      final card = find.byType(StatsCard);
-      expect(MediaQuery.textScalerOf(tester.element(card)).scale(10), 20);
-      expect(Theme.of(tester.element(card)).brightness, Brightness.dark);
-    });
 
     auditScreen(
       'ready',
