@@ -25,26 +25,13 @@ import '../support/auth_test_fixtures.dart';
 // #37 i18n: AuthScreen resolves all copy from AuthLocalizations, so the
 // harness must provide the delegates; assertions keep matching the
 // English template values.
-//
-// [textScaler] is applied below the app when given. Null leaves the scale to
-// a MediaQuery above it, which is how the 200% tests here set theirs.
-Widget _wrap(
-  Widget child,
-  MockAuthBloc bloc, {
-  ThemeData? theme,
-  TextScaler? textScaler,
-}) => MaterialApp(
-  theme: theme ?? BgeTheme.light(),
-  localizationsDelegates: AuthLocalizations.localizationsDelegates,
-  supportedLocales: AuthLocalizations.supportedLocales,
-  builder: textScaler == null
-      ? null
-      : (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
-  home: BlocProvider<AuthBloc>.value(value: bloc, child: child),
-);
+Widget _wrap(Widget child, MockAuthBloc bloc, {ThemeData? theme}) =>
+    MaterialApp(
+      theme: theme ?? BgeTheme.light(),
+      localizationsDelegates: AuthLocalizations.localizationsDelegates,
+      supportedLocales: AuthLocalizations.supportedLocales,
+      home: BlocProvider<AuthBloc>.value(value: bloc, child: child),
+    );
 
 AuthScreen _screen(ServerIdentity identity) =>
     AuthScreen(identity: identity, serverDisplayName: 'Test BGE Server');
@@ -1053,11 +1040,11 @@ void main() {
       final both = testServerIdentity(hasOidc: true);
 
       /// The screen for [identity], with the bloc parked in [state].
-      Widget Function(ThemeData, TextScaler) screenIn(
+      Widget Function(ThemeData) screenIn(
         AuthBlocState state, {
         ServerIdentity? identity,
         Future<int> Function()? unsentChangesCount,
-      }) => (theme, textScaler) {
+      }) => (theme) {
         whenListen(
           mockBloc,
           const Stream<AuthBlocState>.empty(),
@@ -1071,7 +1058,6 @@ void main() {
           ),
           mockBloc,
           theme: theme,
-          textScaler: textScaler,
         );
       };
 
@@ -1205,12 +1191,12 @@ void main() {
         arrange: scrollToEnd,
       );
 
-      Widget addressMismatch(ThemeData theme, TextScaler textScaler) {
+      Widget addressMismatch(ThemeData theme) {
         stubProviderSignInAvailability(
           mockBloc,
           const ProviderSignInAddressMismatch('https://auth.example.com'),
         );
-        return initial(theme, textScaler);
+        return initial(theme);
       }
 
       auditScreen(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +27,31 @@ Widget _page(int rows) => MaterialApp(
 
 ScrollPosition _position(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+/// A page with nothing below its fold, under an open dialog whose [rows] 100dp
+/// rows scroll inside it, apart from the page.
+Future<void> _openDialog(WidgetTester tester, int rows) async {
+  await tester.pumpWidget(
+    const MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: Text('page'))),
+    ),
+  );
+  unawaited(
+    showDialog<void>(
+      context: tester.element(find.text('page')),
+      builder: (_) => AlertDialog(
+        scrollable: true,
+        content: Column(
+          children: [
+            for (var i = 0; i < rows; i++)
+              SizedBox(height: 100, child: Text('row $i')),
+          ],
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
 
 void main() {
   group('scrollPageToEnd', () {
@@ -118,6 +145,104 @@ void main() {
     ) async {
       useViewSize(tester, const Size(320, 800));
       await tester.pumpWidget(_page(12));
+
+      final failure = await _failureOf(() async => expectWholePage(tester));
+      expect(failure?.message, contains('the page still scrolls'));
+    });
+
+    testWidgets("expectWholePage within checks a pop-up's own scroll, not "
+        "the page's", (tester) async {
+      useViewSize(tester, const Size(320, 800));
+      await _openDialog(tester, 12);
+      final dialog = find.byType(AlertDialog);
+      // The dialog's scrollable itself, which `within` may find too.
+      final dialogScroll = find
+          .ancestor(of: find.text('row 0'), matching: find.byType(Scrollable))
+          .first;
+
+      // The page fits, and the dialog's rows run past its own fold.
+      expectWholePage(tester);
+      for (final within in [dialog, dialogScroll]) {
+        final failure = await _failureOf(
+          () async => expectWholePage(tester, within: within),
+        );
+        expect(failure?.message, contains('still scrolls'), reason: '$within');
+      }
+
+      await useWholePage(tester);
+
+      expectWholePage(tester, within: dialog);
+      expectWholePage(tester, within: dialogScroll);
+    });
+
+    // A search field above the list, not inside its scroll: the field's own
+    // scrollables come first in the tree, and never scroll.
+    testWidgets("expectWholePage within skips a text field's scroll above the "
+        'list', (tester) async {
+      useViewSize(tester, const Size(320, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              key: const ValueKey('sheet'),
+              children: [
+                const TextField(),
+                const TextField(maxLines: 3),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (var i = 0; i < 12; i++)
+                        SizedBox(height: 100, child: Text('row $i')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final failure = await _failureOf(
+        () async => expectWholePage(
+          tester,
+          within: find.byKey(const ValueKey('sheet')),
+        ),
+      );
+      expect(failure?.message, contains('still scrolls'));
+    });
+
+    // A horizontal row above the list, outside any text field: the row comes
+    // first in the tree and fits, so only the axis keeps it from passing for
+    // the page.
+    testWidgets('expectWholePage skips a horizontal row above the list', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                SizedBox(
+                  height: 48,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: const [Text('chip a'), Text('chip b')],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (var i = 0; i < 12; i++)
+                        SizedBox(height: 100, child: Text('row $i')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
       final failure = await _failureOf(() async => expectWholePage(tester));
       expect(failure?.message, contains('the page still scrolls'));

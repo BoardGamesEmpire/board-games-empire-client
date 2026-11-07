@@ -202,7 +202,7 @@ class _EventOverviewPage extends StatelessWidget {
               key: EventOverviewScreen.createKey,
               onPressed: () => create(context),
               icon: const Icon(Icons.add),
-              label: Text(l10n.eventsCreate),
+              label: BgeFabLabel(l10n.eventsCreate),
             ),
       slivers: [
         EventOverviewSliver(

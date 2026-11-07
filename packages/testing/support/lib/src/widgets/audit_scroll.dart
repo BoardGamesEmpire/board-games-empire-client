@@ -8,8 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 // that silently fell short would repeat the unscrolled call without saying
 // so.
 //
-// The page's own scrollable is taken to be the first in the tree: a field's
-// inner one sits beneath it.
+// The page's own scrollable is taken to be the first vertical one in the
+// tree that is not a text field's own: a horizontal row, or a field's inner
+// scroll, can come first in the tree without being what the page scrolls by.
 
 /// Scrolls the page to its end, for what a state leaves below the fold at
 /// 320dp × 2.0, and checks that it got there (#50).
@@ -97,13 +98,42 @@ Future<void> useWholePage(WidgetTester tester) async {
 
 /// Checks that nothing is below the fold: the page's scrollable has no extent
 /// (#50).
-void expectWholePage(WidgetTester tester) {
+///
+/// With [within], the first vertical scrollable at or inside what it finds
+/// instead, a text field's own aside: a dialog's, a sheet's or a menu's own,
+/// or a footer's. Each scrolls apart from
+/// the page, so a view tall enough to hold the page can still leave the end
+/// of a pop-up below its own fold. Check the page before opening the pop-up,
+/// and the pop-up once it is open.
+void expectWholePage(WidgetTester tester, {Finder? within}) {
+  if (within == null) {
+    expect(
+      _pagePosition(tester).maxScrollExtent,
+      0,
+      reason: 'the page still scrolls',
+    );
+    return;
+  }
+  final scrollable = find
+      .descendant(of: within, matching: _verticalScrollable, matchRoot: true)
+      .first;
   expect(
-    _pagePosition(tester).maxScrollExtent,
+    tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
     0,
-    reason: 'the page still scrolls',
+    reason: '$within still scrolls',
   );
 }
 
 ScrollPosition _pagePosition(WidgetTester tester) =>
-    tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+    tester.state<ScrollableState>(_verticalScrollable.first).position;
+
+/// The scrollables a page or a pop-up scrolls by: vertical, and not a text
+/// field's own, which a field above a list would put first in the tree.
+final Finder _verticalScrollable = find.byElementPredicate(
+  (e) =>
+      e.widget is Scrollable &&
+      axisDirectionToAxis((e.widget as Scrollable).axisDirection) ==
+          Axis.vertical &&
+      e.findAncestorWidgetOfExactType<EditableText>() == null,
+  description: "a page's or a pop-up's vertical scrollable",
+);

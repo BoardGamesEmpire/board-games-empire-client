@@ -46,33 +46,20 @@ void main() {
     void Function(BuildContext context)? onInvite,
     ValueListenable<bool>? offline,
     ThemeData? theme,
-    TextScaler? textScaler,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    builder: offline == null && textScaler == null
+    builder: offline == null
         ? null
-        : (context, child) {
-            var app = child!;
-            if (offline != null) {
-              final screen = app;
-              app = ValueListenableBuilder<bool>(
-                valueListenable: offline,
-                child: screen,
-                builder: (context, isOffline, child) => BgeConnectivityScope(
-                  offline: isOffline,
-                  noticeShowing: isOffline,
-                  onlineOnlyReason: _onlineOnlyCopy,
-                  child: child!,
-                ),
-              );
-            }
-            // Null leaves the scale to the test.
-            if (textScaler == null) return app;
-            return MediaQuery(
-              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-              child: app,
-            );
-          },
+        : (context, child) => ValueListenableBuilder<bool>(
+            valueListenable: offline,
+            child: child,
+            builder: (context, isOffline, child) => BgeConnectivityScope(
+              offline: isOffline,
+              noticeShowing: isOffline,
+              onlineOnlyReason: _onlineOnlyCopy,
+              child: child!,
+            ),
+          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: HouseholdInviteListScreen(
@@ -352,17 +339,12 @@ void main() {
     /// The screen over the fake as [seed] leaves it; `build` runs before the
     /// first read, so the state is chosen here. With an Invite action, as the
     /// shell gives an owner, so its button is audited too.
-    Widget Function(ThemeData, TextScaler) screenWith(
+    Widget Function(ThemeData) screenWith(
       void Function() seed, {
       ValueListenable<bool>? offline,
-    }) => (theme, textScaler) {
+    }) => (theme) {
       seed();
-      return harness(
-        offline: offline,
-        theme: theme,
-        textScaler: textScaler,
-        onInvite: (_) {},
-      );
+      return harness(offline: offline, theme: theme, onInvite: (_) {});
     };
 
     /// One of each row shape: pending, awaiting approval (Approve and Turn
@@ -379,20 +361,6 @@ void main() {
     Future<void> shown(WidgetTester tester) async {
       await tester.pumpAndSettle();
     }
-
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      rows();
-      await tester.pumpWidget(
-        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
-      );
-      await tester.pumpAndSettle();
-
-      final screen = find.byType(HouseholdInviteListScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
 
     auditScreen(
       'ready',
@@ -429,10 +397,6 @@ void main() {
         await shown(tester);
         expect(find.text(_onlineOnlyCopy), findsWidgets);
       },
-      // The nodes that fail are the disabled row buttons, whose label is
-      // drawn dimmed by design; WCAG 1.4.3 exempts inactive controls, and the
-      // enabled buttons pass in 'ready'.
-      textContrast: false,
     );
 
     auditScreen(

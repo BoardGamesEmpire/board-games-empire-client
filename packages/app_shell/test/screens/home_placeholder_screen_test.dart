@@ -8,10 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// [HomePlaceholderScreen]'s audit (#50). Its buttons reach the router and
 /// the auth bloc only when pressed, so the harness provides neither.
-Widget _wrap({
-  required ThemeData theme,
-  TextScaler textScaler = TextScaler.noScaling,
-}) => MaterialApp(
+Widget _wrap({required ThemeData theme}) => MaterialApp(
   theme: theme,
   localizationsDelegates: [
     ...ShellLocalizations.localizationsDelegates,
@@ -19,18 +16,11 @@ Widget _wrap({
     FeedbackLocalizations.delegate,
   ],
   supportedLocales: ShellLocalizations.supportedLocales,
-  builder: (context, child) => MediaQuery(
-    data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-    child: child!,
-  ),
   home: const HomePlaceholderScreen(),
 );
 
 void main() {
   group('accessibility audit', () {
-    auditScreen(
-      'ready',
-      build: (theme, textScaler) => _wrap(theme: theme, textScaler: textScaler),
-    );
+    auditScreen('ready', build: (theme) => _wrap(theme: theme));
   });
 }

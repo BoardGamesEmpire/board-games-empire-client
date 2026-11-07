@@ -54,20 +54,11 @@ void main() {
     void Function(BuildContext context)? onConnectDataGateway,
     Widget? above,
     ThemeData? theme,
-    TextScaler? textScaler,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
     supportedLocales: GameCatalogLocalizations.supportedLocales,
-    // Only when given, so that a scale set round the whole app reaches the
-    // row too.
-    builder: textScaler == null
-        ? null
-        : (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: child!,
-          ),
     home: Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -995,40 +986,21 @@ void main() {
   // puts its sections in (#50). A refused user is shown nothing, so has no
   // call.
   group('accessibility audit', () {
-    Widget build(
-      ThemeData theme,
-      TextScaler textScaler, {
-      bool canConnect = false,
-    }) => harness(
+    Widget build(ThemeData theme, {bool canConnect = false}) => harness(
       theme: theme,
-      textScaler: textScaler,
       onOpen: (_, _) {},
       onConnectDataGateway: canConnect ? (_) {} : null,
     );
 
     /// [build], with the server answering the row's first read, which it
     /// makes as it is built, with [answer].
-    Widget Function(ThemeData, TextScaler) answering(
+    Widget Function(ThemeData) answering(
       Future<PaginatedResult<Game>> Function() answer, {
       bool canConnect = false,
-    }) => (theme, textScaler) {
+    }) => (theme) {
       remote.onFetchPage = (_, _) => answer();
-      return build(theme, textScaler, canConnect: canConnect);
+      return build(theme, canConnect: canConnect);
     };
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the row.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-
-      final section = find.byType(NewestGamesSection);
-      expect(MediaQuery.textScalerOf(tester.element(section)).scale(10), 20);
-      expect(Theme.of(tester.element(section)).brightness, Brightness.dark);
-    });
 
     // The first read never answers: the spinner never settles.
     auditScreen(

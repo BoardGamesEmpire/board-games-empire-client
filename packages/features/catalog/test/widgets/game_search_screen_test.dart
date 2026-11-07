@@ -10,7 +10,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -43,12 +42,10 @@ void main() {
     onImport,
     ValueListenable<bool>? offline,
     ThemeData? theme,
-    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       catalogApp(
         theme: theme,
-        textScaler: textScaler,
         GameSearchScreen(
           remote: remote,
           cache: cache,
@@ -960,7 +957,7 @@ void main() {
         );
         final data = route.evaluate().single.getSemanticsData();
         expect(data.flagsCollection.scopesRoute, isTrue);
-        expect(data.label, isNotEmpty);
+        expect(data.label, 'Dialog');
 
         handle.dispose();
       }, variant: TargetPlatformVariant.all());
@@ -1275,20 +1272,11 @@ void main() {
   });
 
   group('accessibility audit', () {
-    // `show` pumps the screen and wants the tester, so each call's build
-    // only records the theme and scale and returns a placeholder; its
-    // arrange pumps the screen over it with them.
-    late ThemeData theme;
-    late TextScaler scaler;
-
-    Widget record(ThemeData t, TextScaler s) {
-      theme = t;
-      scaler = s;
-      return const SizedBox.shrink();
-    }
-
+    // `show` pumps the screen and wants the tester, so each call pumps it
+    // with `pump`, and its arrange searches.
     Future<void> showAudited(
-      WidgetTester tester, {
+      WidgetTester tester,
+      ThemeData theme, {
       FakeGamesCache? cache,
       ValueListenable<bool>? offline,
       Future<Map<String, String>> Function()? sourceNames,
@@ -1300,7 +1288,6 @@ void main() {
       onOpen: (_, _) {},
       onImport: (_, _, _) {},
       theme: theme,
-      textScaler: scaler,
     );
 
     // Six hits on the server and six from a source, with a source that
@@ -1320,23 +1307,10 @@ void main() {
 
     final names = {'dg_bgg': 'BoardGameGeek', 'dg_down': 'Steam'};
 
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      theme = BgeTheme.dark();
-      scaler = const TextScaler.linear(2);
-      await showAudited(tester);
-
-      final screen = find.byType(GameSearchScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
-
     auditScreen(
       'idle',
-      build: record,
-      arrange: (tester) async {
-        await showAudited(tester);
+      pump: (tester, theme) async {
+        await showAudited(tester, theme);
         expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
       },
     );
@@ -1344,12 +1318,13 @@ void main() {
     // The search is still being read: the spinner never settles.
     auditScreen(
       'loading',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         final pending = Completer<GameSearchResults>();
         addTearDown(() => pending.complete(const GameSearchResults()));
         remote.onSearch = (_, _) => pending.future;
-        await showAudited(tester);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
         await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'catan');
         await tester.pump(GameSearchBloc.defaultDebounce);
         await tester.pump();
@@ -1360,10 +1335,11 @@ void main() {
 
     auditScreen(
       'ready',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => many;
-        await showAudited(tester, sourceNames: () async => names);
+        await showAudited(tester, theme, sourceNames: () async => names);
+      },
+      arrange: (tester) async {
         await search(tester, 'game');
         expect(find.byKey(GameSearchScreen.countKey), findsOneWidget);
       },
@@ -1371,10 +1347,11 @@ void main() {
 
     auditScreen(
       'ready, scrolled to the end',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => many;
-        await showAudited(tester, sourceNames: () async => names);
+        await showAudited(tester, theme, sourceNames: () async => names);
+      },
+      arrange: (tester) async {
         await search(tester, 'game');
         await scrollListToEnd(
           tester,
@@ -1385,10 +1362,11 @@ void main() {
 
     auditScreen(
       'empty',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => const GameSearchResults();
-        await showAudited(tester);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
         await search(tester, 'zzz');
         expect(find.byKey(GameSearchScreen.noResultsKey), findsOneWidget);
       },
@@ -1396,13 +1374,15 @@ void main() {
 
     auditScreen(
       'failure, saved games under a banner',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => throw unreachable();
         await showAudited(
           tester,
+          theme,
           cache: FakeGamesCache([game('g_catan', title: 'Catan')]),
         );
+      },
+      arrange: (tester) async {
         await search(tester, 'catan');
         expect(find.byKey(GameSearchScreen.fromCacheBannerKey), findsOneWidget);
       },
@@ -1410,11 +1390,12 @@ void main() {
 
     auditScreen(
       'failure',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => throw unreachable();
         // No saved games to fall back on: an empty cache reads as no hits.
-        await showAudited(tester);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
         await search(tester, 'catan');
         expect(find.byKey(GameSearchScreen.errorKey), findsOneWidget);
       },
@@ -1422,11 +1403,12 @@ void main() {
 
     auditScreen(
       'denied',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async =>
             throw const GamesForbiddenException('403');
-        await showAudited(tester, cache: FakeGamesCache());
+        await showAudited(tester, theme, cache: FakeGamesCache());
+      },
+      arrange: (tester) async {
         await search(tester, 'catan');
         expect(find.byKey(GameSearchScreen.deniedKey), findsOneWidget);
       },
@@ -1437,12 +1419,13 @@ void main() {
     // finding: see `docs/design/ACCESSIBILITY_AUDIT.md` §3.
     auditScreen(
       'offline',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         final offline = ValueNotifier(true);
         addTearDown(offline.dispose);
         remote.onSearch = (_, _) async => results;
-        await showAudited(tester, offline: offline);
+        await showAudited(tester, theme, offline: offline);
+      },
+      arrange: (tester) async {
         await search(tester, 'catan');
         expect(find.text(onlineOnlyCopy), findsWidgets);
       },
@@ -1451,10 +1434,11 @@ void main() {
 
     auditScreen(
       'filter sheet',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         remote.onSearch = (_, _) async => const GameSearchResults();
-        await showAudited(tester);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
         await openFilters(tester);
         expect(find.byKey(GameSearchScreen.filterSheetKey), findsOneWidget);
       },
@@ -1466,8 +1450,7 @@ void main() {
     // sheet is audited in a view tall enough to hold it whole.
     auditScreen(
       'filter sheet, whole page',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         useViewSize(
           tester,
           Size(
@@ -1476,7 +1459,9 @@ void main() {
           ),
         );
         remote.onSearch = (_, _) async => const GameSearchResults();
-        await showAudited(tester);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
         await openFilters(tester);
         final position = tester
             .state<ScrollableState>(sheetScrollable())

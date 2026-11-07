@@ -233,19 +233,24 @@ void main() {
     void Function(BuildContext context)? onBack,
     void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ValueListenable<bool>? offline,
     DateTime Function()? clock,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     locale: const Locale('en', 'US'),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
     builder: (context, child) {
-      final app = MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      );
+      // No override unless a test sets one, so an audit cell's own scale
+      // reaches the screen (#767).
+      final app = textScaler == null
+          ? child!
+          : MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            );
       if (offline == null) return app;
       // As the shell hosts it, above the navigator, so menus and dialogs
       // read it too.
@@ -291,7 +296,7 @@ void main() {
     void Function(BuildContext context)? onBack,
     void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ValueListenable<bool>? offline,
     DateTime Function()? clock,
   }) async {
@@ -397,6 +402,20 @@ void main() {
         link,
       );
       expect(find.text('Bring snacks.'), findsOneWidget);
+    });
+
+    testWidgets('the link is at least a tap target tall', (tester) async {
+      // A long press selects it, and a short link is a single line (#50).
+      // Measured on the link's own node, so another target on the page
+      // can't fail it.
+      await show(tester, _detail(event: _event(url: 'https://bge.app')));
+
+      final link = tester.getSemantics(find.byType(SelectableText));
+      expect(
+        link.getSemanticsData().hasAction(SemanticsAction.longPress),
+        isTrue,
+      );
+      expect(link.rect.height, greaterThanOrEqualTo(kMinInteractiveDimension));
     });
 
     testWidgets("the title is the page's heading", (tester) async {
@@ -6254,5 +6273,782 @@ void main() {
     await settle(tester);
     expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  // Each state the screen draws, in #50's four cells: the short centred
+  // pages, the event as its host and as a guest see it, its banners, a write
+  // in flight, offline, and each menu and dialog the screen opens.
+  group('accessibility audit', () {
+    const available = AvailabilityResponse.available;
+    const maybe = AvailabilityResponse.maybe;
+    const notGoing = EventParticipationStatus.notAttending;
+
+    late List<Completer<EventSnapshot>> reads;
+    late ValueNotifier<bool> offline;
+
+    setUp(() {
+      reads = [];
+      offline = ValueNotifier(true);
+    });
+
+    tearDown(() => offline.dispose());
+
+    /// Date [id] of `e-1`, Proposed unless [status] says otherwise, on the
+    /// evening of November [day].
+    EventOccurrence date(
+      String id, {
+      int day = 6,
+      int sortOrder = 0,
+      OccurrenceStatus status = OccurrenceStatus.proposed,
+      DateTime? end,
+    }) => confirmed(
+      id,
+      DateTime(2026, 11, day, 19),
+      end: end,
+      sortOrder: sortOrder,
+    ).copyWith(eventId: 'e-1', status: status);
+
+    /// The viewer's own row on `e-1`, `att-me`, named Me, holding [role] and
+    /// going.
+    EventAttendee me(EventRole role) =>
+        attendance(EventParticipationStatus.attending)
+            .copyWith(eventId: 'e-1', displayName: 'Me', role: role);
+
+    /// A poll in the Smiths' household with every header line, two proposed
+    /// dates and a confirmed one with an end, and someone in each answer's
+    /// group, as [viewer] sees it. A null [viewer] isn't on the roster.
+    EventDetail viewed(EventAttendee? viewer) => _detail(
+      event: _event(
+        schedulingMode: EventSchedulingMode.poll,
+        householdId: 'h-1',
+        location: 'The back room',
+        url: 'https://example.com/catan-night',
+        description: 'Bring snacks.',
+      ),
+      occurrences: [
+        date('o-1'),
+        date('o-2', day: 13, sortOrder: 1),
+        date(
+          'o-3',
+          day: 20,
+          sortOrder: 2,
+          status: OccurrenceStatus.confirmed,
+          end: DateTime(2026, 11, 20, 23),
+        ),
+      ],
+      attendees: [
+        ?viewer,
+        _member('att-2', displayName: 'Ada'),
+        _member(
+          'att-3',
+          displayName: 'Bo',
+          status: EventParticipationStatus.maybe,
+        ),
+        _guest('att-4', 'Cy'),
+        _member('att-5', displayName: 'Di', status: notGoing),
+      ],
+      attendance: viewer,
+    );
+
+    // The host has the most controls. A guest answers the invitation and
+    // the poll, and has none of the host's. A spectator answers the
+    // invitation alone, and a viewer not on the roster has no control at
+    // all: the fewest.
+    final host = viewed(me(EventRole.host));
+    final guest = viewed(me(EventRole.guest));
+    final spectator = viewed(me(EventRole.spectator));
+    final offRoster = viewed(null);
+
+    // The host alone on the roster. Offline changes no roster row, and with
+    // the whole roster and the reason lines the page runs past
+    // `useWholePage`'s view at 320dp × 2.0.
+    final hostAlone = EventDetail(
+      snapshot: host.snapshot.copyWith(attendees: [me(EventRole.host)]),
+      attendance: host.attendance,
+    );
+
+    AvailabilityVoter voter(String id, AvailabilityResponse response) =>
+        AvailabilityVoter(attendeeId: id, response: response, eligible: true);
+
+    /// The poll as the server counts it: o-1 leads on the viewer's answer
+    /// and Ada's, and Ada is a maybe on o-2.
+    AvailabilitySummary answers(String _) => AvailabilitySummary(
+      occurrences: [
+        OccurrenceAvailability(
+          occurrenceId: 'o-1',
+          available: 2,
+          maybe: 0,
+          unavailable: 0,
+          voters: [voter('att-me', available), voter('att-2', available)],
+        ),
+        OccurrenceAvailability(
+          occurrenceId: 'o-2',
+          available: 0,
+          maybe: 1,
+          unavailable: 0,
+          voters: [voter('att-2', maybe)],
+        ),
+      ],
+    );
+
+    /// A server whose reads answer at once, whose poll reads answer from
+    /// [summary] ([answers] by default), and whose deletes, votes and
+    /// answers to the invitation answer from [deleted], [voted] and [rsvp].
+    FakeEventRemote serving({
+      FutureOr<AvailabilitySummary> Function(String eventId)? summary,
+      FutureOr<void> Function(String id)? deleted,
+      FutureOr<AvailabilityVote> Function(EventVoteRequest request)? voted,
+      FutureOr<EventAttendee> Function(RsvpRequest request)? rsvp,
+    }) => FakeEventRemote.detail(
+      (_) => host.snapshot,
+      summary: summary ?? answers,
+      deleted: deleted ?? (_) {},
+      voted: voted ?? (_) => throw UnimplementedError('no vote is sent'),
+      rsvp: rsvp ?? (_) => throw UnimplementedError('no answer is sent'),
+    );
+
+    /// The screen with a server and a way back, as the app opens it, so the
+    /// viewer's role alone decides what it offers. A new server each cell.
+    Widget Function(ThemeData) screen({
+      FakeEventRemote Function()? remote,
+      bool isOffline = false,
+    }) =>
+        (theme) => harness(
+          theme: theme,
+          remote: (remote ?? serving)(),
+          households: Stream.value([_household('h-1', 'The Smiths')]),
+          onBack: (_) {},
+          onWhoAnswered: (_) {},
+          offline: isOffline ? offline : null,
+        );
+
+    /// Shows [detail], and lets the reads it starts end: the detail's and
+    /// the poll's.
+    Future<void> showing(WidgetTester tester, EventDetail detail) async {
+      cache.add(detail);
+      await tester.pumpAndSettle();
+      expect(find.text('Catan night'), findsOneWidget);
+    }
+
+    void expectHostsControls() {
+      for (final key in [
+        EventDetailScreen.moreActionsKey,
+        EventDetailScreen.dateMenuKey('o-1'),
+        EventDetailScreen.dateMenuKey('o-3'),
+        EventDetailScreen.whoAnsweredKey,
+        EventDetailScreen.confirmLeaderKey('o-1'),
+        EventDetailScreen.pollAnswerKey('o-2', available),
+        EventDetailScreen.addDateKey,
+        EventDetailScreen.rsvpAnswerKey(notGoing),
+        EventDetailScreen.rsvpNoteKey,
+      ]) {
+        expect(find.byKey(key), findsOneWidget, reason: '$key');
+      }
+    }
+
+    /// Scrolls [finder] into view and taps it, then lets what it opens
+    /// finish moving. A menu item's press lands after the frame its tap
+    /// ends in, which the settle covers.
+    Future<void> press(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openMenu(WidgetTester tester) async {
+      await press(tester, find.byKey(EventDetailScreen.moreActionsKey));
+      // The last item is on screen, not merely built in a panel that
+      // scrolls.
+      expect(
+        find.byKey(EventDetailScreen.deleteKey).hitTestable(),
+        findsOneWidget,
+      );
+    }
+
+    Future<void> openDeleteDialog(WidgetTester tester) async {
+      await openMenu(tester);
+      await press(tester, find.byKey(EventDetailScreen.deleteKey));
+      // Three answers, since the menu offers Cancel too (#502).
+      expect(find.byKey(EventDetailScreen.cancelInsteadKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.deleteConfirmKey), findsOneWidget);
+    }
+
+    Future<void> openCancelDialog(WidgetTester tester) async {
+      await openMenu(tester);
+      await press(tester, find.byKey(EventDetailScreen.cancelKey));
+      expect(find.byKey(EventDetailScreen.cancelReasonKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.cancelConfirmKey), findsOneWidget);
+    }
+
+    Future<void> openNotGoingDialog(WidgetTester tester) async {
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.rsvpAnswerKey(notGoing)),
+      );
+      expect(
+        find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey),
+        findsOneWidget,
+      );
+    }
+
+    /// Confirm this date, under the leader: the dialog offers to decline
+    /// o-2 with it (#507).
+    Future<void> openConfirmDateDialog(WidgetTester tester) async {
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.confirmLeaderKey('o-1')),
+      );
+      expect(find.byKey(EventDetailScreen.declineOthersKey), findsOneWidget);
+    }
+
+    /// Edit, on the confirmed date with an end: its note, and the end's
+    /// clear button.
+    Future<void> openEditDateDialog(WidgetTester tester) async {
+      await press(tester, find.byKey(EventDetailScreen.dateMenuKey('o-3')));
+      await press(
+        tester,
+        find.byKey(
+          EventDetailScreen.dateActionKey('o-3', EventAction.editDate),
+        ),
+      );
+      expect(find.byKey(EventDateDialogKeys.clearEnd), findsOneWidget);
+      expect(
+        find.text("Attendees aren't told when a confirmed date changes."),
+        findsOneWidget,
+      );
+    }
+
+    /// The host's page in a view tall enough to hold it whole, then the
+    /// dialog [open] opens, which no longer scrolls either (#50). Its title
+    /// and content scroll, and its buttons stay put under them.
+    Future<void> openWhole(
+      WidgetTester tester,
+      Future<void> Function(WidgetTester tester) open,
+    ) async {
+      await showing(tester, host);
+      await useWholePage(tester);
+      expectWholePage(tester);
+      await open(tester);
+      expectWholePage(tester, within: find.byType(AlertDialog));
+    }
+
+    auditScreen(
+      'loading',
+      build: (theme) => harness(theme: theme),
+      settle: false,
+      arrange: (tester) async {
+        expect(find.byKey(EventDetailScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'not found',
+      build: (theme) => harness(
+        theme: theme,
+        remote: FakeEventRemote.detail(
+          (_) => throw const EventRemoteNotFoundException('gone'),
+        ),
+        onBack: (_) {},
+      ),
+      arrange: (tester) async {
+        cache.add(_detail());
+        await settle(tester);
+        expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.notFoundBackKey), findsOneWidget);
+      },
+    );
+
+    Future<void> failFirstRead(WidgetTester tester) async {
+      cache.add(null);
+      await settle(tester);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      expect(find.byKey(EventDetailScreen.errorKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.errorRetryKey), findsOneWidget);
+    }
+
+    auditScreen(
+      'error, with retry',
+      build: (theme) => harness(theme: theme, remote: scripted(reads)),
+      arrange: failFirstRead,
+    );
+
+    // At 320dp × 2.0 the retry is below the fold.
+    auditScreen(
+      'error, with retry, scrolled to the end',
+      build: (theme) => harness(theme: theme, remote: scripted(reads)),
+      arrange: (tester) async {
+        await failFirstRead(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    // The retry stays up, saying it is running, and its spinner never
+    // settles. Scrolled first, since the scroll's own settle would wait on
+    // the spinner.
+    auditScreen(
+      'error, retrying, scrolled to the end',
+      build: (theme) => harness(theme: theme, remote: scripted(reads)),
+      settle: false,
+      arrange: (tester) async {
+        await failFirstRead(tester);
+        await scrollPageToEnd(tester);
+        blocOf(tester).add(const EventDetailRetryRequested());
+        await settle(tester);
+        expect(reads, hasLength(2));
+        expect(find.text(_inProgressCopy), findsOneWidget);
+        final view = tester.view.physicalSize / tester.view.devicePixelRatio;
+        expect(
+          tester.getRect(find.byKey(EventDetailScreen.errorRetryKey)).bottom,
+          lessThanOrEqualTo(view.height),
+        );
+      },
+    );
+
+    // No server to read again: the failure alone, as a plain banner.
+    auditScreen(
+      'error, without retry',
+      build: (theme) => harness(theme: theme),
+      arrange: (tester) async {
+        cache.addError(StateError('no authenticated user'));
+        await settle(tester);
+        expect(find.byKey(EventDetailScreen.errorKey), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.errorRetryKey), findsNothing);
+      },
+    );
+
+    // The menu, each date's menu, the poll's chips and Confirm this date,
+    // Add a date and the host's own answer.
+    auditScreen(
+      'ready as host',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        expectHostsControls();
+      },
+    );
+
+    auditScreen(
+      'ready as host, scrolled to the end',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await scrollPageToEnd(tester);
+        expectHostsControls();
+      },
+    );
+
+    // At 320dp × 2.0 the page is some 5400dp long, and its top and its end
+    // leave the dates, the poll and the host's answer between them. At 390dp
+    // × 1.0 everything under the first date is below the fold, and the end
+    // isn't scrolled to there. This audits the page in a view tall enough
+    // to hold it whole (#50).
+    auditScreen(
+      'ready as host, whole page',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await useWholePage(tester);
+        expectHostsControls();
+        expectWholePage(tester);
+      },
+    );
+
+    /// What no role but the host's is offered.
+    void expectNoneOfTheHosts() {
+      for (final key in [
+        EventDetailScreen.moreActionsKey,
+        EventDetailScreen.dateMenuKey('o-1'),
+        EventDetailScreen.dateMenuKey('o-3'),
+        EventDetailScreen.confirmLeaderKey('o-1'),
+        EventDetailScreen.addDateKey,
+      ]) {
+        expect(find.byKey(key), findsNothing, reason: '$key');
+      }
+    }
+
+    // A guest answers the invitation and the poll, and has no menu, no
+    // date's menu, no Add a date and no Confirm this date. A whole page, as
+    // the host's: its top holds the header alone at 320dp × 2.0.
+    auditScreen(
+      'ready as guest, whole page',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, guest);
+        await useWholePage(tester);
+        expectNoneOfTheHosts();
+        expect(
+          find.byKey(EventDetailScreen.pollAnswerKey('o-2', available)),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(EventDetailScreen.rsvpAnswerKey(notGoing)),
+          findsOneWidget,
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    // A spectator answers the invitation and can't vote: the answer chips
+    // over dates that show the poll's tallies alone, which no other role's
+    // page draws. A whole page, as the guest's.
+    auditScreen(
+      'ready as spectator, whole page',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, spectator);
+        await useWholePage(tester);
+        expectNoneOfTheHosts();
+        expect(
+          find.byKey(EventDetailScreen.pollAnswerKey('o-1', available)),
+          findsNothing,
+        );
+        expect(
+          find.byKey(EventDetailScreen.pollTalliesKey('o-1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(EventDetailScreen.rsvpAnswerKey(notGoing)),
+          findsOneWidget,
+        );
+        expect(find.byKey(EventDetailScreen.rsvpNoteKey), findsOneWidget);
+        expect(
+          textOf(tester, find.byKey(EventDetailScreen.roleKey)),
+          "You're a spectator at this event",
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    // A reader not on the roster, such as a friend who sees the event: the
+    // fewest controls, Who answered alone. No answer to give, no vote and no
+    // role line. A whole page, as the guest's.
+    auditScreen(
+      'ready as a viewer off the roster, whole page',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, offRoster);
+        await useWholePage(tester);
+        expectNoneOfTheHosts();
+        for (final key in [
+          EventDetailScreen.pollAnswerKey('o-1', available),
+          EventDetailScreen.rsvpAnswerKey(notGoing),
+          EventDetailScreen.rsvpNoteKey,
+          EventDetailScreen.roleKey,
+        ]) {
+          expect(find.byKey(key), findsNothing, reason: '$key');
+        }
+        expect(
+          find.byKey(EventDetailScreen.pollTalliesKey('o-1')),
+          findsOneWidget,
+        );
+        expect(find.byKey(EventDetailScreen.whoAnsweredKey), findsOneWidget);
+        expectWholePage(tester);
+      },
+    );
+
+    Future<void> failRefresh(WidgetTester tester) async {
+      cache.add(_detail(occurrences: [_ahead()]));
+      await settle(tester);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      expect(find.byKey(EventDetailScreen.refreshBannerKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.refreshRetryKey), findsOneWidget);
+    }
+
+    auditScreen(
+      'refresh failed',
+      build: (theme) => harness(theme: theme, remote: scripted(reads)),
+      arrange: failRefresh,
+    );
+
+    // The retry's read never ends, so its spinner keeps going.
+    auditScreen(
+      'refreshing',
+      build: (theme) => harness(theme: theme, remote: scripted(reads)),
+      settle: false,
+      arrange: (tester) async {
+        await failRefresh(tester);
+        await tester.tap(find.byKey(EventDetailScreen.refreshRetryKey));
+        await settle(tester);
+        // The banner's copy and its button's label.
+        expect(find.text(_inProgressCopy), findsNWidgets(2));
+      },
+    );
+
+    // A refused delete: the warning banner over the event, with Dismiss.
+    auditScreen(
+      'action outcome',
+      build: screen(
+        remote: () => serving(
+          deleted: (_) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+        ),
+      ),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openDeleteDialog(tester);
+        await press(tester, find.byKey(EventDetailScreen.deleteConfirmKey));
+        expect(inOutcome(_refusedCopy), findsOneWidget);
+        expect(inOutcome('Dismiss'), findsOneWidget);
+      },
+    );
+
+    // A vote whose answer was lost: the error banner, over the event. Sent
+    // as its chip sends it, which at 320dp × 2.0 is below the fold.
+    auditScreen(
+      'poll outcome',
+      build: screen(remote: () => serving(voted: (_) => throw _offline)),
+      arrange: (tester) async {
+        await showing(tester, guest);
+        tester
+            .element(find.byKey(EventDetailScreen.datesKey))
+            .read<EventPollBloc>()
+            .add(const EventPollVoted('e-1', 'o-2', available));
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(EventDetailScreen.pollOutcomeKey),
+            matching: find.text(_pollFailedCopy),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The poll's answers couldn't be read: its warning banner and retry,
+    // above the dates, which still show. In the middle of the page, so a
+    // whole page.
+    auditScreen(
+      'poll failed, whole page',
+      build: screen(remote: () => serving(summary: (_) => throw _offline)),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await useWholePage(tester);
+        expect(find.text(_pollLoadFailedCopy), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.pollRetryKey), findsOneWidget);
+        expectWholePage(tester);
+      },
+    );
+
+    // The host's Maybe is out and never answered: its chip spins, and the
+    // page's other controls wait for it. The view is made whole first, since
+    // its settle would wait on the spinner.
+    auditScreen(
+      'an answer in flight, whole page',
+      build: screen(
+        remote: () => serving(rsvp: (_) => Completer<EventAttendee>().future),
+      ),
+      settle: false,
+      // Add a date, Going, Not going and Add a note are disabled while it is
+      // out, and a disabled control's dimmed label is exempt (WCAG 1.4.3).
+      // Each sits in `BgeOnlineOnly`'s merge, whose own node says disabled
+      // only while offline, and that is what the guideline reads, so online
+      // it measures them all the same (#50).
+      textContrast: false,
+      arrange: (tester) async {
+        await showing(tester, host);
+        await useWholePage(tester);
+        await tester.tap(
+          find.byKey(
+            EventDetailScreen.rsvpAnswerKey(EventParticipationStatus.maybe),
+          ),
+        );
+        await settle(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(
+              EventDetailScreen.rsvpAnswerKey(EventParticipationStatus.maybe),
+            ),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<ButtonStyleButton>(
+                find.byKey(EventDetailScreen.addDateKey),
+              )
+              .onPressed,
+          isNull,
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    // Every control that writes is disabled and says why. They sit down the
+    // page, so a whole page.
+    auditScreen(
+      'offline, whole page',
+      build: screen(isOffline: true),
+      arrange: (tester) async {
+        await showing(tester, hostAlone);
+        await useWholePage(tester);
+        expectHostsControls();
+        expect(
+          tester
+              .widget<ButtonStyleButton>(
+                find.byKey(EventDetailScreen.addDateKey),
+              )
+              .onPressed,
+          isNull,
+        );
+        // Under Add a date, Confirm this date and each proposed date's
+        // chips, and under the host's answer.
+        expect(
+          inSection(EventDetailScreen.datesKey, _onlineOnlyCopy),
+          findsNWidgets(4),
+        );
+        expect(
+          inSection(EventDetailScreen.attendeesKey, _onlineOnlyCopy),
+          findsOneWidget,
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'actions menu open',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openMenu(tester);
+        expect(find.byKey(EventDetailScreen.cancelKey), findsOneWidget);
+      },
+    );
+
+    // The items stay, disabled, each saying why.
+    auditScreen(
+      'actions menu open, offline',
+      build: screen(isOffline: true),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openMenu(tester);
+        expect(
+          tester
+              .widget<MenuItemButton>(find.byKey(EventDetailScreen.deleteKey))
+              .onPressed,
+          isNull,
+        );
+      },
+    );
+
+    auditScreen(
+      'date menu open',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await press(tester, find.byKey(EventDetailScreen.dateMenuKey('o-1')));
+        expect(
+          find
+              .byKey(
+                EventDetailScreen.dateActionKey('o-1', EventAction.removeDate),
+              )
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'delete dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openDeleteDialog(tester);
+      },
+    );
+
+    // At 320dp × 2.0 each of these dialogs' title and body run past its
+    // fold, over buttons that stay put. Each is audited again in a view
+    // tall enough to hold it whole (#50).
+    auditScreen(
+      'delete dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openDeleteDialog),
+    );
+
+    auditScreen(
+      'cancel dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openCancelDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'cancel dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openCancelDialog),
+    );
+
+    auditScreen(
+      'not going dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openNotGoingDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'not going dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openNotGoingDialog),
+    );
+
+    auditScreen(
+      'note dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await press(tester, find.byKey(EventDetailScreen.rsvpNoteKey));
+        expect(find.byKey(EventDetailScreen.rsvpNoteFieldKey), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.rsvpNoteSaveKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'add date dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await press(tester, find.byKey(EventDetailScreen.addDateKey));
+        expect(find.byKey(EventDateDialogKeys.start), findsOneWidget);
+        expect(find.byKey(EventDateDialogKeys.submit), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'confirm date dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openConfirmDateDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'confirm date dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openConfirmDateDialog),
+    );
+
+    auditScreen(
+      'edit date dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openEditDateDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'edit date dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openEditDateDialog),
+    );
   });
 }

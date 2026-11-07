@@ -94,14 +94,8 @@ void main() {
 
   tearDown(() => unawaited(members.close()));
 
-  Widget harness({ThemeData? theme, TextScaler? textScaler}) => MaterialApp(
+  Widget harness({ThemeData? theme}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    builder: textScaler == null
-        ? null
-        : (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: child!,
-          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: EditHouseholdScreen(
@@ -338,11 +332,9 @@ void main() {
     /// The screen over the fakes as [seed] leaves them. `build` runs in the
     /// test body before the first read, so the state is chosen here, not in
     /// `arrange`.
-    Widget Function(ThemeData, TextScaler) screenWith([
-      void Function()? seed,
-    ]) => (theme, textScaler) {
+    Widget Function(ThemeData) screenWith([void Function()? seed]) => (theme) {
       seed?.call();
-      return harness(theme: theme, textScaler: textScaler);
+      return harness(theme: theme);
     };
 
     final build = screenWith();
@@ -370,21 +362,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(EditHouseholdScreen.errorKey), findsOneWidget);
     }
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the screen.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-      await tester.pumpAndSettle();
-
-      final form = find.byType(EditHouseholdForm);
-      expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
-      expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
-    });
 
     // The read never answers, so the spinner never stops.
     auditScreen(

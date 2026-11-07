@@ -43,20 +43,12 @@ void main() {
     void Function(BuildContext context)? onCreate,
     void Function(BuildContext context, String eventId)? onOpen,
     ThemeData? theme,
-    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: theme ?? BgeTheme.light(),
         localizationsDelegates: EventsLocalizations.localizationsDelegates,
         supportedLocales: EventsLocalizations.supportedLocales,
-        // Null leaves the scale as the test view has it.
-        builder: textScaler == null
-            ? null
-            : (context, child) => MediaQuery(
-                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-                child: child!,
-              ),
         home: EventGroupScreen(
           group: group,
           repository: repository,
@@ -279,64 +271,43 @@ void main() {
 
   group('accessibility audit', () {
     // The screen is pumped by `pumpGroup`, which wants the tester, so each
-    // call's build only records the theme and scale and returns a
-    // placeholder, and its arrange pumps the screen over it with them.
-    late ThemeData theme;
-    late TextScaler scaler;
+    // call pumps it with `pump`, and its arrange feeds the screen's reads.
 
-    Future<void> show(
+    /// The [group]'s screen, with rows that open, as the shell's do, so they
+    /// are audited as the tap targets they are rather than as inert text.
+    Future<void> Function(WidgetTester, ThemeData) showing(EventGroup group) =>
+        (tester, theme) => pumpGroup(
+          tester,
+          group,
+          onRetry: () async {},
+          onCreate: (_) {},
+          onOpen: (_, _) {},
+          theme: theme,
+        );
+
+    /// The hydrate ends with [outcome], and the cache answers [rows], or
+    /// fails with [error].
+    Future<void> feed(
       WidgetTester tester,
-      EventGroup group,
       List<EventListItem>? rows, {
       Object? error,
       EventHydrateOutcome outcome = EventHydrateOutcome.complete,
     }) async {
-      // Rows that open, as the shell's do, so they are audited as the tap
-      // targets they are rather than as inert text.
-      await pumpGroup(
-        tester,
-        group,
-        onRetry: () async {},
-        onCreate: (_) {},
-        onOpen: (_, _) {},
-        theme: theme,
-        textScaler: scaler,
-      );
       status.finished(outcome);
       if (error != null) items.addError(error);
       if (rows != null) items.add(rows);
       await tester.pump();
     }
 
-    Widget record(ThemeData t, TextScaler s) {
-      theme = t;
-      scaler = s;
-      return const SizedBox.shrink();
-    }
-
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      theme = BgeTheme.dark();
-      scaler = const TextScaler.linear(2);
-      await show(tester, EventGroup.past, past(1));
-
-      final page = find.byType(EventGroupScreen);
-      expect(MediaQuery.textScalerOf(tester.element(page)).scale(10), 20);
-      expect(Theme.of(tester.element(page)).brightness, Brightness.dark);
-    });
-
     // Nothing has answered: the spinner never settles.
     auditScreen(
       'loading',
-      build: record,
-      arrange: (tester) async {
+      pump: (tester, theme) async {
         await pumpGroup(
           tester,
           EventGroup.upcoming,
           onCreate: (_) {},
           theme: theme,
-          textScaler: scaler,
         );
         await tester.pump();
         expect(find.byKey(EventOverviewScreen.loadingKey), findsOneWidget);
@@ -346,9 +317,9 @@ void main() {
 
     auditScreen(
       'ready',
-      build: record,
+      pump: showing(EventGroup.past),
       arrange: (tester) async {
-        await show(tester, EventGroup.past, past(12));
+        await feed(tester, past(12));
         await tester.pumpAndSettle();
         expect(find.byKey(EventOverviewScreen.rowKey('e-past-0')), findsOne);
       },
@@ -356,9 +327,9 @@ void main() {
 
     auditScreen(
       'ready, scrolled to the end',
-      build: record,
+      pump: showing(EventGroup.past),
       arrange: (tester) async {
-        await show(tester, EventGroup.past, past(12));
+        await feed(tester, past(12));
         await scrollListToEnd(
           tester,
           find.byKey(EventOverviewScreen.rowKey('e-past-11')),
@@ -368,9 +339,9 @@ void main() {
 
     auditScreen(
       'empty',
-      build: record,
+      pump: showing(EventGroup.past),
       arrange: (tester) async {
-        await show(tester, EventGroup.past, const []);
+        await feed(tester, const []);
         await tester.pumpAndSettle();
         expect(find.byKey(EventGroupScreen.emptyKey), findsOneWidget);
       },
@@ -378,9 +349,9 @@ void main() {
 
     auditScreen(
       'failure',
-      build: record,
+      pump: showing(EventGroup.past),
       arrange: (tester) async {
-        await show(tester, EventGroup.past, null, error: StateError('x'));
+        await feed(tester, null, error: StateError('x'));
         await tester.pumpAndSettle();
         expect(find.byKey(EventOverviewScreen.errorKey), findsOneWidget);
       },
@@ -388,14 +359,9 @@ void main() {
 
     auditScreen(
       'refresh failed',
-      build: record,
+      pump: showing(EventGroup.past),
       arrange: (tester) async {
-        await show(
-          tester,
-          EventGroup.past,
-          past(3),
-          outcome: EventHydrateOutcome.failed,
-        );
+        await feed(tester, past(3), outcome: EventHydrateOutcome.failed);
         await tester.pumpAndSettle();
         expect(
           find.byKey(EventOverviewScreen.refreshBannerKey),

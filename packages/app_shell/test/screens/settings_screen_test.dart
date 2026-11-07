@@ -43,17 +43,12 @@ void main() {
     required List<SettingsSection> sections,
     String? activeServerAlias,
     ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     // The real theme, so a measure assertion tests the wiring rather
     // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: ShellLocalizations.localizationsDelegates,
     supportedLocales: ShellLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
     home: SettingsScreen(
       sections: sections,
       activeServerAlias: activeServerAlias,
@@ -349,12 +344,11 @@ void main() {
     // locale. No feature contributes a per-server entry yet.
     auditScreen(
       'ready',
-      build: (theme, textScaler) => settingsApp(
+      build: (theme) => settingsApp(
         sections: appSections(
           supportedLocales: const [Locale('en'), Locale('es')],
         ),
         theme: theme,
-        textScaler: textScaler,
       ),
     );
   });

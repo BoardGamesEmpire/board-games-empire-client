@@ -444,7 +444,7 @@ class _HouseholdListViewState extends State<_HouseholdListView> {
                     key: HouseholdListScreen.createFabKey,
                     onPressed: () => create(context),
                     icon: const Icon(Icons.group_add_outlined),
-                    label: Text(l10n.createHouseholdTitle),
+                    label: BgeFabLabel(l10n.createHouseholdTitle),
                   ),
             slivers: [
               if (state

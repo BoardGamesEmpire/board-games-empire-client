@@ -50,7 +50,16 @@ class BgeOnlineOnly extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         MergeSemantics(
-          child: Semantics(hint: reason, child: child),
+          // Offline the merged node says disabled itself, not only through
+          // what it merges: Flutter's text-contrast guideline reads a node's
+          // own flags, and would otherwise hold the control's dimmed label to
+          // 4.5:1, which WCAG 1.4.3 exempts (#50). What a screen reader hears
+          // doesn't change: the merged control already says disabled.
+          child: Semantics(
+            hint: reason,
+            enabled: reason == null ? null : false,
+            child: child,
+          ),
         ),
         if (showNote && reason != null) const BgeOnlineOnlyNote(),
       ],

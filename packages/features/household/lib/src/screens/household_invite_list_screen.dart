@@ -114,7 +114,7 @@ class _HouseholdInviteListView extends StatelessWidget {
                   key: HouseholdInviteListScreen.inviteKey,
                   onPressed: () => invite(context),
                   icon: const Icon(Icons.person_add_alt),
-                  label: Text(l10n.householdInvitesInvite),
+                  label: BgeFabLabel(l10n.householdInvitesInvite),
                 )
               : null,
           slivers: [

@@ -100,7 +100,8 @@ void main() {
     String householdId = _id,
     void Function(BuildContext context)? onBack,
     Future<void> Function()? onRetry,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
     HouseholdInviteRemoteDataSource? invites,
     void Function(BuildContext context, String householdId)? onOpenInvites,
     void Function(BuildContext context, String householdId)? onEdit,
@@ -111,14 +112,17 @@ void main() {
     Future<void> Function()? onMembershipChanged,
     ValueListenable<bool>? offline,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) {
-      final app = MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      );
+      // No scale of its own unless asked: an audit cell sets the view's.
+      final app = textScaler == null
+          ? child!
+          : MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            );
       if (offline == null) return app;
       // As the shell hosts it, above the navigator, so menus and dialogs
       // read it too.
@@ -2811,6 +2815,487 @@ void main() {
         expect(menuFocus(tester, 'u-2').hasPrimaryFocus, isTrue);
       });
     });
+  });
+
+  group('accessibility audit', () {
+    late _MockMemberRemote remote;
+    late FakeHouseholdInviteRemote invites;
+
+    setUpAll(() {
+      registerFallbackValue(_member('u-fallback'));
+      registerFallbackValue(<HouseholdMember>[]);
+      registerFallbackValue(HouseholdRole.householdMember);
+    });
+
+    setUp(() {
+      remote = _MockMemberRemote();
+      invites = FakeHouseholdInviteRemote()
+        ..onFetchHouseholdInvites = (_, _, _, limit) async =>
+            pageOf(const [], limit: limit, total: 2, hasMore: true);
+      when(() => repository.cacheMember(any())).thenAnswer((_) async {});
+      when(() => repository.updateCachedMembers(any()))
+          .thenAnswer((_) async {});
+      when(() => repository.removeCachedMember(any(), any()))
+          .thenAnswer((_) async {});
+    });
+
+    /// The screen as the shell composes it, with every entry and row it can
+    /// offer passed, so the viewer's role alone decides which show. The
+    /// events section is a stand-in: the household package can't build the
+    /// real one. [started] and [finished] move the hydrate as it is built,
+    /// which `auditScreen` does once per cell. [offline] holds the connection
+    /// down through a notifier of the cell's own, which goes with it.
+    Widget Function(ThemeData) screen({
+      bool started = false,
+      HydrateOutcome? finished,
+      Future<void> Function()? onRetry,
+      bool offline = false,
+    }) => (theme) {
+      if (started) status.started();
+      if (finished != null) status.finished(finished);
+      final notifier = offline ? ValueNotifier(true) : null;
+      if (notifier != null) addTearDown(notifier.dispose);
+      return harness(
+        theme: theme,
+        onBack: (_) {},
+        onRetry: onRetry,
+        invites: invites,
+        onOpenInvites: (_, _) {},
+        onEdit: (_, _) {},
+        onInvite: (_, _) {},
+        onNewEvent: (_, _) {},
+        eventsSection: (_, _) =>
+            const Text('No upcoming events with a confirmed date.'),
+        members: remote,
+        onMembershipChanged: () async {},
+        offline: notifier,
+      );
+    };
+
+    final owner = _member('u-me', role: HouseholdRole.householdOwner);
+    // A co-owner, so the owner's Leave is offered enabled. An owner may only
+    // remove another owner, so her menu holds Remove alone.
+    final amy = _member(
+      'u-3',
+      role: HouseholdRole.householdOwner,
+      displayName: 'Amy',
+    );
+    // A member, so the owner's menu on him holds every action.
+    final zed = _member('u-2', displayName: 'Zed');
+
+    Finder menuOf(String userId) =>
+        find.byKey(HouseholdDetailScreen.memberActionsKey(userId));
+
+    /// The owner's page: the role with the most controls.
+    Future<void> settleAsOwner(WidgetTester tester) => settleWith(
+      tester,
+      household: _household(_id, description: 'Board games, every Sunday.'),
+      roster: [owner, amy, zed],
+    );
+
+    void expectOwnersControls(WidgetTester tester) {
+      for (final key in [
+        HouseholdDetailScreen.editKey,
+        HouseholdDetailScreen.invitesKey,
+        HouseholdDetailScreen.eventsHeadingKey,
+        HouseholdDetailScreen.newEventKey,
+        HouseholdDetailScreen.leaveKey,
+      ]) {
+        expect(find.byKey(key), findsOneWidget, reason: '$key');
+      }
+      expect(menuOf('u-2'), findsOneWidget);
+      expect(menuOf('u-3'), findsOneWidget);
+      expect(find.text('2 awaiting approval'), findsOneWidget);
+      expect(
+        tester
+            .widget<ListTile>(find.byKey(HouseholdDetailScreen.leaveKey))
+            .enabled,
+        isTrue,
+      );
+    }
+
+    /// From the owner's page, opens Zed's menu, where the owner's every
+    /// member action is.
+    Future<void> openZedsMenu(WidgetTester tester) async {
+      await tester.tap(menuOf('u-2'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.changeRoleKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.removeKey), findsOneWidget);
+      // The last item is on screen, not merely built in a panel that scrolls.
+      expect(
+        find.byKey(HouseholdDetailScreen.makeOwnerKey).hitTestable(),
+        findsOneWidget,
+      );
+    }
+
+    /// Chooses [item] from Zed's menu. A menu item's onPressed runs after
+    /// the frame, which the settle covers.
+    Future<void> chooseOnZed(WidgetTester tester, Key item) async {
+      await openZedsMenu(tester);
+      await tester.tap(find.byKey(item));
+      await tester.pumpAndSettle();
+    }
+
+    final guestOption = find.byKey(
+      HouseholdDetailScreen.roleOptionKey(HouseholdRole.householdGuest),
+    );
+
+    Future<void> openRoleDialog(WidgetTester tester) async {
+      await chooseOnZed(tester, HouseholdDetailScreen.changeRoleKey);
+      expect(guestOption, findsOneWidget);
+    }
+
+    Future<void> openRemoveConfirm(WidgetTester tester) async {
+      await chooseOnZed(tester, HouseholdDetailScreen.removeKey);
+      expect(find.text('Remove Zed?'), findsOneWidget);
+    }
+
+    Future<void> confirmRemove(WidgetTester tester) async {
+      await openRemoveConfirm(tester);
+      await tester.tap(find.byKey(HouseholdDetailScreen.removeConfirmKey));
+    }
+
+    auditScreen(
+      'loading',
+      build: screen(started: true),
+      settle: false,
+      arrange: (tester) async {
+        households.add(const []);
+        await tester.pump();
+        expect(find.byKey(HouseholdDetailScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'error',
+      build: screen(),
+      arrange: (tester) async {
+        households.addError(StateError('unauthenticated'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdDetailScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'not found, with its banner',
+      build: screen(finished: HydrateOutcome.failed, onRetry: () async {}),
+      arrange: (tester) async {
+        households.add(const []);
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+        expect(find.text(_refreshFailedCopy), findsOneWidget);
+        expect(
+          find.byKey(HouseholdDetailScreen.refreshRetryKey),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(HouseholdDetailScreen.notFoundBackKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready as owner',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        expectOwnersControls(tester);
+      },
+    );
+
+    auditScreen(
+      'ready as owner, scrolled to the end',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await scrollPageToEnd(tester);
+        expectOwnersControls(tester);
+      },
+    );
+
+    // At 320dp × 2.0 the page is over two views long. The invites entry
+    // starts below the fold, and the end leaves it half under the top edge,
+    // where Flutter's tap-target check skips it. This audits the page in a
+    // view tall enough to hold it whole (#50).
+    auditScreen(
+      'ready as owner, whole page',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await useWholePage(tester);
+        expectOwnersControls(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    // A member gets the Invite row in the invites entry's place (#569),
+    // which no owner sees.
+    auditScreen(
+      'ready as member, with the Invite row',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleWith(
+          tester,
+          household: _household(_id).copyWith(
+            settings: const HouseholdSettings(
+              memberInvitePolicy: MemberInvitePolicy.direct,
+            ),
+          ),
+          roster: [
+            _member('u-me'),
+            _member(
+              'u-2',
+              role: HouseholdRole.householdOwner,
+              displayName: 'Zed',
+            ),
+          ],
+        );
+        expect(find.byKey(HouseholdDetailScreen.inviteKey), findsOneWidget);
+        expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+      },
+    );
+
+    auditScreen(
+      'ready as guest',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', role: HouseholdRole.householdGuest),
+            _member(
+              'u-2',
+              role: HouseholdRole.householdOwner,
+              displayName: 'Zed',
+            ),
+          ],
+        );
+        // The fewest controls: the events and Leave, nothing else.
+        for (final key in [
+          HouseholdDetailScreen.editKey,
+          HouseholdDetailScreen.invitesKey,
+          HouseholdDetailScreen.inviteKey,
+          HouseholdDetailScreen.newEventKey,
+        ]) {
+          expect(find.byKey(key), findsNothing, reason: '$key');
+        }
+        expect(menuOf('u-2'), findsNothing);
+        expect(
+          find.byKey(HouseholdDetailScreen.eventsHeadingKey),
+          findsOneWidget,
+        );
+        expect(find.byKey(HouseholdDetailScreen.leaveKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refresh failed, with retry',
+      build: screen(finished: HydrateOutcome.failed, onRetry: () async {}),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        expect(find.text(_refreshFailedCopy), findsOneWidget);
+        expect(
+          find.byKey(HouseholdDetailScreen.refreshRetryKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The pass never ends, so the retry keeps spinning.
+    auditScreen(
+      'refreshing',
+      build: screen(
+        finished: HydrateOutcome.failed,
+        onRetry: () => Completer<void>().future,
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+        await tester.pump();
+        status.started();
+        await tester.pump();
+        // The banner's message and the busy button's own label.
+        expect(find.text(_refreshingCopy), findsNWidgets(2));
+      },
+    );
+
+    auditScreen(
+      'offline',
+      build: screen(finished: HydrateOutcome.complete, offline: true),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        // The Leave row's online-only note.
+        expect(find.text(_onlineOnlyCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'member menu open',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await openZedsMenu(tester);
+      },
+    );
+
+    auditScreen(
+      'member menu open, offline',
+      build: screen(finished: HydrateOutcome.complete, offline: true),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await openZedsMenu(tester);
+        expect(
+          tester
+              .widget<MenuItemButton>(
+                find.byKey(HouseholdDetailScreen.removeKey),
+              )
+              .onPressed,
+          isNull,
+        );
+      },
+    );
+
+    auditScreen(
+      'role dialog',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await openRoleDialog(tester);
+      },
+    );
+
+    // At 320dp × 2.0 the dialog's options run some 1700dp past its fold,
+    // and the middle one alone is taller than the dialog, so no scroll
+    // shows it whole. This audits them all in a view tall enough to hold
+    // the dialog whole (#50).
+    auditScreen(
+      'role dialog, whole page',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await useWholePage(tester);
+        await openRoleDialog(tester);
+        // Its title and options scroll, and its buttons stay put under them.
+        expectWholePage(tester, within: find.byType(AlertDialog));
+        expect(guestOption.hitTestable(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'role dialog, another role chosen',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await openRoleDialog(tester);
+        // Scrolls the dialog to it at 320dp × 2.0.
+        await tester.ensureVisible(guestOption);
+        await tester.pumpAndSettle();
+        await tester.tap(guestOption);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextButton>(find.byKey(HouseholdDetailScreen.roleSaveKey))
+              .onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    auditScreen(
+      'remove confirm',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await openRemoveConfirm(tester);
+      },
+    );
+
+    auditScreen(
+      'make owner confirm',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        await settleAsOwner(tester);
+        await chooseOnZed(tester, HouseholdDetailScreen.makeOwnerKey);
+        expect(find.text('Make Zed the owner?'), findsOneWidget);
+        expect(
+          find.byKey(HouseholdDetailScreen.makeOwnerConfirmKey).hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The removal never answers, so Zed's menu keeps spinning.
+    auditScreen(
+      'remove in flight',
+      build: screen(finished: HydrateOutcome.complete),
+      settle: false,
+      arrange: (tester) async {
+        when(() => remote.remove(any(), any()))
+            .thenAnswer((_) => Completer<HouseholdMember>().future);
+        await settleAsOwner(tester);
+        await confirmRemove(tester);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          find.descendant(
+            of: menuOf('u-2'),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'member outcome, removed',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        when(() => remote.remove(any(), any())).thenAnswer((_) async => zed);
+        await settleAsOwner(tester);
+        await confirmRemove(tester);
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(HouseholdDetailScreen.memberOutcomeKey),
+            matching: find.text('Removed from the household.'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find
+              .byKey(HouseholdDetailScreen.memberOutcomeDismissKey)
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'member outcome, failed',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        when(() => remote.remove(any(), any()))
+            .thenThrow(const HouseholdMemberTransientException('down'));
+        await settleAsOwner(tester);
+        await confirmRemove(tester);
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(HouseholdDetailScreen.memberOutcomeKey),
+            matching: find.text("Couldn't reach the server. Try again."),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find
+              .byKey(HouseholdDetailScreen.memberOutcomeDismissKey)
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }
 
