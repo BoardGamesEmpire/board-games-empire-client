@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart';
@@ -41,14 +42,18 @@ void main() {
     doneCount = 0;
   });
 
+  /// [settle] false pumps one frame only, for a state whose spinner never
+  /// lets the screen settle.
   Future<void> pumpForm(
     WidgetTester tester, {
     String? editingId,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
+    bool settle = true,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
         supportedLocales: DataGatewayLocalizations.supportedLocales,
         builder: offline == null ? null : connectivityBuilder(offline),
@@ -60,7 +65,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) await tester.pumpAndSettle();
   }
 
   Future<void> enter(WidgetTester tester, Key field, String text) async {
@@ -833,5 +838,311 @@ void main() {
       expect(sent, const DataGatewayChanges(connectionPort: 50060));
       handle.dispose();
     });
+  });
+
+  group('accessibility audit', () {
+    /// The form as the shell composes it: an edit of [editingId], or an add
+    /// without one. [seed] scripts the fakes before the form opens.
+    /// [offline] holds the connection down through a notifier of the cell's
+    /// own, which goes with it.
+    Future<void> Function(WidgetTester, ThemeData) form({
+      String? editingId,
+      void Function()? seed,
+      bool offline = false,
+      bool settle = true,
+    }) => (tester, theme) {
+      seed?.call();
+      final notifier = offline ? ValueNotifier(true) : null;
+      if (notifier != null) addTearDown(notifier.dispose);
+      return pumpForm(
+        tester,
+        editingId: editingId,
+        offline: notifier,
+        theme: theme,
+        settle: settle,
+      );
+    };
+
+    final add = form();
+
+    /// An edit of BGG whose read [answer] gives.
+    Future<void> Function(WidgetTester, ThemeData) edit(
+      Future<DataGateway> Function(String id) answer, {
+      bool settle = true,
+    }) => form(
+      editingId: 'dg_1',
+      seed: () => remote.onFetchOne = answer,
+      settle: settle,
+    );
+
+    /// May read DataGateways and add one, but not change one: an edit opens
+    /// read-only.
+    void mayNotUpdate() {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+      );
+      remote.onFetchOne = (_) async => bgg;
+    }
+
+    void nameInUse() =>
+        remote.onCreate = (_) async =>
+            throw const DataGatewayNameInUseException('taken', statusCode: 409);
+
+    /// Submits blank name and address fields and a port out of range.
+    Future<void> submitInvalid(WidgetTester tester) async {
+      await enter(tester, DataGatewayForm.portFieldKey, '70000');
+      await submit(tester);
+      expect(find.text('Enter a name.'), findsOneWidget);
+      expect(find.text('Enter a connection address.'), findsOneWidget);
+      expect(find.text('Enter a port from 1 to 65535.'), findsOneWidget);
+      expect(remote.calls, isEmpty);
+    }
+
+    Future<void> submitTaken(WidgetTester tester) async {
+      await fillValid(tester);
+      await submit(tester);
+      expect(
+        find.descendant(
+          of: find.byKey(DataGatewayFormScreen.errorBannerKey),
+          matching: find.text('Another data gateway already uses this name.'),
+        ),
+        findsOneWidget,
+      );
+    }
+
+    /// Makes the add one that never answers.
+    void holdAdd() =>
+        remote.onCreate = (_) => Completer<DataGatewayChangeResult>().future;
+
+    /// Fills the form and submits it. Pumps rather than settles: the button's
+    /// spinner never stops.
+    Future<void> startAdd(WidgetTester tester) async {
+      await fillValid(tester);
+      await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
+      await tester.tap(find.byKey(DataGatewayForm.submitKey));
+      await tester.pump();
+      expect(
+        tester
+            .widget<BgeSubmitButton>(find.byKey(DataGatewayForm.submitKey))
+            .submitting,
+        isTrue,
+      );
+    }
+
+    void expectReadOnly() {
+      expect(find.text('bgg.internal'), findsOneWidget);
+      expect(find.byKey(DataGatewayForm.submitKey), findsNothing);
+      expect(find.byKey(DataGatewayForm.refusedKey), findsOneWidget);
+    }
+
+    /// The Add, disabled and saying why.
+    void expectOffline(WidgetTester tester) {
+      expect(
+        tester
+            .widget<BgeSubmitButton>(find.byKey(DataGatewayForm.submitKey))
+            .onPressed,
+        isNull,
+      );
+      expect(find.text(onlineOnlyCopy), findsOneWidget);
+    }
+
+    auditScreen(
+      'loading',
+      pump: edit((_) => Completer<DataGateway>().future, settle: false),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(DataGatewayFormScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'access denied',
+      pump: edit((_) async => throw forbidden()),
+      arrange: (tester) async {
+        expect(
+          find.text("You don't have access to data gateways"),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'missing',
+      pump: edit(
+        (_) async =>
+            throw const DataGatewayNotFoundException('gone', statusCode: 404),
+      ),
+      arrange: (tester) async {
+        expect(find.text("This data gateway doesn't exist"), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'load failed, with retry',
+      pump: edit((_) async => throw unreachable()),
+      arrange: (tester) async {
+        expect(find.text("We couldn't load this data gateway"), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'add, blank',
+      pump: add,
+      arrange: (tester) async {
+        expect(find.byKey(DataGatewayForm.nameFieldKey), findsOneWidget);
+        expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'add, blank, scrolled to the end',
+      pump: add,
+      arrange: (tester) async {
+        await scrollPageToEnd(tester);
+        expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'editing',
+      pump: edit((_) async => bgg),
+      arrange: (tester) async {
+        expect(find.text('bgg.internal'), findsOneWidget);
+        expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'editing, scrolled to the end',
+      pump: edit((_) async => bgg),
+      arrange: (tester) async {
+        await scrollPageToEnd(tester);
+        expect(find.text('The BGG bridge'), findsOneWidget);
+        expect(find.byKey(DataGatewayForm.submitKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'invalid',
+      pump: add,
+      arrange: (tester) async {
+        await submitInvalid(tester);
+        await scrollPageToTop(tester);
+      },
+    );
+
+    auditScreen(
+      'invalid, scrolled to the end',
+      pump: add,
+      arrange: (tester) async {
+        await submitInvalid(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    auditScreen(
+      'rejected submit',
+      pump: form(seed: nameInUse),
+      arrange: (tester) async {
+        await submitTaken(tester);
+        await scrollPageToTop(tester);
+      },
+    );
+
+    auditScreen(
+      'rejected submit, scrolled to the end',
+      pump: form(seed: nameInUse),
+      arrange: (tester) async {
+        await submitTaken(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    // The add never answers, so the button keeps spinning. The failing node
+    // is the button, disabled while the add is in flight and dimmed by
+    // design: WCAG 1.4.3 exempts inactive controls.
+    auditScreen(
+      'submitting',
+      pump: form(seed: holdAdd),
+      settle: false,
+      arrange: startAdd,
+      textContrast: false,
+    );
+
+    auditScreen(
+      'read-only, with its reason',
+      pump: form(editingId: 'dg_1', seed: mayNotUpdate),
+      arrange: (tester) async => expectReadOnly(),
+    );
+
+    auditScreen(
+      'read-only, with its reason, scrolled to the end',
+      pump: form(editingId: 'dg_1', seed: mayNotUpdate),
+      arrange: (tester) async {
+        await scrollPageToEnd(tester);
+        expectReadOnly();
+      },
+    );
+
+    // At 320dp × 2.0 the rejected and read-only forms run 900 and 842dp past
+    // a 744dp view, so the top and the end leave a band of each on screen in
+    // neither. The submitting one is otherwise audited only where its tap
+    // scrolled it. These audit them in a view tall enough to hold the form
+    // whole (#50).
+    auditScreen(
+      'rejected submit, whole page',
+      pump: form(seed: nameInUse),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await submitTaken(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'submitting, whole page',
+      pump: form(seed: holdAdd),
+      settle: false,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await startAdd(tester);
+        expectWholePage(tester);
+      },
+      // The same disabled button as in 'submitting'.
+      textContrast: false,
+    );
+
+    auditScreen(
+      'read-only, with its reason, whole page',
+      pump: form(editingId: 'dg_1', seed: mayNotUpdate),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expectReadOnly();
+        expectWholePage(tester);
+      },
+    );
+
+    // The failing node in both is the disabled Add, dimmed by design: WCAG
+    // 1.4.3 exempts inactive controls, and the enabled one passes in 'add,
+    // blank'.
+    auditScreen(
+      'offline',
+      pump: form(offline: true),
+      arrange: (tester) async => expectOffline(tester),
+      textContrast: false,
+    );
+
+    auditScreen(
+      'offline, scrolled to the end',
+      pump: form(offline: true),
+      arrange: (tester) async {
+        await scrollPageToEnd(tester);
+        expectOffline(tester);
+      },
+      textContrast: false,
+    );
   });
 }
