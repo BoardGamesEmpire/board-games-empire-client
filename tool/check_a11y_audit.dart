@@ -41,13 +41,14 @@
 //
 // ── Exemptions ─────────────────────────────────────────────────────
 //
-// [_deferred] lists screens other units are rewriting. They are printed on
-// every run so they cannot be forgotten. It is keyed by the screen's path
+// [_deferred] lists screens an open unit is rewriting. When there are any,
+// they are printed on every run so they cannot be forgotten. It is keyed by the screen's path
 // from the workspace root, so a screen of the same name in another package
 // is not exempt with it, and an entry that matches no screen file is stale
 // and fails the check, so a rename, a move or a deletion cannot leave a
-// silent exemption behind. The map is
-// emptied once those units merge and their screens gain audit groups.
+// silent exemption behind. The map is empty when no unit is rewriting a
+// screen; an entry goes in with the unit that owns the rewrite and comes
+// out when that unit's screen gains its audit group.
 
 import 'dart:io';
 
@@ -56,27 +57,8 @@ import 'dart:io';
 final _nul = String.fromCharCode(0);
 
 /// Screens exempt for now, by path from the workspace root, with the unit
-/// that owns the rewrite. #50 closes this map when those units merge.
-const _deferred = {
-  'packages/features/household/lib/src/screens/household_detail_screen.dart':
-      '#479/#478 in flight',
-  'packages/features/household/lib/src/screens/household_list_screen.dart':
-      '#479/#478 in flight',
-  'packages/features/data_gateway/lib/src/screens/data_gateway_list_screen.dart':
-      '#479/#478 in flight',
-  'packages/features/data_gateway/lib/src/screens/data_gateway_form_screen.dart':
-      '#479/#478 in flight',
-  'packages/features/data_gateway/lib/src/screens/data_gateway_detail_screen.dart':
-      '#479/#478 in flight',
-  'packages/features/events/lib/src/screens/event_detail_screen.dart':
-      '#508/#667 in flight',
-  'packages/features/catalog/lib/src/screens/game_detail_screen.dart':
-      '#708/#709/#735 in flight',
-  'packages/features/collection/lib/src/screens/game_collection_list_screen.dart':
-      '#708/#709/#735 in flight',
-  'packages/features/collection/lib/src/entry/collection_entry_screen.dart':
-      '#708/#709/#735 in flight',
-};
+/// that owns the rewrite. Empty while no open unit is rewriting a screen.
+const _deferred = <String, String>{};
 
 /// An audit group's opening. Whitespace may come between `group(` and the
 /// name: the formatter puts the name on a line of its own once the call has a
