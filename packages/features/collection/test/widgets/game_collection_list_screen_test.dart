@@ -57,16 +57,20 @@ void main() {
     unawaited(status.close());
   });
 
-  Widget app(Widget home, {TextScaler textScaler = TextScaler.noScaling}) =>
+  /// [home] in [theme], light by default. [textScaler] overrides the
+  /// device's text scale only when set.
+  Widget app(Widget home, {TextScaler? textScaler, ThemeData? theme}) =>
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates:
             GameCollectionLocalizations.localizationsDelegates,
         supportedLocales: GameCollectionLocalizations.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
+        builder: textScaler == null
+            ? null
+            : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              ),
         home: home,
       );
 
@@ -76,7 +80,8 @@ void main() {
     Future<void> Function()? onRetry,
     VoidCallback? onEnter,
     ListLayoutRepository? layouts,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
   }) => app(
     GameCollectionListScreen(
       repository: repository,
@@ -88,6 +93,7 @@ void main() {
       layouts: layouts,
     ),
     textScaler: textScaler,
+    theme: theme,
   );
 
   /// Shows [rows] with the hydrate settled.
@@ -1456,6 +1462,330 @@ void main() {
       expect(_focusIsWithin(tester, stack), isTrue);
       expect(await pixel(), isNot(unfocused));
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+
+  group('accessibility audit', () {
+    /// A row with every detail and the favourite, plain ones enough to run
+    /// below the fold at both viewports, as rows and as covers, and last a
+    /// digital one with a rating alone, which the end's call has on screen.
+    List<GameCollectionListItem> rows() => [
+      listItem(
+        'e-1',
+        title: 'Twilight Imperium',
+        subtitle: 'Fourth Edition',
+        quantity: 2,
+        rating: 9,
+        favorite: true,
+        lastPlayed: DateTime(2026, 10, 3),
+      ),
+      for (var i = 2; i < 30; i++) listItem('e-$i', title: 'Game $i'),
+      listItem(
+        'e-30',
+        title: 'Azul',
+        platformName: 'PC',
+        medium: GameMedium.digital,
+        rating: 7,
+      ),
+    ];
+
+    /// Wingspan owned twice, one of the two a favourite, as one stack above
+    /// two games owned once.
+    List<GameCollectionListItem> stacked() => [
+      listItem(
+        'w-1',
+        gameId: 'g-wingspan',
+        title: 'Wingspan',
+        platformName: 'Tabletop',
+      ),
+      listItem(
+        'w-2',
+        gameId: 'g-wingspan',
+        title: 'Wingspan',
+        platformName: 'Steam',
+        medium: GameMedium.digital,
+        favorite: true,
+      ),
+      listItem('e-1', title: 'Azul'),
+      listItem('e-2', title: 'Brass'),
+    ];
+
+    ListLayoutRepository thumbnails() =>
+        _FakeLayouts()..stored = ListLayout.thumbnails;
+
+    /// The screen in [theme], with a way to open an entry unless [open] is
+    /// false: the composition offers one only to a user who may write the
+    /// collection.
+    Widget Function(ThemeData) screen({
+      bool open = true,
+      void Function(BuildContext context)? onBrowse,
+      Future<void> Function()? onRetry,
+      ListLayoutRepository? layouts,
+    }) =>
+        (theme) => harness(
+          theme: theme,
+          onOpen: open ? (_, _) {} : null,
+          onBrowse: onBrowse,
+          onRetry: onRetry,
+          layouts: layouts,
+        );
+
+    /// The hydrate settled and the cache answered [cached].
+    Future<void> answer(
+      WidgetTester tester,
+      List<GameCollectionListItem> cached,
+    ) async {
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add(cached);
+      await tester.pumpAndSettle();
+    }
+
+    final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+    final stackTile = find.byKey(
+      GameCollectionListScreen.stackTileKey('g-wingspan'),
+    );
+
+    GameCollectionListState listState(WidgetTester tester) =>
+        BlocProvider.of<GameCollectionListBloc>(
+          tester.element(find.byType(GameCollectionListSliver)),
+        ).state;
+
+    // A first fill: the spinner never settles.
+    auditScreen(
+      'loading',
+      build: screen(),
+      settle: false,
+      arrange: (tester) async {
+        status.started();
+        items.add(const []);
+        await tester.pump();
+        expect(find.byKey(GameCollectionListScreen.loadingKey), findsOneWidget);
+        expect(listState(tester), isA<GameCollectionListLoading>());
+      },
+    );
+
+    // The rows are in, but the remembered layout isn't read yet, so the
+    // loading state stands in for them.
+    auditScreen(
+      'loading, the layout read held',
+      build: screen(layouts: _FakeLayouts()..hold = Completer<ListLayout?>()),
+      settle: false,
+      arrange: (tester) async {
+        status.finished(CollectionHydrateOutcome.complete);
+        items.add(rows());
+        await tester.pump();
+        expect(find.byKey(GameCollectionListScreen.loadingKey), findsOneWidget);
+        expect(listState(tester), isA<GameCollectionListReady>());
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('e-1')),
+          findsNothing,
+        );
+      },
+    );
+
+    auditScreen(
+      'error',
+      build: screen(),
+      arrange: (tester) async {
+        items.addError(StateError('no authenticated user'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(GameCollectionListScreen.errorKey), findsOneWidget);
+        expect(find.text(_errorCopy), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'empty, with Browse',
+      build: screen(onBrowse: (_) {}),
+      arrange: (tester) async {
+        await answer(tester, const []);
+        expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, list',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('e-1')),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.favorite), findsOneWidget);
+        expect(
+          rowSemantics(tester, 'e-1'),
+          isSemantics(isButton: true, hasTapAction: true),
+        );
+      },
+    );
+
+    // The rows are built only as the list reaches them (#50).
+    auditScreen(
+      'ready, list, scrolled to the end',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.rowKey('e-30')),
+        );
+      },
+    );
+
+    // Without a way to open an entry, for a user who may not write the
+    // collection: the rows and the stack are content, not controls.
+    auditScreen(
+      'ready, rows that open nowhere',
+      build: screen(open: false),
+      arrange: (tester) async {
+        await answer(tester, stacked());
+        expect(stack, findsOneWidget);
+        expect(
+          rowSemantics(tester, 'e-1'),
+          isSemantics(isButton: false, hasTapAction: false),
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        expect(
+          find.byKey(GameCollectionListScreen.tileKey('e-1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('e-1')),
+          findsNothing,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails, scrolled to the end',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.tileKey('e-30')),
+        );
+      },
+    );
+
+    // A game owned twice: one row, its cover marked with the count, and the
+    // copies in place of an entry's details.
+    auditScreen(
+      'ready, a stack row',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, stacked());
+        expect(stack, findsOneWidget);
+        expect(
+          find.descendant(of: stack, matching: find.text('2')),
+          findsOneWidget,
+        );
+        expect(find.text('2 copies: Tabletop, Steam'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, a stack, in thumbnails',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, stacked());
+        expect(stackTile, findsOneWidget);
+        expect(
+          find.descendant(of: stackTile, matching: find.text('2')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The stack's picker, a sheet at both viewports.
+    auditScreen(
+      'entry picker open',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, stacked());
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(CollectionEntryPicker.tileKey('w-1')),
+          findsOneWidget,
+        );
+        // The last tile is on screen, not only built, and nothing of the
+        // picker, which scrolls on its own, is below its fold.
+        final last = find.byKey(CollectionEntryPicker.tileKey('w-2'));
+        expect(last.hitTestable(), findsOneWidget);
+        expectWholePage(
+          tester,
+          within: find
+              .ancestor(of: last, matching: find.byType(Scrollable))
+              .first,
+        );
+      },
+    );
+
+    auditScreen(
+      'refresh failed, with retry',
+      build: screen(onRetry: () async {}),
+      arrange: (tester) async {
+        items.add(rows());
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+        expect(find.text(_refreshFailedCopy), findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.refreshRetryKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    /// The banner over an empty collection, which it qualifies rather than
+    /// replaces.
+    Future<void> failedOverEmpty(WidgetTester tester) async {
+      items.add(const []);
+      status.finished(CollectionHydrateOutcome.failed);
+      await tester.pumpAndSettle();
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
+    }
+
+    auditScreen(
+      'refresh failed, over an empty collection',
+      build: screen(onBrowse: (_) {}, onRetry: () async {}),
+      arrange: failedOverEmpty,
+    );
+
+    // At 320dp × 2.0 the banner pushes Browse below the fold (#50).
+    auditScreen(
+      'refresh failed, over an empty collection, scrolled to the end',
+      build: screen(onBrowse: (_) {}, onRetry: () async {}),
+      arrange: (tester) async {
+        await failedOverEmpty(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    // The retry's pass never ends, so the busy button never settles.
+    auditScreen(
+      'refreshing',
+      build: screen(onRetry: () => Completer<void>().future),
+      settle: false,
+      arrange: (tester) async {
+        items.add(rows());
+        status.finished(CollectionHydrateOutcome.failed);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(GameCollectionListScreen.refreshRetryKey));
+        await tester.pump();
+        status.started();
+        await tester.pump();
+        expect(find.text(_refreshingCopy), findsNWidgets(2));
+      },
+    );
   });
 }
 
