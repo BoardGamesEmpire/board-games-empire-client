@@ -1037,10 +1037,6 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(_onlineOnlyCopy), findsOneWidget);
       },
-      // The failing node is the disabled Send button, drawn dimmed by design;
-      // WCAG 1.4.3 exempts inactive controls, and the enabled button passes
-      // in 'ready'.
-      textContrast: false,
     );
 
     auditScreen(

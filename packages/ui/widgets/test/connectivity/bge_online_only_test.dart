@@ -1,3 +1,5 @@
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/semantics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +119,27 @@ void main() {
           hasEnabledState: true,
         ),
       );
+      handle.dispose();
+    });
+
+    // Flutter's text-contrast guideline skips a node only when its own flags
+    // say disabled, and would otherwise measure the dimmed label (#50).
+    testWidgets("offline the merged node's own flags say disabled", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          BgeOnlineOnly(
+            child: const FilledButton(onPressed: null, child: Text('Delete')),
+          ),
+        ),
+      );
+
+      final node = tester.getSemantics(find.text('Delete'));
+      expect(node.hint, _reason);
+      expect(node.flagsCollection.isEnabled, Tristate.isFalse);
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
       handle.dispose();
     });
 

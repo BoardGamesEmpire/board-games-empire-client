@@ -2870,9 +2870,6 @@ void main() {
         );
         expectWholePage(tester);
       },
-      // The failing node is the interview button, disabled offline and
-      // dimmed by design: WCAG 1.4.3 exempts inactive controls.
-      textContrast: false,
     );
 
     // The worklist's own surfaces, under a DataGateway that reads. Its rows

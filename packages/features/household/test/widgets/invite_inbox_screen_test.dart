@@ -348,10 +348,6 @@ void main() {
         await shown(tester);
         expect(find.text(_onlineOnlyCopy), findsWidgets);
       },
-      // The failing nodes are the disabled Accept and Decline buttons, drawn
-      // dimmed by design; WCAG 1.4.3 exempts inactive controls, and the
-      // enabled buttons pass in 'ready'.
-      textContrast: false,
     );
 
     auditScreen('joined', build: screenWith(accepting), arrange: accept);

@@ -131,10 +131,11 @@ Know these limits before trusting a green run.
   semantics node whose label equals the text of one on-screen `Text`. Merged
   titles and bodies, field labels and hints, subtitled rows and drawer labels
   go unmeasured.
-- **Disabled controls.** A disabled control's dimmed label fails the
-  contrast guideline, but WCAG 1.4.3 exempts inactive controls, so a state
-  with one passes `textContrast: false` and says why in a comment. The same
-  controls pass in the state where they are enabled.
+- **Disabled controls.** The contrast guideline skips a node whose own
+  flags say disabled, but a control merged into a bigger node that doesn't
+  say so has its dimmed label measured. WCAG 1.4.3 exempts inactive
+  controls, so a state with one passes `textContrast: false` and says why in
+  a comment. The same controls pass in the state where they are enabled.
 - **Clipped controls.** The tap-target guideline measures a control clipped
   by the viewport at its clipped size, so a scroll that leaves a field half
   under the top edge fails it, though nothing a user meets is wrong. Such a
@@ -433,9 +434,11 @@ Fixed in this run, each with a regression test in the PR:
 
 Two failures the guidelines report are not defects, and §3 describes both: a
 disabled control's dimmed label, and a control clipped by the viewport's top
-edge. The first reached the data gateway form's Add button, the gateway
-detail's Interview again, and event detail's Add a date, answer chips and Add
-a note: `BgeOnlineOnly` merges the control's semantics, the merged node
-carries no enabled state of its own, and the guideline measures its dimmed
+edge. The first reached the data gateway form's Add button and event detail's Add
+a date, answer chips and Add a note while a write is in flight:
+`BgeOnlineOnly` merges the control's semantics, and online the merged node
+carries no enabled state of its own, so the guideline measures its dimmed
 label. Those states pass `textContrast: false`; the enabled controls pass
-with contrast on.
+with contrast on. Offline the merged node now says disabled itself
+(`bge_online_only.dart`), so the offline states of those screens, the
+gateway detail and the household invite screens audit contrast too.

@@ -6843,8 +6843,9 @@ void main() {
       settle: false,
       // Add a date, Going, Not going and Add a note are disabled while it is
       // out, and a disabled control's dimmed label is exempt (WCAG 1.4.3).
-      // Each sits in `BgeOnlineOnly`'s merge, whose own node carries no
-      // enabled state, so the guideline measures it all the same (#50).
+      // Each sits in `BgeOnlineOnly`'s merge, whose own node says disabled
+      // only while offline, and that is what the guideline reads, so online
+      // it measures them all the same (#50).
       textContrast: false,
       arrange: (tester) async {
         await showing(tester, host);
@@ -6881,10 +6882,6 @@ void main() {
     auditScreen(
       'offline, whole page',
       build: screen(isOffline: true),
-      // Disabled controls' dimmed labels are exempt (WCAG 1.4.3), and each
-      // sits in `BgeOnlineOnly`'s merge, whose own node carries no enabled
-      // state, so the guideline measures it all the same (#50).
-      textContrast: false,
       arrange: (tester) async {
         await showing(tester, hostAlone);
         await useWholePage(tester);

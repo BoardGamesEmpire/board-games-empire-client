@@ -397,10 +397,6 @@ void main() {
         await shown(tester);
         expect(find.text(_onlineOnlyCopy), findsWidgets);
       },
-      // The nodes that fail are the disabled row buttons, whose label is
-      // drawn dimmed by design; WCAG 1.4.3 exempts inactive controls, and the
-      // enabled buttons pass in 'ready'.
-      textContrast: false,
     );
 
     auditScreen(

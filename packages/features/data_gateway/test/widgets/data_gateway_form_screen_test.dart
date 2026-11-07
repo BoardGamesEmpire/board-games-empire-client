@@ -1063,7 +1063,9 @@ void main() {
 
     // The add never answers, so the button keeps spinning. The failing node
     // is the button, disabled while the add is in flight and dimmed by
-    // design: WCAG 1.4.3 exempts inactive controls.
+    // design: WCAG 1.4.3 exempts inactive controls. Online, its
+    // `BgeOnlineOnly` merge has no disabled state of its own, which is what
+    // the guideline reads, so it measures the label (#50).
     auditScreen(
       'submitting',
       pump: form(seed: holdAdd),
@@ -1125,14 +1127,12 @@ void main() {
       },
     );
 
-    // The failing node in both is the disabled Add, dimmed by design: WCAG
-    // 1.4.3 exempts inactive controls, and the enabled one passes in 'add,
-    // blank'.
+    // Offline the disabled Add's `BgeOnlineOnly` node says it is disabled, so
+    // the guideline leaves its dimmed label alone, as WCAG 1.4.3 does.
     auditScreen(
       'offline',
       pump: form(offline: true),
       arrange: (tester) async => expectOffline(tester),
-      textContrast: false,
     );
 
     auditScreen(
@@ -1142,7 +1142,6 @@ void main() {
         await scrollPageToEnd(tester);
         expectOffline(tester);
       },
-      textContrast: false,
     );
   });
 }
