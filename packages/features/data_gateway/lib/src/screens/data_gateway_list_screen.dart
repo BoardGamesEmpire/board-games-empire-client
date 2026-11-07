@@ -336,7 +336,7 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
                     focusNode: _add,
                     onPressed: () => add(context),
                     icon: const Icon(Icons.add),
-                    label: Text(l10n.dataGatewayAdd),
+                    label: BgeFabLabel(l10n.dataGatewayAdd),
                   ),
             slivers: [
               if (ready?.outcome case final outcome?)

@@ -431,6 +431,14 @@ Fixed in this run, each with a regression test in the PR:
   long-press target 42dp tall. It now sits in a box at least 48dp tall
   (`event_detail_sections.dart`), with a regression test in
   `event_detail_screen_test.dart`.
+- At 320dp × 2.0 in SF Pro, the iOS and macOS font, "Add data gateway" and
+  "Create household" made their floating buttons wider than the window,
+  pushing the buttons' start edges 12dp and 8dp off screen. The guidelines
+  don't check that a control stays on screen, and the test font draws every
+  glyph an em wide, so its widths aren't a device's. A real-font render
+  found it, and no suite runs one. The five extended buttons' labels are now
+  `BgeFabLabel`, which scales a label down to the room the window leaves
+  (`bge_fab_label_test.dart`).
 
 Two failures the guidelines report are not defects, and §3 describes both: a
 disabled control's dimmed label, and a control clipped by the viewport's top
