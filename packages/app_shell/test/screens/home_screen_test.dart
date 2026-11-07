@@ -628,8 +628,6 @@ void main() {
     });
   });
 
-  // The sections are other packages' widgets, built only in the shell's
-  // composition; these audit what this screen draws itself.
   // The sections themselves are composed in `BgeApp`, and each is audited in
   // its own package, beside its tests (`test/home/` in events, collection and
   // catalog); this group audits the page round them (#50).

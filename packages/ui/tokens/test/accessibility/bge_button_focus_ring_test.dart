@@ -687,6 +687,52 @@ void main() {
     expect(shown(tester), hasLength(1));
   });
 
+  testWidgets('a button disposed while the ring is suppressed leaves no '
+      'listener', (tester) async {
+    const otherKey = Key('other');
+    await host(tester, [
+      FilledButton(key: goKey, onPressed: () {}, child: const Text('Go')),
+      FilledButton(key: otherKey, onPressed: () {}, child: const Text('Two')),
+    ]);
+    await tester.tap(find.byKey(goKey), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(shown(tester), isEmpty, reason: 'the press suppresses the ring');
+
+    // The pressed button goes while the ring is still suppressed.
+    await host(tester, [
+      FilledButton(key: otherKey, onPressed: () {}, child: const Text('Two')),
+    ]);
+    expect(find.byKey(goKey), findsNothing);
+
+    await tab(tester);
+
+    expect(painters(tester, find.byKey(otherKey)).single.color, ring);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Enter and Space keep the ring', (tester) async {
+    var pressed = 0;
+    await host(tester, [
+      FilledButton(
+        key: goKey,
+        onPressed: () => pressed++,
+        child: const Text('Go'),
+      ),
+    ]);
+    await tab(tester);
+    expect(shown(tester), hasLength(1), reason: 'Tab rings it');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(pressed, 1, reason: 'Enter presses it');
+    expect(shown(tester), hasLength(1), reason: 'after Enter');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(pressed, 2, reason: 'Space presses it');
+    expect(shown(tester), hasLength(1), reason: 'after Space');
+  });
+
   // What #50's drafted findings want, skipped until each is fixed, so the gap
   // stays visible in the suite. Each is written against what a user sees
   // rather than against today's ring, so a fix of any shape passes it. Each

@@ -957,7 +957,7 @@ void main() {
         );
         final data = route.evaluate().single.getSemanticsData();
         expect(data.flagsCollection.scopesRoute, isTrue);
-        expect(data.label, isNotEmpty);
+        expect(data.label, 'Dialog');
 
         handle.dispose();
       }, variant: TargetPlatformVariant.all());

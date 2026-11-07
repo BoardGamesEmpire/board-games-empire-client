@@ -1145,6 +1145,10 @@ void main() {
         remote.browse = (_) => browsePage(offered(3));
         await showRows(tester, const []);
         await scrollPageToEnd(tester);
+        // Still the suggested events once scrolled: the page builds all of
+        // its column, so the card and the note are there (#767).
+        expect(rowOf('e-offer-0'), findsOneWidget);
+        expect(find.text(_note), findsOneWidget);
       },
     );
 
