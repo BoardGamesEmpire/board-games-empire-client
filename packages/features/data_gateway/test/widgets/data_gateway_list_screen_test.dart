@@ -975,7 +975,17 @@ void main() {
         list.jumpTo(end);
         await tester.pumpAndSettle();
       }
-      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_20')));
+      // Clear of the button, not only clear at its centre: the tap below
+      // lands mid-menu, which stays above the button's top even when the
+      // page leaves it no room and the menu's lower edge sits under it.
+      final menu = find.byKey(DataGatewayListScreen.rowMenuKey('dg_20'));
+      expect(
+        tester
+            .getRect(menu)
+            .overlaps(tester.getRect(find.byKey(DataGatewayListScreen.addKey))),
+        isFalse,
+      );
+      await tester.tap(menu);
       await tester.pumpAndSettle();
 
       expect(adds, 0);
