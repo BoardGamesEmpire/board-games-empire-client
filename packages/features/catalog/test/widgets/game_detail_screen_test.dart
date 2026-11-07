@@ -59,6 +59,8 @@ void main() {
     String gameId = 'g_catan',
     FakeGamesCache? cache,
     GameDetailCollection? collection,
+    ThemeData? theme,
+    bool settle = true,
   }) async {
     await tester.pumpWidget(
       catalogApp(
@@ -69,9 +71,10 @@ void main() {
           collection: collection,
           openLink: (uri) async => opened.add(uri),
         ),
+        theme: theme,
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) await tester.pumpAndSettle();
   }
 
   /// Taps the link whose text is [text] in the rendered description.
@@ -1469,5 +1472,195 @@ void main() {
         handle.dispose();
       }
     });
+  });
+
+  group('accessibility audit', () {
+    final steam = PlatformGame(
+      id: 'pg_2',
+      gameId: 'g_catan',
+      platformId: 'plat_steam',
+      platformName: 'Steam',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    GameCollection owned(String platformGameId, GameMedium medium) =>
+        GameCollection(
+          id: 'e_${platformGameId}_${medium.name}',
+          userId: 'u_1',
+          platformGameId: platformGameId,
+          medium: medium,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+
+    GameDetailCollection watching(Stream<List<GameCollection>> stream) =>
+        GameDetailCollection(
+          watchOwned: (_) => stream,
+          onAdd: (context, game, options, {platformGameId}) {},
+          onOpenOwned: (context, items) {},
+        );
+
+    // Tabletop owned, Steam not: both chip kinds and the add button.
+    GameDetailCollection owningTabletop() =>
+        watching(Stream.value([owned('pg_1', GameMedium.physical)]));
+
+    // The description and facts keep the page short of the fold at 390dp but
+    // not at 320dp x 2.0, so the chips and the add button sit below it.
+    void readyWithOwnership() {
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop, steam]);
+    }
+
+    // The fetch is held, so the spinner never settles.
+    auditScreen(
+      'loading',
+      pump: (tester, theme) async {
+        final pending = Completer<GameWithPlatformGames>();
+        addTearDown(
+          () => pending.complete((
+            game: catan,
+            platformGames: const <PlatformGame>[],
+          )),
+        );
+        remote.onFetchGame = (_) => pending.future;
+        await show(tester, theme: theme, settle: false);
+        await tester.pump();
+        expect(find.byKey(GameDetailScreen.loadingKey), findsOneWidget);
+      },
+      settle: false,
+    );
+
+    auditScreen(
+      'unavailable',
+      pump: (tester, theme) async {
+        remote.onFetchGame = (_) async =>
+            throw const GameNotFoundException('404');
+        await show(tester, theme: theme);
+        expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failed with a retry',
+      pump: (tester, theme) async {
+        remote.onFetchGame = (_) async => throw unreachable();
+        await show(tester, theme: theme, cache: FakeGamesCache());
+        expect(find.byKey(GameDetailScreen.errorKey), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, no collection',
+      pump: (tester, theme) async {
+        readyWithOwnership();
+        await show(tester, theme: theme);
+        expect(find.text('Trade, build, settle'), findsOneWidget);
+        expect(find.byKey(GameDetailScreen.addKey), findsNothing);
+        expect(
+          find.byKey(GameDetailScreen.platformKey('pg_2')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // Tabletop owned: the legend only an owned platform draws, a chip of
+    // each kind, and the button.
+    Future<void> showOwning(WidgetTester tester, ThemeData theme) async {
+      readyWithOwnership();
+      await show(tester, theme: theme, collection: owningTabletop());
+      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsOneWidget);
+      expect(find.byType(ActionChip), findsNWidgets(2));
+      expect(find.byKey(GameDetailScreen.addKey), findsOneWidget);
+    }
+
+    auditScreen('ready with ownership', pump: showOwning);
+
+    auditScreen(
+      'ready with ownership, scrolled to the end',
+      pump: showOwning,
+      arrange: scrollPageToEnd,
+    );
+
+    // The watch has not answered: plain chips, no legend, no button.
+    Future<void> showUnanswered(WidgetTester tester, ThemeData theme) async {
+      final pending = StreamController<List<GameCollection>>();
+      addTearDown(pending.close);
+      readyWithOwnership();
+      await show(tester, theme: theme, collection: watching(pending.stream));
+      expect(find.byType(Chip), findsNWidgets(2));
+      expect(find.byType(ActionChip), findsNothing);
+      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsNothing);
+      expect(find.byKey(GameDetailScreen.addKey), findsNothing);
+    }
+
+    auditScreen('ready, ownership not answered yet', pump: showUnanswered);
+
+    auditScreen(
+      'ready, ownership not answered yet, scrolled to the end',
+      pump: showUnanswered,
+      arrange: scrollPageToEnd,
+    );
+
+    // The watch failed: plain chips again, but the button offers everything.
+    Future<void> showWatchFailed(WidgetTester tester, ThemeData theme) async {
+      readyWithOwnership();
+      await show(
+        tester,
+        theme: theme,
+        collection: watching(
+          Stream<List<GameCollection>>.error(StateError('the cache is gone')),
+        ),
+      );
+      expect(find.byType(Chip), findsNWidgets(2));
+      expect(find.byType(ActionChip), findsNothing);
+      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsNothing);
+      expect(find.byKey(GameDetailScreen.addKey), findsOneWidget);
+    }
+
+    auditScreen('ready, ownership failed', pump: showWatchFailed);
+
+    auditScreen(
+      'ready, ownership failed, scrolled to the end',
+      pump: showWatchFailed,
+      arrange: scrollPageToEnd,
+    );
+
+    // Everything owned in both mediums: the legend, and no button.
+    Future<void> showAllOwned(WidgetTester tester, ThemeData theme) async {
+      readyWithOwnership();
+      await show(
+        tester,
+        theme: theme,
+        collection: watching(
+          Stream.value([
+            for (final id in ['pg_1', 'pg_2'])
+              for (final medium in GameMedium.values) owned(id, medium),
+          ]),
+        ),
+      );
+      expect(find.byType(ActionChip), findsNWidgets(2));
+      expect(find.byKey(GameDetailScreen.ownedLegendKey), findsOneWidget);
+      expect(find.byKey(GameDetailScreen.addKey), findsNothing);
+    }
+
+    auditScreen('ready, everything owned', pump: showAllOwned);
+
+    auditScreen(
+      'ready, everything owned, scrolled to the end',
+      pump: showAllOwned,
+      arrange: scrollPageToEnd,
+    );
+
+    auditScreen(
+      'from the cache, under the banner',
+      pump: (tester, theme) async {
+        remote.onFetchGame = (_) async => throw unreachable();
+        await show(tester, theme: theme, cache: FakeGamesCache([catan]));
+        expect(find.byKey(GameDetailScreen.fromCacheBannerKey), findsOneWidget);
+        expect(find.text('Trade, build, settle'), findsOneWidget);
+      },
+    );
   });
 }
