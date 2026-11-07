@@ -1251,6 +1251,10 @@ void main() {
       for (var i = 2; i <= 10; i++) _household('h-$i', name: 'Group $i'),
     ];
 
+    /// The screen as the shell composes it: with `onOpen`, so each row is
+    /// the button the app draws, held to the tap-target and label checks. An
+    /// inert row is what a composition with no detail route gets, and the
+    /// shell always has one.
     Widget Function(ThemeData) screen({
       bool started = false,
       HydrateOutcome? finished,
@@ -1258,7 +1262,12 @@ void main() {
     }) => (theme) {
       if (started) status.started();
       if (finished != null) status.finished(finished);
-      return harness(theme: theme, onCreate: (_) {}, onRetry: onRetry);
+      return harness(
+        theme: theme,
+        onCreate: (_) {},
+        onOpen: (_, _) {},
+        onRetry: onRetry,
+      );
     };
 
     auditScreen(

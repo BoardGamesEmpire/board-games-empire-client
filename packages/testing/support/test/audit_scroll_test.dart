@@ -210,5 +210,42 @@ void main() {
       );
       expect(failure?.message, contains('still scrolls'));
     });
+
+    // A horizontal row above the list, outside any text field: the row comes
+    // first in the tree and fits, so only the axis keeps it from passing for
+    // the page.
+    testWidgets('expectWholePage skips a horizontal row above the list', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                SizedBox(
+                  height: 48,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: const [Text('chip a'), Text('chip b')],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (var i = 0; i < 12; i++)
+                        SizedBox(height: 100, child: Text('row $i')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final failure = await _failureOf(() async => expectWholePage(tester));
+      expect(failure?.message, contains('the page still scrolls'));
+    });
   });
 }
