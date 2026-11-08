@@ -1,16 +1,9 @@
 # mobile
 
-Board Games Empire mobile application
+The Android and iOS app: a thin wrapper that hands `mobile_platform`'s bootstrap
+to `app_shell` (see the [root README](../../README.md#repository-layout)).
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+To point it at a backend on your machine, see
+[docs/dev/native-dev-server.md](../../docs/dev/native-dev-server.md). For the
+release APK and its signing key, see
+[docs/dev/android-signing.md](../../docs/dev/android-signing.md).

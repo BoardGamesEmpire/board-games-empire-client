@@ -34,7 +34,7 @@ browser ──▶ http://localhost:8080  (the proxy — open THIS)
 **1 — Backend** (in the NestJS repo):
 
 ```sh
-npm run start:dev        # serves on :33333
+npm start                # every service; the api serves on :33333
 ```
 
 **2 — Flutter web dev server.** Use the `web-server` device (not `chrome`) so

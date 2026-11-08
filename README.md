@@ -13,9 +13,11 @@ One codebase, three targets, built in parallel from day one:
 | macOS / Linux / Windows | [apps/desktop](apps/desktop) | macOS is the alpha desktop target |
 | Browser | [apps/browser](apps/browser) | Needs the dev proxy locally — see below |
 
-> **Status: pre-alpha.** There is no installable release yet. The infrastructure
-> layers (storage, network, auth, observability, sync queue) are in place and
-> exercised by tests; the feature surface is still being built. See
+> **Status: pre-alpha.** There is no release yet. Each master build's signed
+> Android APK can be downloaded for 7 days, though: see
+> [Install on Android](#install-on-android). The infrastructure layers (storage,
+> network, auth, observability, sync queue) are in place and exercised by tests;
+> the feature surface is still being built. See
 > [docs/ROADMAP.md](docs/ROADMAP.md) for what's done and what's next.
 
 ## Quick start
@@ -45,7 +47,33 @@ melos run web:server       # web dev server + the dev proxy together
 
 The browser target must be opened through the proxy origin, not the Flutter dev
 server port — the cookie-based auth model depends on it.
-[docs/dev/web-proxy.md](docs/dev/web-proxy.md) explains the topology.
+[docs/dev/web-proxy.md](docs/dev/web-proxy.md) explains the topology. The
+mobile and desktop apps take their server from the app itself:
+[docs/dev/native-dev-server.md](docs/dev/native-dev-server.md) shows how to
+point a device or emulator at a backend on your machine, and
+[docs/dev/android-signing.md](docs/dev/android-signing.md) how a release APK is
+signed.
+
+## Install on Android
+
+Each push to master that passes CI builds a signed release APK. It is the
+`android-apk` artifact of the newest master run of the `CI` workflow that has
+one, under the repository's Actions tab, and it is kept for 7 days.
+Downloading an artifact needs a GitHub sign-in. The download is a zip holding
+`bge-<version>-android-universal.apk` and its `.sha256`;
+`shasum -a 256 -c bge-<version>-android-universal.apk.sha256` checks it.
+
+1. Allow the app you'll open the APK with, such as your browser or file manager,
+   to install unknown apps. Android asks the first time.
+2. If you installed a build from before the app's id became
+   `com.boardgamesempire.app`, uninstall it first. Android treats the old
+   `com.boardgamesempire.mobile.mobile` build as a separate app, so the two
+   would sit side by side.
+3. Open the APK and install it.
+
+Each later APK installs over the last and keeps your data. A debug build from
+`flutter run` doesn't: it is signed with another key, so Flutter uninstalls the
+installed APK first, and its data with it.
 
 ## Repository layout
 
@@ -109,6 +137,10 @@ See [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md).
 - [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md) — identity, tokens,
   the shared widget set, and the accessibility rules
 - [docs/dev/web-proxy.md](docs/dev/web-proxy.md) — local web testing
+- [docs/dev/native-dev-server.md](docs/dev/native-dev-server.md) — pointing a
+  device, emulator or desktop app at a dev server
+- [docs/dev/android-signing.md](docs/dev/android-signing.md) — the release key,
+  CI's signing secrets, and checking an APK's signer
 - [docs/dev/web-image.md](docs/dev/web-image.md) — the published web image: its
   tags, what it holds, and how to inspect it
 - [SECURITY.md](SECURITY.md) — reporting a vulnerability
