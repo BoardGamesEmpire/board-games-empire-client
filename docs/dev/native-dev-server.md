@@ -29,7 +29,7 @@ macOS app              ──localhost──▶ this machine                    
 
 The api listens on port `33333` in every recipe below.
 
-## 1. An emulator or a USB device: `adb reverse`
+## 1. An Android emulator or USB device: `adb reverse`
 
 Start here. `adb reverse` makes the device's `localhost:33333` this machine's
 `localhost:33333`, which every backend default already expects. Nothing on the
@@ -42,13 +42,17 @@ backend changes.
    adb reverse tcp:33333 tcp:33333
    ```
 
+   With more than one device or emulator attached, `adb` refuses with
+   "more than one device/emulator". Name the one you mean by the serial
+   `adb devices` lists: `adb -s <serial> reverse tcp:33333 tcp:33333`.
+
 3. In the app, add `http://localhost:33333`.
 
 The mapping lasts only as long as the connection. When the cable comes out or
 the emulator restarts, the app can't reach the server until you run the command
 again.
 
-## 2. An emulator without `adb reverse`: `10.0.2.2`
+## 2. An Android emulator without `adb reverse`: `10.0.2.2`
 
 The Android emulator reaches this machine's loopback interface at `10.0.2.2`. A
 backend that listens only on loopback, as the Compose profile does by default,
@@ -56,6 +60,10 @@ is still reachable this way, and the api answers any IP address as a host.
 Nothing on the backend changes.
 
 In the app, add `http://10.0.2.2:33333`.
+
+Email sign-in works here, but provider sign-in doesn't appear. The app offers it
+only at the address the server gives as its own, its `BETTER_AUTH_URL`, which is
+`http://localhost:33333` by default. To sign in with a provider, use recipe 1.
 
 ## 3. A phone on Wi-Fi: the LAN address
 
@@ -80,6 +88,11 @@ it in your network settings, or with `ipconfig getifaddr en0` on macOS.
 
 The LAN address is private, so the app accepts `http` for it. A server at a
 public address needs `https`.
+
+Private isn't encrypted, though. Anyone who can watch the Wi-Fi can read the
+password and session token that plain `http` carries. Use this recipe only on a
+network you trust, with an account made for development. Recipe 1 keeps the
+traffic on the USB cable.
 
 ## 4. A self-hosted server, Kubernetes included
 

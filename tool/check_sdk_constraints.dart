@@ -219,17 +219,21 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final members = (rootYaml['workspace'] as YamlList?)?.cast<String>();
+  // Without a trailing slash, which pub accepts and ignores. Every check
+  // names a member by this string, so `apps/mobile/` would otherwise be
+  // no app, and `packages/platform/web/` no web package.
+  final members = (rootYaml['workspace'] as YamlList?)
+      ?.cast<String>()
+      .map((dir) => dir.replaceFirst(RegExp(r'/+$'), ''))
+      .toList();
   if (members == null || members.isEmpty) {
     stderr.writeln('Root pubspec.yaml lists no `workspace:` members.');
     exit(1);
   }
 
-  // An app is a member directly under apps/. A library nested deeper,
-  // such as a plugin kept beside its app, has no client version to hold.
-  // Loud rather than a pass when there is none: the version invariant
-  // would check nothing and still report success.
-  final apps = members.where(RegExp(r'^apps/[^/]+$').hasMatch).toSet();
+  // Loud rather than a pass when there is no app ([_app]): the version
+  // invariant would check nothing and still report success.
+  final apps = members.where(_app.hasMatch).toSet();
   if (apps.isEmpty) {
     stderr.writeln(
       'No `workspace:` member is under apps/, so there is no app version '
@@ -1294,6 +1298,18 @@ void _selfTest() {
     ],
   );
 
+  // An app is a member directly under apps/, as the version check has it.
+  // A package nested beside apps/browser is a web library, not an app.
+  expect(
+    'separation: a member nested under apps/ is not an app',
+    separation({
+      'apps/browser/plugin':
+          'name: plugin\ndependencies:\n'
+          '  web_platform:\n    path: ../../../packages/platform/web\n',
+    }),
+    <String>[],
+  );
+
   expect(
     'separation: a cycle terminates',
     separation({
@@ -1319,12 +1335,17 @@ const _webOnlyPackages = {
   'packages/network/web_network',
 };
 
-/// The one app that builds for the browser. Every other member under
-/// apps/ builds for a native platform.
+/// The one app that builds for the browser. Every other app builds for a
+/// native platform.
 const _webApp = 'apps/browser';
 
+/// An app is a member directly under apps/. A library nested deeper, such
+/// as a plugin kept beside its app, is not one: it has no client version
+/// to hold, and it builds for whichever platform its app does.
+final _app = RegExp(r'^apps/[^/]+$');
+
 /// One problem per web implementation ([_webOnlyPackages]) a native app
-/// (any member under apps/ but [_webApp]) reaches through its
+/// (any [_app] but [_webApp]) reaches through its
 /// `dependencies:`, each naming the chain that reaches it.
 ///
 /// [pubspecs] maps each member's directory, relative to the root, to its
@@ -1351,7 +1372,7 @@ List<String> _platformSeparationProblems(Map<String, YamlMap> pubspecs) {
 
   final nativeApps = [
     for (final dir in pubspecs.keys)
-      if (dir.startsWith('apps/') && dir != _webApp) dir,
+      if (_app.hasMatch(dir) && dir != _webApp) dir,
   ]..sort();
 
   final problems = <String>[];
