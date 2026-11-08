@@ -12,6 +12,8 @@ PlatformGameSummary _summary({
   String? subtitle,
   String? gameThumbnail = 'g_thumb.png',
   String? platformThumbnail,
+  List<ExpansionLink>? baseGames,
+  ContentType? contentType,
 }) => PlatformGameSummary(
   id: 'pg-1',
   platformId: 'plat-1',
@@ -23,6 +25,8 @@ PlatformGameSummary _summary({
     subtitle: subtitle,
     image: 'g.png',
     thumbnail: gameThumbnail,
+    baseGames: baseGames,
+    contentType: contentType,
   ),
 );
 
@@ -155,6 +159,61 @@ void main() {
       expect(game?.title, 'Brass');
       expect(game?.subtitle, isNull);
       expect(game?.thumbnail, isNull);
+    });
+
+    test('a summary with links replaces the cached links (#711)', () async {
+      final seeded = DateTime.utc(2020);
+      await repo().cacheGame(
+        Game(
+          id: 'g-1',
+          title: 'Brass: Birmingham',
+          baseGames: const [ExpansionLink(gameId: 'b1', isStandalone: false)],
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
+
+      await repo().cachePlatformGameSummaries([
+        _summary(
+          baseGames: const [ExpansionLink(gameId: 'b2', isStandalone: true)],
+        ),
+      ]);
+
+      expect((await repo().getGame('g-1'))?.baseGames, const [
+        ExpansionLink(gameId: 'b2', isStandalone: true),
+      ]);
+    });
+
+    test("a summary's content type is written (#711)", () async {
+      await repo().cachePlatformGameSummaries([
+        _summary(contentType: ContentType.expansion),
+      ]);
+
+      final row = await db.select(db.gamesTable).getSingle();
+      expect(row.contentType, 'Expansion');
+    });
+
+    test('a summary without links keeps the cached links and content '
+        'type (#711)', () async {
+      final seeded = DateTime.utc(2020);
+      await repo().cacheGame(
+        Game(
+          id: 'g-1',
+          title: 'Brass: Birmingham',
+          contentType: ContentType.expansion,
+          baseGames: const [ExpansionLink(gameId: 'b1', isStandalone: false)],
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
+
+      await repo().cachePlatformGameSummaries([_summary()]);
+
+      final row = await db.select(db.gamesTable).getSingle();
+      expect(row.contentType, 'Expansion');
+      expect((await repo().getGame('g-1'))?.baseGames, const [
+        ExpansionLink(gameId: 'b1', isStandalone: false),
+      ]);
     });
   });
 }

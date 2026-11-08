@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 17`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 18`; `MetaDatabase` is at
 `schemaVersion == 2`. Both databases have real forward migrations, so each has
 a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
 (schema helpers + migration tests), all **committed** — regenerate them with
@@ -126,6 +126,14 @@ Server schema history:
   creates `event_access` from the live table, which now has the column, so it
   drops it again right after, beside the four v15 columns, from the empty
   table, and this step adds it back.
+- **v17 → v18 (#711):** adds `games.base_games_json` (`TEXT NOT NULL`,
+  default `'[]'`), the links from an expansion to its base games, each
+  `{gameId, isStandalone}`, by one `addColumn`. A game cached before it holds
+  `[]`, read as no base games until the next read writes them. Additive (one
+  defaulted column, no rebuild), so #54 stays deferred. No earlier step
+  creates `games` from the live table (the v1 and later steps that touch it
+  use `addColumn`, `renameColumn` and `dropColumn`, and onCreate runs only on a
+  fresh database), so none needs to drop the column.
 
 Meta schema history:
 
@@ -136,7 +144,7 @@ Meta schema history:
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v17.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v18.json`
 - `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live

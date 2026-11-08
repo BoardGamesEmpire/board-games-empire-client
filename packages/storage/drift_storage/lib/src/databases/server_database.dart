@@ -56,7 +56,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **17**.
+/// `schemaVersion` is **18**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -158,6 +158,10 @@ part 'server_database.g.dart';
 ///   read was shown the event's roster. Additive: one `addColumn` call, no
 ///   table rebuilt. A row cached before it holds false, which reads as not
 ///   shown until the user's next detail read.
+/// - **v17 → v18 (#711):** adds `games.base_games_json`, the links from an
+///   expansion to its base games, defaulting to `[]`. Additive: one
+///   `addColumn` call, no table rebuilt. A game cached before it holds `[]`,
+///   which reads as no base games until the next read writes them.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -174,7 +178,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v17.json`, and
+/// `drift_schemas/server/drift_schema_v18.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -221,7 +225,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -436,6 +440,12 @@ class ServerDatabase extends _$ServerDatabase {
         // until their next detail read sets it, so there is nothing to
         // backfill.
         await m.addColumn(eventAccessTable, eventAccessTable.rosterShown);
+      }
+      if (from < 18 && to >= 18) {
+        // v17 → v18 (#711): the links from an expansion to its base games.
+        // Additive with a default: every existing game holds `[]` until the
+        // next read writes its links, so there is nothing to backfill.
+        await m.addColumn(gamesTable, gamesTable.baseGamesJson);
       }
     },
   );

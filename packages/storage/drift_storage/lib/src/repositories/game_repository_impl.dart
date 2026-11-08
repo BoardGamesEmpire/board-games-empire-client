@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 import '../tables/game_access_table.dart';
+import 'expansion_links_codec.dart';
 import 'game_cache_access.dart';
 import 'stored_enum_name.dart';
 import 'watch_disposal.dart';
@@ -420,6 +421,16 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   /// among them (#406).
   Future<void> _writeSummary(PlatformGameSummary summary, DateTime now) async {
     final game = summary.game;
+    // A response that didn't carry the links or the content type leaves the
+    // columns out, so a fuller record keeps what it has (#711).
+    final baseGames = game.baseGames;
+    final contentType = game.contentType;
+    final baseGamesJson = baseGames == null
+        ? const Value<String>.absent()
+        : Value(encodeExpansionLinks(baseGames));
+    final contentTypeWire = contentType == null
+        ? const Value<String>.absent()
+        : Value(contentType.toWire());
 
     await _db
         .into(_db.gamesTable)
@@ -430,6 +441,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
             subtitle: Value(game.subtitle),
             image: Value(game.image),
             thumbnail: Value(game.thumbnail),
+            baseGamesJson: baseGamesJson,
+            contentType: contentTypeWire,
             createdAt: now,
             updatedAt: now,
           ),
@@ -439,6 +452,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
               subtitle: Value(game.subtitle),
               image: Value(game.image),
               thumbnail: Value(game.thumbnail),
+              baseGamesJson: baseGamesJson,
+              contentType: contentTypeWire,
             ),
           ),
         );
@@ -529,6 +544,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     designers: _decodeStringList(row.designersJson),
     publishers: _decodeStringList(row.publishersJson),
     tags: _decodeStringList(row.tagsJson),
+    baseGames: decodeExpansionLinks(row.baseGamesJson),
     reach: Reach.fromWire(row.reach),
     createdById: row.createdById,
     deletedAt: row.deletedAt,
@@ -563,6 +579,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         designersJson: Value(jsonEncode(g.designers)),
         publishersJson: Value(jsonEncode(g.publishers)),
         tagsJson: Value(jsonEncode(g.tags)),
+        baseGamesJson: Value(encodeExpansionLinks(g.baseGames)),
         reach: Value(storedEnumName(g.reach, Reach.unknown, (v) => v.toWire())),
         createdById: Value(g.createdById),
         deletedAt: Value(g.deletedAt),

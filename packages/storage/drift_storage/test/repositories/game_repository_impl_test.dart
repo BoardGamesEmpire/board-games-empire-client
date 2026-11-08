@@ -242,6 +242,26 @@ void main() {
     });
 
     group('cacheGames() — batch', () {
+      test("cacheGames keeps each game's base games (#711)", () async {
+        const links = [
+          ExpansionLink(gameId: 'b1', isStandalone: false),
+          ExpansionLink(gameId: 'b2', isStandalone: true),
+        ];
+        final t = _now();
+        await repo.cacheGames([
+          Game(
+            id: 'g-1',
+            title: 'Expansion',
+            contentType: ContentType.expansion,
+            baseGames: links,
+            createdAt: t,
+            updatedAt: t,
+          ),
+        ]);
+
+        expect((await repo.getGame('g-1'))!.baseGames, links);
+      });
+
       test('persists multiple games in one batch', () async {
         await repo.cacheGames([
           _makeGame(id: 'g-1', title: 'One'),

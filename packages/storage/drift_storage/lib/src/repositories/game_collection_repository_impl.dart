@@ -6,6 +6,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import 'expansion_links_codec.dart';
 import 'game_cache_access.dart';
 import 'watch_disposal.dart';
 
@@ -1584,6 +1585,8 @@ class GameCollectionRepositoryImpl
         platformGame.image ??
         game.thumbnail ??
         game.image,
+    baseGames: decodeExpansionLinks(game.baseGamesJson),
+    contentType: ContentType.fromWire(game.contentType),
   );
 
   GameCollectionsTableCompanion _modelToCompanion(GameCollection m) =>
