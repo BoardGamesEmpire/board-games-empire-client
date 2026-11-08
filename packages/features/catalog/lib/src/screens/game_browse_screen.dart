@@ -309,26 +309,44 @@ class _GameBrowsePage extends StatelessWidget {
                   else if (thumbnails == null)
                     loading
                   else ...[
-                    if (thumbnails)
-                      BgeKeyedSliverGrid<Game>(
-                        items: games,
-                        keyOf: (game) => GameBrowseScreen.tileKey(game.id),
-                        gridDelegate: bgeCoverGridDelegate(context),
-                        itemBuilder: (context, game) =>
-                            _BrowseTile(game: game, onQuickLook: onQuickLook),
-                      )
-                    else
-                      BgeKeyedSliverList<_BrowseItem>(
-                        items: _browseRows(_placeBrowse(state)),
-                        keyOf: (item) => item.parent == null
-                            ? GameBrowseScreen.rowKey(item.game.id)
-                            : GameBrowseScreen.nestedRowKey(
-                                item.parent!.id,
-                                item.game.id,
+                    // One scope for the list and the grid, so a game's focus
+                    // follows its item between top level and under its base
+                    // game (#769, #711).
+                    BgeFocusHandoffScope(
+                      child: SliverMainAxisGroup(
+                        slivers: [
+                          if (thumbnails)
+                            BgeKeyedSliverGrid<Game>(
+                              items: games,
+                              keyOf: (game) =>
+                                  GameBrowseScreen.tileKey(game.id),
+                              gridDelegate: bgeCoverGridDelegate(context),
+                              itemBuilder: (context, game) => BgeFocusHandoff(
+                                identity: game.id,
+                                child: _BrowseTile(
+                                  game: game,
+                                  onQuickLook: onQuickLook,
+                                ),
                               ),
-                        itemBuilder: (context, item) =>
-                            _BrowseRow(item: item, onOpen: onOpen),
+                            )
+                          else
+                            BgeKeyedSliverList<_BrowseItem>(
+                              items: _browseRows(_placeBrowse(state)),
+                              keyOf: (item) => item.parent == null
+                                  ? GameBrowseScreen.rowKey(item.game.id)
+                                  : GameBrowseScreen.nestedRowKey(
+                                      item.parent!.id,
+                                      item.game.id,
+                                    ),
+                              itemBuilder: (context, item) => BgeFocusHandoff(
+                                identity: item.game.id,
+                                place: item.parent?.id,
+                                child: _BrowseRow(item: item, onOpen: onOpen),
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
                     SliverToBoxAdapter(child: _MoreFooter(state: state)),
                   ],
                 ],

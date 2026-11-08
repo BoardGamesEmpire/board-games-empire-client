@@ -1954,6 +1954,212 @@ void main() {
       );
     });
   });
+
+  group('focus across forms (#769)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+    final catan = listItem('e-0', title: 'Catan');
+    GameCollectionListItem wingspan(String id, String platformName) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platformName,
+    );
+    final once = [catan, wingspan('e-1', 'Tabletop')];
+    final twice = [...once, wingspan('e-2', 'Steam')];
+
+    // The two views a game is drawn in: its entry's key and its stack's key
+    // there, and the layout store that opens the screen in it.
+    final views =
+        <(String, Key Function(String), Key Function(String), _FakeLayouts?)>[
+          (
+            'the list',
+            GameCollectionListScreen.rowKey,
+            GameCollectionListScreen.stackKey,
+            null,
+          ),
+          (
+            'thumbnails',
+            GameCollectionListScreen.tileKey,
+            GameCollectionListScreen.stackTileKey,
+            thumbs,
+          ),
+        ];
+
+    /// The focus node of the control that opens [item]: its ink's.
+    FocusNode control(WidgetTester tester, Finder item) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.descendant(of: item, matching: find.byType(InkWell)),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      ),
+    );
+
+    /// Focuses Catan's item, then [item]: the page has focused something
+    /// before, as it has once a keyboard user has got this far.
+    Future<void> focus(WidgetTester tester, Finder item) async {
+      final catanItem = find.byKey(GameCollectionListScreen.rowKey('e-0'));
+      control(
+        tester,
+        catanItem.evaluate().isEmpty
+            ? find.byKey(GameCollectionListScreen.tileKey('e-0'))
+            : catanItem,
+      ).requestFocus();
+      await tester.pump();
+      control(tester, item).requestFocus();
+      await tester.pump();
+      expect(_focusIsWithin(tester, item), isTrue);
+    }
+
+    Finder pickerTile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId));
+
+    for (final (view, entryKey, stackKey, layouts) in views) {
+      final entry = find.byKey(entryKey('e-1'));
+      final stack = find.byKey(stackKey('g-wingspan'));
+      final what = view == 'the list' ? 'row' : 'tile';
+
+      testWidgets("a focused stack reduced to one entry leaves focus on the "
+          "entry's $what, in $view", (tester) async {
+        await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, stack);
+
+        items.add(once);
+        await tester.pumpAndSettle();
+
+        expect(stack, findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+
+      testWidgets("a focused entry's $what that gains a second entry leaves "
+          'focus on the stack, in $view', (tester) async {
+        await show(tester, once, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, entry);
+
+        items.add(twice);
+        await tester.pumpAndSettle();
+
+        expect(entry, findsNothing);
+        expect(_focusIsWithin(tester, stack), isTrue);
+      });
+
+      testWidgets('back from the entry page after removing a copy lands '
+          "focus on the game's item, in $view", (tester) async {
+        await show(
+          tester,
+          twice,
+          layouts: layouts,
+          onOpen: (context, id) => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    Scaffold(appBar: AppBar(), body: Text('entry $id')),
+              ),
+            ),
+          ),
+        );
+        await focus(tester, stack);
+        // A tap, as a touch gives: the stack takes focus before the picker
+        // opens.
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        await tester.tap(pickerTile('e-2'));
+        await tester.pumpAndSettle();
+        expect(find.text('entry e-2'), findsOneWidget);
+        expect(pickerTile('e-2'), findsNothing);
+
+        // The copy is removed on the entry page, under which the stack
+        // becomes one entry.
+        items.add(once);
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.text('entry e-2'), findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+
+      testWidgets('closing the picker after a sync leaves one entry lands '
+          "focus on the game's item, in $view", (tester) async {
+        await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, stack);
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        expect(pickerTile('e-1'), findsOneWidget);
+
+        items.add(once);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        expect(pickerTile('e-1'), findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+    }
+
+    testWidgets('a mouse-clicked stack reduced to one entry leaves the tile '
+        'focused without a ring or a tint', (tester) async {
+      // A mouse leaves the highlight mode at the keyboard's on a desktop, so
+      // the focus handed to the entry's tile would be ringed, for a user who
+      // never touched the keyboard, unless the click's state goes with it.
+      await show(tester, twice, layouts: thumbs, onOpen: (_, _) {});
+      final stack = find.byKey(
+        GameCollectionListScreen.stackTileKey('g-wingspan'),
+      );
+      final entry = find.byKey(GameCollectionListScreen.tileKey('e-1'));
+      const away = Offset(4, 590);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: away);
+      addTearDown(mouse.removePointer);
+      Future<void> click(Offset at) async {
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+      }
+
+      await click(tester.getCenter(stack));
+      expect(pickerTile('e-1'), findsOneWidget);
+      // A sync leaves the game one entry under the picker, which is closed
+      // by a click on the barrier, below the dialog.
+      items.add(once);
+      await tester.pumpAndSettle();
+      await click(away);
+      expect(pickerTile('e-1'), findsNothing);
+
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      final ring = find.descendant(
+        of: entry,
+        matching: find.byType(BgeFocusRing),
+      );
+      expect(tester.widget<BgeFocusRing>(ring).suppressed, isTrue);
+      final drawn = tester.widget<DecoratedBox>(
+        find.descendant(of: ring, matching: find.byType(DecoratedBox)).first,
+      );
+      expect((drawn.decoration as BoxDecoration).border, isNull);
+      // Nor is its ink tinted: with the mouse away, the focus highlight is
+      // all the ink paints, and it paints with no strength.
+      expect(
+        tester.renderObject(
+          find.descendant(of: entry, matching: find.byType(Material)),
+        ),
+        paints..everything((method, arguments) {
+          for (final argument in arguments) {
+            if (argument is Paint) expect(argument.color.a, 0);
+          }
+          return true;
+        }),
+      );
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
 }
 
 /// Whether the primary focus is on the widget [finder] finds, or inside it.

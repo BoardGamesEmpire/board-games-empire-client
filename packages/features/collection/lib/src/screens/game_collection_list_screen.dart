@@ -386,61 +386,81 @@ class GameCollectionListSliver extends StatelessWidget {
             GameCollectionListReady(:final items) when items.isEmpty =>
               _EmptySliver(onBrowse: onBrowse),
             _ when thumbnails == null => loading,
-            GameCollectionListReady(:final items) when thumbnails == true =>
-              BgeKeyedSliverGrid<List<GameCollectionListItem>>(
-                items: groupByGame(items),
-                keyOf: (group) => switch (group) {
-                  [final item] => GameCollectionListScreen.tileKey(
-                    item.entry.id,
-                  ),
-                  _ => GameCollectionListScreen.stackTileKey(
-                    group.first.gameId,
-                  ),
-                },
-                gridDelegate: bgeCoverGridDelegate(context),
-                itemBuilder: (context, group) => switch (group) {
-                  [final item] => _CollectionTile(item: item, onOpen: onOpen),
-                  _ => _StackTile(items: group, onOpen: onOpen),
-                },
-              ),
-            GameCollectionListReady(:final items) =>
-              BgeKeyedSliverList<CollectionRow>(
-                items: collectionRows(
-                  items,
-                  titleOf: (item) => _title(l10n, item),
-                ),
-                keyOf: (row) => switch ((row.group, row.parentGameId)) {
-                  ([final item], null) => GameCollectionListScreen.rowKey(
-                    item.entry.id,
-                  ),
-                  (_, null) => GameCollectionListScreen.stackKey(
-                    row.group.first.gameId,
-                  ),
-                  ([final item], final parent?) =>
-                    GameCollectionListScreen.nestedRowKey(
-                      parent,
-                      item.entry.id,
+            // One scope for the list and the grid, so a game's focus follows
+            // it as its item changes form: one entry or a stack, top level or
+            // under its base game (#769, #711).
+            GameCollectionListReady(:final items) => BgeFocusHandoffScope(
+              child: SliverMainAxisGroup(
+                slivers: [
+                  if (thumbnails == true)
+                    BgeKeyedSliverGrid<List<GameCollectionListItem>>(
+                      items: groupByGame(items),
+                      keyOf: (group) => switch (group) {
+                        [final item] => GameCollectionListScreen.tileKey(
+                          item.entry.id,
+                        ),
+                        _ => GameCollectionListScreen.stackTileKey(
+                          group.first.gameId,
+                        ),
+                      },
+                      gridDelegate: bgeCoverGridDelegate(context),
+                      itemBuilder: (context, group) => BgeFocusHandoff(
+                        identity: group.first.gameId,
+                        child: switch (group) {
+                          [final item] => _CollectionTile(
+                            item: item,
+                            onOpen: onOpen,
+                          ),
+                          _ => _StackTile(items: group, onOpen: onOpen),
+                        },
+                      ),
+                    )
+                  else
+                    BgeKeyedSliverList<CollectionRow>(
+                      items: collectionRows(
+                        items,
+                        titleOf: (item) => _title(l10n, item),
+                      ),
+                      keyOf: (row) => switch ((row.group, row.parentGameId)) {
+                        ([final item], null) => GameCollectionListScreen.rowKey(
+                          item.entry.id,
+                        ),
+                        (_, null) => GameCollectionListScreen.stackKey(
+                          row.group.first.gameId,
+                        ),
+                        ([final item], final parent?) =>
+                          GameCollectionListScreen.nestedRowKey(
+                            parent,
+                            item.entry.id,
+                          ),
+                        (_, final parent?) =>
+                          GameCollectionListScreen.nestedStackKey(
+                            parent,
+                            row.group.first.gameId,
+                          ),
+                      },
+                      itemBuilder: (context, row) => BgeFocusHandoff(
+                        identity: row.group.first.gameId,
+                        place: row.parentGameId,
+                        child: switch (row.group) {
+                          [final item] => _CollectionRow(
+                            item: item,
+                            onOpen: onOpen,
+                            expansionOf: row.parentTitle,
+                            missingBase: row.missingBase,
+                          ),
+                          final group => _StackRow(
+                            items: group,
+                            onOpen: onOpen,
+                            expansionOf: row.parentTitle,
+                            missingBase: row.missingBase,
+                          ),
+                        },
+                      ),
                     ),
-                  (_, final parent?) => GameCollectionListScreen.nestedStackKey(
-                    parent,
-                    row.group.first.gameId,
-                  ),
-                },
-                itemBuilder: (context, row) => switch (row.group) {
-                  [final item] => _CollectionRow(
-                    item: item,
-                    onOpen: onOpen,
-                    expansionOf: row.parentTitle,
-                    missingBase: row.missingBase,
-                  ),
-                  final group => _StackRow(
-                    items: group,
-                    onOpen: onOpen,
-                    expansionOf: row.parentTitle,
-                    missingBase: row.missingBase,
-                  ),
-                },
+                ],
               ),
+            ),
           },
         ],
       ),

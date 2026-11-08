@@ -22,6 +22,8 @@
 /// #710), `BgeKeyedSliverGrid`,
 /// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
 /// those two grids and their list or thumbnails choice (#710),
+/// `BgeFocusHandoffScope` and `BgeFocusHandoff` by the Games and Collection
+/// lists and grids, whose games change form (#769, #711),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
 /// quick look (#573, #607), `BgeInertButton` by the 7 buttons that
@@ -58,6 +60,7 @@ export 'src/connectivity/bge_connectivity_scope.dart';
 export 'src/connectivity/bge_online_only.dart';
 export 'src/connectivity/bge_online_only_menu.dart';
 export 'src/connectivity/bge_online_only_popup_menu_item.dart';
+export 'src/focus/bge_focus_handoff.dart';
 export 'src/focus/bge_focus_ring.dart';
 export 'src/focus/bge_pointer_focus.dart';
 export 'src/focus/focus_is_free.dart';
