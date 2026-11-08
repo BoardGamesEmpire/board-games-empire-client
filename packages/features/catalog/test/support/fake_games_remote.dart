@@ -114,10 +114,12 @@ Game game(
   String id, {
   String? title,
   ContentType contentType = ContentType.baseGame,
+  List<ExpansionLink> baseGames = const [],
 }) => Game(
   id: id,
   title: title ?? 'Game $id',
   contentType: contentType,
+  baseGames: baseGames,
   createdAt: _seeded,
   updatedAt: _seeded,
 );

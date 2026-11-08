@@ -89,6 +89,14 @@ class GameBrowseScreen extends StatelessWidget {
   /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String gameId) => Key('catalog_browse.row_$gameId');
 
+  /// Per-row key of an expansion shown under a base game:
+  /// `catalog_browse.nested_row_<parentGameId>_<gameId>`.
+  ///
+  /// An expansion under two base games is drawn twice, so its key names the
+  /// base game it is under (#711).
+  static Key nestedRowKey(String parentGameId, String gameId) =>
+      Key('catalog_browse.nested_row_${parentGameId}_$gameId');
+
   final GamesRemoteDataSource remote;
 
   /// The user-session games cache, or null where there is none. Without it
@@ -144,13 +152,20 @@ class GameBrowseScreen extends StatelessWidget {
             : (thumbnails) =>
                   layouts.writeThumbnails(ListLayoutScreen.games, thumbnails),
         onError: _layoutFailed,
-        builder: (context, thumbnails, onChanged) => _GameBrowsePage(
-          thumbnails: thumbnails,
-          onLayoutChanged: onChanged,
-          onOpen: onOpen,
-          onSearch: onSearch,
-          onQuickLook: onQuickLook,
-        ),
+        builder: (context, thumbnails, onChanged) =>
+            BlocListener<GameBrowseBloc, GameBrowseState>(
+              listenWhen: _landedNothingShown,
+              listener: (context, _) => context.read<GameBrowseBloc>().add(
+                const GameBrowseMoreRequested(),
+              ),
+              child: _GameBrowsePage(
+                thumbnails: thumbnails,
+                onLayoutChanged: onChanged,
+                onOpen: onOpen,
+                onSearch: onSearch,
+                onQuickLook: onQuickLook,
+              ),
+            ),
       ),
     );
   }
@@ -194,11 +209,15 @@ class _GameBrowsePage extends StatelessWidget {
         return BgePage.slivers(
           title: Text(l10n.catalogBrowseTitle),
           width: BgePageWidth.pane,
-          // "Game 3 of 50": the rows loaded so far, once they are built.
+          // "Game 3 of 50": the rows loaded so far, once they are built. In
+          // the list, a row for each nested expansion too (#711). The grid
+          // still draws every game.
           semanticChildCount: switch (state) {
             GameBrowseReady(:final games)
                 when games.isNotEmpty && thumbnails != null =>
-              games.length,
+              thumbnails
+                  ? games.length
+                  : _browseRows(_placeBrowse(state)).length,
             _ => null,
           },
           actions: [
@@ -299,11 +318,16 @@ class _GameBrowsePage extends StatelessWidget {
                             _BrowseTile(game: game, onQuickLook: onQuickLook),
                       )
                     else
-                      BgeKeyedSliverList<Game>(
-                        items: games,
-                        keyOf: (game) => GameBrowseScreen.rowKey(game.id),
-                        itemBuilder: (context, game) =>
-                            _BrowseRow(game: game, onOpen: onOpen),
+                      BgeKeyedSliverList<_BrowseItem>(
+                        items: _browseRows(_placeBrowse(state)),
+                        keyOf: (item) => item.parent == null
+                            ? GameBrowseScreen.rowKey(item.game.id)
+                            : GameBrowseScreen.nestedRowKey(
+                                item.parent!.id,
+                                item.game.id,
+                              ),
+                        itemBuilder: (context, item) =>
+                            _BrowseRow(item: item, onOpen: onOpen),
                       ),
                     SliverToBoxAdapter(child: _MoreFooter(state: state)),
                   ],
@@ -315,6 +339,76 @@ class _GameBrowsePage extends StatelessWidget {
     );
   }
 }
+
+/// Whether a page has just landed in [current] without a game to show that
+/// [previous] didn't show, while the list has more (#711).
+///
+/// Every game on it can be held, waiting for a base game on a later page: a
+/// page of expansions newer than their base games, sorted newest first. The
+/// screen then reads the next page itself, rather than leaving an empty
+/// screen, or a "Show more games" press that shows nothing, until one lands
+/// that shows something or the list ends, when nothing is held.
+bool _landedNothingShown(GameBrowseState previous, GameBrowseState current) {
+  if (current is! GameBrowseReady ||
+      !current.hasMore ||
+      current.loadingMore ||
+      current.loadMoreFailed ||
+      current.retrying) {
+    return false;
+  }
+  return switch (previous) {
+    // The first page, or a retry's: is anything shown at all?
+    GameBrowseLoading() => _shownCount(current) == 0,
+    GameBrowseReady(retrying: true) => _shownCount(current) == 0,
+    // The next page: did it show anything more?
+    GameBrowseReady(loadingMore: true) =>
+      _shownCount(current) <= _shownCount(previous),
+    _ => false,
+  };
+}
+
+/// How many of [state]'s games are shown, at top level or nested.
+int _shownCount(GameBrowseReady state) => {
+  for (final placed in _placeBrowse(state)) ...[
+    placed.item.id,
+    for (final expansion in placed.expansions) expansion.id,
+  ],
+}.length;
+
+/// Places the loaded games under their base games (#711).
+///
+/// An expansion that isn't nested under a loaded base game waits while any
+/// of its base games is still to load. Once they are loaded, or the list
+/// ends (`hasMore` false), it is placed: at top level, marked, if none of
+/// them is shown. Offline, `hasMore` is true until the cache's last page is
+/// read, so the same rule holds. A page that shows nothing new reads the
+/// next one ([_landedNothingShown]).
+List<PlacedGame<Game>> _placeBrowse(GameBrowseReady state) => placeExpansions(
+  state.games,
+  gameIdOf: (game) => game.id,
+  baseGamesOf: (game) => game.baseGames,
+  contentTypeOf: (game) => game.contentType,
+  complete: !state.hasMore,
+);
+
+/// One row of the list: a game, with the base game it is nested under, if
+/// any.
+class _BrowseItem {
+  const _BrowseItem(this.game, {this.parent, this.missingBase = false});
+
+  final Game game;
+  final Game? parent;
+  final bool missingBase;
+}
+
+/// [placed] as the rows drawn: each top-level game, then its expansions.
+List<_BrowseItem> _browseRows(List<PlacedGame<Game>> placed) => [
+  for (final top in placed) ...[
+    _BrowseItem(top.item, missingBase: top.missingBase),
+    for (final expansion in top.expansions)
+      _BrowseItem(expansion, parent: top.item),
+  ],
+];
 
 /// Which order to list the games in.
 ///
@@ -414,22 +508,52 @@ class _BrowseTile extends StatelessWidget {
 }
 
 class _BrowseRow extends StatelessWidget {
-  const _BrowseRow({required this.game, this.onOpen});
+  const _BrowseRow({required this.item, this.onOpen});
 
-  final Game game;
+  final _BrowseItem item;
   final void Function(BuildContext context, String gameId)? onOpen;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final open = onOpen;
+    final game = item.game;
+    final parent = item.parent;
+    final title = gameTitle(l10n, game.title, game.subtitle);
     return CatalogGameRow(
-      title: gameTitle(l10n, game.title, game.subtitle),
+      title: title,
+      nested: parent != null,
+      spokenTitle: parent == null
+          ? null
+          : l10n.catalogExpansionOf(
+              title,
+              gameTitle(l10n, parent.title, parent.subtitle),
+            ),
+      note: item.missingBase ? _missingBaseNote(context, game) : null,
       thumbnailUrl: game.thumbnail,
       facts: _gameFacts(l10n, game),
       onTap: open == null ? null : () => open(context, game.id),
     );
   }
+}
+
+/// The note on [game], an expansion shown without its base game (#711).
+///
+/// A game with no link to a base game has none on the server. One with a
+/// link has one there, which the server lists only when it is in the
+/// caller's own list, so read from the device's saved games its base game
+/// was just never saved.
+String _missingBaseNote(BuildContext context, Game game) {
+  final l10n = GameCatalogLocalizations.of(context);
+  final fromCache = context.select<GameBrowseBloc, bool>(
+    (bloc) => switch (bloc.state) {
+      GameBrowseReady(:final fromCache) => fromCache,
+      _ => false,
+    },
+  );
+  return fromCache && game.baseGames.isNotEmpty
+      ? l10n.catalogBaseGameNotSaved
+      : l10n.catalogBaseGameMissing;
 }
 
 /// The end of the list: the next page's button, its progress, or its

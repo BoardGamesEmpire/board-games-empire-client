@@ -279,5 +279,33 @@ void main() {
       expect(find.text('Delete'), findsOneWidget);
       expect(find.text(_reason), findsNothing);
     });
+
+    for (final offline in [true, false]) {
+      testWidgets('speaks semanticsLabel for the label, '
+          '${offline ? 'offline' : 'online'}', (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _host(
+            MenuItemButton(
+              onPressed: offline ? null : () {},
+              child: const BgeOnlineOnlyLabel(
+                'Seafarers',
+                semanticsLabel: 'Seafarers, expansion for Catan',
+              ),
+            ),
+            offline: offline,
+          ),
+        );
+
+        final label = tester
+            .getSemantics(
+              find.bySemanticsLabel(RegExp('^Seafarers, expansion for Catan')),
+            )
+            .getSemanticsData()
+            .label;
+        expect(label.contains(_reason), offline);
+        handle.dispose();
+      });
+    }
   });
 }

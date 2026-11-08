@@ -24,6 +24,22 @@
   "@catalogBrowseFailedBody": {
     "description": "Body under catalogBrowseFailedTitle."
   },
+  "catalogExpansionOf": "{title}, expansion for {baseGame}",
+  "@catalogExpansionOf": {
+    "description": "What a screen reader says for a game's row listed under its base game: the expansion's title, then the base game it belongs to.",
+    "placeholders": {
+      "title": {"type": "String", "example": "Seafarers"},
+      "baseGame": {"type": "String", "example": "Catan"}
+    }
+  },
+  "catalogBaseGameMissing": "Base game not on this server",
+  "@catalogBaseGameMissing": {
+    "description": "A note on an expansion's row in the games list when its base game is not on the server. Shown and spoken."
+  },
+  "catalogBaseGameNotSaved": "Base game not saved on this device",
+  "@catalogBaseGameNotSaved": {
+    "description": "Replaces catalogBaseGameMissing while the games list shows the games saved on the device, offline: the server lists the expansion's base game, but it was never saved here. Shown and spoken."
+  },
   "catalogBrowseMore": "Show more games",
   "@catalogBrowseMore": {
     "description": "Button at the end of the games list that loads the next page of games."

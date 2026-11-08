@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import 'catalog_facts.dart';
 
@@ -15,6 +16,9 @@ class CatalogGameRow extends StatelessWidget {
     this.facts = const [],
     this.onTap,
     this.onlineOnly = false,
+    this.nested = false,
+    this.spokenTitle,
+    this.note,
     super.key,
   });
 
@@ -32,12 +36,24 @@ class CatalogGameRow extends StatelessWidget {
   /// the row is disabled and says why, in its own label.
   final bool onlineOnly;
 
+  /// Whether the row is an expansion under its base game's row (#711): its
+  /// start is indented beyond the tile's own padding.
+  final bool nested;
+
+  /// What a screen reader says for the title, when it differs from the
+  /// words drawn.
+  final String? spokenTitle;
+
+  /// A line above the facts, shown and spoken.
+  final String? note;
+
   @override
   Widget build(BuildContext context) {
     // MergeSemantics rather than a Semantics container: a tappable ListTile
     // builds an InkWell with its own node, and merging keeps the tap action
     // and the words on one node (the collection row's reasoning).
-    return MergeSemantics(
+    final tokens = BgeTokens.of(context);
+    final tile = MergeSemantics(
       child: ListTile(
         onTap: onTap,
         enabled: !(onlineOnly && BgeConnectivityScope.offlineOf(context)),
@@ -48,9 +64,24 @@ class CatalogGameRow extends StatelessWidget {
         ),
         // The reason is a line of the title, so it stays in the row's one
         // node, ahead of the facts.
-        title: onlineOnly ? BgeOnlineOnlyLabel(title) : Text(title),
-        subtitle: facts.isEmpty ? null : CatalogFactsText(facts),
+        title: onlineOnly
+            ? BgeOnlineOnlyLabel(title, semanticsLabel: spokenTitle)
+            : Text(title, semanticsLabel: spokenTitle),
+        subtitle: note == null && facts.isEmpty
+            ? null
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (note != null) Text(note!),
+                  if (facts.isNotEmpty) CatalogFactsText(facts),
+                ],
+              ),
       ),
+    );
+    if (!nested) return tile;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: tokens.spaceLg),
+      child: tile,
     );
   }
 }

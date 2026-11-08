@@ -274,6 +274,282 @@ void main() {
     handle.dispose();
   });
 
+  group('expansions (#711)', () {
+    ExpansionLink under(String id, {bool standalone = false}) =>
+        ExpansionLink(gameId: id, isStandalone: standalone);
+
+    final base = game('B');
+    Game expansion(String id, List<ExpansionLink> links) =>
+        game(id, contentType: ContentType.expansion, baseGames: links);
+
+    Finder row(String key) => find.byKey(GameBrowseScreen.rowKey(key));
+    Finder nested(String parent, String id) =>
+        find.byKey(GameBrowseScreen.nestedRowKey(parent, id));
+
+    testWidgets("an expansion's row sits under its base game's, indented", (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        expansion('E', [under('B')]),
+      ]);
+
+      await show(tester);
+
+      expect(row('B'), findsOneWidget);
+      expect(nested('B', 'E'), findsOneWidget);
+      expect(row('E'), findsNothing);
+      expect(
+        tester.getTopLeft(row('B')).dy,
+        lessThan(tester.getTopLeft(nested('B', 'E')).dy),
+      );
+      double start(Finder row) => tester
+          .getTopLeft(find.descendant(of: row, matching: find.byType(ListTile)))
+          .dx;
+      expect(start(nested('B', 'E')), greaterThan(start(row('B'))));
+    });
+
+    testWidgets('a nested row is spoken as an expansion of its base game', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        expansion('E', [under('B')]),
+      ]);
+
+      await show(tester);
+
+      expect(
+        tester
+            .getSemantics(
+              find.descendant(
+                of: nested('B', 'E'),
+                matching: find.byType(ListTile),
+              ),
+            )
+            .label,
+        contains('Game E, expansion for Game B'),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('an expansion under two base games is under each', (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        game('C'),
+        expansion('E', [under('B'), under('C')]),
+      ]);
+
+      await show(tester);
+
+      expect(nested('B', 'E'), findsOneWidget);
+      expect(nested('C', 'E'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standalone expansion also has its own row', (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        expansion('E', [under('B', standalone: true)]),
+      ]);
+
+      await show(tester);
+
+      expect(nested('B', 'E'), findsOneWidget);
+      expect(row('E'), findsOneWidget);
+      expect(find.text('Base game not on this server'), findsNothing);
+    });
+
+    testWidgets(
+      "an expansion whose base game isn't loaded waits, and shows marked "
+      'when the list ends',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([
+                game('A'),
+                expansion('E', [under('B')]),
+              ], hasMore: true)
+            : pageOf(const [], page: 2);
+
+        await show(tester);
+
+        expect(row('E'), findsNothing);
+        expect(find.text('Game E'), findsNothing);
+
+        await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+        await tester.pumpAndSettle();
+
+        expect(row('E'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: row('E'),
+            matching: find.text('Base game not on this server'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.getSemantics(row('E')).label,
+          contains('Base game not on this server'),
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      "the base game's page arriving puts the waiting expansion under it",
+      (tester) async {
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([
+                game('A'),
+                expansion('E', [under('B')]),
+              ], hasMore: true)
+            : pageOf([base], page: 2);
+
+        await show(tester);
+        await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+        await tester.pumpAndSettle();
+
+        expect(nested('B', 'E'), findsOneWidget);
+        expect(row('E'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a first page with every game waiting reads the next one itself',
+      (tester) async {
+        remote.onFetchPage = (page, _) async => page == 1
+            ? pageOf([
+                expansion('E', [under('B')]),
+              ], hasMore: true)
+            : pageOf([base], page: 2);
+
+        await show(tester);
+
+        expect(nested('B', 'E'), findsOneWidget);
+        expect(remote.calls, hasLength(2));
+      },
+    );
+
+    testWidgets('a next page with every game waiting reads on until one shows '
+        'something', (tester) async {
+      remote.onFetchPage = (page, _) async => switch (page) {
+        1 => pageOf([game('A')], hasMore: true),
+        2 => pageOf(
+          [
+            expansion('E', [under('B')]),
+          ],
+          page: 2,
+          hasMore: true,
+        ),
+        3 => pageOf([base, game('C')], page: 3, hasMore: true),
+        _ => throw unreachable(),
+      };
+
+      await show(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+      await tester.pumpAndSettle();
+
+      expect(nested('B', 'E'), findsOneWidget);
+      expect(row('C'), findsOneWidget);
+      // Page 3 showed something, so the list waits for the next press.
+      expect(remote.calls, hasLength(3));
+      expect(find.byKey(GameBrowseScreen.moreKey), findsOneWidget);
+    });
+
+    testWidgets('a failed read of the next page stops reading on', (
+      tester,
+    ) async {
+      remote.onFetchPage = (page, _) async => page == 1
+          ? pageOf([
+              expansion('E', [under('B')]),
+            ], hasMore: true)
+          : throw unreachable();
+
+      await show(tester);
+
+      expect(find.byKey(GameBrowseScreen.moreFailedKey), findsOneWidget);
+      expect(remote.calls, hasLength(2));
+    });
+
+    testWidgets(
+      "offline, an expansion whose base game wasn't saved says so, not that "
+      "it isn't on the server",
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onFetchPage = (_, _) async => throw unreachable();
+
+        await show(
+          tester,
+          cache: FakeGamesCache([
+            expansion('E', [under('B')]),
+            expansion('U', const []),
+          ]),
+        );
+
+        expect(
+          tester.getSemantics(row('E')).label,
+          contains('Base game not saved on this device'),
+        );
+        expect(
+          find.descendant(
+            of: row('E'),
+            matching: find.text('Base game not on this server'),
+          ),
+          findsNothing,
+        );
+        // With no link at all, the server has no base game for it.
+        expect(
+          find.descendant(
+            of: row('U'),
+            matching: find.text('Base game not on this server'),
+          ),
+          findsOneWidget,
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets('an unlinked expansion is top level and marked at once', (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async =>
+          pageOf([expansion('E', const [])], hasMore: true);
+
+      await show(tester);
+
+      expect(
+        find.descendant(
+          of: row('E'),
+          matching: find.text('Base game not on this server'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the semantic child count counts every row, nested ones too', (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        base,
+        game('C'),
+        expansion('E', [under('B'), under('C')]),
+      ]);
+
+      await show(tester);
+
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        4,
+      );
+    });
+  });
+
   group('sort', () {
     // The order each read comes back in is the test's: the title read lists
     // Azul, the newest one Catan first.
