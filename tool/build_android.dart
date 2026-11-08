@@ -28,9 +28,12 @@
 //        had no network at all, and nothing in `flutter run` shows that.
 //        Only the artifact does;
 //      - its signature verifies, and the signer is printed. With
-//        `--require-release-signing`, a debug signer fails the build:
-//        Android refuses a debug-signed APK as an update over a
-//        release-signed one, so every installed copy would turn it away.
+//        `--require-release-signing`, any signer but the release key
+//        fails the build: Android refuses an APK as an update over one
+//        signed with another key, so every installed copy would turn it
+//        away. The release key is the certificate [_releaseCertificate]
+//        names. A debug key fails it, and so does a valid key that only
+//        stands in for the release one, such as a replaced CI secret.
 //   5. Copies the APK to apps/mobile/build/release under its versioned
 //      name, beside a `.sha256` in `sha256sum -c` format.
 
@@ -53,6 +56,17 @@ const _builtApk = 'build/app/outputs/flutter-apk/app-release.apk';
 const _uploadDir = 'build/release';
 
 const _requireReleaseSigning = '--require-release-signing';
+
+/// The SHA-256 digest of the release key's certificate, as `keytool -list
+/// -v` prints it. Every APK CI ships is signed by it, and only an APK that
+/// is installs over one already out there.
+///
+/// Kept here, not beside the key in CI's secrets, so that changing which key
+/// CI ships takes a reviewed change to master, not only a new secret.
+/// docs/dev/android-signing.md records it when the key is made.
+const _releaseCertificate =
+    '52:96:99:C0:55:A9:87:79:CC:BB:26:23:B4:11:6E:79:'
+    'E0:30:D5:1C:EB:13:E8:F9:4E:23:5E:F1:10:FA:4B:50';
 
 Future<void> main(List<String> args) async {
   final unknown = args.where(
@@ -158,6 +172,25 @@ Future<void> main(List<String> args) async {
       'was given. It would not install over a release-signed build.',
     );
     exit(1);
+  }
+  if (requireReleaseSigning) {
+    final signerProblems = _signerProblems(certs, _releaseCertificate);
+    if (signerProblems.isNotEmpty) {
+      stderr.writeln(
+        'The APK is not signed with the release key, though '
+        '$_requireReleaseSigning was given. It would not install over a '
+        'release-signed build:',
+      );
+      for (final p in signerProblems) {
+        stderr.writeln('  $p');
+      }
+      stderr.writeln(
+        'If the release key was replaced on purpose, change '
+        '_releaseCertificate in tool/build_android.dart; '
+        'docs/dev/android-signing.md says what that costs.',
+      );
+      exit(1);
+    }
   }
 
   final bytes = apk.readAsBytesSync();
@@ -312,6 +345,35 @@ bool _isDebugSigner(String printCerts) => const LineSplitter()
     .any(
       (l) => l.contains('certificate DN:') && l.contains('CN=Android Debug'),
     );
+
+/// What keeps an APK's signers from being the release key, given `apksigner
+/// verify --print-certs`' output: empty when every signer's certificate
+/// SHA-256 digest is [expected].
+///
+/// [expected] may be in `keytool`'s form, colon-separated upper case, and
+/// apksigner prints bare lower case; both are compared without either. A
+/// public key's digest, which `-v` adds, and a source stamp's, which is
+/// not a signer, are not a signer's certificate.
+List<String> _signerProblems(String printCerts, String expected) {
+  String bare(String digest) =>
+      digest.replaceAll(RegExp(r'[:\s]'), '').toLowerCase();
+  final want = bare(expected);
+  final certificate = RegExp(r'\bcertificate SHA-256 digest: ([0-9a-fA-F:]+)');
+  final digests = [
+    for (final line in const LineSplitter().convert(printCerts))
+      if (!line.startsWith('Source Stamp'))
+        if (certificate.firstMatch(line) case final match?) bare(match[1]!),
+  ];
+  if (digests.isEmpty) {
+    return ["no signer's certificate SHA-256 digest in apksigner's output"];
+  }
+  return [
+    for (final digest in digests)
+      if (digest != want)
+        'a signer certificate has SHA-256 digest $digest, not the release '
+            "key's $want",
+  ];
+}
 
 /// The Android SDK to take build-tools from: `sdk.dir` in
 /// [localProperties], else ANDROID_HOME, else ANDROID_SDK_ROOT.
@@ -473,6 +535,80 @@ void _selfTest() {
       'Signer #1 certificate SHA-256 digest: 00\n',
     ),
     false,
+  );
+
+  // The release key's digest as apksigner prints it, and another key's,
+  // both from real output.
+  const releaseDigest =
+      '529699c055a98779ccbb2623b4116e79e030d51ceb13e8f94e235ef110fa4b50';
+  const otherDigest =
+      '92fe8a6fc5c6b4445cf7d9cc1942279a0bb5ee548126a571506ceada6bd2ffdd';
+  expect(
+    'release signer: the recorded one is the release key',
+    _signerProblems(
+      'Signer #1 certificate SHA-256 digest: $releaseDigest\n',
+      _releaseCertificate,
+    ),
+    <String>[],
+  );
+  expect(
+    'release signer: the release key in output with no signer number',
+    _signerProblems(
+      'WARNING: A restricted method in java.lang.System has been called\n'
+      '\n'
+      'V2 Signer: certificate DN: CN=Board Games Empire\n'
+      'V2 Signer: certificate SHA-256 digest: $releaseDigest\n'
+      'V2 Signer: certificate SHA-1 digest: 89779bfaed00c066b3cfff42d1441eeb\n',
+      _releaseCertificate,
+    ),
+    <String>[],
+  );
+  expect(
+    'release signer: refuses another valid key',
+    _signerProblems(
+      'V2 Signer: certificate DN: CN=BGE throwaway\n'
+      'V2 Signer: certificate SHA-256 digest: $otherDigest\n',
+      _releaseCertificate,
+    ),
+    [
+      'a signer certificate has SHA-256 digest $otherDigest, not the '
+          "release key's $releaseDigest",
+    ],
+  );
+  expect(
+    'release signer: refuses a second signer that is another key',
+    _signerProblems(
+      'Signer #1 certificate SHA-256 digest: $releaseDigest\n'
+      'Signer #2 certificate SHA-256 digest: $otherDigest\n',
+      _releaseCertificate,
+    ),
+    [
+      'a signer certificate has SHA-256 digest $otherDigest, not the '
+          "release key's $releaseDigest",
+    ],
+  );
+  expect(
+    "release signer: not the public key's digest -v adds",
+    _signerProblems(
+      'V2 Signer: certificate SHA-256 digest: $releaseDigest\n'
+      'V2 Signer: public key SHA-256 digest: $otherDigest\n',
+      _releaseCertificate,
+    ),
+    <String>[],
+  );
+  expect(
+    "release signer: not a source stamp's certificate",
+    _signerProblems(
+      'Signer #1 certificate SHA-256 digest: $releaseDigest\n'
+      'Source Stamp Signer certificate SHA-256 digest: $otherDigest\n',
+      _releaseCertificate,
+    ),
+    <String>[],
+  );
+  expect(
+    'release signer: flags output naming no certificate',
+    _signerProblems('Verified using v2 scheme: true\n', _releaseCertificate),
+    ["no signer's certificate SHA-256 digest in apksigner's output"],
   );
 
   expect(

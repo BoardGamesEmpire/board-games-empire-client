@@ -42,8 +42,12 @@ as half a key.
 
 `BGE_REQUIRE_RELEASE_SIGNING=true` turns the debug fallback into a failure too.
 `dart run tool/build_android.dart --require-release-signing` sets it, and then
-also refuses an APK whose signer is the debug key. CI's `release-android` job
-uses that flag, so it can't upload a debug-signed APK.
+also refuses an APK signed by anything but the release key: the debug key, or
+any other key, however valid. It knows the release key by its certificate's
+SHA-256 digest, `_releaseCertificate` in `tool/build_android.dart`. CI's
+`release-android` job uses that flag, so it can't upload an APK that won't
+install over the last one. A keystore secret replaced with another key fails
+the job rather than ship.
 
 ## Generating the key
 
@@ -62,6 +66,21 @@ password is the keystore's. So the key password, wherever it goes (the
 `ANDROID_KEY_PASSWORD` secret, `BGE_ANDROID_KEY_PASSWORD` or `keyPassword`),
 takes the same value as the keystore's.
 
+The name fields end up in every APK, where anyone can read them, and Android
+ignores them. A project name in the first two is enough, and the rest can be
+left blank. Don't use `CN=Android Debug`, the name the build takes for the
+debug key.
+
+Then record the certificate's SHA-256 digest, the `SHA256:` line of:
+
+```sh
+keytool -list -v -keystore bge-release.jks -alias bge-release
+```
+
+It goes in `_releaseCertificate` in `tool/build_android.dart`, by pull request,
+as `keytool` prints it. It isn't secret: every APK carries the certificate.
+Until it is there, `release-android` refuses the APK the new key signs.
+
 ## Back it up offline
 
 Losing the key, or its password, means no later APK installs over any copy
@@ -73,6 +92,10 @@ leaves the device), so nothing restores it.
 Keep a copy of the keystore and its password somewhere offline, apart from
 the machine you made it on. Anyone with the key can sign an APK that installs
 over the real app, so keep it secret too.
+
+Replacing the key, lost or not, costs the same uninstall. It is a pull request
+that changes `_releaseCertificate`, merged before the new key's secrets go to
+CI, and a note to every tester that the next APK won't install over the last.
 
 ## Handing it to CI
 
@@ -153,9 +176,7 @@ APK you downloaded, use `apksigner` from the Android SDK's build-tools:
 apksigner verify --print-certs bge-1.0.0-android-universal.apk
 ```
 
-The certificate DN is `CN=Android Debug` for a debug-signed APK. For a
-release-signed one, compare the certificate's SHA-256 digest with the key's:
-
-```sh
-keytool -list -v -keystore bge-release.jks -alias bge-release
-```
+The certificate DN is `CN=Android Debug` for a debug-signed APK. A
+release-signed one's certificate SHA-256 digest is `_releaseCertificate` in
+`tool/build_android.dart`, which `keytool` prints with colons and in upper case
+where `apksigner` prints neither.
