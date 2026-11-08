@@ -34,12 +34,16 @@ import 'pointer_focus_flag.dart';
 /// Inside a `BgeFocusHandoff` the state is the item's rather than the
 /// control's, shared by the controls in it. When the game changes form, the
 /// hand-off gives it to the replacement with the focus, so focus a click gave
-/// stays undrawn in the new form too, until the next key press (#769).
+/// stays undrawn in the new form too, until the next key press (#769). Inside
+/// a control that passes its state on with [sharePointerFocus], the state is
+/// that control's, the nearest of the two winning.
 mixin BgePointerFocus<T extends StatefulWidget> on State<T> {
-  /// The control's own state, where no item provides one.
+  /// The control's own state, where no item or enclosing control provides
+  /// one.
   PointerFocusFlag? _own;
 
-  /// The state the control follows: its item's, or its own.
+  /// The state the control follows: its item's, an enclosing control's, or
+  /// its own.
   PointerFocusFlag? _flag;
 
   /// Whether a mouse or a trackpad pressed the control since the last key
@@ -64,6 +68,18 @@ mixin BgePointerFocus<T extends StatefulWidget> on State<T> {
   void _onFlagChanged() {
     if (mounted) setState(() {});
   }
+
+  /// Gives the controls in [child] this control's state, so that a press on
+  /// any of them hides the feedback of all of them until the next key press,
+  /// as the controls of one `BgeFocusHandoff` item share theirs. For a
+  /// control with a second one of its own, such as a cover's expansions badge
+  /// (#711), where focus passes from one to the other.
+  ///
+  /// Call it from `build`: the state is found in [didChangeDependencies],
+  /// which runs before the first build, and a call before then, such as from
+  /// `initState`, fails.
+  Widget sharePointerFocus(Widget child) =>
+      PointerFocusFlagScope(flag: _flag!, child: child);
 
   /// Notes a press of the control by a pointer of [kind]: a mouse's or a
   /// trackpad's sets [pointerFocus]. A null [kind], a press no pointer made,

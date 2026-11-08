@@ -10,12 +10,14 @@ import 'package:flutter/widgets.dart';
 /// key press, and it stops when it is disposed, so no key handler is left
 /// behind.
 ///
-/// A control keeps one of its own, unless a `BgeFocusHandoff` above it
-/// provides its item's through a [PointerFocusFlagScope]. Then the controls
-/// in the item share it, and when the game changes form, the hand-off copies
-/// it to the replacement before giving it focus (#769). For a hand-off that
-/// waits on a pop, the scope keeps a flag of its own, so a key press on the
-/// route above still ends it.
+/// A control keeps one of its own, unless a [PointerFocusFlagScope] above it
+/// provides one, from either of two sources. A `BgeFocusHandoff` provides its
+/// item's: the controls in the item share it, and when the game changes form,
+/// the hand-off copies it to the replacement before giving it focus (#769).
+/// For a hand-off that waits on a pop, the scope keeps a flag of its own, so
+/// a key press on the route above still ends it. An enclosing control
+/// provides the one it follows, through `BgePointerFocus.sharePointerFocus`,
+/// to a control inside it, such as a cover's expansions badge (#711).
 ///
 /// Not exported: the package's own focus widgets share it.
 class PointerFocusFlag extends ValueNotifier<bool> {
@@ -55,7 +57,9 @@ class PointerFocusFlag extends ValueNotifier<bool> {
   }
 }
 
-/// Provides an item's [PointerFocusFlag] to the controls inside it.
+/// Provides a [PointerFocusFlag] to the controls inside it: a
+/// `BgeFocusHandoff` item's, or an enclosing control's, from
+/// `BgePointerFocus.sharePointerFocus`.
 class PointerFocusFlagScope extends InheritedWidget {
   /// Provides [flag] to [child].
   const PointerFocusFlagScope({
@@ -64,11 +68,11 @@ class PointerFocusFlagScope extends InheritedWidget {
     super.key,
   });
 
-  /// The item's flag.
+  /// The flag the controls in [child] follow.
   final PointerFocusFlag flag;
 
-  /// The flag of the item [context] is in, if any, which [context] then
-  /// depends on.
+  /// The flag provided to [context], its item's or an enclosing control's,
+  /// if any, which [context] then depends on.
   static PointerFocusFlag? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<PointerFocusFlagScope>()?.flag;
 

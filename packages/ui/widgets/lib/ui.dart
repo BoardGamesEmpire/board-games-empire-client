@@ -68,6 +68,7 @@ export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';
 export 'src/images/bge_stack_marker.dart';
 export 'src/images/bge_thumbnail.dart';
