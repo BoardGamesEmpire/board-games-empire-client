@@ -42,16 +42,22 @@ final class PlacedGame<T> extends Equatable {
 /// 2. A standalone item, unmarked.
 /// 3. Once the list is [complete], a linked item with `present` empty, marked.
 ///
-/// Pass 2 nests the linked items. Its `parents` are the `present` links whose
-/// base game is an anchor. The item goes once into each parent's expansions,
-/// in input order. A linked, non-standalone item with `present` non-empty but
-/// no parents (its `present` base games are themselves nested) is top level
-/// and unmarked: those base games are shown, only nested.
+/// Pass 2 places the other linked items that aren't held (below). Each is
+/// nested when any of its `present` base games is top level, and is top
+/// level, unmarked, when all of them are nested: those base games are shown,
+/// only nested. So nesting is one level deep, and a chain of expansions
+/// alternates: one nested under the base before it, the next top level, the
+/// one after nested under that. A cycle no anchor leads into is top level,
+/// unmarked, holding nothing.
+///
+/// Every item not held, a standalone one too, goes once into the expansions
+/// of each of its `present` base games shown at top level, in input order.
 ///
 /// While the list is not [complete], a linked, non-standalone item with no
-/// parents is instead held, left out, when any of its base games is `absent`,
-/// because that base game may be on a later page, or when any of its
-/// `present` base games is held, and so on along a chain to a fixpoint. This
+/// anchor among its `present` base games is instead held, left out, when any
+/// of its base games is `absent`, because that base game may be on a later
+/// page, or when any of its `present` base games is held, and so on along a
+/// chain to a fixpoint. This
 /// holds every linked item with `present` empty. Holding it keeps rows from
 /// moving: a later page that brings the absent base game nests the item
 /// under it rather than taking it from the top level. A cycle with no held
@@ -133,35 +139,58 @@ List<PlacedGame<T>> placeExpansions<T>(
     }
   }
 
-  final children = <String, List<T>>{};
-  final topLevel = <_ItemLinks<T>>[];
-  for (final entry in entries) {
-    final id = gameIdOf(entry.item);
-    if (held.contains(id)) continue;
-    final isAnchor = anchors.containsKey(id);
-    if (entry.linked) {
-      var nested = false;
-      for (final base in entry.present) {
-        if (anchors.containsKey(base)) {
-          (children[base] ??= []).add(entry.item);
-          nested = true;
-        }
-      }
-      if (!isAnchor && !nested && entry.present.isNotEmpty) {
-        topLevel.add(entry);
-        continue;
+  // Decided in rounds out from the anchors, each from the one before's
+  // answers, so the input's order changes nothing. Every undecided item is
+  // linked, not standalone, with `present` non-empty: anything else is an
+  // anchor or held.
+  final top = {...anchors.keys};
+  final nested = <String>{};
+  var undecided = [
+    for (final entry in entries)
+      if (!anchors.containsKey(gameIdOf(entry.item)) &&
+          !held.contains(gameIdOf(entry.item)))
+        entry,
+  ];
+  while (undecided.isNotEmpty) {
+    final toTop = <String>[];
+    final toNested = <String>[];
+    final rest = <_ItemLinks<T>>[];
+    for (final entry in undecided) {
+      final id = gameIdOf(entry.item);
+      if (entry.present.any(top.contains)) {
+        toNested.add(id);
+      } else if (entry.present.every(nested.contains)) {
+        toTop.add(id);
+      } else {
+        rest.add(entry);
       }
     }
-    if (isAnchor) topLevel.add(entry);
+    if (toTop.isEmpty && toNested.isEmpty) break;
+    top.addAll(toTop);
+    nested.addAll(toNested);
+    undecided = rest;
+  }
+  // What no round reaches is a cycle: top level, holding nothing.
+  final cyclic = {for (final entry in undecided) gameIdOf(entry.item)};
+
+  final children = <String, List<T>>{};
+  for (final entry in entries) {
+    final id = gameIdOf(entry.item);
+    if (held.contains(id) || cyclic.contains(id)) continue;
+    for (final base in entry.present) {
+      if (top.contains(base)) (children[base] ??= []).add(entry.item);
+    }
   }
 
   return [
-    for (final entry in topLevel)
-      PlacedGame(
-        entry.item,
-        expansions: children[gameIdOf(entry.item)] ?? const [],
-        missingBase: anchors[gameIdOf(entry.item)] ?? false,
-      ),
+    for (final entry in entries)
+      if (top.contains(gameIdOf(entry.item)) ||
+          cyclic.contains(gameIdOf(entry.item)))
+        PlacedGame(
+          entry.item,
+          expansions: children[gameIdOf(entry.item)] ?? const [],
+          missingBase: anchors[gameIdOf(entry.item)] ?? false,
+        ),
   ];
 }
 

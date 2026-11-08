@@ -132,6 +132,59 @@ void main() {
       ]);
     });
 
+    group('a chain of expansions', () {
+      // a ← b ← c ← d ← e: each an expansion of the one before.
+      final a = _g('a');
+      final b = _g('b', links: [_link('a')], type: ContentType.expansion);
+      final c = _g('c', links: [_link('b')], type: ContentType.expansion);
+      final d = _g('d', links: [_link('c')], type: ContentType.expansion);
+      final e = _g('e', links: [_link('d')], type: ContentType.expansion);
+
+      test('nests an expansion under a top-level base that is itself an '
+          'expansion', () {
+        expect(_place([a, b, c, d]), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [d]),
+        ]);
+      });
+
+      test('alternates top level and nested along its length', () {
+        expect(_place([a, b, c, d, e]), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [d]),
+          PlacedGame(e),
+        ]);
+      });
+
+      test('is placed the same whatever the order', () {
+        expect(_place([e, d, c, b, a]), [
+          PlacedGame(e),
+          PlacedGame(c, expansions: [d]),
+          PlacedGame(a, expansions: [b]),
+        ]);
+      });
+
+      test('is placed the same while the list is incomplete, when every base '
+          'is loaded', () {
+        expect(_place([a, b, c, d], complete: false), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [d]),
+        ]);
+      });
+
+      test('nests an expansion only under the bases shown at top level', () {
+        final both = _g(
+          'both',
+          links: [_link('b'), _link('c')],
+          type: ContentType.expansion,
+        );
+        expect(_place([a, b, c, both]), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [both]),
+        ]);
+      });
+    });
+
     test('a link to itself is ignored', () {
       final g = _g('a', links: [_link('a')], type: ContentType.expansion);
       expect(_place([g]), [PlacedGame(g, missingBase: true)]);
