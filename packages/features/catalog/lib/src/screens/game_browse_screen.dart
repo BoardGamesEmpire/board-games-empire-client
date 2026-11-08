@@ -166,7 +166,11 @@ class GameBrowseScreen extends StatelessWidget {
         onError: _layoutFailed,
         builder: (context, thumbnails, onChanged) =>
             BlocListener<GameBrowseBloc, GameBrowseState>(
-              listenWhen: _landedNothingShown,
+              listenWhen: (previous, current) => _landedNothingShown(
+                previous,
+                current,
+                thumbnails: thumbnails ?? false,
+              ),
               listener: (context, _) => context.read<GameBrowseBloc>().add(
                 const GameBrowseMoreRequested(),
               ),
@@ -376,7 +380,15 @@ class _GameBrowsePage extends StatelessWidget {
 /// screen then reads the next page itself, rather than leaving an empty
 /// screen, or a "Show more games" press that shows nothing, until one lands
 /// that shows something or the list ends, when nothing is held.
-bool _landedNothingShown(GameBrowseState previous, GameBrowseState current) {
+///
+/// In [thumbnails], only a new cover counts: an expansion nested under a
+/// folded cover shows only as a higher count on its badge. One that lands
+/// in the open strip doesn't count either, so such a page reads one more.
+bool _landedNothingShown(
+  GameBrowseState previous,
+  GameBrowseState current, {
+  required bool thumbnails,
+}) {
   if (current is! GameBrowseReady ||
       !current.hasMore ||
       current.loadingMore ||
@@ -384,24 +396,30 @@ bool _landedNothingShown(GameBrowseState previous, GameBrowseState current) {
       current.retrying) {
     return false;
   }
+  int shown(GameBrowseReady state) =>
+      _shownCount(state, thumbnails: thumbnails);
   return switch (previous) {
     // The first page, or a retry's: is anything shown at all?
-    GameBrowseLoading() => _shownCount(current) == 0,
-    GameBrowseReady(retrying: true) => _shownCount(current) == 0,
+    GameBrowseLoading() => shown(current) == 0,
+    GameBrowseReady(retrying: true) => shown(current) == 0,
     // The next page: did it show anything more?
-    GameBrowseReady(loadingMore: true) =>
-      _shownCount(current) <= _shownCount(previous),
+    GameBrowseReady(loadingMore: true) => shown(current) <= shown(previous),
     _ => false,
   };
 }
 
-/// How many of [state]'s games are shown, at top level or nested.
-int _shownCount(GameBrowseReady state) => {
-  for (final placed in _placeBrowse(state)) ...[
-    placed.item.id,
-    for (final expansion in placed.expansions) expansion.id,
-  ],
-}.length;
+/// How many of [state]'s games are shown: the top-level covers in
+/// [thumbnails], else the rows, at top level or nested.
+int _shownCount(GameBrowseReady state, {required bool thumbnails}) {
+  final placed = _placeBrowse(state);
+  if (thumbnails) return placed.length;
+  return {
+    for (final top in placed) ...[
+      top.item.id,
+      for (final expansion in top.expansions) expansion.id,
+    ],
+  }.length;
+}
 
 /// Places the loaded games under their base games (#711).
 ///

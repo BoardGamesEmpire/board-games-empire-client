@@ -461,6 +461,28 @@ void main() {
       expect(find.byKey(GameBrowseScreen.moreKey), findsOneWidget);
     });
 
+    testWidgets('a next page of expansions under a shown base game shows '
+        'their rows, and reads no further', (tester) async {
+      remote.onFetchPage = (page, _) async => switch (page) {
+        1 => pageOf([base], hasMore: true),
+        2 => pageOf(
+          [
+            expansion('E', [under('B')]),
+          ],
+          page: 2,
+          hasMore: true,
+        ),
+        _ => throw unreachable(),
+      };
+
+      await show(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+      await tester.pumpAndSettle();
+
+      expect(nested('B', 'E'), findsOneWidget);
+      expect(remote.calls, hasLength(2));
+    });
+
     testWidgets('a failed read of the next page stops reading on', (
       tester,
     ) async {
@@ -1106,6 +1128,35 @@ void main() {
         ),
       );
       handle.dispose();
+    });
+
+    testWidgets('a next page that only adds expansions under a folded cover '
+        'reads on until a cover shows', (tester) async {
+      remote.onFetchPage = (page, _) async => switch (page) {
+        1 => pageOf([game('B')], hasMore: true),
+        2 => pageOf(
+          [
+            expansion('E', [under('B')]),
+          ],
+          page: 2,
+          hasMore: true,
+        ),
+        3 => pageOf([game('C')], page: 3, hasMore: true),
+        _ => throw unreachable(),
+      };
+
+      await showThumbnails(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+      await tester.pumpAndSettle();
+
+      expect(tile('C'), findsOneWidget);
+      expect(
+        find.descendant(of: badgeOf('B'), matching: find.text('1')),
+        findsOneWidget,
+      );
+      // Page 3 showed a cover, so the grid waits for the next press.
+      expect(remote.calls, hasLength(3));
+      expect(find.byKey(GameBrowseScreen.moreKey), findsOneWidget);
     });
 
     testWidgets("the badge unfolds a strip of its expansions' covers and "
