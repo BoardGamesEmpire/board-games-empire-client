@@ -148,7 +148,7 @@ Know these limits before trusting a green run.
   inbox, the household's invite list and the bootstrap error screen, and
   create event's date and time pickers, among others. Nor is the game quick
   look, which a cover on home's rows or the browse screen opens: it is no
-  screen of its own, so the coverage check doesn't ask for it.
+  screen of its own, so the coverage check doesn't ask for it (#803).
 - **The offline notice** the shell draws isn't in the screen audits.
 - **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
@@ -402,7 +402,7 @@ can express what the finding wants, that check is in the suite, skipped with
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
 | #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
-| `<A11Y-18>` | The app bar's Edit and Remove on `CollectionEntryScreen`, `primary` text on the app bar's scrolled-under tint: 4.39:1 against 4.5 (light, once content scrolls under the bar) | `packages/features/collection/test/widgets/collection_entry_screen_test.dart`, `ready, scrolled to the end` |
+| #802 | The app bar's Edit and Remove on `CollectionEntryScreen`, `primary` text on the app bar's scrolled-under tint: 4.39:1 against 4.5 (light, once content scrolls under the bar) | `packages/features/collection/test/widgets/collection_entry_screen_test.dart`, `ready, scrolled to the end` |
 
 Fixed in this run, each with a regression test in the PR:
 

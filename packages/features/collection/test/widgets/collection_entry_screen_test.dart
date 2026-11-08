@@ -1233,7 +1233,7 @@ void main() {
 
     // At 320dp × 2.0 the page runs 436dp past its view. Audited in a view
     // tall enough to hold it: scrolled to the end, the app bar fails
-    // <A11Y-18> (below).
+    // #802 (below).
     auditScreen(
       'ready, every field empty, whole page',
       pump: pushed(item: bareRow(), gameDetails: true),
@@ -1259,7 +1259,7 @@ void main() {
     auditScreen(
       'ready, scrolled to the end',
       pump: pushed(gameDetails: true),
-      skip: 'see <A11Y-18>',
+      skip: 'see #802',
       arrange: (tester) async {
         expectEveryFieldSet();
         await scrollPageToEnd(tester);
