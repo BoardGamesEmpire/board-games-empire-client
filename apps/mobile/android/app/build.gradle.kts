@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.boardgamesempire.mobile.mobile"
+    namespace = "com.boardgamesempire.app"
 
     // Pinned ahead of `flutter.compileSdkVersion`, which is still 36 on
     // Flutter 3.47.1. flutter_secure_storage 11 compiles its own Android
@@ -22,10 +22,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.boardgamesempire.mobile.mobile"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // The macOS app's bundle id. It can't change once an APK is
+        // sideloaded: Android treats a new id as another app, installed
+        // beside the old one with none of its data (#51).
+        applicationId = "com.boardgamesempire.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

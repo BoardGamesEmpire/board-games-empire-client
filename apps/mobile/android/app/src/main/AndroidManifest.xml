@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Network access (#51): Flutter's template grants INTERNET only in the
+         debug and profile manifests, for the tooling's own connection to
+         the running app. So a release build had no network at all, and
+         nothing in `flutter run` shows it: every server was unreachable.
+         The debug and profile copies stay, since their tooling comment
+         still applies. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Backup posture (#16, encryption-at-rest):
          The local databases are encrypted with keys held in the Android
          Keystore, which never leave this device. A backed-up database is
