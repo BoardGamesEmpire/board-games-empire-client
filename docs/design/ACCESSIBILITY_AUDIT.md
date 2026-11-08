@@ -207,6 +207,15 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    its edit sheet and remove dialog.
 10. Admin, the DataGateway list: a row's menu, the add form, and a
     DataGateway's detail with its language picker.
+11. The invite inbox: a pending invite's Accept, then its Decline and the
+    decline confirm dialog (Cancel, then Decline), and the outcome banner
+    after each. No automated check opens this dialog (§3, "Some pop-ups").
+12. A household's invite list: a row's Revoke and its confirm dialog, and,
+    on an invite awaiting approval, Turn down and its dialog. Both dialogs
+    have Cancel and the confirming button. Check the title and body say
+    which of the two it is, and that focus returns to the row, or to
+    where its removal leaves it, on dismiss. No automated check opens
+    these dialogs either.
 
 ### TalkBack (Android)
 
