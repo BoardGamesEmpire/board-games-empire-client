@@ -2,6 +2,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../common/reach.dart';
 import 'content_type.dart';
+import 'expansion_link.dart';
 
 part 'game.freezed.dart';
 part 'game.g.dart';
@@ -44,6 +45,9 @@ abstract class Game with _$Game {
     @JsonKey(unknownEnumValue: ContentType.unknown)
     @Default(ContentType.baseGame)
     ContentType contentType,
+
+    // The base games this game expands (#711); none for a base game.
+    @Default(<ExpansionLink>[]) List<ExpansionLink> baseGames,
 
     // Aggregate metadata from server
     @Default(0) int totalPlayCount,

@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'content_type.dart';
+import 'expansion_link.dart';
 import 'game_collection.dart';
 
 part 'game_collection_list_item.freezed.dart';
@@ -26,5 +28,11 @@ abstract class GameCollectionListItem with _$GameCollectionListItem {
     /// game's: each one's thumbnail, else its full image (#709). Null when
     /// none of the four is set.
     String? thumbnail,
+
+    /// The game's base games (#711); none for a base game.
+    @Default(<ExpansionLink>[]) List<ExpansionLink> baseGames,
+
+    /// What the game is (#711).
+    @Default(ContentType.baseGame) ContentType contentType,
   }) = _GameCollectionListItem;
 }

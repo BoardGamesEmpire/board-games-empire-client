@@ -4,6 +4,7 @@ import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 const _kHtml = '<!doctype html><html><body>Sign in to continue</body></html>';
@@ -170,6 +171,41 @@ void main() {
       expect(page.items, hasLength(1));
       expect(page.items.single.entry.id, 'gc_1');
       expect(page.meta.hasMore, isFalse);
+    });
+  });
+
+  group('the embedded game\'s expansion fields (#711)', () {
+    test('reads the embedded game\'s base games and content type', () async {
+      final row = _entry('gc_1');
+      final platformGame = row['platformGame'] as Map<String, dynamic>;
+      platformGame['game'] = <String, dynamic>{
+        ...(platformGame['game'] as Map<String, dynamic>),
+        'contentType': 'Expansion',
+        'baseGames': [
+          {'gameId': 'b1', 'isStandalone': false},
+        ],
+      };
+      final remote = remoteOver(
+        cannedDio(body: _listBody([row]), statusCode: 200),
+      );
+
+      final summary = (await remote.fetchCollectionPage()).items.single.summary;
+
+      expect(summary.game.contentType, ContentType.expansion);
+      expect(summary.game.baseGames, const [
+        ExpansionLink(gameId: 'b1', isStandalone: false),
+      ]);
+    });
+
+    test('a row without them leaves both null', () async {
+      final remote = remoteOver(
+        cannedDio(body: _listBody([_entry('gc_1')]), statusCode: 200),
+      );
+
+      final summary = (await remote.fetchCollectionPage()).items.single.summary;
+
+      expect(summary.game.contentType, isNull);
+      expect(summary.game.baseGames, isNull);
     });
   });
 
