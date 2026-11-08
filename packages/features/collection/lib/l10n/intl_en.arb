@@ -135,6 +135,46 @@
   "@collectionListBaseGameMissing": {
     "description": "A note on the collection row of an expansion or DLC the user owns without owning its base game. Shown on the row, and read by screen readers with the row's other details, first among them."
   },
+  "collectionExpansionsBadge": "{title} expansions, {count}",
+  "@collectionExpansionsBadge": {
+    "description": "What a screen reader says for the badge on a base game's cover in the collection grid, which counts the expansions the user owns for it and shows or hides them under the cover. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many of its expansions the user owns, at least one, an expansion owned more than once counting once.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "collectionShowExpansions": "Show expansions",
+  "@collectionShowExpansions": {
+    "description": "An action a screen reader offers on a base game's cover in the collection grid while its expansions are hidden: it shows the covers of the expansions the user owns in a row under the cover, as the cover's badge does."
+  },
+  "collectionHideExpansions": "Hide expansions",
+  "@collectionHideExpansions": {
+    "description": "An action a screen reader offers on a base game's cover in the collection grid while its expansions are shown under it: it hides them again. Replaces collectionShowExpansions."
+  },
+  "collectionExpansionsStrip": "{title} expansions",
+  "@collectionExpansionsStrip": {
+    "description": "Heading of the row of expansion covers shown under a base game's cover in the collection grid: the expansions the user owns for it. Shown, and spoken as a heading. {title} is the base game's title, with its subtitle where it has one.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "collectionShelfPrevious": "Previous games",
+  "@collectionShelfPrevious": {
+    "description": "Tooltip and spoken label of the button on the row of expansion covers under a base game's cover in the collection grid that scrolls the row back to the expansions before the ones in view."
+  },
+  "collectionShelfNext": "Next games",
+  "@collectionShelfNext": {
+    "description": "Tooltip and spoken label of the button on the row of expansion covers under a base game's cover in the collection grid that scrolls the row on to the expansions after the ones in view."
+  },
   "collectionListStackCopies": "{count, plural, other{{count} copies}}: {platforms}",
   "@collectionListStackCopies": {
     "description": "On the collection row or cover of a game the user owns more than once, on different platforms or as both a physical and a digital copy: how many copies, then which, for example '2 copies: Tabletop, Steam'. Shown under the game's name on a row, and read by screen readers after the game's name on a row and on a cover. {count} is always two or more. {platforms} lists each copy's platform, with its medium where two copies share a platform (collectionPickerEntryWithMedium), joined by collectionListDetailSpokenSeparator.",

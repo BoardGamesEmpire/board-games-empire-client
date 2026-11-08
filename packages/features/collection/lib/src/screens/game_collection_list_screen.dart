@@ -16,7 +16,6 @@ import '../bloc/game_collection_list_event.dart';
 import '../bloc/game_collection_list_state.dart';
 import '../medium_label.dart';
 import '../picker/collection_entry_picker.dart';
-import 'collection_groups.dart';
 import 'collection_rows.dart';
 
 /// The collection list (#44): every game the signed-in user owns, read
@@ -59,6 +58,12 @@ import 'collection_rows.dart';
 /// ([showCollectionEntryPicker]), whose tiles open them through [onOpen]. A
 /// game owned once is a row or a cover of its own, as before, and opens its
 /// entry directly. Without [onOpen] a stack is inert, as a row is.
+///
+/// ## An expansion is shown under its base game (#711)
+///
+/// An owned expansion's row sits under its owned base game's row. In
+/// thumbnails, a badge on the base game's cover opens a strip of its
+/// expansions' covers under that cover's row.
 ///
 /// ## An empty collection points at the catalog (#45)
 ///
@@ -156,6 +161,20 @@ class GameCollectionListScreen extends StatelessWidget {
   /// [stackKey].
   static Key stackTileKey(String gameId) =>
       Key('collection_list.stack_tile_$gameId');
+
+  /// Per-tile key of an expansion's cover in the strip unfolded under its
+  /// base game's: `collection_list.nested_tile_<parentGameId>_<entryId>`.
+  ///
+  /// Held by the wrapper around the cover, as [tileKey] is. It names the
+  /// base game, as [nestedRowKey] does (#711).
+  static Key nestedTileKey(String parentGameId, String entryId) =>
+      Key('collection_list.nested_tile_${parentGameId}_$entryId');
+
+  /// Per-stack tile key of an expansion owned more than once, in the strip
+  /// unfolded under its base game's:
+  /// `collection_list.nested_stack_tile_<parentGameId>_<gameId>`.
+  static Key nestedStackTileKey(String parentGameId, String gameId) =>
+      Key('collection_list.nested_stack_tile_${parentGameId}_$gameId');
 
   /// Per-row thumbnail key: `collection_list.thumbnail_<entryId>`.
   static Key thumbnailKey(String entryId) =>
@@ -256,16 +275,14 @@ class _GameCollectionListPage extends StatelessWidget {
     // The row count, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210). A row or a cover per game, as a game owned
     // more than once is one stack (#709). The list draws a row for each
-    // nested expansion too (#711), so it counts the rows; the grid still
-    // draws every game, so its count is the games, counted without building
-    // the groups on every state.
+    // nested expansion too (#711), so it counts the rows; the grid draws the
+    // top-level covers, as a strip's are a row of their own, so it counts
+    // those.
     final list = thumbnails == false;
     final rowCount = context.select<GameCollectionListBloc, int?>(
       (bloc) => switch (bloc.state) {
         GameCollectionListReady(:final items) when items.isNotEmpty =>
-          list
-              ? collectionRows(items).length
-              : {for (final item in items) item.gameId}.length,
+          list ? collectionRows(items).length : placeCollection(items).length,
         _ => null,
       },
     );
@@ -393,27 +410,9 @@ class GameCollectionListSliver extends StatelessWidget {
               child: SliverMainAxisGroup(
                 slivers: [
                   if (thumbnails == true)
-                    BgeKeyedSliverGrid<List<GameCollectionListItem>>(
-                      items: groupByGame(items),
-                      keyOf: (group) => switch (group) {
-                        [final item] => GameCollectionListScreen.tileKey(
-                          item.entry.id,
-                        ),
-                        _ => GameCollectionListScreen.stackTileKey(
-                          group.first.gameId,
-                        ),
-                      },
-                      gridDelegate: bgeCoverGridDelegate(context),
-                      itemBuilder: (context, group) => BgeFocusHandoff(
-                        identity: group.first.gameId,
-                        child: switch (group) {
-                          [final item] => _CollectionTile(
-                            item: item,
-                            onOpen: onOpen,
-                          ),
-                          _ => _StackTile(items: group, onOpen: onOpen),
-                        },
-                      ),
+                    _CollectionCovers(
+                      placed: placeCollection(items),
+                      onOpen: onOpen,
                     )
                   else
                     BgeKeyedSliverList<CollectionRow>(
@@ -604,28 +603,185 @@ List<({String shown, String spoken})> _details(
   ];
 }
 
+/// The collection as a grid of covers (#710): the top-level games alone,
+/// with a badge on a base game's cover, or its stack's, that opens a strip
+/// of its expansions' covers under its row (#711).
+///
+/// One game is unfolded at a time ([BgeUnfoldingCovers]), whether its
+/// cover is one entry's or a stack's. The unfold goes once that game is no
+/// longer at top level with expansions, as when a sync takes it or its
+/// expansions away, so the grid is whole again and the game doesn't come
+/// back unfolded.
+///
+/// Without [onOpen] the covers are inert, and carry no badge: a badge that
+/// goes while it holds focus gives it to its cover, which an inert cover
+/// can't take.
+class _CollectionCovers extends StatelessWidget {
+  const _CollectionCovers({required this.placed, this.onOpen});
+
+  final List<PlacedGame<List<GameCollectionListItem>>> placed;
+  final void Function(BuildContext context, String entryId)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final onOpen = this.onOpen;
+    return BgeUnfoldingCovers<PlacedGame<List<GameCollectionListItem>>>(
+      items: placed,
+      keyOf: (placed) => switch (placed.item) {
+        [final item] => GameCollectionListScreen.tileKey(item.entry.id),
+        final group => GameCollectionListScreen.stackTileKey(
+          group.first.gameId,
+        ),
+      },
+      idOf: (placed) => placed.item.first.gameId,
+      hasStrip: (placed) => placed.expansions.isNotEmpty,
+      itemBuilder: (context, placed, unfolded, toggle) {
+        final group = placed.item;
+        final gameId = group.first.gameId;
+        final count = placed.expansions.length;
+        final expansions = count == 0 || onOpen == null
+            ? null
+            : BgeCoverExpansions(
+                count: count,
+                expanded: unfolded,
+                onToggle: toggle,
+                label: l10n.collectionExpansionsBadge(
+                  _title(l10n, group.first),
+                  count,
+                ),
+                showLabel: l10n.collectionShowExpansions,
+                hideLabel: l10n.collectionHideExpansions,
+              );
+        return BgeFocusHandoff(
+          identity: gameId,
+          child: switch (group) {
+            [final item] => _CollectionTile(
+              item: item,
+              onOpen: onOpen,
+              missingBase: placed.missingBase,
+              expansions: expansions,
+            ),
+            _ => _StackTile(
+              items: group,
+              onOpen: onOpen,
+              missingBase: placed.missingBase,
+              expansions: expansions,
+            ),
+          },
+        );
+      },
+      stripBuilder: (context, placed) => _CollectionStrip(
+        parent: placed.item.first,
+        expansions: placed.expansions,
+        onOpen: onOpen,
+      ),
+    );
+  }
+}
+
+/// A base game's owned expansions, as a row of covers under its cover's row
+/// (#711). Each opens its entry, or its picker for a stack, as a cover in
+/// the grid does.
+class _CollectionStrip extends StatelessWidget {
+  const _CollectionStrip({
+    required this.parent,
+    required this.expansions,
+    this.onOpen,
+  });
+
+  /// The base game's first entry, which names it.
+  final GameCollectionListItem parent;
+  final List<List<GameCollectionListItem>> expansions;
+  final void Function(BuildContext context, String entryId)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final parentTitle = _title(l10n, parent);
+    return BgeShelf(
+      heading: l10n.collectionExpansionsStrip(parentTitle),
+      previousLabel: l10n.collectionShelfPrevious,
+      nextLabel: l10n.collectionShelfNext,
+      children: [
+        for (final group in expansions)
+          BgeFocusHandoff(
+            key: switch (group) {
+              [final item] => GameCollectionListScreen.nestedTileKey(
+                parent.gameId,
+                item.entry.id,
+              ),
+              _ => GameCollectionListScreen.nestedStackTileKey(
+                parent.gameId,
+                group.first.gameId,
+              ),
+            },
+            identity: group.first.gameId,
+            place: 'strip:${parent.gameId}',
+            child: switch (group) {
+              [final item] => _CollectionTile(
+                item: item,
+                onOpen: onOpen,
+                expansionOf: parentTitle,
+              ),
+              _ => _StackTile(
+                items: group,
+                onOpen: onOpen,
+                expansionOf: parentTitle,
+              ),
+            },
+          ),
+      ],
+    );
+  }
+}
+
 /// An entry's cover alone, named as its row is: the title and the row's
 /// spoken details, then the favourite, since no text is drawn to tell two
 /// covers apart (#710).
+///
+/// In a strip under its base game, a shelf's size, and named as an
+/// expansion of it, as its nested row is (#711). In the grid, a cell's size,
+/// marked when [missingBase].
 class _CollectionTile extends StatelessWidget {
-  const _CollectionTile({required this.item, this.onOpen});
+  const _CollectionTile({
+    required this.item,
+    this.onOpen,
+    this.expansionOf,
+    this.missingBase = false,
+    this.expansions,
+  });
 
   final GameCollectionListItem item;
   final void Function(BuildContext context, String entryId)? onOpen;
+
+  /// The title of the base game whose strip the cover is in, or null in the
+  /// grid (#711).
+  final String? expansionOf;
+
+  /// Whether the game is an expansion shown without its base game (#711).
+  final bool missingBase;
+
+  /// The game's expansions, for a base game's badge (#711).
+  final BgeCoverExpansions? expansions;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
     final entry = item.entry;
     final open = onOpen;
+    final title = _title(l10n, item);
     return BgeCoverTile(
-      extent: null,
+      extent: expansionOf == null ? null : BgeCoverTile.shelfExtent,
       label: [
-        _title(l10n, item),
+        _spokenTitle(l10n, title, expansionOf) ?? title,
+        if (missingBase) l10n.collectionListBaseGameMissing,
         ..._details(l10n, item).map((d) => d.spoken),
         if (entry.hasFavorited) l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: item.thumbnail,
+      marked: missingBase,
+      expansions: expansions,
       onTap: open == null ? null : () => open(context, entry.id),
     );
   }
@@ -828,27 +984,50 @@ class _RingedListTileState extends State<_RingedListTile>
 
 /// A stack's cover (#709), marked with the count of its entries and named as
 /// its row is: the title, the copies, then the favourite.
+///
+/// In a strip, in the grid, marked and with a badge as [_CollectionTile] is
+/// (#711).
 class _StackTile extends StatelessWidget {
-  const _StackTile({required this.items, this.onOpen});
+  const _StackTile({
+    required this.items,
+    this.onOpen,
+    this.expansionOf,
+    this.missingBase = false,
+    this.expansions,
+  });
 
   final List<GameCollectionListItem> items;
   final void Function(BuildContext context, String entryId)? onOpen;
+
+  /// The title of the base game whose strip the cover is in, or null in the
+  /// grid (#711).
+  final String? expansionOf;
+
+  /// Whether the game is an expansion shown without its base game (#711).
+  final bool missingBase;
+
+  /// The game's expansions, for a base game's badge (#711).
+  final BgeCoverExpansions? expansions;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
     final open = onOpen;
     final first = items.first;
+    final title = _title(l10n, first);
     return BgeCoverTile(
-      extent: null,
+      extent: expansionOf == null ? null : BgeCoverTile.shelfExtent,
       stackCount: items.length,
       label: [
-        _title(l10n, first),
+        _spokenTitle(l10n, title, expansionOf) ?? title,
+        if (missingBase) l10n.collectionListBaseGameMissing,
         _copies(l10n, items).spoken,
         if (items.any((item) => item.entry.hasFavorited))
           l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: first.thumbnail,
+      marked: missingBase,
+      expansions: expansions,
       // The tile takes focus on a tap before this runs, so the picker hands
       // it back when it closes.
       onTap: open == null

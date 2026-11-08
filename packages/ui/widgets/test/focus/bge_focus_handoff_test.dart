@@ -15,16 +15,44 @@ typedef _Item = ({
   String? game,
   String? place,
   bool stack,
+  bool laidOut,
 });
 
-_Item _line(String key) =>
-    (key: key, label: key, game: null, place: null, stack: false);
+_Item _line(String key) => (
+  key: key,
+  label: key,
+  game: null,
+  place: null,
+  stack: false,
+  laidOut: false,
+);
 
-_Item _row(String key, String label, {String game = 'g', String? place}) =>
-    (key: key, label: label, game: game, place: place, stack: false);
+_Item _row(String key, String label, {String game = 'g', String? place}) => (
+  key: key,
+  label: label,
+  game: game,
+  place: place,
+  stack: false,
+  laidOut: false,
+);
 
-_Item _stack(String key, String label, {String game = 'g', String? place}) =>
-    (key: key, label: label, game: game, place: place, stack: true);
+_Item _stack(String key, String label, {String game = 'g', String? place}) => (
+  key: key,
+  label: label,
+  game: game,
+  place: place,
+  stack: true,
+  laidOut: false,
+);
+
+_Item _laidOut(String key, String label, {String game = 'g'}) => (
+  key: key,
+  label: label,
+  game: game,
+  place: null,
+  stack: false,
+  laidOut: true,
+);
 
 /// One form of a game's item, as an entry's row is.
 class _Row extends StatelessWidget {
@@ -55,6 +83,36 @@ class _Stack extends StatelessWidget {
         onTap: () {},
         child: SizedBox(height: 48, child: Text(label)),
       ),
+    ),
+  );
+}
+
+/// A form with two controls, the first built at layout, inside a
+/// [LayoutBuilder], as a cover tile's cover is, and the second built at once,
+/// as its expansions badge is (#711). The second's focus node is attached
+/// first.
+class _LaidOut extends StatelessWidget {
+  const _LaidOut(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    child: Row(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, _) => InkWell(
+              onTap: () {},
+              child: SizedBox(height: 48, child: Text(label)),
+            ),
+          ),
+        ),
+        InkWell(
+          onTap: () {},
+          child: SizedBox(height: 48, child: Text('$label badge')),
+        ),
+      ],
     ),
   );
 }
@@ -118,7 +176,9 @@ void main() {
                           final game => BgeFocusHandoff(
                             identity: game,
                             place: item.place,
-                            child: item.stack
+                            child: item.laidOut
+                                ? _LaidOut(item.label)
+                                : item.stack
                                 ? _Stack(item.label)
                                 : _Row(item.label),
                           ),
@@ -199,6 +259,39 @@ void main() {
       }
     },
   );
+
+  testWidgets("hands focus to the replacement's first control in the tree, "
+      'though a later one was attached first', (tester) async {
+    await show(tester, [_line('a'), _row('row-g', 'Wingspan')]);
+    await focus(tester, 'Wingspan');
+
+    items.value = [_line('a'), _laidOut('laid-g', 'Wingspan cover')];
+    await tester.pumpAndSettle();
+
+    expect(control(tester, 'Wingspan cover').hasPrimaryFocus, isTrue);
+  });
+
+  testWidgets("hands focus to the replacement's control in the place of the "
+      'one that had it', (tester) async {
+    await show(tester, [_line('a'), _laidOut('laid-g', 'Wingspan')]);
+    await focus(tester, 'Wingspan badge');
+
+    items.value = [_line('a'), _laidOut('laid-g-2', 'Wingspan again')];
+    await tester.pumpAndSettle();
+
+    expect(control(tester, 'Wingspan again badge').hasPrimaryFocus, isTrue);
+  });
+
+  testWidgets('hands focus to the first control when the replacement has '
+      "none in the focused one's place", (tester) async {
+    await show(tester, [_line('a'), _laidOut('laid-g', 'Wingspan')]);
+    await focus(tester, 'Wingspan badge');
+
+    items.value = [_line('a'), _row('row-g', 'Wingspan row')];
+    await tester.pumpAndSettle();
+
+    expect(control(tester, 'Wingspan row').hasPrimaryFocus, isTrue);
+  });
 
   testWidgets('hands focus to the copy under the same base game', (
     tester,
@@ -468,13 +561,14 @@ void main() {
   });
 
   group('carries focus a mouse gave, hidden until a key press', () {
-    /// Whether the game is a stack, or null once it has gone.
-    late ValueNotifier<bool?> stacked;
+    /// The game's form: `stack`, a stack of two; `single` or `third`, one
+    /// entry's cover, each under its own key; or null once it has gone.
+    late ValueNotifier<String?> form;
     late TestGesture mouse;
     const away = Offset(700, 500);
 
-    setUp(() => stacked = ValueNotifier(true));
-    tearDown(() => stacked.dispose());
+    setUp(() => form = ValueNotifier('stack'));
+    tearDown(() => form.dispose());
 
     /// The game's cover, a stack of two or one entry's, under the button
     /// above the list, which has had focus.
@@ -495,19 +589,20 @@ void main() {
                 BgeFocusHandoffScope(
                   child: SliverMainAxisGroup(
                     slivers: [
-                      ValueListenableBuilder<bool?>(
-                        valueListenable: stacked,
-                        builder: (_, stacked, _) => BgeKeyedSliverList<bool>(
-                          items: [?stacked],
-                          keyOf: (stacked) =>
-                              ValueKey(stacked ? 'stack' : 'single'),
-                          itemBuilder: (_, stacked) => BgeFocusHandoff(
+                      ValueListenableBuilder<String?>(
+                        valueListenable: form,
+                        builder: (_, form, _) => BgeKeyedSliverList<String>(
+                          items: [?form],
+                          keyOf: ValueKey.new,
+                          itemBuilder: (_, form) => BgeFocusHandoff(
                             identity: 'g',
                             child: Align(
                               alignment: AlignmentDirectional.centerStart,
                               child: BgeCoverTile(
-                                label: stacked ? 'Azul, 2 copies' : 'Azul',
-                                stackCount: stacked ? 2 : null,
+                                label: form == 'stack'
+                                    ? 'Azul, 2 copies'
+                                    : 'Azul',
+                                stackCount: form == 'stack' ? 2 : null,
                                 onTap: () {},
                               ),
                             ),
@@ -621,7 +716,7 @@ void main() {
         FocusHighlightMode.traditional,
       );
 
-      stacked.value = false;
+      form.value = 'single';
       await tester.pumpAndSettle();
 
       expect(state(tester, 'single'), (
@@ -651,7 +746,7 @@ void main() {
       await showCover(tester);
       await click(tester, 'stack');
 
-      stacked.value = false;
+      form.value = 'single';
       await tester.pump();
       // The replacement was built for keyboard focus, so focus waits a frame
       // on the page; the user moves it in that frame.
@@ -661,6 +756,89 @@ void main() {
 
       expect(other.hasPrimaryFocus, isTrue);
       expect(state(tester, 'single').focused, isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    /// The page's focus scope, where focus waits while a replacement
+    /// rebuilds.
+    FocusNode page(WidgetTester tester) =>
+        FocusScope.of(tester.element(find.text('other')));
+
+    testWidgets('to the newest replacement when the game changes form again '
+        'while focus waits', (tester) async {
+      await showCover(tester);
+      await click(tester, 'stack');
+
+      form.value = 'single';
+      await tester.pump();
+      // Focus waits a frame on the page while the replacement rebuilds; the
+      // game changes form again in that frame.
+      expect(FocusManager.instance.primaryFocus, page(tester));
+      form.value = 'third';
+      await tester.pumpAndSettle();
+
+      expect(state(tester, 'third'), (
+        focused: true,
+        ringed: false,
+        tinted: false,
+      ));
+      expect(ring(tester, 'third').suppressed, isTrue);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('and draws it when a key is pressed while focus waits', (
+      tester,
+    ) async {
+      await showCover(tester);
+      await click(tester, 'stack');
+
+      form.value = 'single';
+      await tester.pump();
+      expect(FocusManager.instance.primaryFocus, page(tester));
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      expect(state(tester, 'single'), (
+        focused: true,
+        ringed: true,
+        tinted: true,
+      ));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('to the newest replacement when the game changes form again '
+        "while a pop-up's restore waits", (tester) async {
+      await showCover(tester);
+      await click(tester, 'stack');
+      late BuildContext dialog;
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.text('other')),
+          builder: (context) {
+            dialog = context;
+            return const AlertDialog(content: Text('picker'));
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      form.value = 'single';
+      await tester.pump();
+
+      Navigator.of(dialog).pop();
+      // Until the restore parks focus on the page for the replacement to
+      // rebuild; the game changes form again in that frame.
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump();
+        if (FocusManager.instance.primaryFocus == page(tester)) break;
+      }
+      expect(FocusManager.instance.primaryFocus, page(tester));
+      form.value = 'third';
+      await tester.pumpAndSettle();
+
+      expect(find.text('picker'), findsNothing);
+      expect(state(tester, 'third'), (
+        focused: true,
+        ringed: false,
+        tinted: false,
+      ));
+      expect(ring(tester, 'third').suppressed, isTrue);
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets("a keyboard's focus stays drawn, and moves at once", (
@@ -675,7 +853,7 @@ void main() {
         tinted: true,
       ));
 
-      stacked.value = false;
+      form.value = 'single';
       await tester.pump();
       // In the frame that replaced the item.
       expect(state(tester, 'single').focused, isTrue);
@@ -708,7 +886,7 @@ void main() {
             ),
           );
           await tester.pumpAndSettle();
-          stacked.value = false;
+          form.value = 'single';
           await tester.pump();
           if (keyPressed) {
             await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
@@ -750,7 +928,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           // The game leaves under the page with no other form.
-          stacked.value = null;
+          form.value = null;
           await tester.pump();
 
           if (listGoes) {

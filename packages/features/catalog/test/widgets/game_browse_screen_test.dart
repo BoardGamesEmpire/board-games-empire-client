@@ -10,6 +10,7 @@ import 'package:game_catalog/game_catalog.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -1021,6 +1022,361 @@ void main() {
     });
   });
 
+  group('expansions in thumbnails (#711)', () {
+    ExpansionLink under(String id) =>
+        ExpansionLink(gameId: id, isStandalone: false);
+    Game expansion(String id, List<ExpansionLink> links) =>
+        game(id, contentType: ContentType.expansion, baseGames: links);
+
+    Finder tile(String id) => find.byKey(GameBrowseScreen.tileKey(id));
+    Finder stripTile(String parent, String id) =>
+        find.byKey(GameBrowseScreen.nestedTileKey(parent, id));
+    Finder badgeOf(String id) => find.descendant(
+      of: tile(id),
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+
+    /// The cover's own node: with a badge, the tile holds two nodes and has
+    /// none of its own, so it is found from the picture inside it.
+    SemanticsNode coverNode(WidgetTester tester, String id) =>
+        tester.getSemantics(
+          find.descendant(of: tile(id), matching: find.byType(BgeThumbnail)),
+        );
+
+    void performCustomAction(SemanticsNode node, String label) =>
+        node.owner!.performAction(
+          node.id,
+          SemanticsAction.customAction,
+          CustomSemanticsAction.getIdentifier(
+            CustomSemanticsAction(label: label),
+          ),
+        );
+
+    final grids = find.byWidgetPredicate(
+      (widget) => widget is BgeKeyedSliverGrid,
+    );
+
+    /// Shows the page in thumbnails, two columns wide and tall enough for
+    /// every cover and the strip.
+    Future<void> showThumbnails(
+      WidgetTester tester, {
+      void Function(BuildContext context, GameQuickLookSeed seed)? onQuickLook,
+      Stream<String>? gone,
+      FakeGamesCache? cache,
+    }) async {
+      useViewSize(tester, const Size(400, 1600));
+      await show(
+        tester,
+        gone: gone,
+        cache: cache,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+        onQuickLook: onQuickLook ?? (_, _) {},
+      );
+    }
+
+    testWidgets("only top-level covers show, and a base game's carries the "
+        'count', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E', [under('B')]),
+        game('C'),
+      ]);
+
+      await showThumbnails(tester);
+
+      expect(tile('B'), findsOneWidget);
+      expect(tile('C'), findsOneWidget);
+      expect(tile('E'), findsNothing);
+      expect(find.byType(BgeShelf), findsNothing);
+      expect(
+        find.descendant(of: badgeOf('B'), matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(badgeOf('C'), findsNothing);
+      expect(
+        tester.getSemantics(badgeOf('B')),
+        isSemantics(
+          label: 'Game B expansions, 1',
+          isButton: true,
+          hasExpandedState: true,
+          isExpanded: false,
+          hasTapAction: true,
+          isFocusable: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("the badge unfolds a strip of its expansions' covers and "
+        'folds it again', (tester) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E1', [under('B')]),
+        expansion('E2', [under('B')]),
+        game('C'),
+        game('D'),
+      ]);
+      await showThumbnails(tester);
+
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BgeShelf), findsOneWidget);
+      expect(find.text('Game B expansions'), findsOneWidget);
+      expect(stripTile('B', 'E1'), findsOneWidget);
+      expect(stripTile('B', 'E2'), findsOneWidget);
+      expect(tile('E1'), findsNothing);
+      expect(
+        tester.getSemantics(badgeOf('B')),
+        isSemantics(
+          label: 'Game B expansions, 2',
+          isButton: true,
+          hasExpandedState: true,
+          isExpanded: true,
+          hasTapAction: true,
+          isFocusable: true,
+        ),
+      );
+      // Under B's row, which C shares at two columns, and above D's.
+      final strip = tester.getRect(find.byType(BgeShelf));
+      expect(tester.getRect(tile('C')).bottom, lessThan(strip.top));
+      expect(tester.getRect(tile('D')).top, greaterThan(strip.bottom));
+      // A strip cover is named as the expansion of its base game.
+      expect(
+        tester.getSemantics(stripTile('B', 'E1')).label,
+        startsWith('Game E1, expansion for Game B'),
+      );
+
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BgeShelf), findsNothing);
+      expect(stripTile('B', 'E1'), findsNothing);
+      expect(grids, findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('unfolding another base game folds the first', (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        game('C'),
+        expansion('E1', [under('B')]),
+        expansion('E2', [under('C')]),
+      ]);
+      await showThumbnails(tester);
+
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+      await tester.tap(badgeOf('C'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BgeShelf), findsOneWidget);
+      expect(stripTile('C', 'E2'), findsOneWidget);
+      expect(stripTile('B', 'E1'), findsNothing);
+    });
+
+    testWidgets('the badge keeps its focus as strips open and close, a later '
+        "game's included", (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E1', [under('B')]),
+        game('C'),
+        game('D'),
+        expansion('E2', [under('D')]),
+        game('F'),
+      ]);
+      await showThumbnails(tester);
+      bool focusWithin(Finder finder) {
+        final focused = FocusManager.instance.primaryFocus?.context;
+        if (focused == null) return false;
+        final target = tester.element(finder);
+        var within = identical(focused, target);
+        focused.visitAncestorElements((ancestor) {
+          within = within || identical(ancestor, target);
+          return !within;
+        });
+        return within;
+      }
+
+      for (final step in ['opened', 'closed', 'opened again']) {
+        await tester.tap(badgeOf('B'));
+        await tester.pumpAndSettle();
+        expect(focusWithin(badgeOf('B')), isTrue, reason: step);
+      }
+
+      // At two columns D is in the row after B's strip, and moves to the
+      // rows before its own strip.
+      await tester.tap(badgeOf('D'));
+      await tester.pumpAndSettle();
+
+      expect(stripTile('D', 'E2'), findsOneWidget);
+      expect(focusWithin(badgeOf('D')), isTrue);
+    });
+
+    testWidgets('a strip cover opens the quick look', (tester) async {
+      final calls = <GameQuickLookSeed>[];
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E', [under('B')]),
+      ]);
+      await showThumbnails(tester, onQuickLook: (_, seed) => calls.add(seed));
+
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+      await tester.tap(stripTile('B', 'E'));
+      await tester.pumpAndSettle();
+
+      expect(calls.map((seed) => seed.id), ['E']);
+    });
+
+    testWidgets("Show expansions works from the cover's custom action", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E', [under('B')]),
+      ]);
+      await showThumbnails(tester);
+
+      expect(
+        coverNode(tester, 'B'),
+        isSemantics(
+          label: 'Game B',
+          customActions: [
+            const CustomSemanticsAction(label: 'Show expansions'),
+          ],
+        ),
+      );
+      performCustomAction(coverNode(tester, 'B'), 'Show expansions');
+      await tester.pumpAndSettle();
+
+      expect(stripTile('B', 'E'), findsOneWidget);
+      expect(
+        coverNode(tester, 'B'),
+        isSemantics(
+          label: 'Game B',
+          customActions: [
+            const CustomSemanticsAction(label: 'Hide expansions'),
+          ],
+        ),
+      );
+
+      performCustomAction(coverNode(tester, 'B'), 'Hide expansions');
+      await tester.pumpAndSettle();
+
+      expect(stripTile('B', 'E'), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets("a marked cover's label says the base game isn't on this "
+        'server', (tester) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('A'),
+        expansion('E', [under('X')]),
+      ]);
+      await showThumbnails(tester);
+
+      final cover = find.descendant(
+        of: tile('E'),
+        matching: find.byType(BgeCoverTile),
+      );
+      expect(tester.widget<BgeCoverTile>(cover).marked, isTrue);
+      expect(
+        tester.widget<BgeCoverTile>(cover).label,
+        'Game E, Base game not on this server, Expansion',
+      );
+      expect(
+        tester
+            .widget<BgeCoverTile>(
+              find.descendant(
+                of: tile('A'),
+                matching: find.byType(BgeCoverTile),
+              ),
+            )
+            .marked,
+        isFalse,
+      );
+    });
+
+    testWidgets("offline, a marked cover's label says its base game wasn't "
+        'saved', (tester) async {
+      remote.onFetchPage = (_, _) async => throw unreachable();
+      await showThumbnails(
+        tester,
+        cache: FakeGamesCache([
+          expansion('E', [under('X')]),
+        ]),
+      );
+
+      expect(
+        tester
+            .widget<BgeCoverTile>(
+              find.descendant(
+                of: tile('E'),
+                matching: find.byType(BgeCoverTile),
+              ),
+            )
+            .label,
+        'Game E, Base game not saved on this device, Expansion',
+      );
+    });
+
+    testWidgets('the semantic child count is the top-level covers', (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        game('C'),
+        expansion('E', [under('B'), under('C')]),
+      ]);
+      await showThumbnails(tester);
+
+      // Three games, an expansion under two of them: two covers.
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        2,
+      );
+    });
+
+    testWidgets('the strip folds when its game is found gone', (tester) async {
+      final gone = StreamController<String>();
+      addTearDown(gone.close);
+      remote.onFetchPage = (_, _) async => pageOf([
+        game('B'),
+        expansion('E', [under('B')]),
+        game('C'),
+      ]);
+      await showThumbnails(tester, gone: gone.stream);
+      await tester.tap(badgeOf('B'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BgeShelf), findsOneWidget);
+
+      gone.add('B');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BgeShelf), findsNothing);
+      expect(grids, findsOneWidget);
+      // Its expansion has no base game left on the page.
+      expect(tile('E'), findsOneWidget);
+      expect(
+        tester
+            .widget<BgeCoverTile>(
+              find.descendant(
+                of: tile('E'),
+                matching: find.byType(BgeCoverTile),
+              ),
+            )
+            .marked,
+        isTrue,
+      );
+    });
+  });
+
   group('the layout toggle (#710)', () {
     final toggle = find.byKey(GameBrowseScreen.layoutToggleKey);
 
@@ -1170,6 +1526,29 @@ void main() {
       for (var n = 0; n < 10; n++) game('g_$n', title: 'Game number $n'),
     ];
 
+    // The same with [count] expansions nested under Azul (#711), and
+    // Seafarers, unlinked, marked. Five overflow Azul's strip, so the shelf
+    // shows its buttons; one keeps the marked row in the narrow window.
+    List<Game> withExpansions(int count) => [
+      azul,
+      for (var n = 0; n < count; n++)
+        game(
+          'x_$n',
+          title: 'Azul expansion $n',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g_azul', isStandalone: false),
+          ],
+        ),
+      seafarers,
+      for (var n = 0; n < 10; n++) game('g_$n', title: 'Game number $n'),
+    ];
+
+    Finder badgeOf(String id) => find.descendant(
+      of: find.byKey(GameBrowseScreen.tileKey(id)),
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+
     // The first page is still being read: the spinner never settles.
     auditScreen(
       'loading',
@@ -1204,11 +1583,76 @@ void main() {
     );
 
     auditScreen(
+      'ready, with a nested expansion and a marked one',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(1), hasMore: true);
+        await showAudited(tester, theme);
+        expect(
+          find.byKey(GameBrowseScreen.nestedRowKey('g_azul', 'x_0')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameBrowseScreen.rowKey('g_seafarers')),
+          findsOneWidget,
+        );
+        expect(find.byKey(GameBrowseScreen.rowKey('x_0')), findsNothing);
+      },
+    );
+
+    // At 320dp and 2.0 the marked row is taller than what is left below the
+    // nested one, so it is audited whole here.
+    auditScreen(
+      'ready, with a nested expansion and a marked one, scrolled to the '
+      'marked one',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(1), hasMore: true);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) => tester.ensureVisible(
+        find.byKey(GameBrowseScreen.rowKey('g_seafarers')),
+      ),
+    );
+
+    auditScreen(
       'thumbnails',
       pump: (tester, theme) async {
         remote.onFetchPage = (_, _) async => pageOf(many(), hasMore: true);
         await showAudited(tester, theme, layout: ListLayout.thumbnails);
         expect(find.byKey(GameBrowseScreen.tileKey('g_azul')), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'thumbnails, with a badged cover and a marked one',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(5), hasMore: true);
+        await showAudited(tester, theme, layout: ListLayout.thumbnails);
+        expect(badgeOf('g_azul'), findsOneWidget);
+        expect(
+          find.byKey(GameBrowseScreen.tileKey('g_seafarers')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'thumbnails, with a strip unfolded',
+      pump: (tester, theme) async {
+        remote.onFetchPage = (_, _) async =>
+            pageOf(withExpansions(5), hasMore: true);
+        await showAudited(tester, theme, layout: ListLayout.thumbnails);
+        await tester.tap(badgeOf('g_azul'));
+        await tester.pumpAndSettle();
+        expect(find.text('Azul expansions'), findsOneWidget);
+        expect(find.byKey(BgeShelf.previousKey), findsOneWidget);
+        expect(find.byKey(BgeShelf.nextKey), findsOneWidget);
+        expect(
+          find.byKey(GameBrowseScreen.nestedTileKey('g_azul', 'x_0')),
+          findsOneWidget,
+        );
       },
     );
 

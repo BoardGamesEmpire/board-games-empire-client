@@ -22,6 +22,8 @@
 /// #710), `BgeKeyedSliverGrid`,
 /// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
 /// those two grids and their list or thumbnails choice (#710),
+/// `BgeUnfoldingCoverGrid` by the same two grids, which open a base game's
+/// expansions under its row (#711),
 /// `BgeFocusHandoffScope` and `BgeFocusHandoff` by the Games and Collection
 /// lists and grids, whose games change form (#769, #711),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
@@ -77,6 +79,7 @@ export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_layout_toggle.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
+export 'src/layout/bge_unfolding_cover_grid.dart';
 export 'src/popups/bge_popup.dart';
 export 'src/routes/read_again_when_uncovered.dart';
 export 'src/states/bge_empty_state.dart';

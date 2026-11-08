@@ -1770,6 +1770,100 @@ void main() {
       },
     );
 
+    /// Wingspan with five owned expansions nested under it (#711): five
+    /// overflow its strip, so the shelf shows its buttons. Then an owned
+    /// expansion whose base game isn't owned, marked, and two plain games.
+    List<GameCollectionListItem> withExpansions() => [
+      listItem('base-1', gameId: 'g-base', title: 'Wingspan'),
+      for (var n = 0; n < 5; n++)
+        listItem(
+          'exp-$n',
+          gameId: 'g-exp-$n',
+          title: 'Wingspan expansion $n',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ],
+        ),
+      listItem(
+        'orphan-1',
+        gameId: 'g-orphan',
+        title: 'Seafarers',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      ),
+      listItem('e-1', title: 'Azul'),
+      listItem('e-2', title: 'Brass'),
+    ];
+
+    final baseTile = find.byKey(GameCollectionListScreen.tileKey('base-1'));
+    final badge = find.descendant(
+      of: baseTile,
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+
+    auditScreen(
+      'ready, nested expansions and a marked one',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        expect(
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The marked row is below the fold at 320dp × 2.0, under the nested
+    // ones.
+    auditScreen(
+      'ready, nested expansions and a marked one, scrolled to the end',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.rowKey('e-2')),
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('orphan-1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails, a badged cover and a marked one',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        expect(badge, findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.tileKey('orphan-1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails, a strip unfolded',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        await tester.tap(badge);
+        await tester.pumpAndSettle();
+        expect(find.text('Wingspan expansions'), findsOneWidget);
+        expect(find.byKey(BgeShelf.previousKey), findsOneWidget);
+        expect(find.byKey(BgeShelf.nextKey), findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+      },
+    );
+
     // The retry's pass never ends, so the busy button never settles.
     auditScreen(
       'refreshing',
@@ -1952,6 +2046,412 @@ void main() {
             .semanticChildCount,
         4,
       );
+    });
+  });
+
+  group('expansions in thumbnails (#711)', () {
+    const underBase = [ExpansionLink(gameId: 'g-base', isStandalone: false)];
+    final base = listItem('base-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'exp-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: underBase,
+    );
+    final other = listItem('azul-1', gameId: 'g-azul', title: 'Azul');
+
+    Finder tile(String entryId) =>
+        find.byKey(GameCollectionListScreen.tileKey(entryId));
+    Finder badgeOf(Finder cover) => find.descendant(
+      of: cover,
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+    final strip = find.byType(BgeShelf);
+    final grids = find.byWidgetPredicate(
+      (widget) => widget is BgeKeyedSliverGrid,
+    );
+
+    /// The cover's own node: with a badge, the tile holds two nodes and has
+    /// none of its own, so it is found from the picture inside it.
+    SemanticsNode coverNode(WidgetTester tester, Finder cover) =>
+        tester.getSemantics(
+          find.descendant(of: cover, matching: find.byType(BgeThumbnail)),
+        );
+
+    BgeCoverTile coverOf(WidgetTester tester, Finder cover) =>
+        tester.widget<BgeCoverTile>(
+          find.descendant(of: cover, matching: find.byType(BgeCoverTile)),
+        );
+
+    void performCustomAction(SemanticsNode node, String label) =>
+        node.owner!.performAction(
+          node.id,
+          SemanticsAction.customAction,
+          CustomSemanticsAction.getIdentifier(
+            CustomSemanticsAction(label: label),
+          ),
+        );
+
+    /// Shows [rows] in thumbnails, two columns wide and tall enough for
+    /// every cover and the strip.
+    Future<void> showThumbnails(
+      WidgetTester tester,
+      List<GameCollectionListItem> rows, {
+      void Function(BuildContext context, String entryId)? onOpen,
+    }) async {
+      useViewSize(tester, const Size(400, 1600));
+      await show(
+        tester,
+        rows,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+        onOpen: onOpen ?? (_, _) {},
+      );
+    }
+
+    testWidgets("only top-level covers show, and a base game's carries the "
+        'count', (tester) async {
+      final handle = tester.ensureSemantics();
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-catan',
+        title: 'Catan',
+        platformName: platform,
+      );
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        copy('catan-1', 'Tabletop'),
+        copy('catan-2', 'Steam'),
+        listItem(
+          'seafarers-1',
+          gameId: 'g-seafarers',
+          title: 'Seafarers',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-catan', isStandalone: false),
+          ],
+        ),
+      ]);
+
+      expect(tile('base-1'), findsOneWidget);
+      expect(tile('azul-1'), findsOneWidget);
+      expect(tile('exp-1'), findsNothing);
+      expect(tile('seafarers-1'), findsNothing);
+      expect(strip, findsNothing);
+      expect(
+        find.descendant(of: badgeOf(tile('base-1')), matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(badgeOf(tile('azul-1')), findsNothing);
+      expect(
+        tester.getSemantics(badgeOf(tile('base-1'))),
+        isSemantics(
+          label: 'Wingspan expansions, 1',
+          isButton: true,
+          hasExpandedState: true,
+          isExpanded: false,
+          hasTapAction: true,
+          isFocusable: true,
+        ),
+      );
+      // A base game owned twice carries its badge on its stack.
+      final stack = find.byKey(
+        GameCollectionListScreen.stackTileKey('g-catan'),
+      );
+      expect(
+        tester.getSemantics(badgeOf(stack)),
+        isSemantics(label: 'Catan expansions, 1', isExpanded: false),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("the badge unfolds a strip of its expansions' covers and "
+        'folds it again', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        listItem('carcassonne-1', gameId: 'g-carc', title: 'Carcassonne'),
+      ]);
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+
+      expect(strip, findsOneWidget);
+      expect(find.text('Wingspan expansions'), findsOneWidget);
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+      expect(nested, findsOneWidget);
+      expect(
+        tester.getSemantics(badgeOf(tile('base-1'))),
+        isSemantics(label: 'Wingspan expansions, 1', isExpanded: true),
+      );
+      // Under the base game's row, which Azul shares at two columns, and
+      // above Carcassonne's.
+      expect(
+        tester.getRect(tile('azul-1')).bottom,
+        lessThan(tester.getRect(strip).top),
+      );
+      expect(
+        tester.getRect(tile('carcassonne-1')).top,
+        greaterThan(tester.getRect(strip).bottom),
+      );
+      // A strip cover is named as the expansion of its base game.
+      expect(
+        tester.getSemantics(nested).label,
+        startsWith('European Expansion, expansion for Wingspan'),
+      );
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(nested, findsNothing);
+      expect(grids, findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('a strip cover opens the entry, or the picker for a stack', (
+      tester,
+    ) async {
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-exp-2',
+        title: 'Oceania Expansion',
+        platformName: platform,
+        contentType: ContentType.expansion,
+        baseGames: underBase,
+      );
+      final opened = <String>[];
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        copy('oce-1', 'Tabletop'),
+        copy('oce-2', 'Steam'),
+      ], onOpen: (_, id) => opened.add(id));
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: badgeOf(tile('base-1')), matching: find.text('2')),
+        findsOneWidget,
+        reason: 'a stack counts as one expansion',
+      );
+
+      await tester.tap(
+        find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'exp-1')),
+      );
+      await tester.pumpAndSettle();
+      expect(opened, ['exp-1']);
+
+      await tester.tap(
+        find.byKey(
+          GameCollectionListScreen.nestedStackTileKey('g-base', 'g-exp-2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(opened, ['exp-1']);
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('oce-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('oce-2')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("Show expansions works from the cover's custom action", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [base, expansion]);
+      final cover = tile('base-1');
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+
+      expect(
+        coverNode(tester, cover),
+        isSemantics(
+          customActions: [
+            const CustomSemanticsAction(label: 'Show expansions'),
+          ],
+        ),
+      );
+      performCustomAction(coverNode(tester, cover), 'Show expansions');
+      await tester.pumpAndSettle();
+
+      expect(nested, findsOneWidget);
+      expect(
+        coverNode(tester, cover),
+        isSemantics(
+          customActions: [
+            const CustomSemanticsAction(label: 'Hide expansions'),
+          ],
+        ),
+      );
+
+      performCustomAction(coverNode(tester, cover), 'Hide expansions');
+      await tester.pumpAndSettle();
+
+      expect(nested, findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets("a marked cover's label says the base game isn't in the "
+        'collection', (tester) async {
+      await showThumbnails(tester, [
+        expansion,
+        listItem(
+          'dlc-1',
+          gameId: 'g-dlc',
+          title: 'Season Pass',
+          contentType: ContentType.dlc,
+        ),
+        other,
+      ]);
+
+      for (final id in ['exp-1', 'dlc-1']) {
+        expect(coverOf(tester, tile(id)).marked, isTrue, reason: id);
+        expect(
+          coverOf(tester, tile(id)).label,
+          startsWith(
+            id == 'exp-1'
+                ? 'European Expansion, Base game not in your collection, '
+                : 'Season Pass, Base game not in your collection, ',
+          ),
+          reason: id,
+        );
+      }
+      expect(coverOf(tester, tile('azul-1')).marked, isFalse);
+      expect(
+        coverOf(tester, tile('azul-1')).label,
+        isNot(contains('Base game not in your collection')),
+      );
+    });
+
+    testWidgets('the semantic child count is the top-level covers', (
+      tester,
+    ) async {
+      final both = listItem(
+        'exp-1',
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ExpansionLink(gameId: 'g-azul', isStandalone: false),
+        ],
+      );
+      await showThumbnails(tester, [base, other, both]);
+
+      // Three games, an expansion under two of them: two covers.
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        2,
+      );
+    });
+
+    for (final (before, what) in [
+      ([base, expansion, other], 'with its badge'),
+      ([base, other], 'gaining its badge'),
+    ]) {
+      testWidgets("a focused base game's cover keeps its focus as the game "
+          'becomes a stack $what, not the badge (#769)', (tester) async {
+        await showThumbnails(tester, before);
+        bool inBadge(Finder cover) =>
+            badgeOf(cover).evaluate().isNotEmpty &&
+            _focusIsWithin(tester, badgeOf(cover));
+        final ink = find.descendant(
+          of: tile('base-1'),
+          matching: find.byType(InkWell),
+        );
+        Focus.of(
+          tester.element(
+            find.descendant(of: ink.first, matching: find.byType(MouseRegion)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        expect(_focusIsWithin(tester, tile('base-1')), isTrue);
+        expect(inBadge(tile('base-1')), isFalse);
+
+        items.add([
+          base,
+          listItem(
+            'base-2',
+            gameId: 'g-base',
+            title: 'Wingspan',
+            platformName: 'Steam',
+          ),
+          expansion,
+          other,
+        ]);
+        await tester.pumpAndSettle();
+
+        final stack = find.byKey(
+          GameCollectionListScreen.stackTileKey('g-base'),
+        );
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(badgeOf(stack), findsOneWidget);
+        expect(inBadge(stack), isFalse);
+      });
+    }
+
+    testWidgets('the strip folds when its game goes', (tester) async {
+      await showThumbnails(tester, [base, expansion, other]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(strip, findsOneWidget);
+
+      // A sync takes the base game away.
+      items.add([expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+      expect(tile('exp-1'), findsOneWidget);
+      expect(coverOf(tester, tile('exp-1')).marked, isTrue);
+
+      // Back again, it is folded: the unfold went with it.
+      items.add([base, expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(badgeOf(tile('base-1')), findsOneWidget);
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+    });
+
+    testWidgets('the strip folds when its game loses its expansions', (
+      tester,
+    ) async {
+      await showThumbnails(tester, [base, expansion, other]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(strip, findsOneWidget);
+
+      // A sync takes the expansion's entry away.
+      items.add([base, other]);
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+      expect(badgeOf(tile('base-1')), findsNothing);
+
+      // Owned again, it is folded: the unfold went with the expansions.
+      items.add([base, expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(badgeOf(tile('base-1')), findsOneWidget);
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
     });
   });
 

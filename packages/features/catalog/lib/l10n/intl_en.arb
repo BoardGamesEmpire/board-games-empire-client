@@ -38,7 +38,30 @@
   },
   "catalogBaseGameNotSaved": "Base game not saved on this device",
   "@catalogBaseGameNotSaved": {
-    "description": "Replaces catalogBaseGameMissing while the games list shows the games saved on the device, offline: the server lists the expansion's base game, but it was never saved here. Shown and spoken."
+    "description": "Replaces catalogBaseGameMissing, on a row or a cover, while the games list shows the games saved on the device, offline: the server lists the expansion's base game, but it was never saved here. Shown and spoken."
+  },
+  "catalogExpansionsBadge": "{title} expansions, {count}",
+  "@catalogExpansionsBadge": {
+    "description": "What a screen reader says for the badge on a base game's cover in the games grid, which counts the game's expansions and shows or hides them under the cover. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many expansions it has, at least one.",
+    "placeholders": {
+      "title": {"type": "String", "example": "Catan"},
+      "count": {"type": "int", "example": "2"}
+    }
+  },
+  "catalogShowExpansions": "Show expansions",
+  "@catalogShowExpansions": {
+    "description": "An action a screen reader offers on a base game's cover in the games grid while its expansions are hidden: it shows the expansions' covers in a row under the cover, as the cover's badge does."
+  },
+  "catalogHideExpansions": "Hide expansions",
+  "@catalogHideExpansions": {
+    "description": "An action a screen reader offers on a base game's cover in the games grid while its expansions are shown under it: it hides them again. Replaces catalogShowExpansions."
+  },
+  "catalogExpansionsStrip": "{title} expansions",
+  "@catalogExpansionsStrip": {
+    "description": "Heading of the row of expansion covers shown under a base game's cover in the games grid. Shown, and spoken as a heading. {title} is the base game's title, with its subtitle where it has one.",
+    "placeholders": {
+      "title": {"type": "String", "example": "Catan"}
+    }
   },
   "catalogBrowseMore": "Show more games",
   "@catalogBrowseMore": {
@@ -102,11 +125,11 @@
   },
   "catalogShelfPrevious": "Previous games",
   "@catalogShelfPrevious": {
-    "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row back to the games before the ones in view."
+    "description": "Tooltip and spoken label of the button on a row of games that scrolls the row back to the games before the ones in view. Used on the home page's rows of games, and on the row of a base game's expansion covers shown under its cover in the games grid."
   },
   "catalogShelfNext": "Next games",
   "@catalogShelfNext": {
-    "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row on to the games after the ones in view."
+    "description": "Tooltip and spoken label of the button on a row of games that scrolls the row on to the games after the ones in view. Used on the home page's rows of games, and on the row of a base game's expansion covers shown under its cover in the games grid."
   },
   "catalogSomethingToPlayHeading": "Something to play",
   "@catalogSomethingToPlayHeading": {

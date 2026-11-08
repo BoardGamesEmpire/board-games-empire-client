@@ -36,6 +36,10 @@ import '../widgets/catalog_slivers.dart';
 /// opens the game's page; a cover opens its quick look. The toggle isn't in
 /// the app bar: beside the back button, search and sort, it left the title a
 /// few letters on a 320dp phone.
+///
+/// An expansion is shown under its base game (#711): its row under the base
+/// game's row, and its cover in a strip that a badge on the base game's cover
+/// opens under that cover's row.
 class GameBrowseScreen extends StatelessWidget {
   const GameBrowseScreen({
     required this.remote,
@@ -96,6 +100,14 @@ class GameBrowseScreen extends StatelessWidget {
   /// base game it is under (#711).
   static Key nestedRowKey(String parentGameId, String gameId) =>
       Key('catalog_browse.nested_row_${parentGameId}_$gameId');
+
+  /// Per-tile key of an expansion's cover in the strip unfolded under its
+  /// base game's: `catalog_browse.nested_tile_<parentGameId>_<gameId>`.
+  ///
+  /// Held by the wrapper around the cover, as [tileKey] is. It names the
+  /// base game, as [nestedRowKey] does (#711).
+  static Key nestedTileKey(String parentGameId, String gameId) =>
+      Key('catalog_browse.nested_tile_${parentGameId}_$gameId');
 
   final GamesRemoteDataSource remote;
 
@@ -206,18 +218,25 @@ class _GameBrowsePage extends StatelessWidget {
         void retry() =>
             context.read<GameBrowseBloc>().add(const GameBrowseLoadRequested());
 
+        // Placed once per build, for the count and for the covers or the
+        // rows drawn (#711). Not while the choice is read, when neither is.
+        final placed = switch (state) {
+          GameBrowseReady ready when thumbnails != null => _placeBrowse(ready),
+          _ => null,
+        };
+        final rows = placed == null || thumbnails == true
+            ? null
+            : _browseRows(placed);
+
         return BgePage.slivers(
           title: Text(l10n.catalogBrowseTitle),
           width: BgePageWidth.pane,
-          // "Game 3 of 50": the rows loaded so far, once they are built. In
-          // the list, a row for each nested expansion too (#711). The grid
-          // still draws every game.
+          // "Game 3 of 50": the items loaded so far, once they are built. In
+          // the list, a row for each nested expansion too; in the grid, the
+          // top-level covers, as a strip's are a row of their own (#711).
           semanticChildCount: switch (state) {
-            GameBrowseReady(:final games)
-                when games.isNotEmpty && thumbnails != null =>
-              thumbnails
-                  ? games.length
-                  : _browseRows(_placeBrowse(state)).length,
+            GameBrowseReady(:final games) when games.isNotEmpty =>
+              rows?.length ?? placed?.length,
             _ => null,
           },
           actions: [
@@ -316,22 +335,13 @@ class _GameBrowsePage extends StatelessWidget {
                       child: SliverMainAxisGroup(
                         slivers: [
                           if (thumbnails)
-                            BgeKeyedSliverGrid<Game>(
-                              items: games,
-                              keyOf: (game) =>
-                                  GameBrowseScreen.tileKey(game.id),
-                              gridDelegate: bgeCoverGridDelegate(context),
-                              itemBuilder: (context, game) => BgeFocusHandoff(
-                                identity: game.id,
-                                child: _BrowseTile(
-                                  game: game,
-                                  onQuickLook: onQuickLook,
-                                ),
-                              ),
+                            _BrowseCovers(
+                              placed: placed!,
+                              onQuickLook: onQuickLook,
                             )
                           else
                             BgeKeyedSliverList<_BrowseItem>(
-                              items: _browseRows(_placeBrowse(state)),
+                              items: rows!,
                               keyOf: (item) => item.parent == null
                                   ? GameBrowseScreen.rowKey(item.game.id)
                                   : GameBrowseScreen.nestedRowKey(
@@ -498,26 +508,165 @@ List<CatalogFact> _gameFacts(GameCatalogLocalizations l10n, Game game) =>
       contentType: game.contentType,
     );
 
-/// A game's cover alone, named as its row is: the title and the row's facts,
-/// since no text is drawn to tell two covers apart (#710).
-class _BrowseTile extends StatelessWidget {
-  const _BrowseTile({required this.game, this.onQuickLook});
+/// The games as a grid of covers (#710): the top-level games alone, with a
+/// badge on a base game's cover that opens a strip of its expansions' covers
+/// under its row (#711).
+///
+/// One game is unfolded at a time ([BgeUnfoldingCovers]). The unfold goes
+/// once that game is no longer at top level with expansions, as when it is
+/// found gone, so the grid is whole again and the game doesn't come back
+/// unfolded.
+///
+/// Without [onQuickLook] the covers are inert, and carry no badge: a badge
+/// that goes while it holds focus gives it to its cover, which an inert
+/// cover can't take.
+class _BrowseCovers extends StatelessWidget {
+  const _BrowseCovers({required this.placed, this.onQuickLook});
 
-  final Game game;
+  final List<PlacedGame<Game>> placed;
+  final void Function(BuildContext context, GameQuickLookSeed seed)?
+  onQuickLook;
+
+  @override
+  Widget build(BuildContext context) {
+    final onQuickLook = this.onQuickLook;
+    return BgeUnfoldingCovers<PlacedGame<Game>>(
+      items: placed,
+      keyOf: (placed) => GameBrowseScreen.tileKey(placed.item.id),
+      idOf: (placed) => placed.item.id,
+      hasStrip: (placed) => placed.expansions.isNotEmpty,
+      itemBuilder: (context, placed, unfolded, toggle) {
+        final game = placed.item;
+        return BgeFocusHandoff(
+          identity: game.id,
+          child: _BrowseTile(
+            game: game,
+            onQuickLook: onQuickLook,
+            missingBase: placed.missingBase,
+            expansionCount: placed.expansions.length,
+            expanded: unfolded,
+            onToggle: onQuickLook == null ? null : toggle,
+          ),
+        );
+      },
+      stripBuilder: (context, placed) => _BrowseStrip(
+        parent: placed.item,
+        expansions: placed.expansions,
+        onQuickLook: onQuickLook,
+      ),
+    );
+  }
+}
+
+/// A base game's expansions, as a row of covers under its cover's row
+/// (#711). Each opens its quick look, as a cover in the grid does.
+class _BrowseStrip extends StatelessWidget {
+  const _BrowseStrip({
+    required this.parent,
+    required this.expansions,
+    this.onQuickLook,
+  });
+
+  final Game parent;
+  final List<Game> expansions;
   final void Function(BuildContext context, GameQuickLookSeed seed)?
   onQuickLook;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
+    return BgeShelf(
+      heading: l10n.catalogExpansionsStrip(
+        gameTitle(l10n, parent.title, parent.subtitle),
+      ),
+      previousLabel: l10n.catalogShelfPrevious,
+      nextLabel: l10n.catalogShelfNext,
+      children: [
+        for (final game in expansions)
+          BgeFocusHandoff(
+            key: GameBrowseScreen.nestedTileKey(parent.id, game.id),
+            identity: game.id,
+            place: 'strip:${parent.id}',
+            child: _BrowseTile(
+              game: game,
+              parent: parent,
+              onQuickLook: onQuickLook,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A game's cover alone, named as its row is: the title and the row's facts,
+/// since no text is drawn to tell two covers apart (#710).
+///
+/// In a strip under its base game, a shelf's size, and named as an
+/// expansion of [parent], as its nested row is (#711). At top level, a grid
+/// cell's size, marked when it is an expansion shown without its base game,
+/// and with a badge for a base game's expansions when [onToggle] is given.
+class _BrowseTile extends StatelessWidget {
+  const _BrowseTile({
+    required this.game,
+    this.onQuickLook,
+    this.parent,
+    this.missingBase = false,
+    this.expansionCount = 0,
+    this.expanded = false,
+    this.onToggle,
+  });
+
+  final Game game;
+  final void Function(BuildContext context, GameQuickLookSeed seed)?
+  onQuickLook;
+
+  /// The base game whose strip the cover is in, or null in the grid.
+  final Game? parent;
+
+  /// Whether the game is an expansion shown without its base game.
+  final bool missingBase;
+
+  /// How many expansions are under the game.
+  final int expansionCount;
+
+  /// Whether they are shown.
+  final bool expanded;
+
+  /// Shows or hides them, or null for no badge.
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCatalogLocalizations.of(context);
     final open = onQuickLook;
+    final parent = this.parent;
+    final onToggle = this.onToggle;
+    final title = gameTitle(l10n, game.title, game.subtitle);
     return BgeCoverTile(
-      extent: null,
+      extent: parent == null ? null : BgeCoverTile.shelfExtent,
       label: [
-        gameTitle(l10n, game.title, game.subtitle),
+        if (parent == null)
+          title
+        else
+          l10n.catalogExpansionOf(
+            title,
+            gameTitle(l10n, parent.title, parent.subtitle),
+          ),
+        if (missingBase) _missingBaseNote(context, game),
         ..._gameFacts(l10n, game).map((fact) => fact.spoken),
       ].join(l10n.catalogDetailSpokenSeparator),
       imageUrl: game.thumbnail,
+      marked: missingBase,
+      expansions: expansionCount == 0 || onToggle == null
+          ? null
+          : BgeCoverExpansions(
+              count: expansionCount,
+              expanded: expanded,
+              onToggle: onToggle,
+              label: l10n.catalogExpansionsBadge(title, expansionCount),
+              showLabel: l10n.catalogShowExpansions,
+              hideLabel: l10n.catalogHideExpansions,
+            ),
       onTap: open == null
           ? null
           : () => open(context, GameQuickLookSeed.fromGame(game)),

@@ -17,10 +17,11 @@ import 'pointer_focus_flag.dart';
 /// ## The focused item leaves
 ///
 /// The focus goes to the replacement at the end of the frame that replaced
-/// the item. It can't go as the item leaves: a replacement in the same place
-/// in a list is built only after the old item has gone. Left alone, the
-/// framework would hand focus back to whatever the page focused before, such
-/// as another row. The hand-off takes it first.
+/// the item, or a frame later for focus a click gave, as below. It can't go
+/// as the item leaves: a replacement in the same place in a list is built
+/// only after the old item has gone. Left alone, the framework would hand
+/// focus back to whatever the page focused before, such as another row. The
+/// hand-off takes it first.
 ///
 /// ## The item a covered route will give focus back to leaves
 ///
@@ -35,6 +36,12 @@ import 'pointer_focus_flag.dart';
 /// acts once this route is current again with none running. Whichever comes
 /// first takes the hand-off. Nothing happens if the game has no item by then,
 /// and a later pop gives it nothing either.
+///
+/// ## Which control
+///
+/// An item can hold more than one control, such as a cover and its
+/// expansions badge (#711). Focus goes to the replacement's control in the
+/// place, among its controls, of the one that had it, else to its first.
 ///
 /// ## A game in two places
 ///
@@ -57,7 +64,9 @@ import 'pointer_focus_flag.dart';
 /// A replacement built for the other state gets the focus a frame late. An
 /// ink fixes its tint's strength from the colour it was last built with when
 /// focus arrives, so focus waits on the page while the replacement rebuilds.
-/// Focus the keyboard gave, onto a replacement built for it, moves at once.
+/// If the game changes form again meanwhile, focus waits for the newest
+/// replacement in turn. Focus the keyboard gave, onto a replacement built for
+/// it, moves at once.
 ///
 /// The scope builds no render object of its own, so it can stand among
 /// slivers as well as boxes.
@@ -74,11 +83,18 @@ class BgeFocusHandoffScope extends StatefulWidget {
 
 /// A game whose item a covered route will give focus back to has left.
 class _Pending {
-  _Pending(this.identity, this.place, {required bool pointerFocus})
-    : pointerFocus = PointerFocusFlag(pointerFocus);
+  _Pending(
+    this.identity,
+    this.place, {
+    required this.control,
+    required bool pointerFocus,
+  }) : pointerFocus = PointerFocusFlag(pointerFocus);
 
   final Object identity;
   final Object? place;
+
+  /// Which of the item's controls the pop would have given focus to.
+  final int control;
 
   /// The item's focus a click gave, which a key press on the route above
   /// still ends while the hand-off waits.
@@ -148,7 +164,12 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
     final node = item._node;
     final pointerFocus = item._pointerFocus.value;
     if (node.hasFocus) {
-      _handOffAfterFrame(identity, place, pointerFocus: pointerFocus);
+      _handOffAfterFrame(
+        identity,
+        place,
+        control: item._controlHolding(FocusManager.instance.primaryFocus),
+        pointerFocus: pointerFocus,
+      );
       return;
     }
     if (_current) return;
@@ -162,6 +183,7 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
     final pending = _pending ??= _Pending(
       identity,
       place,
+      control: item._controlHolding(remembered),
       pointerFocus: pointerFocus,
     );
     WidgetsBinding.instance
@@ -176,6 +198,7 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
   void _handOffAfterFrame(
     Object identity,
     Object? place, {
+    required int control,
     required bool pointerFocus,
   }) {
     WidgetsBinding.instance
@@ -184,7 +207,12 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
         // On nothing, as the item went in this frame and the framework has
         // yet to hand focus on.
         if (!focusIsFree(context)) return;
-        _focusItemOf(identity, place, pointerFocus: pointerFocus);
+        _focusItemOf(
+          identity,
+          place,
+          control: control,
+          pointerFocus: pointerFocus,
+        );
       })
       ..ensureVisualUpdate();
   }
@@ -213,7 +241,12 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
     pending.pointerFocus.dispose();
     if (!mounted || !_active) return;
     if (!focusIsFree(context, untouched: pending.restoredTo)) return;
-    _focusItemOf(pending.identity, pending.place, pointerFocus: pointerFocus);
+    _focusItemOf(
+      pending.identity,
+      pending.place,
+      control: pending.control,
+      pointerFocus: pointerFocus,
+    );
   }
 
   /// Gives focus to the game's item, with the state of focus a click gave.
@@ -225,13 +258,19 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
   /// page, where the framework puts nothing else, and goes on to the item
   /// once its controls are built for the state. Focus the user has moved
   /// meanwhile stays where it is.
+  ///
+  /// The game's item is looked up again after the wait, as the game can
+  /// change form again in that frame. The state goes on as the waiting item
+  /// holds it, which a key press in that frame ends. A replacement built
+  /// meanwhile is new to it too, and focus waits for that one in turn.
   void _focusItemOf(
     Object identity,
     Object? place, {
+    required int control,
     required bool pointerFocus,
   }) {
     final item = _itemOf(identity, place);
-    final target = item?._firstTraversable;
+    final target = item?._control(control);
     if (item == null || target == null) return;
     if (item._pointerFocus.value == pointerFocus) {
       target.requestFocus();
@@ -242,9 +281,15 @@ class _BgeFocusHandoffScopeState extends State<BgeFocusHandoffScope> {
       ..requestScopeFocus();
     WidgetsBinding.instance
       ..addPostFrameCallback((_) {
-        if (!mounted || !_active || !item.mounted) return;
+        if (!mounted || !_active) return;
         if (FocusManager.instance.primaryFocus != page) return;
-        item._firstTraversable?.requestFocus();
+        _focusItemOf(
+          identity,
+          place,
+          control: control,
+          // Read even if the item has gone since: its last value stands.
+          pointerFocus: item._pointerFocus.value,
+        );
       })
       ..ensureVisualUpdate();
   }
@@ -280,8 +325,10 @@ class _BgeFocusHandoffMarker extends InheritedWidget {
 /// one held goes to the other when the first is replaced. The scope's doc
 /// says when.
 ///
-/// The focus goes to the first control inside [child] that keyboard
-/// navigation stops at. The wrapper takes no focus itself, adds no stop and
+/// The item's controls are the ones inside [child] that keyboard navigation
+/// stops at, in the order of its widgets. The focus goes to the control in
+/// the place of the one that had it, such as a cover's expansions badge,
+/// else to the first. The wrapper takes no focus itself, adds no stop and
 /// no semantics node, and builds no render object, so it can sit between a
 /// sliver and its box children.
 class BgeFocusHandoff extends StatefulWidget {
@@ -356,19 +403,44 @@ class _BgeFocusHandoffState extends State<BgeFocusHandoff> {
     _scope?._items.add(this);
   }
 
-  /// The first node inside the item that keyboard navigation stops at, the
-  /// outermost first.
-  FocusNode? get _firstTraversable {
-    FocusNode? first(Iterable<FocusNode> nodes) {
-      for (final node in nodes) {
-        if (node.canRequestFocus && !node.skipTraversal) return node;
-        final inner = first(node.children);
-        if (inner != null) return inner;
+  /// The item's controls: the nodes inside it that keyboard navigation stops
+  /// at, the outermost, in the order of the item's widgets.
+  ///
+  /// By the widgets, not the order the nodes were attached in. A control
+  /// built at layout, as a cover tile's cover is under its `LayoutBuilder`,
+  /// is attached after one built beside it at once, as the cover's
+  /// expansions badge is (#711). Not read while the item builds.
+  List<FocusNode> get _controls {
+    final byElement = <BuildContext, FocusNode>{
+      for (final node in _node.traversalDescendants) ?node.context: node,
+    };
+    final controls = <FocusNode>[];
+    void visit(Element element) {
+      final node = byElement[element];
+      if (node != null) {
+        controls.add(node);
+      } else {
+        element.visitChildren(visit);
       }
-      return null;
     }
 
-    return first(_node.children);
+    (context as Element).visitChildren(visit);
+    return controls;
+  }
+
+  /// Which of [_controls] holds [node], or is it: 0, the first, if none.
+  int _controlHolding(FocusNode? node) {
+    if (node == null) return 0;
+    final index = _controls.indexWhere(
+      (control) => control == node || node.ancestors.contains(control),
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  /// The control at [index] among [_controls], else the first, if any.
+  FocusNode? _control(int index) {
+    final controls = _controls;
+    return index < controls.length ? controls[index] : controls.firstOrNull;
   }
 
   @override
