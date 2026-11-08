@@ -189,5 +189,26 @@ void main() {
 
       expect(await fixThenCheck(), (1, 1), reason: lastOutput);
     });
+
+    test('native app reaching a web implementation', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          // An app, so it holds the root version like app_a.
+          'apps/mobile':
+              'name: mobile\npublish_to: none\nversion: 1.0.0+1\n'
+              'environment:\n  sdk: ^3.13.0\nresolution: workspace\n'
+              'dependencies:\n'
+              '  web_platform:\n    path: ../../packages/platform/web\n',
+          'packages/platform/web': validMemberPubspec.replaceFirst(
+            'name: member',
+            'name: web_platform',
+          ),
+        },
+      );
+
+      // Check-only, so --fix can't clear it.
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(lastOutput, contains('apps/mobile reaches packages/platform/web'));
+    });
   });
 }

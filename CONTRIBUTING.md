@@ -142,7 +142,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `test` | All non-golden tests, 22 packages. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
-| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, and the client version |
+| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, the client version, the Flutter release digest, and that no native app reaches a web implementation |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `check:a11y-audit` | Fail on a `*_screen.dart` with no `group('accessibility audit')` naming it in its package's tests (#50); prints the exempt screens. Mirrors CI. |
