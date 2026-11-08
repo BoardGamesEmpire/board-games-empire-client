@@ -184,6 +184,23 @@ void main() {
       ]);
     });
 
+    test('a summary with no links clears the cached links (#711)', () async {
+      final seeded = DateTime.utc(2020);
+      await repo().cacheGame(
+        Game(
+          id: 'g-1',
+          title: 'Brass: Birmingham',
+          baseGames: const [ExpansionLink(gameId: 'b1', isStandalone: false)],
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
+
+      await repo().cachePlatformGameSummaries([_summary(baseGames: const [])]);
+
+      expect((await repo().getGame('g-1'))?.baseGames, isEmpty);
+    });
+
     test("a summary's content type is written (#711)", () async {
       await repo().cachePlatformGameSummaries([
         _summary(contentType: ContentType.expansion),
