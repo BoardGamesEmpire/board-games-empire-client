@@ -73,10 +73,12 @@ dev_dependencies:
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   build_runner: ^2.16.0
-  # Read-only pubspec parsing for tool/check_sdk_constraints.dart (#153).
+  # Read-only pubspec parsing for tool/check_sdk_constraints.dart (#153)
+  # and tool/build_android.dart (#51).
   yaml: ^3.1.2
   # SHA-256 for tool/fetch_web_assets.dart, which checks each drift
-  # runtime file against a committed digest before placing it (#418).
+  # runtime file against a committed digest before placing it (#418), and
+  # for the APK checksum tool/build_android.dart writes (#51).
   crypto: ^3.0.7
   # tool/test runs check_sdk_constraints.dart over fixture workspaces and
   # pins its exit codes (#201).
@@ -409,11 +411,13 @@ melos:
       run: melos run web:assets && dart run tool/build_web.dart
       description: Build the web application for production, as the published image ships it
 
+    # tool/build_android.dart, which CI's `build-android` job runs too: one
+    # universal release APK, checked for its package, the INTERNET
+    # permission and its signer, beside its checksum (#51). One
+    # definition, so a local release build is CI's build.
     build-mobile-android:
-      run: melos exec -c 1 -- flutter build apk --release
-      description: Build Android APK
-      packageFilters:
-        scope: "mobile"
+      run: dart run tool/build_android.dart
+      description: "Build the Android release APK as CI does: universal, checked, with its checksum"
 
     build-mobile-ios:
       run: melos exec -c 1 -- flutter build ios --release --no-codesign

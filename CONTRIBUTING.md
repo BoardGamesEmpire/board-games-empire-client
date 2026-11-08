@@ -149,6 +149,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `schema:dump` | Refresh the committed Drift schema snapshots |
 | `web` / `web:proxy` / `web:server` | Web dev server, dev proxy, or both together |
 | `build-web` | The release web build the published image ships: the drift fetch, then `tool/build_web.dart`, which CI's `build-web` job also runs |
+| `build-mobile-android` | The Android release APK, through `tool/build_android.dart`, which CI's `build-android` job also runs: one universal APK, checked for its package, the INTERNET permission and its signer, beside its checksum |
 | `mobile` / `desktop-macos` / `desktop-linux` / `desktop-windows` | Run an app |
 
 Three scripts assume a POSIX shell and will not run under cmd or PowerShell:
