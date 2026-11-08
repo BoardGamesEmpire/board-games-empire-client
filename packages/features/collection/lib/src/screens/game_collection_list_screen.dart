@@ -506,10 +506,11 @@ class _CollectionRow extends StatelessWidget {
     return MergeSemantics(
       child: _Nested(
         nested: expansionOf != null,
-        child: ListTile(
+        child: _RingedListTile(
           // Without an onTap the tile's InkWell has no handler, so it is
           // disabled: no tap action, and not a focus stop under ordinary
           // keyboard navigation. That is the inert row #44 wants.
+          focusOnTap: false,
           onTap: open == null ? null : () => open(context, entry.id),
           leading: BgeThumbnail(
             key: GameCollectionListScreen.thumbnailKey(entry.id),
@@ -653,29 +654,9 @@ class _CollectionTile extends StatelessWidget {
 /// The entries of one game owned more than once, as one row (#709): the
 /// thumbnail marked with their count, the title line, and the copies in
 /// place of an entry's details. The heart shows when any of them is a
-/// favourite. A tap opens the picker of the entries.
-///
-/// ## Focus
-///
-/// A tap gives the row focus before it opens the picker, so the picker hands
-/// focus back to this row when it closes, as it does after a keyboard
-/// activation. A list tile's ink takes no focus from a tap of its own, and
-/// focus would land back on the page instead.
-///
-/// As on [BgeCoverTile], focus a mouse or a trackpad gave draws no focus tint
-/// ([BgePointerFocus]). On a desktop a mouse leaves the highlight mode at the
-/// keyboard's, so the row would be tinted when the picker closed, for a user
-/// who never touched the keyboard. A touch turns the highlight mode to touch,
-/// which hides the tint anyway.
-///
-/// The next key press ends that, but the row's focus shows again only from
-/// its next focus. Its tint is its only focus feedback, and an ink highlight
-/// keeps the strength it was first drawn with: a Tab away and back draws it,
-/// as does opening the picker again from the keyboard and closing it. The
-/// cover tile's ring covers that gap, and a row has none. Nor can the row
-/// redraw the tint: a list tile passes its ink nothing that makes the ink
-/// draw it afresh, and taking focus off the row and back would move focus.
-class _StackRow extends StatefulWidget {
+/// favourite. A tap opens the picker of the entries, and takes focus first
+/// ([_RingedListTile]).
+class _StackRow extends StatelessWidget {
   const _StackRow({
     required this.items,
     this.onOpen,
@@ -694,11 +675,114 @@ class _StackRow extends StatefulWidget {
   final bool missingBase;
 
   @override
-  State<_StackRow> createState() => _StackRowState();
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final open = onOpen;
+    final first = items.first;
+    final copies = _copies(l10n, items);
+    final missing = missingBase ? l10n.collectionListBaseGameMissing : null;
+
+    // MergeSemantics outermost, as on an entry's row, so the row's node is
+    // the first thing under the list's key. The indent is inside it.
+    return MergeSemantics(
+      child: _Nested(
+        nested: expansionOf != null,
+        child: _RingedListTile(
+          focusOnTap: true,
+          onTap: open == null
+              ? null
+              : () => unawaited(
+                  openCollectionEntries(context, items: items, onOpen: open),
+                ),
+          // The picture is smaller by the marker's offsets, so the marked
+          // whole is an entry's thumbnail's size and the titles line up. A
+          // list tile caps its leading at that height, so a full-size picture
+          // with its offsets would be squeezed.
+          leading: BgeStackMarker(
+            count: items.length,
+            child: BgeThumbnail(
+              url: first.thumbnail,
+              extent: BgeThumbnail.listExtent - BgeStackMarker.reachOf(context),
+              placeholderIcon: Icons.casino_outlined,
+              placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+            ),
+          ),
+          title: Text(
+            _title(l10n, first),
+            semanticsLabel: _spokenTitle(
+              l10n,
+              _title(l10n, first),
+              expansionOf,
+            ),
+          ),
+          subtitle: Text(
+            [?missing, copies.shown].join(l10n.collectionListDetailSeparator),
+            semanticsLabel: [
+              ?missing,
+              copies.spoken,
+            ].join(l10n.collectionListDetailSpokenSeparator),
+          ),
+          trailing: items.any((item) => item.entry.hasFavorited)
+              ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
+              : null,
+        ),
+      ),
+    );
+  }
 }
 
-class _StackRowState extends State<_StackRow> with BgePointerFocus<_StackRow> {
-  final _focusNode = FocusNode(debugLabel: '_StackRow');
+/// A list tile that rings its focus (#770), as [BgeCoverTile] does its own.
+///
+/// ## Focus
+///
+/// A list tile's only focus feedback is its ink's tint, and an ink highlight
+/// keeps the strength it was first drawn with. Focus a mouse or a trackpad
+/// gave draws no tint ([BgePointerFocus]), since on a desktop a mouse leaves
+/// the highlight mode at the keyboard's and the row would be tinted for a user
+/// who never touched the keyboard. The tint drawn without strength then stayed
+/// hidden after the next key press, until the row's next focus: a keyboard
+/// user had a focused row they couldn't see.
+///
+/// So the tile sits in a [BgeFocusRing], which follows the highlight mode as
+/// it changes, and is hidden only while the focus is a pointer's. The next key
+/// press shows it at once, without focus moving. The tint is hidden the same
+/// way and is no longer the only cue.
+///
+/// With [focusOnTap] a tap gives the row focus before its [onTap] runs, so a
+/// picker or page it opens hands focus back to it when it closes, as it does
+/// after a keyboard activation. A list tile's ink takes no focus from a tap
+/// of its own, and focus would land back on the page instead. Inside a
+/// `BgeFocusHandoff` the pointer's focus goes with the game's item when it
+/// changes form (#769).
+class _RingedListTile extends StatefulWidget {
+  const _RingedListTile({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+    required this.onTap,
+    required this.focusOnTap,
+  });
+
+  final Widget leading;
+  final Widget title;
+  final Widget subtitle;
+  final Widget? trailing;
+
+  /// What a tap does, or null for an inert row, which has no tap action and
+  /// isn't a focus stop.
+  final VoidCallback? onTap;
+
+  /// Whether a tap gives the row focus before [onTap] runs.
+  final bool focusOnTap;
+
+  @override
+  State<_RingedListTile> createState() => _RingedListTileState();
+}
+
+class _RingedListTileState extends State<_RingedListTile>
+    with BgePointerFocus<_RingedListTile> {
+  final _focusNode = FocusNode(debugLabel: '_RingedListTile');
 
   @override
   void dispose() {
@@ -708,79 +792,34 @@ class _StackRowState extends State<_StackRow> with BgePointerFocus<_StackRow> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = GameCollectionLocalizations.of(context);
-    final items = widget.items;
-    final open = widget.onOpen;
-    final first = items.first;
-    final copies = _copies(l10n, items);
-    final missing = widget.missingBase
-        ? l10n.collectionListBaseGameMissing
-        : null;
-
-    // MergeSemantics outermost, as on an entry's row, so the row's node is
-    // the first thing under the list's key. The indent is inside it.
-    return MergeSemantics(
-      child: _Nested(
-        nested: widget.expansionOf != null,
-        child: Listener(
-          // Every pointer's press on the row, as a list tile offers no
-          // tap-down. A keyboard's activation sends none, so its focus shows.
-          onPointerDown: open == null
+    final onTap = widget.onTap;
+    return Listener(
+      // Every pointer's press on the row, as a list tile offers no tap-down. A
+      // keyboard's activation sends none, so its focus shows.
+      onPointerDown: onTap == null
+          ? null
+          : (event) => notePointerPress(event.kind),
+      child: BgeFocusRing(
+        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusSm),
+        suppressed: pointerFocus,
+        builder: (context, onFocusChange) => ListTile(
+          focusNode: _focusNode,
+          onFocusChange: onFocusChange,
+          // The theme's tint, with no strength while the focus is a pointer's.
+          focusColor: pointerFocusColor,
+          // Without an onTap the tile's InkWell has no handler, so it is
+          // disabled: no tap action, and not a focus stop under ordinary
+          // keyboard navigation. That is the inert row #44 wants.
+          onTap: onTap == null
               ? null
-              : (event) => notePointerPress(event.kind),
-          child: ListTile(
-            focusNode: _focusNode,
-            // The theme's tint, with no strength while the focus is a pointer's.
-            focusColor: pointerFocusColor,
-            onTap: open == null
-                ? null
-                : () {
-                    _focusNode.requestFocus();
-                    unawaited(
-                      openCollectionEntries(
-                        context,
-                        items: items,
-                        onOpen: open,
-                      ),
-                    );
-                  },
-            // The picture is smaller by the marker's offsets, so the marked
-            // whole is an entry's thumbnail's size and the titles line up. A
-            // list tile caps its leading at that height, so a full-size picture
-            // with its offsets would be squeezed.
-            leading: BgeStackMarker(
-              count: items.length,
-              child: BgeThumbnail(
-                url: first.thumbnail,
-                extent:
-                    BgeThumbnail.listExtent - BgeStackMarker.reachOf(context),
-                placeholderIcon: Icons.casino_outlined,
-                placeholderKey:
-                    GameCollectionListScreen.thumbnailPlaceholderKey,
-              ),
-            ),
-            title: Text(
-              _title(l10n, first),
-              semanticsLabel: _spokenTitle(
-                l10n,
-                _title(l10n, first),
-                widget.expansionOf,
-              ),
-            ),
-            subtitle: Text(
-              [?missing, copies.shown].join(l10n.collectionListDetailSeparator),
-              semanticsLabel: [
-                ?missing,
-                copies.spoken,
-              ].join(l10n.collectionListDetailSpokenSeparator),
-            ),
-            trailing: items.any((item) => item.entry.hasFavorited)
-                ? Icon(
-                    Icons.favorite,
-                    semanticLabel: l10n.collectionListFavorite,
-                  )
-                : null,
-          ),
+              : () {
+                  if (widget.focusOnTap) _focusNode.requestFocus();
+                  onTap();
+                },
+          leading: widget.leading,
+          title: widget.title,
+          subtitle: widget.subtitle,
+          trailing: widget.trailing,
         ),
       ),
     );

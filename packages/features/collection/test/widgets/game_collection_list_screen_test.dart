@@ -2160,6 +2160,222 @@ void main() {
       );
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
+
+  group('focus ring (#770)', () {
+    GameCollectionListItem copy(String id, String platform) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platform,
+    );
+    final once = [copy('e-1', 'Tabletop')];
+    final twice = [...once, copy('e-2', 'Steam')];
+    final base = listItem('base-1', gameId: 'g-base', title: 'Catan');
+    GameCollectionListItem expansion(String id, String platform) => listItem(
+      id,
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      platformName: platform,
+      contentType: ContentType.expansion,
+      baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+    );
+
+    Finder pickerTile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId));
+
+    /// Whether a ring is drawn over something under [finder]: a foreground
+    /// box with a border.
+    bool ringShown(WidgetTester tester, Finder finder) => tester
+        .widgetList<DecoratedBox>(
+          find.descendant(of: finder, matching: find.byType(DecoratedBox)),
+        )
+        .any((box) {
+          final decoration = box.decoration;
+          return box.position == DecorationPosition.foreground &&
+              decoration is BoxDecoration &&
+              decoration.border != null;
+        });
+
+    /// The focus node of the control that opens the item [item] finds.
+    FocusNode control(WidgetTester tester, Finder item) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.descendant(of: item, matching: find.byType(InkWell)),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      ),
+    );
+
+    const away = Offset(4, 590);
+
+    /// A mouse that clicks where it is told and rests away from the rows.
+    Future<Future<void> Function(Offset)> mouseClicker(
+      WidgetTester tester,
+    ) async {
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: away);
+      addTearDown(mouse.removePointer);
+      return (at) async {
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+      };
+    }
+
+    /// Clicks [stack], then closes its picker with a click on the barrier.
+    Future<void> clickAndClose(
+      WidgetTester tester,
+      Finder stack,
+      String firstEntry,
+    ) async {
+      final click = await mouseClicker(tester);
+      await click(tester.getCenter(stack));
+      expect(pickerTile(firstEntry), findsOneWidget);
+      await click(away);
+      expect(pickerTile(firstEntry), findsNothing);
+    }
+
+    Future<void> pressShift(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+    }
+
+    final stackRows = [
+      (
+        'a clicked stack row',
+        twice,
+        'e-1',
+        GameCollectionListScreen.stackKey('g-wingspan'),
+      ),
+      (
+        'a nested stack row',
+        [base, expansion('x-1', 'Tabletop'), expansion('x-2', 'Steam')],
+        'x-1',
+        GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
+      ),
+    ];
+
+    for (final (what, rows, first, key) in stackRows) {
+      final stack = find.byKey(key);
+
+      testWidgets('$what shows its ring once a key is pressed after the '
+          'picker closes', (tester) async {
+        await show(tester, rows, onOpen: (_, _) {});
+        await clickAndClose(tester, stack, first);
+
+        expect(_focusIsWithin(tester, stack), isTrue);
+        await pressShift(tester);
+
+        expect(ringShown(tester, stack), isTrue);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+      testWidgets('$what focused by a click and never touched by the '
+          'keyboard shows no ring', (tester) async {
+        await show(tester, rows, onOpen: (_, _) {});
+        await clickAndClose(tester, stack, first);
+
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(
+          FocusManager.instance.highlightMode,
+          FocusHighlightMode.traditional,
+        );
+        expect(ringShown(tester, stack), isFalse);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
+
+    testWidgets("an entry's row shows its ring under keyboard focus", (
+      tester,
+    ) async {
+      await show(tester, [
+        ...once,
+        base,
+        expansion('x-1', 'Tabletop'),
+      ], onOpen: (_, _) {});
+
+      for (final key in [
+        GameCollectionListScreen.rowKey('e-1'),
+        GameCollectionListScreen.nestedRowKey('g-base', 'x-1'),
+      ]) {
+        final row = find.byKey(key);
+        expect(ringShown(tester, row), isFalse);
+        control(tester, row).requestFocus();
+        await tester.pumpAndSettle();
+
+        expect(ringShown(tester, row), isTrue);
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a mouse-clicked stack row reduced to one entry leaves the '
+        'entry row focused without a ring', (tester) async {
+      final boundary = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: harness(onOpen: (_, _) {}),
+        ),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add(twice);
+      await tester.pumpAndSettle();
+      final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+      final entry = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+      final click = await mouseClicker(tester);
+      // Inside the row, past its text, where only the row's own ink draws.
+      final rect = tester.getRect(stack);
+      final blank = Offset(rect.right - 8, rect.center.dy);
+      Future<Color> pixel() async {
+        final render =
+            boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        return (await tester.runAsync(() async {
+          final image = await render.toImage();
+          final bytes = (await image.toByteData())!;
+          final at = (blank.dy.floor() * image.width + blank.dx.floor()) * 4;
+          return Color.fromARGB(
+            bytes.getUint8(at + 3),
+            bytes.getUint8(at),
+            bytes.getUint8(at + 1),
+            bytes.getUint8(at + 2),
+          );
+        }))!;
+      }
+
+      final unfocused = await pixel();
+
+      await click(tester.getCenter(stack));
+      expect(pickerTile('e-1'), findsOneWidget);
+      // A sync leaves the game one entry under the picker, which is closed by
+      // a click on the barrier, below the dialog.
+      items.add(once);
+      await tester.pumpAndSettle();
+      await click(away);
+      expect(pickerTile('e-1'), findsNothing);
+
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      expect(ringShown(tester, entry), isFalse);
+      // Nor is its ink tinted. A row's ink paints on the page's material, so
+      // the painted pixel inside the row is compared with the row unfocused;
+      // the colour the row hands its ink is not proof, as a highlight keeps
+      // the strength it was first drawn with.
+      expect(await pixel(), unfocused);
+      final tile = tester.widget<ListTile>(
+        find.descendant(of: entry, matching: find.byType(ListTile)),
+      );
+      expect(tile.focusColor?.a, 0);
+
+      await pressShift(tester);
+      expect(ringShown(tester, entry), isTrue);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
 }
 
 /// Whether the primary focus is on the widget [finder] finds, or inside it.
