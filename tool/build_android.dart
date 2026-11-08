@@ -537,17 +537,22 @@ void _selfTest() {
     false,
   );
 
-  // The release key's digest as apksigner prints it, and another key's,
-  // both from real output.
+  // An expected certificate as keytool prints it, the form
+  // _releaseCertificate takes, and the same digest as apksigner prints it;
+  // then another key's, from real apksigner output. Fixtures, not
+  // _releaseCertificate, so a new release key changes only the constant.
+  const keytoolDigest =
+      '52:96:99:C0:55:A9:87:79:CC:BB:26:23:B4:11:6E:79:'
+      'E0:30:D5:1C:EB:13:E8:F9:4E:23:5E:F1:10:FA:4B:50';
   const releaseDigest =
       '529699c055a98779ccbb2623b4116e79e030d51ceb13e8f94e235ef110fa4b50';
   const otherDigest =
       '92fe8a6fc5c6b4445cf7d9cc1942279a0bb5ee548126a571506ceada6bd2ffdd';
   expect(
-    'release signer: the recorded one is the release key',
+    "release signer: accepts the expected key in keytool's form",
     _signerProblems(
       'Signer #1 certificate SHA-256 digest: $releaseDigest\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     <String>[],
   );
@@ -559,7 +564,7 @@ void _selfTest() {
       'V2 Signer: certificate DN: CN=Board Games Empire\n'
       'V2 Signer: certificate SHA-256 digest: $releaseDigest\n'
       'V2 Signer: certificate SHA-1 digest: 89779bfaed00c066b3cfff42d1441eeb\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     <String>[],
   );
@@ -568,7 +573,7 @@ void _selfTest() {
     _signerProblems(
       'V2 Signer: certificate DN: CN=BGE throwaway\n'
       'V2 Signer: certificate SHA-256 digest: $otherDigest\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     [
       'a signer certificate has SHA-256 digest $otherDigest, not the '
@@ -580,7 +585,7 @@ void _selfTest() {
     _signerProblems(
       'Signer #1 certificate SHA-256 digest: $releaseDigest\n'
       'Signer #2 certificate SHA-256 digest: $otherDigest\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     [
       'a signer certificate has SHA-256 digest $otherDigest, not the '
@@ -592,7 +597,7 @@ void _selfTest() {
     _signerProblems(
       'V2 Signer: certificate SHA-256 digest: $releaseDigest\n'
       'V2 Signer: public key SHA-256 digest: $otherDigest\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     <String>[],
   );
@@ -601,14 +606,19 @@ void _selfTest() {
     _signerProblems(
       'Signer #1 certificate SHA-256 digest: $releaseDigest\n'
       'Source Stamp Signer certificate SHA-256 digest: $otherDigest\n',
-      _releaseCertificate,
+      keytoolDigest,
     ),
     <String>[],
   );
   expect(
     'release signer: flags output naming no certificate',
-    _signerProblems('Verified using v2 scheme: true\n', _releaseCertificate),
+    _signerProblems('Verified using v2 scheme: true\n', keytoolDigest),
     ["no signer's certificate SHA-256 digest in apksigner's output"],
+  );
+  expect(
+    "release signer: _releaseCertificate is a SHA-256 digest in keytool's form",
+    RegExp(r'^([0-9A-F]{2}:){31}[0-9A-F]{2}$').hasMatch(_releaseCertificate),
+    true,
   );
 
   expect(

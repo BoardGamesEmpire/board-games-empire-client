@@ -231,5 +231,25 @@ void main() {
       expect(await fixThenCheck(), (1, 1), reason: lastOutput);
       expect(lastOutput, contains('apps/mobile reaches packages/platform/web'));
     });
+
+    // Pub reads `./packages/platform/web` as `packages/platform/web` too.
+    test('web implementation listed with a leading ./', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'apps/mobile':
+              'name: mobile\npublish_to: none\nversion: 1.0.0+1\n'
+              'environment:\n  sdk: ^3.13.0\nresolution: workspace\n'
+              'dependencies:\n'
+              '  web_platform:\n    path: ../../packages/platform/web\n',
+          './packages/platform/web': validMemberPubspec.replaceFirst(
+            'name: member',
+            'name: web_platform',
+          ),
+        },
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(lastOutput, contains('apps/mobile reaches packages/platform/web'));
+    });
   });
 }

@@ -219,12 +219,13 @@ void main(List<String> args) {
     exit(1);
   }
 
-  // Without a trailing slash, which pub accepts and ignores. Every check
-  // names a member by this string, so `apps/mobile/` would otherwise be
-  // no app, and `packages/platform/web/` no web package.
+  // Without a leading `./` or a trailing slash, both of which pub accepts
+  // and ignores. Every check names a member by this string, so
+  // `apps/mobile/` would otherwise be no app, and `./packages/platform/web`
+  // no web package.
   final members = (rootYaml['workspace'] as YamlList?)
       ?.cast<String>()
-      .map((dir) => dir.replaceFirst(RegExp(r'/+$'), ''))
+      .map((dir) => dir.replaceAll(RegExp(r'^(\./+)+|/+$'), ''))
       .toList();
   if (members == null || members.isEmpty) {
     stderr.writeln('Root pubspec.yaml lists no `workspace:` members.');

@@ -91,8 +91,9 @@ public address needs `https`.
 
 Private isn't encrypted, though. Anyone who can watch the Wi-Fi can read the
 password and session token that plain `http` carries. Use this recipe only on a
-network you trust, with an account made for development. Recipe 1 keeps the
-traffic on the USB cable.
+network you trust, with an account made for development. Recipe 1, with an
+emulator or a USB cable, keeps the traffic off the network; adb over Wi-Fi
+doesn't.
 
 ## 4. A self-hosted server, Kubernetes included
 

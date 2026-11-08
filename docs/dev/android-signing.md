@@ -1,8 +1,11 @@
 # Signing the Android APK
 
 Android installs an APK over an earlier one only when both are signed with the
-same key. Every APK that master's CI run uploads is signed with one release key,
-so each one installs as an update over the last and keeps the user's data. This
+same key, and when its `versionCode`, the build number after the `+` in the
+app's `version:`, is no lower. Every APK that master's CI run uploads is signed
+with one release key, so each one installs as an update over the last and keeps
+the user's data, as long as the build number never goes down. CI doesn't
+compare build numbers between runs. This
 page is for maintainers: making that key, handing it to CI, and signing a local
 build with it.
 
@@ -45,7 +48,7 @@ as half a key.
 also refuses an APK signed by anything but the release key: the debug key, or
 any other key, however valid. It knows the release key by its certificate's
 SHA-256 digest, `_releaseCertificate` in `tool/build_android.dart`. CI's
-`release-android` job uses that flag, so it can't upload an APK that won't
+`release-android` job uses that flag, so it can't upload an APK whose key won't
 install over the last one. A keystore secret replaced with another key fails
 the job rather than ship.
 
@@ -96,6 +99,10 @@ over the real app, so keep it secret too.
 Replacing the key, lost or not, costs the same uninstall. It is a pull request
 that changes `_releaseCertificate`, merged before the new key's secrets go to
 CI, and a note to every tester that the next APK won't install over the last.
+The master run that merge starts still holds the old key's secrets, so its
+`release-android` refuses the APK and uploads nothing. Once the new secrets are
+set, re-run that job (the run's "Re-run failed jobs", or
+`gh run rerun <run-id> --failed`) and check that it uploads `android-apk`.
 
 ## Handing it to CI
 
