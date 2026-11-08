@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart';
@@ -127,21 +128,27 @@ void main() {
     remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf(const []);
   });
 
+  /// [textScaler] null leaves the view's own scale. The `MediaQuery` goes in
+  /// only for what a test sets.
   Widget app(
     Widget home, {
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool alwaysUse24HourFormat = false,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
   }) {
-    Widget scaled(BuildContext context, Widget? child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        textScaler: textScaler,
-        alwaysUse24HourFormat: alwaysUse24HourFormat,
-      ),
-      child: child!,
-    );
+    final TransitionBuilder? scaled =
+        textScaler == null && !alwaysUse24HourFormat
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: textScaler,
+              alwaysUse24HourFormat: alwaysUse24HourFormat,
+            ),
+            child: child!,
+          );
     return MaterialApp(
-      theme: BgeTheme.light(),
+      theme: theme ?? BgeTheme.light(),
       localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
       supportedLocales: DataGatewayLocalizations.supportedLocales,
       builder: offline == null
@@ -153,7 +160,7 @@ void main() {
 
   Future<void> pumpScreen(
     WidgetTester tester, {
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool alwaysUse24HourFormat = false,
     ValueListenable<bool>? offline,
   }) async {
@@ -2427,5 +2434,658 @@ void main() {
       expect(banner, findsOneWidget);
       expect(focusIsIn(tester, banner), isFalse);
     });
+  });
+
+  group('accessibility audit', () {
+    const listMechanics = DataGatewayCapabilities.listMechanics;
+
+    /// Something on every line the page can show: in use with a later
+    /// interview that failed, every capability with two switched off, and a
+    /// list of each kind: loaded, failed, not loaded yet and switched off.
+    DataGateway full() => row(
+      interview: failing(DataGatewayInterviewFailureCode.pingFailed),
+      capabilities: DataGatewayCapabilities.known,
+      disabled: const [fetch, listMechanics],
+      sections: [
+        DataGatewaySection(capability: languages, lastLoadedAt: lastAt),
+        DataGatewaySection(
+          capability: platforms,
+          failure: DataGatewaySectionFailure(
+            code: DataGatewaySectionFailureCode.listFailed,
+            at: failedAt,
+          ),
+        ),
+      ],
+    );
+
+    /// One of each row the waiting filter lists: pending, with what the
+    /// DataGateway supplied beside it, and unresolved, in a format this
+    /// client names and in one it doesn't.
+    final links = [
+      languageLink(
+        'l1',
+        value: 'ces',
+        format: LanguageCodeFormat.iso6393,
+        status: LanguageLinkStatus.pending,
+        suppliedName: 'Czech',
+        suppliedNativeName: 'Cestina',
+        suppliedIetfTag: 'cs',
+      ),
+      languageLink(
+        'l2',
+        value: 'Brazilian',
+        format: LanguageCodeFormat.languageName,
+      ),
+      languageLink('l3', value: 'Klingon'),
+    ];
+
+    /// The worklist's one page: [links], and nothing more.
+    final linkPage = linkPageOf(links);
+
+    /// A first page with more behind it, which is a full one: the next page
+    /// asked for is the one after the rows read so far.
+    final fullPage = linkPageOf([
+      for (
+        var n = 1;
+        n <= DataGatewayRemoteDataSource.languageLinkPageSize;
+        n++
+      )
+        languageLink('r$n'),
+    ], hasMore: true);
+
+    final tags = [
+      languageTag('t1', name: 'Czech', tag: 'cs'),
+      languageTag('t2', name: 'Slovak', tag: 'sk'),
+      languageTag('t3', name: 'Polish', tag: 'pl'),
+    ];
+
+    Finder linkRow(String id) => find.byKey(LanguageLinkWorklist.rowKey(id));
+    Finder linkMenu(String id) => find.byKey(LanguageLinkWorklist.menuKey(id));
+    final moreButton = find.byKey(LanguageLinkWorklist.moreKey);
+    final worklistBanner = find.byKey(
+      LanguageLinkWorklist.outcomeKey,
+      skipOffstage: false,
+    );
+    final picker = find.byType(LanguageTagPickerDialog);
+
+    /// The DataGateway is [full], with its worklist of [links].
+    void listed() {
+      remote.onFetchOne = (_) async => full();
+      remote.onFetchLanguageLinks = (_, _, _, _) async => linkPage;
+    }
+
+    /// The worklist answers its first read with [answer]: a page, a future
+    /// to wait on, or anything else to throw. Under the file's usual row,
+    /// which has less to say than [full], so the worklist sits higher on the
+    /// page.
+    void worklist(Object answer) {
+      remote.onFetchOne = (_) async => row();
+      remote.onFetchLanguageLinks = (_, _, _, _) => switch (answer) {
+        final PaginatedResult<LanguageLink> page => Future.value(page),
+        final Future<PaginatedResult<LanguageLink>> pending => pending,
+        _ => Future.error(answer),
+      };
+    }
+
+    /// The worklist of [links], and a picker that finds [tags] with more
+    /// behind them.
+    void pickable() {
+      worklist(linkPage);
+      remote.onFetchLanguageTags = (_, _, _) async =>
+          tagPageOf(tags, hasMore: true);
+    }
+
+    /// The screen in [theme], as the shell routes to it. [seed] scripts the
+    /// fakes first, [listed] unless it says otherwise: the screen sends its
+    /// reads as it is built. `auditScreen` builds once per cell, so the seed
+    /// runs once per cell too. [offline] holds the connection down through a
+    /// notifier of the cell's own, which goes with it.
+    Widget Function(ThemeData) screen({
+      void Function()? seed,
+      bool offline = false,
+    }) => (theme) {
+      (seed ?? listed)();
+      final notifier = offline ? ValueNotifier(true) : null;
+      if (notifier != null) addTearDown(notifier.dispose);
+      return app(
+        DataGatewayDetailScreen(remote: remote, id: 'dg_1', access: access),
+        theme: theme,
+        offline: notifier,
+      );
+    };
+
+    /// Pumps through a menu's or a dialog's way in or out. Not a settle: a
+    /// busy cue never stops.
+    Future<void> pumpThrough(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    /// Scrolls the page down to [target], as a user would, and up to the
+    /// head of the view where the page goes that far.
+    Future<void> scrollTo(
+      WidgetTester tester,
+      Finder target, {
+      bool settle = true,
+    }) async {
+      await tester.scrollUntilVisible(
+        target,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      // Built in the cache counts as found, so into view for certain.
+      await tester.ensureVisible(target);
+      settle ? await tester.pumpAndSettle() : await pumpThrough(tester);
+    }
+
+    /// Chooses [item] from the menu on [id]'s row, and lets the menu close.
+    /// Pumps rather than settles, so that it works beside a row that spins.
+    Future<void> chooseOn(WidgetTester tester, String id, Key item) async {
+      await scrollTo(tester, linkMenu(id), settle: false);
+      await tester.tap(linkMenu(id));
+      await pumpThrough(tester);
+      await tester.tap(find.byKey(item));
+      // A popup item hands its choice over once its menu has gone.
+      await pumpThrough(tester);
+    }
+
+    /// Opens the language picker from [id]'s row, and lets it read its first
+    /// page.
+    Future<void> openPicker(WidgetTester tester, String id) async {
+      await chooseOn(tester, id, LanguageLinkWorklist.linkKey);
+      await pumpThrough(tester);
+      expect(picker, findsOneWidget);
+    }
+
+    /// A switch's write that fails, and an ignore that works: an outcome for
+    /// each banner.
+    void bothAnswer() {
+      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      remote.onIgnoreLanguageLink = (_, id) async =>
+          languageLink(id, status: LanguageLinkStatus.ignored);
+    }
+
+    /// Switches Search off, which fails, then ignores the first row: both
+    /// banners show, the DataGateway's first.
+    Future<void> showBoth(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await press(tester, capability(search));
+      await tester.pumpAndSettle();
+      await chooseOn(tester, 'l1', LanguageLinkWorklist.ignoreKey);
+      await tester.pumpAndSettle();
+      expect(
+        textIn(
+          banner,
+          "Couldn't get an answer about that change. Check the switch before "
+          'trying again.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        textIn(worklistBanner, 'Ignored ces (ISO 639-3 code).'),
+        findsOneWidget,
+      );
+    }
+
+    void holdIgnores() =>
+        remote.onIgnoreLanguageLink = (_, _) =>
+            Completer<LanguageLink>().future;
+
+    /// The spinner standing in for [id]'s menu while its action runs.
+    Finder busyOn(String id) => find.descendant(
+      of: find.byKey(LanguageLinkWorklist.rowKey(id), skipOffstage: false),
+      matching: find.byType(CircularProgressIndicator, skipOffstage: false),
+      skipOffstage: false,
+    );
+
+    auditScreen(
+      'loading',
+      build: screen(
+        seed: () => remote.onFetchOne = (_) => Completer<DataGateway>().future,
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(DataGatewayDetailScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'access denied',
+      build: screen(
+        seed: () {
+          // A caller who may not read is refused the worklist too.
+          remote.onFetchOne = (_) async => throw forbidden();
+          remote.onFetchLanguageLinks = (_, _, _, _) async => throw forbidden();
+        },
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(DataGatewayDetailScreen.deniedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'gone',
+      build: screen(
+        seed: () => remote.onFetchOne = (_) async =>
+            throw const DataGatewayNotFoundException('gone', statusCode: 404),
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(DataGatewayDetailScreen.goneKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failed, with retry',
+      build: screen(
+        seed: () => remote.onFetchOne = (_) async => throw unreachable(),
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(DataGatewayDetailScreen.errorKey), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, may update',
+      build: screen(),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        expect(find.byKey(DataGatewayDetailScreen.nameKey), findsOneWidget);
+        // Built, if below the fold at 320dp × 2.0.
+        expect(interviewButton, findsOneWidget);
+        expect(tile(tester, search).onChanged, isNotNull);
+      },
+    );
+
+    // The worklist's rows are built only as the page reaches them (#50).
+    auditScreen(
+      'ready, scrolled to the end',
+      build: screen(),
+      arrange: (tester) async {
+        await scrollListToEnd(tester, linkRow('l3'));
+        expect(linkMenu('l3'), findsOneWidget);
+      },
+    );
+
+    // At 320dp × 2.0 the page runs about seven views long: the top holds
+    // the name and the status, and the end the worklist's rows, so the
+    // interview button, the lists, the switches and the worklist's head are
+    // on screen in neither. This audits them in a view tall enough to hold
+    // the page whole (#50).
+    auditScreen(
+      'ready, whole page',
+      build: screen(),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expect(interviewButton, findsOneWidget);
+        for (final name in DataGatewayCapabilities.known) {
+          expect(tile(tester, name).onChanged, isNotNull, reason: name);
+        }
+        for (final link in links) {
+          expect(linkMenu(link.id), findsOneWidget, reason: link.id);
+        }
+        expectWholePage(tester);
+      },
+    );
+
+    // Whole, for the same reason: the switches, which are what read-only
+    // changes, are below the fold at the top, all of them at 320dp × 2.0
+    // and all but the first at 390dp × 1.0.
+    auditScreen(
+      'ready, read-only, whole page',
+      build: screen(
+        seed: () {
+          access.current = readOnly;
+          listed();
+        },
+      ),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expect(interviewButton, findsNothing);
+        expect(tile(tester, search).onChanged, isNull);
+        expect(linkRow('l1'), findsOneWidget);
+        expect(linkMenu('l1'), findsNothing);
+        expectWholePage(tester);
+      },
+    );
+
+    // The interview never answers. Its button says so, and the switches stop.
+    auditScreen(
+      'interview in flight',
+      build: screen(
+        seed: () {
+          listed();
+          remote.onInterview = (_) =>
+              Completer<DataGatewayInterviewResult>().future;
+        },
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await press(tester, interviewButton);
+        expect(textIn(interviewButton, 'Interviewing…'), findsOneWidget);
+        expect(tile(tester, search).onChanged, isNull);
+      },
+    );
+
+    // The write never answers, so the bar at the head of the switches runs.
+    auditScreen(
+      'capability write in flight',
+      build: screen(
+        seed: () {
+          listed();
+          remote.onSetDisabledCapabilities = (_, _) =>
+              Completer<DataGatewayChangeResult>().future;
+        },
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await press(tester, capability(search));
+        expect(find.byType(LinearProgressIndicator), findsOneWidget);
+        expect(tile(tester, search).onChanged, isNotNull);
+      },
+    );
+
+    auditScreen(
+      'outcome banner',
+      build: screen(
+        seed: () {
+          listed();
+          remote.onInterview = (_) async => answered(full(), ok: false);
+        },
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await press(tester, interviewButton);
+        await tester.pumpAndSettle();
+        expect(textIn(banner, 'The interview failed.'), findsOneWidget);
+      },
+    );
+
+    // The footer at its fullest: the DataGateway's banner, then the
+    // worklist's.
+    auditScreen(
+      'both outcome banners',
+      build: screen(
+        seed: () {
+          listed();
+          bothAnswer();
+        },
+      ),
+      arrange: showBoth,
+    );
+
+    // At 320dp × 2.0 the two banners are taller than the footer's half of
+    // the view, which scrolls to the worklist's, the last to arrive, and
+    // leaves the DataGateway's above its edge, Dismiss and all. This audits
+    // both in a view tall enough to hold them, under the file's usual row,
+    // so that the page fits it too (#50).
+    auditScreen(
+      'both outcome banners, whole page',
+      build: screen(
+        seed: () {
+          worklist(linkPage);
+          bothAnswer();
+        },
+      ),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await showBoth(tester);
+        expectWholePage(tester);
+        // The footer the banners sit in, which scrolls apart from the page.
+        expectWholePage(
+          tester,
+          within: find.ancestor(of: banner, matching: find.byType(Scrollable)),
+        );
+      },
+    );
+
+    // Whole, as the ready state is: offline changes the interview button
+    // and the switches, which are below the fold at the top (at 390dp × 1.0
+    // the button isn't). The worklist is left empty, as the file's setUp has
+    // it: offline changes none of its rows until a menu opens, and with them
+    // the page is taller at 320dp × 2.0 than the whole-page view.
+    auditScreen(
+      'offline, whole page',
+      build: screen(
+        seed: () => remote.onFetchOne = (_) async => full(),
+        offline: true,
+      ),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expect(
+          tester.widget<ButtonStyleButton>(interviewButton).onPressed,
+          isNull,
+        );
+        expect(tile(tester, search).onChanged, isNull);
+        // The button's note, and a line in each switch.
+        expect(
+          find.text(onlineOnlyCopy),
+          findsNWidgets(1 + DataGatewayCapabilities.known.length),
+        );
+        expectWholePage(tester);
+      },
+    );
+
+    // The worklist's own surfaces, under a DataGateway that reads. Its rows
+    // are drawn in the ready calls above.
+    auditScreen(
+      'worklist, loading',
+      build: screen(
+        seed: () => worklist(Completer<PaginatedResult<LanguageLink>>().future),
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await pumpEvent(tester);
+        final loading = find.bySemanticsLabel('Loading language names…');
+        await scrollTo(tester, loading, settle: false);
+        expect(loading.hitTestable(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'worklist, failed',
+      build: screen(seed: () => worklist(unreachable())),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        final failed = find.byKey(LanguageLinkWorklist.errorKey);
+        await scrollTo(tester, failed);
+        expect(
+          find.text("Couldn't load the language names.").hitTestable(),
+          findsOneWidget,
+        );
+        expect(
+          find
+              .descendant(of: failed, matching: find.text('Try again'))
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'worklist, access denied',
+      build: screen(seed: () => worklist(forbidden())),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        // Its first line, so the whole notice is under it.
+        final denied = find.text("You don't have access to data gateways");
+        await scrollTo(tester, denied);
+        expect(denied.hitTestable(), findsOneWidget);
+        expect(
+          find
+              .text('Ask an admin of this server if you need to manage them.')
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'worklist, empty',
+      build: screen(seed: () => worklist(linkPageOf(const []))),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await scrollTo(tester, find.byKey(LanguageLinkWorklist.emptyKey));
+        expect(find.text('Nothing to review').hitTestable(), findsOneWidget);
+      },
+    );
+
+    // The first row is pending, which offers every action.
+    auditScreen(
+      'worklist, row menu open',
+      build: screen(seed: () => worklist(linkPage)),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await scrollTo(tester, linkMenu('l1'));
+        await tester.tap(linkMenu('l1'));
+        await tester.pumpAndSettle();
+        for (final key in [
+          LanguageLinkWorklist.acceptKey,
+          LanguageLinkWorklist.linkKey,
+          LanguageLinkWorklist.ignoreKey,
+        ]) {
+          expect(find.byKey(key).hitTestable(), findsOneWidget, reason: '$key');
+        }
+      },
+    );
+
+    // The ignore never answers, so the row keeps spinning.
+    auditScreen(
+      'worklist, an action in flight',
+      build: screen(
+        seed: () {
+          worklist(linkPage);
+          holdIgnores();
+        },
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await chooseOn(tester, 'l1', LanguageLinkWorklist.ignoreKey);
+        expect(busyOn('l1'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'worklist, more footer',
+      build: screen(seed: () => worklist(fullPage)),
+      arrange: (tester) async {
+        await scrollListToEnd(tester, moreButton);
+        expect(textIn(moreButton, 'Show more'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'worklist, more failed',
+      build: screen(
+        seed: () {
+          remote.onFetchOne = (_) async => row();
+          remote.onFetchLanguageLinks = (_, _, page, _) async =>
+              page == 1 ? fullPage : throw unreachable();
+        },
+      ),
+      arrange: (tester) async {
+        await scrollListToEnd(tester, moreButton);
+        await tester.tap(moreButton);
+        await tester.pumpAndSettle();
+        // The notice goes in above the button, which it pushes down.
+        await scrollListToEnd(tester, moreButton);
+        expect(
+          find.text("Couldn't load more language names.").hitTestable(),
+          findsOneWidget,
+        );
+        expect(textIn(moreButton, 'Try again'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'language tag picker open',
+      build: screen(seed: pickable),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await openPicker(tester, 'l1');
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Link "ces (ISO 639-3 code)" to a language'),
+          findsOneWidget,
+        );
+        expect(find.byKey(LanguageTagPickerDialog.searchKey), findsOneWidget);
+      },
+    );
+
+    // At 320dp × 2.0 the title, the field and its helper fill the dialog,
+    // and its rows and Show more scroll below them. This audits them in a
+    // view tall enough to hold the dialog whole (#50).
+    auditScreen(
+      'language tag picker open, whole page',
+      build: screen(seed: pickable),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        await openPicker(tester, 'l1');
+        await tester.pumpAndSettle();
+        // Its title, field and rows scroll, and Cancel stays put under them.
+        expectWholePage(tester, within: picker);
+        for (final tag in tags) {
+          expect(
+            find.byKey(LanguageTagPickerDialog.rowKey(tag.id)).hitTestable(),
+            findsOneWidget,
+            reason: tag.id,
+          );
+        }
+        expect(
+          find.byKey(LanguageTagPickerDialog.moreKey).hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'language tag picker, failed',
+      build: screen(
+        seed: () {
+          worklist(linkPage);
+          remote.onFetchLanguageTags = (_, _, _) async => throw unreachable();
+        },
+      ),
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await openPicker(tester, 'l1');
+        final retry = find.byKey(LanguageTagPickerDialog.retryKey);
+        // Into the dialog's view: at 320dp × 2.0 it is below its fold.
+        await tester.ensureVisible(retry);
+        await tester.pumpAndSettle();
+        expect(
+          find.text("Couldn't load languages.").hitTestable(),
+          findsOneWidget,
+        );
+        expect(retry.hitTestable(), findsOneWidget);
+      },
+    );
+
+    // A dialog over a busy worklist: the second row's picker while the
+    // first row's ignore runs.
+    auditScreen(
+      'language tag picker, over an action in flight',
+      build: screen(
+        seed: () {
+          pickable();
+          holdIgnores();
+        },
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pumpAndSettle();
+        await chooseOn(tester, 'l1', LanguageLinkWorklist.ignoreKey);
+        expect(busyOn('l1'), findsOneWidget);
+        await openPicker(tester, 'l2');
+        expect(busyOn('l1'), findsOneWidget);
+      },
+    );
   });
 }

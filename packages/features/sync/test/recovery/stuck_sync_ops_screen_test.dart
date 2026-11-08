@@ -51,17 +51,17 @@ void main() {
 
   tearDown(() => unawaited(stuck.close()));
 
-  Widget harness({
-    ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
-  }) => MaterialApp(
+  /// [textScaler], when given, overrides the scale the view gives the app.
+  Widget harness({ThemeData? theme, TextScaler? textScaler}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: SyncLocalizations.localizationsDelegates,
     supportedLocales: SyncLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: StuckSyncOpsScreen(recovery: recovery),
   );
 
@@ -289,22 +289,7 @@ void main() {
   });
 
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler) =>
-        harness(theme: theme, textScaler: textScaler);
-
-    testWidgets('the harness applies the theme and the text scaler', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-      stuck.add(_ops.take(1).toList());
-      await tester.pumpAndSettle();
-
-      final context = tester.element(find.byType(StuckSyncOpsScreen));
-      expect(Theme.of(context).brightness, Brightness.dark);
-      expect(MediaQuery.textScalerOf(context).scale(10), 20);
-    });
+    Widget build(ThemeData theme) => harness(theme: theme);
 
     // At 320dp × 2.0 the intro alone fills most of the view, so the rows can
     // sit below the fold and unbuilt; the intro is what proves the state.

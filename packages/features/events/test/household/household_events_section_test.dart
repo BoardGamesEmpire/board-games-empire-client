@@ -120,24 +120,35 @@ void main() {
   Widget harness({
     bool withSync = true,
     void Function(BuildContext context, String eventId)? onOpen,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    // No override unless a test sets one, so an audit cell's own scale
+    // reaches the section (#767).
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: BgePage(
       width: BgePageWidth.pane,
-      child: HouseholdEventsSection(
-        repository: repository,
-        householdId: 'h-1',
-        sync: withSync ? sync : null,
-        onOpen: onOpen,
-        now: () => clock,
+      // The column the household screen puts it in, under its heading.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          HouseholdEventsSection(
+            repository: repository,
+            householdId: 'h-1',
+            sync: withSync ? sync : null,
+            onOpen: onOpen,
+            now: () => clock,
+          ),
+        ],
       ),
     ),
   );
@@ -654,5 +665,144 @@ void main() {
     await tester.pump();
 
     expect(items.hasListener, isFalse);
+  });
+
+  // The household screen gets this section from `BgeApp`, so its own audit
+  // stands a placeholder in its place. The section is audited here, in a
+  // page as the household screen's column holds it (#50).
+  group('accessibility audit', () {
+    Widget build(ThemeData theme) => harness(theme: theme, onOpen: (_, _) {});
+
+    /// Three upcoming rows, the first with the user's answer on it.
+    List<EventListItem> rows() => [
+      item(
+        'e-1',
+        title: 'Game night e-1',
+        householdId: 'h-1',
+        occurrences: [confirmed('o-e-1', DateTime.utc(2026, 10, 25, 19))],
+        attendance: const EventAttendance(
+          attendeeId: 'att-me',
+          status: EventParticipationStatus.attending,
+        ),
+      ),
+      upcoming('e-2', 27, title: 'A long evening of cooperative games'),
+      upcoming('e-3', 30),
+    ];
+
+    /// Caches [rows] and lands the open's pass with [outcome].
+    Future<void> showRows(
+      WidgetTester tester,
+      List<EventListItem> rows, {
+      HouseholdEventsOutcome outcome = HouseholdEventsOutcome.complete,
+    }) async {
+      sync.finish(outcome);
+      items.add(rows);
+      await tester.pumpAndSettle();
+    }
+
+    // The open's pass runs and nothing is cached: the spinner never
+    // settles.
+    auditScreen(
+      'loading',
+      build: build,
+      settle: false,
+      arrange: (tester) async {
+        items.add(const []);
+        await tester.pump();
+        expect(find.byKey(HouseholdEventsSection.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, rows());
+        expect(rowOf('e-1'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: rowOf('e-1'),
+            matching: find.textContaining('Going'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // At 320dp × 2.0 the rows run below the fold.
+    auditScreen(
+      'ready, scrolled to the end',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, rows());
+        await scrollPageToEnd(tester);
+        expect(rowOf('e-3').hitTestable(), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'empty',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, const []);
+        expect(find.byKey(HouseholdEventsSection.emptyKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refresh failed',
+      build: build,
+      arrange: (tester) async {
+        await showRows(tester, rows(), outcome: HouseholdEventsOutcome.failed);
+        expect(find.text(_refreshFailed), findsOneWidget);
+        expect(
+          find.byKey(HouseholdEventsSection.refreshRetryKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The retry's pass never ends, so its spinner keeps going.
+    auditScreen(
+      'refreshing',
+      build: build,
+      settle: false,
+      arrange: (tester) async {
+        await showRows(tester, rows(), outcome: HouseholdEventsOutcome.failed);
+        await tester.tap(find.byKey(HouseholdEventsSection.refreshRetryKey));
+        await tester.pump();
+        expect(sync.refreshes, ['h-1', 'h-1']);
+        // The banner's copy and its button's label.
+        expect(find.text(_refreshing), findsNWidgets(2));
+      },
+    );
+
+    auditScreen(
+      'failure',
+      build: build,
+      arrange: (tester) async {
+        sync.finish(HouseholdEventsOutcome.complete);
+        items.addError(StateError('the cache could not be read'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdEventsSection.errorKey), findsOneWidget);
+        expect(
+          find.byKey(HouseholdEventsSection.errorRetryKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // Without a sync, as the shell builds it where none is registered: the
+    // failure alone, with no button.
+    auditScreen(
+      'failure, without retry',
+      build: (theme) => harness(theme: theme, withSync: false),
+      arrange: (tester) async {
+        items.addError(StateError('the cache could not be read'));
+        await tester.pumpAndSettle();
+        expect(find.text(_loadFailed), findsOneWidget);
+        expect(find.byKey(HouseholdEventsSection.errorRetryKey), findsNothing);
+      },
+    );
   });
 }

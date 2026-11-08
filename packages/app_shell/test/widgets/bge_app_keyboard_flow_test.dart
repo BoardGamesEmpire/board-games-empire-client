@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_catalog/game_catalog.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
@@ -31,6 +33,40 @@ class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
+
+class _MockEventRepository extends Mock implements EventRepository {}
+
+class _MockGameCollectionRepository extends Mock
+    implements GameCollectionRepository {}
+
+/// A server whose one game is [newest], for home's "Recently added" row.
+/// Nothing here opens a game or asks for random ones: the "Something to play"
+/// row draws from the collection.
+class _OneGameRemote implements GamesRemoteDataSource {
+  _OneGameRemote(this.newest);
+
+  final Game newest;
+
+  @override
+  Future<PaginatedResult<Game>> fetchPage({
+    int page = 1,
+    int limit = GamesRemoteDataSource.maxPageSize,
+    GameSort sort = GameSort.title,
+  }) async => PaginatedResult(
+    items: [newest],
+    meta: PaginationMeta(
+      page: 1,
+      limit: limit,
+      total: 1,
+      totalPages: 1,
+      hasMore: false,
+    ),
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
 
 /// Never reached: nothing here submits the server-add form.
 class _UnusedWellKnownClient implements WellKnownClient {
@@ -83,7 +119,9 @@ ServerIdentity _identityWithProviders() {
 ///
 /// The harnesses are the ones `server_add_route_test.dart` (server-add),
 /// `bge_app_auth_wiring_test.dart` (sign-in) and
-/// `bge_app_household_menu_test.dart` (the signed-in home) build.
+/// `bge_app_household_menu_test.dart` (the signed-in home) build, with each of
+/// home's sections' sources registered as `bge_app_home_sections_test.dart`
+/// registers them.
 void main() {
   late SemanticsHandle semantics;
 
@@ -194,12 +232,76 @@ void main() {
         ),
       ]),
     );
+    // One upcoming event, so home builds its upcoming events section.
+    // Far enough ahead to stay upcoming, in local time so the card reads the
+    // same wherever the suite runs.
+    final start = DateTime(2099, 1, 1, 19);
+    final eventRepository = _MockEventRepository();
+    when(eventRepository.watchAttendingEventListItems).thenAnswer(
+      (_) => Stream<List<EventListItem>>.value([
+        EventListItem(
+          event: Event(
+            id: 'e1',
+            title: 'Game night',
+            createdById: 'user-host',
+            type: EventType.casualGathering,
+            reach: Reach.friends,
+            status: EventStatus.planning,
+            schedulingMode: EventSchedulingMode.fixed,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+          occurrences: [
+            EventOccurrence(
+              id: 'o1',
+              eventId: 'e1',
+              startDate: start,
+              status: OccurrenceStatus.confirmed,
+              sortOrder: 0,
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          ],
+        ),
+      ]),
+    );
+    // One game of the user's own, so home builds its stats card, and its
+    // "Something to play" row draws that game. Another on the server, so the
+    // "Recently added" row has one too (#767).
+    final collection = _MockGameCollectionRepository();
+    when(collection.watchCollectionListItems).thenAnswer(
+      (_) => Stream<List<GameCollectionListItem>>.value([
+        GameCollectionListItem(
+          entry: GameCollection(
+            id: 'entry-azul',
+            userId: 'u1',
+            platformGameId: 'pg-azul',
+            medium: GameMedium.physical,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+          gameId: 'azul',
+          title: 'Azul',
+          platformName: 'Board game',
+        ),
+      ]),
+    );
     final cubit = _MockAppBootstrapCubit();
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           householdRepository: repository,
+          eventRepository: eventRepository,
+          gameCollectionRepository: collection,
+          gamesRemoteDataSource: _OneGameRemote(
+            Game(
+              id: 'cascadia',
+              title: 'Cascadia',
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          ),
           // The create route's guard: without a sender, the list offers no
           // create (#121).
           syncOperationSender: _MockSyncOperationSender(),
@@ -216,12 +318,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(HomeScreen), findsOneWidget);
 
-    // This container registers none of the sections' sources, so home shows
-    // its welcome line, and the app bar's menu button is its one stop.
-    await expectTraversable(tester, expectedOrder: ['Open navigation menu']);
+    // Every section is up, so the walk crosses all four (#767).
+    expect(find.byKey(StatsCard.ownedKey), findsOneWidget);
+    expect(find.byKey(NewestGamesSection.coverKey('cascadia')), findsOneWidget);
+    expect(find.byKey(SomethingToPlaySection.coverKey('azul')), findsOneWidget);
 
-    // The drawer, from the menu button. Its destinations, then its action
-    // under the divider. Material reads each destination with "Tab n of m"
+    // The menu button, then the sections top to bottom. Upcoming events: its
+    // See all link in the heading row, then the card, which reads its title
+    // and when. The stats card has no stop: its heading and count are text,
+    // and its households link shows only to someone in no household. Each row
+    // of games: the link or button in its heading row, then its cover. One
+    // cover fits, so neither row shows its previous and next buttons.
+    await expectTraversable(
+      tester,
+      expectedOrder: [
+        'Open navigation menu',
+        'See all your events',
+        'Game night\nThu, Jan 1, 2099 · 7:00 PM',
+        'See all recently added games',
+        'Cascadia',
+        'Reshuffle',
+        'Azul',
+      ],
+    );
+
+    // The drawer, from the menu button. Its destinations (Collection, Games
+    // and Events are there because the collection repository, the games
+    // remote and the event repository are registered), then its action under
+    // the divider. Material reads each destination with "Tab n of m"
     // (#763).
     final menu = find.byIcon(Icons.menu);
     final menuNode = Focus.of(tester.element(menu));
@@ -230,9 +354,12 @@ void main() {
     await expectTraversable(
       tester,
       expectedOrder: [
-        'Households\nTab 1 of 3',
-        'Send feedback\nTab 2 of 3',
-        'Settings\nTab 3 of 3',
+        'Collection\nTab 1 of 6',
+        'Games\nTab 2 of 6',
+        'Events\nTab 3 of 6',
+        'Households\nTab 4 of 6',
+        'Send feedback\nTab 5 of 6',
+        'Settings\nTab 6 of 6',
         'Sign Out',
       ],
     );
@@ -254,6 +381,12 @@ void main() {
       ),
     );
     expect(find.byType(HouseholdListScreen), findsOneWidget);
+
+    // The back control, the row, then the floating Create.
+    await expectTraversable(
+      tester,
+      expectedOrder: ['Back', 'Sunday Crew', 'Create household'],
+    );
 
     // A page route takes no Escape: only a route the barrier dismisses does.
     // Its back button is how a keyboard leaves it.

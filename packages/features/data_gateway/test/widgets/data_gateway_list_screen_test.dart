@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart';
@@ -41,21 +42,28 @@ void main() {
 
   /// [onOpen] is null unless a test gives one, which leaves the rows
   /// untappable, as a composition with no detail route does.
+  ///
+  /// [textScaler] null leaves the view's own scale. [settle] false pumps one
+  /// frame only, for a state whose spinner never lets the screen settle.
   Future<void> pumpScreen(
     WidgetTester tester, {
     void Function(BuildContext context)? onAdd,
     void Function(BuildContext context, String id)? onEdit,
     void Function(BuildContext context, String id)? onOpen,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ValueListenable<bool>? offline,
+    ThemeData? theme,
+    bool settle = true,
   }) async {
-    Widget scaled(BuildContext context, Widget? child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    );
+    final TransitionBuilder? scaled = textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          );
     await tester.pumpWidget(
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
         supportedLocales: DataGatewayLocalizations.supportedLocales,
         builder: offline == null
@@ -70,7 +78,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) await tester.pumpAndSettle();
   }
 
   /// [row] with the interview status it would have if it had been
@@ -967,7 +975,17 @@ void main() {
         list.jumpTo(end);
         await tester.pumpAndSettle();
       }
-      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_20')));
+      // Clear of the button, not only clear at its centre: the tap below
+      // lands mid-menu, which stays above the button's top even when the
+      // page leaves it no room and the menu's lower edge sits under it.
+      final menu = find.byKey(DataGatewayListScreen.rowMenuKey('dg_20'));
+      expect(
+        tester
+            .getRect(menu)
+            .overlaps(tester.getRect(find.byKey(DataGatewayListScreen.addKey))),
+        isFalse,
+      );
+      await tester.tap(menu);
       await tester.pumpAndSettle();
 
       expect(adds, 0);
@@ -1134,5 +1152,349 @@ void main() {
       expect(remote.calls.where((c) => c.startsWith('connect')), hasLength(1));
       handle.dispose();
     });
+  });
+
+  group('accessibility audit', () {
+    /// One of each line a row can show: not in use and why, disabled, in use
+    /// with a description, a later interview failed, and waiting for its
+    /// first. At 320dp × 2.0 they run below the fold.
+    final rows = [
+      withInterview(bgg, failure: DataGatewayInterviewFailureCode.pingFailed),
+      steam,
+      withInterview(
+        gateway('dg_3', name: 'Catalog', description: 'The catalog bridge'),
+        interviewed: true,
+      ),
+      withInterview(
+        gateway('dg_4', name: 'Archive'),
+        interviewed: true,
+        failure: DataGatewayInterviewFailureCode.describeFailed,
+      ),
+      gateway('dg_5', name: 'Spare'),
+    ];
+
+    /// The screen as the shell composes it, with add, edit and open all
+    /// passed, so the caller's access alone decides which controls show.
+    /// [seed] scripts the fakes before the first read goes out. [offline]
+    /// holds the connection down through a notifier of the cell's own, which
+    /// goes with it.
+    Future<void> Function(WidgetTester, ThemeData) screen({
+      void Function()? seed,
+      bool offline = false,
+      bool settle = true,
+    }) => (tester, theme) {
+      (seed ?? () => remote.listing(rows))();
+      final notifier = offline ? ValueNotifier(true) : null;
+      if (notifier != null) addTearDown(notifier.dispose);
+      return pumpScreen(
+        tester,
+        theme: theme,
+        onAdd: (_) {},
+        onEdit: (_, _) {},
+        onOpen: (_, _) {},
+        offline: notifier,
+        settle: settle,
+      );
+    };
+
+    final ready = screen();
+
+    /// May read DataGateways, and nothing else: the fewest controls.
+    void reader() {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
+      remote.listing(rows);
+    }
+
+    void expectFullAccess() {
+      expect(find.byKey(DataGatewayListScreen.addKey), findsOneWidget);
+      expect(
+        find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')),
+        findsOneWidget,
+      );
+    }
+
+    /// Opens BGG's menu, which offers every item: BGG is enabled, so it has
+    /// Disconnect as well.
+    Future<void> openBggsMenu(WidgetTester tester) async {
+      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')));
+      await tester.pumpAndSettle();
+      for (final key in [
+        DataGatewayListScreen.editKey,
+        DataGatewayListScreen.connectKey,
+        DataGatewayListScreen.disconnectKey,
+        DataGatewayListScreen.deleteKey,
+      ]) {
+        expect(find.byKey(key), findsOneWidget, reason: '$key');
+      }
+      // The last item is on screen, not merely built in a panel that scrolls.
+      expect(
+        find.byKey(DataGatewayListScreen.deleteKey).hitTestable(),
+        findsOneWidget,
+      );
+    }
+
+    /// The spinner that stands in for [id]'s menu while its action runs.
+    Finder busyOn(String id) => find.descendant(
+      of: find.byKey(DataGatewayListScreen.rowKey(id)),
+      matching: find.byType(CircularProgressIndicator),
+    );
+
+    /// Makes every connect one that never answers.
+    void holdConnects() =>
+        remote.onConnect = (_) => Completer<DataGatewayChangeResult>().future;
+
+    /// Pumps through a menu's or a dialog's way in or out. Not a settle: a
+    /// row's spinner never stops.
+    Future<void> pumpThrough(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    void expectOutcome(String message) => expect(
+      find.descendant(
+        of: find.byKey(DataGatewayListScreen.outcomeKey),
+        matching: find.text(message),
+      ),
+      findsOneWidget,
+    );
+
+    auditScreen(
+      'loading',
+      pump: screen(
+        seed: () =>
+            remote.onFetchPage = (_, _) =>
+                Completer<PaginatedResult<DataGateway>>().future,
+        settle: false,
+      ),
+      settle: false,
+      arrange: (tester) async {
+        await tester.pump();
+        expect(find.byKey(DataGatewayListScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'access denied',
+      pump: screen(seed: () => remote.refusingReads()),
+      arrange: (tester) async {
+        expect(find.byKey(DataGatewayListScreen.deniedKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'failed, with retry',
+      pump: screen(
+        seed: () => remote.onFetchPage = (_, _) async => throw unreachable(),
+      ),
+      arrange: (tester) async {
+        expect(find.byKey(DataGatewayListScreen.errorKey), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'empty',
+      pump: screen(seed: () => remote.listing(const [])),
+      arrange: (tester) async {
+        expect(find.byKey(DataGatewayListScreen.emptyKey), findsOneWidget);
+        expect(find.byKey(DataGatewayListScreen.addKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, full access',
+      pump: ready,
+      arrange: (tester) async => expectFullAccess(),
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      pump: ready,
+      arrange: (tester) async {
+        await scrollListToEnd(
+          tester,
+          find.byKey(DataGatewayListScreen.rowKey('dg_5')),
+        );
+        expect(
+          find.byKey(DataGatewayListScreen.rowMenuKey('dg_5')),
+          findsOneWidget,
+        );
+        expect(find.byKey(DataGatewayListScreen.addKey), findsOneWidget);
+      },
+    );
+
+    // At 320dp × 2.0 a row is 340–700dp tall: the top holds BGG and Steam,
+    // the end holds Spare alone, and Catalog and Archive are on screen in
+    // neither. This audits every row in a view tall enough to hold the list
+    // whole (#50).
+    auditScreen(
+      'ready, whole page',
+      pump: ready,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        for (final row in rows) {
+          expect(
+            find.byKey(DataGatewayListScreen.rowMenuKey(row.id)),
+            findsOneWidget,
+            reason: row.id,
+          );
+        }
+        expectWholePage(tester);
+      },
+    );
+
+    auditScreen(
+      'ready, read-only',
+      pump: screen(seed: reader),
+      arrange: (tester) async {
+        expect(find.text('BGG'), findsOneWidget);
+        expect(find.byKey(DataGatewayListScreen.addKey), findsNothing);
+        for (final row in rows) {
+          expect(
+            find.byKey(DataGatewayListScreen.rowMenuKey(row.id)),
+            findsNothing,
+          );
+        }
+      },
+    );
+
+    auditScreen('row menu open', pump: ready, arrange: openBggsMenu);
+
+    auditScreen(
+      'delete confirm',
+      pump: ready,
+      arrange: (tester) async {
+        await choose(tester, 'dg_1', DataGatewayListScreen.deleteKey);
+        expect(find.text('Delete BGG?'), findsOneWidget);
+        expect(
+          find.byKey(DataGatewayListScreen.deleteConfirmKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The connect never answers, so BGG's row keeps spinning.
+    auditScreen(
+      'connect in flight',
+      pump: ready,
+      settle: false,
+      arrange: (tester) async {
+        holdConnects();
+        await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(DataGatewayListScreen.connectKey));
+        await pumpThrough(tester);
+        expect(busyOn('dg_1'), findsOneWidget);
+      },
+    );
+
+    // A dialog over a busy list: BGG's delete confirm while Steam spins.
+    auditScreen(
+      'delete confirm, over a connect in flight',
+      pump: ready,
+      settle: false,
+      arrange: (tester) async {
+        holdConnects();
+        // At 320dp × 2.0 Steam's menu sits under the Add button, so its
+        // connect starts as its menu item would start it.
+        tester
+            .element(find.text('BGG'))
+            .read<DataGatewayListBloc>()
+            .add(
+              const DataGatewayListActionRequested(
+                DataGatewayRowAction.connect,
+                'dg_2',
+              ),
+            );
+        await pumpThrough(tester);
+        expect(busyOn('dg_2'), findsOneWidget);
+
+        await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_1')));
+        await pumpThrough(tester);
+        await tester.tap(find.byKey(DataGatewayListScreen.deleteKey));
+        await pumpThrough(tester);
+        expect(find.text('Delete BGG?'), findsOneWidget);
+        expect(busyOn('dg_2'), findsOneWidget);
+      },
+    );
+
+    // One call per tone the banner takes: info, error, warning and success.
+    auditScreen(
+      'action outcome, refused',
+      pump: screen(
+        seed: () {
+          remote
+            ..listing(rows)
+            ..onConnect = (_) async => throw forbidden();
+        },
+      ),
+      arrange: (tester) async {
+        await choose(tester, 'dg_1', DataGatewayListScreen.connectKey);
+        expectOutcome("Your role can't change data gateways.");
+      },
+    );
+
+    auditScreen(
+      'action outcome, failed',
+      pump: screen(
+        seed: () {
+          remote
+            ..listing(rows)
+            ..onDisconnect = (_) async => throw unreachable();
+        },
+      ),
+      arrange: (tester) async {
+        await choose(tester, 'dg_1', DataGatewayListScreen.disconnectKey);
+        expectOutcome("We couldn't disconnect from BGG. Try again.");
+      },
+    );
+
+    auditScreen(
+      'action outcome, attempt failed',
+      pump: screen(
+        seed: () {
+          remote
+            ..listing(rows)
+            ..onConnect = (_) async => changed(
+              bgg,
+              attempted: DataGatewayConnectionAction.connect,
+              succeeded: false,
+            );
+        },
+      ),
+      arrange: (tester) async {
+        await choose(tester, 'dg_1', DataGatewayListScreen.connectKey);
+        expectOutcome("BGG is enabled, but the server couldn't connect to it.");
+      },
+    );
+
+    auditScreen(
+      'action outcome, done',
+      pump: screen(
+        seed: () {
+          remote
+            ..listing(rows)
+            ..onConnect = (_) async =>
+                changed(bgg, attempted: DataGatewayConnectionAction.connect);
+        },
+      ),
+      arrange: (tester) async {
+        await choose(tester, 'dg_1', DataGatewayListScreen.connectKey);
+        expectOutcome('Connected to BGG.');
+      },
+    );
+
+    // Offline changes nothing on the list itself: only the menu's direct
+    // writes go disabled, with the reason under each.
+    auditScreen(
+      'offline, row menu open',
+      pump: screen(offline: true),
+      arrange: (tester) async {
+        await openBggsMenu(tester);
+        expect(find.text(onlineOnlyCopy), findsNWidgets(3));
+      },
+    );
   });
 }

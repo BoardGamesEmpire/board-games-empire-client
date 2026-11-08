@@ -46,20 +46,20 @@ void main() {
     unawaited(status.close());
   });
 
-  Widget app(
-    Widget home, {
-    TextScaler textScaler = TextScaler.noScaling,
-    ThemeData? theme,
-  }) => MaterialApp(
-    theme: theme ?? BgeTheme.light(),
-    localizationsDelegates: EventsLocalizations.localizationsDelegates,
-    supportedLocales: EventsLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
-    home: home,
-  );
+  /// [textScaler], when given, overrides the scale the view gives the app.
+  Widget app(Widget home, {TextScaler? textScaler, ThemeData? theme}) =>
+      MaterialApp(
+        theme: theme ?? BgeTheme.light(),
+        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        supportedLocales: EventsLocalizations.supportedLocales,
+        builder: textScaler == null
+            ? null
+            : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              ),
+        home: home,
+      );
 
   Widget harness({
     void Function(BuildContext context, String eventId)? onOpen,
@@ -68,7 +68,7 @@ void main() {
     Future<void> Function()? onRetry,
     VoidCallback? onEnter,
     Stream<List<Household>>? households,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ThemeData? theme,
   }) => app(
     EventOverviewScreen(
@@ -92,7 +92,7 @@ void main() {
     List<EventListItem> rows, {
     void Function(BuildContext context, EventGroup group)? onOpenGroup,
     void Function(BuildContext context)? onCreate,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
   }) async {
     await tester.pumpWidget(
       harness(
@@ -762,15 +762,13 @@ void main() {
   });
 
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler, {bool retry = true}) =>
-        harness(
-          theme: theme,
-          textScaler: textScaler,
-          onOpen: (_, _) {},
-          onOpenGroup: (_, _) {},
-          onCreate: (_) {},
-          onRetry: retry ? () async {} : null,
-        );
+    Widget build(ThemeData theme, {bool retry = true}) => harness(
+      theme: theme,
+      onOpen: (_, _) {},
+      onOpenGroup: (_, _) {},
+      onCreate: (_) {},
+      onRetry: retry ? () async {} : null,
+    );
 
     Future<void> showRows(
       WidgetTester tester,
@@ -788,20 +786,6 @@ void main() {
       item('e-plan'),
       item('e-past', occurrences: [confirmed('o', day(20))]),
     ];
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the screen.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-
-      final screen = find.byType(EventOverviewScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
 
     // The hydrate has started and nothing has arrived: the spinner never
     // settles.

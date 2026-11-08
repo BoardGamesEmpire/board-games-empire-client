@@ -31,19 +31,11 @@ void main() {
     stubState(bloc, const ServerOnboardingIdle());
   });
 
-  /// [textScaler] is applied below the app when given. Null leaves the
-  /// scale to a MediaQuery above it, which is how the 200% test sets it.
-  Widget harness({ThemeData? theme, TextScaler? textScaler}) => MaterialApp(
+  Widget harness({ThemeData? theme}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates:
         ServerOnboardingLocalizations.localizationsDelegates,
     supportedLocales: ServerOnboardingLocalizations.supportedLocales,
-    builder: textScaler == null
-        ? null
-        : (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: child!,
-          ),
     home: BlocProvider<ServerOnboardingBloc>.value(
       value: bloc,
       child: const ServerAddScreen(),
@@ -163,12 +155,11 @@ void main() {
 
     group('accessibility audit', () {
       /// The screen with the bloc parked in [state].
-      Widget Function(ThemeData, TextScaler) screenIn(
-        ServerOnboardingState state,
-      ) => (theme, textScaler) {
-        stubState(bloc, state);
-        return harness(theme: theme, textScaler: textScaler);
-      };
+      Widget Function(ThemeData) screenIn(ServerOnboardingState state) =>
+          (theme) {
+            stubState(bloc, state);
+            return harness(theme: theme);
+          };
 
       /// Scrolls the page to its end, for what a state leaves below the fold
       /// at 320dp × 2.0, which the audit can't see from the top.

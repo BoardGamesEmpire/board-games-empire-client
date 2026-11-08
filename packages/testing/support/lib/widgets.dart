@@ -10,7 +10,8 @@
 /// `network.dart` (#354 D1).
 library;
 
-export 'src/widgets/accessibility_audit.dart';
+// One cell's body is for the package's own test, which watches a cell fail.
+export 'src/widgets/accessibility_audit.dart' hide runAuditCell;
 export 'src/widgets/audit_scroll.dart';
 export 'src/widgets/fonts.dart';
 export 'src/widgets/keyboard_traversal.dart';

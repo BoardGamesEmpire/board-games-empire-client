@@ -33,7 +33,8 @@ import 'event_labels.dart';
 /// The link is selectable text, not a link: opening it waits for a launcher
 /// this package doesn't have, so for now the user can copy it. Like every
 /// icon line, it wraps within the width its row leaves it, a long address
-/// with no spaces included.
+/// with no spaces included. It is at least a tap target tall, since a long
+/// press selects it.
 class EventDetailHeader extends StatelessWidget {
   const EventDetailHeader({
     required this.event,
@@ -124,7 +125,15 @@ class EventDetailHeader extends StatelessWidget {
         if (location != null)
           _IconLine(icon: Icons.place_outlined, child: Text(location)),
         if (url != null)
-          _IconLine(icon: Icons.link, child: SelectableText(url)),
+          _IconLine(
+            icon: Icons.link,
+            // At least a tap target tall: the link is selected by a long
+            // press, and a short link is a single line (#50).
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: tokens.minTapTarget),
+              child: SelectableText(url),
+            ),
+          ),
         if (description != null)
           Padding(
             padding: EdgeInsets.only(top: tokens.spaceSm),

@@ -39,9 +39,11 @@ Flutter's accessibility guidelines on a screen in one state:
 - `iOSTapTargetGuideline` is left out: its 44pt bar is under the 48dp one.
 
 Each call checks the state at **320dp × 2.0** and **390dp × 1.0**, in **light
-and dark**. High contrast stays with the token tests. A test calls it for
-every state its screen has (ready, empty, failure, loading and the rest), in
-a `group('accessibility audit')`. Loading states pass `settle: false`. A long
+and dark**. The helper applies each cell's text scale itself, and fails a cell
+whose screen didn't draw at that scale and in that theme, as when a harness
+sets its own (#767). High contrast stays with the token tests. A test calls it
+for every state its screen has (ready, empty, failure, loading and the rest),
+in a `group('accessibility audit')`. Loading states pass `settle: false`. A long
 state is audited a second time, either scrolled to its end or as a whole page
 in a tall view.
 
@@ -49,7 +51,11 @@ Home's sections (upcoming events, the stats card, and the "Recently added" and
 "Something to play" rows) are composed in `BgeApp`, outside any screen, so
 `HomeScreen`'s own audit hosts placeholders in their place. Each section is
 audited in its own package instead, in every state it draws, beside its tests
-under `test/home/` in events, collection and catalog.
+under `test/home/` in events, collection and catalog. Household detail's events
+section, `HouseholdEventsSection`, is the same: it lives in events, which
+household doesn't depend on, so household detail's audit hosts a stand-in, and
+the section is audited in
+`packages/features/events/test/household/household_events_section_test.dart`.
 
 ### The coverage check
 
@@ -57,8 +63,8 @@ under `test/home/` in events, collection and catalog.
 `test-files` job) fails when a `*_screen.dart` under a package's `lib/` has no
 test in the same package holding both `group('accessibility audit'` and the
 screen's class name. A new screen fails it until someone writes the group.
-It prints the exempt screens on every run. The match is a text match, so it
-catches the screen nobody thought of, not a group that audits nothing. The
+It prints the exempt screens when there are any. The match is a text match, so
+it catches the screen nobody thought of, not a group that audits nothing. The
 reviewer checks that.
 
 ### Keyboard flow tests
@@ -74,8 +80,12 @@ it, but the helpers don't fail on it by themselves. The flows:
 
 - Server add, sign-in, and home → create household:
   `packages/app_shell/test/widgets/bge_app_keyboard_flow_test.dart`. The home
-  leg walks the signed-in home, the open drawer and the create-household form,
-  and checks that Escape closes the drawer with focus back on its menu button.
+  leg walks the signed-in home through all four of its sections: the menu
+  button, upcoming events' See all link and event card, the stats card (text
+  only, so no stop), "Recently added"'s See all link and cover, and "Something
+  to play"'s Reshuffle and cover. Then the open drawer, the household list
+  (back, the row, Create household) and the create-household form, and it
+  checks that Escape closes the drawer with focus back on its menu button.
 - Create event: the `keyboard` group of
   `packages/features/events/test/widgets/create_event_screen_test.dart`
 - Game search: the `keyboard` group of
@@ -121,15 +131,24 @@ Know these limits before trusting a green run.
   semantics node whose label equals the text of one on-screen `Text`. Merged
   titles and bodies, field labels and hints, subtitled rows and drawer labels
   go unmeasured.
-- **Disabled controls.** A disabled control's dimmed label fails the
-  contrast guideline, but WCAG 1.4.3 exempts inactive controls, so a state
-  with one passes `textContrast: false` and says why in a comment. The same
-  controls pass in the state where they are enabled.
+- **Disabled controls.** The contrast guideline skips a node whose own
+  flags say disabled, but a control merged into a bigger node that doesn't
+  say so has its dimmed label measured. WCAG 1.4.3 exempts inactive
+  controls, so a state with one passes `textContrast: false` and says why in
+  a comment. The same controls pass in the state where they are enabled.
 - **Clipped controls.** The tap-target guideline measures a control clipped
   by the viewport at its clipped size, so a scroll that leaves a field half
   under the top edge fails it, though nothing a user meets is wrong. Such a
   state is audited as a whole page in a tall view instead, as above.
-- **Dialogs** opened from a screen are mostly not audited.
+- **Some pop-ups.** Household list and detail, the three DataGateway
+  screens, event detail, game detail and the two collection screens audit
+  every dialog, sheet and menu they open. Elsewhere only home's drawer, game
+  search's filter sheet, sent invites' filter menu and stuck changes' discard
+  dialog are audited. The rest are not: the confirm dialogs of the invite
+  inbox, the household's invite list and the bootstrap error screen, and
+  create event's date and time pickers, among others. Nor is the game quick
+  look, which a cover on home's rows or the browse screen opens: it is no
+  screen of its own, so the coverage check doesn't ask for it (#803).
 - **The offline notice** the shell draws isn't in the screen audits.
 - **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
@@ -145,8 +164,10 @@ Know these limits before trusting a green run.
   and key events. On web with semantics on, a click can reach a button as a
   semantics tap rather than a pointer press, which the flag doesn't see, so
   the device walk should check the ring after mouse use there.
-- **Nine screens are exempt** while other units rewrite them (see the
-  coverage table below).
+- **Text on event detail.** The vote chips, "Confirm this date", the
+  tallies and the type and status line speak a label that differs from their
+  drawn text, so the contrast guideline measures none of them there. The
+  same colour pairs are measured elsewhere on the page.
 
 ---
 
@@ -179,6 +200,22 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 4. Game search, with the filter sheet.
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
+7. Event detail from Events: an answer, with its note and not-going dialogs,
+   then as host the actions and date menus and the dialogs they open.
+8. Game detail from Games, and a cover's quick look from a home row.
+9. Collection: the list in both layouts, a stack's picker, and an entry with
+   its edit sheet and remove dialog.
+10. Admin, the DataGateway list: a row's menu, the add form, and a
+    DataGateway's detail with its language picker.
+11. The invite inbox: a pending invite's Accept, then its Decline and the
+    decline confirm dialog (Cancel, then Decline), and the outcome banner
+    after each. No automated check opens this dialog (§3, "Some pop-ups").
+12. A household's invite list: a row's Revoke and its confirm dialog, and,
+    on an invite awaiting approval, Turn down and its dialog. Both dialogs
+    have Cancel and the confirming button. Check the title and body say
+    which of the two it is, and that focus returns to the row, or to
+    where its removal leaves it, on dismiss. No automated check opens
+    these dialogs either.
 
 ### TalkBack (Android)
 
@@ -280,7 +317,7 @@ follows input focus to:
 
 ## 5. This run's results
 
-Run 2026-11-05, for #50 and #644.
+Run 2026-11-05 for #50 and #644, completed 2026-11-06.
 
 ### The `textContrastGuideline` probe
 
@@ -298,28 +335,37 @@ no false finding.
 
 ### Coverage
 
-From `dart run tool/check_a11y_audit.dart`: 34 screens checked, 25 audited,
-9 deferred. A screen with more than one test file is listed under the file
-that holds its own audit. Home's four sections aren't `*_screen.dart`, so the
-check doesn't count them; they are listed after the audited screens.
+From `dart run tool/check_a11y_audit.dart`: 34 screens checked, 34 audited.
+A screen with more than one test file lists each file. Home's four sections
+and household detail's events section aren't `*_screen.dart`, so the check
+doesn't count them; they are listed after the audited screens.
 
 | Screen | Test file | Status |
 |---|---|---|
 | `AuthScreen` | `packages/features/auth/test/widgets/auth_screen_test.dart` | audited |
 | `BootstrapErrorScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
+| `CollectionEntryScreen` | `packages/features/collection/test/widgets/collection_entry_screen_test.dart` | audited |
 | `CreateEventScreen` | `packages/features/events/test/widgets/create_event_screen_test.dart` | audited |
 | `CreateHouseholdScreen` | `packages/features/household/test/widgets/create_household_screen_test.dart` | audited |
+| `DataGatewayDetailScreen` | `packages/features/data_gateway/test/widgets/data_gateway_detail_screen_test.dart` | audited |
+| `DataGatewayFormScreen` | `packages/features/data_gateway/test/widgets/data_gateway_form_screen_test.dart` | audited |
+| `DataGatewayListScreen` | `packages/features/data_gateway/test/widgets/data_gateway_list_screen_test.dart` | audited |
 | `EditHouseholdScreen` | `packages/features/household/test/widgets/edit_household_screen_test.dart` | audited |
 | `EventAvailabilityScreen` | `packages/features/events/test/widgets/event_availability_screen_test.dart` | audited |
+| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` | audited |
 | `EventGroupScreen` | `packages/features/events/test/widgets/event_group_screen_test.dart` | audited |
 | `EventOverviewScreen` | `packages/features/events/test/widgets/event_overview_screen_test.dart` | audited |
 | `FeedbackFlowScreen` | `packages/app_shell/test/screens/feedback_flow_screen_test.dart` | audited |
 | `FeedbackReviewScreen` | `packages/app_shell/test/widgets/feedback_review_screen_test.dart` | audited |
 | `GameBrowseScreen` | `packages/features/catalog/test/widgets/game_browse_screen_test.dart` | audited |
+| `GameCollectionListScreen` | `packages/features/collection/test/widgets/game_collection_list_screen_test.dart` | audited |
+| `GameDetailScreen` | `packages/features/catalog/test/widgets/game_detail_screen_test.dart` | audited |
 | `GameSearchScreen` | `packages/features/catalog/test/widgets/game_search_screen_test.dart` | audited |
 | `HomePlaceholderScreen` | `packages/app_shell/test/screens/home_placeholder_screen_test.dart` | audited |
 | `HomeScreen` | `packages/app_shell/test/screens/home_screen_test.dart` | audited |
+| `HouseholdDetailScreen` | `packages/features/household/test/widgets/household_detail_screen_test.dart` and `packages/features/household/test/widgets/household_detail_leave_test.dart` | audited |
 | `HouseholdInviteListScreen` | `packages/features/household/test/widgets/household_invite_list_screen_test.dart` | audited |
+| `HouseholdListScreen` | `packages/features/household/test/widgets/household_list_screen_test.dart` | audited |
 | `InviteInboxScreen` | `packages/features/household/test/widgets/invite_inbox_screen_test.dart` | audited |
 | `NotYetAvailableScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
 | `RouteNotFoundScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
@@ -334,18 +380,10 @@ check doesn't count them; they are listed after the audited screens.
 | `StatsCard` (home) | `packages/features/collection/test/home/stats_card_test.dart` | audited |
 | `NewestGamesSection` (home) | `packages/features/catalog/test/home/newest_games_section_test.dart` | audited |
 | `SomethingToPlaySection` (home) | `packages/features/catalog/test/home/something_to_play_section_test.dart` | audited |
-| `CollectionEntryScreen` | none | deferred, #708/#709/#735 |
-| `DataGatewayDetailScreen` | none | deferred, #479/#478 |
-| `DataGatewayFormScreen` | none | deferred, #479/#478 |
-| `DataGatewayListScreen` | none | deferred, #479/#478 |
-| `EventDetailScreen` | none | deferred, #508/#667 |
-| `GameCollectionListScreen` | none | deferred, #708/#709/#735 |
-| `GameDetailScreen` | none | deferred, #708/#709/#735 |
-| `HouseholdDetailScreen` | none | deferred, #479/#478 |
-| `HouseholdListScreen` | none | deferred, #479/#478 |
+| `HouseholdEventsSection` (household detail) | `packages/features/events/test/household/household_events_section_test.dart` | audited |
 
-When those units merge, empty `_deferred` in `tool/check_a11y_audit.dart`,
-write each screen's audit group and keyboard walk, and re-run this section.
+`_deferred` in `tool/check_a11y_audit.dart` is empty, so the run prints no
+exemption block.
 
 ### Live web pass
 
@@ -373,6 +411,7 @@ can express what the finding wants, that check is in the suite, skipped with
 | #763 | Drawer entries read "Tab n of m" though the drawer is a launcher | `packages/app_shell/test/screens/home_screen_test.dart` |
 | #764 | `TextButton()`, `OutlinedButton()` and `ElevatedButton()` clip their content to their shape once the ring's builder is set, so a label that wraps at 2.0 text loses glyph pixels at the curved ends | `packages/ui/tokens/test/accessibility/bge_button_focus_ring_test.dart` |
 | #765 | Shift+Tab from the top of a lazily built list wraps to the last child still built, not the list's end: focus can't reach a child the list hasn't built | `packages/ui/widgets/test/layout/bge_page_test.dart` |
+| #802 | The app bar's Edit and Remove on `CollectionEntryScreen`, `primary` text on the app bar's scrolled-under tint: 4.39:1 against 4.5 (light, once content scrolls under the bar) | `packages/features/collection/test/widgets/collection_entry_screen_test.dart`, `ready, scrolled to the end` |
 
 Fixed in this run, each with a regression test in the PR:
 
@@ -397,7 +436,26 @@ Fixed in this run, each with a regression test in the PR:
   view, its ring now scrolls the rest of itself in.
 - The feedback review's stack trace, one frame long, was a long-press target
   under 48dp tall. It now has the minimum height.
+- Event detail's link, a `SelectableText` like that stack trace, was a
+  long-press target 42dp tall. It now sits in a box at least 48dp tall
+  (`event_detail_sections.dart`), with a regression test in
+  `event_detail_screen_test.dart`.
+- At 320dp × 2.0 in SF Pro, the iOS and macOS font, "Add data gateway" and
+  "Create household" made their floating buttons wider than the window,
+  pushing the buttons' start edges 12dp and 8dp off screen. The guidelines
+  don't check that a control stays on screen, and the test font draws every
+  glyph an em wide, so its widths aren't a device's. A real-font render
+  found it, and no suite runs one. The five extended buttons' labels are now
+  `BgeFabLabel`, which scales a label down to the room the window leaves
+  (`bge_fab_label_test.dart`).
 
 Two failures the guidelines report are not defects, and §3 describes both: a
 disabled control's dimmed label, and a control clipped by the viewport's top
-edge.
+edge. The first reached the data gateway form's Add button and event detail's Add
+a date, answer chips and Add a note while a write is in flight:
+`BgeOnlineOnly` merges the control's semantics, and online the merged node
+carries no enabled state of its own, so the guideline measures its dimmed
+label. Those states pass `textContrast: false`; the enabled controls pass
+with contrast on. Offline the merged node now says disabled itself
+(`bge_online_only.dart`), so the offline states of those screens, the
+gateway detail and the household invite screens audit contrast too.

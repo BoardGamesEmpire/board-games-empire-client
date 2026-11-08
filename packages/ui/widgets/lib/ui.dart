@@ -25,7 +25,9 @@
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
 /// quick look (#573, #607), `BgeInertButton` by the 7 buttons that
-/// keep focus while they can do nothing (#607), and
+/// keep focus while they can do nothing (#607), `BgeFabLabel` by the 5
+/// extended floating buttons, which it keeps on screen at large text (#50),
+/// and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
 /// empty and denied surfaces of the feature screens, at 23, 23 and 39 call
 /// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
@@ -49,6 +51,7 @@ export 'src/banners/bge_inline_banner.dart';
 export 'src/banners/bge_offline_strip.dart';
 export 'src/banners/bge_refresh_banner.dart';
 export 'src/banners/unverified_session_banner.dart';
+export 'src/buttons/bge_fab_label.dart';
 export 'src/buttons/bge_inert_button.dart';
 export 'src/buttons/bge_submit_button.dart';
 export 'src/connectivity/bge_connectivity_scope.dart';

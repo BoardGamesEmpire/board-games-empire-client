@@ -104,17 +104,8 @@ void main() {
   Widget harness({
     required void Function(String) onCreated,
     ThemeData? theme,
-    TextScaler? textScaler,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    // Null leaves the scale to a MediaQuery above the app, which is how the
-    // 200% tests here set theirs.
-    builder: textScaler == null
-        ? null
-        : (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: child!,
-          ),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: Builder(
@@ -616,8 +607,7 @@ void main() {
     });
 
     group('accessibility audit', () {
-      Widget build(ThemeData theme, TextScaler textScaler) =>
-          harness(onCreated: (_) {}, theme: theme, textScaler: textScaler);
+      Widget build(ThemeData theme) => harness(onCreated: (_) {}, theme: theme);
 
       Future<void> submitFilled(WidgetTester tester) async {
         await openScreen(tester);
@@ -678,21 +668,6 @@ void main() {
         await tester.pump();
         expect(find.byType(CircularProgressIndicator), findsOneWidget);
       }
-
-      // The audit's 320dp × 2.0 cells are only worth running if the harness
-      // passes the scale and theme on to the screen.
-      testWidgets('the harness applies the theme and the text scale', (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          build(BgeTheme.dark(), const TextScaler.linear(2)),
-        );
-        await openScreen(tester);
-
-        final form = find.byType(CreateHouseholdForm);
-        expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
-        expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
-      });
 
       auditScreen('ready', build: build, arrange: openScreen);
 

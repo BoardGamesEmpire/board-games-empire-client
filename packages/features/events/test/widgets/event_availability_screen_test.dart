@@ -169,10 +169,12 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// [textScaler], when given, overrides the scale the view gives the app;
+  /// `copyWith` keeps the view's when it is null.
   Widget harness({
     EventRemoteDataSource? remote,
     Future<bool> Function()? confirmSession,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool boldText = false,
     ThemeData? theme,
   }) => MaterialApp(
@@ -215,7 +217,7 @@ void main() {
     EventDetail? detail, {
     EventRemoteDataSource? remote,
     Future<bool> Function()? confirmSession,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool boldText = false,
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
@@ -1097,15 +1099,8 @@ void main() {
   });
 
   group('accessibility audit', () {
-    Widget build(
-      ThemeData theme,
-      TextScaler textScaler, {
-      bool remote = true,
-    }) => harness(
-      remote: remote ? serving() : null,
-      theme: theme,
-      textScaler: textScaler,
-    );
+    Widget build(ThemeData theme, {bool remote = true}) =>
+        harness(remote: remote ? serving() : null, theme: theme);
 
     // Eight people on four dates, one with a long label: taller and wider
     // than the narrow window at 2.0 text.
@@ -1134,20 +1129,6 @@ void main() {
       await settle(tester);
     }
 
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the screen.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-
-      final screen = find.byType(EventAvailabilityScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
-
     // Nothing has answered yet: the spinner never settles.
     auditScreen(
       'loading',
@@ -1171,10 +1152,9 @@ void main() {
 
     auditScreen(
       'ready, scrolled to the end',
-      build: (theme, textScaler) => harness(
+      build: (theme) => harness(
         remote: serving(summary: (_) => bigSummary),
         theme: theme,
-        textScaler: textScaler,
       ),
       arrange: (tester) async {
         await feed(tester, _poll(dates, roster: people));
@@ -1204,10 +1184,9 @@ void main() {
 
     auditScreen(
       'failure',
-      build: (theme, textScaler) => harness(
+      build: (theme) => harness(
         remote: serving(summary: (_) => throw _offline),
         theme: theme,
-        textScaler: textScaler,
       ),
       arrange: (tester) async {
         await feed(tester, _poll(_dates, roster: _roster));

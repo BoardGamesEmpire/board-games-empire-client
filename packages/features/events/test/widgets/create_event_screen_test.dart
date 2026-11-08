@@ -171,11 +171,12 @@ void main() {
   }
 
   /// The screen, pushed above a page of its own as the shell pushes it, so
-  /// that a screen leaving on its own would show.
+  /// that a screen leaving on its own would show. [textScaler], when given,
+  /// overrides the scale the view gives the app.
   Widget harness({
     Stream<List<Household>>? households,
     String? householdId,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool offline = false,
     ThemeData? theme,
   }) => MaterialApp(
@@ -189,10 +190,12 @@ void main() {
       offline: offline,
       noticeShowing: offline,
       onlineOnlyReason: "Available when you're online",
-      child: MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      ),
+      child: textScaler == null
+          ? child!
+          : MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            ),
     ),
     home: Builder(
       builder: (context) => Scaffold(
@@ -222,7 +225,7 @@ void main() {
     WidgetTester tester, {
     Stream<List<Household>>? households,
     String? householdId,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     bool offline = false,
     ThemeData? theme,
   }) async {
@@ -955,11 +958,8 @@ void main() {
   });
 
   group('accessibility audit', () {
-    Widget build(ThemeData theme, TextScaler textScaler) => harness(
-      households: Stream.value([_home, _club]),
-      textScaler: textScaler,
-      theme: theme,
-    );
+    Widget build(ThemeData theme) =>
+        harness(households: Stream.value([_home, _club]), theme: theme);
 
     // The harness shows the screen from a button, so the page is open only
     // once that is tapped.
@@ -1023,21 +1023,6 @@ void main() {
       await tester.pumpAndSettle();
       expectWholePage(tester);
     }
-
-    // The audit's 320dp × 2.0 cells are only worth running if the harness
-    // passes the scale and theme on to the screen.
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        build(BgeTheme.dark(), const TextScaler.linear(2)),
-      );
-      await show(tester);
-
-      final form = find.byType(CreateEventScreen);
-      expect(MediaQuery.textScalerOf(tester.element(form)).scale(10), 20);
-      expect(Theme.of(tester.element(form)).brightness, Brightness.dark);
-    });
 
     auditScreen('ready', build: build, arrange: show);
 

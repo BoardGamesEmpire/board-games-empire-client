@@ -134,16 +134,20 @@ void main() {
     medium: GameMedium.digital,
   );
 
-  Widget app(Widget home, {TextScaler textScaler = TextScaler.noScaling}) =>
+  /// [home] in [theme], light by default. [textScaler] overrides the
+  /// device's text scale only when set.
+  Widget app(Widget home, {TextScaler? textScaler, ThemeData? theme}) =>
       MaterialApp(
-        theme: BgeTheme.light(),
+        theme: theme ?? BgeTheme.light(),
         localizationsDelegates:
             GameCollectionLocalizations.localizationsDelegates,
         supportedLocales: GameCollectionLocalizations.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
+        builder: textScaler == null
+            ? null
+            : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              ),
         home: home,
       );
 
@@ -161,14 +165,26 @@ void main() {
     WidgetTester tester, {
     GameCollectionListItem? item,
     void Function(BuildContext, String)? onOpenGame,
-    TextScaler textScaler = TextScaler.noScaling,
   }) async {
     watch.add(item ?? fullRow());
-    await tester.pumpWidget(
-      app(screen(onOpenGame: onOpenGame), textScaler: textScaler),
-    );
+    await tester.pumpWidget(app(screen(onOpenGame: onOpenGame)));
     await tester.pumpAndSettle();
   }
+
+  /// A page whose one button pushes the screen, as the list opens it.
+  Widget opener({void Function(BuildContext, String)? onOpenGame}) => Scaffold(
+    body: Builder(
+      builder: (context) => TextButton(
+        key: _openKey,
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => screen(onOpenGame: onOpenGame),
+          ),
+        ),
+        child: const Text(_listCopy),
+      ),
+    ),
+  );
 
   /// The screen pushed over a page, as the list opens it, so that its pop
   /// and a SnackBar over the page beneath are real.
@@ -176,25 +192,15 @@ void main() {
     WidgetTester tester, {
     GameCollectionListItem? item,
     void Function(BuildContext, String)? onOpenGame,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
   }) async {
     watch.add(item ?? fullRow());
     await tester.pumpWidget(
       app(
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              key: _openKey,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => screen(onOpenGame: onOpenGame),
-                ),
-              ),
-              child: const Text(_listCopy),
-            ),
-          ),
-        ),
+        opener(onOpenGame: onOpenGame),
         textScaler: textScaler,
+        theme: theme,
       ),
     );
     await tester.tap(find.byKey(_openKey));
@@ -261,6 +267,23 @@ void main() {
 
   Future<void> submit(WidgetTester tester) =>
       tapInView(tester, find.byKey(EditCollectionEntrySheet.submitKey));
+
+  /// Opens the sheet and submits a change to the copies, with the update held
+  /// open until the returned completer completes. Pumps rather than settles:
+  /// the submit spins while the save is out.
+  Future<Completer<_Updated>> submitHeld(WidgetTester tester) async {
+    final held = Completer<_Updated>();
+    when(callUpdate).thenAnswer((_) => held.future);
+    await openSheet(tester);
+    await type(tester, EditCollectionEntrySheet.quantityKey, '3');
+    await tester.ensureVisible(find.byKey(EditCollectionEntrySheet.submitKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(EditCollectionEntrySheet.submitKey));
+    await tester.pump();
+    await tester.pump();
+    expect(blocOf(tester).state.action, CollectionEntryAction.saving);
+    return held;
+  }
 
   Future<void> confirmRemove(WidgetTester tester) async {
     await tester.tap(find.byKey(CollectionEntryScreen.removeKey));
@@ -536,18 +559,7 @@ void main() {
     Future<Completer<_Updated>> submitHeldThenDismiss(
       WidgetTester tester,
     ) async {
-      final held = Completer<_Updated>();
-      when(callUpdate).thenAnswer((_) => held.future);
-      await openSheet(tester);
-      await type(tester, EditCollectionEntrySheet.quantityKey, '3');
-      await tester.ensureVisible(
-        find.byKey(EditCollectionEntrySheet.submitKey),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(EditCollectionEntrySheet.submitKey));
-      await tester.pump();
-      await tester.pump();
-      expect(blocOf(tester).state.action, CollectionEntryAction.saving);
+      final held = await submitHeld(tester);
 
       // Dismissed by its barrier while the save is still out.
       await tester.tapAt(const Offset(10, 10));
@@ -1085,5 +1097,321 @@ void main() {
     final headers = find.semantics.byFlag(SemanticsFlag.isHeader).evaluate();
     expect(headers.map((node) => node.getSemanticsData().label), ['Wingspan']);
     semantics.dispose();
+  });
+
+  group('accessibility audit', () {
+    /// Pushes the screen in [theme] over a page, as the list opens it, so
+    /// its app bar has the back button, with whatever the watch has been
+    /// given. Pumps through the push rather than settling: a read that
+    /// never answers spins.
+    Future<void> push(WidgetTester tester, ThemeData theme) async {
+      await tester.pumpWidget(app(opener(), theme: theme));
+      await tester.tap(find.byKey(_openKey));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    /// [showPushed] in [theme], over [item] (Wingspan, fully set, by
+    /// default), with "Game details" when [gameDetails].
+    Future<void> Function(WidgetTester, ThemeData) pushed({
+      GameCollectionListItem? item,
+      bool gameDetails = false,
+    }) =>
+        (tester, theme) => showPushed(
+          tester,
+          theme: theme,
+          item: item,
+          onOpenGame: gameDetails ? (_, _) {} : null,
+        );
+
+    final sheet = find.byKey(EditCollectionEntrySheet.sheetKey);
+    final dialog = find.byType(RemoveFromCollectionDialog);
+
+    /// The view made tall enough to hold the page whole, then [open], whose
+    /// pop-up [of] no longer scrolls either (#50).
+    Future<void> openWhole(
+      WidgetTester tester,
+      Finder of,
+      Future<void> Function(WidgetTester tester) open,
+    ) async {
+      await useWholePage(tester);
+      expectWholePage(tester);
+      await open(tester);
+      expectWholePage(tester, within: of);
+    }
+
+    /// Opens the sheet, changes the copies and submits a save that fails.
+    Future<void> submitFailing(WidgetTester tester) async {
+      when(callUpdate).thenThrow(StateError('disposed'));
+      await openSheet(tester);
+      await type(tester, EditCollectionEntrySheet.quantityKey, '3');
+      await submit(tester);
+      expect(find.text(_saveFailedCopy), findsOneWidget);
+    }
+
+    /// Opens the sheet, empties the copies and submits: the form refuses it.
+    Future<void> submitInvalid(WidgetTester tester) async {
+      await openSheet(tester);
+      await type(tester, EditCollectionEntrySheet.quantityKey, '');
+      await submit(tester);
+      verifyNever(callUpdate);
+      expect(find.text('Enter a whole number, 1 or more.'), findsOneWidget);
+    }
+
+    Future<void> openDialog(WidgetTester tester) async {
+      await tester.tap(find.byKey(CollectionEntryScreen.removeKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove Wingspan?'), findsOneWidget);
+    }
+
+    // The watch never answers, so the spinner never settles.
+    auditScreen(
+      'loading',
+      pump: push,
+      settle: false,
+      arrange: (tester) async {
+        expect(find.byKey(CollectionEntryScreen.loadingKey), findsOneWidget);
+        expect(find.byKey(CollectionEntryScreen.editKey), findsNothing);
+      },
+    );
+
+    // Removed on another device: named, from the row the bloc keeps.
+    auditScreen(
+      'gone',
+      pump: pushed(),
+      arrange: (tester) async {
+        watch.add(null);
+        await tester.pumpAndSettle();
+        expect(find.byKey(CollectionEntryScreen.goneKey), findsOneWidget);
+        expect(find.text('Wingspan'), findsOneWidget);
+        expect(find.byKey(CollectionEntryScreen.editKey), findsNothing);
+      },
+    );
+
+    /// The first read fails, and the screen pushes over it.
+    Future<void> pushFailing(WidgetTester tester, ThemeData theme) {
+      watch.addError(StateError('the read failed'));
+      return push(tester, theme);
+    }
+
+    Future<void> expectError(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      expect(find.byKey(CollectionEntryScreen.errorKey), findsOneWidget);
+      expect(find.byKey(CollectionEntryScreen.retryKey), findsOneWidget);
+    }
+
+    auditScreen('error, with retry', pump: pushFailing, arrange: expectError);
+
+    // At 320dp × 2.0 Try again sits on the view's bottom edge, where the
+    // tap-target check skips it (#50).
+    auditScreen(
+      'error, with retry, scrolled to the end',
+      pump: pushFailing,
+      arrange: (tester) async {
+        await expectError(tester);
+        await scrollPageToEnd(tester);
+      },
+    );
+
+    // Each field's empty value, quiet, and the way to the game's page.
+    void expectEveryFieldEmpty() {
+      expect(find.byKey(CollectionEntryScreen.gameDetailsKey), findsOneWidget);
+      expect(find.text('No rating'), findsOneWidget);
+      expect(find.text('No comment'), findsOneWidget);
+    }
+
+    void expectEveryFieldSet() {
+      expect(find.text('Would play again'), findsOneWidget);
+      expect(find.text('Best with five.'), findsOneWidget);
+    }
+
+    auditScreen(
+      'ready, every field empty, with Game details',
+      pump: pushed(item: bareRow(), gameDetails: true),
+      arrange: (tester) async => expectEveryFieldEmpty(),
+    );
+
+    // At 320dp × 2.0 the page runs 436dp past its view. Audited in a view
+    // tall enough to hold it: scrolled to the end, the app bar fails
+    // #802 (below).
+    auditScreen(
+      'ready, every field empty, whole page',
+      pump: pushed(item: bareRow(), gameDetails: true),
+      arrange: (tester) async {
+        expectEveryFieldEmpty();
+        await useWholePage(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    // Every field set, where the composition has no catalog to open.
+    auditScreen(
+      'ready, every field set',
+      pump: pushed(),
+      arrange: (tester) async {
+        expectEveryFieldSet();
+        expect(find.byKey(CollectionEntryScreen.gameDetailsKey), findsNothing);
+      },
+    );
+
+    // Content scrolled under the app bar tints it, and in the light theme
+    // Edit and Remove fall below 4.5:1 on the tint.
+    auditScreen(
+      'ready, scrolled to the end',
+      pump: pushed(gameDetails: true),
+      skip: 'see #802',
+      arrange: (tester) async {
+        expectEveryFieldSet();
+        await scrollPageToEnd(tester);
+        expect(find.text('Best with five.').hitTestable(), findsOneWidget);
+      },
+    );
+
+    // Until then what runs below the fold at 320dp × 2.0 (689dp) is audited
+    // in a view tall enough to hold it, with nothing under the app bar.
+    auditScreen(
+      'ready, every field set, whole page',
+      pump: pushed(gameDetails: true),
+      arrange: (tester) async {
+        expectEveryFieldSet();
+        expect(
+          find.byKey(CollectionEntryScreen.gameDetailsKey),
+          findsOneWidget,
+        );
+        await useWholePage(tester);
+        expectWholePage(tester);
+      },
+    );
+
+    // The sheet dismissed by the system's back with its save still out:
+    // Edit says so, and both wait.
+    auditScreen(
+      'saving',
+      pump: pushed(),
+      arrange: (tester) async {
+        await submitHeld(tester);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(sheet, findsNothing);
+        expect(
+          find.descendant(
+            of: find.byKey(CollectionEntryScreen.editKey),
+            matching: find.text('Saving…'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // Remove says so, and Edit and "Game details" wait.
+    auditScreen(
+      'removing',
+      pump: pushed(gameDetails: true),
+      arrange: (tester) async {
+        holdRemoval();
+        await confirmRemove(tester);
+        expect(
+          find.descendant(
+            of: find.byKey(CollectionEntryScreen.removeKey),
+            matching: find.text('Removing…'),
+          ),
+          findsOneWidget,
+        );
+        expect(blocOf(tester).state.action, CollectionEntryAction.removing);
+      },
+    );
+
+    // The removal failed: said in a SnackBar, and the screen stays.
+    auditScreen(
+      'a failed removal',
+      pump: pushed(),
+      arrange: (tester) async {
+        when(() => repository.removeFromCollection('gc_1'))
+            .thenThrow(StateError('disposed'));
+        await confirmRemove(tester);
+        expect(snackBarText(_removeFailedCopy), findsOneWidget);
+        expect(find.byKey(CollectionEntryScreen.removeKey), findsOneWidget);
+      },
+    );
+
+    auditScreen('edit sheet open', pump: pushed(), arrange: openSheet);
+
+    auditScreen(
+      'edit sheet open, whole page',
+      pump: pushed(),
+      arrange: (tester) => openWhole(tester, sheet, openSheet),
+    );
+
+    auditScreen(
+      'edit sheet, a rejected submit, whole page',
+      pump: pushed(),
+      arrange: (tester) => openWhole(tester, sheet, submitInvalid),
+    );
+
+    auditScreen(
+      'edit sheet, save failed, whole page',
+      pump: pushed(),
+      arrange: (tester) => openWhole(tester, sheet, submitFailing),
+    );
+
+    final ratingItem = find.widgetWithText(MenuItemButton, '1 out of 10');
+
+    /// Opens the sheet and its rating menu. Over [bareRow], unrated, the
+    /// menu offers "No rating" beside 1 to 10.
+    Future<void> openRatingMenu(WidgetTester tester) async {
+      await openSheet(tester);
+      await tapInView(tester, find.byKey(EditCollectionEntrySheet.ratingKey));
+      expect(find.widgetWithText(MenuItemButton, 'No rating'), findsOneWidget);
+      expect(ratingItem, findsOneWidget);
+    }
+
+    auditScreen(
+      'edit sheet, rating menu open',
+      pump: pushed(item: bareRow()),
+      arrange: openRatingMenu,
+    );
+
+    // At 320dp × 2.0 the menu runs 68dp past its own fold, so "10 out of 10"
+    // is in no view. Scrolled to its end, "No rating" is left a sliver high
+    // under the menu's top edge, where the tap-target check measures it at
+    // its clipped size, so the menu is audited whole instead (#50).
+    auditScreen(
+      'edit sheet, rating menu open, whole page',
+      pump: pushed(item: bareRow()),
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expectWholePage(tester);
+        await openRatingMenu(tester);
+        // The menu's own scroll, round its items.
+        expectWholePage(
+          tester,
+          within: find
+              .ancestor(of: ratingItem, matching: find.byType(Scrollable))
+              .first,
+        );
+        expect(find.text('10 out of 10').hitTestable(), findsOneWidget);
+      },
+    );
+
+    // The submit spins while the save is out.
+    auditScreen(
+      'edit sheet, saving, whole page',
+      pump: pushed(),
+      settle: false,
+      arrange: (tester) async {
+        await useWholePage(tester);
+        expectWholePage(tester);
+        await submitHeld(tester);
+        expectWholePage(tester, within: sheet);
+      },
+    );
+
+    auditScreen('remove dialog open', pump: pushed(), arrange: openDialog);
+
+    auditScreen(
+      'remove dialog open, whole page',
+      pump: pushed(),
+      arrange: (tester) => openWhole(tester, dialog, openDialog),
+    );
   });
 }

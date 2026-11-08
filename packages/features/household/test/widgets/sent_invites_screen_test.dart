@@ -35,8 +35,9 @@ void main() {
 
   setUp(() => remote = FakeHouseholdInviteRemote());
 
+  /// [textScaler], when given, overrides the scale the view gives the app.
   Widget harness({
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
     ValueListenable<bool>? offline,
     ThemeData? theme,
   }) => MaterialApp(
@@ -44,10 +45,12 @@ void main() {
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) {
-      final app = MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: child!,
-      );
+      final app = textScaler == null
+          ? child!
+          : MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            );
       if (offline == null) return app;
       return ValueListenableBuilder<bool>(
         valueListenable: offline,
@@ -504,12 +507,12 @@ void main() {
   group('accessibility audit', () {
     /// The screen over the fake as [seed] leaves it; `build` runs before the
     /// first read, so the state is chosen here.
-    Widget Function(ThemeData, TextScaler) screenWith(
+    Widget Function(ThemeData) screenWith(
       void Function() seed, {
       ValueListenable<bool>? offline,
-    }) => (theme, textScaler) {
+    }) => (theme) {
       seed();
-      return harness(theme: theme, textScaler: textScaler, offline: offline);
+      return harness(theme: theme, offline: offline);
     };
 
     /// A pending row, an awaiting-approval one, an expired one and a settled
@@ -531,20 +534,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(SentInvitesScreen.outcomeKey), findsOneWidget);
     }
-
-    testWidgets('the harness applies the theme and the text scale', (
-      tester,
-    ) async {
-      rows();
-      await tester.pumpWidget(
-        harness(theme: BgeTheme.dark(), textScaler: const TextScaler.linear(2)),
-      );
-      await tester.pumpAndSettle();
-
-      final screen = find.byType(SentInvitesScreen);
-      expect(MediaQuery.textScalerOf(tester.element(screen)).scale(10), 20);
-      expect(Theme.of(tester.element(screen)).brightness, Brightness.dark);
-    });
 
     auditScreen(
       'ready',
@@ -585,10 +574,6 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(_onlineOnlyCopy), findsWidgets);
       },
-      // The failing nodes are the disabled Withdraw buttons, drawn dimmed by
-      // design; WCAG 1.4.3 exempts inactive controls, and the enabled ones
-      // pass in 'ready'.
-      textContrast: false,
     );
 
     auditScreen(

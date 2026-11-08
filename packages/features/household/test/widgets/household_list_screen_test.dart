@@ -117,15 +117,18 @@ void main() {
     void Function(BuildContext context, String householdId)? onOpen,
     Future<void> Function()? onRetry,
     VoidCallback? onEnter,
-    TextScaler textScaler = TextScaler.noScaling,
+    TextScaler? textScaler,
+    ThemeData? theme,
   }) => MaterialApp(
-    theme: BgeTheme.light(),
+    theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
+    builder: textScaler == null
+        ? null
+        : (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: child!,
+          ),
     home: HouseholdListScreen(
       repository: repository,
       hydration: status.watch(),
@@ -1239,6 +1242,124 @@ void main() {
 
     expect(find.byKey(HouseholdListScreen.errorKey), findsOneWidget);
     expect(find.text(_errorCopy), findsOneWidget);
+  });
+
+  group('accessibility audit', () {
+    /// Rows enough to run below the fold at 320dp × 2.0.
+    List<Household> manyRows() => [
+      _household('h-1', name: 'Sunday Crew', isDirty: true),
+      for (var i = 2; i <= 10; i++) _household('h-$i', name: 'Group $i'),
+    ];
+
+    /// The screen as the shell composes it: with `onOpen`, so each row is
+    /// the button the app draws, held to the tap-target and label checks. An
+    /// inert row is what a composition with no detail route gets, and the
+    /// shell always has one.
+    Widget Function(ThemeData) screen({
+      bool started = false,
+      HydrateOutcome? finished,
+      Future<void> Function()? onRetry,
+    }) => (theme) {
+      if (started) status.started();
+      if (finished != null) status.finished(finished);
+      return harness(
+        theme: theme,
+        onCreate: (_) {},
+        onOpen: (_, _) {},
+        onRetry: onRetry,
+      );
+    };
+
+    auditScreen(
+      'loading',
+      build: screen(started: true),
+      settle: false,
+      arrange: (tester) async {
+        households.add(const []);
+        await tester.pump();
+        expect(find.byKey(HouseholdListScreen.loadingKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'empty, with Create',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        households.add(const []);
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdListScreen.emptyCreateKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, with a row not yet synced',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        households.add(manyRows());
+        await tester.pumpAndSettle();
+        expect(find.text('Sunday Crew'), findsOneWidget);
+        expect(find.text(_notSyncedCopy), findsOneWidget);
+        expect(find.byKey(HouseholdListScreen.createFabKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'ready, scrolled to the end',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        households.add(manyRows());
+        await tester.pumpAndSettle();
+        await scrollListToEnd(
+          tester,
+          find.byKey(HouseholdListScreen.rowKey('h-10')),
+          // The wider, taller view holds all ten rows; only the narrow one
+          // has anything below the fold.
+          mustScroll:
+              tester.view.physicalSize.width / tester.view.devicePixelRatio <=
+              320,
+        );
+        expect(find.byKey(HouseholdListScreen.createFabKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'stream error',
+      build: screen(finished: HydrateOutcome.complete),
+      arrange: (tester) async {
+        households.addError(StateError('no authenticated user'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(HouseholdListScreen.errorKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refresh failed, with retry',
+      build: screen(finished: HydrateOutcome.failed, onRetry: () async {}),
+      arrange: (tester) async {
+        households.add(manyRows());
+        await tester.pumpAndSettle();
+        expect(find.text(_refreshFailedCopy), findsOneWidget);
+        expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'refreshing',
+      build: screen(
+        finished: HydrateOutcome.failed,
+        onRetry: () => Completer<void>().future,
+      ),
+      settle: false,
+      arrange: (tester) async {
+        households.add(manyRows());
+        await tester.pump();
+        await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+        await tester.pump();
+        status.started();
+        await tester.pump();
+        expect(find.text(_refreshingCopy), findsNWidgets(2));
+      },
+    );
   });
 
   group('the entry trigger (#300 D1, D13, D14)', () {

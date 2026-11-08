@@ -45,17 +45,12 @@ void main() {
     VoidCallback? onCancel,
     VoidCallback? onClose,
     ThemeData? theme,
-    TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     // The real theme, so a measure assertion tests the wiring rather
     // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: ShellLocalizations.localizationsDelegates,
     supportedLocales: ShellLocalizations.supportedLocales,
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-      child: child!,
-    ),
     home: FeedbackReviewScreen(
       preview: preview ?? FeedbackReportPreview.fromReport(buildReport()),
       onSubmit: onSubmit ?? (_) async => FeedbackSubmitResult.sent,
@@ -762,8 +757,7 @@ void main() {
         '#5      _rootRunUnary (dart:async/zone.dart:1538:47)';
 
     Widget build(
-      ThemeData theme,
-      TextScaler textScaler, {
+      ThemeData theme, {
       Future<FeedbackSubmitResult> Function(FeedbackReport)? onSubmit,
       String trace = crashTrace,
     }) => reviewApp(
@@ -772,7 +766,6 @@ void main() {
       ),
       onSubmit: onSubmit,
       theme: theme,
-      textScaler: textScaler,
     );
 
     Future<void> send(WidgetTester tester) =>
@@ -829,8 +822,7 @@ void main() {
     // leave: one line of text, but still a long-press target to select it.
     auditScreen(
       'ready, a one-line trace expanded',
-      build: (theme, textScaler) =>
-          build(theme, textScaler, trace: '#0 main (file.dart:1)'),
+      build: (theme) => build(theme, trace: '#0 main (file.dart:1)'),
       arrange: expandDiagnostics,
     );
 
@@ -838,9 +830,8 @@ void main() {
     auditScreen(
       'sending',
       settle: false,
-      build: (theme, textScaler) => build(
+      build: (theme) => build(
         theme,
-        textScaler,
         onSubmit: (_) => Completer<FeedbackSubmitResult>().future,
       ),
       arrange: send,
@@ -849,9 +840,8 @@ void main() {
     auditScreen(
       'sending, scrolled to the end',
       settle: false,
-      build: (theme, textScaler) => build(
+      build: (theme) => build(
         theme,
-        textScaler,
         onSubmit: (_) => Completer<FeedbackSubmitResult>().future,
       ),
       arrange: (tester) async {
@@ -866,9 +856,8 @@ void main() {
 
     auditScreen(
       'failed',
-      build: (theme, textScaler) => build(
+      build: (theme) => build(
         theme,
-        textScaler,
         onSubmit: (_) async =>
             throw const FeedbackPersistenceException('everything failed'),
       ),
