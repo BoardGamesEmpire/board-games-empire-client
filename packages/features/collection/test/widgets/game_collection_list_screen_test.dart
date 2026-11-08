@@ -1787,6 +1787,173 @@ void main() {
       },
     );
   });
+
+  group('expansions (#711)', () {
+    final base = listItem('base-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'exp-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+    );
+
+    testWidgets("an owned expansion's row sits under its base game's, "
+        'indented, spoken as its expansion', (tester) async {
+      await show(tester, [expansion, base]);
+
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-base', 'exp-1'),
+      );
+      final top = find.byKey(GameCollectionListScreen.rowKey('base-1'));
+      expect(nested, findsOneWidget);
+      expect(
+        tester.getTopLeft(nested).dy,
+        greaterThan(tester.getTopLeft(top).dy),
+      );
+      expect(
+        find.byKey(GameCollectionListScreen.rowKey('exp-1')),
+        findsNothing,
+      );
+      expect(
+        tester.getTopLeft(find.text('European Expansion')).dx,
+        greaterThan(tester.getTopLeft(find.text('Wingspan')).dx),
+      );
+      expect(
+        tester.getSemantics(nested).label,
+        contains('European Expansion, expansion for Wingspan'),
+      );
+    });
+
+    testWidgets('a nested stack keeps its picker', (tester) async {
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        platformName: platform,
+        contentType: ContentType.expansion,
+        baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+      );
+      final opened = <String>[];
+      await show(tester, [
+        base,
+        copy('exp-1', 'Tabletop'),
+        copy('exp-2', 'Steam'),
+      ], onOpen: (_, id) => opened.add(id));
+
+      final stack = find.byKey(
+        GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
+      );
+      expect(stack, findsOneWidget);
+      expect(
+        tester.getSemantics(stack).label,
+        contains('European Expansion, expansion for Wingspan'),
+      );
+      await tester.tap(stack);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('exp-2')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("an orphan's row says its base game is missing", (
+      tester,
+    ) async {
+      await show(tester, [
+        listItem(
+          'dlc-1',
+          gameId: 'g-dlc',
+          title: 'Season Pass',
+          contentType: ContentType.dlc,
+        ),
+      ]);
+
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        rowSemantics(tester, 'dlc-1').label,
+        contains('Base game not in your collection'),
+      );
+    });
+
+    testWidgets('a standalone game is not marked', (tester) async {
+      await show(tester, [listItem('e-1', title: 'Catan')]);
+
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsNothing,
+      );
+    });
+
+    testWidgets("a parent's subtitle is spoken in its expansions' names", (
+      tester,
+    ) async {
+      final catan = listItem(
+        'c-1',
+        gameId: 'g-catan',
+        title: 'Catan',
+        subtitle: 'Seafarers Edition',
+      );
+      final nested = listItem(
+        'x-2',
+        gameId: 'g-x',
+        title: 'Cities',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      );
+      await show(tester, [catan, nested]);
+
+      final row = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-catan', 'x-2'),
+      );
+      expect(
+        tester.getSemantics(row).label,
+        contains('Cities, expansion for Catan: Seafarers Edition'),
+      );
+    });
+
+    testWidgets('the semantic child count counts nested rows, an expansion '
+        'of two owned base games under each', (tester) async {
+      final baseB = listItem('base-2', gameId: 'g-base-b', title: 'Azul');
+      final both = listItem(
+        'exp-1',
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ExpansionLink(gameId: 'g-base-b', isStandalone: false),
+        ],
+      );
+      await show(tester, [base, baseB, both]);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(GameCollectionListScreen.nestedRowKey('g-base-b', 'exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        4,
+      );
+    });
+  });
 }
 
 /// Whether the primary focus is on the widget [finder] finds, or inside it.

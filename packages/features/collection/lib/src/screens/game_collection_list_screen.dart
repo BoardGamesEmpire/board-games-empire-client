@@ -17,6 +17,7 @@ import '../bloc/game_collection_list_state.dart';
 import '../medium_label.dart';
 import '../picker/collection_entry_picker.dart';
 import 'collection_groups.dart';
+import 'collection_rows.dart';
 
 /// The collection list (#44): every game the signed-in user owns, read
 /// reactively from the local cache.
@@ -124,6 +125,19 @@ class GameCollectionListScreen extends StatelessWidget {
   /// Held by the wrapper [BgeKeyedSliverGrid] puts around each tile, as
   /// [rowKey] is for rows.
   static Key tileKey(String entryId) => Key('collection_list.tile_$entryId');
+
+  /// Per-row key of an expansion shown under its base game:
+  /// `collection_list.nested_row_<parentGameId>_<entryId>`.
+  ///
+  /// An expansion of two owned base games is drawn under each, so the key
+  /// names the base game it is under (#711).
+  static Key nestedRowKey(String parentGameId, String entryId) =>
+      Key('collection_list.nested_row_${parentGameId}_$entryId');
+
+  /// Per-stack key of an expansion owned more than once and shown under its
+  /// base game: `collection_list.nested_stack_<parentGameId>_<gameId>`.
+  static Key nestedStackKey(String parentGameId, String gameId) =>
+      Key('collection_list.nested_stack_${parentGameId}_$gameId');
 
   /// Per-row key: `collection_list.row_<entryId>`.
   ///
@@ -241,13 +255,17 @@ class _GameCollectionListPage extends StatelessWidget {
     final l10n = GameCollectionLocalizations.of(context);
     // The row count, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210). A row or a cover per game, as a game owned
-    // more than once is one stack (#709): as many as [groupByGame] makes, so
-    // its games, counted without building the groups on every state.
+    // more than once is one stack (#709). The list draws a row for each
+    // nested expansion too (#711), so it counts the rows; the grid still
+    // draws every game, so its count is the games, counted without building
+    // the groups on every state.
+    final list = thumbnails == false;
     final rowCount = context.select<GameCollectionListBloc, int?>(
       (bloc) => switch (bloc.state) {
-        GameCollectionListReady(:final items) when items.isNotEmpty => {
-          for (final item in items) item.gameId,
-        }.length,
+        GameCollectionListReady(:final items) when items.isNotEmpty =>
+          list
+              ? collectionRows(items).length
+              : {for (final item in items) item.gameId}.length,
         _ => null,
       },
     );
@@ -386,17 +404,41 @@ class GameCollectionListSliver extends StatelessWidget {
                 },
               ),
             GameCollectionListReady(:final items) =>
-              BgeKeyedSliverList<List<GameCollectionListItem>>(
-                items: groupByGame(items),
-                keyOf: (group) => switch (group) {
-                  [final item] => GameCollectionListScreen.rowKey(
+              BgeKeyedSliverList<CollectionRow>(
+                items: collectionRows(
+                  items,
+                  titleOf: (item) => _title(l10n, item),
+                ),
+                keyOf: (row) => switch ((row.group, row.parentGameId)) {
+                  ([final item], null) => GameCollectionListScreen.rowKey(
                     item.entry.id,
                   ),
-                  _ => GameCollectionListScreen.stackKey(group.first.gameId),
+                  (_, null) => GameCollectionListScreen.stackKey(
+                    row.group.first.gameId,
+                  ),
+                  ([final item], final parent?) =>
+                    GameCollectionListScreen.nestedRowKey(
+                      parent,
+                      item.entry.id,
+                    ),
+                  (_, final parent?) => GameCollectionListScreen.nestedStackKey(
+                    parent,
+                    row.group.first.gameId,
+                  ),
                 },
-                itemBuilder: (context, group) => switch (group) {
-                  [final item] => _CollectionRow(item: item, onOpen: onOpen),
-                  _ => _StackRow(items: group, onOpen: onOpen),
+                itemBuilder: (context, row) => switch (row.group) {
+                  [final item] => _CollectionRow(
+                    item: item,
+                    onOpen: onOpen,
+                    expansionOf: row.parentTitle,
+                    missingBase: row.missingBase,
+                  ),
+                  final group => _StackRow(
+                    items: group,
+                    onOpen: onOpen,
+                    expansionOf: row.parentTitle,
+                    missingBase: row.missingBase,
+                  ),
                 },
               ),
           },
@@ -409,10 +451,22 @@ class GameCollectionListSliver extends StatelessWidget {
 /// One entry (#44): the thumbnail, the title line, the detail line and
 /// the favorite, as one semantics node.
 class _CollectionRow extends StatelessWidget {
-  const _CollectionRow({required this.item, this.onOpen});
+  const _CollectionRow({
+    required this.item,
+    this.onOpen,
+    this.expansionOf,
+    this.missingBase = false,
+  });
 
   final GameCollectionListItem item;
   final void Function(BuildContext context, String entryId)? onOpen;
+
+  /// The title of the base game this row is shown under, or null at top
+  /// level (#711).
+  final String? expansionOf;
+
+  /// Whether the game is an expansion shown without its base game (#711).
+  final bool missingBase;
 
   @override
   Widget build(BuildContext context) {
@@ -421,39 +475,77 @@ class _CollectionRow extends StatelessWidget {
     final open = onOpen;
 
     final title = _title(l10n, item);
-    final details = _details(l10n, item);
+    final details = [
+      if (missingBase) _same(l10n.collectionListBaseGameMissing),
+      ..._details(l10n, item),
+    ];
 
     // MergeSemantics rather than a Semantics container: a tappable ListTile
     // builds an InkWell with its own node, and merging keeps the tap action
     // and the words on one node (the household row's reasoning).
     return MergeSemantics(
-      child: ListTile(
-        // Without an onTap the tile's InkWell has no handler, so it is
-        // disabled: no tap action, and not a focus stop under ordinary
-        // keyboard navigation. That is the inert row #44 wants.
-        onTap: open == null ? null : () => open(context, entry.id),
-        leading: BgeThumbnail(
-          key: GameCollectionListScreen.thumbnailKey(entry.id),
-          url: item.thumbnail,
-          placeholderIcon: Icons.casino_outlined,
-          placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+      child: _Nested(
+        nested: expansionOf != null,
+        child: ListTile(
+          // Without an onTap the tile's InkWell has no handler, so it is
+          // disabled: no tap action, and not a focus stop under ordinary
+          // keyboard navigation. That is the inert row #44 wants.
+          onTap: open == null ? null : () => open(context, entry.id),
+          leading: BgeThumbnail(
+            key: GameCollectionListScreen.thumbnailKey(entry.id),
+            url: item.thumbnail,
+            placeholderIcon: Icons.casino_outlined,
+            placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+          ),
+          title: Text(
+            title,
+            semanticsLabel: _spokenTitle(l10n, title, expansionOf),
+          ),
+          // Joined differently for the eye and the ear: a screen reader
+          // would read the visual separator's symbol out.
+          subtitle: Text(
+            details
+                .map((d) => d.shown)
+                .join(l10n.collectionListDetailSeparator),
+            semanticsLabel: details
+                .map((d) => d.spoken)
+                .join(l10n.collectionListDetailSpokenSeparator),
+          ),
+          trailing: entry.hasFavorited
+              ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
+              : null,
         ),
-        title: Text(title),
-        // Joined differently for the eye and the ear: a screen reader
-        // would read the visual separator's symbol out.
-        subtitle: Text(
-          details.map((d) => d.shown).join(l10n.collectionListDetailSeparator),
-          semanticsLabel: details
-              .map((d) => d.spoken)
-              .join(l10n.collectionListDetailSpokenSeparator),
-        ),
-        trailing: entry.hasFavorited
-            ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
-            : null,
       ),
     );
   }
 }
+
+/// Indents a row shown under its base game by a step of the scale (#711).
+class _Nested extends StatelessWidget {
+  const _Nested({required this.nested, required this.child});
+
+  final bool nested;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!nested) return child;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: BgeTokens.of(context).spaceLg),
+      child: child,
+    );
+  }
+}
+
+/// What is spoken for a title: "X, expansion for Y" under a base game, else
+/// null, to speak the words drawn (#711).
+String? _spokenTitle(
+  GameCollectionLocalizations l10n,
+  String title,
+  String? expansionOf,
+) => expansionOf == null
+    ? null
+    : l10n.collectionListExpansionOf(title, expansionOf);
 
 /// The title line: the game's title, with its subtitle when it has one.
 String _title(GameCollectionLocalizations l10n, GameCollectionListItem item) {
@@ -564,10 +656,22 @@ class _CollectionTile extends StatelessWidget {
 /// redraw the tint: a list tile passes its ink nothing that makes the ink
 /// draw it afresh, and taking focus off the row and back would move focus.
 class _StackRow extends StatefulWidget {
-  const _StackRow({required this.items, this.onOpen});
+  const _StackRow({
+    required this.items,
+    this.onOpen,
+    this.expansionOf,
+    this.missingBase = false,
+  });
 
   final List<GameCollectionListItem> items;
   final void Function(BuildContext context, String entryId)? onOpen;
+
+  /// The title of the base game this row is shown under, or null at top
+  /// level (#711).
+  final String? expansionOf;
+
+  /// Whether the game is an expansion shown without its base game (#711).
+  final bool missingBase;
 
   @override
   State<_StackRow> createState() => _StackRowState();
@@ -589,46 +693,74 @@ class _StackRowState extends State<_StackRow> with BgePointerFocus<_StackRow> {
     final open = widget.onOpen;
     final first = items.first;
     final copies = _copies(l10n, items);
+    final missing = widget.missingBase
+        ? l10n.collectionListBaseGameMissing
+        : null;
 
     // MergeSemantics outermost, as on an entry's row, so the row's node is
-    // the first thing under the list's key.
+    // the first thing under the list's key. The indent is inside it.
     return MergeSemantics(
-      child: Listener(
-        // Every pointer's press on the row, as a list tile offers no
-        // tap-down. A keyboard's activation sends none, so its focus shows.
-        onPointerDown: open == null
-            ? null
-            : (event) => notePointerPress(event.kind),
-        child: ListTile(
-          focusNode: _focusNode,
-          // The theme's tint, with no strength while the focus is a pointer's.
-          focusColor: pointerFocusColor,
-          onTap: open == null
+      child: _Nested(
+        nested: widget.expansionOf != null,
+        child: Listener(
+          // Every pointer's press on the row, as a list tile offers no
+          // tap-down. A keyboard's activation sends none, so its focus shows.
+          onPointerDown: open == null
               ? null
-              : () {
-                  _focusNode.requestFocus();
-                  unawaited(
-                    openCollectionEntries(context, items: items, onOpen: open),
-                  );
-                },
-          // The picture is smaller by the marker's offsets, so the marked
-          // whole is an entry's thumbnail's size and the titles line up. A
-          // list tile caps its leading at that height, so a full-size picture
-          // with its offsets would be squeezed.
-          leading: BgeStackMarker(
-            count: items.length,
-            child: BgeThumbnail(
-              url: first.thumbnail,
-              extent: BgeThumbnail.listExtent - BgeStackMarker.reachOf(context),
-              placeholderIcon: Icons.casino_outlined,
-              placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+              : (event) => notePointerPress(event.kind),
+          child: ListTile(
+            focusNode: _focusNode,
+            // The theme's tint, with no strength while the focus is a pointer's.
+            focusColor: pointerFocusColor,
+            onTap: open == null
+                ? null
+                : () {
+                    _focusNode.requestFocus();
+                    unawaited(
+                      openCollectionEntries(
+                        context,
+                        items: items,
+                        onOpen: open,
+                      ),
+                    );
+                  },
+            // The picture is smaller by the marker's offsets, so the marked
+            // whole is an entry's thumbnail's size and the titles line up. A
+            // list tile caps its leading at that height, so a full-size picture
+            // with its offsets would be squeezed.
+            leading: BgeStackMarker(
+              count: items.length,
+              child: BgeThumbnail(
+                url: first.thumbnail,
+                extent:
+                    BgeThumbnail.listExtent - BgeStackMarker.reachOf(context),
+                placeholderIcon: Icons.casino_outlined,
+                placeholderKey:
+                    GameCollectionListScreen.thumbnailPlaceholderKey,
+              ),
             ),
+            title: Text(
+              _title(l10n, first),
+              semanticsLabel: _spokenTitle(
+                l10n,
+                _title(l10n, first),
+                widget.expansionOf,
+              ),
+            ),
+            subtitle: Text(
+              [?missing, copies.shown].join(l10n.collectionListDetailSeparator),
+              semanticsLabel: [
+                ?missing,
+                copies.spoken,
+              ].join(l10n.collectionListDetailSpokenSeparator),
+            ),
+            trailing: items.any((item) => item.entry.hasFavorited)
+                ? Icon(
+                    Icons.favorite,
+                    semanticLabel: l10n.collectionListFavorite,
+                  )
+                : null,
           ),
-          title: Text(_title(l10n, first)),
-          subtitle: Text(copies.shown, semanticsLabel: copies.spoken),
-          trailing: items.any((item) => item.entry.hasFavorited)
-              ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
-              : null,
         ),
       ),
     );

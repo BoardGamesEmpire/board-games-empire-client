@@ -117,6 +117,24 @@
   "@collectionListFavorite": {
     "description": "Marks a game the user has favorited. Spoken by screen readers for the heart icon on a collection row, and shown beside the same icon on a collection entry's detail."
   },
+  "collectionListExpansionOf": "{title}, expansion for {baseGame}",
+  "@collectionListExpansionOf": {
+    "description": "What a screen reader says for the title of a collection row listed under its base game, which the user also owns: the expansion's title, then the base game it belongs to. Shown rows are indented under the base game; this is what carries that to the ear.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Seafarers"
+      },
+      "baseGame": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "collectionListBaseGameMissing": "Base game not in your collection",
+  "@collectionListBaseGameMissing": {
+    "description": "A note on the collection row of an expansion or DLC the user owns without owning its base game. Shown on the row, and read by screen readers with the row's other details, first among them."
+  },
   "collectionListStackCopies": "{count, plural, other{{count} copies}}: {platforms}",
   "@collectionListStackCopies": {
     "description": "On the collection row or cover of a game the user owns more than once, on different platforms or as both a physical and a digital copy: how many copies, then which, for example '2 copies: Tabletop, Steam'. Shown under the game's name on a row, and read by screen readers after the game's name on a row and on a cover. {count} is always two or more. {platforms} lists each copy's platform, with its medium where two copies share a platform (collectionPickerEntryWithMedium), joined by collectionListDetailSpokenSeparator.",
