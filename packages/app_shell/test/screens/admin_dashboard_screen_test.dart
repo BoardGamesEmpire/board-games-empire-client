@@ -619,6 +619,8 @@ void main() {
             tester,
             _reads(gateways: AccessExtent.all, households: AccessExtent.all),
           );
+          final before = FocusManager.instance.primaryFocus;
+          expect(before, isNotNull);
           final entry = tester.getSemantics(find.text(_householdsTitle));
           entry.owner!.performAction(entry.id, SemanticsAction.tap);
           await tester.pumpAndSettle();
@@ -630,18 +632,99 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.text(_gatewaysTitle), findsNothing);
-          expect(
-            FocusManager.instance.primaryFocus,
-            isNot(
-              same(
-                Focus.of(
-                  tester.element(find.text(_householdsTitle)),
-                  createDependency: false,
-                ),
-              ),
+          expect(FocusManager.instance.primaryFocus, same(before));
+          semantics.dispose();
+        });
+
+        testWidgets('the entry a screen reader opened leaves while entries '
+            'below are not built: focus is on the next entry', (tester) async {
+          // Disposed in the test body: a handle still out at its end fails
+          // the test before any tear-down runs.
+          final semantics = tester.ensureSemantics();
+          access = FakeCallerAccessRepository(
+            _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+          );
+          final sections = pushing();
+          await tester.pumpWidget(
+            _app(
+              access: access,
+              sections: [
+                ...sections,
+                // Enough below the first screen and the cache that the last
+                // are listed but never built.
+                for (var i = 0; i < 40; i++)
+                  AdminSection(
+                    id: 'filler_$i',
+                    icon: Icons.groups_outlined,
+                    title: 'Filler $i',
+                    summary: 'Below the fold',
+                    resourceType: ResourceType.household,
+                    onOpen: (_) {},
+                  ),
+              ],
             ),
           );
+          await tester.pumpAndSettle();
+          expect(find.text('Filler 39', skipOffstage: false), findsNothing);
+
+          final entry = tester.getSemantics(find.text(_gatewaysTitle));
+          entry.owner!.performAction(entry.id, SemanticsAction.tap);
+          await tester.pumpAndSettle();
+
+          access.current = _reads(households: AccessExtent.all);
+          await tester.pumpAndSettle();
+          popSection(tester);
+          await tester.pumpAndSettle();
+
+          expect(find.text(_gatewaysTitle), findsNothing);
+          expectFocusOn(tester, _householdsTitle);
           semantics.dispose();
+        });
+
+        testWidgets('the entry a screen reader opened leaves while the page '
+            'above is still going: focus is on the next entry', (tester) async {
+          // Disposed in the test body: a handle still out at its end fails
+          // the test before any tear-down runs.
+          final semantics = tester.ensureSemantics();
+          await pumpWith(
+            tester,
+            _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+          );
+          final entry = tester.getSemantics(find.text(_gatewaysTitle));
+          entry.owner!.performAction(entry.id, SemanticsAction.tap);
+          await tester.pumpAndSettle();
+
+          popSection(tester);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          // The pop has begun: the dashboard is the top route again, but the
+          // section's page has not gone.
+          expect(find.text('$_gatewaysTitle section'), findsOneWidget);
+          access.current = _reads(households: AccessExtent.all);
+          await tester.pumpAndSettle();
+
+          expect(find.text(_gatewaysTitle), findsNothing);
+          expectFocusOn(tester, _householdsTitle);
+          semantics.dispose();
+        });
+
+        testWidgets('the entry opened from the keyboard leaves while the page '
+            'above is still going: focus is on the next entry', (tester) async {
+          await pumpWith(
+            tester,
+            _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+          );
+          await openByKeyboard(tester, _gatewaysTitle);
+
+          popSection(tester);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.text('$_gatewaysTitle section'), findsOneWidget);
+          access.current = _reads(households: AccessExtent.all);
+          await tester.pumpAndSettle();
+
+          expect(find.text(_gatewaysTitle), findsNothing);
+          expectFocusOn(tester, _householdsTitle);
         });
 
         testWidgets('the entry opened leaves after the page had other focus: '

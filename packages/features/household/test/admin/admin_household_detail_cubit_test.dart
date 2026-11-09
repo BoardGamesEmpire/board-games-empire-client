@@ -78,30 +78,53 @@ void main() {
     ],
   );
 
-  test('of two overlapping reads, the one asked for last wins, whichever '
-      'answers first', () async {
-    final answers = [
-      Completer<AdminHouseholdDetail>(),
-      Completer<AdminHouseholdDetail>(),
-    ];
-    var reads = 0;
-    remote.onFetchDetail = (_) => answers[reads++].future;
-    final cubit = build();
-    addTearDown(cubit.close);
-    final states = <AdminHouseholdDetailState>[];
-    final listening = cubit.stream.listen(states.add);
-    addTearDown(listening.cancel);
+  for (final newerFirst in [true, false]) {
+    test('of two overlapping reads, the one asked for last wins, when the '
+        '${newerFirst ? 'newer' : 'older'} answers first', () async {
+      final answers = [
+        Completer<AdminHouseholdDetail>(),
+        Completer<AdminHouseholdDetail>(),
+      ];
+      var reads = 0;
+      remote.onFetchDetail = (_) => answers[reads++].future;
+      final cubit = build();
+      addTearDown(cubit.close);
+      final states = <AdminHouseholdDetailState>[];
+      final listening = cubit.stream.listen(states.add);
+      addTearDown(listening.cancel);
 
-    final first = cubit.load();
-    final second = cubit.load();
-    answers[1].complete(adminDetail(name: 'Newer'));
-    await second;
-    answers[0].complete(adminDetail(name: 'Older'));
-    await first;
+      final older = cubit.load();
+      final newer = cubit.load();
+      Future<void> answerOlder() async {
+        answers[0].complete(adminDetail(name: 'Older'));
+        await older;
+      }
 
-    expect(states, [AdminHouseholdDetailReady(adminDetail(name: 'Newer'))]);
-    expect(cubit.state, AdminHouseholdDetailReady(adminDetail(name: 'Newer')));
-  });
+      Future<void> answerNewer() async {
+        answers[1].complete(adminDetail(name: 'Newer'));
+        await newer;
+      }
+
+      if (newerFirst) {
+        await answerNewer();
+        await answerOlder();
+      } else {
+        await answerOlder();
+        await pumpEventQueue();
+        // The older answer, with the newer still out, shows nothing.
+        expect(states, isEmpty);
+        await answerNewer();
+      }
+      // The stream hands a state on a turn after the cubit emits it.
+      await pumpEventQueue();
+
+      expect(states, [AdminHouseholdDetailReady(adminDetail(name: 'Newer'))]);
+      expect(
+        cubit.state,
+        AdminHouseholdDetailReady(adminDetail(name: 'Newer')),
+      );
+    });
+  }
 
   blocTest<AdminHouseholdDetailCubit, AdminHouseholdDetailState>(
     'a retry shows loading, then the household',

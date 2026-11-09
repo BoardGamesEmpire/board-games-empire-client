@@ -157,8 +157,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (current && (above?.isDismissed ?? true)) _settleReturnAfterFrame();
   }
 
-  /// Whether a route covers the page.
-  bool get _covered => !(_route?.isCurrent ?? true);
+  /// Whether a route covers the page, until a page above that is popping has
+  /// gone: the page is the top route again as soon as the pop begins, but
+  /// the return is settled only once the page above has gone.
+  bool get _covered =>
+      !(_route?.isCurrent ?? true) || !(_above?.isDismissed ?? true);
 
   /// A page above has gone once the animation it ran here is dismissed.
   void _onAboveChanged(AnimationStatus status) {
@@ -319,9 +322,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     ).focusedChild;
     // The row the page gives focus back to, else, when that is no row, the
     // row opened: a screen reader's double tap opens it without focusing it.
-    final returningRow = from.indexWhere(
-      (section) => identical(_entries[section.id], returning),
-    );
+    // A row never built has no node, which a null [returning] must not match.
+    final returningRow = returning == null
+        ? -1
+        : from.indexWhere(
+            (section) => identical(_entries[section.id], returning),
+          );
     final gone = returningRow >= 0
         ? (listed.contains(from[returningRow].id) ? -1 : returningRow)
         : from.indexWhere(
