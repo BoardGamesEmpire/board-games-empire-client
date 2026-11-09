@@ -11,6 +11,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
+import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -71,6 +72,14 @@ class _EmptyEventRepository implements EventRepository {
       throw UnimplementedError('${invocation.memberName} is not faked');
 }
 
+/// The server's DataGateway client, which offers the admin dashboard its
+/// DataGateway section (#684). Nothing here reads through it.
+class _DataGateways implements DataGatewayRemoteDataSource {
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not faked');
+}
+
 AuthResponse _sessionOf(String id, String username) => AuthResponse(
   token: null,
   user: AuthUser(
@@ -113,6 +122,7 @@ void main() {
     void Function(DependencyContainerImpl container, String userId)? onActivate,
     Future<void>? Function(String userId)? holdActivation,
     FakeAuthRepository Function()? repository,
+    DataGatewayRemoteDataSource? dataGateways,
   }) async {
     repo =
         repository?.call() ??
@@ -125,7 +135,11 @@ void main() {
           : (userId) =>
                 onActivate(active.container as DependencyContainerImpl, userId),
     );
-    active = buildActiveServer(repo, userSessionScope: sessionScope);
+    active = buildActiveServer(
+      repo,
+      userSessionScope: sessionScope,
+      dataGatewayRemoteDataSource: dataGateways,
+    );
     cubit = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
         activeServerScope: FakeActiveServerScope(active),
@@ -211,9 +225,10 @@ void main() {
   });
 
   testWidgets('builds home from the second user\'s services', (tester) async {
-    // The second user may read DataGateways and the first may not, so the
-    // Admin entry is what tells the two homes apart. Each session has its own
-    // access, as a real scope registers anew (#456).
+    // The second user may read every DataGateway and the first may not, so
+    // on a server with a DataGateway client the Admin entry is what tells the
+    // two homes apart (#684). Each session has its own access, as a real scope
+    // registers anew (#456).
     final first = FakeCallerAccessRepository(
       FakeCallerAccessRepository.dataGateway(),
     );
@@ -223,6 +238,7 @@ void main() {
     var current = first;
     await signedInAsFirstUser(
       tester,
+      dataGateways: _DataGateways(),
       onActivate: (container, userId) {
         if (userId == 'u1') {
           container.registerFactory<CallerAccessRepository>(() => current);

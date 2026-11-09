@@ -39,6 +39,7 @@ import 'package:ui/ui.dart'
         UnverifiedSessionBanner;
 
 import '../../l10n/shell_localizations.dart';
+import '../admin/admin_section.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
 import '../bootstrap/app_bootstrap_state.dart';
 import '../deep_links/deep_link_handler.dart';
@@ -47,6 +48,7 @@ import '../i18n/active_locale.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
+import '../screens/admin_dashboard_screen.dart';
 import '../screens/feedback_flow_screen.dart';
 import '../screens/home_menu_entry.dart';
 import '../screens/home_screen.dart';
@@ -414,6 +416,9 @@ class _BgeAppState extends State<BgeApp> {
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
       dataGatewayDetailBuilder: _buildDataGatewayDetailRoute,
+      adminDashboardBuilder: _buildAdminDashboardRoute,
+      adminHouseholdListBuilder: _buildAdminHouseholdListRoute,
+      adminHouseholdDetailBuilder: _buildAdminHouseholdDetailRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
@@ -759,6 +764,7 @@ class _BgeAppState extends State<BgeApp> {
     final somethingToPlay = canBrowseGames
         ? _buildSomethingToPlay(container)
         : null;
+    final adminSections = _adminSections(context, container);
 
     HomeScreen home({required bool admin, bool canConnect = false}) =>
         HomeScreen(
@@ -815,10 +821,7 @@ class _BgeAppState extends State<BgeApp> {
                 id: 'admin',
                 icon: Icons.admin_panel_settings_outlined,
                 label: shellL10n.homeMenuAdmin,
-                // Straight to the DataGateway list: it is the only admin screen
-                // so far. #274's dashboard takes the entry over and keeps the
-                // route.
-                onSelected: (ctx) => ctx.push(AppRoutes.adminDataGateways),
+                onSelected: (ctx) => ctx.push(AppRoutes.admin),
               ),
             HomeMenuEntry(
               id: 'settings',
@@ -837,12 +840,21 @@ class _BgeAppState extends State<BgeApp> {
           ],
         );
 
-    // #41, #456: the Admin entry shows while the session's access allows
-    // read on DataGateways, and is hidden while the answer is unknown. It
-    // comes and goes as the answer changes: a sign-up's first answer lands
-    // after home is up, and a refusal on any DataGateway screen asks again.
-    // Moderators may read DataGateways too, so the entry says nothing about
-    // changing them: each screen offers what the answer allows.
+    // #274, #684: the Admin entry opens the admin dashboard, and shows while
+    // the session's access shows any of its sections, that is, while the
+    // caller reads every resource of some section's type
+    // ([visibleAdminSections]). Reading some is not enough: a plain member
+    // reads some households, their own. For DataGateways this agrees with the
+    // rule the entry had before the dashboard (#41), since a plain user reads
+    // none. A section is offered only where the server registers the client
+    // its screens read through ([_adminSections]), resolved above with the
+    // rest of home.
+    //
+    // #456: hidden while the answer is unknown. It comes and goes as the
+    // answer changes: a sign-up's first answer lands after home is up, and a
+    // refusal on any section's screen asks again. Moderators may read
+    // DataGateways too, so the entry says nothing about changing anything:
+    // each screen offers what the answer allows.
     //
     // No access registered (no user session, or no user client to ask
     // through) is no entry.
@@ -872,7 +884,7 @@ class _BgeAppState extends State<BgeApp> {
           AccessAction.read,
         );
         return home(
-          admin: mayRead,
+          admin: visibleAdminSections(current, adminSections).isNotEmpty,
           canConnect:
               mayRead &&
               current.allows(ResourceType.dataGateway, AccessAction.create),
@@ -2249,6 +2261,105 @@ class _BgeAppState extends State<BgeApp> {
       remote: container.get<DataGatewayRemoteDataSource>(),
       access: _callerAccess(container),
       id: dataGatewayId,
+    );
+  }
+
+  /// The admin dashboard's sections (#684) on the server whose [container]
+  /// this is, in the order the dashboard lists them: each where the server
+  /// registers the client its screens read through. Which of them show is
+  /// for the session's access to say ([visibleAdminSections]), in the drawer
+  /// and on the dashboard alike.
+  ///
+  /// A section's screens are pushed over the dashboard, so leaving them is a
+  /// pop back to it.
+  static List<AdminSection> _adminSections(
+    BuildContext context,
+    DependencyContainer container,
+  ) {
+    final shellL10n = ShellLocalizations.of(context);
+    return [
+      if (container.isRegistered<DataGatewayRemoteDataSource>())
+        AdminSection(
+          id: 'data_gateways',
+          icon: Icons.hub_outlined,
+          title: DataGatewayLocalizations.of(context).dataGatewayListTitle,
+          summary: shellL10n.adminSectionDataGatewaysSummary,
+          resourceType: ResourceType.dataGateway,
+          onOpen: (ctx) =>
+              unawaited(ctx.push<void>(AppRoutes.adminDataGateways)),
+        ),
+      if (container.isRegistered<AdminHouseholdRemoteDataSource>())
+        AdminSection(
+          id: 'households',
+          icon: Icons.groups_outlined,
+          title: adminHouseholdsTitle(HouseholdLocalizations.of(context)),
+          summary: shellL10n.adminSectionHouseholdsSummary,
+          resourceType: ResourceType.household,
+          onOpen: (ctx) => unawaited(ctx.push<void>(AppRoutes.adminHouseholds)),
+        ),
+    ];
+  }
+
+  /// The admin dashboard (#684): the sections [_adminSections] offers on the
+  /// active server, and the session's [CallerAccessRepository], which says
+  /// which of them show. Null (→ [NotYetAvailableScreen]) when no active
+  /// server is resolvable.
+  ///
+  /// Not guarded on access, as no section's route is: a deep link by a user
+  /// it shows no section reaches the dashboard, which says so. Its way home
+  /// is a `go`, since a deep link builds nothing beneath it to pop to.
+  Widget? _buildAdminDashboardRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    return AdminDashboardScreen(
+      sections: _adminSections(context, container),
+      access: _callerAccess(container),
+      onGoHome: (ctx) => ctx.go(AppRoutes.home),
+    );
+  }
+
+  /// The #685 staff households list: the per-server
+  /// [AdminHouseholdRemoteDataSource] and the session's
+  /// [CallerAccessRepository] from the active server's container. Null
+  /// (→ [NotYetAvailableScreen]) when no active server is resolvable or it
+  /// has no staff households client.
+  ///
+  /// Guarded on the client alone, not on access, as the DataGateway list is:
+  /// a deep link by a user the server refuses reaches the list, which says
+  /// so. A live household's detail is pushed.
+  Widget? _buildAdminHouseholdListRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<AdminHouseholdRemoteDataSource>()) return null;
+
+    return AdminHouseholdListScreen(
+      remote: container.get<AdminHouseholdRemoteDataSource>(),
+      access: _callerAccess(container),
+      onOpen: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.adminHouseholdDetailOf(id))),
+    );
+  }
+
+  /// One household's #685 staff detail. Same resolution and null contract as
+  /// [_buildAdminHouseholdListRoute].
+  Widget? _buildAdminHouseholdDetailRoute(
+    BuildContext context,
+    String householdId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<AdminHouseholdRemoteDataSource>()) return null;
+
+    return AdminHouseholdDetailScreen(
+      remote: container.get<AdminHouseholdRemoteDataSource>(),
+      access: _callerAccess(container),
+      id: householdId,
     );
   }
 
