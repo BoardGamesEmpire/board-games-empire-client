@@ -10,9 +10,14 @@ publish_to: none
 # Linux read. The same check fails if a native manifest stops taking its
 # version from Flutter.
 #
-# `+N` is the build number on every platform. It is committed here, not
-# injected by CI, and it must never go down: Android refuses to install
-# an update whose versionCode is lower. #419 decides how it is bumped.
+# The release job (#419) writes this line with `--set-version` whenever a
+# `feat` or `fix` reaches master. Don't edit it by hand.
+#
+# `+N` is what local builds and the web report. CI builds only Android,
+# and gives each Android build the first-parent commit count instead, so
+# it only rises (#419), which matters because Android refuses to install
+# an update whose versionCode is lower. Other platforms' builds take this
+# unless given `--build-number`. Keep this one at 1.
 #
 # Keep it all numeric, major.minor.patch+build, with each part at most
 # 65535, the build number at least 1, and the version never 0.0.0; the
@@ -21,11 +26,7 @@ publish_to: none
 # but not from the others, Windows holds each part in a 16-bit field,
 # Android's versionCode starts at 1, and 0.0.0 is what an app reports
 # when it cannot read its own version.
-#
-# To bump, edit it here and run
-#   dart run tool/check_sdk_constraints.dart --fix
-# to propagate it to every app.
-version: 1.0.0+1
+version: 0.1.0+1
 
 # ── Toolchain pin (#153) ───────────────────────────────────────────
 # `flutter:` below is an EXACT version, not a floor. It is the single
