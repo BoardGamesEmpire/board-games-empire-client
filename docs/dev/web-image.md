@@ -15,15 +15,18 @@ ghcr.io/boardgamesempire/bge-client-web
 | --- | --- | --- |
 | `edge` | the files of master's newest published commit | when those files change |
 | `sha-<short>` | one commit, named by the first 7 characters of its SHA | never |
+| `X.Y.Z` | one release: the commit semantic-release tagged `vX.Y.Z` | never |
 
 A commit that changes no built file, such as a docs-only one, gets its
 `sha-<short>` but leaves `edge` where it is. So `edge`'s `revision` label
 names the commit that moved it, normally the first to build its files, and
 it can be older than master's newest commit.
 
-There are no version tags yet. They arrive with #419, along with a client
-version worth tagging: until then, every build reports the template version
-`1.0.0`.
+Every `feat` or `fix` merged to master is released automatically, as a `0.x`
+version for now (#419), and its release commit's image gets the `X.Y.Z` tag.
+A backend release pins one of those, `bge-client-web:X.Y.Z@sha256:…`, rather
+than `edge`. There is no `stable`, `latest`, `X.Y` or `X` tag. `stable`
+arrives after alpha (#829).
 
 Pin a digest, not a tag. `edge` moves whenever the built files change, and a
 digest names exactly one image:
@@ -122,6 +125,12 @@ The job reads everything it decides on before it writes a tag, so a run
 that fails while reading writes nothing, and its commit does not count as
 published. It writes `sha-<short>` before moving `edge`. The job's summary
 says whether `edge` moved, and which condition held it back when it did not.
+
+`X.Y.Z` is written only on the commit its `vX.Y.Z` tag names (#419). The
+`Release tag` job, which `publish-web` needs, looks that tag up. An `X.Y.Z`
+that already names this digest is reused, and one that names another digest
+stops the job, since version tags never move. A `v` tag that disagrees with
+the root pubspec's version stops `Release tag`, so no image tag is written.
 Only one `publish-web` job runs at a time and the rest wait in a queue, so
 no other run can write a tag between this run reading the tags and writing
 its own.
@@ -136,6 +145,12 @@ for a week after the run, while `build-web`'s artifact is kept. After that,
 `sha-<short>`, which happens only in the job's last step, the re-run checks
 and tags that image rather than pushing another. If it failed before then,
 any image it pushed stays untagged, and the re-run pushes a new one.
+
+After a release tag pushed by hand, re-run that commit's `Release tag` job,
+not `publish-web`. A re-run job keeps the outputs of the jobs it needs from
+the earlier attempt, so `publish-web` alone would still read the empty tag
+that `Release tag` found the first time. Re-running `Release tag` re-runs
+`publish-web` and `github-release` after it.
 
 The package is public, so source builds of the backend and Renovate pull it
 without credentials. A public package cannot be made private again.

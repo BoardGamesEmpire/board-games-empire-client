@@ -602,6 +602,53 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # ── Release tag (#419) ───────────────────────────────────────────
+  # Says whether this commit is a release: `tag` is the `vX.Y.Z` it
+  # carries, or empty, and `previous` the release before it, where
+  # `github-release` starts its notes. It reads the remote's tags, since
+  # the checkout fetches none. tool/release_tags.dart peels annotated tags,
+  # and stops the job when the commit carries a `v` tag other than the root
+  # pubspec's version, or more than one.
+  #
+  # The `release` job pushes a release commit and then its tag, and the
+  # commit's push starts this run. Waiting for `generate` puts minutes
+  # between the two, so the tag has arrived by the time this reads.
+  #
+  # It is not one of the test gates `gates` lists, which `release` and
+  # `release-android` wait for, but its failure must keep `publish-web`
+  # from running: when a `v`
+  # tag disagrees with the pubspec, this job's exit 1 is what stops
+  # `publish-web` writing any image tag. So `publish-web`'s `if:` must never
+  # gain `always()` or `!cancelled()`. If a tag is pushed by
+  # hand after this job ran, re-run this job, and GitHub re-runs
+  # `publish-web` and `github-release` after it. Re-running `publish-web`
+  # alone would reuse this job's empty `tag` (CONTRIBUTING.md, Releasing).
+  release-tag:
+    name: Release tag
+    needs: generate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.find.outputs.tag }}
+      previous: ${{ steps.find.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-flutter
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Release tag self-test
+        run: dart run tool/release_tags.dart --self-test
+      # With pipefail, a failed `ls-remote` fails the step rather than
+      # reading as a remote with no tags.
+      - name: Find this commit's release tag
+        id: find
+        run: |
+          set -euo pipefail
+          git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" 'refs/tags/v*' \
+            | dart run tool/release_tags.dart --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
   # ── Android build (#51) ──────────────────────────────────────────
   # The release build `melos run build-mobile-android` runs:
   # tool/build_android.dart builds one universal APK, checks its package,
@@ -826,10 +873,9 @@ jobs:
   # `sha-<short>` names one commit and never moves. `edge` holds the files
   # of master's newest published commit, and moves only when those files
   # change (#424), so its revision label names the commit that moved it,
-  # normally the first to build them. There are no version tags yet
-  # (#419). Three rules keep the tags honest:
-  #   - The image is pushed by digest and checked before either tag points
-  #     at it, so a failed check leaves both tags where they were.
+  # normally the first to build them. Four rules keep the tags honest:
+  #   - The image is pushed by digest and checked before any tag points at
+  #     it, so a failed check leaves every tag where it was.
   #   - `edge` only moves forward along master. Master runs do not cancel
   #     each other (top of this file), so an older commit's run can get
   #     here after a newer one's, and a re-run can get here at any time.
@@ -841,6 +887,11 @@ jobs:
   #     earlier attempt pushed and checked it, and this one checks and tags
   #     that image instead of pushing another. If it names any other
   #     commit, the job stops.
+  #   - `X.Y.Z` names one release and never moves: it is written only on
+  #     the commit its `vX.Y.Z` tag names, the release commit
+  #     semantic-release made (#419), whose `version.json` must say
+  #     `X.Y.Z`. One that already names this digest is reused, and one
+  #     naming another stops the job.
   #
   # The image is one bare manifest: no index, provenance or SBOM. A default
   # push from a public repository attaches provenance, which wraps even a
@@ -854,7 +905,7 @@ jobs:
   # again.
   publish-web:
     name: Publish web image
-    needs: [gates]
+    needs: [gates, release-tag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     # One publish at a time, across every master run. The last step reads
     # the tags and then writes `edge`, which is safe only if no other run
@@ -873,6 +924,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      release: ${{ steps.tags.outputs.release }}
     env:
       IMAGE: ghcr.io/boardgamesempire/bge-client-web
     steps:
@@ -1003,6 +1056,9 @@ jobs:
       #     decide this: it stays on an older commit for as long as the
       #     files do not change.
       #   - Its files differ from `edge`'s, or `edge` has no files label.
+      # On a release commit it then writes `X.Y.Z`, unless an earlier
+      # attempt did, and hands the release tag to `github-release` either
+      # way, so a re-run can still create a Release an earlier one missed.
       # A run that fails while reading writes nothing, so its commit does
       # not count as published and cannot hold back an older one.
       # `sha-<short>` goes before `edge`, in a command of its own, so `edge`
@@ -1013,10 +1069,13 @@ jobs:
       # as it is. Left to default, a single source is wrapped in a new
       # index.
       - name: Tag the checked digest, and move edge if it should
+        id: tags
         env:
           DIGEST: ${{ steps.existing.outputs.digest || steps.push.outputs.digest }}
           SHORT: ${{ steps.meta.outputs.short }}
           FILES: ${{ steps.meta.outputs.files }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-tag.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -1088,8 +1147,34 @@ jobs:
               move=true reason="the files changed since \`$built_by\`."
             fi
           }
+          # Sets `release` to the commit's release tag, or empty, and
+          # `write_version` to whether `X.Y.Z` still needs writing.
+          decide_release() {
+            release='' write_version=false
+            if [ -z "$RELEASE_TAG" ]; then
+              return
+            fi
+            if [ "${RELEASE_TAG#v}" != "$VERSION" ]; then
+              echo "::error::This commit carries $RELEASE_TAG, but its version.json says $VERSION."
+              exit 1
+            fi
+            if manifest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' 2>"$RUNNER_TEMP/version.err"); then
+              got=$(jq -r .digest <<<"$manifest")
+              if [ "$got" != "$DIGEST" ]; then
+                echo "::error::$IMAGE:$VERSION names $got, not $DIGEST, and version tags never move."
+                exit 1
+              fi
+            elif grep -qF "$IMAGE:$VERSION: not found" "$RUNNER_TEMP/version.err"; then
+              write_version=true
+            else
+              echo "::error::Could not read $IMAGE:$VERSION: $(cat "$RUNNER_TEMP/version.err")"
+              exit 1
+            fi
+            release=$RELEASE_TAG
+          }
 
           decide
+          decide_release
           write_tag "sha-$SHORT"
           echo "Published \`$IMAGE:sha-$SHORT\` as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
           if [ "$move" = true ]; then
@@ -1100,3 +1185,63 @@ jobs:
             echo "::notice::edge stays where it is: ${reason//\`/}"
             echo "\`edge\` stays where it is: $reason" >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -n "$release" ]; then
+            if [ "$write_version" = true ]; then
+              write_tag "$VERSION"
+              echo "Published \`$IMAGE:$VERSION\`, the release \`$release\`, as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "\`$IMAGE:$VERSION\`, the release \`$release\`, already named \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "release=$release" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── GitHub release (#419) ────────────────────────────────────────
+  # Creates a release commit's GitHub Release, once `publish-web` has
+  # tagged its image `X.Y.Z`. Every `0.x` release is a pre-release, and
+  # none is marked latest: that waits for a person to promote a stable
+  # release (#829). A Release that already exists is left as it is, so a
+  # re-run creates only one an earlier attempt missed.
+  #
+  # The notes list the PRs merged since `previous`, by title, rather than
+  # the commits: master keeps every PR's commits, so a commit list would be
+  # mostly noise (#419). The first release has no `previous` to start from,
+  # so GitHub lists every PR merged before it.
+  #
+  # No checkout: `gh` names the repository, and `--verify-tag` refuses a
+  # tag the remote doesn't have rather than create one.
+  github-release:
+    name: GitHub release
+    needs: [publish-web, release-tag]
+    if: needs.publish-web.outputs.release != ''
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release's GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish-web.outputs.release }}
+          PREVIOUS: ${{ needs.release-tag.outputs.previous }}
+        run: |
+          set -euo pipefail
+          # Only "release not found" means there is none. Any other failure,
+          # such as a network or auth error, stops the job rather than try to
+          # create a Release that may exist.
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>"$RUNNER_TEMP/view.err"; then
+            echo "::notice::$TAG already has a Release."
+            exit 0
+          fi
+          if ! grep -q 'release not found' "$RUNNER_TEMP/view.err"; then
+            cat "$RUNNER_TEMP/view.err" >&2
+            echo "::error::Could not tell whether $TAG has a Release."
+            exit 1
+          fi
+          args=(--verify-tag --title "$TAG" --latest=false --generate-notes)
+          case "$TAG" in
+            v0.*) args+=(--prerelease) ;;
+          esac
+          if [ -n "$PREVIOUS" ]; then
+            args+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" "${args[@]}"
