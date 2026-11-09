@@ -1191,5 +1191,75 @@
   "adminHouseholdsMoreFailed": "Couldn't load more households.",
   "@adminHouseholdsMoreFailed": {
     "description": "Shown above the load-more button under the staff households list when the next page could not be read. The households shown stay, and the button tries again."
+  },
+  "adminHouseholdDetailTitle": "Household",
+  "@adminHouseholdDetailTitle": {
+    "description": "Title of the staff household detail screen until the household's own name has been read."
+  },
+  "adminHouseholdDetailLoading": "Loading household\u2026",
+  "@adminHouseholdDetailLoading": {
+    "description": "Shown on the staff household detail screen while the household is being read. Also its accessible name then."
+  },
+  "adminHouseholdDetailReachPrivate": "Only members",
+  "@adminHouseholdDetailReachPrivate": {
+    "description": "Staff household detail: who can see the household, when it is limited to its own members."
+  },
+  "adminHouseholdDetailReachFriends": "Members' friends",
+  "@adminHouseholdDetailReachFriends": {
+    "description": "Staff household detail: who can see the household, when its members' friends can too."
+  },
+  "adminHouseholdDetailReachFriendsOfFriends": "Friends of friends",
+  "@adminHouseholdDetailReachFriendsOfFriends": {
+    "description": "Staff household detail: who can see the household, when its members' friends' friends can too."
+  },
+  "adminHouseholdDetailReachPublic": "Everyone on the server",
+  "@adminHouseholdDetailReachPublic": {
+    "description": "Staff household detail: who can see the household, when everyone signed in to the server can."
+  },
+  "adminHouseholdDetailVisibleTo": "Visible to: {reach}",
+  "@adminHouseholdDetailVisibleTo": {
+    "description": "Staff household detail line naming who can see the household, as in 'Visible to: Only members'.",
+    "placeholders": {
+      "reach": {
+        "type": "String",
+        "example": "Only members"
+      }
+    }
+  },
+  "adminHouseholdDetailLanguage": "Language: {name}",
+  "@adminHouseholdDetailLanguage": {
+    "description": "Staff household detail line naming the household's language, as in 'Language: English'.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "English"
+      }
+    }
+  },
+  "adminHouseholdDetailCreatedOn": "Created {date}",
+  "@adminHouseholdDetailCreatedOn": {
+    "description": "Staff household detail line: when the household was created, with the year, as in 'Created Oct 2, 2026'.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "adminHouseholdDetailGone": "This household was deleted, or no longer exists",
+  "@adminHouseholdDetailGone": {
+    "description": "Shown on the staff household detail screen when the server answered that the household is gone (a 404)."
+  },
+  "adminHouseholdDetailRefused": "You don't have access to this household",
+  "@adminHouseholdDetailRefused": {
+    "description": "Shown on the staff household detail screen when the server refused it: the person's role no longer lets them read it."
+  },
+  "adminHouseholdDetailFailed": "Couldn't load this household",
+  "@adminHouseholdDetailFailed": {
+    "description": "Title shown on the staff household detail screen when the household could not be read, for a reason that says nothing about access."
+  },
+  "adminHouseholdDetailFailedBody": "Check your connection and try again.",
+  "@adminHouseholdDetailFailedBody": {
+    "description": "Body under the title shown when the staff household detail screen could not read the household."
   }
 }

@@ -117,3 +117,43 @@ PaginatedResult<AdminHouseholdRow> adminPageOf(
     hasMore: hasMore,
   ),
 );
+
+/// A member of a household's roster, named [name] unless it has none.
+HouseholdMember adminMember(
+  String id, {
+  String? name,
+  HouseholdRole? role = HouseholdRole.householdMember,
+}) => HouseholdMember(
+  id: id,
+  userId: 'u_$id',
+  householdId: 'h_1',
+  role: role,
+  username: name?.toLowerCase(),
+  displayName: name,
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
+/// A household as the staff detail reads it. Every fact is present unless a
+/// test drops it.
+AdminHouseholdDetail adminDetail({
+  String id = 'h_1',
+  String name = "Ada's table",
+  String? description = 'Friday board games',
+  Reach reach = Reach.friends,
+  String? languageName = 'English',
+  List<HouseholdMember>? members,
+}) => AdminHouseholdDetail(
+  id: id,
+  name: name,
+  description: description,
+  reach: reach,
+  languageName: languageName,
+  createdAt: DateTime.utc(2026, 3, 14, 12),
+  members:
+      members ??
+      [
+        adminMember('m1', name: 'Ada', role: HouseholdRole.householdOwner),
+        adminMember('m2', name: 'Bea'),
+      ],
+);

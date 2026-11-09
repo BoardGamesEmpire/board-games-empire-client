@@ -3,9 +3,12 @@ library;
 export 'package:hydration/hydration.dart' show Hydration, HydrationState;
 
 export 'src/admin/admin_household_resource_types.dart';
+export 'src/admin/bloc/admin_household_detail_cubit.dart';
+export 'src/admin/bloc/admin_household_detail_state.dart';
 export 'src/admin/bloc/admin_household_list_bloc.dart';
 export 'src/admin/bloc/admin_household_list_event.dart';
 export 'src/admin/bloc/admin_household_list_state.dart';
+export 'src/admin/screens/admin_household_detail_screen.dart';
 export 'src/admin/screens/admin_household_list_screen.dart';
 export 'src/bloc/awaiting_approval_count_cubit.dart';
 export 'src/bloc/create_household_bloc.dart';
