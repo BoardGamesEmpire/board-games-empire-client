@@ -73,9 +73,12 @@ String adminHouseholdsTitle(HouseholdLocalizations l10n) =>
 /// confirmation is open, as a read lands without its row: focus has nothing
 /// to come back to when the dialog closes. Load more, gone with the last
 /// page, hands its focus to the first row that page brought, or to the same
+/// places. A live row that goes with focus, as when a read takes a household
+/// deleted meanwhile, hands it to its own Restore if it is still listed as
+/// deleted, else to the next row, else the row before it, else the same
 /// places. Focus the user has moved meanwhile is left where it is. Retry,
-/// which goes with the failure as the read starts, hands its focus to the
-/// heading.
+/// which goes with the failure as the read starts, and Dismiss, which goes
+/// with the banner, hand their focus to the heading.
 class AdminHouseholdListScreen extends StatelessWidget {
   const AdminHouseholdListScreen({
     required this.remote,
@@ -217,6 +220,11 @@ class _AdminHouseholdListViewState extends State<_AdminHouseholdListView> {
   static bool _offersMore(AdminHouseholdListState state) =>
       state is AdminHouseholdListReady && state.hasMore;
 
+  /// Whether [state] lists [id] as a live row, whose tile can keep focus.
+  static bool _listsLive(AdminHouseholdListState state, String id) =>
+      state is AdminHouseholdListReady &&
+      state.rows.any((row) => row.id == id && !row.isDeleted);
+
   /// Where focus goes when the control that had it goes, with nothing more
   /// fitting: the banner's Dismiss while an outcome shows, else the heading.
   FocusNode _fallbackIn(AdminHouseholdListState state) =>
@@ -254,7 +262,17 @@ class _AdminHouseholdListViewState extends State<_AdminHouseholdListView> {
         .firstOrNull
         ?.key;
     final moreGoes = _more.hasFocus && !_offersMore(state);
-    if (restoreGoes == null && !moreGoes) return;
+    // A live row's tile, taken away or turned deleted. Focus on a Restore is
+    // [restoreGoes]'s.
+    final rowGoes = restoreGoes != null
+        ? null
+        : _rows.entries
+              .where((entry) => entry.value.hasFocus)
+              .where((entry) => !(_restores[entry.key]?.hasFocus ?? false))
+              .where((entry) => !_listsLive(state, entry.key))
+              .firstOrNull
+              ?.key;
+    if (restoreGoes == null && !moreGoes && rowGoes == null) return;
 
     // The first row the last page brought, which follows Load more as the
     // next control along.
@@ -262,23 +280,48 @@ class _AdminHouseholdListViewState extends State<_AdminHouseholdListView> {
     final firstNew = moreGoes && state is AdminHouseholdListReady
         ? state.rows.where((row) => !listed.contains(row.id)).firstOrNull?.id
         : null;
+    // The row itself first, for its Restore, then those after it, nearest
+    // first, then those before it.
+    final around = rowGoes == null ? const <String>[] : _around(rowGoes);
     final focused = FocusManager.instance.primaryFocus;
     final bloc = context.read<AdminHouseholdListBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
-      final kept = restoreGoes == null
+      // A tile turned deleted still holds focus here: it lets go only in a
+      // microtask after this frame. It keeps focus only if listed live again.
+      final kept = rowGoes != null
+          ? _listsLive(bloc.state, rowGoes) &&
+                (_rows[rowGoes]?.hasFocus ?? false)
+          : restoreGoes == null
           ? _more.hasFocus
           : _restores[restoreGoes]?.hasFocus ?? false;
       if (kept) return;
       // Looked up now, as that frame built it: a row that is not built has
       // nothing to take focus.
-      final next = firstNew == null
-          ? null
-          : _rows[firstNew]?.traversalDescendants.firstOrNull;
+      final next = [
+        ?firstNew,
+        ...around,
+      ].map(_firstControlIn).nonNulls.firstOrNull;
       _focus(next ?? _fallbackIn(bloc.state));
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
+
+  /// [id] then the ids listed around it, as the last state had them: those
+  /// after it, nearest first, then those before it.
+  List<String> _around(String id) {
+    final index = _listed.indexOf(id);
+    if (index < 0) return [id];
+    return [
+      id,
+      for (var i = index + 1; i < _listed.length; i++) _listed[i],
+      for (var i = index - 1; i >= 0; i--) _listed[i],
+    ];
+  }
+
+  /// The first control in [id]'s row, if the row is listed and built.
+  FocusNode? _firstControlIn(String id) =>
+      _rows[id]?.traversalDescendants.firstOrNull;
 
   /// Disposes the nodes of rows no longer listed, and of Restores no longer
   /// offered, after the frame that takes them down: a [Focus] holds its node
@@ -400,6 +443,14 @@ class _AdminHouseholdListViewState extends State<_AdminHouseholdListView> {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
+  void _dismissOutcome() {
+    // Dismiss goes with the banner, and would take focus with it.
+    if (_dismiss.hasFocus) _focus(_heading);
+    context.read<AdminHouseholdListBloc>().add(
+      const AdminHouseholdListOutcomeDismissed(),
+    );
+  }
+
   void _searchChanged(String text) => context
       .read<AdminHouseholdListBloc>()
       .add(AdminHouseholdListSearchChanged(text));
@@ -467,6 +518,7 @@ class _AdminHouseholdListViewState extends State<_AdminHouseholdListView> {
                       child: _OutcomeBanner(
                         outcome: outcome,
                         dismissFocus: _dismiss,
+                        onDismiss: _dismissOutcome,
                       ),
                     ),
                   ),
@@ -1081,12 +1133,18 @@ class _MoreFooter extends StatelessWidget {
 
 /// What the last restore answered, with its Dismiss.
 class _OutcomeBanner extends StatelessWidget {
-  const _OutcomeBanner({required this.outcome, required this.dismissFocus});
+  const _OutcomeBanner({
+    required this.outcome,
+    required this.dismissFocus,
+    required this.onDismiss,
+  });
 
   final AdminHouseholdRestoreOutcome outcome;
 
   /// For the Dismiss, which takes focus from a Restore that goes.
   final FocusNode dismissFocus;
+
+  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -1114,9 +1172,7 @@ class _OutcomeBanner extends StatelessWidget {
       message: message,
       action: TextButton(
         focusNode: dismissFocus,
-        onPressed: () => context.read<AdminHouseholdListBloc>().add(
-          const AdminHouseholdListOutcomeDismissed(),
-        ),
+        onPressed: onDismiss,
         child: Text(l10n.adminHouseholdsDismiss),
       ),
     );

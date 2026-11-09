@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +77,31 @@ void main() {
       const AdminHouseholdDetailFailed(),
     ],
   );
+
+  test('of two overlapping reads, the one asked for last wins, whichever '
+      'answers first', () async {
+    final answers = [
+      Completer<AdminHouseholdDetail>(),
+      Completer<AdminHouseholdDetail>(),
+    ];
+    var reads = 0;
+    remote.onFetchDetail = (_) => answers[reads++].future;
+    final cubit = build();
+    addTearDown(cubit.close);
+    final states = <AdminHouseholdDetailState>[];
+    final listening = cubit.stream.listen(states.add);
+    addTearDown(listening.cancel);
+
+    final first = cubit.load();
+    final second = cubit.load();
+    answers[1].complete(adminDetail(name: 'Newer'));
+    await second;
+    answers[0].complete(adminDetail(name: 'Older'));
+    await first;
+
+    expect(states, [AdminHouseholdDetailReady(adminDetail(name: 'Newer'))]);
+    expect(cubit.state, AdminHouseholdDetailReady(adminDetail(name: 'Newer')));
+  });
 
   blocTest<AdminHouseholdDetailCubit, AdminHouseholdDetailState>(
     'a retry shows loading, then the household',

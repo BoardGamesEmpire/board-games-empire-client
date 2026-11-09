@@ -520,6 +520,31 @@ void main() {
       },
     );
 
+    test(
+      'a list closed while its first request is out asks for no more',
+      () async {
+        final rows = _rows(1, 260, deleted: false);
+        serve(rows);
+        final bloc = build()..add(const AdminHouseholdListLoadRequested());
+        await pumpEventQueue();
+        for (var i = 0; i < 4; i++) {
+          bloc.add(const AdminHouseholdListMoreRequested());
+          await pumpEventQueue();
+        }
+        final held = Completer<_Page>();
+        remote.onFetchPage = (_) => held.future;
+
+        // As when the list comes back into view, and is left before it reads.
+        bloc.add(const AdminHouseholdListLoadRequested());
+        await pumpEventQueue();
+        await bloc.close();
+        held.complete(adminPageOf(rows.sublist(0, 100), hasMore: true));
+        await pumpEventQueue();
+
+        expect(remote.calls.skip(5), [_fetch(limit: 100)]);
+      },
+    );
+
     blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
       'after a restore took a row out, reads the whole pages it was among',
       setUp: () => serve(_rows(1, 60)),
@@ -1523,59 +1548,27 @@ void main() {
       },
     );
 
-    blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
-      'under All by recently deleted, a restored row moves past rows shown '
-      'that are all deleted: load more asks for the page that now holds the '
-      'next row',
-      setUp: () {
-        firstPages([
-          adminPageOf(_rows(1, 25), hasMore: true),
-        ], later: (page) => adminPageOf(_rows(26, 50), page: page));
-        remote.onRestore = (_) async {};
-      },
-      build: build,
-      act: (bloc) async {
-        bloc.add(
-          const AdminHouseholdListStatusChanged(AdminHouseholdStatus.all),
-        );
-        await pumpEventQueue();
-        bloc.add(
-          const AdminHouseholdListSortChanged(AdminHouseholdSort.deleted),
-        );
-        await pumpEventQueue();
-        bloc.add(const AdminHouseholdListRestoreRequested('h1'));
-        await pumpEventQueue();
-        expect(
-          (bloc.state as AdminHouseholdListReady).rows.first,
-          adminRow('h1'),
-        );
-        bloc.add(const AdminHouseholdListMoreRequested());
-        await pumpEventQueue();
-      },
-      verify: (_) => expect(remote.calls, [
-        _fetch(status: AdminHouseholdStatus.all),
-        _fetch(
-          status: AdminHouseholdStatus.all,
-          sort: AdminHouseholdSort.deleted,
-        ),
-        'restore(h1)',
-        _fetch(
-          status: AdminHouseholdStatus.all,
-          sort: AdminHouseholdSort.deleted,
-        ),
-      ]),
-    );
+    group('under All by recently deleted, a restored row moves after every '
+        'deleted one: the list is read again to put it there', () {
+      const byDeleted = AdminHouseholdQuery(
+        status: AdminHouseholdStatus.all,
+        sort: AdminHouseholdSort.deleted,
+      );
 
-    blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
-      'under All by recently deleted with live rows shown, a restored row '
-      'may move among them: the list is read again',
-      setUp: () {
-        remote
-          ..listing([gone, ada], hasMore: true)
-          ..onRestore = (_) async {};
-      },
-      build: build,
-      act: (bloc) async {
+      /// Answers list reads from [rows] in the server's order, deleted rows
+      /// first, newest first, then live rows. A restore turns its row live,
+      /// which takes it after every deleted row.
+      void serveByDeleted(List<AdminHouseholdRow> rows) {
+        serve(rows);
+        remote.onRestore = (id) async {
+          final at = rows.indexWhere((row) => row.id == id);
+          final restored = rows.removeAt(at).restored();
+          final live = rows.indexWhere((row) => !row.isDeleted);
+          rows.insert(live < 0 ? rows.length : live, restored);
+        };
+      }
+
+      Future<void> showByDeleted(AdminHouseholdListBloc bloc) async {
         bloc.add(
           const AdminHouseholdListStatusChanged(AdminHouseholdStatus.all),
         );
@@ -1584,22 +1577,109 @@ void main() {
           const AdminHouseholdListSortChanged(AdminHouseholdSort.deleted),
         );
         await pumpEventQueue();
-        bloc.add(const AdminHouseholdListRestoreRequested('h_gone'));
-        await pumpEventQueue();
-      },
-      verify: (_) => expect(remote.calls, [
-        _fetch(status: AdminHouseholdStatus.all),
-        _fetch(
-          status: AdminHouseholdStatus.all,
-          sort: AdminHouseholdSort.deleted,
-        ),
-        'restore(h_gone)',
-        _fetch(
-          status: AdminHouseholdStatus.all,
-          sort: AdminHouseholdSort.deleted,
-        ),
-      ]),
-    );
+      }
+
+      blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
+        'with every row shown',
+        setUp: () => serveByDeleted([gone, lost, ada]),
+        build: build,
+        act: (bloc) async {
+          await showByDeleted(bloc);
+          bloc.add(const AdminHouseholdListRestoreRequested('h_gone'));
+          await pumpEventQueue();
+        },
+        verify: (bloc) {
+          expect(remote.calls, [
+            _fetch(status: AdminHouseholdStatus.all),
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+            ),
+            'restore(h_gone)',
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+            ),
+          ]);
+          expect(
+            bloc.state,
+            ready(
+              [lost, gone.restored(), ada],
+              query: byDeleted,
+              outcome: _outcome(
+                AdminHouseholdRestoreResult.restored,
+                'Old crew',
+              ),
+            ),
+          );
+        },
+      );
+
+      blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
+        'with only deleted rows shown and more to load: the row leaves them, '
+        'and load more brings it in its place',
+        setUp: () => serveByDeleted([..._rows(1, 30), ada]),
+        build: build,
+        act: (bloc) async {
+          await showByDeleted(bloc);
+          bloc.add(const AdminHouseholdListRestoreRequested('h1'));
+          await pumpEventQueue();
+          expect((bloc.state as AdminHouseholdListReady).rows, _rows(2, 26));
+          bloc.add(const AdminHouseholdListMoreRequested());
+          await pumpEventQueue();
+        },
+        verify: (bloc) {
+          expect(remote.calls, [
+            _fetch(status: AdminHouseholdStatus.all),
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+            ),
+            'restore(h1)',
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+            ),
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+              page: 2,
+            ),
+          ]);
+          expect((bloc.state as AdminHouseholdListReady).rows, [
+            ..._rows(2, 30),
+            adminRow('h1'),
+            ada,
+          ]);
+        },
+      );
+
+      blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
+        'with live rows shown and more to load',
+        setUp: () =>
+            serveByDeleted([gone, ada, ..._rows(1, 30, deleted: false)]),
+        build: build,
+        act: (bloc) async {
+          await showByDeleted(bloc);
+          bloc.add(const AdminHouseholdListRestoreRequested('h_gone'));
+          await pumpEventQueue();
+        },
+        verify: (bloc) {
+          expect(
+            remote.calls.last,
+            _fetch(
+              status: AdminHouseholdStatus.all,
+              sort: AdminHouseholdSort.deleted,
+            ),
+          );
+          expect((bloc.state as AdminHouseholdListReady).rows.take(3), [
+            gone.restored(),
+            ada,
+            adminRow('h1'),
+          ]);
+        },
+      );
+    });
 
     blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
       'under All by name, a restored row keeps its place: nothing is read '

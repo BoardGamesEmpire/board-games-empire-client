@@ -1155,6 +1155,76 @@ void main() {
     });
   });
 
+  group('keeping keyboard focus when a row goes', () {
+    /// The live row named [name], whose tile takes focus.
+    Finder tile(String name) =>
+        find.ancestor(of: find.text(name), matching: find.byType(ListTile));
+
+    testWidgets('a live row that leaves with focus, as on the read when the '
+        'list comes back into view, hands it to the next row', (tester) async {
+      final cy = adminRow('h_cy', name: 'Cy club');
+      remote.listing([ada, bea, cy]);
+      await pumpScreen(tester);
+      await focusOn(tester, find.text('Bea games'));
+      expect(focusIsIn(tester, tile('Bea games')), isTrue);
+
+      remote.listing([ada, cy]);
+      blocOf(tester).add(const AdminHouseholdListLoadRequested());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bea games'), findsNothing);
+      expect(focusIsIn(tester, tile('Cy club')), isTrue);
+    });
+
+    testWidgets('the last row leaving with focus hands it to the row before '
+        'it', (tester) async {
+      remote.listing([ada, bea]);
+      await pumpScreen(tester);
+      await focusOn(tester, find.text('Bea games'));
+
+      remote.listing([ada]);
+      blocOf(tester).add(const AdminHouseholdListLoadRequested());
+      await tester.pumpAndSettle();
+
+      expect(focusIsIn(tester, tile("Ada's table")), isTrue);
+    });
+
+    testWidgets('under All, a live row with focus that turns deleted hands it '
+        'to its own Restore', (tester) async {
+      final beaGone = adminRow('h_bea', name: 'Bea games', deleted: true);
+      remote.listing([ada, bea]);
+      await pumpScreen(tester);
+      await choose(tester, AdminHouseholdListScreen.statusKey, 'All');
+      await focusOn(tester, find.text('Bea games'));
+
+      remote.listing([ada, beaGone]);
+      blocOf(tester).add(const AdminHouseholdListLoadRequested());
+      await tester.pumpAndSettle();
+
+      expect(
+        focusIsIn(
+          tester,
+          find.byKey(AdminHouseholdListScreen.restoreKey('h_bea')),
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('the only row leaving with focus hands it to the heading', (
+      tester,
+    ) async {
+      remote.listing([ada]);
+      await pumpScreen(tester);
+      await focusOn(tester, find.text("Ada's table"));
+
+      remote.listing([]);
+      blocOf(tester).add(const AdminHouseholdListLoadRequested());
+      await tester.pumpAndSettle();
+
+      expectFocusOn(tester, heading());
+    });
+  });
+
   group('keeping keyboard focus when Restore goes', () {
     testWidgets("under Deleted, focus on Restore goes to the banner's "
         'Dismiss when its row leaves', (tester) async {
@@ -1179,6 +1249,25 @@ void main() {
 
       expect(find.text('Old crew'), findsNothing);
       expectFocusOn(tester, dismiss());
+    });
+
+    testWidgets('Dismiss pressed from the keyboard goes with the banner, and '
+        'hands its focus to the heading', (tester) async {
+      remote
+        ..listing([gone, lost])
+        ..onRestore = (_) async {};
+      await pumpScreen(tester);
+      await choose(tester, AdminHouseholdListScreen.statusKey, 'Deleted');
+      remote.listing([lost]);
+      await restoreFromKeyboard(tester, 'h_gone');
+      await tester.pumpAndSettle();
+      expectFocusOn(tester, dismiss());
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(AdminHouseholdListScreen.outcomeKey), findsNothing);
+      expectFocusOn(tester, heading());
     });
 
     testWidgets('under All, focus on Restore goes to Dismiss when its row '

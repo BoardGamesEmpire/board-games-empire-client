@@ -63,17 +63,17 @@ import 'admin_household_list_state.dart';
 ///
 /// Restores run per household, apart from the reads, and one still running
 /// when the query changes settles against the rows shown then. A restored
-/// row leaves the list under Deleted, and turns live in place under All. A
-/// 409 says the household is live already, which is done. A 404 says there
+/// row leaves the list under Deleted, and turns live in place under All;
+/// under All by recently deleted, where it moves after every deleted row,
+/// the list is then read again to put it there. A 409 says the household is
+/// live already, which is done. A 404 says there
 /// is nothing this caller may restore, and the row stays. After either, the
 /// list is read again.
 ///
 /// A restore that is done also reads the list again when the rows shown may
 /// not have heard of it: a read is out that the server may answer as it was
 /// before, the rows were read since it began, or a page read since may have
-/// skipped a row it moved. Under All by recently deleted, a restored row
-/// moves among the live rows; when some are shown it may land among them or
-/// past them, so the list is read again too while the server has more.
+/// skipped a row it moved.
 ///
 /// ## Refusals
 ///
@@ -339,7 +339,8 @@ class AdminHouseholdListBloc
           page: ++pages,
           limit: limit,
         );
-        if (read != _generation) return;
+        // Nobody is left to show the pages after it to.
+        if (read != _generation || isClosed) return;
         rows.addAll(page.items.where((row) => ids.add(row.id)));
         hasMore = page.meta.hasMore;
       }
@@ -507,6 +508,8 @@ class AdminHouseholdListBloc
     final rows = _rows;
     final row = rows?.where((r) => r.id == id).firstOrNull;
     var moved = false;
+    // Under All by recently deleted: the row belongs after every deleted
+    // row, among the live ones, which may not be shown.
     var unplaced = false;
     // A row shown live already was read after the restore.
     if (rows != null && row != null && row.isDeleted) {
@@ -514,7 +517,7 @@ class AdminHouseholdListBloc
       // Under All by recently deleted, live rows come after every deleted
       // one, so the restored row moves among them.
       moved = leaves || _query.sort == AdminHouseholdSort.deleted;
-      unplaced = !leaves && moved && _hasMore && rows.any((r) => !r.isDeleted);
+      unplaced = !leaves && moved;
       _rows = [
         for (final r in rows)
           if (r.id != id) r else if (!leaves) r.restored(),

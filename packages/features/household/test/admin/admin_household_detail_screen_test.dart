@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -27,11 +28,11 @@ void main() {
     );
   });
 
-  Widget harness({ThemeData? theme}) => MaterialApp(
+  Widget harness({ThemeData? theme, String id = 'h_1'}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    home: AdminHouseholdDetailScreen(remote: remote, access: access, id: 'h_1'),
+    home: AdminHouseholdDetailScreen(remote: remote, access: access, id: id),
   );
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -223,6 +224,72 @@ void main() {
       expect(find.text("Couldn't load this household"), findsNothing);
       expect(find.text('Friday board games'), findsOneWidget);
       expect(reads, 2);
+    });
+
+    testWidgets('Try again pressed from the keyboard goes as it reads, and '
+        'hands its focus to the heading', (tester) async {
+      final retried = Completer<AdminHouseholdDetail>();
+      var reads = 0;
+      remote.onFetchDetail = (_) async {
+        if (reads++ == 0) throw _transient;
+        return retried.future;
+      };
+      await pumpScreen(tester);
+      Focus.of(tester.element(find.text('Try again'))).requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+
+      expect(find.text('Try again'), findsNothing);
+      final focused = FocusManager.instance.primaryFocus;
+      expect(focused, isNot(isA<FocusScopeNode>()));
+      expect(
+        focused,
+        same(
+          Focus.of(
+            tester.element(inAppBar('Household')),
+            createDependency: false,
+          ),
+        ),
+      );
+
+      retried.complete(adminDetail());
+      await tester.pumpAndSettle();
+      expect(find.text('Friday board games'), findsOneWidget);
+      expect(reads, 2);
+    });
+  });
+
+  group('another household', () {
+    testWidgets('a new id reads that household, as a go to its detail from '
+        "another's does", (tester) async {
+      remote.onFetchDetail = (id) async =>
+          id == 'h_1' ? adminDetail() : adminDetail(id: id, name: 'Bea games');
+      await pumpScreen(tester);
+      expect(inAppBar("Ada's table"), findsOneWidget);
+
+      // The router keeps the page for a go to another id of the same route,
+      // and builds the screen again with the new id.
+      await tester.pumpWidget(harness(id: 'h_2'));
+      await tester.pumpAndSettle();
+
+      expect(inAppBar('Bea games'), findsOneWidget);
+      expect(remote.calls, ['fetchDetail(h_1)', 'fetchDetail(h_2)']);
+    });
+
+    testWidgets("Try again after a new id reads the new one, not the old's", (
+      tester,
+    ) async {
+      remote.onFetchDetail = (_) async => throw _transient;
+      await pumpScreen(tester);
+      await tester.pumpWidget(harness(id: 'h_2'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.last, 'fetchDetail(h_2)');
     });
   });
 

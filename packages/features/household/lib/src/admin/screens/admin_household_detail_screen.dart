@@ -64,6 +64,9 @@ class AdminHouseholdDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider<AdminHouseholdDetailCubit>(
+    // A go to another household's detail keeps the router's page, and builds
+    // this screen again with the new id: a new cubit reads that household.
+    key: ValueKey(id),
     create: (_) =>
         AdminHouseholdDetailCubit(remote: remote, access: access, id: id)
           ..load(),
