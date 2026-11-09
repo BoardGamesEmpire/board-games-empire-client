@@ -80,6 +80,34 @@
   "@homeMenuAdmin": {
     "description": "Home drawer entry that opens the server administration screens (#41). Shown only to users the server lets read its data gateways. Today it opens the data gateway list directly; an admin dashboard takes it over later."
   },
+  "adminDashboardTitle": "Admin",
+  "@adminDashboardTitle": {
+    "description": "Title of the admin dashboard (#684), the screen listing the server administration sections the signed-in user may open, such as data gateways and households."
+  },
+  "adminDashboardLoading": "Checking your access…",
+  "@adminDashboardLoading": {
+    "description": "Announced to screen readers, beside a spinner, while the admin dashboard asks the server which administration sections the signed-in user may open (#684). Not drawn."
+  },
+  "adminDashboardFailedTitle": "Couldn't check your access",
+  "@adminDashboardFailedTitle": {
+    "description": "Title shown on the admin dashboard when the server could not be asked which administration sections the signed-in user may open, for example while offline (#684). A Try again button follows."
+  },
+  "adminDashboardFailedBody": "Check your connection and try again.",
+  "@adminDashboardFailedBody": {
+    "description": "Body under adminDashboardFailedTitle on the admin dashboard (#684)."
+  },
+  "adminDashboardRetry": "Try again",
+  "@adminDashboardRetry": {
+    "description": "Button on the admin dashboard that asks the server again which administration sections the signed-in user may open, after that failed (#684)."
+  },
+  "adminDashboardRefused": "You don't have access to any admin sections on this server",
+  "@adminDashboardRefused": {
+    "description": "Shown in place of the list on the admin dashboard when the server lets the signed-in user open none of its administration sections, for example after their role changed (#684)."
+  },
+  "adminDashboardGoHome": "Go home",
+  "@adminDashboardGoHome": {
+    "description": "Button under adminDashboardRefused on the admin dashboard that leaves for the home screen (#684)."
+  },
   "homeActiveServerLabel": "Server",
   "@homeActiveServerLabel": {
     "description": "Caption above the active server name in the home navigation drawer header (#129)."

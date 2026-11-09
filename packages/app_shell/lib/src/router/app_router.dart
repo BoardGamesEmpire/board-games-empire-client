@@ -232,12 +232,19 @@ abstract final class AppRoutes {
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
 
-  /// The DataGateway admin list (#41).
-  ///
-  /// Under `/admin` because DataGateways belong to the admin dashboard
-  /// (#274). When that lands it takes over the drawer entry and keeps this
-  /// path.
-  static const adminDataGateways = '/admin/data-gateways';
+  /// The admin dashboard (#684): the server administration sections the
+  /// caller's access shows. Each section's screens are its children, so a
+  /// deep link to one builds the dashboard beneath it.
+  static const admin = '/admin';
+
+  /// The DataGateway admin list (#41), a section beneath [admin] (#684). The
+  /// path is the one it had before the dashboard.
+  static const adminDataGateways = '$admin/$_adminDataGatewaysSegment';
+
+  // The sections' paths relative to [admin], which is how the route table
+  // declares them, as with the household children (#308).
+  static const _adminDataGatewaysSegment = 'data-gateways';
+  static const _adminHouseholdsSegment = 'households';
 
   /// The add form, beneath the list.
   static const dataGatewayAdd = '$adminDataGateways/$_dataGatewayAddSegment';
@@ -270,6 +277,21 @@ abstract final class AppRoutes {
   /// The location of one DataGateway's own page.
   static String dataGatewayDetailOf(String id) =>
       '$adminDataGateways/${Uri.encodeComponent(id)}';
+
+  /// Every household on the server, deleted ones too (#685), a section
+  /// beneath [admin] (#684). Not [household], which lists the caller's own.
+  static const adminHouseholds = '$admin/$_adminHouseholdsSegment';
+
+  /// The id segment of one household's staff detail, beneath
+  /// [adminHouseholds]. Build a concrete location with
+  /// [adminHouseholdDetailOf].
+  static const adminHouseholdIdParam = 'adminHouseholdId';
+
+  static const _adminHouseholdDetailSegment = ':$adminHouseholdIdParam';
+
+  /// The location of one household's staff detail (#685).
+  static String adminHouseholdDetailOf(String id) =>
+      '$adminHouseholds/${Uri.encodeComponent(id)}';
 
   static const error = '/error';
 
@@ -600,6 +622,31 @@ typedef DataGatewayDetailScreenBuilder = Widget? Function(
   String dataGatewayId,
 );
 
+/// Builds the admin dashboard (#684) for the [AppRoutes.admin] route.
+/// Supplied by [BgeApp]; returns null when no active server is resolvable,
+/// in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Not gated on the user's access, as [DataGatewayListScreenBuilder] isn't:
+/// the dashboard says why it shows no section.
+typedef AdminDashboardScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the staff households list (#685) for the [AppRoutes.adminHouseholds]
+/// route. Supplied by [BgeApp]; returns null when no active server is
+/// resolvable or its container carries no `AdminHouseholdRemoteDataSource`,
+/// in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Not gated on the user's access: the list says when the server refuses it.
+typedef AdminHouseholdListScreenBuilder = Widget? Function(
+  BuildContext context,
+);
+
+/// Builds one household's staff detail (#685) for [householdId]. Same null
+/// contract as [AdminHouseholdListScreenBuilder].
+typedef AdminHouseholdDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
 /// Makes the location the router reports for the address bar follow pushed
 /// screens, not only the declarative stack beneath them (#321). The web
 /// composition calls it before the router is built; native doesn't.
@@ -663,6 +710,9 @@ GoRouter buildAppRouter({
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
   DataGatewayDetailScreenBuilder? dataGatewayDetailBuilder,
+  AdminDashboardScreenBuilder? adminDashboardBuilder,
+  AdminHouseholdListScreenBuilder? adminHouseholdListBuilder,
+  AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -1060,50 +1110,89 @@ GoRouter buildAppRouter({
           stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
         ),
       ),
-      // #41: the DataGateway admin screens. The forms and a DataGateway's own
-      // page (#457) are children of the list, as the household children are of
-      // theirs (#308), so a deep link to one builds the list beneath it and
-      // leaving it is a plain pop. The add form stays ahead of the detail:
-      // see [AppRoutes.dataGatewayDetail].
+      // #684: the admin dashboard, with each section's screens beneath it,
+      // so a deep link to a section builds the dashboard beneath it and
+      // leaving the section is a plain pop back to it. The sections' paths
+      // didn't change when they moved beneath it.
       GoRoute(
-        path: AppRoutes.adminDataGateways,
+        path: AppRoutes.admin,
         pageBuilder: (context, state) => _materialPage(
           state,
-          dataGatewayListBuilder?.call(context) ??
-              const NotYetAvailableScreen(),
+          adminDashboardBuilder?.call(context) ?? const NotYetAvailableScreen(),
         ),
         routes: [
+          // #41: the DataGateway admin screens. The forms and a DataGateway's
+          // own page (#457) are children of the list, as the household
+          // children are of theirs (#308), so a deep link to one builds the
+          // list beneath it and leaving it is a plain pop. The add form stays
+          // ahead of the detail: see [AppRoutes.dataGatewayDetail].
           GoRoute(
-            path: AppRoutes._dataGatewayAddSegment,
+            path: AppRoutes._adminDataGatewaysSegment,
             pageBuilder: (context, state) => _materialPage(
               state,
-              dataGatewayFormBuilder?.call(context, null) ??
+              dataGatewayListBuilder?.call(context) ??
                   const NotYetAvailableScreen(),
             ),
+            routes: [
+              GoRoute(
+                path: AppRoutes._dataGatewayAddSegment,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  dataGatewayFormBuilder?.call(context, null) ??
+                      const NotYetAvailableScreen(),
+                ),
+              ),
+              GoRoute(
+                path: AppRoutes._dataGatewayDetailSegment,
+                pageBuilder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
+                  return _materialPage(
+                    state,
+                    dataGatewayDetailBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+              GoRoute(
+                path: AppRoutes._dataGatewayEditSegment,
+                pageBuilder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
+                  return _materialPage(
+                    state,
+                    dataGatewayFormBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+            ],
           ),
+          // #685: every household on the server, with a live one's staff
+          // detail beneath the list, for the reason the DataGateway page is
+          // beneath its list.
           GoRoute(
-            path: AppRoutes._dataGatewayDetailSegment,
-            pageBuilder: (context, state) {
-              final id =
-                  state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
-              return _materialPage(
-                state,
-                dataGatewayDetailBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-          ),
-          GoRoute(
-            path: AppRoutes._dataGatewayEditSegment,
-            pageBuilder: (context, state) {
-              final id =
-                  state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
-              return _materialPage(
-                state,
-                dataGatewayFormBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
+            path: AppRoutes._adminHouseholdsSegment,
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              adminHouseholdListBuilder?.call(context) ??
+                  const NotYetAvailableScreen(),
+            ),
+            routes: [
+              GoRoute(
+                path: AppRoutes._adminHouseholdDetailSegment,
+                pageBuilder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.adminHouseholdIdParam] ??
+                      '';
+                  return _materialPage(
+                    state,
+                    adminHouseholdDetailBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
