@@ -42,27 +42,31 @@ final class PlacedGame<T> extends Equatable {
 /// 2. A standalone item, unmarked.
 /// 3. Once the list is [complete], a linked item with `present` empty, marked.
 ///
-/// Pass 2 places the other linked items that aren't held (below). Each is
-/// nested when any of its `present` base games is top level, and is top
-/// level, unmarked, when all of them are nested: those base games are shown,
-/// only nested. So nesting is one level deep, and a chain of expansions
-/// alternates: one nested under the base before it, the next top level, the
-/// one after nested under that. A cycle no anchor leads into is top level,
-/// unmarked, holding nothing.
+/// Pass 2 places the other linked items. Each is nested when any of its
+/// `present` base games is top level, and is top level, unmarked, when all
+/// of them are nested: those base games are shown, only nested. While the
+/// list is not [complete], an item with an `absent` base game is never put
+/// at top level this way, as that base game may be on a later page and hold
+/// it. So nesting is one level deep, and a chain of expansions alternates:
+/// one nested under the base before it, the next top level, the one after
+/// nested under that. A cycle no anchor leads into is top level, unmarked,
+/// holding nothing, and so is an item that hangs from one: an expansion of a
+/// cycle's member, an expansion of that, and so on. Links that loop are bad
+/// data; this shows every game in them without picking a way to break the
+/// loop.
 ///
 /// Every item not held, a standalone one too, goes once into the expansions
 /// of each of its `present` base games shown at top level, in input order.
 ///
-/// While the list is not [complete], a linked, non-standalone item with no
-/// anchor among its `present` base games is instead held, left out, when any
-/// of its base games is `absent`, because that base game may be on a later
-/// page, or when any of its `present` base games is held, and so on along a
-/// chain to a fixpoint. This
-/// holds every linked item with `present` empty. Holding it keeps rows from
-/// moving: a later page that brings the absent base game nests the item
-/// under it rather than taking it from the top level. A cycle with no held
-/// member stays top level. An item nested under an anchor, and a standalone
-/// item, is never held; nothing is held once the list is [complete].
+/// While the list is not [complete], an item pass 2 leaves unplaced is
+/// instead held, left out, when any of its base games is `absent`, or when
+/// any of its `present` base games is held, and so on along a chain to a
+/// fixpoint. This holds every linked item with `present` empty. Holding it
+/// keeps rows from moving: a later page that brings the absent base game
+/// nests the item under it rather than taking it from the top level. A
+/// cycle with no held member stays top level. An item nested under a base
+/// game shown at top level, and a standalone item, is never held; nothing
+/// is held once the list is [complete].
 ///
 /// The result lists the top-level items in input order, each once.
 List<PlacedGame<T>> placeExpansions<T>(
@@ -115,41 +119,14 @@ List<PlacedGame<T>> placeExpansions<T>(
     }
   }
 
-  final held = <String>{};
-  if (!complete) {
-    final unparented = [
-      for (final entry in entries)
-        if (entry.linked &&
-            !entry.standalone &&
-            !entry.present.any(anchors.containsKey))
-          entry,
-    ];
-    for (final entry in unparented) {
-      if (entry.someAbsent) held.add(gameIdOf(entry.item));
-    }
-    // Held-ness spreads along chains; the set only grows, so this ends.
-    var grew = true;
-    while (grew) {
-      grew = false;
-      for (final entry in unparented) {
-        if (entry.present.any(held.contains)) {
-          grew = held.add(gameIdOf(entry.item)) || grew;
-        }
-      }
-    }
-  }
-
   // Decided in rounds out from the anchors, each from the one before's
   // answers, so the input's order changes nothing. Every undecided item is
-  // linked, not standalone, with `present` non-empty: anything else is an
-  // anchor or held.
+  // linked and not standalone: anything else is an anchor.
   final top = {...anchors.keys};
   final nested = <String>{};
   var undecided = [
     for (final entry in entries)
-      if (!anchors.containsKey(gameIdOf(entry.item)) &&
-          !held.contains(gameIdOf(entry.item)))
-        entry,
+      if (!anchors.containsKey(gameIdOf(entry.item))) entry,
   ];
   while (undecided.isNotEmpty) {
     final toTop = <String>[];
@@ -159,7 +136,8 @@ List<PlacedGame<T>> placeExpansions<T>(
       final id = gameIdOf(entry.item);
       if (entry.present.any(top.contains)) {
         toNested.add(id);
-      } else if (entry.present.every(nested.contains)) {
+      } else if ((complete || !entry.someAbsent) &&
+          entry.present.every(nested.contains)) {
         toTop.add(id);
       } else {
         rest.add(entry);
@@ -170,8 +148,29 @@ List<PlacedGame<T>> placeExpansions<T>(
     nested.addAll(toNested);
     undecided = rest;
   }
-  // What no round reaches is a cycle: top level, holding nothing.
-  final cyclic = {for (final entry in undecided) gameIdOf(entry.item)};
+
+  final held = <String>{};
+  if (!complete) {
+    for (final entry in undecided) {
+      if (entry.someAbsent) held.add(gameIdOf(entry.item));
+    }
+    // Held-ness spreads along chains; the set only grows, so this ends.
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final entry in undecided) {
+        if (entry.present.any(held.contains)) {
+          grew = held.add(gameIdOf(entry.item)) || grew;
+        }
+      }
+    }
+  }
+  // What no round reaches and isn't held is a cycle or hangs from one: top
+  // level, holding nothing.
+  final cyclic = {
+    for (final entry in undecided)
+      if (!held.contains(gameIdOf(entry.item))) gameIdOf(entry.item),
+  };
 
   final children = <String, List<T>>{};
   for (final entry in entries) {

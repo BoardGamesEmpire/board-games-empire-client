@@ -183,6 +183,43 @@ void main() {
           PlacedGame(c, expansions: [both]),
         ]);
       });
+
+      test('nests an expansion under a top-level base that is itself an '
+          'expansion while another of its bases is absent', () {
+        final x = _g(
+          'x',
+          links: [_link('c'), _link('later')],
+          type: ContentType.expansion,
+        );
+        final later = _g('later');
+        expect(_place([a, b, c, x], complete: false), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [x]),
+        ]);
+        expect(_place([a, b, c, x, later], complete: false), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [x]),
+          PlacedGame(later, expansions: [x]),
+        ]);
+      });
+
+      test('nests an expansion under a top-level base that is itself an '
+          'expansion while another of its shown bases is held', () {
+        final held = _g(
+          'held',
+          links: [_link('later')],
+          type: ContentType.expansion,
+        );
+        final x = _g(
+          'x',
+          links: [_link('c'), _link('held')],
+          type: ContentType.expansion,
+        );
+        expect(_place([a, b, c, held, x], complete: false), [
+          PlacedGame(a, expansions: [b]),
+          PlacedGame(c, expansions: [x]),
+        ]);
+      });
     });
 
     test('a link to itself is ignored', () {
@@ -287,6 +324,20 @@ void main() {
       final a = _g('a', links: [_link('b')], type: ContentType.expansion);
       final b = _g('b', links: [_link('a')], type: ContentType.expansion);
       expect(_place([a, b], complete: false), [PlacedGame(a), PlacedGame(b)]);
+    });
+
+    test('an expansion hanging from a cycle is top level, unmarked, holding '
+        'nothing', () {
+      final a = _g('a', links: [_link('b')], type: ContentType.expansion);
+      final b = _g('b', links: [_link('a')], type: ContentType.expansion);
+      final c = _g('c', links: [_link('a')], type: ContentType.expansion);
+      final d = _g('d', links: [_link('c')], type: ContentType.expansion);
+      expect(_place([a, b, c, d]), [
+        PlacedGame(a),
+        PlacedGame(b),
+        PlacedGame(c),
+        PlacedGame(d),
+      ]);
     });
   });
 }
