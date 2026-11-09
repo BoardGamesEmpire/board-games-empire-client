@@ -659,12 +659,26 @@ jobs:
   # Always with the debug key. This job never names the release key or
   # its environment, so nothing a PR changes here can reach them;
   # `release-android` below signs.
+  #
+  # Every Android build's `versionCode` is the first-parent commit count
+  # of the commit it builds (#419), so each master build installs over
+  # the one before and a release sits above every earlier build. The
+  # count needs every commit but none of their files, so the checkout
+  # fetches full history without trees (`filter: tree:0`) and only this
+  # commit's files. On a PR the count is the merge ref's, used only to
+  # check the flag works.
   build-android:
     name: Android build
     needs: generate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      - name: Count master's commits for the build number
+        id: build-number
+        run: echo "n=$(git rev-list --count --first-parent HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: generated-sources
@@ -678,7 +692,9 @@ jobs:
       - name: Android build self-test
         run: dart run tool/build_android.dart --self-test
       - name: Build the APK with the debug key
-        run: dart run tool/build_android.dart
+        env:
+          BUILD_NUMBER: ${{ steps.build-number.outputs.n }}
+        run: dart run tool/build_android.dart --build-number "$BUILD_NUMBER"
 
   # ── Gates (#419) ─────────────────────────────────────────────────
   # Every test gate, in one list. `release-android`, `release` and
@@ -697,7 +713,8 @@ jobs:
   # Signs master's APK with the release key and uploads it with its
   # checksum, as the 7-day `android-apk` artifact, not a release (#785
   # owns releases). Only a push to master in this repository runs it, so
-  # a fork's master builds in `build-android` and uploads nothing.
+  # a fork's master builds in `build-android` and uploads nothing. It
+  # numbers its build the same way.
   #
   # The key's four secrets live in the `android-release` environment,
   # which only master may deploy to. GitHub hands a job an environment's
@@ -717,6 +734,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      - name: Count master's commits for the build number
+        id: build-number
+        run: echo "n=$(git rev-list --count --first-parent HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: generated-sources
@@ -746,7 +769,8 @@ jobs:
           BGE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BGE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           BGE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: dart run tool/build_android.dart --require-release-signing
+          BUILD_NUMBER: ${{ steps.build-number.outputs.n }}
+        run: dart run tool/build_android.dart --require-release-signing --build-number "$BUILD_NUMBER"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-apk
