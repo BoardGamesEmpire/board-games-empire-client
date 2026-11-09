@@ -57,6 +57,39 @@ void main() {
       );
       expect(blank.name, isNull);
     });
+
+    test('owners are equal by id, username and display name', () {
+      final userId = ['u', '1'].join();
+      final owner = AdminHouseholdOwner(
+        userId: userId,
+        username: 'ada',
+        displayName: 'Ada L.',
+      );
+
+      expect(owner.props, ['u1', 'ada', 'Ada L.']);
+      expect(
+        owner,
+        const AdminHouseholdOwner(
+          userId: 'u1',
+          username: 'ada',
+          displayName: 'Ada L.',
+        ),
+      );
+      expect(
+        owner,
+        isNot(AdminHouseholdOwner(userId: userId, username: 'ada')),
+      );
+      expect(
+        owner,
+        isNot(
+          AdminHouseholdOwner(
+            userId: userId,
+            username: 'bea',
+            displayName: 'Ada L.',
+          ),
+        ),
+      );
+    });
   });
 
   group('AdminHouseholdRow', () {
@@ -86,6 +119,55 @@ void main() {
           owners: const [AdminHouseholdOwner(userId: 'u1', username: 'ada')],
         ),
       );
+    });
+  });
+
+  group('AdminHouseholdDetail', () {
+    final createdAt = DateTime.utc(2026, 1, 1);
+    HouseholdMember member(String id) => HouseholdMember(
+      id: id,
+      userId: 'user_$id',
+      householdId: 'h1',
+      role: HouseholdRole.householdOwner,
+      username: 'ada',
+      createdAt: createdAt,
+      updatedAt: createdAt,
+    );
+    AdminHouseholdDetail detail({
+      String? description = 'Friday nights',
+      String? languageName = 'English',
+      List<HouseholdMember>? members,
+    }) => AdminHouseholdDetail(
+      id: 'h1',
+      name: 'Catan Club',
+      description: description,
+      image: 'https://example.test/i.png',
+      reach: Reach.friends,
+      languageName: languageName,
+      createdAt: createdAt,
+      members: members ?? [member('m1')],
+    );
+
+    test('keeps what it is given', () {
+      final read = detail();
+
+      expect(read.id, 'h1');
+      expect(read.name, 'Catan Club');
+      expect(read.description, 'Friday nights');
+      expect(read.image, 'https://example.test/i.png');
+      expect(read.reach, Reach.friends);
+      expect(read.languageName, 'English');
+      expect(read.createdAt, createdAt);
+      expect(read.members, [member('m1')]);
+    });
+
+    test('details are equal by every field, the roster included', () {
+      expect(detail(), detail());
+      expect(detail().hashCode, detail().hashCode);
+      expect(detail(), isNot(detail(description: null)));
+      expect(detail(), isNot(detail(languageName: null)));
+      expect(detail(), isNot(detail(members: [member('m2')])));
+      expect(detail(), isNot(detail(members: const [])));
     });
   });
 }

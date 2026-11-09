@@ -381,5 +381,47 @@ void main() {
         },
       );
     }
+
+    Map<String, dynamic> household() =>
+        (jsonDecode(_detail()) as Map<String, dynamic>)['household']
+            as Map<String, dynamic>;
+    for (final (label, body, says) in [
+      ('no household', <String, dynamic>{}, 'missing the "household" object'),
+      (
+        'a household that is not an object',
+        {'household': 'hh_1'},
+        '"household" is String, expected an object',
+      ),
+      (
+        'no members',
+        {'household': household()..remove('members')},
+        'missing the "members" array',
+      ),
+      (
+        'members that are not a list',
+        {
+          'household': household()..['members'] = {'m1': 'ann'},
+        },
+        'expected a list',
+      ),
+      (
+        'a languageTag that is not an object',
+        {'household': household()..['languageTag'] = 'en'},
+        '"languageTag" is String, expected an object or null',
+      ),
+    ]) {
+      test('fetchDetail: a body with $label is permanent with its status', () {
+        final remote = answering(jsonEncode(body));
+        return expectLater(
+          remote.fetchDetail('hh_1'),
+          throwsA(
+            isA<AdminHouseholdPermanentException>()
+                .having((e) => e.statusCode, 'statusCode', 200)
+                .having((e) => e.cause, 'cause', isA<FormatException>())
+                .having((e) => e.message, 'message', contains(says)),
+          ),
+        );
+      });
+    }
   });
 }

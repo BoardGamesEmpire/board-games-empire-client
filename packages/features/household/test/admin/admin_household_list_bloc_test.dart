@@ -640,6 +640,75 @@ void main() {
     );
 
     blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
+      'a change that sends the same search while the first page reads keeps '
+      'the spinner, under the new text',
+      setUp: () {
+        reload = Completer<_Page>();
+        remote.onFetchPage = (_) => reload.future;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const AdminHouseholdListSearchChanged('ab'));
+        await pumpEventQueue();
+        bloc.add(const AdminHouseholdListSearchChanged(' ab '));
+        await pumpEventQueue();
+        reload.complete(adminPageOf([ada]));
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const AdminHouseholdListLoading(query: AdminHouseholdQuery(text: 'ab')),
+        const AdminHouseholdListLoading(
+          query: AdminHouseholdQuery(text: ' ab '),
+        ),
+        ready([ada], query: const AdminHouseholdQuery(text: ' ab ')),
+      ],
+      verify: (_) => expect(remote.calls, [_fetch(q: 'ab')]),
+    );
+
+    for (final (label, error, shown)
+        in <
+          (
+            String,
+            AdminHouseholdRemoteException,
+            AdminHouseholdListState Function(AdminHouseholdQuery),
+          )
+        >[
+          (
+            'Refused',
+            _forbidden,
+            (AdminHouseholdQuery query) =>
+                AdminHouseholdListRefused(query: query),
+          ),
+          (
+            'Failed',
+            _transient,
+            (AdminHouseholdQuery query) =>
+                AdminHouseholdListFailed(query: query),
+          ),
+        ]) {
+      blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
+        'a change that sends the same search keeps $label, under the new '
+        'text, and reads nothing',
+        setUp: () => remote.onFetchPage = (_) async => throw error,
+        build: build,
+        act: (bloc) async {
+          bloc.add(const AdminHouseholdListSearchChanged('ab'));
+          await pumpEventQueue();
+          bloc.add(const AdminHouseholdListSearchChanged(' ab '));
+          await pumpEventQueue();
+        },
+        expect: () => [
+          const AdminHouseholdListLoading(
+            query: AdminHouseholdQuery(text: 'ab'),
+          ),
+          shown(const AdminHouseholdQuery(text: 'ab')),
+          shown(const AdminHouseholdQuery(text: ' ab ')),
+        ],
+        verify: (_) => expect(remote.calls, [_fetch(q: 'ab')]),
+      );
+    }
+
+    blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
       'live with the deleted sort falls back to name',
       setUp: () => remote.listing([ada]),
       build: build,
