@@ -1,0 +1,20 @@
+name: Set up the Android build
+description: >-
+  Installs the JDK the Android Gradle plugin builds with, with Gradle's
+  caches keyed on the app's Gradle files. Both Android jobs use it, so the
+  APK master signs is built with the toolchain the PR's build checked
+  (#51). Run it after actions/checkout.
+
+runs:
+  using: composite
+  steps:
+    # The Android Gradle plugin needs JDK 17 or newer.
+    - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: |
+          apps/mobile/android/*.gradle.kts
+          apps/mobile/android/app/build.gradle.kts
+          apps/mobile/android/gradle/wrapper/gradle-wrapper.properties

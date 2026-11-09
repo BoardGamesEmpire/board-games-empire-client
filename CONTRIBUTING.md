@@ -142,13 +142,14 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `test` | All non-golden tests, 22 packages. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
-| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, and the client version |
+| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, the client version, the Flutter release digest, and that no native app reaches a web implementation |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `check:a11y-audit` | Fail on a `*_screen.dart` with no `group('accessibility audit')` naming it in its package's tests (#50); prints the exempt screens. Mirrors CI. |
 | `schema:dump` | Refresh the committed Drift schema snapshots |
 | `web` / `web:proxy` / `web:server` | Web dev server, dev proxy, or both together |
 | `build-web` | The release web build the published image ships: the drift fetch, then `tool/build_web.dart`, which CI's `build-web` job also runs |
+| `build-mobile-android` | The Android release APK, through `tool/build_android.dart`, which CI's `build-android` job also runs: one universal APK, checked for its package, the INTERNET permission and its signer, beside its checksum |
 | `mobile` / `desktop-macos` / `desktop-linux` / `desktop-windows` | Run an app |
 
 Three scripts assume a POSIX shell and will not run under cmd or PowerShell:
@@ -236,7 +237,7 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in eleven jobs:
+pushes to `master`, in twelve jobs:
 
 | Job | Gate |
 | --- | --- |
@@ -251,9 +252,13 @@ pushes to `master`, in eleven jobs:
 | `test` | One job per package, golden tags excluded (the `goldens` job runs those) |
 | `test-web` | The browser-only (`@TestOn('browser')`) suites in Chrome, for the packages that have them |
 | `build-web` | The release web build succeeds, its drift runtime files match their committed checksums, it holds no dotfile, and the files the app boots from are present |
+| `build-android` | The release APK builds, debug-signed, as `com.boardgamesempire.app`, with the INTERNET permission and a signature that verifies |
 
-On a push to `master`, a twelfth job, `publish-web`, publishes that build as an
-image once all eleven have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
+On a push to `master`, two more jobs run once all twelve have passed.
+`release-android` signs the APK with the release key, from the
+`android-release` environment, and uploads it as the `android-apk` artifact;
+[docs/dev/android-signing.md](docs/dev/android-signing.md) covers the key.
+`publish-web` publishes the web build as an image. [docs/dev/web-image.md](docs/dev/web-image.md)
 covers its tags and contents.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline

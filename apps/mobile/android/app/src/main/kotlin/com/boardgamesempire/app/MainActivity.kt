@@ -1,4 +1,4 @@
-package com.boardgamesempire.mobile.mobile
+package com.boardgamesempire.app
 
 import io.flutter.embedding.android.FlutterActivity
 

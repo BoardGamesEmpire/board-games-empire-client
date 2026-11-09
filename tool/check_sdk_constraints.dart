@@ -1,5 +1,5 @@
 // Verifies the invariants that hold across every package in the
-// workspace. Four of them today:
+// workspace. Five of them today:
 //
 //   1. SDK constraints match the root pubspec (#153) — the bulk of this
 //      file. `--fix` repairs it.
@@ -8,6 +8,8 @@
 //      repairs the pubspecs; the native manifests are check-only.
 //   4. `tool/flutter_sdk.sha256` names the pinned Flutter release
 //      (#159, #426). Check-only.
+//   5. No native app depends, however indirectly, on a web
+//      implementation (#51). Check-only.
 //
 // Kept under this filename because CI, the `check:constraints` melos
 // script, and a handful of comments all reference it; the name is
@@ -73,6 +75,26 @@
 // check holds the version it names to the pin. It can't check the digest
 // itself without the network, and it doesn't rewrite the file: the digest
 // comes from Flutter's release list, not from anything in this repo.
+//
+// ── 5. Platform separation ─────────────────────────────────────────
+//
+// The apps are thin wrappers over paired implementations: apps/browser
+// takes the web ones (web_platform, web_storage, web_network), and
+// every other app (apps/mobile, apps/desktop) the native ones, all behind
+// shared interfaces. A native app that reaches a web package compiles its
+// `dart:js_interop` code into a binary that can never run it. This
+// walks each native app's dependencies and fails on any chain that ends
+// at a web package.
+//
+// It follows each dependency named for a workspace member, since that is
+// what pub resolves it to: a `path:` dependency must carry the name of the
+// package it points at, and a bare constraint resolves to the member. A
+// hosted plugin's web half is in the resolved graph too, but Flutter
+// registers it, and so compiles it, only for web. `dev_dependencies:`
+// never reach an app's binary. The check covers apps/desktop as well,
+// which no CI job builds.
+//
+// Check-only: the fix is a change of dependency, not a pubspec rewrite.
 //
 // ── Coverage ───────────────────────────────────────────────────────
 //
@@ -197,17 +219,22 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final members = (rootYaml['workspace'] as YamlList?)?.cast<String>();
+  // Without a leading `./` or a trailing slash, both of which pub accepts
+  // and ignores. Every check names a member by this string, so
+  // `apps/mobile/` would otherwise be no app, and `./packages/platform/web`
+  // no web package.
+  final members = (rootYaml['workspace'] as YamlList?)
+      ?.cast<String>()
+      .map((dir) => dir.replaceAll(RegExp(r'^(\./+)+|/+$'), ''))
+      .toList();
   if (members == null || members.isEmpty) {
     stderr.writeln('Root pubspec.yaml lists no `workspace:` members.');
     exit(1);
   }
 
-  // An app is a member directly under apps/. A library nested deeper,
-  // such as a plugin kept beside its app, has no client version to hold.
-  // Loud rather than a pass when there is none: the version invariant
-  // would check nothing and still report success.
-  final apps = members.where(RegExp(r'^apps/[^/]+$').hasMatch).toSet();
+  // Loud rather than a pass when there is no app ([_app]): the version
+  // invariant would check nothing and still report success.
+  final apps = members.where(_app.hasMatch).toSet();
   if (apps.isEmpty) {
     stderr.writeln(
       'No `workspace:` member is under apps/, so there is no app version '
@@ -222,6 +249,8 @@ void main(List<String> args) {
   final unfixable = <String>[];
   // A set, since one pubspec can need both rewrites.
   final rewrittenPaths = <String>{};
+  // Every member's pubspec as read, for the separation check.
+  final memberPubspecs = <String, YamlMap>{};
   // The problems a rewrite cleared, which are all --fix may claim. One
   // pubspec can have a version it rewrote beside an environment it
   // could not.
@@ -244,6 +273,7 @@ void main(List<String> args) {
 
     var source = file.readAsStringSync();
     final yaml = loadYaml(source) as YamlMap;
+    memberPubspecs[dir] = yaml;
 
     // Before the environment checks, which `continue` past this point.
     _checkPublishTo(path, yaml, publishProblems);
@@ -333,6 +363,8 @@ void main(List<String> args) {
     }
   }
 
+  final separationProblems = _platformSeparationProblems(memberPubspecs);
+
   final manifestProblems = <String>[];
   var manifestCount = 0;
   for (final app in apps) {
@@ -406,10 +438,23 @@ void main(List<String> args) {
     );
   }
 
+  if (separationProblems.isNotEmpty) {
+    stderr.writeln('Native apps reach a web implementation:');
+    for (final p in separationProblems) {
+      stderr.writeln('  $p');
+    }
+    stderr.writeln(
+      '\nWeb implementations are compiled only into apps/browser. Depend on '
+      'the shared interface (storage_interface, network_interface) instead '
+      '— this check does not rewrite it for you.',
+    );
+  }
+
   final checkOnlyFailed =
       publishProblems.isNotEmpty ||
       manifestProblems.isNotEmpty ||
-      digestProblems.isNotEmpty;
+      digestProblems.isNotEmpty ||
+      separationProblems.isNotEmpty;
   final problems = [...sdkProblems, ...versionProblems];
 
   if (problems.isEmpty) {
@@ -418,7 +463,8 @@ void main(List<String> args) {
       'Workspace invariants hold across ${members.length} packages plus '
       'the root (Flutter $pin, sdk $expectedSdk, publish_to none, version '
       '$expectedVersion in ${apps.length} apps and $manifestCount native '
-      'manifests, and the Flutter release digest).',
+      'manifests, the Flutter release digest, and no native app reaching a '
+      'web implementation).',
     );
     return;
   }
@@ -1135,11 +1181,223 @@ void _selfTest() {
     false,
   );
 
+  // A workspace for the separation check: each member's directory and
+  // pubspec, the web packages under their real names.
+  List<String> separation(
+    Map<String, String> pubspecs,
+  ) => _platformSeparationProblems({
+    'packages/platform/web': loadYaml('name: web_platform\n') as YamlMap,
+    'packages/storage/web_storage': loadYaml('name: web_storage\n') as YamlMap,
+    'packages/network/web_network': loadYaml('name: web_network\n') as YamlMap,
+    for (final MapEntry(:key, :value) in pubspecs.entries)
+      key: loadYaml(value) as YamlMap,
+  });
+
+  expect(
+    'separation: a clean chain',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n'
+          '  app_shell:\n    path: ../../packages/app_shell\n',
+      'packages/app_shell':
+          'name: app_shell\ndependencies:\n  core:\n    path: ../core\n',
+      'packages/core': 'name: core\n',
+    }),
+    <String>[],
+  );
+
+  expect(
+    'separation: a direct dependency',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n'
+          '  web_platform:\n    path: ../../packages/platform/web\n',
+    }),
+    ['apps/mobile reaches packages/platform/web through packages/platform/web'],
+  );
+
+  expect(
+    'separation: a transitive dependency',
+    separation({
+      'apps/desktop':
+          'name: desktop\ndependencies:\n  a:\n    path: ../../packages/a\n',
+      'packages/a':
+          'name: a\ndependencies:\n'
+          '  web_storage:\n    path: ../storage/web_storage\n',
+    }),
+    [
+      'apps/desktop reaches packages/storage/web_storage through '
+          'packages/a -> packages/storage/web_storage',
+    ],
+  );
+
+  // Pub resolves a bare constraint on a workspace member's name to that
+  // member, so it is as much an edge as a path.
+  expect(
+    "separation: a bare dependency on a member's name",
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n'
+          '  app_shell:\n    path: ../../packages/app_shell\n',
+      'packages/app_shell':
+          'name: app_shell\ndependencies:\n  web_storage: any\n',
+    }),
+    [
+      'apps/mobile reaches packages/storage/web_storage through '
+          'packages/app_shell -> packages/storage/web_storage',
+    ],
+  );
+
+  // Pub requires a dependency's key to be the name of the package it
+  // points at, so a member is found by name whatever its path says.
+  expect(
+    'separation: an absolute path to a member',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n'
+          '  web_platform:\n    path: /work/client/packages/platform/web\n',
+    }),
+    ['apps/mobile reaches packages/platform/web through packages/platform/web'],
+  );
+
+  expect(
+    "separation: dev_dependencies aren't compiled into the app",
+    separation({
+      'apps/mobile':
+          'name: mobile\ndev_dependencies:\n'
+          '  web_network:\n    path: ../../packages/network/web_network\n',
+    }),
+    <String>[],
+  );
+
+  // A hosted plugin's web half is registered, and so compiled, only for
+  // web.
+  expect(
+    'separation: hosted dependencies are ignored',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n  url_launcher_web: ^2.4.3\n',
+    }),
+    <String>[],
+  );
+
+  // Every app but apps/browser builds for a native platform, a new one
+  // included.
+  expect(
+    'separation: every app but apps/browser is native',
+    separation({
+      'apps/browser':
+          'name: browser\ndependencies:\n'
+          '  web_platform:\n    path: ../../packages/platform/web\n',
+      'apps/tv':
+          'name: tv\ndependencies:\n'
+          '  web_network:\n    path: ../../packages/network/web_network\n',
+    }),
+    [
+      'apps/tv reaches packages/network/web_network through '
+          'packages/network/web_network',
+    ],
+  );
+
+  // An app is a member directly under apps/, as the version check has it.
+  // A package nested beside apps/browser is a web library, not an app.
+  expect(
+    'separation: a member nested under apps/ is not an app',
+    separation({
+      'apps/browser/plugin':
+          'name: plugin\ndependencies:\n'
+          '  web_platform:\n    path: ../../../packages/platform/web\n',
+    }),
+    <String>[],
+  );
+
+  expect(
+    'separation: a cycle terminates',
+    separation({
+      'apps/mobile':
+          'name: mobile\ndependencies:\n  a:\n    path: ../../packages/a\n',
+      'packages/a': 'name: a\ndependencies:\n  b:\n    path: ../b\n',
+      'packages/b': 'name: b\ndependencies:\n  a:\n    path: ../a\n',
+    }),
+    <String>[],
+  );
+
   if (failures > 0) {
     stderr.writeln('\n$failures self-test failure(s).');
     exit(1);
   }
   stdout.writeln('check_sdk_constraints self-test passed.');
+}
+
+/// The web implementations, which only apps/browser may compile in (#51).
+const _webOnlyPackages = {
+  'packages/platform/web',
+  'packages/storage/web_storage',
+  'packages/network/web_network',
+};
+
+/// The one app that builds for the browser. Every other app builds for a
+/// native platform.
+const _webApp = 'apps/browser';
+
+/// An app is a member directly under apps/. A library nested deeper, such
+/// as a plugin kept beside its app, is not one: it has no client version
+/// to hold, and it builds for whichever platform its app does.
+final _app = RegExp(r'^apps/[^/]+$');
+
+/// One problem per web implementation ([_webOnlyPackages]) a native app
+/// (any [_app] but [_webApp]) reaches through its
+/// `dependencies:`, each naming the chain that reaches it.
+///
+/// [pubspecs] maps each member's directory, relative to the root, to its
+/// parsed pubspec. An edge is a dependency named for a member, which is
+/// what pub resolves it to: a `path:` dependency must carry the name of
+/// the package it points at, and a bare constraint resolves to the member
+/// whatever it says. Any other dependency is a leaf: a hosted plugin's web
+/// half is registered, and so compiled, only for web.
+/// `dev_dependencies:` are not compiled into an app. A workspace with no
+/// native app is valid.
+List<String> _platformSeparationProblems(Map<String, YamlMap> pubspecs) {
+  final members = {
+    for (final MapEntry(key: dir, value: pubspec) in pubspecs.entries)
+      if (pubspec['name'] case final String name) name: dir,
+  };
+
+  Iterable<String> edges(String dir) sync* {
+    final deps = pubspecs[dir]?['dependencies'];
+    if (deps is! YamlMap) return;
+    for (final name in deps.keys) {
+      if (members[name] case final String member) yield member;
+    }
+  }
+
+  final nativeApps = [
+    for (final dir in pubspecs.keys)
+      if (_app.hasMatch(dir) && dir != _webApp) dir,
+  ]..sort();
+
+  final problems = <String>[];
+  for (final app in nativeApps) {
+    // Breadth first, so each chain is a shortest one. Each package is
+    // visited once, which ends a cycle.
+    final cameFrom = <String, String?>{app: null};
+    final order = [app];
+    for (var i = 0; i < order.length; i++) {
+      for (final next in edges(order[i])) {
+        if (cameFrom.containsKey(next)) continue;
+        cameFrom[next] = order[i];
+        order.add(next);
+      }
+    }
+    for (final web in order.where(_webOnlyPackages.contains)) {
+      final chain = <String>[];
+      for (String? at = web; at != app; at = cameFrom[at]) {
+        chain.insert(0, at!);
+      }
+      problems.add('$app reaches $web through ${chain.join(' -> ')}');
+    }
+  }
+  return problems;
 }
 
 /// Whether any dependency is sourced from the Flutter SDK.

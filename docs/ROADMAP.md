@@ -191,7 +191,7 @@ preserves play history.
 
 - #49 Empty / loading / error states + offline indicator (#9)
 - #50 Accessibility audit pass (WCAG 2.1 AA)
-- #51 Android sideload packaging + signing + macOS/web CI + dev-URL docs
+- #51 ~~Android sideload packaging + signing + CI tests + dev-URL docs~~
 
 ## Critical path
 
