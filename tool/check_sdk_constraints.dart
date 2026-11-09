@@ -106,12 +106,15 @@
 // Usage:
 //   dart run tool/check_sdk_constraints.dart          # report, exit 1 on drift
 //   dart run tool/check_sdk_constraints.dart --fix    # rewrite pubspec drift
+//   dart run tool/check_sdk_constraints.dart --set-version 0.2.0   # what the release job runs (#419)
 //   dart run tool/check_sdk_constraints.dart --self-test
 //
 // Bumping the toolchain is therefore: edit the root `environment:`
 // block, run with `--fix`, and replace `tool/flutter_sdk.sha256` with the
-// new archive's line from releases_linux.json. Bumping the client version
-// is the root `version:` and `--fix`.
+// new archive's line from releases_linux.json. The release job sets the
+// client version with `--set-version` (#419): it writes the root `version:`
+// as the given major.minor.patch plus the build number already there, then
+// does what `--fix` does for the apps.
 
 import 'dart:convert';
 import 'dart:io';
@@ -119,17 +122,41 @@ import 'dart:io';
 import 'package:yaml/yaml.dart';
 
 void main(List<String> args) {
-  final fix = args.contains('--fix');
-  final unknown = args.where((a) => a != '--fix' && a != '--self-test');
+  final setVersionAt = args.indexOf('--set-version');
+  final setVersion = setVersionAt == -1
+      ? null
+      : (setVersionAt + 1 < args.length ? args[setVersionAt + 1] : '');
+  final fix = args.contains('--fix') || setVersion != null;
+  // The value after `--set-version` belongs to it, so it is no argument of
+  // its own to recognise.
+  final unknown = [
+    for (var i = 0; i < args.length; i++)
+      if (!const {'--fix', '--self-test', '--set-version'}.contains(args[i]) &&
+          (setVersionAt == -1 || i != setVersionAt + 1))
+        args[i],
+  ];
   if (unknown.isNotEmpty) {
     stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(
-      'Usage: dart run tool/check_sdk_constraints.dart [--fix|--self-test]',
-    );
+    stderr.writeln(_usage);
     exit(64); // EX_USAGE
   }
 
+  if (setVersion != null && !RegExp(r'^\d+\.\d+\.\d+$').hasMatch(setVersion)) {
+    stderr.writeln(
+      '--set-version takes major.minor.patch (e.g. 0.2.0), with no '
+      'prerelease and no build number: the build number stays as it is in '
+      'the root `version:`. Found: ${setVersion.isEmpty ? '(nothing)' : setVersion}',
+    );
+    stderr.writeln(_usage);
+    exit(64);
+  }
+
   if (args.contains('--self-test')) {
+    if (setVersion != null) {
+      stderr.writeln('--set-version does not combine with --self-test.');
+      stderr.writeln(_usage);
+      exit(64);
+    }
     _selfTest();
     return;
   }
@@ -139,6 +166,8 @@ void main(List<String> args) {
     stderr.writeln('pubspec.yaml not found. Run this from the workspace root.');
     exit(1);
   }
+
+  if (setVersion != null) _setRootVersion(root, setVersion);
 
   final rootYaml = loadYaml(root.readAsStringSync()) as YamlMap;
   final rootEnv = rootYaml['environment'] as YamlMap?;
@@ -185,37 +214,9 @@ void main(List<String> args) {
     exit(1);
   }
 
-  // The one shape every platform reports unchanged. The comment on the
-  // root `version:` gives the reasons; the prerelease one is in
-  // flutter_tools' `validatedBuildNameForPlatform`, which strips iOS and
-  // macOS versions to digits and dots. The shape also keeps `--fix` safe:
-  // a value like this is a string in YAML, so it can be written unquoted.
-  if (!RegExp(r'^\d+\.\d+\.\d+\+\d+$').hasMatch(expectedVersion)) {
-    stderr.writeln(
-      'Root `version:` must be major.minor.patch+build, all numeric '
-      '(e.g. 1.2.3+4). Found: $expectedVersion',
-    );
-    exit(1);
-  }
-  // Length first, so a long run of digits never reaches int.parse.
-  final parts = expectedVersion.split(RegExp(r'[.+]'));
-  if (parts.any((p) => p.length > 5 || int.parse(p) > 65535) ||
-      int.parse(parts.last) < 1) {
-    stderr.writeln(
-      'Root `version:` parts must each be at most 65535, the size of a '
-      "Windows version field, and the build number at least 1, Android's "
-      'lowest versionCode. Found: $expectedVersion',
-    );
-    exit(1);
-  }
-  // `BuildInfo.unknown` reports 0.0.0 when an app cannot read its own
-  // version, and version negotiation (#13) treats it as the oldest client
-  // there is. A real build at 0.0.0 would look like a failed read.
-  if (parts.take(3).every((p) => int.parse(p) == 0)) {
-    stderr.writeln(
-      'Root `version:` must not be 0.0.0, the version an app reports when '
-      'it cannot read its own. Found: $expectedVersion',
-    );
+  final shapeProblem = _versionShapeProblem(expectedVersion);
+  if (shapeProblem != null) {
+    stderr.writeln(shapeProblem);
     exit(1);
   }
 
@@ -1530,6 +1531,79 @@ String? _rewriteVersion(String source, String version) {
   if (match == null) return null;
   lines[at] = 'version: $version${match.group(1) ?? ''}';
   return lines.join(eol);
+}
+
+/// How the tool is called, printed with a usage error.
+const _usage =
+    'Usage: dart run tool/check_sdk_constraints.dart '
+    '[--fix|--set-version <major.minor.patch>|--self-test]';
+
+/// Why [version] cannot be the client's version, or null when it can.
+///
+/// The one shape every platform reports unchanged. The comment on the
+/// root `version:` gives the reasons; the prerelease one is in
+/// flutter_tools' `validatedBuildNameForPlatform`, which strips iOS and
+/// macOS versions to digits and dots. The shape also keeps `--fix` safe:
+/// a value like this is a string in YAML, so it can be written unquoted.
+String? _versionShapeProblem(String version) {
+  if (!RegExp(r'^\d+\.\d+\.\d+\+\d+$').hasMatch(version)) {
+    return 'Root `version:` must be major.minor.patch+build, all numeric '
+        '(e.g. 1.2.3+4). Found: $version';
+  }
+  // Length first, so a long run of digits never reaches int.parse.
+  final parts = version.split(RegExp(r'[.+]'));
+  if (parts.any((p) => p.length > 5 || int.parse(p) > 65535) ||
+      int.parse(parts.last) < 1) {
+    return 'Root `version:` parts must each be at most 65535, the size of a '
+        "Windows version field, and the build number at least 1, Android's "
+        'lowest versionCode. Found: $version';
+  }
+  // `BuildInfo.unknown` reports 0.0.0 when an app cannot read its own
+  // version, and version negotiation (#13) treats it as the oldest client
+  // there is. A real build at 0.0.0 would look like a failed read.
+  if (parts.take(3).every((p) => int.parse(p) == 0)) {
+    return 'Root `version:` must not be 0.0.0, the version an app reports '
+        'when it cannot read its own. Found: $version';
+  }
+  return null;
+}
+
+/// Writes [version] into the root `version:` of [root], keeping the build
+/// number already there and the rest of the file as written (#419).
+///
+/// The release job names a release, not a build, and the committed build
+/// number stays as it is. Exits 1, with nothing written, when the root has
+/// no usable `version:` or the result would fail [_versionShapeProblem].
+/// The apps follow through the `--fix` pass that `main` goes on to run.
+void _setRootVersion(File root, String version) {
+  final source = root.readAsStringSync();
+  final current = (loadYaml(source) as YamlMap)['version']?.toString();
+  if (current == null) {
+    stderr.writeln('Root pubspec.yaml declares no `version:`.');
+    exit(1);
+  }
+  final build = RegExp(r'^\d+\.\d+\.\d+\+(\d+)$').firstMatch(current)?.group(1);
+  if (build == null) {
+    stderr.writeln(_versionShapeProblem(current));
+    exit(1);
+  }
+
+  final composed = '$version+$build';
+  final problem = _versionShapeProblem(composed);
+  if (problem != null) {
+    stderr.writeln(problem);
+    exit(1);
+  }
+
+  final rewritten = _rewriteVersion(source, composed);
+  if (rewritten == null || !_versionHolds(rewritten, composed)) {
+    stderr.writeln(
+      'Root pubspec.yaml: could not locate a top-level `version:` line to '
+      'rewrite.',
+    );
+    exit(1);
+  }
+  root.writeAsStringSync(rewritten);
 }
 
 /// The native files that hold a version of their own, relative to an

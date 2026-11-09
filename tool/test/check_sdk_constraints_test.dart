@@ -252,4 +252,75 @@ void main() {
       expect(lastOutput, contains('apps/mobile reaches packages/platform/web'));
     });
   });
+  group('--set-version', () {
+    late Directory workspace;
+
+    tearDown(() async {
+      await workspace.delete(recursive: true);
+    });
+
+    test('writes the root and every app, keeping the build number and the root text', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'apps/app_b':
+              'name: app_b\npublish_to: none\nversion: 1.0.0+1\n'
+              'environment:\n  sdk: ^3.13.0\nresolution: workspace\n',
+        },
+        rootPubspecExtra: '# kept as written\n',
+      );
+      final root = File('${workspace.path}/pubspec.yaml');
+      final before = root.readAsStringSync();
+
+      expect(
+        await runTool(workspace, args: ['--set-version', '0.2.0']),
+        0,
+        reason: lastOutput,
+      );
+      expect(
+        root.readAsStringSync(),
+        before.replaceFirst('version: 1.0.0+1', 'version: 0.2.0+1'),
+      );
+      for (final app in ['app_a', 'app_b']) {
+        expect(
+          File('${workspace.path}/apps/$app/pubspec.yaml').readAsStringSync(),
+          contains('version: 0.2.0+1\n'),
+        );
+      }
+      expect(await runTool(workspace), 0, reason: lastOutput);
+    });
+
+    for (final (name, value, code) in [
+      ('a prerelease', '0.2.0-dev.1', 64),
+      ('a build number', '0.2.0+5', 64),
+      ('0.0.0', '0.0.0', 1),
+      ('a part above 65535', '0.65536.0', 1),
+    ]) {
+      test('refuses $name and writes nothing', () async {
+        workspace = await createFixtureWorkspace();
+        final root = File('${workspace.path}/pubspec.yaml');
+        final app = File('${workspace.path}/apps/app_a/pubspec.yaml');
+        final (rootBefore, appBefore) = (
+          root.readAsStringSync(),
+          app.readAsStringSync(),
+        );
+
+        expect(
+          await runTool(workspace, args: ['--set-version', value]),
+          code,
+          reason: lastOutput,
+        );
+        expect(root.readAsStringSync(), rootBefore);
+        expect(app.readAsStringSync(), appBefore);
+      });
+    }
+
+    test('refuses a missing value', () async {
+      workspace = await createFixtureWorkspace();
+      expect(
+        await runTool(workspace, args: ['--set-version']),
+        64,
+        reason: lastOutput,
+      );
+    });
+  });
 }
