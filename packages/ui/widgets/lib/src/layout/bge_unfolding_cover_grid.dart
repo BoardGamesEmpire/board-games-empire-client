@@ -56,6 +56,7 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
     required this.unfolded,
     required this.stripBuilder,
     this.semanticIndexOffset = 0,
+    this.stripKeyOf,
     super.key,
   });
 
@@ -78,6 +79,11 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
   /// Added to each tile's semantic index, as for
   /// [BgeKeyedSliverGrid.semanticIndexOffset].
   final int semanticIndexOffset;
+
+  /// The key of `item`'s strip, [keyOf] when null. A strip with a new key is
+  /// a new strip. Give one that stays the same while the item's tile changes
+  /// form, so the open strip keeps its scroll and focus.
+  final Key Function(T item)? stripKeyOf;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +115,7 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
         grid(items.sublist(0, rowEnd), semanticIndexOffset),
         SliverToBoxAdapter(
           // Keyed by the item, so another item's strip is a new one.
-          key: ValueKey<Key>(keyOf(item)),
+          key: ValueKey<Key>((stripKeyOf ?? keyOf)(item)),
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: spacing),
             child: stripBuilder(context, item),
@@ -173,7 +179,8 @@ class BgeUnfoldingCovers<T> extends StatefulWidget {
 
   /// Which item is unfolded, from one build to the next. Unlike [keyOf], it
   /// stays the same when the item's tile changes form, as one copy of a game
-  /// becoming a stack of them does, so the item stays unfolded.
+  /// becoming a stack of them does, so the item stays unfolded, and its open
+  /// strip stays the same strip.
   final Object Function(T item) idOf;
 
   /// Whether `item` has a strip to open. The unfold goes once it hasn't.
@@ -222,6 +229,7 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
     keyOf: widget.keyOf,
     unfolded: _unfoldedIndex,
     semanticIndexOffset: widget.semanticIndexOffset,
+    stripKeyOf: (item) => ValueKey<Object>(widget.idOf(item)),
     itemBuilder: (context, item) {
       final id = widget.idOf(item);
       return widget.itemBuilder(

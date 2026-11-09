@@ -272,6 +272,7 @@ void main() {
     ) async {
       await tester.pumpWidget(hostAtSize(tester, covers(items), size: _window));
       await toggle(tester, 'b');
+      final strip = tester.element(find.byKey(_stripKey));
 
       await tester.pumpWidget(
         hostAtSize(
@@ -283,6 +284,11 @@ void main() {
 
       expect(find.text('strip of b'), findsOneWidget);
       expect(find.text('b-stack open'), findsOneWidget);
+      expect(
+        tester.element(find.byKey(_stripKey)),
+        same(strip),
+        reason: 'the same strip, so its shelf keeps its scroll and focus',
+      );
     });
 
     for (final (why, gone) in [
