@@ -22,6 +22,10 @@
 /// #710), `BgeKeyedSliverGrid`,
 /// `bgeCoverGridDelegate`, `BgeLayoutToggle` and `BgeRememberedLayout` by
 /// those two grids and their list or thumbnails choice (#710),
+/// `BgeUnfoldingCoverGrid` by the same two grids, which open a base game's
+/// expansions under its row (#711),
+/// `BgeFocusHandoffScope` and `BgeFocusHandoff` by the Games and Collection
+/// lists and grids, whose games change form (#769, #711),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
 /// quick look (#573, #607), `BgeInertButton` by the 7 buttons that
@@ -58,6 +62,7 @@ export 'src/connectivity/bge_connectivity_scope.dart';
 export 'src/connectivity/bge_online_only.dart';
 export 'src/connectivity/bge_online_only_menu.dart';
 export 'src/connectivity/bge_online_only_popup_menu_item.dart';
+export 'src/focus/bge_focus_handoff.dart';
 export 'src/focus/bge_focus_ring.dart';
 export 'src/focus/bge_pointer_focus.dart';
 export 'src/focus/focus_is_free.dart';
@@ -65,6 +70,7 @@ export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';
 export 'src/images/bge_stack_marker.dart';
 export 'src/images/bge_thumbnail.dart';
@@ -73,6 +79,7 @@ export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_layout_toggle.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
+export 'src/layout/bge_unfolding_cover_grid.dart';
 export 'src/popups/bge_popup.dart';
 export 'src/routes/read_again_when_uncovered.dart';
 export 'src/states/bge_empty_state.dart';

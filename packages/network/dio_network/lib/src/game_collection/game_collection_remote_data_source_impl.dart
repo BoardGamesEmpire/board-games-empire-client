@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../games/game_summary_json.dart';
 import '../network/remote_failure.dart';
 
 /// What a 404 means for the request that produced it (#253 **D6**).
@@ -315,6 +316,10 @@ class GameCollectionRemoteDataSourceImpl
         subtitle: game['subtitle'] as String?,
         image: _nonEmpty(game['image']),
         thumbnail: _nonEmpty(game['thumbnail']),
+        contentType: game['contentType'] is String
+            ? ContentType.fromWire(game['contentType'] as String)
+            : null,
+        baseGames: mapExpansionLinks(game['baseGames']),
       ),
     );
   }

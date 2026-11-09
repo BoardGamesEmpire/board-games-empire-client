@@ -37,6 +37,10 @@ class GamesTable extends Table {
   TextColumn get publishersJson => text().withDefault(const Constant('[]'))();
   TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
 
+  /// JSON array of `{gameId, isStandalone}` links from an expansion to its
+  /// base games; `[]` for a game with none (#711).
+  TextColumn get baseGamesJson => text().withDefault(const Constant('[]'))();
+
   /// `Reach`, as the backend's enum name; a name this client can't read is
   /// stored as 'Unknown'. A row cached before v11 keeps the visibility name it
   /// had, so an old 'Household' reads as unknown too. Default 'Public', the

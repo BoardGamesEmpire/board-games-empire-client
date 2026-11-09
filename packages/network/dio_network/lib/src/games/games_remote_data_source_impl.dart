@@ -325,6 +325,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     ratingsCount: json['ratingsCount'] as int?,
     ownedByCount: json['ownedByCount'] as int? ?? 0,
     contentType: ContentType.fromWire(json['contentType'] as String),
+    baseGames: mapExpansionLinks(json['baseGames']) ?? const [],
     reach: _reach(json['reach']),
     createdById: json['createdById'] as String?,
     deletedAt: _date(json['deletedAt']),

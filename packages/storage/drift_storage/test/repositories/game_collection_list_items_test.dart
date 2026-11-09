@@ -25,6 +25,8 @@ PlatformGameSummary _summary({
   String? platformImage,
   String? gameThumbnail,
   String? gameImage,
+  List<ExpansionLink>? baseGames,
+  ContentType? contentType,
 }) => PlatformGameSummary(
   id: id,
   platformId: 'plat-1',
@@ -37,6 +39,8 @@ PlatformGameSummary _summary({
     subtitle: subtitle,
     thumbnail: gameThumbnail,
     image: gameImage,
+    baseGames: baseGames,
+    contentType: contentType,
   ),
 );
 
@@ -127,6 +131,29 @@ void main() {
 
       expect(item.gameId, 'g-1');
     });
+
+    test(
+      'a list item carries its game\'s base games and content type',
+      () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            baseGames: const [ExpansionLink(gameId: 'b1', isStandalone: false)],
+            contentType: ContentType.dlc,
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.baseGames, const [
+          ExpansionLink(gameId: 'b1', isStandalone: false),
+        ]);
+        expect(item.contentType, ContentType.dlc);
+      },
+    );
 
     test('two platform games of one game carry the same game id', () async {
       await hydrate(

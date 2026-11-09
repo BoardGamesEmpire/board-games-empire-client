@@ -28,6 +28,18 @@ Game _make({
 
 void main() {
   group('Game', () {
+    test('baseGames defaults to none and round-trips', () {
+      expect(_make().baseGames, isEmpty);
+
+      final game = _make().copyWith(
+        baseGames: const [ExpansionLink(gameId: 'b', isStandalone: false)],
+      );
+
+      expect(Game.fromJson(game.toJson()).baseGames, const [
+        ExpansionLink(gameId: 'b', isStandalone: false),
+      ]);
+    });
+
     test('defaults for new aggregate fields are sensible', () {
       final game = _make();
       expect(game.totalPlayCount, equals(0));

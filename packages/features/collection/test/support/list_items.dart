@@ -15,6 +15,8 @@ GameCollectionListItem listItem(
   int? rating,
   bool? favorite,
   DateTime? lastPlayed,
+  List<ExpansionLink> baseGames = const [],
+  ContentType contentType = ContentType.baseGame,
 }) => GameCollectionListItem(
   entry: GameCollection(
     id: id,
@@ -33,4 +35,6 @@ GameCollectionListItem listItem(
   subtitle: subtitle,
   platformName: platformName,
   thumbnail: thumbnail,
+  baseGames: baseGames,
+  contentType: contentType,
 );

@@ -92,20 +92,25 @@ class BgeOnlineOnlyNote extends StatelessWidget {
 /// read once, with the item. The reason takes the note's style so it stays
 /// legible on a disabled item.
 class BgeOnlineOnlyLabel extends StatelessWidget {
-  const BgeOnlineOnlyLabel(this.label, {super.key});
+  const BgeOnlineOnlyLabel(this.label, {this.semanticsLabel, super.key});
 
   final String label;
+
+  /// What a screen reader says for [label], when it differs from the words
+  /// drawn, as for [Text.semanticsLabel].
+  final String? semanticsLabel;
 
   @override
   Widget build(BuildContext context) {
     final reason = BgeConnectivityScope.onlineOnlyReasonOf(context);
-    if (reason == null) return Text(label);
+    final text = Text(label, semanticsLabel: semanticsLabel);
+    if (reason == null) return text;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label),
+        text,
         Text(reason, style: _reasonStyle(context)),
       ],
     );

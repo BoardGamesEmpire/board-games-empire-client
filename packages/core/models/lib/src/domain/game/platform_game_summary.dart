@@ -1,5 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'content_type.dart';
+import 'expansion_link.dart';
+
 part 'platform_game_summary.freezed.dart';
 
 /// The slice of a [PlatformGame] and its parent [Game] that every server
@@ -43,5 +46,13 @@ abstract class GameSummary with _$GameSummary {
     String? subtitle,
     String? image,
     String? thumbnail,
+
+    /// What the game is (#711). Null means the response did not carry it, so
+    /// a cache write keeps what it has.
+    ContentType? contentType,
+
+    /// The game's base games (#711). Null means the response did not carry
+    /// them, so a cache write keeps what it has; empty means it has none.
+    List<ExpansionLink>? baseGames,
   }) = _GameSummary;
 }

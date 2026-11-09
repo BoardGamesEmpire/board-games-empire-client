@@ -1770,6 +1770,100 @@ void main() {
       },
     );
 
+    /// Wingspan with five owned expansions nested under it (#711): five
+    /// overflow its strip, so the shelf shows its buttons. Then an owned
+    /// expansion whose base game isn't owned, marked, and two plain games.
+    List<GameCollectionListItem> withExpansions() => [
+      listItem('base-1', gameId: 'g-base', title: 'Wingspan'),
+      for (var n = 0; n < 5; n++)
+        listItem(
+          'exp-$n',
+          gameId: 'g-exp-$n',
+          title: 'Wingspan expansion $n',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ],
+        ),
+      listItem(
+        'orphan-1',
+        gameId: 'g-orphan',
+        title: 'Seafarers',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      ),
+      listItem('e-1', title: 'Azul'),
+      listItem('e-2', title: 'Brass'),
+    ];
+
+    final baseTile = find.byKey(GameCollectionListScreen.tileKey('base-1'));
+    final badge = find.descendant(
+      of: baseTile,
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+
+    auditScreen(
+      'ready, nested expansions and a marked one',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        expect(
+          find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The marked row is below the fold at 320dp × 2.0, under the nested
+    // ones.
+    auditScreen(
+      'ready, nested expansions and a marked one, scrolled to the end',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        await scrollListToEnd(
+          tester,
+          find.byKey(GameCollectionListScreen.rowKey('e-2')),
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('orphan-1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails, a badged cover and a marked one',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        expect(badge, findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.tileKey('orphan-1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'ready, thumbnails, a strip unfolded',
+      build: screen(layouts: thumbnails()),
+      arrange: (tester) async {
+        await answer(tester, withExpansions());
+        await tester.tap(badge);
+        await tester.pumpAndSettle();
+        expect(find.text('Wingspan expansions'), findsOneWidget);
+        expect(find.byKey(BgeShelf.previousKey), findsOneWidget);
+        expect(find.byKey(BgeShelf.nextKey), findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'exp-0')),
+          findsOneWidget,
+        );
+      },
+    );
+
     // The retry's pass never ends, so the busy button never settles.
     auditScreen(
       'refreshing',
@@ -1786,6 +1880,1001 @@ void main() {
         expect(find.text(_refreshingCopy), findsNWidgets(2));
       },
     );
+  });
+
+  group('expansions (#711)', () {
+    final base = listItem('base-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'exp-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+    );
+
+    testWidgets("an owned expansion's row sits under its base game's, "
+        'indented, spoken as its expansion', (tester) async {
+      await show(tester, [expansion, base]);
+
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-base', 'exp-1'),
+      );
+      final top = find.byKey(GameCollectionListScreen.rowKey('base-1'));
+      expect(nested, findsOneWidget);
+      expect(
+        tester.getTopLeft(nested).dy,
+        greaterThan(tester.getTopLeft(top).dy),
+      );
+      expect(
+        find.byKey(GameCollectionListScreen.rowKey('exp-1')),
+        findsNothing,
+      );
+      expect(
+        tester.getTopLeft(find.text('European Expansion')).dx,
+        greaterThan(tester.getTopLeft(find.text('Wingspan')).dx),
+      );
+      expect(
+        tester.getSemantics(nested).label,
+        contains('European Expansion, expansion for Wingspan'),
+      );
+    });
+
+    testWidgets('a nested stack keeps its picker', (tester) async {
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        platformName: platform,
+        contentType: ContentType.expansion,
+        baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+      );
+      final opened = <String>[];
+      await show(tester, [
+        base,
+        copy('exp-1', 'Tabletop'),
+        copy('exp-2', 'Steam'),
+      ], onOpen: (_, id) => opened.add(id));
+
+      final stack = find.byKey(
+        GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
+      );
+      expect(stack, findsOneWidget);
+      expect(
+        tester.getSemantics(stack).label,
+        contains('European Expansion, expansion for Wingspan'),
+      );
+      await tester.tap(stack);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('exp-2')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("an orphan's row says its base game is missing", (
+      tester,
+    ) async {
+      await show(tester, [
+        listItem(
+          'dlc-1',
+          gameId: 'g-dlc',
+          title: 'Season Pass',
+          contentType: ContentType.dlc,
+        ),
+      ]);
+
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsOneWidget,
+      );
+      expect(
+        rowSemantics(tester, 'dlc-1').label,
+        contains('Base game not in your collection'),
+      );
+    });
+
+    testWidgets('a standalone game is not marked', (tester) async {
+      await show(tester, [listItem('e-1', title: 'Catan')]);
+
+      expect(
+        find.textContaining('Base game not in your collection'),
+        findsNothing,
+      );
+    });
+
+    testWidgets("a parent's subtitle is spoken in its expansions' names", (
+      tester,
+    ) async {
+      final catan = listItem(
+        'c-1',
+        gameId: 'g-catan',
+        title: 'Catan',
+        subtitle: 'Seafarers Edition',
+      );
+      final nested = listItem(
+        'x-2',
+        gameId: 'g-x',
+        title: 'Cities',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-catan', isStandalone: false),
+        ],
+      );
+      await show(tester, [catan, nested]);
+
+      final row = find.byKey(
+        GameCollectionListScreen.nestedRowKey('g-catan', 'x-2'),
+      );
+      expect(
+        tester.getSemantics(row).label,
+        contains('Cities, expansion for Catan: Seafarers Edition'),
+      );
+    });
+
+    testWidgets('the semantic child count counts nested rows, an expansion '
+        'of two owned base games under each', (tester) async {
+      final baseB = listItem('base-2', gameId: 'g-base-b', title: 'Azul');
+      final both = listItem(
+        'exp-1',
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ExpansionLink(gameId: 'g-base-b', isStandalone: false),
+        ],
+      );
+      await show(tester, [base, baseB, both]);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(GameCollectionListScreen.nestedRowKey('g-base', 'exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(GameCollectionListScreen.nestedRowKey('g-base-b', 'exp-1')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        4,
+      );
+    });
+  });
+
+  group('expansions in thumbnails (#711)', () {
+    const underBase = [ExpansionLink(gameId: 'g-base', isStandalone: false)];
+    final base = listItem('base-1', gameId: 'g-base', title: 'Wingspan');
+    final expansion = listItem(
+      'exp-1',
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      contentType: ContentType.expansion,
+      baseGames: underBase,
+    );
+    final other = listItem('azul-1', gameId: 'g-azul', title: 'Azul');
+
+    Finder tile(String entryId) =>
+        find.byKey(GameCollectionListScreen.tileKey(entryId));
+    Finder badgeOf(Finder cover) => find.descendant(
+      of: cover,
+      matching: find.byKey(BgeCoverTile.expansionsBadgeKey),
+    );
+    final strip = find.byType(BgeShelf);
+    final grids = find.byWidgetPredicate(
+      (widget) => widget is BgeKeyedSliverGrid,
+    );
+
+    /// The cover's own node: with a badge, the tile holds two nodes and has
+    /// none of its own, so it is found from the picture inside it.
+    SemanticsNode coverNode(WidgetTester tester, Finder cover) =>
+        tester.getSemantics(
+          find.descendant(of: cover, matching: find.byType(BgeThumbnail)),
+        );
+
+    BgeCoverTile coverOf(WidgetTester tester, Finder cover) =>
+        tester.widget<BgeCoverTile>(
+          find.descendant(of: cover, matching: find.byType(BgeCoverTile)),
+        );
+
+    void performCustomAction(SemanticsNode node, String label) =>
+        node.owner!.performAction(
+          node.id,
+          SemanticsAction.customAction,
+          CustomSemanticsAction.getIdentifier(
+            CustomSemanticsAction(label: label),
+          ),
+        );
+
+    /// Shows [rows] in thumbnails, two columns wide and tall enough for
+    /// every cover and the strip.
+    Future<void> showThumbnails(
+      WidgetTester tester,
+      List<GameCollectionListItem> rows, {
+      void Function(BuildContext context, String entryId)? onOpen,
+    }) async {
+      useViewSize(tester, const Size(400, 1600));
+      await show(
+        tester,
+        rows,
+        layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+        onOpen: onOpen ?? (_, _) {},
+      );
+    }
+
+    testWidgets("only top-level covers show, and a base game's carries the "
+        'count', (tester) async {
+      final handle = tester.ensureSemantics();
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-catan',
+        title: 'Catan',
+        platformName: platform,
+      );
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        copy('catan-1', 'Tabletop'),
+        copy('catan-2', 'Steam'),
+        listItem(
+          'seafarers-1',
+          gameId: 'g-seafarers',
+          title: 'Seafarers',
+          contentType: ContentType.expansion,
+          baseGames: const [
+            ExpansionLink(gameId: 'g-catan', isStandalone: false),
+          ],
+        ),
+      ]);
+
+      expect(tile('base-1'), findsOneWidget);
+      expect(tile('azul-1'), findsOneWidget);
+      expect(tile('exp-1'), findsNothing);
+      expect(tile('seafarers-1'), findsNothing);
+      expect(strip, findsNothing);
+      expect(
+        find.descendant(of: badgeOf(tile('base-1')), matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(badgeOf(tile('azul-1')), findsNothing);
+      expect(
+        tester.getSemantics(badgeOf(tile('base-1'))),
+        isSemantics(
+          label: 'Wingspan expansions, 1',
+          isButton: true,
+          hasExpandedState: true,
+          isExpanded: false,
+          hasTapAction: true,
+          isFocusable: true,
+        ),
+      );
+      // A base game owned twice carries its badge on its stack.
+      final stack = find.byKey(
+        GameCollectionListScreen.stackTileKey('g-catan'),
+      );
+      expect(
+        tester.getSemantics(badgeOf(stack)),
+        isSemantics(label: 'Catan expansions, 1', isExpanded: false),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("the badge unfolds a strip of its expansions' covers and "
+        'folds it again', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        other,
+        listItem('carcassonne-1', gameId: 'g-carc', title: 'Carcassonne'),
+      ]);
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+
+      expect(strip, findsOneWidget);
+      expect(find.text('Wingspan expansions'), findsOneWidget);
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+      expect(nested, findsOneWidget);
+      expect(
+        tester.getSemantics(badgeOf(tile('base-1'))),
+        isSemantics(label: 'Wingspan expansions, 1', isExpanded: true),
+      );
+      // Under the base game's row, which Azul shares at two columns, and
+      // above Carcassonne's.
+      expect(
+        tester.getRect(tile('azul-1')).bottom,
+        lessThan(tester.getRect(strip).top),
+      );
+      expect(
+        tester.getRect(tile('carcassonne-1')).top,
+        greaterThan(tester.getRect(strip).bottom),
+      );
+      // A strip cover is named as the expansion of its base game.
+      expect(
+        tester.getSemantics(nested).label,
+        startsWith('European Expansion, expansion for Wingspan'),
+      );
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(nested, findsNothing);
+      expect(grids, findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('a strip cover opens the entry, or the picker for a stack', (
+      tester,
+    ) async {
+      GameCollectionListItem copy(String id, String platform) => listItem(
+        id,
+        gameId: 'g-exp-2',
+        title: 'Oceania Expansion',
+        platformName: platform,
+        contentType: ContentType.expansion,
+        baseGames: underBase,
+      );
+      final opened = <String>[];
+      await showThumbnails(tester, [
+        base,
+        expansion,
+        copy('oce-1', 'Tabletop'),
+        copy('oce-2', 'Steam'),
+      ], onOpen: (_, id) => opened.add(id));
+
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: badgeOf(tile('base-1')), matching: find.text('2')),
+        findsOneWidget,
+        reason: 'a stack counts as one expansion',
+      );
+
+      await tester.tap(
+        find.byKey(GameCollectionListScreen.nestedTileKey('g-base', 'exp-1')),
+      );
+      await tester.pumpAndSettle();
+      expect(opened, ['exp-1']);
+
+      await tester.tap(
+        find.byKey(
+          GameCollectionListScreen.nestedStackTileKey('g-base', 'g-exp-2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(opened, ['exp-1']);
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('oce-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(CollectionEntryPicker.tileKey('oce-2')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("Show expansions works from the cover's custom action", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await showThumbnails(tester, [base, expansion]);
+      final cover = tile('base-1');
+      final nested = find.byKey(
+        GameCollectionListScreen.nestedTileKey('g-base', 'exp-1'),
+      );
+
+      expect(
+        coverNode(tester, cover),
+        isSemantics(
+          customActions: [
+            const CustomSemanticsAction(label: 'Show expansions'),
+          ],
+        ),
+      );
+      performCustomAction(coverNode(tester, cover), 'Show expansions');
+      await tester.pumpAndSettle();
+
+      expect(nested, findsOneWidget);
+      expect(
+        coverNode(tester, cover),
+        isSemantics(
+          customActions: [
+            const CustomSemanticsAction(label: 'Hide expansions'),
+          ],
+        ),
+      );
+
+      performCustomAction(coverNode(tester, cover), 'Hide expansions');
+      await tester.pumpAndSettle();
+
+      expect(nested, findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets("a marked cover's label says the base game isn't in the "
+        'collection', (tester) async {
+      await showThumbnails(tester, [
+        expansion,
+        listItem(
+          'dlc-1',
+          gameId: 'g-dlc',
+          title: 'Season Pass',
+          contentType: ContentType.dlc,
+        ),
+        other,
+      ]);
+
+      for (final id in ['exp-1', 'dlc-1']) {
+        expect(coverOf(tester, tile(id)).marked, isTrue, reason: id);
+        expect(
+          coverOf(tester, tile(id)).label,
+          startsWith(
+            id == 'exp-1'
+                ? 'European Expansion, Base game not in your collection, '
+                : 'Season Pass, Base game not in your collection, ',
+          ),
+          reason: id,
+        );
+      }
+      expect(coverOf(tester, tile('azul-1')).marked, isFalse);
+      expect(
+        coverOf(tester, tile('azul-1')).label,
+        isNot(contains('Base game not in your collection')),
+      );
+    });
+
+    testWidgets('the semantic child count is the top-level covers', (
+      tester,
+    ) async {
+      final both = listItem(
+        'exp-1',
+        gameId: 'g-exp',
+        title: 'European Expansion',
+        contentType: ContentType.expansion,
+        baseGames: const [
+          ExpansionLink(gameId: 'g-base', isStandalone: false),
+          ExpansionLink(gameId: 'g-azul', isStandalone: false),
+        ],
+      );
+      await showThumbnails(tester, [base, other, both]);
+
+      // Three games, an expansion under two of them: two covers.
+      expect(
+        tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .semanticChildCount,
+        2,
+      );
+    });
+
+    for (final (before, what) in [
+      ([base, expansion, other], 'with its badge'),
+      ([base, other], 'gaining its badge'),
+    ]) {
+      testWidgets("a focused base game's cover keeps its focus as the game "
+          'becomes a stack $what, not the badge (#769)', (tester) async {
+        await showThumbnails(tester, before);
+        bool inBadge(Finder cover) =>
+            badgeOf(cover).evaluate().isNotEmpty &&
+            _focusIsWithin(tester, badgeOf(cover));
+        final ink = find.descendant(
+          of: tile('base-1'),
+          matching: find.byType(InkWell),
+        );
+        Focus.of(
+          tester.element(
+            find.descendant(of: ink.first, matching: find.byType(MouseRegion)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        expect(_focusIsWithin(tester, tile('base-1')), isTrue);
+        expect(inBadge(tile('base-1')), isFalse);
+
+        items.add([
+          base,
+          listItem(
+            'base-2',
+            gameId: 'g-base',
+            title: 'Wingspan',
+            platformName: 'Steam',
+          ),
+          expansion,
+          other,
+        ]);
+        await tester.pumpAndSettle();
+
+        final stack = find.byKey(
+          GameCollectionListScreen.stackTileKey('g-base'),
+        );
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(badgeOf(stack), findsOneWidget);
+        expect(inBadge(stack), isFalse);
+      });
+    }
+
+    testWidgets('the strip folds when its game goes', (tester) async {
+      await showThumbnails(tester, [base, expansion, other]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(strip, findsOneWidget);
+
+      // A sync takes the base game away.
+      items.add([expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+      expect(tile('exp-1'), findsOneWidget);
+      expect(coverOf(tester, tile('exp-1')).marked, isTrue);
+
+      // Back again, it is folded: the unfold went with it.
+      items.add([base, expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(badgeOf(tile('base-1')), findsOneWidget);
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+    });
+
+    testWidgets('the strip folds when its game loses its expansions', (
+      tester,
+    ) async {
+      await showThumbnails(tester, [base, expansion, other]);
+      await tester.tap(badgeOf(tile('base-1')));
+      await tester.pumpAndSettle();
+      expect(strip, findsOneWidget);
+
+      // A sync takes the expansion's entry away.
+      items.add([base, other]);
+      await tester.pumpAndSettle();
+
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+      expect(badgeOf(tile('base-1')), findsNothing);
+
+      // Owned again, it is folded: the unfold went with the expansions.
+      items.add([base, expansion, other]);
+      await tester.pumpAndSettle();
+
+      expect(badgeOf(tile('base-1')), findsOneWidget);
+      expect(strip, findsNothing);
+      expect(grids, findsOneWidget);
+    });
+  });
+
+  group('focus across forms (#769)', () {
+    final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
+    final catan = listItem('e-0', title: 'Catan');
+    GameCollectionListItem wingspan(String id, String platformName) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platformName,
+    );
+    final once = [catan, wingspan('e-1', 'Tabletop')];
+    final twice = [...once, wingspan('e-2', 'Steam')];
+
+    // The two views a game is drawn in: its entry's key and its stack's key
+    // there, and the layout store that opens the screen in it.
+    final views =
+        <(String, Key Function(String), Key Function(String), _FakeLayouts?)>[
+          (
+            'the list',
+            GameCollectionListScreen.rowKey,
+            GameCollectionListScreen.stackKey,
+            null,
+          ),
+          (
+            'thumbnails',
+            GameCollectionListScreen.tileKey,
+            GameCollectionListScreen.stackTileKey,
+            thumbs,
+          ),
+        ];
+
+    /// The focus node of the control that opens [item]: its ink's.
+    FocusNode control(WidgetTester tester, Finder item) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.descendant(of: item, matching: find.byType(InkWell)),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      ),
+    );
+
+    /// Focuses Catan's item, then [item]: the page has focused something
+    /// before, as it has once a keyboard user has got this far.
+    Future<void> focus(WidgetTester tester, Finder item) async {
+      final catanItem = find.byKey(GameCollectionListScreen.rowKey('e-0'));
+      control(
+        tester,
+        catanItem.evaluate().isEmpty
+            ? find.byKey(GameCollectionListScreen.tileKey('e-0'))
+            : catanItem,
+      ).requestFocus();
+      await tester.pump();
+      control(tester, item).requestFocus();
+      await tester.pump();
+      expect(_focusIsWithin(tester, item), isTrue);
+    }
+
+    Finder pickerTile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId));
+
+    for (final (view, entryKey, stackKey, layouts) in views) {
+      final entry = find.byKey(entryKey('e-1'));
+      final stack = find.byKey(stackKey('g-wingspan'));
+      final what = view == 'the list' ? 'row' : 'tile';
+
+      testWidgets("a focused stack reduced to one entry leaves focus on the "
+          "entry's $what, in $view", (tester) async {
+        await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, stack);
+
+        items.add(once);
+        await tester.pumpAndSettle();
+
+        expect(stack, findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+
+      testWidgets("a focused entry's $what that gains a second entry leaves "
+          'focus on the stack, in $view', (tester) async {
+        await show(tester, once, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, entry);
+
+        items.add(twice);
+        await tester.pumpAndSettle();
+
+        expect(entry, findsNothing);
+        expect(_focusIsWithin(tester, stack), isTrue);
+      });
+
+      testWidgets('back from the entry page after removing a copy lands '
+          "focus on the game's item, in $view", (tester) async {
+        await show(
+          tester,
+          twice,
+          layouts: layouts,
+          onOpen: (context, id) => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    Scaffold(appBar: AppBar(), body: Text('entry $id')),
+              ),
+            ),
+          ),
+        );
+        await focus(tester, stack);
+        // A tap, as a touch gives: the stack takes focus before the picker
+        // opens.
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        await tester.tap(pickerTile('e-2'));
+        await tester.pumpAndSettle();
+        expect(find.text('entry e-2'), findsOneWidget);
+        expect(pickerTile('e-2'), findsNothing);
+
+        // The copy is removed on the entry page, under which the stack
+        // becomes one entry.
+        items.add(once);
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.text('entry e-2'), findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+
+      testWidgets('closing the picker after a sync leaves one entry lands '
+          "focus on the game's item, in $view", (tester) async {
+        await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
+        await focus(tester, stack);
+        await tester.tap(stack);
+        await tester.pumpAndSettle();
+        expect(pickerTile('e-1'), findsOneWidget);
+
+        items.add(once);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        expect(pickerTile('e-1'), findsNothing);
+        expect(_focusIsWithin(tester, entry), isTrue);
+      });
+    }
+
+    testWidgets('a mouse-clicked stack reduced to one entry leaves the tile '
+        'focused without a ring or a tint', (tester) async {
+      // A mouse leaves the highlight mode at the keyboard's on a desktop, so
+      // the focus handed to the entry's tile would be ringed, for a user who
+      // never touched the keyboard, unless the click's state goes with it.
+      await show(tester, twice, layouts: thumbs, onOpen: (_, _) {});
+      final stack = find.byKey(
+        GameCollectionListScreen.stackTileKey('g-wingspan'),
+      );
+      final entry = find.byKey(GameCollectionListScreen.tileKey('e-1'));
+      const away = Offset(4, 590);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: away);
+      addTearDown(mouse.removePointer);
+      Future<void> click(Offset at) async {
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+      }
+
+      await click(tester.getCenter(stack));
+      expect(pickerTile('e-1'), findsOneWidget);
+      // A sync leaves the game one entry under the picker, which is closed
+      // by a click on the barrier, below the dialog.
+      items.add(once);
+      await tester.pumpAndSettle();
+      await click(away);
+      expect(pickerTile('e-1'), findsNothing);
+
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      final ring = find.descendant(
+        of: entry,
+        matching: find.byType(BgeFocusRing),
+      );
+      expect(tester.widget<BgeFocusRing>(ring).suppressed, isTrue);
+      final drawn = tester.widget<DecoratedBox>(
+        find.descendant(of: ring, matching: find.byType(DecoratedBox)).first,
+      );
+      expect((drawn.decoration as BoxDecoration).border, isNull);
+      // Nor is its ink tinted: with the mouse away, the focus highlight is
+      // all the ink paints, and it paints with no strength.
+      expect(
+        tester.renderObject(
+          find.descendant(of: entry, matching: find.byType(Material)),
+        ),
+        paints..everything((method, arguments) {
+          for (final argument in arguments) {
+            if (argument is Paint) expect(argument.color.a, 0);
+          }
+          return true;
+        }),
+      );
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+
+  group('focus ring (#770)', () {
+    GameCollectionListItem copy(String id, String platform) => listItem(
+      id,
+      gameId: 'g-wingspan',
+      title: 'Wingspan',
+      platformName: platform,
+    );
+    final once = [copy('e-1', 'Tabletop')];
+    final twice = [...once, copy('e-2', 'Steam')];
+    final base = listItem('base-1', gameId: 'g-base', title: 'Catan');
+    GameCollectionListItem expansion(String id, String platform) => listItem(
+      id,
+      gameId: 'g-exp',
+      title: 'European Expansion',
+      platformName: platform,
+      contentType: ContentType.expansion,
+      baseGames: const [ExpansionLink(gameId: 'g-base', isStandalone: false)],
+    );
+
+    Finder pickerTile(String entryId) =>
+        find.byKey(CollectionEntryPicker.tileKey(entryId));
+
+    /// Whether a ring is drawn over something under [finder]: a foreground
+    /// box with a border.
+    bool ringShown(WidgetTester tester, Finder finder) => tester
+        .widgetList<DecoratedBox>(
+          find.descendant(of: finder, matching: find.byType(DecoratedBox)),
+        )
+        .any((box) {
+          final decoration = box.decoration;
+          return box.position == DecorationPosition.foreground &&
+              decoration is BoxDecoration &&
+              decoration.border != null;
+        });
+
+    /// The focus node of the control that opens the item [item] finds.
+    FocusNode control(WidgetTester tester, Finder item) => Focus.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.descendant(of: item, matching: find.byType(InkWell)),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      ),
+    );
+
+    const away = Offset(4, 590);
+
+    /// A mouse that clicks where it is told and rests away from the rows.
+    Future<Future<void> Function(Offset)> mouseClicker(
+      WidgetTester tester,
+    ) async {
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: away);
+      addTearDown(mouse.removePointer);
+      return (at) async {
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await tester.pump(const Duration(milliseconds: 50));
+        await mouse.up();
+        await mouse.moveTo(away);
+        await tester.pumpAndSettle();
+      };
+    }
+
+    /// Clicks [stack], then closes its picker with a click on the barrier.
+    Future<void> clickAndClose(
+      WidgetTester tester,
+      Finder stack,
+      String firstEntry,
+    ) async {
+      final click = await mouseClicker(tester);
+      await click(tester.getCenter(stack));
+      expect(pickerTile(firstEntry), findsOneWidget);
+      await click(away);
+      expect(pickerTile(firstEntry), findsNothing);
+    }
+
+    Future<void> pressShift(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+    }
+
+    final stackRows = [
+      (
+        'a clicked stack row',
+        twice,
+        'e-1',
+        GameCollectionListScreen.stackKey('g-wingspan'),
+      ),
+      (
+        'a nested stack row',
+        [base, expansion('x-1', 'Tabletop'), expansion('x-2', 'Steam')],
+        'x-1',
+        GameCollectionListScreen.nestedStackKey('g-base', 'g-exp'),
+      ),
+    ];
+
+    for (final (what, rows, first, key) in stackRows) {
+      final stack = find.byKey(key);
+
+      testWidgets('$what shows its ring once a key is pressed after the '
+          'picker closes', (tester) async {
+        await show(tester, rows, onOpen: (_, _) {});
+        await clickAndClose(tester, stack, first);
+
+        expect(_focusIsWithin(tester, stack), isTrue);
+        await pressShift(tester);
+
+        expect(ringShown(tester, stack), isTrue);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+      testWidgets('$what focused by a click and never touched by the '
+          'keyboard shows no ring', (tester) async {
+        await show(tester, rows, onOpen: (_, _) {});
+        await clickAndClose(tester, stack, first);
+
+        expect(_focusIsWithin(tester, stack), isTrue);
+        expect(
+          FocusManager.instance.highlightMode,
+          FocusHighlightMode.traditional,
+        );
+        expect(ringShown(tester, stack), isFalse);
+      }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+    }
+
+    testWidgets("an entry's row shows its ring under keyboard focus", (
+      tester,
+    ) async {
+      await show(tester, [
+        ...once,
+        base,
+        expansion('x-1', 'Tabletop'),
+      ], onOpen: (_, _) {});
+
+      for (final key in [
+        GameCollectionListScreen.rowKey('e-1'),
+        GameCollectionListScreen.nestedRowKey('g-base', 'x-1'),
+      ]) {
+        final row = find.byKey(key);
+        expect(ringShown(tester, row), isFalse);
+        control(tester, row).requestFocus();
+        await tester.pumpAndSettle();
+
+        expect(ringShown(tester, row), isTrue);
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a mouse-clicked stack row reduced to one entry leaves the '
+        'entry row focused without a ring', (tester) async {
+      final boundary = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: harness(onOpen: (_, _) {}),
+        ),
+      );
+      status.finished(CollectionHydrateOutcome.complete);
+      items.add(twice);
+      await tester.pumpAndSettle();
+      final stack = find.byKey(GameCollectionListScreen.stackKey('g-wingspan'));
+      final entry = find.byKey(GameCollectionListScreen.rowKey('e-1'));
+      final click = await mouseClicker(tester);
+      // Inside the row, past its text, where only the row's own ink draws.
+      final rect = tester.getRect(stack);
+      final blank = Offset(rect.right - 8, rect.center.dy);
+      Future<Color> pixel() async {
+        final render =
+            boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        return (await tester.runAsync(() async {
+          final image = await render.toImage();
+          final bytes = (await image.toByteData())!;
+          final at = (blank.dy.floor() * image.width + blank.dx.floor()) * 4;
+          return Color.fromARGB(
+            bytes.getUint8(at + 3),
+            bytes.getUint8(at),
+            bytes.getUint8(at + 1),
+            bytes.getUint8(at + 2),
+          );
+        }))!;
+      }
+
+      final unfocused = await pixel();
+
+      await click(tester.getCenter(stack));
+      expect(pickerTile('e-1'), findsOneWidget);
+      // A sync leaves the game one entry under the picker, which is closed by
+      // a click on the barrier, below the dialog.
+      items.add(once);
+      await tester.pumpAndSettle();
+      await click(away);
+      expect(pickerTile('e-1'), findsNothing);
+
+      expect(_focusIsWithin(tester, entry), isTrue);
+      expect(
+        FocusManager.instance.highlightMode,
+        FocusHighlightMode.traditional,
+      );
+      expect(ringShown(tester, entry), isFalse);
+      // Nor is its ink tinted. A row's ink paints on the page's material, so
+      // the painted pixel inside the row is compared with the row unfocused;
+      // the colour the row hands its ink is not proof, as a highlight keeps
+      // the strength it was first drawn with.
+      expect(await pixel(), unfocused);
+      final tile = tester.widget<ListTile>(
+        find.descendant(of: entry, matching: find.byType(ListTile)),
+      );
+      expect(tile.focusColor?.a, 0);
+
+      await pressShift(tester);
+      expect(ringShown(tester, entry), isTrue);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
 }
 

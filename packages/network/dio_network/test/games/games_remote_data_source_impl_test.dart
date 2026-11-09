@@ -425,6 +425,35 @@ void main() {
       expect(game.complexity, 3.0);
     });
 
+    test('reads each row\'s base games, with isStandalone per link', () async {
+      final remote = answering(
+        _catalogBody([
+          {
+            ..._gameRow(),
+            'baseGames': [
+              {'gameId': 'b1', 'isStandalone': false},
+              {'gameId': 'b2', 'isStandalone': true},
+            ],
+          },
+        ]),
+      );
+
+      final game = (await remote.fetchPage()).items.single;
+
+      expect(game.baseGames, const [
+        ExpansionLink(gameId: 'b1', isStandalone: false),
+        ExpansionLink(gameId: 'b2', isStandalone: true),
+      ]);
+    });
+
+    test('a row without baseGames has none', () async {
+      final remote = answering(_catalogBody([_gameRow()]));
+
+      final game = (await remote.fetchPage()).items.single;
+
+      expect(game.baseGames, isEmpty);
+    });
+
     test('reads an empty image or thumbnail as none', () async {
       // The server's own search treats an empty thumbnail as none
       // (`game.thumbnail || undefined`), so the column can hold one.
@@ -596,6 +625,34 @@ void main() {
 
       expect(read.game, _catan);
       expect(adapter.sent.single.path, '/api/games/g_catan');
+    });
+
+    test('reads the detail\'s base games from its linked-game rows', () async {
+      final remote = answering(
+        jsonEncode({
+          'game': {
+            ..._detailRow(),
+            'baseGames': [
+              {
+                'gameId': 'b1',
+                'isStandalone': true,
+                'game': {
+                  'id': 'b1',
+                  'title': 'Base',
+                  'thumbnail': null,
+                  'contentType': 'BaseGame',
+                },
+              },
+            ],
+          },
+        }),
+      );
+
+      final read = await remote.fetchGame('g_catan');
+
+      expect(read.game.baseGames, const [
+        ExpansionLink(gameId: 'b1', isStandalone: true),
+      ]);
     });
 
     test('has no platform games while the server sends none', () async {

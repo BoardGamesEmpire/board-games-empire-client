@@ -22,6 +22,7 @@ import 'generated/schema_v14.dart' as v14;
 import 'generated/schema_v15.dart' as v15;
 import 'generated/schema_v16.dart' as v16;
 import 'generated/schema_v17.dart' as v17;
+import 'generated/schema_v18.dart' as v18;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1536,6 +1537,69 @@ void main() {
             ),
           ],
         );
+      },
+    );
+  });
+
+  // Data-integrity coverage for v17 → v18 (#711): the step adds
+  // `games.base_games_json`, `[]` until a read writes a game's links. A game
+  // cached before it must come through unchanged and read as having none.
+  test('v17 to v18 adds base_games_json, [] on every existing game', () async {
+    await verifier.testWithDataIntegrity(
+      oldVersion: 17,
+      newVersion: 18,
+      createOld: v17.DatabaseAtV17.new,
+      createNew: v18.DatabaseAtV18.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.games,
+          const v17.GamesData(
+            id: 'g_v17_1',
+            title: 'Brass: Birmingham',
+            subtitle: 'Deluxe',
+            description: 'An economic game',
+            minPlayers: 2,
+            maxPlayers: 4,
+            contentType: 'Expansion',
+            totalPlayCount: 7,
+            ownedByCount: 3,
+            categoriesJson: '["Economic"]',
+            mechanicsJson: '[]',
+            designersJson: '[]',
+            publishersJson: '[]',
+            tagsJson: '["Heavy"]',
+            reach: 'Public',
+            createdAt: '2024-01-15T10:30:00.000Z',
+            updatedAt: '2024-01-15T10:30:00.000Z',
+            fullRecordCachedAt: '2024-01-16T10:30:00.000Z',
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.games).get(), const [
+          v18.GamesData(
+            id: 'g_v17_1',
+            title: 'Brass: Birmingham',
+            subtitle: 'Deluxe',
+            description: 'An economic game',
+            minPlayers: 2,
+            maxPlayers: 4,
+            contentType: 'Expansion',
+            totalPlayCount: 7,
+            ownedByCount: 3,
+            categoriesJson: '["Economic"]',
+            mechanicsJson: '[]',
+            designersJson: '[]',
+            publishersJson: '[]',
+            tagsJson: '["Heavy"]',
+            baseGamesJson: '[]',
+            reach: 'Public',
+            createdAt: '2024-01-15T10:30:00.000Z',
+            updatedAt: '2024-01-15T10:30:00.000Z',
+            fullRecordCachedAt: '2024-01-16T10:30:00.000Z',
+          ),
+        ]);
       },
     );
   });
