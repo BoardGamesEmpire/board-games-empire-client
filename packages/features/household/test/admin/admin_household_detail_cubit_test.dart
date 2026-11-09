@@ -78,52 +78,67 @@ void main() {
     ],
   );
 
-  for (final newerFirst in [true, false]) {
-    test('of two overlapping reads, the one asked for last wins, when the '
-        '${newerFirst ? 'newer' : 'older'} answers first', () async {
-      final answers = [
-        Completer<AdminHouseholdDetail>(),
-        Completer<AdminHouseholdDetail>(),
-      ];
-      var reads = 0;
-      remote.onFetchDetail = (_) => answers[reads++].future;
-      final cubit = build();
-      addTearDown(cubit.close);
-      final states = <AdminHouseholdDetailState>[];
-      final listening = cubit.stream.listen(states.add);
-      addTearDown(listening.cancel);
+  // How the older of two overlapping reads ends. Only a 403 has an effect
+  // past the read: it asks the access again.
+  final olderEndings = <String, void Function(Completer<AdminHouseholdDetail>)>{
+    'answers': (answer) => answer.complete(adminDetail(name: 'Older')),
+    'fails': (answer) =>
+        answer.completeError(const AdminHouseholdTransientException('down')),
+    'is refused': (answer) =>
+        answer.completeError(const AdminHouseholdForbiddenException('no')),
+  };
+  for (final MapEntry(key: ending, value: endOlder) in olderEndings.entries) {
+    for (final newerFirst in [true, false]) {
+      test('of two overlapping reads, the one asked for last wins, when the '
+          'older $ending and the ${newerFirst ? 'newer' : 'older'} ends '
+          'first', () async {
+        final answers = [
+          Completer<AdminHouseholdDetail>(),
+          Completer<AdminHouseholdDetail>(),
+        ];
+        var reads = 0;
+        remote.onFetchDetail = (_) => answers[reads++].future;
+        final cubit = build();
+        addTearDown(cubit.close);
+        final states = <AdminHouseholdDetailState>[];
+        final listening = cubit.stream.listen(states.add);
+        addTearDown(listening.cancel);
 
-      final older = cubit.load();
-      final newer = cubit.load();
-      Future<void> answerOlder() async {
-        answers[0].complete(adminDetail(name: 'Older'));
-        await older;
-      }
+        final older = cubit.load();
+        final newer = cubit.load();
+        Future<void> answerOlder() async {
+          endOlder(answers[0]);
+          await older;
+        }
 
-      Future<void> answerNewer() async {
-        answers[1].complete(adminDetail(name: 'Newer'));
-        await newer;
-      }
+        Future<void> answerNewer() async {
+          answers[1].complete(adminDetail(name: 'Newer'));
+          await newer;
+        }
 
-      if (newerFirst) {
-        await answerNewer();
-        await answerOlder();
-      } else {
-        await answerOlder();
+        if (newerFirst) {
+          await answerNewer();
+          await answerOlder();
+        } else {
+          await answerOlder();
+          await pumpEventQueue();
+          // The older answer, with the newer still out, shows nothing.
+          expect(states, isEmpty);
+          await answerNewer();
+        }
+        // The stream hands a state on a turn after the cubit emits it.
         await pumpEventQueue();
-        // The older answer, with the newer still out, shows nothing.
-        expect(states, isEmpty);
-        await answerNewer();
-      }
-      // The stream hands a state on a turn after the cubit emits it.
-      await pumpEventQueue();
 
-      expect(states, [AdminHouseholdDetailReady(adminDetail(name: 'Newer'))]);
-      expect(
-        cubit.state,
-        AdminHouseholdDetailReady(adminDetail(name: 'Newer')),
-      );
-    });
+        expect(states, [AdminHouseholdDetailReady(adminDetail(name: 'Newer'))]);
+        expect(
+          cubit.state,
+          AdminHouseholdDetailReady(adminDetail(name: 'Newer')),
+        );
+        // Asked even though the newer read answered: the refusal is about the
+        // caller, not the household.
+        expect(access.refreshCount, ending == 'is refused' ? 1 : 0);
+      });
+    }
   }
 
   blocTest<AdminHouseholdDetailCubit, AdminHouseholdDetailState>(

@@ -1086,8 +1086,8 @@ void main() {
       });
     }
 
-    testWidgets('Restore is inert while it runs, keeps focus, and a second '
-        'press sends nothing', (tester) async {
+    testWidgets('Restore is inert while it runs, says so, keeps focus, and a '
+        'second press sends nothing', (tester) async {
       final handle = tester.ensureSemantics();
       final restore = Completer<void>();
       remote
@@ -1103,7 +1103,7 @@ void main() {
       expect(
         tester.getSemantics(button),
         isSemantics(
-          label: 'Restore Old crew',
+          label: 'Restoring Old crew…',
           isButton: true,
           isEnabled: false,
           hasTapAction: false,

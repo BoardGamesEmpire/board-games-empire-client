@@ -1027,10 +1027,13 @@ class _RestoreButton extends StatelessWidget {
     return BgeOnlineOnly(
       child: BgeInertButton(
         inert: restoring,
-        // Names the household, since every deleted row has one. A label,
-        // because VoiceOver doesn't read a tooltip on a control that can't
-        // be pressed.
-        label: l10n.adminHouseholdRestoreLabel(row.name),
+        // Names the household, since every deleted row has one, and while
+        // its restore runs says so, since the node is not enabled then. A
+        // label, because VoiceOver doesn't read a tooltip on a control that
+        // can't be pressed.
+        label: restoring
+            ? l10n.adminHouseholdRestoreInProgress(row.name)
+            : l10n.adminHouseholdRestoreLabel(row.name),
         onPressed: BgeConnectivityScope.offlineOf(context) ? null : onPressed,
         builder: (context, focusNode, onPressed) => TextButton(
           key: AdminHouseholdListScreen.restoreKey(row.id),

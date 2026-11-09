@@ -134,17 +134,22 @@ void main() {
       updatedAt: createdAt,
     );
     AdminHouseholdDetail detail({
+      String id = 'h1',
+      String name = 'Catan Club',
       String? description = 'Friday nights',
+      String? image = 'https://example.test/i.png',
+      Reach reach = Reach.friends,
       String? languageName = 'English',
+      DateTime? created,
       List<HouseholdMember>? members,
     }) => AdminHouseholdDetail(
-      id: 'h1',
-      name: 'Catan Club',
+      id: id,
+      name: name,
       description: description,
-      image: 'https://example.test/i.png',
-      reach: Reach.friends,
+      image: image,
+      reach: reach,
       languageName: languageName,
-      createdAt: createdAt,
+      createdAt: created ?? createdAt,
       members: members ?? [member('m1')],
     );
 
@@ -164,7 +169,15 @@ void main() {
     test('details are equal by every field, the roster included', () {
       expect(detail(), detail());
       expect(detail().hashCode, detail().hashCode);
+      expect(detail(), isNot(detail(id: 'h2')));
+      expect(detail(), isNot(detail(name: 'Ticket Club')));
       expect(detail(), isNot(detail(description: null)));
+      expect(detail(), isNot(detail(image: null)));
+      expect(detail(), isNot(detail(reach: Reach.private)));
+      expect(
+        detail(),
+        isNot(detail(created: createdAt.add(const Duration(days: 1)))),
+      );
       expect(detail(), isNot(detail(languageName: null)));
       expect(detail(), isNot(detail(members: [member('m2')])));
       expect(detail(), isNot(detail(members: const [])));

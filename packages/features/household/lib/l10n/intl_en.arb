@@ -1090,6 +1090,16 @@
       }
     }
   },
+  "adminHouseholdRestoreInProgress": "Restoring {name}…",
+  "@adminHouseholdRestoreInProgress": {
+    "description": "What a screen reader says for the Restore button on a deleted household's row while its restore is running. The button still shows Restore, with a spinner, and stays focusable but does nothing until the server answers.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
   "adminHouseholdRestoreConfirmTitle": "Restore {name}?",
   "@adminHouseholdRestoreConfirmTitle": {
     "description": "Title of the dialog asking staff to confirm restoring a deleted household, by its name.",
