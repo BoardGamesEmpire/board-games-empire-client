@@ -903,5 +903,293 @@
   "householdLeaveErrorLastOwner": "You're the household's only owner. Make another member the owner first.",
   "@householdLeaveErrorLastOwner": {
     "description": "Warning banner by the Leave household row when the server refused because the person is its only owner (a 400), for instance because another owner left on another device."
+  },
+  "adminHouseholdsTitle": "Households",
+  "@adminHouseholdsTitle": {
+    "description": "Title of the staff screen listing every household on the server, deleted ones too, and the name of its entry on the admin dashboard. Only server staff see it."
+  },
+  "adminHouseholdsLoading": "Loading households…",
+  "@adminHouseholdsLoading": {
+    "description": "Announced and shown on the staff households screen while the server's households are being read."
+  },
+  "adminHouseholdsSearchLabel": "Search households",
+  "@adminHouseholdsSearchLabel": {
+    "description": "Label of the search field on the staff households screen."
+  },
+  "adminHouseholdsSearchHint": "Name or member",
+  "@adminHouseholdsSearchHint": {
+    "description": "Hint inside the empty search field on the staff households screen: a search matches part of a household's name, or of a member's username or display name."
+  },
+  "adminHouseholdsSearchTooShort": "{count, plural, =1{Enter at least 1 character} other{Enter at least {count} characters}}",
+  "@adminHouseholdsSearchTooShort": {
+    "description": "Helper under the search field on the staff households screen while what is typed is too short to search by. Until then the list shows every household, unsearched.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "adminHouseholdsSearchTooLong": "{count, plural, =1{Enter at most 1 character} other{Enter at most {count} characters}}",
+  "@adminHouseholdsSearchTooLong": {
+    "description": "Helper under the search field on the staff households screen while what is typed is too long to search by, as the server counts it: some characters, such as many emoji or a letter typed with its accent as a separate mark, count as more than one. Until it is shortened the list shows every household, unsearched.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "adminHouseholdsSearchClear": "Clear search",
+  "@adminHouseholdsSearchClear": {
+    "description": "Tooltip and spoken label of the button in the staff households search field that empties it."
+  },
+  "adminHouseholdsStatusMenu": "Show: {status}",
+  "@adminHouseholdsStatusMenu": {
+    "description": "The button at the head of the staff households list that opens the menu choosing which households to list: live ones, deleted ones, or all. Names the choice made now.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Deleted"
+      }
+    }
+  },
+  "adminHouseholdsStatusLive": "Live",
+  "@adminHouseholdsStatusLive": {
+    "description": "Entry of the staff households screen's Show menu: list the households that are not deleted."
+  },
+  "adminHouseholdsStatusDeleted": "Deleted",
+  "@adminHouseholdsStatusDeleted": {
+    "description": "Entry of the staff households screen's Show menu: list only deleted households, which staff can restore."
+  },
+  "adminHouseholdsStatusAll": "All",
+  "@adminHouseholdsStatusAll": {
+    "description": "Entry of the staff households screen's Show menu: list every household, deleted or not."
+  },
+  "adminHouseholdsSortMenu": "Sort: {sort}",
+  "@adminHouseholdsSortMenu": {
+    "description": "The button at the head of the staff households list that opens the menu of orders to list the households in. Names the order chosen now.",
+    "placeholders": {
+      "sort": {
+        "type": "String",
+        "example": "Most members"
+      }
+    }
+  },
+  "adminHouseholdsSortName": "Name",
+  "@adminHouseholdsSortName": {
+    "description": "Entry of the staff households screen's sort menu: the households in alphabetical order of their names."
+  },
+  "adminHouseholdsSortNewest": "Newest",
+  "@adminHouseholdsSortNewest": {
+    "description": "Entry of the staff households screen's sort menu: the most recently created households first."
+  },
+  "adminHouseholdsSortMembers": "Most members",
+  "@adminHouseholdsSortMembers": {
+    "description": "Entry of the staff households screen's sort menu: the households with the most members first."
+  },
+  "adminHouseholdsSortDeleted": "Recently deleted",
+  "@adminHouseholdsSortDeleted": {
+    "description": "Entry of the staff households screen's sort menu, offered only while deleted households are listed: the most recently deleted first, and live ones last."
+  },
+  "adminHouseholdMembers": "{count, plural, =1{1 member} other{{count} members}}",
+  "@adminHouseholdMembers": {
+    "description": "How many members a household has, owners included, on its row of the staff households screen.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "4"
+      }
+    }
+  },
+  "adminHouseholdOwners": "Owners: {names}",
+  "@adminHouseholdOwners": {
+    "description": "The household's owners, by name, on its row of the staff households screen. Not shown for a household with no owner.",
+    "placeholders": {
+      "names": {
+        "type": "String",
+        "example": "Ada, Bea"
+      }
+    }
+  },
+  "adminHouseholdOwnerUnnamed": "Unnamed owner",
+  "@adminHouseholdOwnerUnnamed": {
+    "description": "Stands in for an owner's name wherever the staff households screen lists a household's owners, for an owner with neither a display name nor a username to show, as in 'Owners: Ada, Unnamed owner'."
+  },
+  "adminHouseholdOwnerSeparator": ", ",
+  "@adminHouseholdOwnerSeparator": {
+    "description": "Goes between two owners' names wherever the staff households screen lists a household's owners, as in 'Ada, Bea'. Use your language's list separator."
+  },
+  "adminHouseholdDeletedOn": "Deleted {date}",
+  "@adminHouseholdDeletedOn": {
+    "description": "On a deleted household's row of the staff households screen, beside a bin icon: when it was deleted, with the year, as in 'Deleted Oct 2, 2026'.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "adminHouseholdRowLabel": "{name}, {members}, owners {owners}",
+  "@adminHouseholdRowLabel": {
+    "description": "What a screen reader says for a household's row on the staff households screen: its name, how many members it has, and its owners. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      },
+      "members": {
+        "type": "String",
+        "example": "4 members"
+      },
+      "owners": {
+        "type": "String",
+        "example": "Ada, Bea"
+      }
+    }
+  },
+  "adminHouseholdRowLabelNoOwners": "{name}, {members}",
+  "@adminHouseholdRowLabelNoOwners": {
+    "description": "adminHouseholdRowLabel for a household with no owner: its name and how many members it has.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      },
+      "members": {
+        "type": "String",
+        "example": "4 members"
+      }
+    }
+  },
+  "adminHouseholdRowLabelDeleted": "{row}, deleted {date}",
+  "@adminHouseholdRowLabelDeleted": {
+    "description": "What a screen reader says for a deleted household's row on the staff households screen: what it says for any row, then when the household was deleted, with the year.",
+    "placeholders": {
+      "row": {
+        "type": "String",
+        "example": "Sunday Crew, 4 members, owners Ada"
+      },
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "adminHouseholdRestore": "Restore",
+  "@adminHouseholdRestore": {
+    "description": "Button on a deleted household's row of the staff households screen, which asks to restore it, and the confirm button of the dialog that asks."
+  },
+  "adminHouseholdRestoreLabel": "Restore {name}",
+  "@adminHouseholdRestoreLabel": {
+    "description": "What a screen reader says for the Restore button on a deleted household's row, naming the household, since every deleted row has one.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "adminHouseholdRestoreConfirmTitle": "Restore {name}?",
+  "@adminHouseholdRestoreConfirmTitle": {
+    "description": "Title of the dialog asking staff to confirm restoring a deleted household, by its name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "adminHouseholdRestoreConfirmBody": "It comes back with its members. Owners: {owners}.",
+  "@adminHouseholdRestoreConfirmBody": {
+    "description": "Body of the dialog asking staff to confirm restoring a deleted household: what restoring brings back, and who owns it.",
+    "placeholders": {
+      "owners": {
+        "type": "String",
+        "example": "Ada, Bea"
+      }
+    }
+  },
+  "adminHouseholdRestoreConfirmBodyNoOwners": "It comes back with its members.",
+  "@adminHouseholdRestoreConfirmBodyNoOwners": {
+    "description": "adminHouseholdRestoreConfirmBody for a household with no owner."
+  },
+  "adminHouseholdRestoreCancel": "Cancel",
+  "@adminHouseholdRestoreCancel": {
+    "description": "Button that closes the dialog asking to restore a household, restoring nothing."
+  },
+  "adminHouseholdRestored": "{name} is restored.",
+  "@adminHouseholdRestored": {
+    "description": "Banner on the staff households screen once the server restored a household, or answered that it was live already.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "adminHouseholdNotRestorable": "{name} couldn't be restored. Your role may not allow restoring households.",
+  "@adminHouseholdNotRestorable": {
+    "description": "Banner on the staff households screen when the server answered a restore with nothing this person may restore (a 404): the household is gone, or their role may not restore one. The list is read again.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "adminHouseholdRestoreFailed": "{name} couldn't be restored. Check your connection and try again.",
+  "@adminHouseholdRestoreFailed": {
+    "description": "Banner on the staff households screen when a restore got no answer that says anything, as when the server can't be reached. The row stays, and Restore can be tried again.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "adminHouseholdsDismiss": "Dismiss",
+  "@adminHouseholdsDismiss": {
+    "description": "Button that closes the banner on the staff households screen reporting how a restore went."
+  },
+  "adminHouseholdsEmpty": "No households yet",
+  "@adminHouseholdsEmpty": {
+    "description": "Shown on the staff households screen when the server has no household to list, with no search typed."
+  },
+  "adminHouseholdsEmptySearch": "No households match your search",
+  "@adminHouseholdsEmptySearch": {
+    "description": "Shown on the staff households screen when no household matches what is typed in the search field."
+  },
+  "adminHouseholdsEmptyDeleted": "No deleted households",
+  "@adminHouseholdsEmptyDeleted": {
+    "description": "Shown on the staff households screen when only deleted households are listed, with no search typed, and the server has none."
+  },
+  "adminHouseholdsFailed": "Couldn't load households",
+  "@adminHouseholdsFailed": {
+    "description": "Title shown on the staff households screen when the server's households could not be read, for a reason that says nothing about access."
+  },
+  "adminHouseholdsFailedBody": "Check your connection and try again.",
+  "@adminHouseholdsFailedBody": {
+    "description": "Body under the title shown when the staff households screen could not read the server's households."
+  },
+  "adminHouseholdsRetry": "Try again",
+  "@adminHouseholdsRetry": {
+    "description": "Button that reads the server's households again after a failure, on the staff households screen: the whole list, or its next page."
+  },
+  "adminHouseholdsRefused": "You don't have access to households on this server",
+  "@adminHouseholdsRefused": {
+    "description": "Shown in place of the list on the staff households screen when the server refused it: the person's role no longer lets them see every household."
+  },
+  "adminHouseholdsMore": "Load more",
+  "@adminHouseholdsMore": {
+    "description": "Button under the staff households list that reads the next page of households."
+  },
+  "adminHouseholdsMoreLoading": "Loading more households…",
+  "@adminHouseholdsMoreLoading": {
+    "description": "Label of the load-more button under the staff households list while the next page is being read. Also its accessible name then."
+  },
+  "adminHouseholdsMoreFailed": "Couldn't load more households.",
+  "@adminHouseholdsMoreFailed": {
+    "description": "Shown above the load-more button under the staff households list when the next page could not be read. The households shown stay, and the button tries again."
   }
 }
