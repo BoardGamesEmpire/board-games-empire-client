@@ -5,6 +5,7 @@
 // Usage, from the workspace root:
 //   dart run tool/build_android.dart
 //   dart run tool/build_android.dart --require-release-signing
+//   dart run tool/build_android.dart --build-number 214
 //   dart run tool/build_android.dart --self-test   # the fixtures, no build
 //
 // ── What it does ────────────────────────────────────────────────────
@@ -12,7 +13,10 @@
 //   1. Reads the app's `version:` and refuses one that is not
 //      major.minor.patch+build, before spending a build on it. The APK is
 //      named for the version without its build number:
-//      bge-<X.Y.Z>-android-universal.apk.
+//      bge-<X.Y.Z>-android-universal.apk. With `--build-number <n>`, the
+//      build is given n in place of the committed build number, which stays
+//      1: CI passes its commit count, so each build's versionCode only
+//      rises (#419).
 //   2. Empties apps/mobile/build/release. CI uploads the whole directory,
 //      and an APK an earlier build left there, another version's, would
 //      ship beside the current one.
@@ -23,6 +27,7 @@
 //      back to the debug key.
 //   4. Checks the APK itself, with the build-tools' aapt2 and apksigner:
 //      - its package is com.boardgamesempire.app;
+//      - its versionCode is the `--build-number` given, when one is;
 //      - it holds android.permission.INTERNET. Flutter's template grants
 //        it only in the debug and profile manifests, so a release build
 //        had no network at all, and nothing in `flutter run` shows that.
@@ -57,6 +62,12 @@ const _uploadDir = 'build/release';
 
 const _requireReleaseSigning = '--require-release-signing';
 
+const _buildNumberFlag = '--build-number';
+
+const _usage =
+    'Usage: dart run tool/build_android.dart '
+    '[$_requireReleaseSigning] [$_buildNumberFlag <n>] | --self-test';
+
 /// The SHA-256 digest of the release key's certificate, as `keytool -list
 /// -v` prints it. Every APK CI ships is signed by it, and only an APK that
 /// is installs over one already out there.
@@ -69,15 +80,32 @@ const _releaseCertificate =
     'E0:30:D5:1C:EB:13:E8:F9:4E:23:5E:F1:10:FA:4B:50';
 
 Future<void> main(List<String> args) async {
-  final unknown = args.where(
-    (a) => a != '--self-test' && a != _requireReleaseSigning,
-  );
+  final unknown = <String>[];
+  int? buildNumber;
+  for (var i = 0; i < args.length; i++) {
+    final a = args[i];
+    if (a == _buildNumberFlag) {
+      // The flag's value is the next argument, whatever it looks like: a
+      // bad one is reported as a bad build number, not as an unknown flag.
+      if (i + 1 >= args.length) {
+        stderr.writeln('$_buildNumberFlag needs a value.');
+        stderr.writeln(_usage);
+        exit(64); // EX_USAGE
+      }
+      try {
+        buildNumber = _parseBuildNumber(args[++i]);
+      } on FormatException catch (e) {
+        stderr.writeln('$_buildNumberFlag: ${e.message} (${e.source}).');
+        stderr.writeln(_usage);
+        exit(64); // EX_USAGE
+      }
+    } else if (a != '--self-test' && a != _requireReleaseSigning) {
+      unknown.add(a);
+    }
+  }
   if (unknown.isNotEmpty) {
     stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(
-      'Usage: dart run tool/build_android.dart '
-      '[$_requireReleaseSigning|--self-test]',
-    );
+    stderr.writeln(_usage);
     exit(64); // EX_USAGE
   }
 
@@ -107,9 +135,13 @@ Future<void> main(List<String> args) async {
   if (output.existsSync()) output.deleteSync(recursive: true);
   output.createSync(recursive: true);
 
+  final flutterArgs = [
+    ..._flags,
+    if (buildNumber != null) '$_buildNumberFlag=$buildNumber',
+  ];
   final flutter = await Process.start(
     'flutter',
-    _flags,
+    flutterArgs,
     workingDirectory: app.path,
     environment: {
       if (requireReleaseSigning) 'BGE_REQUIRE_RELEASE_SIGNING': 'true',
@@ -120,14 +152,17 @@ Future<void> main(List<String> args) async {
   );
   final code = await flutter.exitCode;
   if (code != 0) {
-    stderr.writeln('flutter ${_flags.join(' ')} failed with exit code $code.');
+    stderr.writeln(
+      'flutter ${flutterArgs.join(' ')} failed with exit code $code.',
+    );
     exit(code);
   }
 
   final apk = File('${app.path}/$_builtApk');
   if (!apk.existsSync()) {
     stderr.writeln(
-      'flutter ${_flags.join(' ')} succeeded but wrote no $_app/$_builtApk.',
+      'flutter ${flutterArgs.join(' ')} succeeded but wrote no '
+      '$_app/$_builtApk.',
     );
     exit(1);
   }
@@ -149,7 +184,7 @@ Future<void> main(List<String> args) async {
   final tools = _buildTools(sdk);
 
   final badging = await _run(tools.aapt2, ['dump', 'badging', apk.path]);
-  final problems = _badgingProblems(badging);
+  final problems = _badgingProblems(badging, versionCode: buildNumber);
   if (problems.isNotEmpty) {
     stderr.writeln('The release APK is not the app CI ships:');
     for (final p in problems) {
@@ -310,11 +345,28 @@ String _apkName(String version) {
 String _sha256Line(List<int> bytes, String name) =>
     '${sha256.convert(bytes)}  $name\n';
 
+/// [raw] as the build number `--build-number` passes to Flutter: digits
+/// only, from 1 to 65535.
+///
+/// The ceiling is the one a Windows build's version field has, which #439
+/// holds every platform's build number to, so a count CI could pass here
+/// never outgrows what another platform takes.
+///
+/// Throws a [FormatException] for anything else.
+int _parseBuildNumber(String raw) {
+  final number = RegExp(r'^\d+$').hasMatch(raw) ? int.parse(raw) : null;
+  if (number == null || number < 1 || number > 65535) {
+    throw FormatException('Not a build number from 1 to 65535', raw);
+  }
+  return number;
+}
+
 /// What is wrong with an APK, given `aapt2 dump badging`'s output.
 ///
 /// Empty when its package is [_package] and it holds the INTERNET
-/// permission.
-List<String> _badgingProblems(String badging) {
+/// permission, and, when [versionCode] is given, when that is its
+/// versionCode too.
+List<String> _badgingProblems(String badging, {int? versionCode}) {
   final lines = const LineSplitter().convert(badging);
   final problems = <String>[];
   final packageLine = lines.where((l) => l.startsWith('package:')).firstOrNull;
@@ -324,6 +376,15 @@ List<String> _badgingProblems(String badging) {
     final actual = RegExp(r"\bname='([^']*)'").firstMatch(packageLine)?[1];
     if (actual != _package) {
       problems.add('package is ${actual ?? '(unnamed)'}, not $_package');
+    }
+    if (versionCode != null) {
+      final code = RegExp(r"\bversionCode='([^']*)'")
+          .firstMatch(packageLine)?[1];
+      if (code == null) {
+        problems.add('no versionCode');
+      } else if (code != '$versionCode') {
+        problems.add('versionCode is $code, not $versionCode');
+      }
     }
   }
   final internet = RegExp(
@@ -510,6 +571,47 @@ void _selfTest() {
           'server',
     ],
   );
+
+  final numberedBadging = okBadging.replaceFirst(
+    "versionCode='1'",
+    "versionCode='214'",
+  );
+  expect(
+    'badging: accepts the versionCode asked for',
+    _badgingProblems(numberedBadging, versionCode: 214),
+    <String>[],
+  );
+  expect(
+    'badging: names a versionCode other than the one asked for',
+    _badgingProblems(numberedBadging, versionCode: 7),
+    ['versionCode is 214, not 7'],
+  );
+  expect(
+    'badging: checks no versionCode when none is asked for',
+    _badgingProblems(numberedBadging),
+    <String>[],
+  );
+  expect(
+    'badging: flags a package line with no versionCode',
+    _badgingProblems(
+      numberedBadging.replaceFirst("versionCode='214' ", ''),
+      versionCode: 214,
+    ),
+    ['no versionCode'],
+  );
+
+  expect('build number: accepts a CI count', _parseBuildNumber('214'), 214);
+  expect(
+    'build number: accepts the largest a Windows build takes',
+    _parseBuildNumber('65535'),
+    65535,
+  );
+  for (final raw in const ['0', '65536', '21a', '', '-3']) {
+    expectFormatException(
+      "build number: refuses '$raw'",
+      () => _parseBuildNumber(raw),
+    );
+  }
 
   expect(
     'signer: the debug key',
