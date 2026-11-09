@@ -1,0 +1,17 @@
+{
+  "branches": ["master"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", {
+      "preset": "conventionalcommits",
+      "releaseRules": [{ "breaking": true, "release": "minor" }]
+    }],
+    ["@semantic-release/exec", {
+      "prepareCmd": "dart run tool/check_sdk_constraints.dart --set-version ${nextRelease.version}"
+    }],
+    ["@semantic-release/git", {
+      "assets": ["pubspec.yaml", "apps/mobile/pubspec.yaml", "apps/desktop/pubspec.yaml", "apps/browser/pubspec.yaml"],
+      "message": "chore(release): ${nextRelease.version}"
+    }]
+  ]
+}
