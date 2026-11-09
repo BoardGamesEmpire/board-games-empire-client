@@ -65,24 +65,77 @@ This exists because `flutter create` leaves `flutter: ">=3.0.0"` behind, and pub
 can never fail on it — the Dart floor already excludes every Flutter that old, so
 the constraint is inert. 17 packages had drifted that way before #153.
 
-### Bumping the client version
+### Releasing
 
 The root [pubspec.yaml](pubspec.yaml) holds the client's one version, build
 number included, and every app under `apps/` declares the same string. Each
-platform takes its version from its app's pubspec. Bumping works like the
-toolchain:
+platform takes its version from its app's pubspec.
 
-```bash
-# 1. edit the root version:, then
-dart run tool/check_sdk_constraints.dart --fix
-```
+**Nobody edits `version:`.** The `release` job in CI does it (#419). Every
+`feat` or `fix` merged to master is released: `feat` is a minor release,
+`fix` and `perf` are patch releases, and a breaking change is a minor release
+while the major version is 0. Every other commit type releases nothing, so a
+`docs` or `chore` merge leaves the version where it is. That includes the
+commit GitHub's Revert button makes: it reverts a PR's merge commit, and
+semantic-release doesn't read a merge's revert as a revert. When a revert
+should ship, give its commit a `fix:` subject, such as
+`fix: revert "feat: add x"`. The job commits `chore(release): X.Y.Z` with the
+four pubspecs straight to master and tags `vX.Y.Z`. That commit's own CI run
+builds and publishes the release. Remove the breaking-is-minor rule from
+[.releaserc.json](.releaserc.json) when the version reaches `1.0.0`, so a
+breaking change then means a major release.
 
-`--fix` rewrites `version:` in each app's pubspec. Never edit those by hand, and
-never set a version in a native project, such as Xcode's General tab or
-`build.gradle.kts`. The check fails if an app's version differs from the root's,
-and if an Android, iOS, macOS or Windows manifest stops taking its version from
-Flutter (#73). The comment on the root `version:` says which values it accepts
-and how the build number moves.
+A release is cut from a tested commit: the job waits for every gate. A run
+that is behind master releases nothing, and the next run's release covers its
+commits.
+
+**The first release, once.** The job counts commits from the last `v*` tag, so
+until one exists it does nothing, and `0.1.0` is tagged by hand:
+
+1. Merge the PR that sets `0.1.0` (the one that added this section).
+2. `git tag v0.1.0 <merge commit> && git push origin v0.1.0`.
+3. Once that commit's CI run has finished, re-run its `Release tag` job. That
+   re-runs `publish-web` and `github-release` after it, so they write the
+   `0.1.0` image tag and the Release. Do it every time, not only when
+   `publish-web` has already run: `Release tag` needs only `generate`, so it
+   finishes some minutes after the merge, while `publish-web` waits for every
+   gate and takes far longer. A tag pushed in between is too late for
+   `Release tag`, which found nothing, and `publish-web` still uses that
+   result. GitHub only lets you re-run a job once the whole run has
+   finished. The re-run is safe even if the tag was seen the first time: an
+   existing `0.1.0` image tag naming the same digest is reused, and an
+   existing Release is left alone. Re-running `publish-web` alone would not do
+   it: a re-run reuses the outputs of the jobs it needs from the earlier
+   attempt, and `Release tag`'s was empty.
+
+**Recovery.**
+
+- A release commit whose tag never arrived publishes no `X.Y.Z`. Push the tag
+  by hand on that commit, and re-run that commit's `Release tag` job for the
+  same reason as above.
+- A `release` job that fails with a credentials error means #826's App or its
+  secrets are missing: the `release` environment needs the
+  `RELEASE_APP_CLIENT_ID` variable and the `RELEASE_APP_PRIVATE_KEY` secret.
+- A `release` job whose push master rejects has one of two causes, and the
+  error says which. `GH013` or "rule violations" means the App is not a bypass
+  actor on the "Protect master" ruleset (#826): the release commit goes
+  straight to master without a PR, and the ruleset's pull_request rule blocks
+  that unless the App may bypass it. A rejection as non-fast-forward, or
+  "fetch first", means a merge landed between semantic-release's up-to-date
+  check and its push. There is nothing to do: the next run releases both
+  merges.
+
+**Build numbers.** The `+1` committed in the pubspecs is what local and web
+builds report. CI builds only Android, and numbers each Android build by the
+commits on master's first-parent line, so each build's number is higher than
+the last. An iOS, macOS, Windows or Linux build made elsewhere takes the `+1`
+unless it passes `--build-number` itself, and App Store Connect refuses a
+second upload of one version with the same build number. Never set a
+version in a native project, such as Xcode's General tab or
+`build.gradle.kts`. The check (`dart run tool/check_sdk_constraints.dart`)
+fails if an app's version differs from the root's, and if an Android, iOS,
+macOS or Windows manifest stops taking its version from Flutter (#73). The
+comment on the root `version:` says which values it accepts.
 
 ### melos
 
@@ -254,12 +307,20 @@ pushes to `master`, in twelve jobs:
 | `build-web` | The release web build succeeds, its drift runtime files match their committed checksums, it holds no dotfile, and the files the app boots from are present |
 | `build-android` | The release APK builds, debug-signed, as `com.boardgamesempire.app`, with the INTERNET permission and a signature that verifies |
 
-On a push to `master`, two more jobs run once all twelve have passed.
+On a push to `master`, more jobs run. Once all twelve have passed:
 `release-android` signs the APK with the release key, from the
 `android-release` environment, and uploads it as the `android-apk` artifact;
 [docs/dev/android-signing.md](docs/dev/android-signing.md) covers the key.
 `publish-web` publishes the web build as an image. [docs/dev/web-image.md](docs/dev/web-image.md)
-covers its tags and contents.
+covers its tags and contents. `release` runs semantic-release from the
+`release` environment: when the commits since the last tag include a `feat`
+or `fix`, it commits the new version and tags it (see [Releasing](#releasing)).
+
+Three more jobs concern a release. `release-tag` runs on every push to
+`master` and looks up the `vX.Y.Z` tag that names the commit; it finds one only
+on a release commit. `publish-web` gives the image that version's tag only when
+`release-tag` found one. `github-release` creates that tag's pre-release once
+the image is published, and does nothing on a commit that carries no tag.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline
 so a broken melos script cannot take the build down with it. If you change a

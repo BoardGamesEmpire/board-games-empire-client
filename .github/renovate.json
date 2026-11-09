@@ -2,8 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
     "Keeps the workflows' action pins current (#326): each action stays pinned to a commit SHA, with its release as a trailing comment.",
-    "Only the github-actions manager is enabled. Nothing else in this repository is updated by Renovate."
+    "Also keeps the npm packages the `release` job runs with `npx -p name@x.y.z` current (#419), as one group so semantic-release and its plugins move together.",
+    "Only the github-actions and regex managers are enabled. Nothing else in this repository is updated by Renovate."
   ],
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "enabledManagers": ["github-actions"]
+  "enabledManagers": ["github-actions", "custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yaml$/"],
+      "matchStrings": ["-p (?<depName>(?:@[a-z0-9-]+/)?[a-z0-9.-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    { "matchManagers": ["custom.regex"], "groupName": "semantic-release" }
+  ]
 }
