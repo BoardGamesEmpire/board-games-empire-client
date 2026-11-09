@@ -42,8 +42,10 @@ import '../admin/admin_section.dart';
 /// A row usually leaves while its section covers the dashboard: the section
 /// is refused, asks the access again, and the answer takes the row away
 /// underneath. When the row the page would give focus back to has left, the
-/// return hands focus on the same way, once the section has gone. Focus the
-/// user moves on the way back is left where they put it.
+/// return hands focus on the same way, once the section has gone. So does
+/// the row opened, when the page has no row to give focus back to: a screen
+/// reader's double tap opens a row without focusing it. Focus the user moves
+/// on the way back is left where they put it.
 ///
 /// Retry, which goes with the failure as the ask starts, hands its focus to
 /// the heading.
@@ -105,6 +107,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   /// [_route]'s secondary animation, which runs as a route above it comes in
   /// and goes.
   Animation<double>? _above;
+
+  /// The row whose tap opened the route above, until the page is back on
+  /// top. A screen reader's double tap moves no input focus, so the page's
+  /// focus can't tell which row that was.
+  String? _opened;
 
   /// A hand-off owed to the page's return: the row the page would give focus
   /// back to left while a route covered it. Then the rows to try, nearest
@@ -310,12 +317,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       context,
       createDependency: false,
     ).focusedChild;
-    final gone = returning == null
-        ? -1
+    // The row the page gives focus back to, else, when that is no row, the
+    // row opened: a screen reader's double tap opens it without focusing it.
+    final returningRow = from.indexWhere(
+      (section) => identical(_entries[section.id], returning),
+    );
+    final gone = returningRow >= 0
+        ? (listed.contains(from[returningRow].id) ? -1 : returningRow)
         : from.indexWhere(
-            (section) =>
-                !listed.contains(section.id) &&
-                identical(_entries[section.id], returning),
+            (section) => section.id == _opened && !listed.contains(section.id),
           );
     // The row itself first: listed again by the return, it is where the user
     // left off. A row the page would give focus back to after that one went
@@ -333,6 +343,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   /// Settles a hand-off owed to the return after the next frame, by when the
   /// pop has given focus back to the page.
   void _settleReturnAfterFrame() {
+    _opened = null;
     if (_onReturn != null) _afterFrame(_settleReturn);
   }
 
@@ -422,8 +433,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _Shows.sections => BgeKeyedSliverList<AdminSection>(
             items: listed,
             keyOf: (section) => AdminDashboardScreen.entryKey(section.id),
-            itemBuilder: (context, section) =>
-                _Entry(section: section, focusNode: _entryNode(section.id)),
+            itemBuilder: (context, section) => _Entry(
+              section: section,
+              focusNode: _entryNode(section.id),
+              onOpen: (context) {
+                _opened = section.id;
+                section.onOpen(context);
+              },
+            ),
           ),
         },
       ],
@@ -432,12 +449,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 }
 
 class _Entry extends StatelessWidget {
-  const _Entry({required this.section, required this.focusNode});
+  const _Entry({
+    required this.section,
+    required this.focusNode,
+    required this.onOpen,
+  });
 
   final AdminSection section;
 
   /// The row's own, which a row that leaves hands its focus to.
   final FocusNode focusNode;
+
+  /// Opens [section], noting which row opened it.
+  final void Function(BuildContext context) onOpen;
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -445,6 +469,6 @@ class _Entry extends StatelessWidget {
     leading: Icon(section.icon),
     title: Text(section.title),
     subtitle: Text(section.summary),
-    onTap: () => section.onOpen(context),
+    onTap: () => onOpen(context),
   );
 }

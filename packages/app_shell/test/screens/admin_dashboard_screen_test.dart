@@ -4,6 +4,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -581,6 +582,66 @@ void main() {
 
           expect(find.text(_gatewaysTitle), findsNothing);
           expectFocusOn(tester, _householdsTitle);
+        });
+
+        testWidgets('the entry a screen reader opened leaves: back on the '
+            'dashboard, focus is on the next entry', (tester) async {
+          // Disposed in the test body: a handle still out at its end fails
+          // the test before any tear-down runs.
+          final semantics = tester.ensureSemantics();
+          await pumpWith(
+            tester,
+            _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+          );
+          // A double tap arrives as a tap action, which moves no input
+          // focus: the page has none to give back to the entry.
+          final entry = tester.getSemantics(find.text(_gatewaysTitle));
+          entry.owner!.performAction(entry.id, SemanticsAction.tap);
+          await tester.pumpAndSettle();
+          expect(find.text('$_gatewaysTitle section'), findsOneWidget);
+
+          access.current = _reads(households: AccessExtent.all);
+          await tester.pumpAndSettle();
+          popSection(tester);
+          await tester.pumpAndSettle();
+
+          expect(find.text(_gatewaysTitle), findsNothing);
+          expectFocusOn(tester, _householdsTitle);
+          semantics.dispose();
+        });
+
+        testWidgets('an entry a screen reader opened that stays leaves focus '
+            'where the pop puts it', (tester) async {
+          // Disposed in the test body: a handle still out at its end fails
+          // the test before any tear-down runs.
+          final semantics = tester.ensureSemantics();
+          await pumpWith(
+            tester,
+            _reads(gateways: AccessExtent.all, households: AccessExtent.all),
+          );
+          final entry = tester.getSemantics(find.text(_householdsTitle));
+          entry.owner!.performAction(entry.id, SemanticsAction.tap);
+          await tester.pumpAndSettle();
+
+          // Another entry leaves; the one opened is still there.
+          access.current = _reads(households: AccessExtent.all);
+          await tester.pumpAndSettle();
+          popSection(tester);
+          await tester.pumpAndSettle();
+
+          expect(find.text(_gatewaysTitle), findsNothing);
+          expect(
+            FocusManager.instance.primaryFocus,
+            isNot(
+              same(
+                Focus.of(
+                  tester.element(find.text(_householdsTitle)),
+                  createDependency: false,
+                ),
+              ),
+            ),
+          );
+          semantics.dispose();
         });
 
         testWidgets('the entry opened leaves after the page had other focus: '
