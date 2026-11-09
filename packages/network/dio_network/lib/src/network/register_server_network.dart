@@ -8,6 +8,7 @@ import 'package:interfaces/services.dart'
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
+        AdminHouseholdRemoteDataSource,
         DataGatewayRemoteDataSource,
         EventRemoteDataSource,
         GameCollectionRemoteDataSource,
@@ -25,6 +26,7 @@ import '../event/event_remote_data_source_impl.dart';
 import '../feedback/feedback_dio_transport.dart';
 import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../games/games_remote_data_source_impl.dart';
+import '../household/admin_household_remote_data_source_impl.dart';
 import '../household/household_invite_remote_data_source_impl.dart';
 import '../household/household_member_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
@@ -183,6 +185,14 @@ void registerServerNetwork({
   // owns the Dio.
   container.registerSingleton<DataGatewayRemoteDataSource>(
     DataGatewayRemoteDataSourceImpl(dio),
+  );
+
+  // #684: the per-server staff households remote, for the admin households
+  // section. Same convention and placement as the DataGateway remote: the
+  // per-server Dio carries the base URL and the session `/api/admin/households`
+  // requires. Const and stateless; the container owns the Dio.
+  container.registerSingleton<AdminHouseholdRemoteDataSource>(
+    AdminHouseholdRemoteDataSourceImpl(dio),
   );
 
   // #42: the per-server games remote, for browse, search and the game

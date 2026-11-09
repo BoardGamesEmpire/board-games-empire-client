@@ -122,7 +122,12 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
   EventHydrateInstaller(),
-  CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes),
+  CallerAccessInstaller(
+    resourceTypes: {
+      ...dataGatewayResourceTypes,
+      ...householdAdminResourceTypes,
+    },
+  ),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];

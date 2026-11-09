@@ -6,7 +6,8 @@ import 'package:drift_storage/drift_storage.dart'
 import 'package:events/events.dart' show EventHydrateInstaller;
 import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
-import 'package:household/household.dart' show HouseholdHydrateInstaller;
+import 'package:household/household.dart'
+    show HouseholdHydrateInstaller, householdAdminResourceTypes;
 import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
 import 'package:sync_queue/sync_queue.dart'
     show SyncQueueDrainInstaller, SyncSenderInstaller;
@@ -84,7 +85,12 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
   EventHydrateInstaller(),
-  CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes),
+  CallerAccessInstaller(
+    resourceTypes: {
+      ...dataGatewayResourceTypes,
+      ...householdAdminResourceTypes,
+    },
+  ),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];

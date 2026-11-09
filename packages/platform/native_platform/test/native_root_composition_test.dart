@@ -130,6 +130,26 @@ void main() {
         );
       });
 
+      test('the one access request names the DataGateway and the household '
+          'types (#684)', () async {
+        final access = harness.container.get<CallerAccessRepository>();
+
+        await pollUntil(
+          () => access.current.isKnown,
+          describe: () => 'No caller access answer was kept.',
+        );
+
+        final requests = harness.server.requestsTo(
+          'GET',
+          '/api/users/me/access',
+        );
+        expect(requests, hasLength(1));
+        expect(
+          requests.single.queryParameters['resourceTypes'],
+          'DataGateway,Household',
+        );
+      });
+
       test('the hydrates run at sign-in, on the session', () async {
         await harness.awaitHydrated();
 
