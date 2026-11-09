@@ -38,6 +38,20 @@ class FakeCallerAccessRepository implements CallerAccessRepository {
     ),
   });
 
+  /// A known answer with each type's `read` as given and every other action
+  /// none.
+  static CallerAccess of(Map<ResourceType, AccessExtent> reads) =>
+      CallerAccess.known({
+        for (final entry in reads.entries)
+          entry.key: ResourceAccess(
+            create: AccessExtent.none,
+            read: entry.value,
+            update: AccessExtent.none,
+            delete: AccessExtent.none,
+            manage: AccessExtent.none,
+          ),
+      });
+
   final StreamController<CallerAccess> _changes =
       StreamController<CallerAccess>.broadcast();
 
