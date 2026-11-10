@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -31,14 +29,12 @@ void main() {
 
       // Pushed, as the app reaches it, so the app bar has a back button.
       await tester.pumpWidget(catalogApp(const Scaffold(body: Text('home'))));
-      unawaited(
-        Navigator.of(tester.element(find.text('home'))).push(
-          MaterialPageRoute<void>(
-            builder: (_) => GameBrowseScreen(
-              remote: remote,
-              onSearch: (_) {},
-              layouts: _Thumbnails(),
-            ),
+      Navigator.of(tester.element(find.text('home'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameBrowseScreen(
+            remote: remote,
+            onSearch: (_) {},
+            layouts: _Thumbnails(),
           ),
         ),
       );

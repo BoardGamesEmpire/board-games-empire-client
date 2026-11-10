@@ -39,7 +39,7 @@ Widget catalogApp(
   home: home,
 );
 
-/// A games cache holding [games], for the screens' offline paths.
+/// A games cache holding `games`, for the screens' offline paths.
 ///
 /// A widget test runs under fake time, which the drift cache's own
 /// scheduling does not settle under, so the screens get this instead. The

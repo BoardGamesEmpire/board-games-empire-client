@@ -93,7 +93,7 @@ final class SomethingToPlayReady extends SomethingToPlayState {
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read, is
-/// taken down when [gone] says so, with no redraw, and is left out of later
+/// taken down when `gone` says so, with no redraw, and is left out of later
 /// draws. Losing the last row is [SomethingToPlayNothing].
 class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
   /// Starts the first draw: at once with no [collection], or when it answers.

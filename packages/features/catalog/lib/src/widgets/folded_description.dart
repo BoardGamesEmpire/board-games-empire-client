@@ -42,7 +42,7 @@ class FoldedDescription extends StatefulWidget {
     required this.onOpenLink,
     this.foldedLines = 4,
     super.key,
-  }) : assert(foldedLines > 0);
+  }) : assert(foldedLines > 0, 'foldedLines must be greater than 0');
 
   final String markdown;
 

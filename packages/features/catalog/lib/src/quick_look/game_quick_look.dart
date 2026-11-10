@@ -81,11 +81,11 @@ Future<void> showGameQuickLook(
 /// It never becomes an empty pop-up. A read that fails keeps what the seed
 /// had, and one answered from this device's cache shows the cached copy,
 /// unless the seed is a full row: a cached copy is never newer than that,
-/// and only its platforms are shown. Either way a banner says some details couldn't be loaded, with a retry.
-/// The retry keeps everything in place while it runs, itself included, so
-/// it keeps focus (#607). It says it is trying for at least [retryDwell],
-/// however soon its answer comes. A game the server refuses keeps the seed
-/// and says it isn't available.
+/// and only its platforms are shown. Either way a banner says some details
+/// couldn't be loaded, with a retry. The retry keeps everything in place while
+/// it runs, itself included, so it keeps focus (#607). It says it is trying for
+/// at least [retryDwell], however soon its answer comes. A game the server
+/// refuses keeps the seed and says it isn't available.
 ///
 /// ## The header follows the read
 ///

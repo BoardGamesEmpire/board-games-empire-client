@@ -209,8 +209,7 @@ void main() {
       of: find.byKey(GameBrowseScreen.fromCacheBannerKey),
       matching: find.byType(TextButton),
     );
-    final focus = tester.widget<TextButton>(retry).focusNode!;
-    focus.requestFocus();
+    final focus = tester.widget<TextButton>(retry).focusNode!..requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
@@ -1529,8 +1528,7 @@ void main() {
             matching: find.byIcon(Icons.view_list_outlined),
           ),
         ),
-      );
-      segment.requestFocus();
+      )..requestFocus();
       await tester.pump();
 
       tester

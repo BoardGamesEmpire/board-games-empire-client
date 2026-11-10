@@ -395,12 +395,13 @@ void main() {
       setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
       build: build,
       act: (bloc) async {
-        bloc.add(
-          const GameSearchFilterChanged(
-            GameSearchFilter(platformTypes: {PlatformType.tabletop}),
-          ),
-        );
-        bloc.add(const GameSearchQueryChanged('catan'));
+        bloc
+          ..add(
+            const GameSearchFilterChanged(
+              GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+            ),
+          )
+          ..add(const GameSearchQueryChanged('catan'));
         await settle();
       },
       verify: (_) => expect(remote.calls, ['search(catan {tabletop})']),
@@ -557,8 +558,9 @@ void main() {
       return build(cache: GameRepositoryImpl(db, userId: 'user-a'));
     },
     act: (bloc) async {
-      bloc.add(const GameSearchFilterChanged(_expansions));
-      bloc.add(const GameSearchQueryChanged('catan'));
+      bloc
+        ..add(const GameSearchFilterChanged(_expansions))
+        ..add(const GameSearchQueryChanged('catan'));
       await Future<void>.delayed(const Duration(milliseconds: 20));
     },
     skip: 2,
@@ -834,8 +836,9 @@ void main() {
       ]),
       build: () => build(cache: cache),
       act: (bloc) async {
-        bloc.add(const GameSearchFilterChanged(_expansions));
-        bloc.add(const GameSearchQueryChanged('catan'));
+        bloc
+          ..add(const GameSearchFilterChanged(_expansions))
+          ..add(const GameSearchQueryChanged('catan'));
         await Future<void>.delayed(const Duration(milliseconds: 20));
       },
       skip: 2,
@@ -869,8 +872,9 @@ void main() {
       ]),
       build: () => build(cache: cache),
       act: (bloc) async {
-        bloc.add(const GameSearchFilterChanged(_expansions));
-        bloc.add(const GameSearchQueryChanged('catan'));
+        bloc
+          ..add(const GameSearchFilterChanged(_expansions))
+          ..add(const GameSearchQueryChanged('catan'));
         await Future<void>.delayed(const Duration(milliseconds: 20));
       },
       skip: 2,
@@ -897,12 +901,13 @@ void main() {
       setUp: () => cache.cacheGames([game('g_catan', title: 'Catan')]),
       build: () => build(cache: cache),
       act: (bloc) async {
-        bloc.add(
-          const GameSearchFilterChanged(
-            GameSearchFilter(platformTypes: {PlatformType.tabletop}),
-          ),
-        );
-        bloc.add(const GameSearchQueryChanged('catan'));
+        bloc
+          ..add(
+            const GameSearchFilterChanged(
+              GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+            ),
+          )
+          ..add(const GameSearchQueryChanged('catan'));
         await Future<void>.delayed(const Duration(milliseconds: 20));
       },
       skip: 2,

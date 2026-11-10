@@ -231,10 +231,8 @@ void main() {
     await show(tester);
     expect(remote.calls, hasLength(1));
 
-    unawaited(
-      navigatorKey.currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-      ),
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
     expect(remote.calls, hasLength(1), reason: 'covering it reads nothing');
@@ -658,10 +656,8 @@ void main() {
         expect(focused, isNotNull);
 
         remote.onFetchPage = (_, _) async => throw unreachable();
-        unawaited(
-          navigatorKey.currentState!.push(
-            MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-          ),
+        navigatorKey.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
         );
         await tester.pumpAndSettle();
         navigatorKey.currentState!.pop();
@@ -966,10 +962,8 @@ void main() {
       final answer = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (_, _) => answer.future;
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();

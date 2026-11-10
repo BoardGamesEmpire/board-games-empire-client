@@ -455,7 +455,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     // A game the server already holds opens like one from this server;
     // anything else is an import. The import gets the screen's context, not
     // the row's: it outlasts the tap, and the row can go while it runs.
-    final VoidCallback? onTap = gameId != null
+    final onTap = gameId != null
         ? (open == null ? null : () => open(context, gameId))
         : (import == null
               ? null
@@ -488,7 +488,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
   );
 }
 
-/// One filter in use, as its chip under the field shows it: [without] is
+/// One filter in use, as its chip under the field shows it: `without` is
 /// the filter once it is cleared.
 typedef _InUse = ({String id, CatalogFact label, GameSearchFilter without});
 

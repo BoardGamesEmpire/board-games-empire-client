@@ -29,7 +29,7 @@ import 'package:observability/observability.dart';
 /// first section already lists: the server reports a game it imported both
 /// as its own and again under the DataGateway it came from (backend#662).
 ///
-/// A DataGateway is named only where [sourceNames] can name it. The shell
+/// A DataGateway is named only where `sourceNames` can name it. The shell
 /// passes one only when the user may read DataGateways, which ordinary users
 /// may not (#42). Without it, a result carries no source name, and the note
 /// on DataGateways that did not answer counts them instead of naming them.
@@ -57,7 +57,7 @@ import 'package:observability/observability.dart';
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read,
-/// is taken down from both sections when [gone] says so, and stays down
+/// is taken down from both sections when `gone` says so, and stays down
 /// while this screen is open.
 ///
 /// ## When the server refuses

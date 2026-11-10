@@ -83,6 +83,9 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     } on GamesForbiddenException {
       await _gone();
       return emit(const GameDetailUnavailable());
+      // fetchGame throws ArgumentError for an id it cannot send, which is
+      // a game that cannot be shown, not a failed read to fall back from.
+      // ignore: avoid_catching_errors
     } on ArgumentError {
       return emit(const GameDetailUnavailable());
     } on Object catch (error, stackTrace) {

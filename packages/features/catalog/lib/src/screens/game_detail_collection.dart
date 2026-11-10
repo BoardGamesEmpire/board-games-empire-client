@@ -28,8 +28,8 @@ final class GameDetailCollection {
   final Stream<List<GameCollection>> Function(Set<String> platformGameIds)
   watchOwned;
 
-  /// Opens the add for [game], offering [options]: the platforms the user
-  /// can still add it on, as they stood at the press. [platformGameId] is
+  /// Opens the add for `game`, offering `options`: the platforms the user
+  /// can still add it on, as they stood at the press. `platformGameId` is
   /// the platform chosen to start with, or null for none.
   final void Function(
     BuildContext context,

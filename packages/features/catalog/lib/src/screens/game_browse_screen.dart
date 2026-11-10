@@ -429,9 +429,9 @@ int _shownCount(GameBrowseReady state, {required bool thumbnails}) {
 /// of its base games is still to load. Once they are loaded, or the list
 /// ends (`hasMore` false), it is placed: at top level, marked, if none of
 /// them is shown, and at top level, unmarked, if those shown are all nested
-/// (`placeExpansions` says why). Offline, `hasMore` is true until the cache's last page is
-/// read, so the same rule holds. A page that shows nothing new reads the
-/// next one ([_landedNothingShown]).
+/// (`placeExpansions` says why). Offline, `hasMore` is true until the cache's
+/// last page is read, so the same rule holds. A page that shows nothing new
+/// reads the next one ([_landedNothingShown]).
 List<PlacedGame<Game>> _placeBrowse(GameBrowseReady state) => placeExpansions(
   state.games,
   gameIdOf: (game) => game.id,

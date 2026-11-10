@@ -41,9 +41,9 @@ import 'package:ui/ui.dart';
 ///
 /// The cubit lives as long as the section and is created when it is. When the
 /// section is uncovered it draws again only if there is nothing up, as the
-/// server may have been filled meanwhile, or the first draw may have failed with
-/// nothing else to try it again. With rows up it doesn't, so that the pick stays
-/// as the user left it. With none up, nothing can change under them: see
+/// server may have been filled meanwhile, or the first draw may have failed
+/// with nothing else to try it again. With rows up it doesn't, so that the pick
+/// stays as the user left it. With none up, nothing can change under them: see
 /// [SomethingToPlayCubit.drawIfNothing].
 class SomethingToPlaySection extends StatelessWidget {
   const SomethingToPlaySection({
@@ -131,7 +131,8 @@ class _Section extends StatelessWidget {
             context,
             placeholder: const ShelfLoading(
               key: SomethingToPlaySection.loadingKey,
-              // "Recently added" is offered with this section, and announces it.
+              // "Recently added" is offered with this section, and announces
+              // it.
               live: false,
             ),
           ),
