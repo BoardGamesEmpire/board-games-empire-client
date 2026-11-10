@@ -4,7 +4,8 @@
 /// spells it, and a name the server doesn't know is a 400, so a type is only
 /// added once the server knows it.
 enum ResourceType {
-  dataGateway('DataGateway');
+  dataGateway('DataGateway'),
+  household('Household');
 
   const ResourceType(this.wireName);
 

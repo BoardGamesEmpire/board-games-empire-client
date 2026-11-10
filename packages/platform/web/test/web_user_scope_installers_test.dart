@@ -35,7 +35,7 @@ void main() {
     });
 
     test('has one CallerAccessInstaller, after the rehydrator, asking for the '
-        'DataGateway types (#456)', () {
+        'DataGateway and household types (#456, #684)', () {
       final installers = buildWebUserScopeInstallers();
 
       final callerAccess = installers.whereType<CallerAccessInstaller>();
@@ -47,10 +47,10 @@ void main() {
           installers.indexWhere((i) => i is SessionRehydratorInstaller),
         ),
       );
-      expect(
-        callerAccess.single.resourceTypes,
-        contains(ResourceType.dataGateway),
-      );
+      expect(callerAccess.single.resourceTypes, {
+        ResourceType.dataGateway,
+        ResourceType.household,
+      });
     });
 
     test('holds the sender and the drain over it, drain last (#447)', () {

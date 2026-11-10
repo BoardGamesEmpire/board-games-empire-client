@@ -102,8 +102,9 @@ const _forbidden = DataGatewayForbiddenException('refused', statusCode: 403);
 
 /// The Admin entry in the home drawer, and the deep link past it (#41).
 ///
-/// The entry shows while the session's access allows read on DataGateways
-/// (#456). While the answer is unknown, and where it says no, there is no
+/// With only the DataGateway section to show, the entry shows while the
+/// session's access reads every DataGateway (#456, #684), and opens the admin
+/// dashboard. While the answer is unknown, and where it says less, there is no
 /// entry; a deep link still reaches the screen, which then says they have no
 /// access.
 void main() {
@@ -270,7 +271,20 @@ void main() {
       });
     });
 
-    testWidgets('opens the DataGateway list', (tester) async {
+    testWidgets('stays hidden while DataGateway read is some', (tester) async {
+      // Read on some DataGateways is not the whole server's (#274, #684).
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.some,
+      );
+      await pumpHome(tester);
+      await openDrawer(tester);
+
+      expect(adminEntry, findsNothing);
+      expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+    });
+
+    testWidgets('opens the admin dashboard, whose DataGateway entry opens the '
+        'list', (tester) async {
       access.current = FakeCallerAccessRepository.dataGateway(
         read: AccessExtent.all,
       );
@@ -280,14 +294,34 @@ void main() {
       await tester.tap(adminEntry);
       await tester.pumpAndSettle();
 
-      expect(find.text('Data gateways'), findsOneWidget);
+      expect(find.byType(AdminDashboardScreen), findsOneWidget);
+      final entry = find.byKey(AdminDashboardScreen.entryKey('data_gateways'));
+      expect(
+        find.descendant(of: entry, matching: find.text('Data gateways')),
+        findsOneWidget,
+      );
+
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DataGatewayListScreen), findsOneWidget);
       expect(find.text('No data gateways yet'), findsOneWidget);
+
+      // Leaving the list is a pop back to the dashboard.
+      GoRouter.of(tester.element(find.byType(DataGatewayListScreen))).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DataGatewayListScreen), findsNothing);
+      expect(entry, findsOneWidget);
     });
   });
 
   testWidgets('a deep link by a user who may not read shows access-denied, '
       "and asks the session's access again (#41, #456)", (tester) async {
     remote.read = () async => throw _forbidden;
+    // Known, so the admin dashboard the link builds beneath the list (#684)
+    // has nothing to ask: the one ask is the list's.
+    access.current = FakeCallerAccessRepository.dataGateway();
     await pumpHome(tester);
 
     GoRouter.of(tester.element(find.byType(HomeScreen)))

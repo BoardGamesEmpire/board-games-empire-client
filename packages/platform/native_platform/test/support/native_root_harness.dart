@@ -491,6 +491,15 @@ const _someAccess = {
       'delete': 'none',
       'manage': 'none',
     },
+    // The session asks about households too (#684); a reply that omits a
+    // requested type is malformed, so the canned one answers both.
+    'Household': {
+      'create': 'none',
+      'read': 'none',
+      'update': 'none',
+      'delete': 'none',
+      'manage': 'none',
+    },
   },
 };
 

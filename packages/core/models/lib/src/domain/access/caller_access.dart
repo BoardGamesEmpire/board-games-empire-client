@@ -24,7 +24,16 @@ final class CallerAccess extends Equatable {
   /// Whether [action] is open on [type]: false while unknown, or when the
   /// answer lacks [type].
   bool allows(ResourceType type, AccessAction action) =>
-      _types?[type]?.of(action).allows ?? false;
+      extentOf(type, action).allows;
+
+  /// How far [action] reaches on [type]: [AccessExtent.none] while unknown,
+  /// or when the answer lacks [type].
+  ///
+  /// [allows] is `extentOf(...).allows`, so it can't tell [AccessExtent.all]
+  /// from [AccessExtent.some]. A section meant for server-wide administration
+  /// checks for [AccessExtent.all] (#274).
+  AccessExtent extentOf(ResourceType type, AccessAction action) =>
+      _types?[type]?.of(action) ?? AccessExtent.none;
 
   /// Whether the answer is known and every action on every type is
   /// [AccessExtent.none]. True for an empty answer.

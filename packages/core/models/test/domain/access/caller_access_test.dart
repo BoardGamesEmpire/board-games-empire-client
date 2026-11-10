@@ -60,6 +60,49 @@ void main() {
       );
     });
 
+    test('extentOf is none while unknown', () {
+      expect(
+        const CallerAccess.unknown().extentOf(
+          ResourceType.household,
+          AccessAction.read,
+        ),
+        AccessExtent.none,
+      );
+    });
+
+    test('extentOf is none for a type the answer lacks', () {
+      final access = CallerAccess.known({
+        ResourceType.dataGateway: _access(read: AccessExtent.all),
+      });
+
+      expect(
+        access.extentOf(ResourceType.household, AccessAction.read),
+        AccessExtent.none,
+      );
+    });
+
+    test('extentOf tells all from some', () {
+      final some = CallerAccess.known({
+        ResourceType.household: _access(read: AccessExtent.some),
+      });
+      final all = CallerAccess.known({
+        ResourceType.household: _access(read: AccessExtent.all),
+      });
+
+      expect(
+        some.extentOf(ResourceType.household, AccessAction.read),
+        AccessExtent.some,
+      );
+      expect(
+        all.extentOf(ResourceType.household, AccessAction.read),
+        AccessExtent.all,
+      );
+    });
+
+    test("household's wire name is the server's", () {
+      expect(ResourceType.household.wireName, 'Household');
+    });
+
     test('deniesEverything only when every action is none', () {
       expect(
         const CallerAccess.known({

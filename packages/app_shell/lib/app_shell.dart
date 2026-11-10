@@ -7,8 +7,9 @@
 /// "ask each time" crash-report flow (#69) and the full review/redaction
 /// surface (#76), app-level i18n — the generated [ShellLocalizations] plus
 /// the active-locale seam (#33) — the shell screens (splash, bootstrap
-/// failure, placeholders, not-yet-available), and the settings surface with
-/// its persisted theme-mode and locale controllers (#120).
+/// failure, placeholders, not-yet-available), the settings surface with
+/// its persisted theme-mode and locale controllers (#120), and the admin
+/// dashboard that lists the server administration sections (#684).
 ///
 /// Platform composition roots live in `packages/platform/*`; the apps under
 /// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
@@ -16,6 +17,7 @@
 library;
 
 export 'l10n/shell_localizations.dart';
+export 'src/admin/admin_section.dart';
 export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
@@ -33,6 +35,7 @@ export 'src/observability/global_error_hooks.dart';
 export 'src/observability/shell_observability.dart';
 export 'src/observability/uncaught_error_record.dart';
 export 'src/router/app_router.dart';
+export 'src/screens/admin_dashboard_screen.dart';
 export 'src/screens/bootstrap_error_screen.dart';
 export 'src/screens/feedback_flow_screen.dart';
 export 'src/screens/home_menu_entry.dart';

@@ -65,6 +65,7 @@ export 'src/domain/game/platform_type.dart';
 
 export 'src/domain/list_layout.dart';
 
+export 'src/domain/household/admin_household.dart';
 export 'src/domain/household/household.dart';
 export 'src/domain/household/household_invite.dart';
 export 'src/domain/household/household_invite_status.dart';

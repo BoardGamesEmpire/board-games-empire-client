@@ -8,10 +8,11 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
 
 const _listMarkerKey = Key('data_gateway_list_route_marker');
+const _dashboardMarkerKey = Key('admin_dashboard_route_marker');
 
 /// The DataGateway admin routes (#41): the list at `/admin/data-gateways`,
 /// with the add and edit forms and one DataGateway's own page (#457) beneath
-/// it.
+/// it, all beneath the admin dashboard at `/admin` (#684).
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -21,6 +22,7 @@ void main() {
 
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
+    AdminDashboardScreenBuilder? adminDashboardBuilder,
     DataGatewayListScreenBuilder? dataGatewayListBuilder,
     DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
     DataGatewayDetailScreenBuilder? dataGatewayDetailBuilder,
@@ -34,6 +36,7 @@ void main() {
     final router = buildAppRouter(
       bootstrapCubit: cubit,
       refreshListenable: listenable,
+      adminDashboardBuilder: adminDashboardBuilder,
       dataGatewayListBuilder: dataGatewayListBuilder,
       dataGatewayFormBuilder: dataGatewayFormBuilder,
       dataGatewayDetailBuilder: dataGatewayDetailBuilder,
@@ -231,6 +234,54 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+  });
+
+  group('buildAppRouter: DataGateways beneath the admin dashboard (#684)', () {
+    testWidgets('a deep link to /admin/data-gateways builds the dashboard '
+        'beneath it', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        adminDashboardBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _dashboardMarkerKey)),
+        dataGatewayListBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _listMarkerKey)),
+      );
+
+      router.go(AppRoutes.adminDataGateways);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_listMarkerKey), findsOneWidget);
+      // Leaving the section is a plain pop back to the dashboard.
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_dashboardMarkerKey), findsOneWidget);
+      expect(find.byKey(_listMarkerKey), findsNothing);
+    });
+
+    testWidgets('a deep link to one DataGateway builds the list and the '
+        'dashboard beneath it', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        adminDashboardBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _dashboardMarkerKey)),
+        dataGatewayListBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _listMarkerKey)),
+        dataGatewayDetailBuilder: (_, _) =>
+            const Scaffold(body: Text('detail')),
+      );
+
+      router.go(AppRoutes.dataGatewayDetailOf('dg_1'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('detail'), findsOneWidget);
+      expect(find.byKey(_listMarkerKey, skipOffstage: false), findsOneWidget);
+      expect(
+        find.byKey(_dashboardMarkerKey, skipOffstage: false),
+        findsOneWidget,
+      );
     });
   });
 }

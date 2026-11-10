@@ -140,15 +140,17 @@ Know these limits before trusting a green run.
   by the viewport at its clipped size, so a scroll that leaves a field half
   under the top edge fails it, though nothing a user meets is wrong. Such a
   state is audited as a whole page in a tall view instead, as above.
-- **Some pop-ups.** Household list and detail, the three DataGateway
-  screens, event detail, game detail and the two collection screens audit
-  every dialog, sheet and menu they open. Elsewhere only home's drawer, game
-  search's filter sheet, sent invites' filter menu and stuck changes' discard
-  dialog are audited. The rest are not: the confirm dialogs of the invite
-  inbox, the household's invite list and the bootstrap error screen, and
-  create event's date and time pickers, among others. Nor is the game quick
-  look, which a cover on home's rows or the browse screen opens: it is no
-  screen of its own, so the coverage check doesn't ask for it (#803).
+- **Some pop-ups.** Household list and detail, the staff households list
+  (its Show and Sort menus and Restore's confirm dialog), the three
+  DataGateway screens, event detail, game detail and the two collection
+  screens audit every dialog, sheet and menu they open. Elsewhere only
+  home's drawer, game search's filter sheet, sent invites' filter menu and
+  stuck changes' discard dialog are audited. The rest are not: the confirm
+  dialogs of the invite inbox, the household's invite list and the
+  bootstrap error screen, and create event's date and time pickers, among
+  others. Nor is the game quick look, which a cover on home's rows or the
+  browse screen opens: it is no screen of its own, so the coverage check
+  doesn't ask for it (#803).
 - **The offline notice** the shell draws isn't in the screen audits.
 - **The drawer entries** read "Tab n of m" (#763).
 - **Wrapped button labels at 200%.** The ring's builder makes Flutter clip
@@ -205,8 +207,15 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog.
-10. Admin, the DataGateway list: a row's menu, the add form, and a
-    DataGateway's detail with its language picker.
+10. Admin, from the drawer: the dashboard, with an entry for each section
+    the account may see, then each section from its entry.
+    - The DataGateway list: a row's menu, the add form, and a DataGateway's
+      detail with its language picker.
+    - The staff households list: the search (one character first, whose
+      hint says what a search needs, then a name), Show and Sort, a deleted
+      household's Restore with its confirm dialog (Cancel, then Restore),
+      and the outcome banner with its Dismiss. Then a live household's staff
+      detail.
 11. The invite inbox: a pending invite's Accept, then its Decline and the
     decline confirm dialog (Cancel, then Decline), and the outcome banner
     after each. No automated check opens this dialog (§3, "Some pop-ups").
@@ -226,7 +235,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
   "Controls", then again with "Headings".
 - Check that opening the drawer, the filter sheet and a dialog announces a
   name for it.
-- Check the focus hand-offs from #479 and #478 (below).
+- Check the focus hand-offs from #479 and #478, and from #684 and #685
+  (below).
 
 ### VoiceOver (iOS and macOS)
 
@@ -239,7 +249,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 - The drawer is named "Navigation menu" on iOS and macOS as elsewhere. The
   filter sheet and `AlertDialog` routes are unnamed there today
   (#762). Check that each is read as something.
-- Check the focus hand-offs from #479 and #478 (below).
+- Check the focus hand-offs from #479 and #478, and from #684 and #685
+  (below).
 
 ### A browser screen reader (web)
 
@@ -291,6 +302,24 @@ follows input focus to:
 - the member outcome banner's Dismiss, or the member-count heading, after
   Make owner or Remove;
 - the leave-failure banner's Dismiss, after a failure disables the Leave row.
+
+### Focus hand-offs from #684 and #685
+
+The same check, for the admin screens. The dashboard's return is #479's
+case: the pop asks the platform to re-focus an entry that has gone.
+
+- On the staff households list, Restore's row leaving (restored under
+  Deleted, or turned live under All): the outcome banner's Dismiss, or the
+  heading. So does a Restore whose row a read took while its confirm dialog
+  was open, as the dialog closes.
+- On the same list, Load more, gone with the last page: the first row that
+  page brought.
+- On the dashboard, an entry leaving as the account's access changes: the
+  next entry, else the one before it, else the heading. Also on the way
+  back from a section that covered the dashboard when its entry left, as
+  when the section is refused and asks the access again.
+- Retry, on the dashboard, the staff households list and the staff
+  household detail: the heading.
 
 ### #322's selection and copy checks
 

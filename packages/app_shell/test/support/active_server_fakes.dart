@@ -218,6 +218,7 @@ ActiveServer buildActiveServer(
   SyncQueueRepository? syncQueueRepository,
   SyncQueueDrain? syncQueueDrain,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
+  AdminHouseholdRemoteDataSource? adminHouseholdRemoteDataSource,
   CallerAccessRepository? callerAccess,
   GamesRemoteDataSource? gamesRemoteDataSource,
   GameRepository? gameRepository,
@@ -311,6 +312,11 @@ ActiveServer buildActiveServer(
   if (dataGatewayRemoteDataSource != null) {
     container.registerSingleton<DataGatewayRemoteDataSource>(
       dataGatewayRemoteDataSource,
+    );
+  }
+  if (adminHouseholdRemoteDataSource != null) {
+    container.registerSingleton<AdminHouseholdRemoteDataSource>(
+      adminHouseholdRemoteDataSource,
     );
   }
   if (callerAccess != null) {
