@@ -34,9 +34,8 @@ void main() {
     test('builds a crash draft from the record at capture time and '
         'publishes it', () {
       final service = _FakeFeedbackService();
-      final reporter = FeedbackUncaughtErrorReporter(service: service);
-
-      reporter.report(record('bad state'));
+      final reporter = FeedbackUncaughtErrorReporter(service: service)
+        ..report(record('bad state'));
 
       final call = service.buildCalls.single;
       expect(call.category, FeedbackCategory.crash);
@@ -53,10 +52,9 @@ void main() {
 
     test('is single-slot — a newer crash replaces the pending draft', () {
       final service = _FakeFeedbackService();
-      final reporter = FeedbackUncaughtErrorReporter(service: service);
-
-      reporter.report(record('first'));
-      reporter.report(record('second'));
+      final reporter = FeedbackUncaughtErrorReporter(service: service)
+        ..report(record('first'))
+        ..report(record('second'));
 
       expect(service.buildCalls, hasLength(2));
       expect(
@@ -67,9 +65,9 @@ void main() {
 
     test('never auto-submits — privacy contract', () {
       final service = _FakeFeedbackService();
-      final reporter = FeedbackUncaughtErrorReporter(service: service);
-
-      reporter.report(record('bad state'));
+      FeedbackUncaughtErrorReporter(
+        service: service,
+      ).report(record('bad state'));
 
       expect(service.submitted, isEmpty);
     });
@@ -87,8 +85,8 @@ void main() {
 
     test('clearPendingCrashReport empties the slot and notifies', () {
       final service = _FakeFeedbackService();
-      final reporter = FeedbackUncaughtErrorReporter(service: service);
-      reporter.report(record('bad state'));
+      final reporter = FeedbackUncaughtErrorReporter(service: service)
+        ..report(record('bad state'));
 
       var notified = false;
       reporter.pendingCrashReport.addListener(() => notified = true);
@@ -119,7 +117,7 @@ class _BuildCall {
 class _FakeFeedbackService implements FeedbackService {
   _FakeFeedbackService({this.buildError});
 
-  final Object? buildError;
+  final Error? buildError;
   final List<_BuildCall> buildCalls = [];
   final List<FeedbackReport> builtReports = [];
   final List<FeedbackReport> submitted = [];

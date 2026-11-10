@@ -448,7 +448,8 @@ void main() {
       expect(find.textContaining('The Smiths'), findsOneWidget);
     });
 
-    testWidgets('a fallback row opens the detail, caching it for reading only', (
+    testWidgets('a fallback row opens the detail, '
+        'caching it for reading only', (
       tester,
     ) async {
       final remote = _MockEventRemote();

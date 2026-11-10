@@ -363,13 +363,13 @@ void main() {
 
     testWidgets('reports carry the entries of a registered '
         'DeviceInfoReader (#324)', (tester) async {
-      final container = SpyRootContainer();
-      container.registerSingleton<DeviceInfoReader>(
-        const _FixedDeviceInfoReader({
-          'operatingSystem': 'linux',
-          'browser': 'Firefox 130',
-        }),
-      );
+      final container = SpyRootContainer()
+        ..registerSingleton<DeviceInfoReader>(
+          const _FixedDeviceInfoReader({
+            'operatingSystem': 'linux',
+            'browser': 'Firefox 130',
+          }),
+        );
       final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
 
       await boot(tester, bootstrap);

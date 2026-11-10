@@ -30,7 +30,7 @@ class _AdminHouseholds implements AdminHouseholdRemoteDataSource {
   List<AdminHouseholdRow> rows = const [];
 
   /// Thrown by every read, when set.
-  Object? error;
+  Exception? error;
 
   /// The ids whose detail was read, in order.
   final List<String> detailsRead = [];

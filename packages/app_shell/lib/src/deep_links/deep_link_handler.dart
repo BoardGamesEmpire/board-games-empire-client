@@ -29,6 +29,8 @@ class DeepLinkHandler {
   final BgeLogger _logger;
 
   bool _started = false;
+  // Cancelled in dispose(), through a local copy the lint can't follow.
+  // ignore: cancel_subscriptions
   StreamSubscription<Uri>? _subscription;
 
   /// Subscribes to the source. Call exactly once; a second call is a

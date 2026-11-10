@@ -32,7 +32,7 @@ void main() {
       expect: () => const [ThemeMode.dark],
       verify: (_) {
         final captured = verify(
-          () => storage.write('ThemeModeCubit', captureAny()),
+          () => storage.write('ThemeModeCubit', captureAny<dynamic>()),
         ).captured;
         expect(captured.last, {'themeMode': 'dark'});
       },

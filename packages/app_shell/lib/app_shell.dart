@@ -1,19 +1,19 @@
 /// Shared application shell for Board Games Empire.
 ///
-/// Owns the bootstrap sequence ([AppBootstrapCubit] over a platform-supplied
-/// [PlatformBootstrap]), the `go_router` route table (including reserved
+/// Owns the bootstrap sequence (`AppBootstrapCubit` over a platform-supplied
+/// `PlatformBootstrap`), the `go_router` route table (including reserved
 /// deep-link paths, #10), deep-link reception/normalization and the
 /// pending-link slot (#10), global uncaught-error capture (#34) with the
 /// "ask each time" crash-report flow (#69) and the full review/redaction
-/// surface (#76), app-level i18n — the generated [ShellLocalizations] plus
+/// surface (#76), app-level i18n — the generated `ShellLocalizations` plus
 /// the active-locale seam (#33) — the shell screens (splash, bootstrap
 /// failure, placeholders, not-yet-available), the settings surface with
 /// its persisted theme-mode and locale controllers (#120), and the admin
 /// dashboard that lists the server administration sections (#684).
 ///
 /// Platform composition roots live in `packages/platform/*`; the apps under
-/// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
-/// to [runBgeApp].
+/// `apps/*` are thin `main.dart` wrappers that hand a `PlatformBootstrap`
+/// to `runBgeApp`.
 library;
 
 export 'l10n/shell_localizations.dart';

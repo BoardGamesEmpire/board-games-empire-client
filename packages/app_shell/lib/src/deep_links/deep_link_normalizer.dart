@@ -1,4 +1,5 @@
 import 'package:app_shell/src/deep_links/deep_link_redaction.dart';
+import 'package:flutter/foundation.dart';
 
 /// Normalization of raw `bge://` deep-link URIs into router locations (#10).
 ///
@@ -32,12 +33,13 @@ enum DeepLinkRejectionReason {
 }
 
 /// A deep link that passed validation, expressed in the router's terms.
+@immutable
 final class NormalizedDeepLink {
   const NormalizedDeepLink({required this.serverId, required this.location});
 
   /// The client-local server identifier from the link (the MetaDB-assigned
   /// id, not a hostname), percent-decoded. Validated against the server
-  /// registry by [KnownServerLookup] consumers (#82); on web it is carried
+  /// registry by `KnownServerLookup` consumers (#82); on web it is carried
   /// but ignored (single-origin — #10 decision).
   final String serverId;
 

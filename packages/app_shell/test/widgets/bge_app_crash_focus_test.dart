@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
@@ -63,21 +61,19 @@ void main() {
     addTearDown(field.dispose);
     addTearDown(fieldFocus.dispose);
 
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(
-            MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                body: TextField(
-                  controller: field,
-                  focusNode: fieldFocus,
-                  autofocus: true,
-                ),
+    tester
+        .state<NavigatorState>(find.byType(Navigator).first)
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: TextField(
+                controller: field,
+                focusNode: fieldFocus,
+                autofocus: true,
               ),
             ),
           ),
-    );
+        );
     await tester.pumpAndSettle();
   }
 
@@ -127,21 +123,20 @@ void main() {
     fieldFocus = FocusNode();
     addTearDown(field.dispose);
     addTearDown(fieldFocus.dispose);
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(
-            MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                body: TextField(
-                  controller: field,
-                  focusNode: fieldFocus,
-                  autofocus: true,
-                ),
+
+    tester
+        .state<NavigatorState>(find.byType(Navigator).first)
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: TextField(
+                controller: field,
+                focusNode: fieldFocus,
+                autofocus: true,
               ),
             ),
           ),
-    );
+        );
     await tester.pumpAndSettle();
 
     expect(crashFlowFocus(tester, CrashReportPrompt).hasFocus, isTrue);

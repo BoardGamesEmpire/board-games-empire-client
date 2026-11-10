@@ -36,7 +36,7 @@ void main() {
     // channel.
     expect(
       () => startDetachedRehydrate(
-        resolve: () => _ThrowingRehydrator(),
+        resolve: _ThrowingRehydrator.new,
         trigger: 'test',
       ),
       returnsNormally,
@@ -47,7 +47,7 @@ void main() {
     // An unhandled async error here would raise the crash-report prompt
     // (#34) for a refresh nobody asked for.
     startDetachedRehydrate(
-      resolve: () => _FailingRehydrator(),
+      resolve: _FailingRehydrator.new,
       trigger: 'test',
     );
 

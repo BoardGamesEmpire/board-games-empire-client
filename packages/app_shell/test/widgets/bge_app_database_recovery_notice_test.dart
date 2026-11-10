@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
@@ -237,15 +235,13 @@ void main() {
   ) async {
     await pumpApp(tester, recoveredServers: [_server('Game Night')]);
 
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(
-            MaterialPageRoute<void>(
-              builder: (_) => const Scaffold(body: TextField(autofocus: true)),
-            ),
+    tester
+        .state<NavigatorState>(find.byType(Navigator).first)
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: TextField(autofocus: true)),
           ),
-    );
+        );
     await tester.pumpAndSettle();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);

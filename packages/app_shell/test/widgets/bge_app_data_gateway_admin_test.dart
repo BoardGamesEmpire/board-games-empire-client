@@ -27,7 +27,7 @@ class _ListingRemote implements DataGatewayRemoteDataSource {
 
   /// Thrown by every read of a row or of its language links, when set: a user
   /// who may not read a DataGateway may not read its links either.
-  Object? fetchOneError;
+  Exception? fetchOneError;
 
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
@@ -363,9 +363,8 @@ void main() {
       read: AccessExtent.all,
     );
     await pumpHome(tester);
-    final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
-
-    router.go(AppRoutes.dataGatewayEditOf('dg_a'));
+    final router = GoRouter.of(tester.element(find.byType(HomeScreen)))
+      ..go(AppRoutes.dataGatewayEditOf('dg_a'));
     await tester.pumpAndSettle();
     expect(find.text('Named dg_a'), findsOneWidget);
 

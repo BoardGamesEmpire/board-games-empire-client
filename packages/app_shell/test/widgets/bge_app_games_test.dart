@@ -258,7 +258,7 @@ class _DataGatewayRemote implements DataGatewayRemoteDataSource {
   int reads = 0;
 
   /// Thrown by every list read, when set.
-  Object? error;
+  Exception? error;
 
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
@@ -536,8 +536,8 @@ void main() {
     await pumpHome(tester);
     final router =
         tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
-            as GoRouter;
-    router.go(AppRoutes.games);
+              as GoRouter
+          ..go(AppRoutes.games);
     await tester.pumpAndSettle();
     games.sorts.clear();
 

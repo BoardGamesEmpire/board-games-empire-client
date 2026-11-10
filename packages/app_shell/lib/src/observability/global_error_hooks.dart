@@ -36,7 +36,7 @@ typedef RecordUncaughtError = void Function(UncaughtErrorRecord record);
 /// - [FlutterError.onError] — framework errors (build/layout/paint).
 ///   Delegates first to [presentError] so console output survives, without
 ///   a database error's bound values (#463), then captures.
-/// - [PlatformDispatcher.instance.onError] — uncaught async and non-UI
+/// - `PlatformDispatcher.instance.onError` — uncaught async and non-UI
 ///   Dart errors. Returns `true` unconditionally after capture; returning
 ///   `false` can hard-crash the app.
 ///
@@ -111,7 +111,7 @@ void installGlobalErrorHooks({
   void guarded(String failureMessage, void Function() action) {
     try {
       action();
-    } catch (error, stackTrace) {
+    } on Object catch (error, stackTrace) {
       log.warn(failureMessage, error: error, stackTrace: stackTrace);
     }
   }

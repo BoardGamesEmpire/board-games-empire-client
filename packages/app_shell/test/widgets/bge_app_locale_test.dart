@@ -128,8 +128,9 @@ void main() {
       await unmount(tester);
 
       void listener() {}
-      controller.addListener(listener);
-      controller.removeListener(listener);
+      controller
+        ..addListener(listener)
+        ..removeListener(listener);
     });
   });
 }

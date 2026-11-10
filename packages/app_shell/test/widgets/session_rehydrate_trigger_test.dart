@@ -192,8 +192,9 @@ void main() {
       await pump(tester);
 
       await tester.pumpWidget(const SizedBox.shrink());
-      connectivity.emit(ConnectivityState.offline);
-      connectivity.emit(ConnectivityState.online);
+      connectivity
+        ..emit(ConnectivityState.offline)
+        ..emit(ConnectivityState.online);
       await tester.pump();
 
       expect(rehydrator.passes, isZero);

@@ -11,7 +11,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// temporary `HomePlaceholderScreen` (#37).
 ///
 /// Presentation-only. [entries] are supplied by the composition layer
-/// ([BgeApp]), which resolves per-feature l10n + actions and hands them in
+/// (`BgeApp`), which resolves per-feature l10n + actions and hands them in
 /// — mirroring how `SettingsScreen` receives its sections. Navigational
 /// entries render as [NavigationDrawerDestination]s; destructive ones
 /// (sign out) render as a distinct action below a divider, in the error
@@ -20,7 +20,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// `selectedIndex` is null; when true co-equal sections land
 /// (collection/games) they become selectable destinations.
 ///
-/// The drawer is closed via the [Scaffold] state (through [_scaffoldKey]),
+/// The drawer is closed via the [Scaffold] state (through `_scaffoldKey`),
 /// not `Navigator.pop` — a [Scaffold] drawer is not a route, so popping the
 /// navigator would dismiss the page, not the drawer. Each entry's
 /// `onSelected` then runs against this widget's context, which sits under
@@ -248,7 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // The hazard is real rather than theoretical: this label fit by
                 // luck under the previous typeface and went 2.4px over when the
                 // type scale gained letter-spacing. A longer localization would
-                // have done the same. SemanticsNode.label keeps the full string.
+                // have done the same. SemanticsNode.label keeps the full
+                // string.
                 label: Flexible(
                   child: Text(entry.label, overflow: TextOverflow.ellipsis),
                 ),

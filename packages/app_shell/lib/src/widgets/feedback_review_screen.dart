@@ -32,7 +32,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## Presentation-only and host-agnostic
 ///
-/// Dumb by design, like [CrashReportPrompt]: it takes a preview and
+/// Dumb by design, like `CrashReportPrompt`: it takes a preview and
 /// callbacks and knows nothing about routing or the crash-draft slots.
 /// The crash path presents it inside the crash overlay; the
 /// user-initiated flow will push it as a route. Both provide an
@@ -604,7 +604,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   );
 
   /// Terminal outcome: an announced status line plus a dismiss affordance,
-  /// mirroring [CrashReportPrompt]'s outcome states.
+  /// mirroring `CrashReportPrompt`'s outcome states.
   List<Widget> _outcome(
     ShellLocalizations i18n, {
     required Key key,

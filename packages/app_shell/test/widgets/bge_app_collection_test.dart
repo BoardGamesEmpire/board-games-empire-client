@@ -447,9 +447,7 @@ void main() {
       await openTheList(tester);
       final router = GoRouter.of(
         tester.element(find.byType(GameCollectionListScreen)),
-      );
-
-      router.go(AppRoutes.collectionEntryOf('e-1'));
+      )..go(AppRoutes.collectionEntryOf('e-1'));
       await tester.pumpAndSettle();
       router.go(AppRoutes.collectionEntryOf('e-2'));
       await tester.pumpAndSettle();

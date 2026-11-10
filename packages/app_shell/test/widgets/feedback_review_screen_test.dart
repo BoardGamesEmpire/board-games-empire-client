@@ -650,7 +650,8 @@ void main() {
       );
       expect(
         find.text(
-          'Saved for now, but it will be lost if the app is closed or reloaded. '
+          'Saved for now, but it will be lost if the app is closed '
+          'or reloaded. '
           "It may still be sent before then if you're connected and signed in.",
         ),
         findsOneWidget,

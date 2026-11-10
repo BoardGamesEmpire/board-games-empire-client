@@ -6,7 +6,7 @@ import '../support/fake_platform_bootstrap.dart';
 import '../support/stub_feedback_service.dart';
 
 /// Pinned (#106): while the crash flow (#69/#76) is up, system back is
-/// intercepted at the router's [BackButtonDispatcher] by a
+/// intercepted at the router's `BackButtonDispatcher` by a
 /// [RouterBackInterceptor] mounted with the overlay — it never reaches the
 /// router hidden under the crash barrier.
 ///

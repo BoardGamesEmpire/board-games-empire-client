@@ -50,6 +50,7 @@ void main() {
       // sets would burden contributors adding a new language. Print for
       // visibility only.
       if (report.hasUntranslated) {
+        // The test deliberately reports through stdout (see above).
         // ignore: avoid_print
         print(report.describe());
       }

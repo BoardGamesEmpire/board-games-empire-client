@@ -32,7 +32,7 @@ import 'package:observability/observability.dart';
 /// failures — is already captured for feedback reports.
 ///
 /// Observability wiring (#8, #100): [ShellObservability.initialize] pins
-/// the root logger to [Level.ALL] (breadcrumbs keep full fidelity) and
+/// the root logger to `Level.ALL` (breadcrumbs keep full fidelity) and
 /// attaches the platform [LogSink] from
 /// [PlatformBootstrap.createLogSink], gated on the sink path by the
 /// build-mode console threshold — `BgeLogLevel.warn` in release (never
@@ -42,13 +42,13 @@ import 'package:observability/observability.dart';
 ///
 /// The root container (issue #72) is the app-scope, device-global
 /// [DependencyContainer], built by the platform composition root via
-/// [PlatformBootstrap.createRootContainer]. It is acquired *before* the
-/// error hooks and before the failure-prone platform [initialize], so
-/// device-global services (client version #35, feedback #69) exist even
-/// on a failed boot. Implementations must not throw (they register
-/// degraded values instead); as a belt-and-braces guard, a throw here is
-/// breadcrumbed at error level and boot proceeds on an empty fallback —
-/// error capture is never coupled to root-container success.
+/// [PlatformBootstrap.createRootContainer]. It is acquired *before* the error
+/// hooks and before the failure-prone platform [PlatformBootstrap.initialize],
+/// so device-global services (client version #35, feedback #69) exist even on a
+/// failed boot. Implementations must not throw (they register degraded values
+/// instead); as a belt-and-braces guard, a throw here is breadcrumbed at error
+/// level and boot proceeds on an empty fallback — error capture is never
+/// coupled to root-container success.
 ///
 /// Teardown (#384) is one [ShellTeardown]: close the cubit, dispose the
 /// platform bootstrap, then the root container. Two callers share it. The
@@ -192,7 +192,7 @@ Future<void> runBgeApp({
   // while a detached controller silently tracks the negotiated locale).
   // So a foreign reader means `activeLocaleController` stays null and
   // BgeApp wires no capture.
-  final ActiveLocaleController? activeLocaleController =
+  final activeLocaleController =
       rootContainer.isRegistered<ActiveLocaleReader>()
       ? null
       : ActiveLocaleController(

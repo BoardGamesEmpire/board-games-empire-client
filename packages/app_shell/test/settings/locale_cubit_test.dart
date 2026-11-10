@@ -33,7 +33,7 @@ void main() {
       expect: () => const [Locale('es')],
       verify: (_) {
         final captured = verify(
-          () => storage.write('LocaleCubit', captureAny()),
+          () => storage.write('LocaleCubit', captureAny<dynamic>()),
         ).captured;
         expect(captured.last, {'languageTag': 'es'});
       },
@@ -48,7 +48,7 @@ void main() {
       expect: () => const [Locale('es'), null],
       verify: (_) {
         final captured = verify(
-          () => storage.write('LocaleCubit', captureAny()),
+          () => storage.write('LocaleCubit', captureAny<dynamic>()),
         ).captured;
         expect(captured.last, {'languageTag': null});
       },

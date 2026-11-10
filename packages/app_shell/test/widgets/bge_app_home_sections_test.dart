@@ -119,7 +119,9 @@ class _Pool implements HouseholdRemoteDataSource {
 /// A collection cache holding one entry per id in [gameIds]. Its stream stays
 /// open, as Drift's does, or fails when [fails] says so.
 class _Collection implements GameCollectionRepository {
-  _Collection([this.gameIds = const [], this.fails = false]);
+  _Collection([this.gameIds = const []]) : fails = false;
+
+  _Collection.failing() : gameIds = const [], fails = true;
 
   final List<String> gameIds;
   final bool fails;
@@ -941,7 +943,7 @@ void main() {
     ) async {
       await pumpHome(
         tester,
-        collection: _Collection(const [], true),
+        collection: _Collection.failing(),
         events: _Events(),
       );
 

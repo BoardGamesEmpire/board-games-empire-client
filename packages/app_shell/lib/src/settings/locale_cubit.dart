@@ -13,7 +13,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 /// read-only *mirror* of the negotiated locale and cannot drive selection;
 /// the override set here flows into negotiation and the mirror reflects it.
 ///
-/// [HydratedCubit] construction-timing caveat applies — see [ThemeModeCubit].
+/// [HydratedCubit] construction-timing caveat applies — see `ThemeModeCubit`.
 class LocaleCubit extends HydratedCubit<Locale?> {
   /// Seeds [initialLocale] (default `null` = follow system) — the value
   /// used until a stored selection is hydrated, and the fresh-install
@@ -43,7 +43,7 @@ class LocaleCubit extends HydratedCubit<Locale?> {
   /// Defensive against corrupt storage: returns null (follow system) for
   /// anything whose primary subtag is not a well-formed language code,
   /// rather than letting [Locale.fromSubtags] assert on an empty subtag or
-  /// mint an invalid locale — matching [ThemeModeCubit]'s unknown-value
+  /// mint an invalid locale — matching `ThemeModeCubit`'s unknown-value
   /// fallback. (We only ever emit 2–3 letter language codes, so the rarer
   /// reserved/registered forms are treated as corrupt here.)
   static Locale? _parseLanguageTag(String tag) {

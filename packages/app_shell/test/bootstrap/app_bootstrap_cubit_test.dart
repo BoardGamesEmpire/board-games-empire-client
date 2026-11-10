@@ -223,8 +223,9 @@ void main() {
         ),
         act: (cubit) async {
           await cubit.initialize(); // → NeedsAuth
-          cubit.onServerRegistered(); // already past server-add
-          cubit.onServerRegistered();
+          cubit
+            ..onServerRegistered() // already past server-add
+            ..onServerRegistered();
         },
         expect: () => const [AppBootstrapNeedsAuth()],
       );

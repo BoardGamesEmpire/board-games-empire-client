@@ -269,9 +269,8 @@ void main() {
       );
       final router =
           tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
-              as GoRouter;
-
-      router.go(AppRoutes.householdDetailOf('hh_a'));
+                as GoRouter
+            ..go(AppRoutes.householdDetailOf('hh_a'));
       await tester.pumpAndSettle();
       expect(find.text('Alpha Crew'), findsOneWidget);
       expect(find.text('1 member'), findsOneWidget);
@@ -406,10 +405,9 @@ void main() {
 
       // The drawer entry is gated too, so navigate the route directly, as
       // a consumed deep link will (#243).
-      final router =
-          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
-              as GoRouter;
-      router.go(AppRoutes.householdDetailOf(_id));
+      (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter)
+          .go(AppRoutes.householdDetailOf(_id));
       await tester.pumpAndSettle();
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);

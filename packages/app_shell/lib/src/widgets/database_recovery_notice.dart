@@ -26,10 +26,11 @@ import 'package:models/domain.dart';
 ///
 /// A dialog route would also own keyboard focus, and above the Navigator
 /// nothing does, so the notice does it itself. The app behind it can't take
-/// focus while it is up, so a field there that asked for focus can't take
-/// what is typed. The notice's button takes focus instead, takes it back
-/// from a screen that opens behind it, and Tab stays on it. Acknowledging gives focus back to wherever it was before, or to
-/// [fallbackFocus] when a redirect has taken that away.
+/// focus while it is up, so a field there that asked for focus can't take what
+/// is typed. The notice's button takes focus instead, takes it back from a
+/// screen that opens behind it, and Tab stays on it. Acknowledging gives focus
+/// back to wherever it was before, or to [fallbackFocus] when a redirect has
+/// taken that away.
 ///
 /// [child] is always the first child of the same [Stack], so showing or
 /// closing the notice never remounts the app beneath it.

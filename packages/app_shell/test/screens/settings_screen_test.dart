@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -35,8 +37,8 @@ void main() {
   });
 
   tearDown(() {
-    themeModeCubit.close();
-    localeCubit.close();
+    unawaited(themeModeCubit.close());
+    unawaited(localeCubit.close());
   });
 
   Widget settingsApp({

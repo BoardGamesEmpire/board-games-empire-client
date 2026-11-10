@@ -45,9 +45,9 @@ void main() {
     });
 
     test('clear empties the slot without returning the link', () {
-      final holder = PendingDeepLinkHolder()..set(first);
-
-      holder.clear();
+      final holder = PendingDeepLinkHolder()
+        ..set(first)
+        ..clear();
 
       expect(holder.peek, isNull);
       expect(holder.take(), isNull);
@@ -60,10 +60,10 @@ void main() {
     });
 
     test('the slot is reusable after consumption', () {
-      final holder = PendingDeepLinkHolder()..set(first);
-      holder.take();
-
-      holder.set(second);
+      final holder = PendingDeepLinkHolder()
+        ..set(first)
+        ..take()
+        ..set(second);
 
       expect(holder.peek, second);
     });

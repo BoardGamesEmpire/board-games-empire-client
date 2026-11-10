@@ -27,7 +27,7 @@
 /// names — redacting *that* would leave nothing diagnosable and is the
 /// line this module deliberately holds.
 ///
-/// The sinks are enumerable and few: [DeepLinkHandler] logs the rendered
+/// The sinks are enumerable and few: `DeepLinkHandler` logs the rendered
 /// form on both the accept and reject branches, and
 /// `NormalizedDeepLink.toString` renders its two fields. Both are covered.
 library;
@@ -109,23 +109,24 @@ String redactDeepLinkForLog(Uri uri) {
   buffer.write(redacted.join('/'));
 
   if (uri.query.isNotEmpty) {
-    buffer.write('?');
-    buffer.writeAll(
-      uri.query.split('&').map((parameter) {
-        final separator = parameter.indexOf('=');
-        if (separator == -1) {
-          // No key=value structure: the whole segment is opaque and could
-          // be a bare token, so redact it wholesale rather than echoing it
-          // as a "key" (which would leak it).
-          return deepLinkRedactionPlaceholder;
-        }
-        final key = redactDeepLinkSegmentForLog(
-          parameter.substring(0, separator),
-        );
-        return '$key=$deepLinkRedactionPlaceholder';
-      }),
-      '&',
-    );
+    buffer
+      ..write('?')
+      ..writeAll(
+        uri.query.split('&').map((parameter) {
+          final separator = parameter.indexOf('=');
+          if (separator == -1) {
+            // No key=value structure: the whole segment is opaque and could
+            // be a bare token, so redact it wholesale rather than echoing it
+            // as a "key" (which would leak it).
+            return deepLinkRedactionPlaceholder;
+          }
+          final key = redactDeepLinkSegmentForLog(
+            parameter.substring(0, separator),
+          );
+          return '$key=$deepLinkRedactionPlaceholder';
+        }),
+        '&',
+      );
   }
 
   if (uri.fragment.isNotEmpty) {
@@ -140,7 +141,7 @@ String redactDeepLinkForLog(Uri uri) {
 /// Redacts anything ahead of an `@` in a single **raw** (still-encoded)
 /// [segment]. This is the one credential rule of the module, and it runs
 /// on every component emitted as found: path segments, query keys, and
-/// (via [NormalizedDeepLink.toString], which is why it is public) a
+/// (via `NormalizedDeepLink.toString`, which is why it is public) a
 /// serverId logged detached from the URI it came out of.
 ///
 /// It is deliberately not scoped to the shapes `Uri` fails to parse a

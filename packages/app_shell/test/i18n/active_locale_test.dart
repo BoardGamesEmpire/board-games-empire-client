@@ -6,7 +6,7 @@ import 'package:interfaces/services.dart';
 
 /// Pins the #33 active-locale controller contract: it is the concrete
 /// [ActiveLocaleReader] (BCP 47 tag of the held locale), a plain
-/// [ValueNotifier] with dedupe semantics (assigning an equal Locale does
+/// `ValueNotifier` with dedupe semantics (assigning an equal Locale does
 /// not notify), and synchronously disposable.
 void main() {
   group('ActiveLocaleController', () {
@@ -31,9 +31,9 @@ void main() {
       final controller = ActiveLocaleController(const Locale('en'));
       addTearDown(controller.dispose);
       var notifications = 0;
-      controller.addListener(() => notifications++);
-
-      controller.value = const Locale('fr');
+      controller
+        ..addListener(() => notifications++)
+        ..value = const Locale('fr');
 
       expect(notifications, 1);
       expect(controller.value, const Locale('fr'));
@@ -44,9 +44,9 @@ void main() {
       final controller = ActiveLocaleController(const Locale('en'));
       addTearDown(controller.dispose);
       var notifications = 0;
-      controller.addListener(() => notifications++);
-
-      controller.value = const Locale('en');
+      controller
+        ..addListener(() => notifications++)
+        ..value = const Locale('en');
 
       expect(notifications, 0);
     });

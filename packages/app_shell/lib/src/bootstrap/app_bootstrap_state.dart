@@ -17,6 +17,7 @@ import 'package:models/domain.dart';
 /// bootstrap: a registered server routes to the auth leg unconditionally,
 /// and the authenticated → home transition is owned by the auth wiring
 /// issue (#37), which feeds real auth state into the same redirect seam.
+@immutable
 sealed class AppBootstrapState {
   const AppBootstrapState();
 }
