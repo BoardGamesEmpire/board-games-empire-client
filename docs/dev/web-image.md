@@ -125,15 +125,15 @@ The job reads everything it decides on before it writes a tag, so a run
 that fails while reading writes nothing, and its commit does not count as
 published. It writes `sha-<short>` before moving `edge`. The job's summary
 says whether `edge` moved, and which condition held it back when it did not.
+Only one `publish-web` job runs at a time and the rest wait in a queue, so
+no other run can write a tag between this run reading the tags and writing
+its own.
 
 `X.Y.Z` is written only on the commit its `vX.Y.Z` tag names (#419). The
 `Release tag` job, which `publish-web` needs, looks that tag up. An `X.Y.Z`
 that already names this digest is reused, and one that names another digest
 stops the job, since version tags never move. A `v` tag that disagrees with
 the root pubspec's version stops `Release tag`, so no image tag is written.
-Only one `publish-web` job runs at a time and the rest wait in a queue, so
-no other run can write a tag between this run reading the tags and writing
-its own.
 
 This relies on CI building the same files for commits that change none of
 them. If that stops being true, `edge` moves on every commit, as it did

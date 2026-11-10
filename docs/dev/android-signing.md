@@ -181,7 +181,7 @@ The APK and its checksum land in `apps/mobile/build/release/`.
 APK you downloaded, use `apksigner` from the Android SDK's build-tools:
 
 ```sh
-apksigner verify --print-certs bge-1.0.0-android-universal.apk
+apksigner verify --print-certs bge-0.1.0-android-universal.apk
 ```
 
 The certificate DN is `CN=Android Debug` for a debug-signed APK. A
