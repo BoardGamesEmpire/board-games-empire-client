@@ -48,14 +48,12 @@ const _server = ScopedServer(
 );
 
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository(this._state);
+  _FakeAuthRepository(this.authState);
 
-  AuthState _state;
-
-  set authState(AuthState next) => _state = next;
+  AuthState authState;
 
   @override
-  AuthState get currentAuthState => _state;
+  AuthState get currentAuthState => authState;
 
   @override
   Future<AuthResponse?> getSession() => throw UnimplementedError();
@@ -186,15 +184,15 @@ void main() {
       installers: const [UserSessionScopeInstaller()],
       server: _server,
     );
-    container = WebServerScopeContainer(
-      base: origin,
-      host: host,
-      closeSession: session.dispose,
-    );
-    container.registerSingleton<UserSessionScope>(
-      session,
-      dispose: (_) => session.dispose(),
-    );
+    container =
+        WebServerScopeContainer(
+          base: origin,
+          host: host,
+          closeSession: session.dispose,
+        )..registerSingleton<UserSessionScope>(
+          session,
+          dispose: (_) => session.dispose(),
+        );
   });
 
   tearDown(() => container.dispose());

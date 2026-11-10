@@ -108,7 +108,7 @@ void registerWebCrossTabLock(
   container.registerSingleton<CrossTabLock>(const WebCrossTabLock());
 }
 
-/// The browser app's [PlatformBootstrap]: [WebPlatformBootstrap] with the
+/// The browser app's `PlatformBootstrap`: [WebPlatformBootstrap] with the
 /// drift/wasm data layer and the durable feedback queue composed in.
 ///
 /// This exists so the app's `main()` cannot get the wiring subtly wrong.

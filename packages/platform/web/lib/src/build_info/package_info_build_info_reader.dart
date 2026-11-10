@@ -6,7 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 /// reads Flutter's generated `version.json`, derived from the app pubspec
 /// `version:` like the native manifests (#35). Wasm-safe (`js_interop`).
 ///
-/// [packageInfoReader] is the injectable source seam for tests;
+/// `packageInfoReader` is the injectable source seam for tests;
 /// production uses [PackageInfo.fromPlatform].
 ///
 /// Honors the [BuildInfoReader] fail-closed contract in both dimensions:

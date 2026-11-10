@@ -153,7 +153,7 @@ void main() {
   // captures again: it would sit on the provider attempt it left from, with
   // the marker still set for its next load.
   group('a page shown again', () {
-    late void Function(bool persisted) pageShown;
+    late void Function({required bool persisted}) pageShown;
     late int reloads;
 
     setUp(() {
@@ -168,7 +168,7 @@ void main() {
         'reloaded once, with the marker gone', () {
       leftForProvider();
 
-      pageShown(true);
+      pageShown(persisted: true);
 
       expect(marker(), isNull);
       expect(reloads, 1);
@@ -176,7 +176,7 @@ void main() {
 
     test('from the back-forward cache without the marker is left as it '
         'is', () {
-      pageShown(true);
+      pageShown(persisted: true);
 
       expect(reloads, 0);
     });
@@ -184,7 +184,7 @@ void main() {
     test('by a load of its own is left as it is', () {
       leftForProvider();
 
-      pageShown(false);
+      pageShown(persisted: false);
 
       expect(reloads, 0);
       expect(marker(), returnId);

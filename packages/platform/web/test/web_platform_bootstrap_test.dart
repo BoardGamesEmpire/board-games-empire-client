@@ -14,7 +14,7 @@ import 'package:models/domain.dart';
 import 'package:web_platform/web.dart';
 
 /// A stand-in [ActiveServerScope] for the [WebPlatformBootstrap.initialize]
-/// seam tests. The production builder ([bootstrapWebServerScope]) performs a
+/// seam tests. The production builder (`bootstrapWebServerScope`) performs a
 /// live same-origin well-known fetch, which is unavailable on the test VM
 /// (and `Uri.base` has no origin there) — the constant-holder semantics of
 /// the real web scope are covered by `web_network`'s own tests. These tests

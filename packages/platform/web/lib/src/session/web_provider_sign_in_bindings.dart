@@ -51,9 +51,10 @@ import 'package:web_network/web_network.dart'
 /// no return.
 ///
 /// The bindings' page navigator sets the marker to the attempt's return id,
-/// then navigates the page to the provider. A browser that refuses session storage refuses the marker
-/// too, so the navigator throws and the page stays: its return would be read
-/// as no return at all, and a refusal would go unexplained.
+/// then navigates the page to the provider. A browser that refuses session
+/// storage refuses the marker too, so the navigator throws and the page
+/// stays: its return would be read as no return at all, and a refusal would
+/// go unexplained.
 ///
 /// Nothing here logs the address, which carries the provider's own `state` on
 /// the way out and its error on the way back.
@@ -62,12 +63,14 @@ import 'package:web_network/web_network.dart'
 /// the runner's page is never restored from the cache, and reloading it would
 /// end the run.
 WebProviderSignInBindings captureWebProviderSignIn({
-  void Function(void Function(bool persisted) onPageShow) listenForPageShow =
+  void Function(void Function({required bool persisted}) onPageShow)
+      listenForPageShow =
       _listenForPageShow,
   void Function() reload = _reload,
 }) {
   listenForPageShow(
-    (persisted) => _settleCacheRestore(persisted: persisted, reload: reload),
+    ({required persisted}) =>
+        _settleCacheRestore(persisted: persisted, reload: reload),
   );
 
   final read = readProviderSignInReturn(
@@ -119,10 +122,14 @@ String? _takeMarker() {
 
 /// Calls [onPageShow] on every `pageshow`, with whether the back-forward
 /// cache restored the page.
-void _listenForPageShow(void Function(bool persisted) onPageShow) {
+void _listenForPageShow(
+  void Function({required bool persisted}) onPageShow,
+) {
   web.window.addEventListener(
     'pageshow',
-    ((web.PageTransitionEvent event) => onPageShow(event.persisted)).toJS,
+    ((web.PageTransitionEvent event) => onPageShow(
+      persisted: event.persisted,
+    )).toJS,
   );
 }
 
