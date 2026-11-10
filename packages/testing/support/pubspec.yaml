@@ -68,10 +68,6 @@ dev_dependencies:
   # pins an exact version; this range only has to admit it.
   test_api: ^0.7.12
 
-  # very_good_analysis per CONTRIBUTING.md, not the flutter_lints that
-  # `packages/testing/l10n` carries — see #354 D5 and #194.
-  very_good_analysis: ^10.2.0
-
 # `ui_tokens` declares `uses-material-design: true`; without the same flag here
 # `flutter test` warns on every run of a consumer suite.
 flutter:

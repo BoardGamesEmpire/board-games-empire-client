@@ -38,10 +38,8 @@ dev_dependencies:
   mocktail: ^1.0.5
   observability:
     path: ../../core/observability
-  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  very_good_analysis: ^10.2.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -14,5 +14,3 @@ dependencies:
 
 dev_dependencies:
   test: ^1.31.1
-  very_good_analysis: ^10.2.0
-  lints: ^6.1.0

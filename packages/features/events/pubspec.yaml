@@ -56,8 +56,6 @@ dev_dependencies:
   drift_storage:
     path: ../../storage/drift_storage
   mocktail: ^1.0.5
-  very_good_analysis: ^10.2.0
-  flutter_lints: ^6.0.0
   l10n_test_support:
     path: ../../testing/l10n
   # Shared widget-test helpers: viewport sizing for the overview's

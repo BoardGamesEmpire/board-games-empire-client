@@ -35,9 +35,7 @@ dev_dependencies:
   di:
     path: ../../core/di
 
-  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  very_good_analysis: ^10.2.0
 
 flutter:
