@@ -196,7 +196,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `test` | All non-golden tests, 22 packages. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
-| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, the client version, the Flutter release digest, and that no native app reaches a web implementation |
+| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, the client version, the Flutter release digest, that no native app reaches a web implementation, and that every package's `analysis_options.yaml` includes the root one and changes none of its rules |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `check:a11y-audit` | Fail on a `*_screen.dart` with no `group('accessibility audit')` naming it in its package's tests (#50); prints the exempt screens. Mirrors CI. |
@@ -360,7 +360,7 @@ regenerate the lockfile from inside that directory.
   in `apps/*/lib/main.dart`.
 - **Platform differences go behind an interface**, as paired implementations
   (`drift_storage` ↔ `web_storage`), not conditionals in feature code.
-- Analysis uses [very_good_analysis](https://pub.dev/packages/very_good_analysis).
+- Analysis uses one rule set for every package: the root `analysis_options.yaml`, which is [very_good_analysis](https://pub.dev/packages/very_good_analysis) with `public_member_api_docs` and `one_member_abstracts` off. Each package's `analysis_options.yaml` includes it and changes none of its rules (checked by `tool/check_sdk_constraints.dart`).
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)
 (`fix(tool):`, `chore(pubspec):`, `feat(auth):`), and reference the issue they
