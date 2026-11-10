@@ -173,6 +173,76 @@ void main() {
       );
     });
 
+    test('member includes a package lint set', () async {
+      const options = 'include: package:lints/recommended.yaml\n';
+      workspace = await createFixtureWorkspace(
+        members: {'packages/a': validMemberPubspec},
+        analysisOptions: {'packages/a': options},
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(lastOutput, contains('expected "../../analysis_options.yaml"'));
+      // Check-only: --fix never rewrites it.
+      expect(
+        File(
+          '${workspace.path}/packages/a/analysis_options.yaml',
+        ).readAsStringSync(),
+        options,
+      );
+    });
+
+    test('member with no analysis_options', () async {
+      workspace = await createFixtureWorkspace(
+        members: {'packages/a': validMemberPubspec},
+        analysisOptions: {'packages/a': null},
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+    });
+
+    test('member turns a root rule off', () async {
+      workspace = await createFixtureWorkspace(
+        members: {'packages/a': validMemberPubspec},
+        analysisOptions: {
+          'packages/a':
+              'include: ../../analysis_options.yaml\n'
+              'linter:\n'
+              '  rules:\n'
+              '    avoid_print: false\n',
+        },
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(lastOutput, contains('sets `linter:`'));
+    });
+
+    test('no root analysis_options', () async {
+      workspace = await createFixtureWorkspace(rootAnalysisOptions: false);
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      expect(
+        lastOutput,
+        contains('analysis_options.yaml does not exist at the workspace root'),
+      );
+      // Not reported as a member whose include is wrong.
+      expect(lastOutput, isNot(contains('file(s) do not hold')));
+    });
+
+    test('rewritable sdk drift beside a non-conforming include', () async {
+      workspace = await createFixtureWorkspace(
+        members: {
+          'packages/a': validMemberPubspec.replaceFirst('^3.13.0', '^3.12.0'),
+        },
+        analysisOptions: {
+          'packages/a': 'include: package:lints/recommended.yaml\n',
+        },
+      );
+
+      expect(await fixThenCheck(), (1, 1), reason: lastOutput);
+      // The rewrite still happened; only the include remains.
+      expect(lastOutput, isNot(contains('SDK constraint drift')));
+    });
+
     test('stale digest', () async {
       workspace = await createFixtureWorkspace(
         flutterDigest: validFlutterDigest.replaceFirst('3.47.1', '3.44.4'),

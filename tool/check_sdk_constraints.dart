@@ -1,5 +1,5 @@
 // Verifies the invariants that hold across every package in the
-// workspace. Five of them today:
+// workspace. Six of them today:
 //
 //   1. SDK constraints match the root pubspec (#153) — the bulk of this
 //      file. `--fix` repairs it.
@@ -10,6 +10,8 @@
 //      (#159, #426). Check-only.
 //   5. No native app depends, however indirectly, on a web
 //      implementation (#51). Check-only.
+//   6. Every package's `analysis_options.yaml` includes the root one
+//      and changes none of its rules (#194). Check-only.
 //
 // Kept under this filename because CI, the `check:constraints` melos
 // script, and a handful of comments all reference it; the name is
@@ -95,6 +97,30 @@
 // which no CI job builds.
 //
 // Check-only: the fix is a change of dependency, not a pubspec rewrite.
+//
+// ── 6. analysis_options ────────────────────────────────────────────
+//
+// The root `analysis_options.yaml` is the one rule set for the workspace.
+// Each member's own file must include it: its top-level `include:` equals
+// `../` once per segment of the member's directory, then
+// `analysis_options.yaml` (`packages/core/di` includes
+// `../../../analysis_options.yaml`). Compared as a parsed value, so a
+// package lint set, a missing key, or a list such as
+// `[../../analysis_options.yaml, package:flutter_lints/flutter.yaml]`
+// that layers another set over the root all fail the same way.
+//
+// Nothing after the include may change a rule either. A member's file
+// holds `include:` and `analyzer:`, and its `analyzer:` holds only
+// `exclude:` (its own platform folders) and `errors:`. `errors:` may
+// name only the codes in `_memberErrorCodes`: analyzer warnings a code
+// generator's documented pattern sets off, not rules of the set. So
+// `linter: rules: x: false`, `analyzer: errors: x: ignore` and
+// `analyzer: language: strict-casts: false` all fail.
+//
+// Check-only, like publish_to: the fix is a one-line edit, and a rewrite
+// would have to guess which of a file's other keys (its own
+// `analyzer: exclude:`) to keep. The root's own file is only checked for
+// existence: it includes a package, not itself.
 //
 // ── Coverage ───────────────────────────────────────────────────────
 //
@@ -247,6 +273,7 @@ void main(List<String> args) {
   final sdkProblems = <String>[];
   final versionProblems = <String>[];
   final publishProblems = <String>[];
+  final analysisProblems = <String>[];
   final unfixable = <String>[];
   // A set, since one pubspec can need both rewrites.
   final rewrittenPaths = <String>{};
@@ -261,6 +288,8 @@ void main(List<String> args) {
   // target `board_games_empire` — so it gets the publish_to check even
   // though it is not one of its own `workspace:` members.
   _checkPublishTo('pubspec.yaml', rootYaml, publishProblems);
+
+  final rootOptionsMissing = !File('analysis_options.yaml').existsSync();
 
   for (final dir in members) {
     final path = '$dir/pubspec.yaml';
@@ -278,6 +307,13 @@ void main(List<String> args) {
 
     // Before the environment checks, which `continue` past this point.
     _checkPublishTo(path, yaml, publishProblems);
+    final optionsFile = File('$dir/analysis_options.yaml');
+    final optionsProblem = _analysisOptionsProblem(
+      '$dir/analysis_options.yaml',
+      optionsFile.existsSync() ? optionsFile.readAsStringSync() : null,
+      _expectedRootInclude(dir),
+    );
+    if (optionsProblem != null) analysisProblems.add(optionsProblem);
 
     // Only the apps: nothing reads a library's `version:`.
     if (apps.contains(dir)) {
@@ -451,18 +487,42 @@ void main(List<String> args) {
     );
   }
 
+  if (rootOptionsMissing) {
+    stderr.writeln(
+      'analysis_options.yaml does not exist at the workspace root. It is '
+      'the one rule set every package includes (#194): restore it.',
+    );
+  }
+  if (analysisProblems.isNotEmpty) {
+    stderr.writeln(
+      '${analysisProblems.length} analysis_options.yaml file(s) do not hold '
+      'to the root rule set:',
+    );
+    for (final p in analysisProblems) {
+      stderr.writeln('  $p');
+    }
+    stderr.writeln(
+      '\nEvery package analyses under the root rule set alone (#194): '
+      'its file includes the path shown and changes no rule. This check '
+      'does not rewrite it for you.',
+    );
+  }
+
   final checkOnlyFailed =
       publishProblems.isNotEmpty ||
       manifestProblems.isNotEmpty ||
       digestProblems.isNotEmpty ||
-      separationProblems.isNotEmpty;
+      separationProblems.isNotEmpty ||
+      rootOptionsMissing ||
+      analysisProblems.isNotEmpty;
   final problems = [...sdkProblems, ...versionProblems];
 
   if (problems.isEmpty) {
     if (checkOnlyFailed) exit(1);
     stdout.writeln(
       'Workspace invariants hold across ${members.length} packages plus '
-      'the root (Flutter $pin, sdk $expectedSdk, publish_to none, version '
+      'the root (Flutter $pin, sdk $expectedSdk, publish_to none, the root '
+      'analysis_options in every package, version '
       '$expectedVersion in ${apps.length} apps and $manifestCount native '
       'manifests, the Flutter release digest, and no native app reaching a '
       'web implementation).',
@@ -521,6 +581,68 @@ void _checkPublishTo(String path, YamlMap pubspec, List<String> problems) {
   final actual = pubspec['publish_to']?.toString();
   if (actual == 'none') return;
   problems.add('$path: publish_to is ${_show(actual)}, expected "none"');
+}
+
+/// The `include:` a member's `analysis_options.yaml` must carry: the
+/// relative path from [memberDir] to the root file.
+String _expectedRootInclude(String memberDir) =>
+    '${'../' * memberDir.split('/').length}analysis_options.yaml';
+
+/// The `analyzer: errors:` codes a member may set. Each is an analyzer
+/// warning, not a rule of the set.
+const _memberErrorCodes = {
+  // Freezed models put `@JsonKey` on constructor parameters, the pattern
+  // json_serializable documents (core/models).
+  'invalid_annotation_target',
+};
+
+/// What is wrong with a member's `analysis_options.yaml` at [path], given
+/// its text ([source], null when absent) and the [expected] include, or
+/// null when its top-level `include:` is exactly that one string and
+/// nothing after it changes a rule.
+///
+/// A list include is a problem even when it names the root: it can layer
+/// another rule set over it, and the point is a single rule set. Only the
+/// first problem is reported.
+String? _analysisOptionsProblem(String path, String? source, String expected) {
+  if (source == null) {
+    return '$path: does not exist — it must include the root '
+        'analysis_options.yaml';
+  }
+  final Object? yaml;
+  try {
+    yaml = loadYaml(source);
+  } on YamlException {
+    return '$path: is not valid YAML';
+  }
+  final include = yaml is YamlMap ? yaml['include'] : null;
+  if (yaml is! YamlMap || include is! String || include != expected) {
+    return '$path: include is ${_show(include?.toString())}, expected '
+        '"$expected"';
+  }
+  for (final key in yaml.keys) {
+    if (key != 'include' && key != 'analyzer') {
+      return '$path: sets `$key:`, which only the root file may';
+    }
+  }
+  final analyzer = yaml['analyzer'];
+  if (analyzer == null) return null;
+  if (analyzer is! YamlMap) return '$path: `analyzer:` is not a map';
+  for (final key in analyzer.keys) {
+    if (key != 'exclude' && key != 'errors') {
+      return '$path: sets `analyzer: $key:`, which only the root file may';
+    }
+  }
+  final errors = analyzer['errors'];
+  if (errors == null) return null;
+  if (errors is! YamlMap) return '$path: `analyzer: errors:` is not a map';
+  for (final code in errors.keys) {
+    if (!_memberErrorCodes.contains(code)) {
+      return '$path: sets `analyzer: errors: $code:`, which only the root '
+          'file may';
+    }
+  }
+  return null;
 }
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';
@@ -1321,6 +1443,130 @@ void _selfTest() {
       'packages/b': 'name: b\ndependencies:\n  a:\n    path: ../a\n',
     }),
     <String>[],
+  );
+
+  expect(
+    'analysis_options: expected include for a two-segment member',
+    _expectedRootInclude('apps/mobile'),
+    '../../analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: expected include for a three-segment member',
+    _expectedRootInclude('packages/core/di'),
+    '../../../analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: a conforming include passes',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n',
+      '../../analysis_options.yaml',
+    ),
+    null,
+  );
+
+  expect(
+    'analysis_options: a package lint set is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: package:flutter_lints/flutter.yaml\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: include is '
+        '"package:flutter_lints/flutter.yaml", expected '
+        '"../../analysis_options.yaml"',
+  );
+
+  // The root beside another set is still not the root alone.
+  expect(
+    'analysis_options: a list include is rejected',
+    _analysisOptionsProblem(
+          'packages/a/analysis_options.yaml',
+          'include: [../../analysis_options.yaml]\n',
+          '../../analysis_options.yaml',
+        ) !=
+        null,
+    true,
+  );
+
+  expect(
+    'analysis_options: an absent file is reported',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      null,
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: does not exist — it must include '
+        'the root analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: an unparseable file is reported',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: [unclosed',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: is not valid YAML',
+  );
+
+  expect(
+    'analysis_options: its own excludes and a listed errors code pass',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  errors:\n'
+          '    invalid_annotation_target: ignore\n'
+          '  exclude:\n'
+          '    - build/**\n',
+      '../../analysis_options.yaml',
+    ),
+    null,
+  );
+
+  expect(
+    'analysis_options: a rule turned off under linter: is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'linter:\n'
+          '  rules:\n'
+          '    avoid_print: false\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `linter:`, which only the root '
+        'file may',
+  );
+
+  expect(
+    'analysis_options: a rule silenced under analyzer: errors: is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  errors:\n'
+          '    avoid_print: ignore\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `analyzer: errors: '
+        'avoid_print:`, which only the root file may',
+  );
+
+  expect(
+    'analysis_options: a strict mode turned off is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  language:\n'
+          '    strict-casts: false\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `analyzer: language:`, which '
+        'only the root file may',
   );
 
   if (failures > 0) {
