@@ -16,7 +16,7 @@ const _loggerName = 'bge.hydration.test';
 /// recording whom it was asked about (#432).
 class _FakeGuard implements SessionIdentityGuard {
   SessionConfirmation answer = SessionConfirmation.confirmed;
-  Object? throws;
+  Error? throws;
   final askedFor = <String>[];
 
   @override
@@ -271,8 +271,8 @@ void main() {
       SessionConfirmation.notThisUser,
       SessionConfirmation.unanswered,
     ]) {
-      test('a call joining a running drain reports nothing before that drain ends, '
-          'whatever the guard answers: ${answer.name}', () async {
+      test('a call joining a running drain reports nothing before that drain '
+          'ends, whatever the guard answers: ${answer.name}', () async {
         final pass = build();
         final readings = <Hydration>[];
         final sub = status.watch().listen(readings.add);

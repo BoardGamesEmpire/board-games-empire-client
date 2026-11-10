@@ -74,10 +74,10 @@ import 'package:observability/observability.dart';
 /// a failure-driven retry (#311), not something a staleness rule can
 /// answer; a screen's manual retry covers it in the meantime.
 final class HydratePass<O extends Object> {
-  /// [feature] is the capitalised subject of the log lines (`'Household'`).
-  /// [drain] is the feature's page loop, and [failed] the outcome reported
-  /// for a drain that was held off or threw. [userId] is the scope's user,
-  /// whom [guard] is asked about. [context] is merged into every log line.
+  /// `feature` is the capitalised subject of the log lines (`'Household'`).
+  /// `drain` is the feature's page loop, and `failed` the outcome reported
+  /// for a drain that was held off or threw. `userId` is the scope's user,
+  /// whom `guard` is asked about. `context` is merged into every log line.
   HydratePass({
     required this._feature,
     required this._drain,
