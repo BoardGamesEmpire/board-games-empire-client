@@ -37,7 +37,7 @@ final class WebProviderSignInBindings {
     this.startupReturn,
   });
 
-  /// Sets the marker to [returnId], then navigates the page to [url].
+  /// Sets the marker to `returnId`, then navigates the page to `url`.
   final void Function(Uri url, String returnId) leavePageFor;
 
   /// What this page load brought back, read once in main().
@@ -69,7 +69,7 @@ const String _errorDescriptionKey = 'error_description';
 /// one, and downstream maps it to the generic failure. No `error` key is a
 /// success.
 ///
-/// [cleanedAddress] is non-null when something must leave the address bar:
+/// `cleanedAddress` is non-null when something must leave the address bar:
 /// the return id whenever the address carries one, matched or not, and
 /// `error`/`error_description` with a return. Every other query parameter,
 /// the path and the fragment are kept, and a query left empty is dropped
@@ -105,7 +105,7 @@ readProviderSignInReturn({required String? marker, required Uri address}) {
       if (!removed.contains(entry.key)) entry.key: entry.value,
   };
 
-  final WebProviderSignInReturn? startupReturn = !isReturn
+  final startupReturn = !isReturn
       ? null
       : errors == null
       ? const WebProviderSignInReturn()

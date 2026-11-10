@@ -46,8 +46,8 @@ ServerIdentity _identity() => const ServerIdentity(
 );
 
 const _kHtml =
-    '<!doctype html><html><head><title>Sign in</title></head>'
-    '<body><h1>Corporate proxy</h1></body></html>';
+    '<!doctype html><html><head><title>Sign '
+    'in</title></head><body><h1>Corporate proxy</h1></body></html>';
 
 Map<String, dynamic> _grantJson() => {
   'token': 'session-tok-web',

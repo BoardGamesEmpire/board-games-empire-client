@@ -5,7 +5,7 @@ import 'package:interfaces/orchestration.dart';
 ///
 /// Web has no orchestrator and no server switching in alpha — the browser
 /// talks to exactly one origin, whose identity is fetched at bootstrap
-/// ([bootstrapWebServerScope]). This scope therefore holds a single
+/// (`bootstrapWebServerScope`). This scope therefore holds a single
 /// [ActiveServer] fixed at construction: [active] is always non-null, and
 /// [watchActive] replays that one value to every subscriber and then stays
 /// open without ever emitting again.

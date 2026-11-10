@@ -148,9 +148,9 @@ void main() {
         'adopts the new user', () async {
       stubSession('user-a');
       await repo.getSession();
-      repo.signedOutInAnotherTab();
-
-      repo.signedInInAnotherTab();
+      repo
+        ..signedOutInAnotherTab()
+        ..signedInInAnotherTab();
       stubSession('user-b');
 
       final session = await repo.getSession();
