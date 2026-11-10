@@ -49,19 +49,20 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///   built leaves focus alone. The page keeps the rows its footer covers built
 ///   (see [BgePage.footer]), so that is a row the user has scrolled well away
 ///   from.
-/// - The page stays too. What takes focus is brought into view, as Tab does, for
-///   a user who can see focus, unless they moved the page on during the action.
+/// - The page stays too. What takes focus is brought into view, as Tab does,
+///   for a user who can see focus, unless they moved the page on during the
+///   action.
 ///
-/// Show more stays enabled while its page loads, and the bloc drops a press made
-/// meanwhile, because a disabled button gives up keyboard focus (#607).
+/// Show more stays enabled while its page loads, and the bloc drops a press
+/// made meanwhile, because a disabled button gives up keyboard focus (#607).
 ///
 /// ## Reading it
 ///
 /// A row's words read as one node, and its menu is a button of its own, named
-/// for the row by its value and how that is spelled, since a value can be listed
-/// once per format. What is loading, what failed and an empty list are each a live
-/// region, so assistive tech says them as they appear. A status is an icon and
-/// words, never color alone.
+/// for the row by its value and how that is spelled, since a value can be
+/// listed once per format. What is loading, what failed and an empty list are
+/// each a live region, so assistive tech says them as they appear. A status is
+/// an icon and words, never color alone.
 class LanguageLinkWorklist extends StatefulWidget {
   const LanguageLinkWorklist({required this.remote, super.key});
 
@@ -178,8 +179,9 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
         // wherever the picker gave it back.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          actedOn.pageAt = _pageOffset;
-          actedOn.focusAt = FocusManager.instance.primaryFocus;
+          actedOn
+            ..pageAt = _pageOffset
+            ..focusAt = FocusManager.instance.primaryFocus;
         });
       }
     } else if (actedOn.running) {

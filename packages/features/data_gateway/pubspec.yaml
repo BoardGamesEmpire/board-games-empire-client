@@ -8,24 +8,22 @@ environment:
 resolution: workspace
 
 dependencies:
+  equatable: ^2.1.0
   flutter:
     sdk: flutter
+  flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
-
   interfaces:
     path: ../../core/interfaces
+  intl: ^0.20.2
   models:
     path: ../../core/models
   network_interface:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-
-  flutter_bloc: ^9.1.1
-  equatable: ^2.1.0
   reactive_forms: ^18.1.1
-  intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale — both declared directly because this package imports from both.
   ui:
@@ -34,14 +32,14 @@ dependencies:
     path: ../../ui/tokens
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  bloc_test: ^10.0.0
-  l10n_test_support:
-    path: ../../testing/l10n
   # `FakeCallerAccessRepository` (#456), the session's access set by hand.
   bge_test_support:
     path: ../../testing/support
+  bloc_test: ^10.0.0
+  flutter_test:
+    sdk: flutter
+  l10n_test_support:
+    path: ../../testing/l10n
 
 flutter:
   generate: true

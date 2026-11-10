@@ -100,11 +100,9 @@ void main() {
   );
 
   /// Stands in for the add or edit form: a page over the list.
-  void openForm(BuildContext context) => unawaited(
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(body: Text('the form')),
-      ),
+  void openForm(BuildContext context) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(body: Text('the form')),
     ),
   );
 
@@ -1125,8 +1123,9 @@ void main() {
     testWidgets('a menu open when the connection returns goes enabled, loses '
         'the reason, and a press selects', (tester) async {
       final handle = tester.ensureSemantics();
-      remote.listing([bgg]);
-      remote.onConnect = (_) async => changed(bgg);
+      remote
+        ..listing([bgg])
+        ..onConnect = (_) async => changed(bgg);
       await pumpScreen(tester, offline: offline);
       await open(tester, 'dg_1');
       expect(find.text(onlineOnlyCopy), findsNWidgets(3));

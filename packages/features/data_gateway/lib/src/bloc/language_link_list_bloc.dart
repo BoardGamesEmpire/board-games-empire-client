@@ -60,8 +60,9 @@ import 'package:observability/observability.dart';
 ///
 /// More and an action can't overlap: if the server had made the action's change
 /// before it read More's page, the link that moved up a place would be on no
-/// page read, and shown nowhere. Nor is either dropped, since each control stays
-/// enabled through the other (#607) and the user would see nothing happen. So:
+/// page read, and shown nowhere. Nor is either dropped, since each control
+/// stays enabled through the other (#607) and the user would see nothing
+/// happen. So:
 ///
 /// - More asked for during an action or a read waits, showing as loading, and
 ///   starts when nothing is left running. A read that says there is no more
@@ -71,10 +72,10 @@ import 'package:observability/observability.dart';
 ///   loading.
 ///
 /// A read or a filter change while More is out drops More's answer when it
-/// lands, and More stops showing as loading at once. A filter change ends a wait
-/// too. A More that fails keeps the rows and says so, and the next one tries
-/// again. A More that is refused, or finds the DataGateway gone, counts as a read
-/// that was.
+/// lands, and More stops showing as loading at once. A filter change ends a
+/// wait too. A More that fails keeps the rows and says so, and the next one
+/// tries again. A More that is refused, or finds the DataGateway gone, counts
+/// as a read that was.
 ///
 /// ## Actions
 ///
@@ -127,18 +128,18 @@ import 'package:observability/observability.dart';
 ///
 /// A handler waiting on the server outlives [close], and asking for a read then
 /// would throw, so it asks for none once [close] has started. A refusal that
-/// lands after that still asks [access] again, which outlasts the screen.
+/// lands after that still asks `access` again, which outlasts the screen.
 ///
 /// ## Access
 ///
 /// Link, ignore and accept are offered while the caller's access, as the
 /// server answers it, allows update on DataGateways (#456). They follow
-/// [access] as its answer changes, up or down, without reading the list
+/// `access` as its answer changes, up or down, without reading the list
 /// again. An action it no longer allows is dropped, as from a menu opened
 /// before it fell. One already sent runs on, and answers for itself.
 ///
 /// A refused read or More is [LanguageLinkListDenied], and a refused action is
-/// reported in the outcome. Neither takes anything away: each asks [access]
+/// reported in the outcome. Neither takes anything away: each asks `access`
 /// again, and the actions follow what it answers. The refusal is the server's
 /// word that the answer here may be out of date, as when the caller's role
 /// changed since it was asked. A refused read asks even when its answer is
@@ -151,13 +152,13 @@ import 'package:observability/observability.dart';
 /// an answer, while its read or More was out, reads again too, once: no
 /// change is left to say so by then.
 ///
-/// A read that succeeds while the answer is still unknown asks [access]
+/// A read that succeeds while the answer is still unknown asks `access`
 /// again too. The first ask can fail with the server up, as on a 502 from a
 /// proxy, and nothing else asks again until a rehydrate trigger. The server
 /// has just answered this caller, so an ask now is likely to be answered
 /// too.
 ///
-/// A null [access] is a composition with no session to ask. The rows still
+/// A null `access` is a composition with no session to ask. The rows still
 /// show, and nothing is offered, as while the answer is unknown.
 class LanguageLinkListBloc
     extends Bloc<LanguageLinkListEvent, LanguageLinkListState> {

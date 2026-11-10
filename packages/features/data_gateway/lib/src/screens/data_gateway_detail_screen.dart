@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:data_gateway/src/bloc/data_gateway_detail_bloc.dart';
 import 'package:data_gateway/src/bloc/data_gateway_detail_event.dart';
@@ -878,11 +876,9 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
       scrolling.addListener(settled);
       return;
     }
-    unawaited(
-      Scrollable.ensureVisible(
-        dismiss,
-        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-      ),
+    Scrollable.ensureVisible(
+      dismiss,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
     );
   }
 

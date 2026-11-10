@@ -458,12 +458,13 @@ void main() {
         testWidgets('after an interview it refused, focus goes to the '
             "banner's Dismiss", (tester) async {
           var reads = 0;
-          remote.onFetchOne = (_) async => row(enabled: ++reads == 1);
-          remote.onInterview = (_) async =>
-              throw const DataGatewayConflictException(
-                'disabled',
-                statusCode: 409,
-              );
+          remote
+            ..onFetchOne = ((_) async => row(enabled: ++reads == 1))
+            ..onInterview = (_) async =>
+                throw const DataGatewayConflictException(
+                  'disabled',
+                  statusCode: 409,
+                );
           await pumpScreen(tester);
           await focusTheButton(tester);
 
@@ -578,8 +579,9 @@ void main() {
 
     testWidgets('focus the user moves before the interview button goes stays '
         'where they put it', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) async => throw forbidden();
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) async => throw forbidden();
       await pumpScreen(tester);
       await focusOn(tester, textIn(interviewButton, 'Interview again'));
       // A refusal, so the hand-off would go to its banner's Dismiss.
@@ -606,8 +608,9 @@ void main() {
 
     testWidgets('with the outcome dismissed before the next frame, focus goes '
         'on past the Dismiss that frame takes away', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) async => throw forbidden();
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) async => throw forbidden();
       await pumpScreen(tester);
       await focusOn(tester, textIn(interviewButton, 'Interview again'));
       await pressKey(tester);
@@ -637,8 +640,9 @@ void main() {
     ) async {
       final mayUpdate = access.current;
       final interview = Completer<DataGatewayInterviewResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) => interview.future;
       await pumpScreen(tester);
       await tester.ensureVisible(capability(search));
       await tester.pumpAndSettle();
@@ -666,8 +670,9 @@ void main() {
 
     testWidgets('interview again shows busy, then the banner', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) => interview.future;
       await pumpScreen(tester);
 
       expect(
@@ -707,8 +712,9 @@ void main() {
     testWidgets('a focused interview button keeps focus while it runs, and a '
         'press sends nothing', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) => interview.future;
       await pumpScreen(tester);
 
       await focusOn(tester, textIn(interviewButton, 'Interview again'));
@@ -741,8 +747,9 @@ void main() {
     testWidgets('the switches stop taking presses during an interview, and '
         'take them again after it', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) => interview.future;
       await pumpScreen(tester);
       expect(tile(tester, search).onChanged, isNotNull);
 
@@ -813,9 +820,10 @@ void main() {
         for (var i = 0; i < 20; i++) languageLink('l$i', value: 'Value $i'),
       ]);
       const declared = [search, languages, platforms];
-      remote.onFetchOne = (_) async => row(capabilities: declared);
-      remote.onSetDisabledCapabilities = (_, disabled) async =>
-          changed(row(capabilities: declared, disabled: disabled));
+      remote
+        ..onFetchOne = ((_) async => row(capabilities: declared))
+        ..onSetDisabledCapabilities = (_, disabled) async =>
+            changed(row(capabilities: declared, disabled: disabled));
       await pumpScreen(tester);
       await Scrollable.ensureVisible(
         tester.element(capability(languages)),
@@ -1023,12 +1031,13 @@ void main() {
       tester,
     ) async {
       final sent = <List<String>>[];
-      remote.onFetchOne = (_) async =>
-          row(capabilities: const [search], disabled: const ['FutureThing']);
-      remote.onSetDisabledCapabilities = (_, disabled) async {
-        sent.add(disabled);
-        return changed(row(capabilities: const [search]));
-      };
+      remote
+        ..onFetchOne = ((_) async =>
+            row(capabilities: const [search], disabled: const ['FutureThing']))
+        ..onSetDisabledCapabilities = (_, disabled) async {
+          sent.add(disabled);
+          return changed(row(capabilities: const [search]));
+        };
 
       await pumpScreen(tester);
 
@@ -1062,12 +1071,13 @@ void main() {
     testWidgets('a switch sends the event, and what is pressed during the '
         'write goes after it', (tester) async {
       final write = Completer<DataGatewayChangeResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, disabled) => disabled.length == 1
-          ? write.future
-          : Future.value(changed(row(disabled: disabled)));
-      remote.onInterview = (_) async =>
-          answered(row(disabled: const [search, languages]));
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = ((_, disabled) => disabled.length == 1
+            ? write.future
+            : Future.value(changed(row(disabled: disabled))))
+        ..onInterview = (_) async =>
+            answered(row(disabled: const [search, languages]));
       await pumpScreen(tester);
       expect(find.byType(LinearProgressIndicator), findsNothing);
       expect(find.bySemanticsLabel('Saving…'), findsNothing);
@@ -1114,9 +1124,10 @@ void main() {
     });
 
     testWidgets('a write that works has nothing to report', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, disabled) async =>
-          changed(row(disabled: disabled));
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = (_, disabled) async =>
+            changed(row(disabled: disabled));
       await pumpScreen(tester);
 
       await press(tester, capability(search));
@@ -1129,8 +1140,9 @@ void main() {
     testWidgets('the busy cue is announced, heads the capabilities and moves '
         'nothing', (tester) async {
       final write = Completer<DataGatewayChangeResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, _) => write.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = (_, _) => write.future;
       await pumpScreen(tester);
       await tester.ensureVisible(capability(search));
       await tester.pump();
@@ -1164,8 +1176,9 @@ void main() {
 
     testWidgets('a focused switch keeps focus through a write', (tester) async {
       final write = Completer<DataGatewayChangeResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, _) => write.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = (_, _) => write.future;
       await pumpScreen(tester);
 
       await focusOn(tester, textIn(capability(search), 'Search'));
@@ -1186,8 +1199,9 @@ void main() {
 
     testWidgets('a focused switch keeps focus when the write fails and the '
         'banner arrives in the footer', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = (_, _) async => throw unreachable();
       await pumpScreen(tester);
 
       await focusOn(tester, textIn(capability(search), 'Search'));
@@ -1286,8 +1300,9 @@ void main() {
 
     testWidgets('a refused change says why and asks access again, and the '
         'button and switches go once it answers', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) async => throw forbidden();
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) async => throw forbidden();
       await pumpScreen(tester);
 
       await press(tester, interviewButton);
@@ -1398,9 +1413,12 @@ void main() {
     testWidgets('a conflict reads again, and the row it brings says the '
         'DataGateway is disabled, under the banner', (tester) async {
       var read = 0;
-      remote.onFetchOne = (_) async => row(enabled: ++read == 1);
-      remote.onInterview = (_) async =>
-          throw const DataGatewayConflictException('disabled', statusCode: 409);
+      remote
+        ..onFetchOne = ((_) async => row(enabled: ++read == 1))
+        ..onInterview = (_) async => throw const DataGatewayConflictException(
+          'disabled',
+          statusCode: 409,
+        );
       await pumpScreen(tester);
 
       await press(tester, interviewButton);
@@ -1413,8 +1431,9 @@ void main() {
     });
 
     testWidgets('dismiss closes the banner', (tester) async {
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) async => answered(row(), ok: false);
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) async => answered(row(), ok: false);
       await pumpScreen(tester);
       await press(tester, interviewButton);
       await tester.pumpAndSettle();
@@ -1429,11 +1448,12 @@ void main() {
     testWidgets('when the read after a lost answer fails, the failed surface '
         'shows, and the banner comes back with the row', (tester) async {
       var reads = 0;
-      remote.onFetchOne = (_) async {
-        if (++reads == 2) throw unreachable();
-        return row();
-      };
-      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      remote
+        ..onFetchOne = (_) async {
+          if (++reads == 2) throw unreachable();
+          return row();
+        }
+        ..onSetDisabledCapabilities = (_, _) async => throw unreachable();
       await pumpScreen(tester);
 
       await press(tester, capability(search));
@@ -1490,10 +1510,11 @@ void main() {
           ..devicePixelRatio = 1
           ..physicalSize = size;
         addTearDown(tester.view.reset);
-        remote.onFetchOne = (_) async => full();
-        remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf([
-          for (var n = 1; n <= 50; n++) languageLink('l$n'),
-        ], hasMore: true);
+        remote
+          ..onFetchOne = ((_) async => full())
+          ..onFetchLanguageLinks = (_, _, _, _) async => linkPageOf([
+            for (var n = 1; n <= 50; n++) languageLink('l$n'),
+          ], hasMore: true);
         await pumpScreen(tester, textScaler: scaler);
       }
 
@@ -1519,7 +1540,7 @@ void main() {
             name: tester.getRect(capability(name)),
       };
 
-      for (final (outcome, Object error, copy) in [
+      for (final (outcome, Exception error, copy) in [
         ('fails', unreachable(), failedCopy),
         ('is refused', forbidden(), refusedCopy),
       ]) {
@@ -1544,8 +1565,9 @@ void main() {
       testWidgets('$screen: starting a write after an earlier outcome moves no '
           'switch', (tester) async {
         final write = Completer<DataGatewayChangeResult>();
-        remote.onInterview = (_) async => answered(full());
-        remote.onSetDisabledCapabilities = (_, _) => write.future;
+        remote
+          ..onInterview = ((_) async => answered(full()))
+          ..onSetDisabledCapabilities = (_, _) => write.future;
         await open(tester);
         await press(tester, interviewButton);
         await tester.pumpAndSettle();
@@ -1745,10 +1767,10 @@ void main() {
         testWidgets("$screen: both outcomes show, the DataGateway's first, and "
             '$first'
             "'s Dismiss closes only its own", (tester) async {
-          remote.onSetDisabledCapabilities = (_, _) async =>
-              throw unreachable();
-          remote.onIgnoreLanguageLink = (_, id) async =>
-              languageLink(id, status: LanguageLinkStatus.ignored);
+          remote
+            ..onSetDisabledCapabilities = ((_, _) async => throw unreachable())
+            ..onIgnoreLanguageLink = (_, id) async =>
+                languageLink(id, status: LanguageLinkStatus.ignored);
           await open(tester);
           await press(tester, capability(search));
           await tester.pumpAndSettle();
@@ -1810,8 +1832,9 @@ void main() {
       ]) {
         testWidgets('$screen: focus leaves a control that access takes away: '
             "from $control to the refusal's Dismiss", (tester) async {
-          remote.onSetDisabledCapabilities = (_, _) async => throw forbidden();
-          remote.onInterview = (_) async => throw forbidden();
+          remote
+            ..onSetDisabledCapabilities = ((_, _) async => throw forbidden())
+            ..onInterview = (_) async => throw forbidden();
           await open(tester);
           final (target, taken) = control == 'a switch'
               ? (textIn(capability(search), label), capability(search))
@@ -1848,8 +1871,9 @@ void main() {
         ..devicePixelRatio = 1
         ..physicalSize = const Size(320, 568);
       addTearDown(tester.view.reset);
-      remote.onFetchOne = (_) async => full();
-      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      remote
+        ..onFetchOne = ((_) async => full())
+        ..onSetDisabledCapabilities = (_, _) async => throw unreachable();
       await pumpScreen(
         tester,
         textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
@@ -1880,8 +1904,9 @@ void main() {
 
     testWidgets('a refusal leaves focus alone when no control of the '
         "DataGateway's had it", (tester) async {
-      remote.onFetchOne = (_) async => full();
-      remote.onInterview = (_) async => throw forbidden();
+      remote
+        ..onFetchOne = ((_) async => full())
+        ..onInterview = (_) async => throw forbidden();
       await pumpScreen(tester);
       await focusOn(tester, find.byIcon(Icons.refresh));
 
@@ -1903,8 +1928,9 @@ void main() {
         ..devicePixelRatio = 1
         ..physicalSize = const Size(320, 568);
       addTearDown(tester.view.reset);
-      remote.onFetchOne = (_) async => full();
-      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      remote
+        ..onFetchOne = ((_) async => full())
+        ..onSetDisabledCapabilities = (_, _) async => throw unreachable();
       await pumpScreen(
         tester,
         textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
@@ -2117,15 +2143,13 @@ void main() {
       await pumpScreen(tester);
       expect(reads(), hasLength(1));
 
-      unawaited(
-        tester
-            .state<NavigatorState>(find.byType(Navigator))
-            .push(
-              MaterialPageRoute<void>(
-                builder: (_) => const Scaffold(body: Text('a page on top')),
-              ),
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('a page on top')),
             ),
-      );
+          );
       await tester.pumpAndSettle();
       expect(find.text('a page on top'), findsOneWidget);
       expect(reads(), hasLength(1));
@@ -2197,8 +2221,9 @@ void main() {
             ),
         ],
       );
-      remote.onFetchOne = (_) async => long;
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => long)
+        ..onInterview = (_) => interview.future;
 
       await pumpScreen(tester, textScaler: large);
 
@@ -2268,8 +2293,9 @@ void main() {
     testWidgets('no overflow with the busy cue showing', (tester) async {
       narrow(tester);
       final write = Completer<DataGatewayChangeResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onSetDisabledCapabilities = (_, _) => write.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onSetDisabledCapabilities = (_, _) => write.future;
 
       await pumpScreen(tester, textScaler: large);
       await press(tester, capability(search));
@@ -2281,7 +2307,7 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    for (final (name, surface, Object error) in [
+    for (final (name, surface, Exception error) in [
       ('failed', DataGatewayDetailScreen.errorKey, unreachable()),
       (
         'gone',
@@ -2413,8 +2439,9 @@ void main() {
         'banner when it ends', (tester) async {
       offline.value = false;
       final interview = Completer<DataGatewayInterviewResult>();
-      remote.onFetchOne = (_) async => row();
-      remote.onInterview = (_) => interview.future;
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onInterview = (_) => interview.future;
       await pumpScreen(tester, offline: offline);
       await focusOn(tester, textIn(interviewButton, 'Interview again'));
       await pressKey(tester);
@@ -2510,8 +2537,9 @@ void main() {
 
     /// The DataGateway is [full], with its worklist of [links].
     void listed() {
-      remote.onFetchOne = (_) async => full();
-      remote.onFetchLanguageLinks = (_, _, _, _) async => linkPage;
+      remote
+        ..onFetchOne = ((_) async => full())
+        ..onFetchLanguageLinks = (_, _, _, _) async => linkPage;
     }
 
     /// The worklist answers its first read with [answer]: a page, a future
@@ -2519,12 +2547,13 @@ void main() {
     /// which has less to say than [full], so the worklist sits higher on the
     /// page.
     void worklist(Object answer) {
-      remote.onFetchOne = (_) async => row();
-      remote.onFetchLanguageLinks = (_, _, _, _) => switch (answer) {
-        final PaginatedResult<LanguageLink> page => Future.value(page),
-        final Future<PaginatedResult<LanguageLink>> pending => pending,
-        _ => Future.error(answer),
-      };
+      remote
+        ..onFetchOne = ((_) async => row())
+        ..onFetchLanguageLinks = (_, _, _, _) => switch (answer) {
+          final PaginatedResult<LanguageLink> page => Future.value(page),
+          final Future<PaginatedResult<LanguageLink>> pending => pending,
+          _ => Future.error(answer),
+        };
     }
 
     /// The worklist of [links], and a picker that finds [tags] with more
@@ -2600,9 +2629,10 @@ void main() {
     /// A switch's write that fails, and an ignore that works: an outcome for
     /// each banner.
     void bothAnswer() {
-      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
-      remote.onIgnoreLanguageLink = (_, id) async =>
-          languageLink(id, status: LanguageLinkStatus.ignored);
+      remote
+        ..onSetDisabledCapabilities = ((_, _) async => throw unreachable())
+        ..onIgnoreLanguageLink = (_, id) async =>
+            languageLink(id, status: LanguageLinkStatus.ignored);
     }
 
     /// Switches Search off, which fails, then ignores the first row: both
@@ -2655,8 +2685,9 @@ void main() {
       build: screen(
         seed: () {
           // A caller who may not read is refused the worklist too.
-          remote.onFetchOne = (_) async => throw forbidden();
-          remote.onFetchLanguageLinks = (_, _, _, _) async => throw forbidden();
+          remote
+            ..onFetchOne = ((_) async => throw forbidden())
+            ..onFetchLanguageLinks = (_, _, _, _) async => throw forbidden();
         },
       ),
       arrange: (tester) async {
@@ -2985,9 +3016,10 @@ void main() {
       'worklist, more failed',
       build: screen(
         seed: () {
-          remote.onFetchOne = (_) async => row();
-          remote.onFetchLanguageLinks = (_, _, page, _) async =>
-              page == 1 ? fullPage : throw unreachable();
+          remote
+            ..onFetchOne = ((_) async => row())
+            ..onFetchLanguageLinks = (_, _, page, _) async =>
+                page == 1 ? fullPage : throw unreachable();
         },
       ),
       arrange: (tester) async {

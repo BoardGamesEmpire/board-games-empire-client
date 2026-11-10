@@ -509,8 +509,7 @@ void main() {
       final focus = focusAround(
         tester,
         find.descendant(of: moreButton, matching: find.text('Show more')),
-      );
-      focus.requestFocus();
+      )..requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();

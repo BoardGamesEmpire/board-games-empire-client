@@ -156,7 +156,7 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     _actions.dispose();
     super.dispose();

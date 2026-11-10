@@ -42,12 +42,12 @@ import 'package:observability/observability.dart';
 ///
 /// Each action is offered while the caller's access, as the server answers
 /// it, says they may take it (#456): add needs create, connect and disconnect
-/// need update, and delete needs delete. The switches follow [access] as its
+/// need update, and delete needs delete. The switches follow `access` as its
 /// answer changes, up or down, without reading the list again. An action
 /// they no longer allow is dropped, as from a menu opened before they fell.
 ///
 /// A refused read is [DataGatewayListDenied], and a refused change is
-/// reported in the banner. Neither turns a switch off: each asks [access]
+/// reported in the banner. Neither turns a switch off: each asks `access`
 /// again, and the switches follow what it answers. The refusal is the
 /// server's word that the answer here may be out of date, as when the
 /// caller's role changed since it was asked. A refused read asks even when a
@@ -61,13 +61,13 @@ import 'package:observability/observability.dart';
 /// refusal that comes after such an answer, while its read was out, reads
 /// again too, once: no change is left to say so by then.
 ///
-/// A read that succeeds while the answer is still unknown asks [access]
+/// A read that succeeds while the answer is still unknown asks `access`
 /// again too. The first ask can fail with the server up, as on a 502 from a
 /// proxy, and nothing else asks again until a rehydrate trigger. The server
 /// has just answered this caller, so an ask now is likely to be answered
 /// too.
 ///
-/// A null [access] is a composition with no session to ask. The rows still
+/// A null `access` is a composition with no session to ask. The rows still
 /// show, and nothing is offered, as while the answer is unknown.
 class DataGatewayListBloc
     extends Bloc<DataGatewayListEvent, DataGatewayListState> {

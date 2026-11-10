@@ -186,9 +186,10 @@ void main() {
 
   /// Reads and ignores through [server].
   void serving(_Server server) {
-    remote.onFetchLanguageLinks = (_, statuses, page, limit) =>
-        server.read(statuses, page, limit);
-    remote.onIgnoreLanguageLink = (_, id) => server.ignore(id);
+    remote
+      ..onFetchLanguageLinks = ((_, statuses, page, limit) =>
+          server.read(statuses, page, limit))
+      ..onIgnoreLanguageLink = (_, id) => server.ignore(id);
   }
 
   LanguageLinkListReady ready(
@@ -749,9 +750,10 @@ void main() {
               throw unreachable();
             }
 
-            remote.onIgnoreLanguageLink = (_, id) => lost(id);
-            remote.onLinkLanguageLink = (_, id, _) => lost(id);
-            remote.onAcceptLanguageLink = (_, id) => lost(id);
+            remote
+              ..onIgnoreLanguageLink = ((_, id) => lost(id))
+              ..onLinkLanguageLink = ((_, id, _) => lost(id))
+              ..onAcceptLanguageLink = (_, id) => lost(id);
           },
           build: build,
           act: (bloc) async {
@@ -916,9 +918,10 @@ void main() {
           server = _Server(60);
           final ignoring = Completer<LanguageLink>();
           ignoringFirst = ignoring;
-          remote.onFetchLanguageLinks = (_, statuses, page, limit) =>
-              server.read(statuses, page, limit);
-          remote.onIgnoreLanguageLink = (_, id) => ignoring.future;
+          remote
+            ..onFetchLanguageLinks = ((_, statuses, page, limit) =>
+                server.read(statuses, page, limit))
+            ..onIgnoreLanguageLink = (_, id) => ignoring.future;
         },
         build: build,
         act: (bloc) async {
@@ -1084,7 +1087,7 @@ void main() {
 
     group('a refused more is denied, and a 404 more is gone', () {
       for (final (name, error, down, asks)
-          in <(String, Object, LanguageLinkListState, int)>[
+          in <(String, Exception, LanguageLinkListState, int)>[
             (
               'refused, and asks access again',
               forbidden(),
@@ -1476,11 +1479,12 @@ void main() {
         server = _Server(60);
         firstMore = Completer();
         var mores = 0;
-        remote.onFetchLanguageLinks = (_, statuses, page, limit) =>
-            page == 2 && mores++ == 0
-            ? firstMore.future
-            : server.read(statuses, page, limit);
-        remote.onIgnoreLanguageLink = (_, id) => server.ignore(id);
+        remote
+          ..onFetchLanguageLinks = ((_, statuses, page, limit) =>
+              page == 2 && mores++ == 0
+              ? firstMore.future
+              : server.read(statuses, page, limit))
+          ..onIgnoreLanguageLink = (_, id) => server.ignore(id);
       }
 
       blocTest<LanguageLinkListBloc, LanguageLinkListState>(

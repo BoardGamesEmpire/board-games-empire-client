@@ -102,11 +102,12 @@ void main() {
       'marks the row busy, then shows the row the server returned and what '
       'its attempt answered',
       setUp: () {
-        remote.listing([steam]);
-        remote.onConnect = (_) async => changed(
-          steam.copyWith(enabled: true),
-          attempted: DataGatewayConnectionAction.connect,
-        );
+        remote
+          ..listing([steam])
+          ..onConnect = (_) async => changed(
+            steam.copyWith(enabled: true),
+            attempted: DataGatewayConnectionAction.connect,
+          );
       },
       build: build,
       act: (bloc) async {
@@ -137,12 +138,13 @@ void main() {
       'a connect the server could not complete is reported as such, with the '
       'row still enabled, because the server enables it first',
       setUp: () {
-        remote.listing([steam]);
-        remote.onConnect = (_) async => changed(
-          steam.copyWith(enabled: true),
-          attempted: DataGatewayConnectionAction.connect,
-          succeeded: false,
-        );
+        remote
+          ..listing([steam])
+          ..onConnect = (_) async => changed(
+            steam.copyWith(enabled: true),
+            attempted: DataGatewayConnectionAction.connect,
+            succeeded: false,
+          );
       },
       build: build,
       act: (bloc) async {
@@ -203,9 +205,10 @@ void main() {
     blocTest<DataGatewayListBloc, DataGatewayListState>(
       'removes the row',
       setUp: () {
-        remote.listing([bgg, steam]);
-        remote.onDelete = (_) async =>
-            changed(bgg, attempted: DataGatewayConnectionAction.disconnect);
+        remote
+          ..listing([bgg, steam])
+          ..onDelete = (_) async =>
+              changed(bgg, attempted: DataGatewayConnectionAction.disconnect);
       },
       build: build,
       act: (bloc) async {
@@ -234,9 +237,10 @@ void main() {
     blocTest<DataGatewayListBloc, DataGatewayListState>(
       'a row someone else deleted is removed and reported as gone',
       setUp: () {
-        remote.listing([bgg]);
-        remote.onDelete = (_) async =>
-            throw const DataGatewayNotFoundException('gone', statusCode: 404);
+        remote
+          ..listing([bgg])
+          ..onDelete = (_) async =>
+              throw const DataGatewayNotFoundException('gone', statusCode: 404);
       },
       build: build,
       act: (bloc) async {
@@ -319,8 +323,9 @@ void main() {
     blocTest<DataGatewayListBloc, DataGatewayListState>(
       'a refused change asks access again and keeps following it',
       setUp: () {
-        remote.listing([bgg]);
-        remote.onConnect = (_) async => throw forbidden();
+        remote
+          ..listing([bgg])
+          ..onConnect = (_) async => throw forbidden();
       },
       build: build,
       act: (bloc) async {
@@ -648,8 +653,9 @@ void main() {
   blocTest<DataGatewayListBloc, DataGatewayListState>(
     'any other failed change keeps the row and says the action failed',
     setUp: () {
-      remote.listing([bgg]);
-      remote.onDisconnect = (_) async => throw unreachable();
+      remote
+        ..listing([bgg])
+        ..onDisconnect = (_) async => throw unreachable();
     },
     build: build,
     act: (bloc) async {
@@ -953,8 +959,9 @@ void main() {
   blocTest<DataGatewayListBloc, DataGatewayListState>(
     'dismissing the outcome clears it',
     setUp: () {
-      remote.listing([bgg]);
-      remote.onDisconnect = (_) async => throw unreachable();
+      remote
+        ..listing([bgg])
+        ..onDisconnect = (_) async => throw unreachable();
     },
     build: build,
     act: (bloc) async {

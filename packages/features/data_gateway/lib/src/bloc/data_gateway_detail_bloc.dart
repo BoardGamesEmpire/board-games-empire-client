@@ -17,9 +17,9 @@ import 'package:observability/observability.dart';
 ///
 /// ## One action at a time
 ///
-/// The screen keeps a control enabled through its own action, because a disabled
-/// control gives up keyboard focus (#607), so what is pressed during an action
-/// is settled here:
+/// The screen keeps a control enabled through its own action, because a
+/// disabled control gives up keyboard focus (#607), so what is pressed during
+/// an action is settled here:
 ///
 /// - The interview button during its own interview is a double press, and is
 ///   dropped. So is a switch, which the screen stops taking presses by then.
@@ -29,9 +29,9 @@ import 'package:observability/observability.dart';
 ///   second switch pressed quickly isn't lost.
 /// - The interview button during a write waits too, and the state says so with
 ///   [DataGatewayDetailReady.interviewWaiting]. It goes after any switches.
-/// - A write that ends with no row to build from, or that is refused, drops what
-///   was waiting. Its banner says the write didn't go as asked, and a change
-///   sent on behind that could switch back what it may have applied.
+/// - A write that ends with no row to build from, or that is refused, drops
+///   what was waiting. Its banner says the write didn't go as asked, and a
+///   change sent on behind that could switch back what it may have applied.
 ///
 /// ## Capability writes
 ///
@@ -64,14 +64,14 @@ import 'package:observability/observability.dart';
 /// ## An action that ends with no word on the row
 ///
 /// A re-interview that doesn't answer with the row, other than a refusal or a
-/// 404, and a capability write with no usable answer, always read the row again,
-/// and nothing more is sent until a read has answered.
+/// 404, and a capability write with no usable answer, always read the row
+/// again, and nothing more is sent until a read has answered.
 ///
 /// A write whose answer was lost may have applied, so one built from the row on
 /// screen could switch that change back. An interview with no answer may still
-/// be running, or may have finished with a row the screen hasn't seen. That goes
-/// for a proxy's 504 or a dropped connection as much as a timeout, since the
-/// server sets no deadline of its own (backend#722), so it isn't sent twice
+/// be running, or may have finished with a row the screen hasn't seen. That
+/// goes for a proxy's 504 or a dropped connection as much as a timeout, since
+/// the server sets no deadline of its own (backend#722), so it isn't sent twice
 /// before the row has been read. If that read fails the row comes down with it,
 /// so nothing can be built from the old one.
 ///
@@ -82,19 +82,19 @@ import 'package:observability/observability.dart';
 ///
 /// A handler waiting on the server outlives [close], and asking for a read then
 /// would throw, so it asks for none once [close] has started. A refusal that
-/// lands after that still asks [access] again, which outlasts the screen.
+/// lands after that still asks `access` again, which outlasts the screen.
 ///
 /// ## Access
 ///
 /// Re-interview and the capability switches are offered while the caller's
 /// access, as the server answers it, allows update (#456). They follow
-/// [access] as its answer changes, up or down, without reading the row again.
+/// `access` as its answer changes, up or down, without reading the row again.
 /// A press it no longer allows is dropped, and so is one waiting on a write
 /// when update falls before the write answers. What was already sent runs on,
 /// and answers for itself.
 ///
 /// A refused read is [DataGatewayDetailDenied], and a refused change is
-/// reported in the outcome. Neither takes anything away: each asks [access]
+/// reported in the outcome. Neither takes anything away: each asks `access`
 /// again, and the controls follow what it answers. The refusal is the server's
 /// word that the answer here may be out of date, as when the caller's role
 /// changed since it was asked. A refused read asks even when its answer is
@@ -107,13 +107,13 @@ import 'package:observability/observability.dart';
 /// an answer, while its read was out, reads again too, once: no change is
 /// left to say so by then.
 ///
-/// A read that succeeds while the answer is still unknown asks [access]
+/// A read that succeeds while the answer is still unknown asks `access`
 /// again too. The first ask can fail with the server up, as on a 502 from a
 /// proxy, and nothing else asks again until a rehydrate trigger. The server
 /// has just answered this caller, so an ask now is likely to be answered
 /// too.
 ///
-/// A null [access] is a composition with no session to ask. The row still
+/// A null `access` is a composition with no session to ask. The row still
 /// shows, and nothing is offered, as while the answer is unknown.
 class DataGatewayDetailBloc
     extends Bloc<DataGatewayDetailEvent, DataGatewayDetailState> {

@@ -299,7 +299,8 @@ void main() {
         ]) {
       blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
         'a read that $answered with no action running takes the row down, so '
-        'nothing is sent, and the last outcome shows when a read brings it back',
+        'nothing is sent, and the last outcome shows when a read brings it '
+        'back',
         setUp: () {
           reads([row, error, row]);
           remote.onInterview = (_) async => interviewed(row, succeeded: false);
@@ -1617,8 +1618,9 @@ void main() {
       setUp: () {
         reads([row]);
         write = Completer();
-        remote.onSetDisabledCapabilities = (_, _) => write.future;
-        remote.onInterview = (_) async => interviewed(row);
+        remote
+          ..onSetDisabledCapabilities = ((_, _) => write.future)
+          ..onInterview = (_) async => interviewed(row);
       },
       build: build,
       act: (bloc) async {
