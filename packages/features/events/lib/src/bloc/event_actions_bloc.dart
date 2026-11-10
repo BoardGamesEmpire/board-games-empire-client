@@ -236,6 +236,9 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     on<EventArchiveRequested>(_onArchiveRequested);
     on<EventUnarchiveRequested>(_onUnarchiveRequested);
     on<EventRsvpRequested>(_onRsvpRequested);
+    on<EventAttendeeAddRequested>(_onAttendeeAddRequested);
+    on<EventAttendeeRemoveRequested>(_onAttendeeRemoveRequested);
+    on<EventAttendeeAnswerRequested>(_onAttendeeAnswerRequested);
     on<EventWriteDropped>(_onWriteDropped);
     on<EventActionOutcomeDismissed>(_onOutcomeDismissed);
   }
@@ -436,6 +439,62 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     ),
   );
 
+  Future<void> _onAttendeeAddRequested(
+    EventAttendeeAddRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendWrite(
+      EventAction.manageAttendees,
+      'Attendee add',
+      () => _remote.addAttendee(
+        event.eventId,
+        userId: event.userId,
+        role: event.role,
+      ),
+      _repository.addCachedAttendee,
+      attendeeWrite: EventAttendeeWrite.add,
+      attendeeName: event.name,
+    ),
+  );
+
+  Future<void> _onAttendeeRemoveRequested(
+    EventAttendeeRemoveRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendWrite(
+      EventAction.manageAttendees,
+      'Attendee remove',
+      () => _remote.removeAttendee(event.eventId, event.attendeeId),
+      (_) => _repository.removeCachedAttendee(
+        eventId: event.eventId,
+        attendeeId: event.attendeeId,
+      ),
+      attendeeWrite: EventAttendeeWrite.remove,
+      attendeeName: event.name,
+    ),
+  );
+
+  Future<void> _onAttendeeAnswerRequested(
+    EventAttendeeAnswerRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runWrite(
+    emit,
+    () => _sendWrite(
+      EventAction.manageAttendees,
+      'Attendee answer',
+      () => _remote.updateAttendeeStatus(
+        event.eventId,
+        event.attendeeId,
+        event.status,
+      ),
+      _repository.cacheAttendee,
+      attendeeWrite: EventAttendeeWrite.answer,
+      attendeeName: event.name,
+    ),
+  );
+
   Future<void> _onDateRemoveRequested(
     EventDateRemoveRequested event,
     Emitter<EventActionsState> emit,
@@ -619,13 +678,16 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   /// Sends one write with [send], once the session says yes, and writes
   /// what it answered to the cache with [cache]. Answers how it ended, as
   /// [action], and logs it under [request]. A status write also names
-  /// itself as [statusWrite], for the outcome. Never throws.
+  /// itself as [statusWrite], and a roster write (#510) as [attendeeWrite] and
+  /// [attendeeName], for the outcome. Never throws.
   Future<EventActionOutcome> _sendWrite<T>(
     EventAction action,
     String request,
     Future<T> Function() send,
     Future<bool> Function(T answer) cache, {
     EventStatusWrite? statusWrite,
+    EventAttendeeWrite? attendeeWrite,
+    String? attendeeName,
   }) async {
     EventActionOutcome ended(EventActionResult result, [Object? error]) =>
         EventActionOutcome(
@@ -633,6 +695,8 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
           result: result,
           error: error,
           statusWrite: statusWrite,
+          attendeeWrite: attendeeWrite,
+          attendeeName: attendeeName,
         );
 
     if (!await _confirmed('$request not sent')) {
@@ -703,6 +767,8 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
           action: event.action,
           result: EventActionResult.changed,
           statusWrite: event.statusWrite,
+          attendeeWrite: event.attendeeWrite,
+          attendeeName: event.attendeeName,
           dropped: true,
         ),
       ),

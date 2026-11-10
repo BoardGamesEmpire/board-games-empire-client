@@ -55,6 +55,12 @@ enum EventStatusWrite {
   final EventAction action;
 }
 
+/// Which of the roster's three writes an outcome is for (#510).
+///
+/// All three run under [EventAction.manageAttendees]; the banner tells them
+/// apart.
+enum EventAttendeeWrite { add, remove, answer }
+
 /// The last event action's outcome, for the detail screen (#501).
 final class EventActionOutcome extends Equatable {
   const EventActionOutcome({
@@ -62,6 +68,8 @@ final class EventActionOutcome extends Equatable {
     required this.result,
     this.error,
     this.statusWrite,
+    this.attendeeWrite,
+    this.attendeeName,
     this.dropped = false,
   });
 
@@ -71,6 +79,14 @@ final class EventActionOutcome extends Equatable {
   /// Which status write this is, for the four that change the event's own
   /// status (#502). Null for every other action.
   final EventStatusWrite? statusWrite;
+
+  /// Which roster write this is, for the three of #510. Null for every
+  /// other action.
+  final EventAttendeeWrite? attendeeWrite;
+
+  /// The name of the person an attendee write was for, for the banner's
+  /// copy. Null where they have none, and for every other action.
+  final String? attendeeName;
 
   /// What the action ended with. Null when it was done, when it failed
   /// before the request went out, when a cancel then remove stopped before
@@ -151,7 +167,15 @@ final class EventActionOutcome extends Equatable {
   }
 
   @override
-  List<Object?> get props => [action, result, error, statusWrite, dropped];
+  List<Object?> get props => [
+    action,
+    result,
+    error,
+    statusWrite,
+    attendeeWrite,
+    attendeeName,
+    dropped,
+  ];
 }
 
 /// The actions on one event detail screen (#501).

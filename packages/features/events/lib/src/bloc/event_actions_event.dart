@@ -200,25 +200,94 @@ final class EventRsvpRequested extends EventActionsEvent {
   List<Object?> get props => [eventId, attendeeId, status, notes];
 }
 
+/// Add the user [userId] to [eventId]'s roster as [role] (#510). [name] is
+/// the person's name, for the outcome's copy. Null where they have none.
+final class EventAttendeeAddRequested extends EventActionsEvent {
+  const EventAttendeeAddRequested(
+    this.eventId,
+    this.userId,
+    this.role, {
+    this.name,
+  });
+
+  final String eventId;
+  final String userId;
+  final EventRole role;
+  final String? name;
+
+  @override
+  List<Object?> get props => [eventId, userId, role, name];
+}
+
+/// Remove the roster row [attendeeId] from [eventId] (#510).
+final class EventAttendeeRemoveRequested extends EventActionsEvent {
+  const EventAttendeeRemoveRequested(
+    this.eventId,
+    this.attendeeId, {
+    this.name,
+  });
+
+  final String eventId;
+  final String attendeeId;
+  final String? name;
+
+  @override
+  List<Object?> get props => [eventId, attendeeId, name];
+}
+
+/// Set the answer of the roster row [attendeeId] on [eventId] to [status],
+/// for someone else (#510).
+final class EventAttendeeAnswerRequested extends EventActionsEvent {
+  const EventAttendeeAnswerRequested(
+    this.eventId,
+    this.attendeeId,
+    this.status, {
+    this.name,
+  });
+
+  final String eventId;
+  final String attendeeId;
+  final EventParticipationStatus status;
+  final String? name;
+
+  @override
+  List<Object?> get props => [eventId, attendeeId, status, name];
+}
+
 /// The screen dropped a write of [action] once its dialog closed, because
 /// the event no longer offered it (#502, #655), and nothing was sent. Its
 /// banner says the event changed, as a 400 for it would, so a screen reader
 /// hears why nothing happened. [statusWrite] says which, for the four that
-/// change the event's own status.
+/// change the event's own status, and [attendeeWrite] and [attendeeName] for
+/// a roster write (#510).
 final class EventWriteDropped extends EventActionsEvent {
   /// Drops a date write.
-  const EventWriteDropped(this.action) : statusWrite = null;
+  const EventWriteDropped(this.action)
+    : statusWrite = null,
+      attendeeWrite = null,
+      attendeeName = null;
 
   /// Drops [write], under the action whose grant it needs.
   EventWriteDropped.status(EventStatusWrite write)
     : action = write.action,
-      statusWrite = write;
+      statusWrite = write,
+      attendeeWrite = null,
+      attendeeName = null;
+
+  /// Drops a roster [write] for the person named [name], if they have one.
+  const EventWriteDropped.attendee(EventAttendeeWrite write, {String? name})
+    : action = EventAction.manageAttendees,
+      statusWrite = null,
+      attendeeWrite = write,
+      attendeeName = name;
 
   final EventAction action;
   final EventStatusWrite? statusWrite;
+  final EventAttendeeWrite? attendeeWrite;
+  final String? attendeeName;
 
   @override
-  List<Object?> get props => [action, statusWrite];
+  List<Object?> get props => [action, statusWrite, attendeeWrite, attendeeName];
 }
 
 /// The person closed the last action's banner.
