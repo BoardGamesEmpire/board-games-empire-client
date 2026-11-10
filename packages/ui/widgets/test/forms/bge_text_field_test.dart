@@ -309,7 +309,7 @@ void main() {
       expect(
         forms.before.control('email').value,
         isNull,
-        reason: 'the swapped-away group must not receive the user\'s input',
+        reason: "the swapped-away group must not receive the user's input",
       );
     });
 

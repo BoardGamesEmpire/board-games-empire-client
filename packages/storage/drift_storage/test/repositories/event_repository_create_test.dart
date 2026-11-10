@@ -1,10 +1,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
@@ -12,6 +8,9 @@ import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart'
     show eventAccessSourceRead;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -159,7 +158,7 @@ void main() {
       expect(item.attendance?.status, EventParticipationStatus.attending);
     });
 
-    test('create enqueues one op keyed by the event\'s id', () async {
+    test("create enqueues one op keyed by the event's id", () async {
       final created = await repo.create(fixedDraft(title: '  Game night  '));
 
       final pending = await queue.getPendingEntries();
@@ -201,7 +200,7 @@ void main() {
       expect(snapshot.attendees?.map((a) => a.userId), [_kUserA]);
     });
 
-    test('a poll\'s dates are proposed and it is planning', () async {
+    test("a poll's dates are proposed and it is planning", () async {
       final created = await repo.create(
         EventDraft(
           title: 'Which Friday?',
@@ -313,7 +312,7 @@ void main() {
     });
 
     test('a household created here whose create has landed since is sent '
-        'under the server\'s id', () async {
+        "under the server's id", () async {
       // The form was opened on the local id, and the household's reconcile
       // replaced it before the event was submitted.
       await db
@@ -430,7 +429,7 @@ void main() {
   });
 
   group('reconcileCreatedEvent', () {
-    test('reconcile replaces the local event with the server\'s', () async {
+    test("reconcile replaces the local event with the server's", () async {
       final created = await repo.create(fixedDraft());
       final server = serverCopy();
 
@@ -513,7 +512,7 @@ void main() {
     });
 
     test('a deleted replay removes the copy a hydrate cached under the '
-        'server\'s id, for every user', () async {
+        "server's id, for every user", () async {
       // The create's answer was lost, a hydrate cached the event it made,
       // and it was deleted before the retry replayed the create.
       final created = await repo.create(fixedDraft());
@@ -825,7 +824,7 @@ void main() {
       ]);
     });
 
-    test('discard of an op that isn\'t stuck changes nothing', () async {
+    test("discard of an op that isn't stuck changes nothing", () async {
       final created = await repo.create(fixedDraft());
 
       expect(await repo.discardQueuedOp(created.syncQueueId), isFalse);
@@ -845,7 +844,7 @@ void main() {
       expect(await queue.getAllEntries(), hasLength(1));
     });
 
-    test('discard of a create this build can\'t read removes its event '
+    test("discard of a create this build can't read removes its event "
         'too', () async {
       // Queued by a newer build, in another tab, with a type this one
       // doesn't know. Nothing else would ever remove the local event.
@@ -870,7 +869,7 @@ void main() {
       expect(await queue.getAllEntries(), isEmpty);
     });
 
-    test('discard of an entry that won\'t decode at all deletes only the '
+    test("discard of an entry that won't decode at all deletes only the "
         'entry', () async {
       final created = await repo.create(fixedDraft());
       await queue.park(created.syncQueueId, error: 'refused: 400');

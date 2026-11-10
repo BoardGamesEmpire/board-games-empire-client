@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/banners/bge_inline_banner.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../banners/bge_inline_banner.dart';
 
 /// A form's failed submit, shown by [BgeFormActions].
 ///

@@ -101,7 +101,7 @@ void main() {
       final image = await render.toImage();
       return (image.width, (await image.toByteData())!);
     }))!;
-    final at = ((content.center.dy).floor() * width + content.left.floor()) * 4;
+    final at = (content.center.dy.floor() * width + content.left.floor()) * 4;
     return Color.fromARGB(
       bytes.getUint8(at + 3),
       bytes.getUint8(at),

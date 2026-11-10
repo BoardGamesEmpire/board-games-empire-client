@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'household_settings.dart';
+import 'package:models/src/domain/household/household_settings.dart';
 
 part 'household.freezed.dart';
 part 'household.g.dart';
@@ -17,11 +17,11 @@ part 'household.g.dart';
 /// being purged.
 @freezed
 abstract class Household with _$Household {
-  const Household._();
-
   const factory Household({
     required String id,
     required String name,
+    required DateTime createdAt,
+    required DateTime updatedAt,
     String? description,
     String? image,
 
@@ -41,9 +41,8 @@ abstract class Household with _$Household {
     @Default(false) bool isLocalOnly,
 
     DateTime? deletedAt,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _Household;
+  const Household._();
 
   factory Household.fromJson(Map<String, dynamic> json) =>
       _$HouseholdFromJson(json);

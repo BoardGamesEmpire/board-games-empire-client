@@ -1,9 +1,8 @@
+import 'package:dio_network/src/network/register_server_network.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ProviderSignInBrowser;
 import 'package:models/domain.dart';
-
-import 'register_server_network.dart';
 
 /// [ServerScopeInstaller] for the mobile/desktop network slice.
 ///

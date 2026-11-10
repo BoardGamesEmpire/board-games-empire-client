@@ -1,5 +1,3 @@
-library;
-
 export 'package:hydration/hydration.dart' show Hydration, HydrationState;
 
 export 'src/admin/admin_household_resource_types.dart';

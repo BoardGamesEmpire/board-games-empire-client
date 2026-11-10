@@ -71,7 +71,6 @@ const _identity = ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: [],
 );
 
 void main() {

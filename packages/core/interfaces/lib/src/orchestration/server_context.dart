@@ -1,7 +1,6 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
+import 'package:interfaces/src/orchestration/server_context_state.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
-import 'server_context_state.dart';
 
 /// Encapsulates the isolated dependency injection scope, storage, networking,
 /// and lifecycle state for a single BGE server instance.

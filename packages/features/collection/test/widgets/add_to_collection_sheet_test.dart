@@ -29,7 +29,7 @@ const _homeKey = Key('test.home');
 const _heading = 'Add Wingspan';
 const _mediumRequired = 'Choose physical or digital.';
 const _platformRequired = 'Choose a platform.';
-const _both = {GameMedium.physical, GameMedium.digital};
+const Set<GameMedium> _both = {GameMedium.physical, GameMedium.digital};
 const _quantityInvalid = 'Enter a whole number, 1 or more.';
 const _quantityTooMany = "That's more copies than can be stored.";
 const _failedTitle = "Couldn't add the game";
@@ -48,7 +48,6 @@ void main() {
   final wingspan = Game(
     id: 'g_wingspan',
     title: 'Wingspan',
-    contentType: ContentType.baseGame,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   );
@@ -262,7 +261,6 @@ void main() {
     () => repository.addToCollection(
       platformGameId: platformGameId,
       medium: medium,
-      quantity: 1,
     ),
   ).called(1);
 
@@ -555,7 +553,6 @@ void main() {
       () => repository.addToCollection(
         platformGameId: 'pg_1',
         medium: GameMedium.physical,
-        quantity: 1,
       ),
     ).called(1);
     expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
@@ -569,7 +566,7 @@ void main() {
         (
           'not sent yet',
           const SyncFailed(SyncFailure.unreachable, 'offline'),
-          'Added Wingspan to your collection on this device. It hasn\'t '
+          "Added Wingspan to your collection on this device. It hasn't "
               'reached the server yet.',
           CollectionSync.queued,
         ),
@@ -1031,7 +1028,6 @@ void main() {
       () => repository.addToCollection(
         platformGameId: 'pg_1',
         medium: GameMedium.physical,
-        quantity: 1,
         rating: 7,
         comment: 'Great',
       ),
@@ -1053,7 +1049,6 @@ void main() {
       () => repository.addToCollection(
         platformGameId: 'pg_1',
         medium: GameMedium.physical,
-        quantity: 1,
       ),
     ).called(1);
   });

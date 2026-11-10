@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'user_base.dart';
+import 'package:models/src/domain/user/user_base.dart';
 
 part 'user.freezed.dart';
 part 'user.g.dart';
@@ -24,6 +24,8 @@ abstract class User with _$User implements UserBase {
     required String username,
     required String email,
     required bool emailVerified,
+    required DateTime createdAt,
+    required DateTime updatedAt,
     String? image,
     String? firstName,
     String? lastName,
@@ -41,8 +43,6 @@ abstract class User with _$User implements UserBase {
     /// permission/role join tables; this mirrors the backend column but is
     /// not part of [UserBase] (the auth user omits it).
     String? role,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _User;
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);

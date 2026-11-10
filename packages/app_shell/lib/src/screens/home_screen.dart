@@ -1,11 +1,10 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/screens/home_menu_entry.dart';
+import 'package:app_shell/src/screens/home_sections.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, listEquals;
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
-import 'home_menu_entry.dart';
-import 'home_sections.dart';
 
 /// The authenticated landing surface (#129): a real home with a
 /// navigation drawer hosting the app's entry points, replacing the

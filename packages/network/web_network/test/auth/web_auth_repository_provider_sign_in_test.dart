@@ -39,7 +39,7 @@ const _kStrategy = OidcStrategy(
   appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
 );
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: _kOrigin,
   wellKnownSchemaVersion: 1,
@@ -51,7 +51,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [_kStrategy],
+  strategies: [_kStrategy],
 );
 
 /// Answers every request with [statusCode], [body] and any [headers], and

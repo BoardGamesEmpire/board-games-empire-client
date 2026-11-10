@@ -1,8 +1,7 @@
+import 'package:app_shell/src/observability/shell_observability.dart';
+import 'package:app_shell/src/observability/uncaught_error_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:observability/observability.dart';
-
-import 'shell_observability.dart';
-import 'uncaught_error_record.dart';
 
 /// Consumes captured [UncaughtErrorRecord]s (issue #34).
 ///

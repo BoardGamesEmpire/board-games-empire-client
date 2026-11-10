@@ -93,7 +93,8 @@ class EncryptedExecutorFactory {
 
   /// Encryption is always on in release builds; the flag only takes effect
   /// in debug/profile builds.
-  static const _encryptionEnabledDefault = kReleaseMode || !_disableRequested;
+  static const bool _encryptionEnabledDefault =
+      kReleaseMode || !_disableRequested;
 
   static const _serverDatabaseFileName = 'game_empire.db';
   static const _serverDatabaseDirectory = 'app_secure_storage';

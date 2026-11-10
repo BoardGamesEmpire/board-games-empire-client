@@ -512,7 +512,7 @@ void main() {
 
     for (final MapEntry(key: name, value: theme) in themes.entries) {
       testWidgets("$name: Tab rings each action in the banner's foreground, "
-          'on the app buttons\' shape and placement, in every tone', (
+          "on the app buttons' shape and placement, in every tone", (
         tester,
       ) async {
         final appShape = theme.textButtonTheme.style!.shape!.resolve(
@@ -2371,9 +2371,9 @@ void main() {
 
       await tester.pumpWidget(
         MediaQuery(
-          data: MediaQueryData(
-            size: const Size(320, 480),
-            textScaler: const TextScaler.linear(2),
+          data: const MediaQueryData(
+            size: Size(320, 480),
+            textScaler: TextScaler.linear(2),
           ),
           child: MaterialApp(
             theme: BgeTheme.light(),

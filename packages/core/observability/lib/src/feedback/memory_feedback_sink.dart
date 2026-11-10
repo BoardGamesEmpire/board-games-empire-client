@@ -1,5 +1,5 @@
-import 'feedback_sink.dart';
-import 'queued_feedback_report.dart';
+import 'package:observability/src/feedback/feedback_sink.dart';
+import 'package:observability/src/feedback/queued_feedback_report.dart';
 
 /// RAM implementation of [FeedbackSink] (#69, #97).
 ///

@@ -1,6 +1,6 @@
-import 'feedback_category.dart';
-import 'feedback_report.dart';
-import 'feedback_severity.dart';
+import 'package:observability/src/feedback/feedback_category.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
+import 'package:observability/src/feedback/feedback_severity.dart';
 
 /// Assembles and submits [FeedbackReport]s (issue #8; "BugReportService"
 /// in the original issue text, renamed alongside the model to match the

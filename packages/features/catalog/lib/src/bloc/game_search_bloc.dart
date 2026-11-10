@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/debounce_restartable.dart';
+import 'package:game_catalog/src/bloc/game_search_event.dart';
+import 'package:game_catalog/src/bloc/game_search_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'debounce_restartable.dart';
-import 'game_search_event.dart';
-import 'game_search_state.dart';
 
 /// Drives the search screen (#42): one page of `GET /games/search`, shown in
 /// two sections.
@@ -148,7 +147,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       // Unnamed results still read correctly; the note counts the
       // DataGateways that did not answer rather than naming them.
       _logger.info(
-        'Could not read the DataGateways\' names',
+        "Could not read the DataGateways' names",
         error: error,
         stackTrace: stackTrace,
       );

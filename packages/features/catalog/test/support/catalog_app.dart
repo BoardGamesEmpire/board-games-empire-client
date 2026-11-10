@@ -67,8 +67,8 @@ class FakeGamesCache extends Fake implements GameRepository {
   /// [GameSort.newest], as the real cache does.
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) async {
     final ordered = switch (sort) {

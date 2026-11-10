@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'event_table.dart';
+import 'package:drift_storage/src/tables/event_table.dart';
 
 /// A cached copy of an event's policy, as `GET /events` and `GET /events/:id`
 /// embed it (#496): who can be invited and join, and how the event's game

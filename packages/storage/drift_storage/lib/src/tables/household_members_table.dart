@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import './household_table.dart';
+import 'package:drift_storage/src/tables/household_table.dart';
 
 @TableIndex(name: 'household_members_user_idx', columns: {#userId})
 @TableIndex(

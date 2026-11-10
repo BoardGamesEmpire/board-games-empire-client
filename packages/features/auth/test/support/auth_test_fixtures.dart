@@ -1,12 +1,11 @@
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
-
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
-import 'package:auth/src/bloc/auth_event.dart';
 
 /// Shared fixtures for the auth feature's suites (#102): the bloc double the
 /// widget suites drive, the repository double the bloc suites drive, and the

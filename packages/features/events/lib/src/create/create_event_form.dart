@@ -1,5 +1,14 @@
 import 'dart:async';
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/create_event_state.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/create/event_create_dates_section.dart';
+import 'package:events/src/create/event_create_parts.dart';
+import 'package:events/src/create/event_invitees_section.dart';
+import 'package:events/src/create/event_rules_section.dart';
+import 'package:events/src/screens/create_event_screen.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
@@ -7,17 +16,6 @@ import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/create_event_state.dart';
-import '../screens/create_event_screen.dart';
-import '../widgets/event_labels.dart';
-import 'event_create_controls.dart';
-import 'event_create_dates_section.dart';
-import 'event_create_parts.dart';
-import 'event_invitees_section.dart';
-import 'event_rules_section.dart';
 
 /// The event create form (#499): one scrolling page of its basics, *When*,
 /// *Who's invited* and *Advanced: rules*, then the submit.

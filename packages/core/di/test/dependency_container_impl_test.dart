@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:di/di.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart' show GetIt;
 import 'package:interfaces/orchestration.dart';
 
@@ -15,7 +15,7 @@ class _Closeable implements Disposable {
   _Closeable({this.error});
 
   final Object? error;
-  var closes = 0;
+  int closes = 0;
 
   @override
   Future<void> onDispose() async {
@@ -291,7 +291,7 @@ void main() {
       });
 
       test('registrations made directly on the wrapped GetIt resolve '
-          'through the wrapper — the seam injectable\'s generated init '
+          "through the wrapper — the seam injectable's generated init "
           'relies on', () {
         final instance = _OtherService();
         getIt.registerSingleton<_OtherService>(instance);

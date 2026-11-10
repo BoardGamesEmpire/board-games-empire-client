@@ -9,7 +9,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../support/fake_data_gateway_remote.dart';
 
-const _pageSize = DataGatewayRemoteDataSource.languageLinkPageSize;
+const int _pageSize = DataGatewayRemoteDataSource.languageLinkPageSize;
 
 /// A link whose value names it, so a banner's value says which.
 LanguageLink _link(
@@ -22,7 +22,7 @@ LanguageLink _link(
 String _nth(int n) => 'r${n.toString().padLeft(3, '0')}';
 
 /// The statuses a read that names none lists.
-const _waitingStatuses = {
+const Set<LanguageLinkStatus> _waitingStatuses = {
   LanguageLinkStatus.pending,
   LanguageLinkStatus.unresolved,
 };
@@ -936,7 +936,7 @@ void main() {
           expect(remote.calls, [
             fetchCall(),
             ignoreCall(_nth(1)),
-            fetchCall(page: 1),
+            fetchCall(),
           ]);
           expect((bloc.state as LanguageLinkListReady).loadingMore, isFalse);
           expect(idsOf(bloc.state), [
@@ -1749,7 +1749,7 @@ void main() {
     );
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      "a filter change whose read is still out when an action ends reads "
+      'a filter change whose read is still out when an action ends reads '
       'again, and the outcome shows',
       setUp: () {
         pendingIgnore = Completer();

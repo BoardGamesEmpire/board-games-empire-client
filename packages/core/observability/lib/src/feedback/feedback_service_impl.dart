@@ -1,16 +1,15 @@
 import 'package:cuid2/cuid2.dart';
-
-import '../breadcrumbs/breadcrumb.dart';
-import '../logging/bge_logger.dart';
-import 'feedback_category.dart';
-import 'feedback_constants.dart';
-import 'feedback_environment.dart';
-import 'feedback_report.dart';
-import 'feedback_service.dart';
-import 'feedback_severity.dart';
-import 'feedback_sink.dart';
-import 'feedback_target.dart';
-import 'queued_feedback_report.dart';
+import 'package:observability/src/breadcrumbs/breadcrumb.dart';
+import 'package:observability/src/feedback/feedback_category.dart';
+import 'package:observability/src/feedback/feedback_constants.dart';
+import 'package:observability/src/feedback/feedback_environment.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
+import 'package:observability/src/feedback/feedback_service.dart';
+import 'package:observability/src/feedback/feedback_severity.dart';
+import 'package:observability/src/feedback/feedback_sink.dart';
+import 'package:observability/src/feedback/feedback_target.dart';
+import 'package:observability/src/feedback/queued_feedback_report.dart';
+import 'package:observability/src/logging/bge_logger.dart';
 
 /// Device-global [FeedbackService] registered in the app-scope root
 /// container (#72, #69, #97).

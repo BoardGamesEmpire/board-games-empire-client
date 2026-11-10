@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:data_gateway/src/access/read_allowed_since.dart';
+import 'package:data_gateway/src/bloc/language_link_list_event.dart';
+import 'package:data_gateway/src/bloc/language_link_list_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../access/read_allowed_since.dart';
-import 'language_link_list_event.dart';
-import 'language_link_list_state.dart';
 
 /// Drives a DataGateway's language worklist (#457): its language links, a
 /// page at a time under a status filter, and the link, ignore and accept
@@ -278,7 +277,6 @@ class LanguageLinkListBloc
       final result = await _remote.fetchLanguageLinks(
         _gatewayId,
         statuses: _statusesOf(filter),
-        page: 1,
         // The argument must follow the constant the surrounding arithmetic
         // also uses.
         // ignore: avoid_redundant_argument_values

@@ -1,10 +1,9 @@
+import 'package:app_shell/src/widgets/feedback_review_screen.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-import 'package:observability/observability.dart';
-
-import '../widgets/feedback_review_screen.dart';
 
 /// The user-initiated feedback flow (#107): a single route hosting the
 /// compose step (the `feedback` feature's [FeedbackComposeForm]) that

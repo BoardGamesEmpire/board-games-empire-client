@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/create_household_bloc.dart';
+import 'package:household/src/bloc/create_household_event.dart';
+import 'package:household/src/bloc/create_household_state.dart';
+import 'package:household/src/widgets/create_household_form.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/create_household_bloc.dart';
-import '../bloc/create_household_event.dart';
-import '../bloc/create_household_state.dart';
-import '../widgets/create_household_form.dart';
+import 'package:ui/ui.dart';
 
 /// Screen for creating a household (#40).
 ///

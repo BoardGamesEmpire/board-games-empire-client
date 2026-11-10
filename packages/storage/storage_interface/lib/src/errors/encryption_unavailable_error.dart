@@ -23,6 +23,6 @@ class EncryptionUnavailableError extends Error {
   String toString() =>
       'EncryptionUnavailableError: the bundled SQLite build has no cipher '
       'support. The workspace root pubspec.yaml must select an encrypted '
-      "build via `hooks: user_defines: sqlite3: source: sqlite3mc`."
+      'build via `hooks: user_defines: sqlite3: source: sqlite3mc`.'
       '${detail == null ? '' : ' ($detail)'}';
 }

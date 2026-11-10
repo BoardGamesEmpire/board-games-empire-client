@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/remote_failure.dart';
-import 'game_summary_json.dart';
 
 /// What a request's path names, which is what lets an application 404 mean
 /// that thing is gone. A list or write route names nothing: see

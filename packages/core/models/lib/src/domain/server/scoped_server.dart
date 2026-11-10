@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'server_config.dart';
-import 'server_identity.dart';
+import 'package:models/src/domain/server/server_config.dart';
+import 'package:models/src/domain/server/server_identity.dart';
 
 part 'scoped_server.freezed.dart';
 
@@ -37,8 +37,6 @@ part 'scoped_server.freezed.dart';
 /// in.
 @freezed
 abstract class ScopedServer with _$ScopedServer {
-  const ScopedServer._();
-
   const factory ScopedServer({
     /// The stable server-vended UUID (`bge_server_id`).
     required String serverId,
@@ -46,6 +44,7 @@ abstract class ScopedServer with _$ScopedServer {
     /// Human-readable server name, for diagnostics and attribution.
     required String displayName,
   }) = _ScopedServer;
+  const ScopedServer._();
 
   /// The native leg: a configured server the user added on this device.
   factory ScopedServer.fromConfig(ServerConfig config) => ScopedServer(

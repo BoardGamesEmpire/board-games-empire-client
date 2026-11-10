@@ -3,22 +3,20 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/entry/collection_entry_bloc.dart';
+import 'package:game_collection/src/entry/collection_entry_event.dart';
+import 'package:game_collection/src/entry/collection_entry_state.dart';
+import 'package:game_collection/src/entry/edit_collection_entry_sheet.dart';
+import 'package:game_collection/src/entry/remove_from_collection_dialog.dart';
+import 'package:game_collection/src/medium_label.dart';
+import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import '../medium_label.dart';
-import '../sync/collection_sync.dart';
-import 'collection_entry_bloc.dart';
-import 'collection_entry_event.dart';
-import 'collection_entry_state.dart';
-import 'edit_collection_entry_sheet.dart';
-import 'remove_from_collection_dialog.dart';
 
 /// One entry of the collection (#46): the game it is a copy of, the copy's
 /// fields, and the app bar's Edit and Remove.

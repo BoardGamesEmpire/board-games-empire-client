@@ -8,8 +8,6 @@ part 'user_summary.freezed.dart';
 /// Read from the server when a screen opens and never stored on the device.
 @freezed
 abstract class UserSummary with _$UserSummary {
-  const UserSummary._();
-
   const factory UserSummary({
     required String id,
     required String username,
@@ -17,6 +15,7 @@ abstract class UserSummary with _$UserSummary {
     /// From the user's profile, which may be absent.
     String? displayName,
   }) = _UserSummary;
+  const UserSummary._();
 
   /// What to call this user on screen.
   String get label => displayName ?? username;

@@ -8,7 +8,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 const _failed = 'Households may be out of date.';
 const _inProgress = 'Refreshing\u{2026}';
 const _retry = 'Try again';
-const _retryKey = ValueKey('retry');
+const ValueKey<String> _retryKey = ValueKey('retry');
 
 Widget _banner({bool refreshing = false, VoidCallback? onRetry, Key? key}) =>
     BgeRefreshBanner(

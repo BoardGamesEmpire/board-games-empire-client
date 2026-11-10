@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 const _kBgeServerId = '550e8400-e29b-41d4-a716-446655440000';
 const _kServerUrl = 'https://api.example.com';
@@ -206,7 +206,7 @@ void main() {
 
   group('ServerCapacityExceededException', () {
     test('formats message correctly', () {
-      final exception = ServerCapacityExceededException(
+      const exception = ServerCapacityExceededException(
         currentConnected: 5,
         maxCapacity: 5,
       );

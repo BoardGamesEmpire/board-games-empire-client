@@ -1,6 +1,5 @@
-import 'package:models/domain.dart';
-
 import 'package:events/l10n/events_localizations.dart';
+import 'package:models/domain.dart';
 
 // The words for an event's rules, where the create form offers them (#499).
 //

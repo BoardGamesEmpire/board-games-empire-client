@@ -31,7 +31,7 @@ void main() {
     clientRequestId: 'key-1',
     breadcrumbs: [
       Breadcrumb(
-        timestamp: DateTime.utc(2026, 1, 1),
+        timestamp: DateTime.utc(2026),
         level: BgeLogLevel.info,
         loggerName: 'bge.test.harness',
         message: 'opened the add-game screen',
@@ -650,7 +650,7 @@ void main() {
       );
       expect(
         find.text(
-          "Saved for now, but it will be lost if the app is closed or reloaded. "
+          'Saved for now, but it will be lost if the app is closed or reloaded. '
           "It may still be sent before then if you're connected and signed in.",
         ),
         findsOneWidget,

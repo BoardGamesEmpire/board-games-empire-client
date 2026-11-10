@@ -1,23 +1,21 @@
-library;
-
 export 'src/access/data_gateway_names.dart';
 export 'src/access/data_gateway_resource_types.dart';
 export 'src/bloc/data_gateway_detail_bloc.dart';
 export 'src/bloc/data_gateway_detail_event.dart';
 export 'src/bloc/data_gateway_detail_state.dart';
-export 'src/bloc/data_gateway_list_bloc.dart';
-export 'src/bloc/data_gateway_list_event.dart';
-export 'src/bloc/data_gateway_list_state.dart';
 export 'src/bloc/data_gateway_form_bloc.dart';
 export 'src/bloc/data_gateway_form_event.dart';
 export 'src/bloc/data_gateway_form_state.dart';
+export 'src/bloc/data_gateway_list_bloc.dart';
+export 'src/bloc/data_gateway_list_event.dart';
+export 'src/bloc/data_gateway_list_state.dart';
 export 'src/bloc/language_link_list_bloc.dart';
 export 'src/bloc/language_link_list_event.dart';
 export 'src/bloc/language_link_list_state.dart';
 export 'src/bloc/language_tag_search_cubit.dart';
 export 'src/screens/data_gateway_detail_screen.dart';
-export 'src/screens/data_gateway_list_screen.dart';
 export 'src/screens/data_gateway_form_screen.dart';
+export 'src/screens/data_gateway_list_screen.dart';
 export 'src/widgets/data_gateway_form.dart';
 export 'src/widgets/language_link_worklist.dart';
 export 'src/widgets/language_tag_picker_dialog.dart';

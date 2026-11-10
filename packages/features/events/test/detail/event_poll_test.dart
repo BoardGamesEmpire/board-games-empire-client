@@ -19,7 +19,7 @@ void main() {
     int sortOrder = 0,
   }) => confirmed(
     id,
-    DateTime.utc(2026, 11, 1),
+    DateTime.utc(2026, 11),
     sortOrder: sortOrder,
   ).copyWith(status: status);
 
@@ -191,7 +191,7 @@ void main() {
   });
 
   group('votesIn', () {
-    test('is the role table\'s voteAvailability', () {
+    test("is the role table's voteAvailability", () {
       final who = [
         for (final role in EventRole.values)
           if (votesIn(eventWith(), role)) role,

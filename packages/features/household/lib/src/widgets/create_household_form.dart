@@ -1,13 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/widgets/household_name_validator.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import 'household_name_validator.dart';
 
 /// The create-household form: a required name and an optional description.
 ///

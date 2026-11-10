@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/members/send_member_request.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'package:household/src/bloc/household_member_actions_state.dart';
-import 'package:household/src/members/send_member_request.dart';
 
 class MockBgeLogger extends Mock implements BgeLogger {}
 

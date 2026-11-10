@@ -35,8 +35,8 @@ class _RecordingCache extends FakeGamesCache {
 
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) {
     pageReads.add((offset: offset, limit: limit, sort: sort));
@@ -48,8 +48,8 @@ class _RecordingCache extends FakeGamesCache {
 class _BrokenCache extends _RecordingCache {
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) => throw StateError('the session ended');
 }

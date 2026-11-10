@@ -1,10 +1,9 @@
 import 'dart:async';
 
+import 'package:app_shell/src/widgets/detached_rehydrate.dart';
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
-
-import 'detached_rehydrate.dart';
 
 /// Asks the active session's [SessionRehydrator] for a pass when something
 /// suggests the server is worth trying again (#302 D1).

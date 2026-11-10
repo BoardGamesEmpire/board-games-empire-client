@@ -3,15 +3,14 @@ import 'dart:convert';
 import 'package:bge_test_support/network.dart';
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/auth_repository_impl.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
-
-import 'package:dio_network/src/auth/auth_repository_impl.dart';
-import 'package:dio_network/src/auth/token_storage_service.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 
@@ -20,7 +19,7 @@ class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
 const _kAuthBase = '/api/auth';
 const _kServerId = 'server-1';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: _kServerId,
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -32,7 +31,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -92,7 +91,7 @@ void main() {
   Future<void> seedRestorableSession() => freshStorage().store(
     token: 'tok-abc',
     expiresAt: DateTime.utc(2026, 1, 8),
-    persistedAt: DateTime.utc(2026, 1, 1),
+    persistedAt: DateTime.utc(2026),
     user: AuthUser.fromJson(_wireUser()),
   );
 

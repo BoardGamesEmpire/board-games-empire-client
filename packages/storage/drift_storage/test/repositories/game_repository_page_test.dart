@@ -1,14 +1,13 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 const _kUser = 'user-a';
 
-final _seeded = DateTime.utc(2026, 10, 1);
+final _seeded = DateTime.utc(2026, 10);
 
 Game _game(
   String id,
@@ -99,7 +98,7 @@ void main() {
   test('title order is unchanged by default', () async {
     await repo.cacheGames([
       _game('g-1', 'Wingspan', createdAt: DateTime.utc(2026, 10, 3)),
-      _game('g-2', 'Azul', createdAt: DateTime.utc(2026, 10, 1)),
+      _game('g-2', 'Azul', createdAt: DateTime.utc(2026, 10)),
       _game('g-3', 'Catan', createdAt: DateTime.utc(2026, 10, 2)),
     ]);
 
@@ -107,7 +106,7 @@ void main() {
 
     expect(byDefault, ['g-2', 'g-3', 'g-1']);
     expect(
-      await idsOf(repo.getGamesPage(limit: 10, sort: GameSort.title)),
+      await idsOf(repo.getGamesPage(limit: 10)),
       byDefault,
     );
   });
@@ -119,7 +118,7 @@ void main() {
 
     test('orders by createdAt desc, then id desc', () async {
       await repo.cacheGames([
-        _game('g-1', 'Azul', createdAt: DateTime.utc(2026, 10, 1)),
+        _game('g-1', 'Azul', createdAt: DateTime.utc(2026, 10)),
         _game('g-4', 'Brass', createdAt: DateTime.utc(2026, 10, 3)),
         _game('g-2', 'Catan', createdAt: DateTime.utc(2026, 10, 2)),
         _game('g-3', 'Dune', createdAt: DateTime.utc(2026, 10, 2)),
@@ -132,7 +131,7 @@ void main() {
 
     test('does not order by title', () async {
       await repo.cacheGames([
-        _game('g-1', 'Azul', createdAt: DateTime.utc(2026, 10, 1)),
+        _game('g-1', 'Azul', createdAt: DateTime.utc(2026, 10)),
         _game('g-2', 'Brass', createdAt: DateTime.utc(2026, 10, 2)),
       ]);
 
@@ -152,7 +151,7 @@ void main() {
 
     test('skips summary-only rows', () async {
       await repo.cacheGames([
-        _game('g-live', 'Azul', createdAt: DateTime.utc(2026, 10, 1)),
+        _game('g-live', 'Azul', createdAt: DateTime.utc(2026, 10)),
       ]);
       // A collection summary stamps the row with this device's clock, which
       // is later than any seeded createdAt, so an unfiltered read would put
@@ -171,7 +170,7 @@ void main() {
 
     test('leaves out tombstones', () async {
       await repo.cacheGames([
-        _game('g-live', 'Azul', createdAt: DateTime.utc(2026, 10, 1)),
+        _game('g-live', 'Azul', createdAt: DateTime.utc(2026, 10)),
         _game(
           'g-gone',
           'Brass',

@@ -57,7 +57,7 @@ void main() {
   });
 
   group('locale policy (#33)', () {
-    test('en is the first supported locale — Flutter\'s default '
+    test("en is the first supported locale — Flutter's default "
         'resolution makes it the fallback with no custom callback', () {
       expect(ShellLocalizations.supportedLocales.first, const Locale('en'));
     });

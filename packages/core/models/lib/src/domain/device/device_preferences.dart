@@ -14,8 +14,6 @@ part 'device_preferences.g.dart';
 /// that feature is implemented.
 @freezed
 abstract class DevicePreferences with _$DevicePreferences {
-  const DevicePreferences._();
-
   const factory DevicePreferences({
     /// Maximum number of servers that may be in [ConnectionState.active],
     /// [ConnectionState.backgrounding], or [ConnectionState.monitoring] at
@@ -36,6 +34,7 @@ abstract class DevicePreferences with _$DevicePreferences {
     /// Disabled by default — battery awareness is post-MVP.
     @Default(false) bool batteryAwareTransitions,
   }) = _DevicePreferences;
+  const DevicePreferences._();
 
   factory DevicePreferences.fromJson(Map<String, dynamic> json) =>
       _$DevicePreferencesFromJson(json);

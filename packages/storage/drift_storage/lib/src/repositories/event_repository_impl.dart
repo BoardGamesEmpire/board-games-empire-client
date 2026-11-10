@@ -1,13 +1,12 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/stored_enum_name.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
+import 'package:drift_storage/src/tables/event_access_table.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import '../tables/event_access_table.dart';
-import 'stored_enum_name.dart';
-import 'watch_disposal.dart';
 
 /// [EventRepository] over the per-server [ServerDatabase], for one user
 /// (#496).

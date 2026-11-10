@@ -1,6 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_detail_bloc.dart';
+import 'package:events/src/bloc/event_detail_event.dart';
+import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/bloc/event_poll_bloc.dart';
+import 'package:events/src/bloc/event_poll_event.dart';
+import 'package:events/src/bloc/event_poll_state.dart';
+import 'package:events/src/detail/event_poll.dart';
+import 'package:events/src/widgets/event_date_poll.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,18 +19,6 @@ import 'package:models/domain.dart' hide ConnectionState;
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_detail_bloc.dart';
-import '../bloc/event_detail_event.dart';
-import '../bloc/event_detail_state.dart';
-import '../bloc/event_poll_bloc.dart';
-import '../bloc/event_poll_event.dart';
-import '../bloc/event_poll_state.dart';
-import '../detail/event_poll.dart';
-import '../widgets/event_date_poll.dart';
-import '../widgets/event_labels.dart';
 
 /// Who answered an event's availability poll (#507): a row for each person
 /// the poll lists, a column for each Proposed date, and each person's answer

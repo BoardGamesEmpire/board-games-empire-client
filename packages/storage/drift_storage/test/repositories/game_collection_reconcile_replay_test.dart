@@ -1,11 +1,10 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 import '../support/platform_game_fixture.dart';
@@ -86,7 +85,7 @@ void main() {
       final [addOp, updateOp] = await queue.getAllEntries();
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
 
@@ -114,7 +113,7 @@ void main() {
       final [addOp, _] = await queue.getAllEntries();
 
       await repo.reconcileFromServer(
-        _server(id: added.id, quantity: 1),
+        _server(id: added.id),
         completedSyncQueueId: addOp.id,
       );
 
@@ -147,7 +146,7 @@ void main() {
       final [addOp, updateOp] = await queue.getAllEntries();
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
       await exhaust(updateOp.id);
@@ -168,7 +167,7 @@ void main() {
       await exhaust(updateOp.id);
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
 
@@ -185,7 +184,7 @@ void main() {
       expect(await queue.claim(updateOp.id), isTrue);
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
 
@@ -211,14 +210,14 @@ void main() {
       final [addOp, quantityOp] = await queue.getAllEntries();
       await exhaust(quantityOp.id);
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
 
       await repo.updateCollectionEntry(id: _kServerId, rating: 5);
       final ratingOp = (await queue.getPendingEntries()).single;
       await repo.reconcileFromServer(
-        _server(quantity: 1, rating: 5),
+        _server(rating: 5),
         completedSyncQueueId: ratingOp.id,
       );
 
@@ -228,14 +227,14 @@ void main() {
     });
 
     test(
-      'an update replays field by field over the server\'s answer',
+      "an update replays field by field over the server's answer",
       () async {
         final added = await add();
         await repo.updateCollectionEntry(id: added.id, favorite: true);
         final [addOp, _] = await queue.getAllEntries();
 
         await repo.reconcileFromServer(
-          _server(quantity: 1, playCount: 3, comment: 'From the server'),
+          _server(playCount: 3, comment: 'From the server'),
           completedSyncQueueId: addOp.id,
         );
 
@@ -247,7 +246,7 @@ void main() {
       },
     );
 
-    test('add -> remove -> add: the re-add survives the removal\'s own '
+    test("add -> remove -> add: the re-add survives the removal's own "
         'acknowledgement', () async {
       final added = await add();
       await repo.removeFromCollection(added.id);
@@ -255,7 +254,7 @@ void main() {
       final [addOp, removeOp, _] = await queue.getAllEntries();
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
 
@@ -267,12 +266,12 @@ void main() {
         row.isLocalOnly,
         isTrue,
         reason:
-            'a re-add the server has not seen; without it the removal\'s '
+            "a re-add the server has not seen; without it the removal's "
             'acknowledgement purges the row',
       );
 
       await repo.reconcileFromServer(
-        _server(quantity: 1, deletedAt: DateTime.utc(2026, 3)),
+        _server(deletedAt: DateTime.utc(2026, 3)),
         completedSyncQueueId: removeOp.id,
       );
 
@@ -289,7 +288,7 @@ void main() {
       final [addOp, updateOp] = await queue.getAllEntries();
 
       await repo.reconcileFromServer(
-        _server(quantity: 1),
+        _server(),
         completedSyncQueueId: addOp.id,
       );
       await repo.reconcileFromServer(
@@ -332,7 +331,7 @@ void main() {
       // outstanding; it must still be placed among the others, or the
       // exhausted quantity 2 is replayed over the server's 5.
       final mark = await repo.removalMark();
-      await repo.mergeFromServer([_server(quantity: 1)], removalsSince: mark);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
       await repo.updateCollectionEntry(id: _kServerId, quantity: 2);
       await repo.updateCollectionEntry(id: _kServerId, quantity: 5);
       await repo.updateCollectionEntry(id: _kServerId, rating: 4);
@@ -358,7 +357,7 @@ void main() {
         'while that op is queued', () async {
       await add();
 
-      await repo.reconcileFromServer(_server(quantity: 1));
+      await repo.reconcileFromServer(_server());
 
       final row = await onlyRow();
       expect(row.quantity, 1);

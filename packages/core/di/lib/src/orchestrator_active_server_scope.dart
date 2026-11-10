@@ -1,8 +1,7 @@
 import 'dart:async';
 
+import 'package:di/src/streams/replay_then_forward.dart';
 import 'package:interfaces/orchestration.dart';
-
-import 'streams/replay_then_forward.dart';
 
 /// Native [ActiveServerScope] (#37): a thin, read-only adapter over the
 /// [ServerOrchestrator].

@@ -1,12 +1,11 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -55,7 +54,7 @@ void main() {
   ];
 
   test(
-    'a user shown the roster reads it though it doesn\'t name them',
+    "a user shown the roster reads it though it doesn't name them",
     () async {
       await read(repoFor(_kA), roster([_kA, _kH]));
       final b = repoFor(_kB);
@@ -87,7 +86,7 @@ void main() {
     expect(users(await a.getEvent('e-1')), [_kA, _kH]);
   });
 
-  test('the flag survives another user\'s newer roster', () async {
+  test("the flag survives another user's newer roster", () async {
     final a = repoFor(_kA);
     final b = repoFor(_kB);
     await read(a, roster([_kA, _kH]));
@@ -97,7 +96,7 @@ void main() {
     expect(users(await b.getEvent('e-1')), [_kA, _kH, _kJ]);
   });
 
-  test('the flag is this user\'s alone', () async {
+  test("the flag is this user's alone", () async {
     await read(repoFor(_kA), roster([_kA, _kH]));
     await read(repoFor(_kB), roster([_kA, _kH]));
     final g = repoFor(_kG);

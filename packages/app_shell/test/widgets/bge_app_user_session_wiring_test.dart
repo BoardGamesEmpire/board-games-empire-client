@@ -75,7 +75,7 @@ class _ThrowingUserSessionScope implements UserSessionScope {
 class _GatedActivateUserSessionScope implements UserSessionScope {
   final activateGate = Completer<void>();
   final calls = <String>[];
-  var activateStarted = false;
+  bool activateStarted = false;
 
   Future<void> _ops = Future<void>.value();
   String? _activeUserId;
@@ -109,7 +109,7 @@ class _GatedActivateUserSessionScope implements UserSessionScope {
 /// home widget over disposed repositories (#135 review).
 class _GatedUserSessionScope implements UserSessionScope {
   final deactivateGate = Completer<void>();
-  var deactivateStarted = false;
+  bool deactivateStarted = false;
   String? _activeUserId;
 
   // Reported truthfully, like every real implementation: the shell reads it
@@ -188,7 +188,7 @@ class _SignOutCountingAuthRepository extends FakeAuthRepository {
 class _GatedFailingUserSessionScope implements UserSessionScope {
   final activateGate = Completer<void>();
   final calls = <String>[];
-  var activateStarted = false;
+  bool activateStarted = false;
 
   Future<void> _ops = Future<void>.value();
 
@@ -250,7 +250,7 @@ class _HangingSessionCheckAuthRepository extends FakeAuthRepository {
 class _FailFirstThenSucceedUserSessionScope implements UserSessionScope {
   final activateGate = Completer<void>();
   final calls = <String>[];
-  var activateCount = 0;
+  int activateCount = 0;
   String? _activeUserId;
 
   Future<void> _ops = Future<void>.value();
@@ -511,7 +511,7 @@ void main() {
     expect(
       feedback.drainCalls,
       0,
-      reason: 'the departed server\'s handler must not advance the gate',
+      reason: "the departed server's handler must not advance the gate",
     );
   });
 

@@ -1,11 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/create_household_event.dart';
+import 'package:household/src/bloc/create_household_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
-import 'package:observability/observability.dart';
 import 'package:models/domain.dart';
-
-import 'create_household_event.dart';
-import 'create_household_state.dart';
+import 'package:observability/observability.dart';
 
 /// Drives household creation (#27/#39/#40), coordinating the local write
 /// and the online-first server sync:

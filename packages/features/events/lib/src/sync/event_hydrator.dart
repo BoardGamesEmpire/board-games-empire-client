@@ -1,9 +1,8 @@
+import 'package:events/src/sync/page_one.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'page_one.dart';
 
 /// What one [EventHydrator.hydrate] pass achieved.
 ///
@@ -277,7 +276,7 @@ class EventHydrator {
     if (!confirmed) {
       _logger.info(
         'Event hydrate stopped: a page came back once the session could no '
-        'longer be confirmed as this user\'s',
+        "longer be confirmed as this user's",
         context: {'page': page},
       );
     }

@@ -142,7 +142,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
 
   @override
   Future<HydratedStorageDirectory> hydratedStorageDirectory() async =>
-      HydratedStorageDirectory('unused-in-tests');
+      const HydratedStorageDirectory('unused-in-tests');
 
   @override
   Future<void> dispose() async {

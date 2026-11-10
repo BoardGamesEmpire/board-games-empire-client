@@ -1,5 +1,10 @@
 import 'dart:async';
 
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:data_gateway/src/bloc/data_gateway_list_bloc.dart';
+import 'package:data_gateway/src/bloc/data_gateway_list_event.dart';
+import 'package:data_gateway/src/bloc/data_gateway_list_state.dart';
+import 'package:data_gateway/src/widgets/data_gateway_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -7,13 +12,6 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-
-import '../bloc/data_gateway_list_bloc.dart';
-import '../bloc/data_gateway_list_event.dart';
-import '../bloc/data_gateway_list_state.dart';
-import '../widgets/data_gateway_status.dart';
 
 /// The DataGateway admin screen (#41): every DataGateway on the active
 /// server, with add, edit, delete, connect and disconnect.

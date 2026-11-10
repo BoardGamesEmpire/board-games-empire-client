@@ -109,7 +109,7 @@ ServerUrlResult normalizeServerUrl(String input) {
   // Prepend https:// only when no scheme is present at all. A lone
   // "scheme-relative" (//host) or partial scheme still parses; the
   // scheme check below handles the rest.
-  final hasScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(candidate);
+  final hasScheme = RegExp('^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(candidate);
   if (!hasScheme) candidate = 'https://$candidate';
 
   final Uri uri;
@@ -139,7 +139,6 @@ ServerUrlResult normalizeServerUrl(String input) {
       if (!_isLoopbackOrPrivateHost(uri.host)) {
         return const ServerUrlInvalid(ServerUrlError.insecureHttp);
       }
-      break;
     default:
       return const ServerUrlInvalid(ServerUrlError.unsupportedScheme);
   }

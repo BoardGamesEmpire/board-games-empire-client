@@ -1,8 +1,7 @@
+import 'package:app_shell/src/observability/global_error_hooks.dart';
+import 'package:app_shell/src/observability/uncaught_error_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:observability/observability.dart';
-
-import 'global_error_hooks.dart';
-import 'uncaught_error_record.dart';
 
 /// [UncaughtErrorReporter] backing the alpha "ask each time" flow (#69).
 ///

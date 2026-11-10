@@ -17,7 +17,7 @@ class ThrowingDisposeContainer implements DependencyContainer {
   ThrowingDisposeContainer(this._inner);
 
   final DependencyContainer _inner;
-  var disposeCalls = 0;
+  int disposeCalls = 0;
 
   @override
   T get<T extends Object>() => _inner.get<T>();

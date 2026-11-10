@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/household_detail_event.dart';
+import 'package:household/src/bloc/household_detail_state.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import 'household_detail_event.dart';
-import 'household_detail_state.dart';
 
 /// Drives the household detail screen (#270): one household, its member
 /// count, and the current user's role in it.

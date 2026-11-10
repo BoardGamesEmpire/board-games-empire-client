@@ -1,7 +1,7 @@
 import 'package:logging/logging.dart';
 
-import 'bge_log_level.dart';
-import 'context_log_message.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
+import 'package:observability/src/logging/context_log_message.dart';
 
 /// Thin wrapper around `package:logging`'s [Logger] exposing the BGE
 /// five-level scheme (issue #8).

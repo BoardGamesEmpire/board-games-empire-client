@@ -194,7 +194,7 @@ void main() {
     });
 
     test('a claimed refusal wins, told whether the API wrote it', () {
-      final family = _TestFamily(onRefused: _Claimed.new);
+      const family = _TestFamily(onRefused: _Claimed.new);
       final cause = StateError('cause');
 
       final enveloped = failureForStatus(
@@ -281,7 +281,7 @@ void main() {
           data: _envelope(403),
         ),
       );
-      final family = _TestFamily(onRefused: _Claimed.new);
+      const family = _TestFamily(onRefused: _Claimed.new);
 
       expect(
         failureForDioException(family, error, action: 'act'),

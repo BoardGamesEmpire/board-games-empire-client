@@ -177,9 +177,10 @@ Future<void> main(List<String> args) async {
     '-v',
     '${handBack.absolute.path}:/out',
     '-v',
-    pubCache == null || pubCache.isEmpty
-        ? 'bge-goldens-pub-cache:/root/.pub-cache'
-        : '$pubCache:/root/.pub-cache',
+    if (pubCache == null || pubCache.isEmpty)
+      'bge-goldens-pub-cache:/root/.pub-cache'
+    else
+      '$pubCache:/root/.pub-cache',
     if (owner != null) ...[
       '-e',
       'HOST_UID=${owner.uid}',
@@ -204,7 +205,7 @@ Future<void> main(List<String> args) async {
   if (handedBack.refused.isNotEmpty) {
     stderr.writeln(
       '\nThe container handed back ${handedBack.refused.length} path(s) '
-      'outside a golden package\'s test/goldens/, or not a plain file. '
+      "outside a golden package's test/goldens/, or not a plain file. "
       'None were copied:',
     );
     for (final path in handedBack.refused) {
@@ -217,7 +218,7 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       update
           ? '\nRegenerating the goldens failed.'
-          : '\nGolden tests failed. The diffs are under each package\'s '
+          : "\nGolden tests failed. The diffs are under each package's "
                 'test/goldens/failures/.',
     );
     exit(1);

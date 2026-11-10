@@ -1,16 +1,15 @@
 import 'dart:async';
 
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/password_policy.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import '../../l10n/auth_localizations.dart';
-import '../password_policy.dart';
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
-import '../bloc/auth_bloc_state.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Registration form for email/password sign-up.
 ///
@@ -151,7 +150,6 @@ class _RegisterFormState extends State<RegisterForm> {
                   autocorrect: false,
                   enableSuggestions: false,
                   autofillHints: const [AutofillHints.email],
-                  textInputAction: TextInputAction.next,
                   readOnly: isLoading,
                   autofocus: true,
                   validationMessages: {
@@ -170,7 +168,6 @@ class _RegisterFormState extends State<RegisterForm> {
                   autocorrect: false,
                   enableSuggestions: false,
                   autofillHints: const [AutofillHints.username],
-                  textInputAction: TextInputAction.next,
                   readOnly: isLoading,
                   validationMessages: {
                     ValidationMessage.required: (_) => l10n.authErrorRequired,
@@ -189,9 +186,7 @@ class _RegisterFormState extends State<RegisterForm> {
                         formControlName: 'firstName',
                         label: l10n.authFirstNameLabel,
                         autofillHints: const [AutofillHints.givenName],
-                        textInputAction: TextInputAction.next,
                         readOnly: isLoading,
-                        validationMessages: const {},
                       ),
                     ),
                     const BgeGap.sm(axis: Axis.horizontal),
@@ -200,9 +195,7 @@ class _RegisterFormState extends State<RegisterForm> {
                         formControlName: 'lastName',
                         label: l10n.authLastNameLabel,
                         autofillHints: const [AutofillHints.familyName],
-                        textInputAction: TextInputAction.next,
                         readOnly: isLoading,
-                        validationMessages: const {},
                       ),
                     ),
                   ],

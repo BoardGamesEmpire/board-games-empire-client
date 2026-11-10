@@ -1,10 +1,9 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/l10n/shell_localizations_en.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:observability/observability.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../../l10n/shell_localizations_en.dart';
 
 /// Installs [BuildErrorView] as the process-global [ErrorWidget.builder]
 /// (issue #66). Called by `runBgeApp` during bootstrap, alongside

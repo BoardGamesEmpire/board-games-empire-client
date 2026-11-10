@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'data_gateway.dart';
+import 'package:models/src/domain/data_gateway/data_gateway.dart';
 
 part 'data_gateway_input.freezed.dart';
 
@@ -28,8 +28,6 @@ abstract class DataGatewayInput with _$DataGatewayInput {
 /// row was read.
 @freezed
 abstract class DataGatewayChanges with _$DataGatewayChanges {
-  const DataGatewayChanges._();
-
   const factory DataGatewayChanges({
     String? name,
     String? connectionUrl,
@@ -39,6 +37,7 @@ abstract class DataGatewayChanges with _$DataGatewayChanges {
     /// means "unchanged", so emptying the field needs a value of its own.
     String? description,
   }) = _DataGatewayChanges;
+  const DataGatewayChanges._();
 
   /// What [input] changes about [original].
   ///

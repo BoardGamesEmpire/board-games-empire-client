@@ -202,7 +202,7 @@ void main() {
     testWidgets('a composition without connectivity mounts and does nothing', (
       tester,
     ) async {
-      await pump(tester, service: null);
+      await pump(tester);
       await tester.pump();
 
       expect(rehydrator.passes, isZero);
@@ -230,7 +230,7 @@ void main() {
     });
 
     testWidgets('resume works without a connectivity service', (tester) async {
-      await pump(tester, service: null);
+      await pump(tester);
 
       await resume(tester);
 

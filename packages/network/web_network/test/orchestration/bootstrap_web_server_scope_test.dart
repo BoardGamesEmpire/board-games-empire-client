@@ -16,7 +16,7 @@ class _MockWellKnownClient extends Mock implements WellKnownClient {}
 const _kOrigin = 'https://bge.example.com';
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: _kOrigin,
   wellKnownSchemaVersion: 1,
@@ -28,7 +28,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -107,7 +107,7 @@ void main() {
       },
     );
 
-    test('hands the scope\'s AuthRepository the provider sign-in bindings, '
+    test("hands the scope's AuthRepository the provider sign-in bindings, "
         'and gives it none without them (#583)', () async {
       stubFetchSuccess();
 

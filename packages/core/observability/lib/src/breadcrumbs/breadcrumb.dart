@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../logging/bge_log_level.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
 
 part 'breadcrumb.freezed.dart';
 part 'breadcrumb.g.dart';

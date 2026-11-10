@@ -37,7 +37,7 @@ ServerConfig _config() => ServerConfig(
   serverUrl: 'https://api.example.test',
   connectionState: ConnectionState.active,
   bgeServerId: 'server-1',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: 'server-1',
     issuer: 'https://api.example.test',
     wellKnownSchemaVersion: 1,
@@ -49,7 +49,7 @@ ServerConfig _config() => ServerConfig(
     passkeySupported: false,
     twoFactorSupported: false,
     anonymousAuthSupported: false,
-    strategies: const [
+    strategies: [
       EmailAndPasswordStrategy(
         signUpDisabled: false,
         signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -64,9 +64,9 @@ ServerConfig _config() => ServerConfig(
 /// fixture the config came from.
 ScopedServer _server() => ScopedServer.fromConfig(_config());
 
-PaginatedResult<HouseholdWithMembers> _emptyPage() => PaginatedResult(
-  items: const [],
-  meta: const PaginationMeta(
+PaginatedResult<HouseholdWithMembers> _emptyPage() => const PaginatedResult(
+  items: [],
+  meta: PaginationMeta(
     page: 1,
     limit: 100,
     total: 0,
@@ -121,7 +121,7 @@ void main() {
     // The drain is unawaited, so let its first turn run.
     await Future<void>.delayed(Duration.zero);
 
-    verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+    verify(() => remote.fetchHouseholds()).called(1);
   });
 
   test('install does not wait for the drain to finish', () async {
@@ -332,7 +332,7 @@ void main() {
 
       await rehydrator.rehydrateStale();
 
-      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+      verify(() => remote.fetchHouseholds()).called(1);
     });
 
     test(
@@ -474,7 +474,7 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
 
-        verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+        verify(() => remote.fetchHouseholds()).called(1);
       },
     );
 
@@ -525,7 +525,7 @@ void main() {
 
       // Once at install, once for the retry: unlike a #302 trigger, a
       // press is not filtered by staleness — the user asked.
-      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(2);
+      verify(() => remote.fetchHouseholds()).called(2);
     });
 
     test('a retry drives the status the screens already watch', () async {
@@ -819,7 +819,7 @@ void main() {
       await pumpEventQueue();
 
       expect(guard.askedFor, ['user-1', 'user-1']);
-      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+      verify(() => remote.fetchHouseholds()).called(1);
     });
 
     test('a pass it refuses sends nothing, and reads as failed so a later '

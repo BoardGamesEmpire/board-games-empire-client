@@ -1,10 +1,9 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
+import 'package:di/src/scope/user_scope_host.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
-
-import '../debug_report_swallowed.dart';
-import 'user_scope_host.dart';
 
 /// [UserSessionScope] over a **fixed** parent scope (#137).
 ///

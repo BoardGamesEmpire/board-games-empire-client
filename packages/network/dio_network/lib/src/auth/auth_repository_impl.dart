@@ -1,9 +1,19 @@
 import 'dart:async';
 
 import 'package:di/di.dart' show LocalClockService, replayThenForward;
-import 'package:http_status/http_status.dart';
 import 'package:dio/dio.dart';
-
+import 'package:dio_network/src/auth/provider_sign_in/app_sign_in_return_address.dart';
+import 'package:dio_network/src/auth/provider_sign_in/pkce.dart';
+import 'package:dio_network/src/auth/provider_sign_in/provider_sign_in_attempt.dart';
+import 'package:dio_network/src/auth/provider_sign_in/server_address.dart';
+import 'package:dio_network/src/auth/rate_limited.dart';
+import 'package:dio_network/src/auth/session_read_status.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
+import 'package:dio_network/src/network/redact_uri.dart';
+import 'package:dio_network/src/network/token_interceptor.dart';
+import 'package:http_status/http_status.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart'
@@ -11,18 +21,6 @@ import 'package:interfaces/services.dart'
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
-
-import '../network/api_error_envelope.dart';
-import '../network/decode_json_body.dart';
-import '../network/redact_uri.dart';
-import '../network/token_interceptor.dart';
-import 'provider_sign_in/app_sign_in_return_address.dart';
-import 'provider_sign_in/pkce.dart';
-import 'provider_sign_in/provider_sign_in_attempt.dart';
-import 'provider_sign_in/server_address.dart';
-import 'rate_limited.dart';
-import 'session_read_status.dart';
-import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
 ///

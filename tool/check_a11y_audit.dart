@@ -310,7 +310,7 @@ void _selfTest() {
     const screen = 'class {C} extends StatelessWidget {}\n';
     String auditTest(String cls) =>
         "void main() {\n  group('accessibility audit', () {\n"
-        '    testWidgets(\'x\', (t) async { await pump($cls()); });\n  });\n}\n';
+        "    testWidgets('x', (t) async { await pump($cls()); });\n  });\n}\n";
 
     // Covered: audit group and class name in a test in the same package.
     write(
@@ -428,7 +428,7 @@ void _selfTest() {
       listed.contains('packages/b/lib/src/widgets/deep_screen.dart'),
     );
     expect(
-      'ignores another package\'s tests',
+      "ignores another package's tests",
       listed.contains('packages/b/lib/src/other_screen.dart'),
     );
     expect(

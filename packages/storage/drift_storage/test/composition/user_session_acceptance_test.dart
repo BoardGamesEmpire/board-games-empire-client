@@ -106,7 +106,7 @@ AuthResponse _session(String userId) => AuthResponse(
 AuthState _authenticated(String userId) =>
     AuthStateAuthenticated(session: _session(userId));
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: _kServerId,
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -118,7 +118,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -189,7 +189,7 @@ void main() {
   }
 
   test('a live watchHouseholds subscription closes on sign-out and the '
-      'rebuilt scope serves only the new user\'s data', () async {
+      "rebuilt scope serves only the new user's data", () async {
     await signIn(_kUserA);
     final repoA = context.container.get<HouseholdRepository>();
     await repoA.create(name: 'Alpha Household');
@@ -284,7 +284,7 @@ void main() {
   });
 
   test('a live watchCollection subscription closes on sign-out and the '
-      'rebuilt scope serves only the new user\'s collection (#150)', () async {
+      "rebuilt scope serves only the new user's collection (#150)", () async {
     await signIn(_kUserA);
     await seedPlatformGame(context.container.get<ServerDatabase>());
     final collectionsA = context.container.get<GameCollectionRepository>();
@@ -348,7 +348,7 @@ void main() {
   });
 
   test('a direct user change with no intervening sign-out still disposes the '
-      'departing user\'s collection repository — a missed pop cannot serve '
+      "departing user's collection repository — a missed pop cannot serve "
       'cross-user data (#150)', () async {
     await signIn(_kUserA);
     await seedPlatformGame(context.container.get<ServerDatabase>());
@@ -373,7 +373,7 @@ void main() {
     await expectLater(
       context.container.get<GameCollectionRepository>().getCollection(),
       completion(isEmpty),
-      reason: "user B resolves a fresh instance scoped to B",
+      reason: 'user B resolves a fresh instance scoped to B',
     );
   });
 }

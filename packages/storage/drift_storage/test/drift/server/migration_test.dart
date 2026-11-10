@@ -4,16 +4,7 @@ import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'generated/schema.dart';
-
 import 'generated/schema_v1.dart' as v1;
-import 'generated/schema_v2.dart' as v2;
-import 'generated/schema_v3.dart' as v3;
-import 'generated/schema_v4.dart' as v4;
-import 'generated/schema_v5.dart' as v5;
-import 'generated/schema_v6.dart' as v6;
-import 'generated/schema_v7.dart' as v7;
-import 'generated/schema_v8.dart' as v8;
-import 'generated/schema_v9.dart' as v9;
 import 'generated/schema_v10.dart' as v10;
 import 'generated/schema_v11.dart' as v11;
 import 'generated/schema_v12.dart' as v12;
@@ -23,6 +14,14 @@ import 'generated/schema_v15.dart' as v15;
 import 'generated/schema_v16.dart' as v16;
 import 'generated/schema_v17.dart' as v17;
 import 'generated/schema_v18.dart' as v18;
+import 'generated/schema_v2.dart' as v2;
+import 'generated/schema_v3.dart' as v3;
+import 'generated/schema_v4.dart' as v4;
+import 'generated/schema_v5.dart' as v5;
+import 'generated/schema_v6.dart' as v6;
+import 'generated/schema_v7.dart' as v7;
+import 'generated/schema_v8.dart' as v8;
+import 'generated/schema_v9.dart' as v9;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -510,7 +509,7 @@ void main() {
   // had. The access tables are backfilled from `game_collections`, live and
   // removed rows alike, so each user keeps exactly the games their own
   // collection brought onto the device.
-  test('migration from v5 to v6 records each collection row\'s user for its '
+  test("migration from v5 to v6 records each collection row's user for its "
       'game and platform game, and leaves every cached row summary-only '
       '(#434, #406)', () async {
     const at = '2024-01-15T10:30:00.000Z';
@@ -1181,7 +1180,6 @@ void main() {
             status: 'Cancelled',
             sortOrder: 0,
             cancelledAt: at,
-            cancelReason: null,
             createdAt: at,
             updatedAt: at,
           ),
@@ -1238,8 +1236,6 @@ void main() {
             type: 'StrategyNight',
             reach: 'FriendsOfFriends',
             status: 'Ongoing',
-            cancelReason: null,
-            cancelledAt: null,
             schedulingMode: 'Fixed',
             isDirty: 0,
             isLocalOnly: 0,
@@ -1375,19 +1371,11 @@ void main() {
               userId: 'user_v14_1',
               eventId: 'e_v14_1',
               source: 'attending',
-              attendeeId: null,
-              attendanceStatus: null,
-              attendanceRole: null,
-              rsvpDate: null,
             ),
             v15.EventAccessData(
               userId: 'user_v14_1',
               eventId: 'e_v14_1',
               source: 'read',
-              attendeeId: null,
-              attendanceStatus: null,
-              attendanceRole: null,
-              rsvpDate: null,
             ),
           ],
         );
@@ -1444,7 +1432,6 @@ void main() {
               gameId: 'g_v15_1',
               platformId: 'plat_tabletop',
               platformName: 'Tabletop',
-              platformType: null,
               minPlayers: 2,
               maxPlayers: 4,
               minPlayTime: 45,

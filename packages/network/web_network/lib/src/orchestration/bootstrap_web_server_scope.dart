@@ -5,12 +5,12 @@ import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart' show ScopedServer, ServerIdentity;
 import 'package:network_interface/network_interface.dart' show WellKnownClient;
 
-import '../auth/provider_sign_in_bindings.dart';
-import '../auth/session_channel.dart';
-import '../network/register_server_network_web.dart';
-import '../network/web_dio_factory.dart';
-import 'web_active_server_scope.dart';
-import 'web_server_scope_container.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
+import 'package:web_network/src/auth/session_channel.dart';
+import 'package:web_network/src/network/register_server_network_web.dart';
+import 'package:web_network/src/network/web_dio_factory.dart';
+import 'package:web_network/src/orchestration/web_active_server_scope.dart';
+import 'package:web_network/src/orchestration/web_server_scope_container.dart';
 
 /// Installs additional per-server resources into the web server scope once
 /// the network stack is registered (#288).

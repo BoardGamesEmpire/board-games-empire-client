@@ -1,12 +1,11 @@
+import 'package:feedback/l10n/feedback_localizations.dart';
+import 'package:feedback/src/forms/feedback_compose_form_model.dart';
+import 'package:feedback/src/models/feedback_compose_result.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import '../../l10n/feedback_localizations.dart';
-import '../forms/feedback_compose_form_model.dart';
-import '../models/feedback_compose_result.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// The user-initiated feedback compose form (#107): category, conditional
 /// severity, message, optional title.

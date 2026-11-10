@@ -10,9 +10,8 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
+import 'package:ui/src/buttons/bge_inert_button.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../buttons/bge_inert_button.dart';
 
 /// A headed row that moves side to side by swipe or by click (#615).
 ///

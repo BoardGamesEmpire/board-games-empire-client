@@ -260,7 +260,7 @@ void main() {
       },
     );
 
-    test('a hydrate result does not lift an ended cache\'s error', () async {
+    test("a hydrate result does not lift an ended cache's error", () async {
       // Nothing will answer on a closed stream, so a pass completing later
       // must not put back a spinner that nothing resolves (#453).
       final bloc = build();

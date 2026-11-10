@@ -1,5 +1,5 @@
-import 'household_hydration_status.dart';
-import 'household_refresher.dart';
+import 'package:household/src/sync/household_hydration_status.dart';
+import 'package:household/src/sync/household_refresher.dart';
 
 /// Runs the hydrate pass that follows a change to a household's
 /// membership.

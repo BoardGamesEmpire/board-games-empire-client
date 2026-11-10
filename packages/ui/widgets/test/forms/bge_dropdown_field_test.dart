@@ -167,7 +167,7 @@ String? _focusedItem(WidgetTester tester) {
   return null;
 }
 
-final _platforms = TargetPlatformVariant({
+const _platforms = TargetPlatformVariant({
   TargetPlatform.android,
   TargetPlatform.macOS,
 });

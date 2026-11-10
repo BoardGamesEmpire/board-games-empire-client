@@ -1,8 +1,7 @@
+import 'package:events/src/sync/household_events_hydrator.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
-
-import 'household_events_hydrator.dart';
 
 /// One household's pass and the status a screen reads it by.
 typedef _HouseholdPass = ({

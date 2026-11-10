@@ -1,13 +1,12 @@
-import 'package:test/test.dart';
-
 import 'package:models/dto.dart';
+import 'package:test/test.dart';
 
 AuthUser _user() => AuthUser(
   id: 'user123',
   username: 'johndoe',
   email: 'john@example.com',
   emailVerified: true,
-  createdAt: DateTime.utc(2024, 1, 1),
+  createdAt: DateTime.utc(2024),
   updatedAt: DateTime.utc(2024, 1, 2),
 );
 
@@ -175,7 +174,7 @@ void main() {
         userId: 'user123',
         ipAddress: '198.51.100.7',
         userAgent: 'test-agent',
-        createdAt: DateTime.utc(2024, 1, 1),
+        createdAt: DateTime.utc(2024),
         updatedAt: DateTime.utc(2024, 1, 2),
       );
 

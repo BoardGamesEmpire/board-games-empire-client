@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import 'pointer_focus_flag.dart';
+import 'package:ui/src/focus/pointer_focus_flag.dart';
 
 /// Keeps a control's focus feedback hidden while its focus is a pointer's, as
 /// a browser's `:focus-visible` does (#707).

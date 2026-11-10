@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:household/src/sync/household_hydration_status.dart';
+import 'package:household/src/sync/household_hydrator.dart';
+import 'package:household/src/sync/household_refresher.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'household_hydration_status.dart';
-import 'household_hydrator.dart';
-import 'household_refresher.dart';
 
 /// Starts the household hydrate when a user session activates (#267).
 ///

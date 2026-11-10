@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:ui/ui.dart';
-
 import 'package:sync_queue/l10n/sync_localizations.dart';
+import 'package:ui/ui.dart';
 
 /// Says how many changes couldn't sync, and leads to the screen where each
 /// can be retried or discarded (#190). Shows nothing while none are stuck.

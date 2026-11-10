@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
@@ -44,7 +44,7 @@ void main() {
         expect(_make(quantity: 0).isOwned, isFalse);
       });
       test('false when tombstoned even if quantity > 0', () {
-        expect(_make(quantity: 1, deletedAt: _now).isOwned, isFalse);
+        expect(_make(deletedAt: _now).isOwned, isFalse);
       });
     });
 
@@ -79,8 +79,6 @@ void main() {
         lastPlayed: _now,
         lastUpdated: _now,
         isDirty: true,
-        isLocalOnly: false,
-        deletedAt: null,
         createdAt: _now,
         updatedAt: _now,
       );

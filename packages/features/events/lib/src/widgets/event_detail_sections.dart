@@ -1,17 +1,15 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_poll_state.dart';
+import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_status_now.dart';
+import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/event_date_poll.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_poll_state.dart';
-import '../detail/event_actions.dart';
-import '../detail/event_date_actions.dart';
-import '../detail/event_status_now.dart';
-import '../screens/event_detail_screen.dart';
-import 'event_date_poll.dart';
-import 'event_labels.dart';
 
 /// The top of an event's detail (#498): its title, as the page's heading,
 /// then what kind of event it is and where it stands, whose it is, who may
@@ -575,7 +573,7 @@ class EventAttendeesSection extends StatelessWidget {
 }
 
 /// The order the groups come in. A status this client doesn't know goes last.
-const _groupOrder = [
+const List<EventParticipationStatus> _groupOrder = [
   EventParticipationStatus.attending,
   EventParticipationStatus.maybe,
   EventParticipationStatus.invited,

@@ -2,21 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/bloc/game_collection_list_bloc.dart';
+import 'package:game_collection/src/bloc/game_collection_list_event.dart';
+import 'package:game_collection/src/bloc/game_collection_list_state.dart';
+import 'package:game_collection/src/medium_label.dart';
+import 'package:game_collection/src/picker/collection_entry_picker.dart';
+import 'package:game_collection/src/screens/collection_rows.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import '../bloc/game_collection_list_bloc.dart';
-import '../bloc/game_collection_list_event.dart';
-import '../bloc/game_collection_list_state.dart';
-import '../medium_label.dart';
-import '../picker/collection_entry_picker.dart';
-import 'collection_rows.dart';
 
 /// The collection list (#44): every game the signed-in user owns, read
 /// reactively from the local cache.
@@ -409,7 +407,7 @@ class GameCollectionListSliver extends StatelessWidget {
             GameCollectionListReady(:final items) => BgeFocusHandoffScope(
               child: SliverMainAxisGroup(
                 slivers: [
-                  if (thumbnails == true)
+                  if (thumbnails)
                     _CollectionCovers(
                       placed: placeCollection(items),
                       onOpen: onOpen,

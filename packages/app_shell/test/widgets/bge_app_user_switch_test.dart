@@ -154,7 +154,7 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
   }
 
-  testWidgets('ends the first user\'s session and starts the second\'s, '
+  testWidgets("ends the first user's session and starts the second's, "
       'without ever showing the sign-in screen', (tester) async {
     await signedInAsFirstUser(tester);
 
@@ -173,7 +173,7 @@ void main() {
 
   // The first user's scope is torn down as the switch begins, and home's
   // entries open screens over its services.
-  testWidgets('shows no home while the second user\'s session is starting', (
+  testWidgets("shows no home while the second user's session is starting", (
     tester,
   ) async {
     final starting = Completer<void>();
@@ -224,7 +224,7 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
   });
 
-  testWidgets('builds home from the second user\'s services', (tester) async {
+  testWidgets("builds home from the second user's services", (tester) async {
     // The second user may read every DataGateway and the first may not, so
     // on a server with a DataGateway client the Admin entry is what tells the
     // two homes apart (#684). Each session has its own access, as a real scope

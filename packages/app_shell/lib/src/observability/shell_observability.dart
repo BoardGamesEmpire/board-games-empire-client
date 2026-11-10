@@ -1,10 +1,9 @@
 import 'dart:async';
 
+import 'package:app_shell/src/observability/uncaught_error_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:observability/observability.dart';
-
-import 'uncaught_error_record.dart';
 
 /// Process-wide observability wiring owned by the shell.
 ///

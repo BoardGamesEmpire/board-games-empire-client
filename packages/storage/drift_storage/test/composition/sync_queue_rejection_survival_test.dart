@@ -113,7 +113,7 @@ AuthResponse _session(String userId) => AuthResponse(
   expiresAt: DateTime.utc(2099),
 );
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: _kServerId,
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -125,7 +125,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',

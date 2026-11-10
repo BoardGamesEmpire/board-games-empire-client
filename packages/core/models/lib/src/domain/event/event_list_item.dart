@@ -1,8 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'event.dart';
-import 'event_attendance.dart';
-import 'event_occurrence.dart';
+import 'package:models/src/domain/event/event.dart';
+import 'package:models/src/domain/event/event_attendance.dart';
+import 'package:models/src/domain/event/event_occurrence.dart';
 
 part 'event_list_item.freezed.dart';
 

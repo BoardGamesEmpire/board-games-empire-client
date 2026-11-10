@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/screens/search_range_field.dart';
+import 'package:models/domain.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 // #50: a range field's accessible name carries its range, so a screen
 // reader moving by form fields doesn't hear "From" three times. The name, the

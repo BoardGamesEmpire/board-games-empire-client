@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:household/src/permissions/household_actions.dart';
 import 'package:models/domain.dart';
-
-import '../permissions/household_actions.dart';
 
 /// Which of the household's invites the list shows.
 enum HouseholdInviteFilter {

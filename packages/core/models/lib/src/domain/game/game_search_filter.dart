@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'content_type.dart';
-import 'platform_type.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/platform_type.dart';
 
 part 'game_search_filter.freezed.dart';
 
@@ -14,13 +14,12 @@ part 'game_search_filter.freezed.dart';
 /// the range narrows nothing, so it is not sent.
 @freezed
 abstract class GameSearchRange with _$GameSearchRange {
-  const GameSearchRange._();
-
   const factory GameSearchRange({
     int? min,
     int? max,
     @Default(false) bool includeUnknown,
   }) = _GameSearchRange;
+  const GameSearchRange._();
 
   /// Whether the range names a bound, which is what makes it a filter.
   bool get narrows => min != null || max != null;
@@ -40,8 +39,6 @@ abstract class GameSearchRange with _$GameSearchRange {
 /// when it matches every set and range that narrows.
 @freezed
 abstract class GameSearchFilter with _$GameSearchFilter {
-  const GameSearchFilter._();
-
   const factory GameSearchFilter({
     @Default(<ContentType>{}) Set<ContentType> contentTypes,
     @Default(<PlatformType>{}) Set<PlatformType> platformTypes,
@@ -55,6 +52,7 @@ abstract class GameSearchFilter with _$GameSearchFilter {
     /// Play time in minutes, which a game's whole play time must fit (#580).
     @Default(GameSearchRange()) GameSearchRange playTime,
   }) = _GameSearchFilter;
+  const GameSearchFilter._();
 
   /// Whether any axis narrows the search.
   bool get narrows =>

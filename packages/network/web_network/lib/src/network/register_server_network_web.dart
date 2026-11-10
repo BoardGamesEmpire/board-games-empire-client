@@ -32,12 +32,12 @@ import 'package:network_interface/network_interface.dart'
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
-import '../auth/provider_sign_in_bindings.dart';
-import '../auth/session_channel.dart';
-import '../auth/web_auth_repository_impl.dart';
-import '../auth/web_session_monitor.dart';
-import 'web_clock_skew_diagnostic_interceptor.dart';
-import 'web_dio_factory.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
+import 'package:web_network/src/auth/session_channel.dart';
+import 'package:web_network/src/auth/web_auth_repository_impl.dart';
+import 'package:web_network/src/auth/web_session_monitor.dart';
+import 'package:web_network/src/network/web_clock_skew_diagnostic_interceptor.dart';
+import 'package:web_network/src/network/web_dio_factory.dart';
 
 /// Registers the web network stack for the origin's server into [container].
 ///

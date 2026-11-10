@@ -1,15 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/src/entry/collection_entry_event.dart';
+import 'package:game_collection/src/entry/collection_entry_state.dart';
+import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../sync/collection_sync.dart';
-import 'collection_entry_event.dart';
-import 'collection_entry_state.dart';
 
 /// Drives one collection entry's detail, edit and removal (#46).
 ///

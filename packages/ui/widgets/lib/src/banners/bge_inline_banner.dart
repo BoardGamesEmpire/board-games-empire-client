@@ -11,10 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show RenderSliverMultiBoxAdaptor, ScrollDirection;
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyUpEvent;
+import 'package:ui/src/banners/banner_action_layout.dart';
+import 'package:ui/src/banners/banner_focus_ring.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'banner_action_layout.dart';
-import 'banner_focus_ring.dart';
 
 /// The tone of a [BgeInlineBanner], which selects its color pair and icon.
 enum BgeBannerTone {

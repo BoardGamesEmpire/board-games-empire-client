@@ -3,17 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/screens/game_detail_collection.dart';
+import 'package:game_catalog/src/screens/game_detail_screen.dart';
+import 'package:game_catalog/src/widgets/catalog_chip_label.dart';
+import 'package:game_catalog/src/widgets/platform_ownership.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../screens/game_detail_collection.dart';
-import '../screens/game_detail_screen.dart';
-import 'catalog_chip_label.dart';
-import 'platform_ownership.dart';
 
 /// The platforms a game is on, as chips that say which of them the user owns
 /// it on, and one button to add it on another (#708).

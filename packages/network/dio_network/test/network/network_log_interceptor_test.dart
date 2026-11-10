@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/network_log_interceptor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
 import 'package:observability/observability.dart';
-
-import 'package:dio_network/src/network/network_log_interceptor.dart';
 
 /// Minimal adapter: returns a response with a scripted status/body, or
 /// throws a scripted [DioException] to exercise the transport-failure path.

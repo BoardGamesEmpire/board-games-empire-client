@@ -90,7 +90,8 @@ MockServerContext mockServerContext(
 stubbedOrchestrator({bool withContainers = false}) {
   final repo = MockServerRepository();
   final prefsRepo = MockDevicePreferencesRepository();
-  when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
+  when(() => prefsRepo.get())
+      .thenAnswer((_) async => const DevicePreferences());
   when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
   when(() => repo.getAllServers()).thenAnswer((_) async => []);
   when(

@@ -1,5 +1,17 @@
 import 'dart:async';
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
+import 'package:app_shell/src/bootstrap/shell_teardown.dart';
+import 'package:app_shell/src/deep_links/deep_link_handler.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/i18n/active_locale.dart';
+import 'package:app_shell/src/observability/active_server_feedback_target_resolver.dart';
+import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
+import 'package:app_shell/src/observability/global_error_hooks.dart';
+import 'package:app_shell/src/observability/shell_observability.dart';
+import 'package:app_shell/src/widgets/bge_app.dart';
+import 'package:app_shell/src/widgets/build_error_view.dart';
 import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,19 +19,6 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../deep_links/deep_link_handler.dart';
-import '../deep_links/pending_deep_link_holder.dart';
-import '../i18n/active_locale.dart';
-import '../observability/active_server_feedback_target_resolver.dart';
-import '../observability/feedback_uncaught_error_reporter.dart';
-import '../observability/global_error_hooks.dart';
-import '../observability/shell_observability.dart';
-import '../widgets/bge_app.dart';
-import '../widgets/build_error_view.dart';
-import 'app_bootstrap_cubit.dart';
-import 'platform_bootstrap.dart';
-import 'shell_teardown.dart';
 
 /// Boots the application. This is the entire contract of each app's
 /// `main.dart`: perform platform-specific setup, then hand a

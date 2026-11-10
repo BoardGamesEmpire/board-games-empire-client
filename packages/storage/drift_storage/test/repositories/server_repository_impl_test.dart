@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:drift_storage/src/repositories/server_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
@@ -227,7 +227,7 @@ void main() {
         });
 
         test('the loser is typed when the database runs in a background '
-            'isolate, as the app\'s does', () async {
+            "isolate, as the app's does", () async {
           final directory = await Directory.systemTemp.createTemp('bge_meta_');
           addTearDown(() => directory.delete(recursive: true));
           final background = MetaDatabase.test(

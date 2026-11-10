@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/widgets/router_back_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import 'router_back_interceptor.dart';
 
 /// Tells the user, once per boot, that the data saved on this device for a
 /// server could not be opened and was rebuilt empty, so changes made on

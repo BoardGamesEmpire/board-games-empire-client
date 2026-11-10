@@ -3,17 +3,16 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -84,7 +83,7 @@ void main() {
         sentOptions = invocation.namedArguments[#options] as Options?;
         return Response<String>(
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         );
       });
 
@@ -112,7 +111,7 @@ void main() {
       ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
 
@@ -136,7 +135,7 @@ void main() {
         (_) async => Response(
           data: jsonEncode(_sessionJson()),
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
       await repo.getSession();
@@ -150,7 +149,7 @@ void main() {
       ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
 
@@ -199,7 +198,7 @@ void main() {
         gate.complete(
           Response<String>(
             statusCode: 200,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
         await pending;
@@ -241,7 +240,7 @@ void main() {
         gate.complete(
           Response<String>(
             statusCode: 200,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
         await pending;
@@ -258,7 +257,7 @@ void main() {
         ).thenAnswer(
           (_) async => Response<String>(
             statusCode: 500,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 
@@ -277,7 +276,7 @@ void main() {
           ).thenThrow(
             DioException(
               type: DioExceptionType.receiveTimeout,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -302,7 +301,7 @@ void main() {
       ).thenAnswer(
         (_) async => Response<String>(
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
     });
@@ -331,7 +330,7 @@ void main() {
           Response(
             data: jsonEncode(_sessionJson()),
             statusCode: 200,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 
@@ -360,7 +359,7 @@ void main() {
         Response(
           data: jsonEncode(_sessionJson()),
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
       await inFlight;
@@ -390,7 +389,7 @@ void main() {
       final emissions = <AuthState>[];
       final sub = repo.watchAuthState().listen(emissions.add);
       gate.complete(
-        Response(statusCode: 401, requestOptions: RequestOptions(path: '')),
+        Response(statusCode: 401, requestOptions: RequestOptions()),
       );
 
       expect(await inFlight, isNull);

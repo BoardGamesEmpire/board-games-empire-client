@@ -1,4 +1,4 @@
-import 'deep_link_redaction.dart';
+import 'package:app_shell/src/deep_links/deep_link_redaction.dart';
 
 /// Normalization of raw `bge://` deep-link URIs into router locations (#10).
 ///

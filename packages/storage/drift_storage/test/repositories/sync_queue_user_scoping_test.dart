@@ -1,11 +1,10 @@
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 
@@ -65,8 +64,8 @@ void main() {
       expect(row.userId, _kUserA);
     });
 
-    test('another user\'s scope reports zero pending and sees no entries; '
-        'the departed user\'s rows stay intact in the table', () async {
+    test("another user's scope reports zero pending and sees no entries; "
+        "the departed user's rows stay intact in the table", () async {
       // The shared-device scenario from the issue: A queues offline...
       await repoA.enqueue(_kOperation);
       await repoA.enqueue(_kOperation);
@@ -83,7 +82,7 @@ void main() {
       expect((await rawRows()).map((r) => r.userId), everyElement(_kUserA));
     });
 
-    test('the returning user\'s fresh scope sees their rows pending and '
+    test("the returning user's fresh scope sees their rows pending and "
         'drainable again', () async {
       final first = await repoA.enqueue(_kOperation);
       final second = await repoA.enqueue(_kOperation);
@@ -101,7 +100,7 @@ void main() {
       );
     });
 
-    test('mark transitions cannot touch another user\'s entry, even with '
+    test("mark transitions cannot touch another user's entry, even with "
         'its id in hand', () async {
       final entry = await repoA.enqueue(_kOperation);
 
@@ -118,7 +117,7 @@ void main() {
     });
 
     test(
-      'purgeCompleted removes only the current user\'s completed rows',
+      "purgeCompleted removes only the current user's completed rows",
       () async {
         final a = await repoA.enqueue(_kOperation);
         final b = await repoB.enqueue(_kOperation);
@@ -147,7 +146,7 @@ void main() {
       expect(untouched.retryCount, SyncQueueEntry.maxRetries);
     });
 
-    test('getOutstandingOpsFor sees only the current user\'s ops', () async {
+    test("getOutstandingOpsFor sees only the current user's ops", () async {
       final mine = await repoA.enqueue(_kOperation);
       await repoB.enqueue(_kOperation);
 
@@ -156,7 +155,7 @@ void main() {
       expect(entries.map((e) => e.id), [mine.id]);
     });
 
-    test('getOutstandingEntries sees only the current user\'s '
+    test("getOutstandingEntries sees only the current user's "
         'entries', () async {
       final mine = await repoA.enqueue(_kOperation);
       await repoB.enqueue(_kOperation);
@@ -166,7 +165,7 @@ void main() {
       expect(entries.map((e) => e.id), [mine.id]);
     });
 
-    test('release cannot hand back another user\'s claimed entry', () async {
+    test("release cannot hand back another user's claimed entry", () async {
       final entry = await repoA.enqueue(_kOperation);
       expect(await repoA.claim(entry.id), isTrue);
 
@@ -189,18 +188,18 @@ void main() {
       expect(
         (await repoA.getPendingEntries()).map((e) => e.id),
         equals([a.id]),
-        reason: 'A\'s crash recovery sees A\'s entry',
+        reason: "A's crash recovery sees A's entry",
       );
       expect(
         await repoA.claim(b.id),
         isFalse,
-        reason: 'B\'s expired claim is not A\'s to retake',
+        reason: "B's expired claim is not A's to retake",
       );
       expect(await repoA.claim(a.id), isTrue);
     });
 
     test(
-      'remapCollectionId rewrites only the current user\'s payloads',
+      "remapCollectionId rewrites only the current user's payloads",
       () async {
         await repoA.enqueue(_kOperation);
         await repoB.enqueue(_kOperation);
@@ -219,7 +218,7 @@ void main() {
       },
     );
 
-    test('watchPendingCount counts only the current user\'s outstanding '
+    test("watchPendingCount counts only the current user's outstanding "
         'work', () async {
       await repoA.enqueue(_kOperation);
 
@@ -283,7 +282,7 @@ void main() {
       await expectLater(repoA.onDispose(), completes);
     });
 
-    test('disposing one user\'s repository does not disturb another\'s '
+    test("disposing one user's repository does not disturb another's "
         'live stream over the same table', () async {
       final events = <int>[];
       final sub = repoB.watchPendingCount().listen(events.add);
@@ -294,7 +293,7 @@ void main() {
       await repoB.enqueue(_kOperation);
       await pumpEventQueue();
 
-      expect(events.last, 1, reason: 'B\'s stream stays live and correct');
+      expect(events.last, 1, reason: "B's stream stays live and correct");
     });
   });
 

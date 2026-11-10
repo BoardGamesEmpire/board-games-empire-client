@@ -1,7 +1,7 @@
 import 'dart:ui' show Tristate;
 
-import 'package:flutter/semantics.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -72,7 +72,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets("the control keeps its state and its node when the "
+    testWidgets('the control keeps its state and its node when the '
         'connection comes and goes', (tester) async {
       final handle = tester.ensureSemantics();
       Widget at({required bool offline}) => _host(
@@ -104,8 +104,8 @@ void main() {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         _host(
-          BgeOnlineOnly(
-            child: const FilledButton(onPressed: null, child: Text('Delete')),
+          const BgeOnlineOnly(
+            child: FilledButton(onPressed: null, child: Text('Delete')),
           ),
         ),
       );
@@ -130,8 +130,8 @@ void main() {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         _host(
-          BgeOnlineOnly(
-            child: const FilledButton(onPressed: null, child: Text('Delete')),
+          const BgeOnlineOnly(
+            child: FilledButton(onPressed: null, child: Text('Delete')),
           ),
         ),
       );
@@ -151,7 +151,6 @@ void main() {
             child: ChoiceChip(
               label: Text('Yes'),
               selected: true,
-              onSelected: null,
             ),
           ),
         ),
@@ -245,9 +244,8 @@ void main() {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         _host(
-          MenuItemButton(
-            onPressed: null,
-            child: const BgeOnlineOnlyLabel('Delete'),
+          const MenuItemButton(
+            child: BgeOnlineOnlyLabel('Delete'),
           ),
         ),
       );

@@ -1,12 +1,11 @@
+import 'package:events/src/bloc/event_actions_event.dart';
+import 'package:events/src/bloc/event_actions_state.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../detail/event_actions.dart';
-import 'event_actions_event.dart';
-import 'event_actions_state.dart';
 
 /// A cache write a delete's answer calls for, run after its outcome is
 /// emitted.

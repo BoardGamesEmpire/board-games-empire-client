@@ -4,7 +4,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
-import 'game_description.dart';
+import 'package:game_catalog/src/widgets/game_description.dart';
 
 /// A game's description cut to its first few lines, with **More** to show
 /// the rest in place and **Less** to cut it again (#707).
@@ -107,7 +107,7 @@ class _FoldedDescriptionState extends State<FoldedDescription> {
       shaderCallback: (bounds) => LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [ink, faded ? ink.withValues(alpha: 0) : ink],
+        colors: [ink, if (faded) ink.withValues(alpha: 0) else ink],
         stops: [fadeFrom, 1],
       ).createShader(bounds),
       // Capped rather than a fixed height, so a description that fits is

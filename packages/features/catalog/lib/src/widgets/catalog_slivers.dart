@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
 /// A section heading in a list, announced as a heading.
 class CatalogSectionHeading extends StatelessWidget {

@@ -1,10 +1,9 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/settings/settings_entry.dart';
+import 'package:app_shell/src/settings/theme_mode_cubit.dart';
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../../l10n/shell_localizations.dart';
-import '../settings_entry.dart';
-import '../theme_mode_cubit.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// The theme-mode settings entry (#120): a labelled radio group of
 /// system / light / dark, backed by [ThemeModeCubit].

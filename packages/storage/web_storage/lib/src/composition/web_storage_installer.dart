@@ -3,7 +3,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
-import '../databases/wasm_executor_factory.dart';
+import 'package:web_storage/src/databases/wasm_executor_factory.dart';
 
 /// Reports how much persistence the browser gave this session (#288).
 ///

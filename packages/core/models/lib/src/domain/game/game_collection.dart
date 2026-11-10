@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'game_medium.dart';
+import 'package:models/src/domain/game/game_medium.dart';
 
 part 'game_collection.freezed.dart';
 part 'game_collection.g.dart';
@@ -15,13 +15,14 @@ part 'game_collection.g.dart';
 /// being purged. UI consumers should treat tombstoned rows as removed.
 @freezed
 abstract class GameCollection with _$GameCollection {
-  const GameCollection._();
-
   const factory GameCollection({
     required String id,
     required String userId,
     required String platformGameId,
     required GameMedium medium,
+
+    required DateTime createdAt,
+    required DateTime updatedAt,
 
     /// Optional link to a specific [GameRelease] (printing/edition).
     String? releaseId,
@@ -43,10 +44,8 @@ abstract class GameCollection with _$GameCollection {
 
     /// Soft-delete timestamp. Non-null means tombstoned awaiting purge.
     DateTime? deletedAt,
-
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _GameCollection;
+  const GameCollection._();
 
   factory GameCollection.fromJson(Map<String, dynamic> json) =>
       _$GameCollectionFromJson(json);

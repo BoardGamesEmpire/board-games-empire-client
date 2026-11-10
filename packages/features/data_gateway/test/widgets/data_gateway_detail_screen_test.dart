@@ -258,7 +258,7 @@ void main() {
             (scheme) => scheme.error,
           ),
         ]) {
-      testWidgets('the failure line takes the status line\'s tone: $state', (
+      testWidgets("the failure line takes the status line's tone: $state", (
         tester,
       ) async {
         remote.onFetchOne = (_) async => row(interview: interview);
@@ -1878,7 +1878,7 @@ void main() {
       expect(page0(tester).pixels, greaterThan(before));
     });
 
-    testWidgets("a refusal leaves focus alone when no control of the "
+    testWidgets('a refusal leaves focus alone when no control of the '
         "DataGateway's had it", (tester) async {
       remote.onFetchOne = (_) async => full();
       remote.onInterview = (_) async => throw forbidden();

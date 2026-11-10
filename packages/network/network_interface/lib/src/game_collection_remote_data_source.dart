@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// One collection entry from a read, with the platform game summary it embeds
 /// (#259).

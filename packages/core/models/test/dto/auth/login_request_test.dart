@@ -1,10 +1,10 @@
-import 'package:test/test.dart';
 import 'package:models/dto.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('LoginRequest', () {
     test('serializes with device info', () {
-      final request = LoginRequest(
+      const request = LoginRequest(
         email: 'john@example.com',
         password: 'secure_password',
         deviceIdentifier: 'device123',

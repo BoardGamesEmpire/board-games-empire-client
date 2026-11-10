@@ -1,7 +1,6 @@
+import 'package:data_gateway/src/bloc/data_gateway_list_event.dart';
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
-
-import 'data_gateway_list_event.dart';
 
 /// What the DataGateway list screen is showing (#41).
 sealed class DataGatewayListState extends Equatable {

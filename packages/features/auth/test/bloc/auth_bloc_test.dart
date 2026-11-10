@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:models/dto.dart';
-
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
 
 import '../support/auth_test_fixtures.dart';
 

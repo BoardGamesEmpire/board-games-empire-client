@@ -108,7 +108,7 @@ void main() {
   });
 
   group('wasCancelled', () {
-    final at = DateTime.utc(2026, 11, 1);
+    final at = DateTime.utc(2026, 11);
 
     test('a cancelled event was', () {
       expect(wasCancelled(eventWith(EventStatus.cancelled)), isTrue);

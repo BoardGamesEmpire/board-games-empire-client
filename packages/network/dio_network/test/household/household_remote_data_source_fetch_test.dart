@@ -540,7 +540,7 @@ void main() {
     test('a page past the depth ceiling throws', () {
       // (page - 1) * limit must not exceed 100_000.
       expect(
-        () => remote.fetchHouseholds(page: 1002, limit: 100),
+        () => remote.fetchHouseholds(page: 1002),
         throwsA(isA<ArgumentError>()),
       );
     });
@@ -551,7 +551,7 @@ void main() {
     // is 0, so this page cannot be written: the test is the VM's.
     test('a page whose depth would overflow an int still throws', () {
       expect(
-        () => remote.fetchHouseholds(page: (1 << 62) + 1, limit: 100),
+        () => remote.fetchHouseholds(page: (1 << 62) + 1),
         throwsA(isA<ArgumentError>()),
       );
       verifyNever(
@@ -566,7 +566,7 @@ void main() {
     test('the last page inside the ceiling is allowed', () async {
       stubGet(_resp(_envelope(const [])));
 
-      await remote.fetchHouseholds(page: 1001, limit: 100);
+      await remote.fetchHouseholds(page: 1001);
 
       verify(
         () => mockDio.get<String>(

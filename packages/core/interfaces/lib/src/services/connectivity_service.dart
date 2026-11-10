@@ -1,4 +1,4 @@
-import 'connectivity_state.dart';
+import 'package:interfaces/src/services/connectivity_state.dart';
 
 /// Device connectivity awareness (#9, Tier 1).
 ///

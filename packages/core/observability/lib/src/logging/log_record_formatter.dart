@@ -1,10 +1,9 @@
 import 'dart:convert';
 
 import 'package:logging/logging.dart';
-
-import '../redaction/redaction.dart';
-import 'bge_log_level.dart';
-import 'context_log_message.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
+import 'package:observability/src/logging/context_log_message.dart';
+import 'package:observability/src/redaction/redaction.dart';
 
 /// Renders a [LogRecord] into a single flat line for text sinks — the
 /// rotating file sink and the web `print` console (issue #100).

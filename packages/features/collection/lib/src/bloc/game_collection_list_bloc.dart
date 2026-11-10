@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/src/bloc/game_collection_list_event.dart';
+import 'package:game_collection/src/bloc/game_collection_list_state.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import 'game_collection_list_event.dart';
-import 'game_collection_list_state.dart';
 
 /// Drives the collection list (#44): the cached rows, plus what the hydrate
 /// is doing to them.

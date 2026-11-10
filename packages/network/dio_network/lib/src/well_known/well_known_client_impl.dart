@@ -1,11 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http_status/http_status.dart';
-
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/decode_json_body.dart';
 
 /// Dio-based implementation of [WellKnownClient].
 ///
@@ -70,7 +68,7 @@ class WellKnownClientImpl implements WellKnownClient {
       // an answered request a transport failure.
       final answered = e.response;
       if (answered != null) {
-        return await _interpret(
+        return _interpret(
           statusCode: answered.statusCode,
           body: answered.data,
           url: url,

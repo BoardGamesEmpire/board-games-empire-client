@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/bloc/invite_inbox_event.dart';
+import 'package:household/src/bloc/invite_inbox_state.dart';
+import 'package:household/src/bloc/invite_pages.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../invites/invite_refusal_message.dart';
-import 'household_invite_list_state.dart';
-import 'invite_inbox_event.dart';
-import 'invite_inbox_state.dart';
-import 'invite_pages.dart';
 
 /// Drives the invite inbox (#455, #454): the pending invites sent to the
 /// user, and accepting or declining them. The server leaves out an invite

@@ -1,11 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'package:household/household.dart';
 
 class MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -159,13 +158,13 @@ void main() {
 
       await build().hydrate();
 
-      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+      verify(() => remote.fetchHouseholds()).called(1);
     });
   });
 
   group('HouseholdHydrator — the drain', () {
     test('follows hasMore across pages and caches all of them', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
           page: 1,
@@ -196,7 +195,7 @@ void main() {
     test('stops on hasMore false even when the page is full', () async {
       // Never infer the end of the list from a short page: a full final
       // page with hasMore false is the end.
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
           page: 1,
@@ -208,7 +207,7 @@ void main() {
 
       await build(limit: 2).hydrate();
 
-      verify(() => remote.fetchHouseholds(page: 1, limit: 2)).called(1);
+      verify(() => remote.fetchHouseholds(limit: 2)).called(1);
       verifyNever(
         () => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')),
       );
@@ -380,7 +379,7 @@ void main() {
 
   group('HouseholdHydrator — a drain across pages (#268)', () {
     void stubThreePages() {
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
           page: 1,
@@ -429,11 +428,11 @@ void main() {
       // The list is membership-scoped for a user session (backend#417), so
       // a total above the cap is a user with that many households, not an
       // admin's view of the server. Nothing stops at page 1 any more.
-      when(() => remote.fetchHouseholds(page: 1, limit: 100)).thenAnswer(
+      when(() => remote.fetchHouseholds()).thenAnswer(
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 100, total: 150, hasMore: true),
       );
-      when(() => remote.fetchHouseholds(page: 2, limit: 100)).thenAnswer(
+      when(() => remote.fetchHouseholds(page: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-2'],
           page: 2,
@@ -478,7 +477,7 @@ void main() {
         ),
       );
 
-      verify(() => remote.fetchHouseholds(page: 1, limit: 2)).called(1);
+      verify(() => remote.fetchHouseholds(limit: 2)).called(1);
       verifyNever(
         () => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')),
       );
@@ -738,8 +737,8 @@ void main() {
         );
 
     test('writes nothing from a page that came back once the session was '
-        'no longer this user\'s, and stops', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 1)).thenAnswer(
+        "no longer this user's, and stops", () async {
+      when(() => remote.fetchHouseholds(limit: 1)).thenAnswer(
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 1, total: 2, hasMore: true),
       );
@@ -820,7 +819,7 @@ void main() {
     });
 
     test('keeps the pages already cached when a later page fails', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
           page: 1,
@@ -843,7 +842,7 @@ void main() {
       // StateError from checkNotDisposed(). That must not escape into
       // scope activation, which treats a throw as a wiring failure and
       // signs the user out.
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
@@ -909,7 +908,7 @@ void main() {
     });
 
     test('stops requesting pages once a write has failed', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
+      when(() => remote.fetchHouseholds(limit: 2)).thenAnswer(
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );

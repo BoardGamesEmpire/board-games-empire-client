@@ -2,8 +2,8 @@ import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
 
 /// Pinned: `BgeApp` gains an optional `feedbackReporter`. When supplied,
 /// the app listens to `pendingCrashReport` and overlays

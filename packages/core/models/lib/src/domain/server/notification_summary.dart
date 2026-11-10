@@ -17,8 +17,6 @@ part 'notification_summary.g.dart';
 /// when the server context activates.
 @freezed
 abstract class NotificationSummary with _$NotificationSummary {
-  const NotificationSummary._();
-
   const factory NotificationSummary({
     /// Client-generated CUID. Local PK in the root DB.
     required String id,
@@ -36,16 +34,16 @@ abstract class NotificationSummary with _$NotificationSummary {
     required String serverDisplayName,
 
     required String title,
+    required DateTime receivedAt,
+    required DateTime createdAt,
     String? body,
 
     @Default(false) bool isRead,
 
     /// When true, the per-server context must be activated to show full detail.
     @Default(false) bool requiresFullLoad,
-
-    required DateTime receivedAt,
-    required DateTime createdAt,
   }) = _NotificationSummary;
+  const NotificationSummary._();
 
   factory NotificationSummary.fromJson(Map<String, dynamic> json) =>
       _$NotificationSummaryFromJson(json);

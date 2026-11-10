@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/wasm.dart';
 
-import 'web_storage_persistence.dart';
+import 'package:web_storage/src/databases/web_storage_persistence.dart';
 
 /// The outcome of opening a web database: the executor, plus what kind of
 /// storage the browser turned out to offer.
@@ -134,8 +134,8 @@ class WebWasmExecutorFactory {
     this._open,
   });
 
-  static final _defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
-  static final _defaultDriftWorkerUri = Uri.parse('drift_worker.js');
+  static final Uri _defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
+  static final Uri _defaultDriftWorkerUri = Uri.parse('drift_worker.js');
 
   /// Prefix for every database name this factory produces.
   static const _databaseNamePrefix = 'bge_server';

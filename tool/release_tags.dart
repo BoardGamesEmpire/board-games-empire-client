@@ -31,7 +31,7 @@ const _commitFlag = '--commit';
 const _selfTestFlag = '--self-test';
 
 const _usage =
-    'Usage: git ls-remote --tags <repo-url> \'refs/tags/v*\' '
+    "Usage: git ls-remote --tags <repo-url> 'refs/tags/v*' "
     '| dart run tool/release_tags.dart $_commitFlag <sha> | $_selfTestFlag';
 
 Future<void> main(List<String> args) async {
@@ -325,7 +325,7 @@ void _selfTest() {
     ],
   );
   expect(
-    'parse: skips lines that are not <sha>\\trefs/tags/<name>',
+    r'parse: skips lines that are not <sha>\trefs/tags/<name>',
     parseTagCommits(
       '\nwarning: noise\na1\trefs/heads/main\na1 refs/tags/v0.1.0\n',
     ),

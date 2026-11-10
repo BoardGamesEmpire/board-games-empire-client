@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
@@ -84,7 +84,6 @@ void main() {
         maxPlayTime: 120,
         minAge: 14,
         complexity: 3.89,
-        contentType: ContentType.baseGame,
         totalPlayCount: 999,
         averageRating: 8.62,
         bayesRating: 8.4,
@@ -95,8 +94,6 @@ void main() {
         designers: const ['Martin Wallace'],
         publishers: const ['Roxley'],
         tags: const ['heavy', 'highly rated'],
-        reach: Reach.public,
-        createdById: null,
         createdAt: _now,
         updatedAt: _now,
       );

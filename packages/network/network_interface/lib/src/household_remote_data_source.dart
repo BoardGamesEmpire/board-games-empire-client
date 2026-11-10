@@ -1,7 +1,7 @@
 import 'package:models/domain.dart';
 
-import 'games_remote_data_source.dart';
-import 'paginated_result.dart';
+import 'package:network_interface/src/games_remote_data_source.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// One household from the list endpoint, with the members it embeds.
 ///

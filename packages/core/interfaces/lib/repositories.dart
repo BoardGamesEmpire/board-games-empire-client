@@ -1,5 +1,3 @@
-library;
-
 export 'src/repositories/auth_repository.dart';
 export 'src/repositories/caller_access_repository.dart';
 export 'src/repositories/device_preferences_repository.dart';

@@ -2,8 +2,8 @@ import 'package:app_shell/app_shell.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
 
 /// Pinned (#106): while the crash flow (#69/#76) is up, system back is
 /// intercepted at the router's [BackButtonDispatcher] by a
@@ -189,7 +189,7 @@ void main() {
       isNull,
       reason:
           'a double-back discard empties the last-error slot (#34 '
-          'contract), matching the Don\'t-send button',
+          "contract), matching the Don't-send button",
     );
   });
 

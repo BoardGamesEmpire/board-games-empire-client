@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:events/src/bloc/create_event_event.dart';
+import 'package:events/src/bloc/create_event_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'create_event_event.dart';
-import 'create_event_state.dart';
 
 /// Drives the event create form (#499): the local write, then one send of it
 /// straight away, as the household create does.

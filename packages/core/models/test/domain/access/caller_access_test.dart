@@ -32,7 +32,6 @@ void main() {
         ResourceType.dataGateway: _access(
           read: AccessExtent.all,
           update: AccessExtent.some,
-          delete: AccessExtent.none,
         ),
       });
 

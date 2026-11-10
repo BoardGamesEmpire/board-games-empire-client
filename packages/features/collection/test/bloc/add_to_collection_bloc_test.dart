@@ -291,7 +291,7 @@ void main() {
     ),
     expect: () => [
       const AddToCollectionState(status: AddToCollectionStatus.submitting),
-      AddToCollectionState(
+      const AddToCollectionState(
         status: AddToCollectionStatus.added,
         sync: CollectionSync.synced,
       ),
@@ -367,7 +367,7 @@ void main() {
     ),
     expect: () => [
       const AddToCollectionState(status: AddToCollectionStatus.submitting),
-      AddToCollectionState(
+      const AddToCollectionState(
         status: AddToCollectionStatus.added,
         sync: CollectionSync.queued,
       ),
@@ -390,7 +390,6 @@ void main() {
       () => repository.addToCollection(
         platformGameId: 'pg_1',
         medium: GameMedium.digital,
-        quantity: 1,
       ),
     ).called(1),
   );
@@ -416,7 +415,6 @@ void main() {
         () => repository.addToCollection(
           platformGameId: 'pg_2',
           medium: GameMedium.digital,
-          quantity: 1,
         ),
       ).called(1);
       verifyNever(
@@ -456,7 +454,7 @@ void main() {
       },
       expect: () => [
         const AddToCollectionState(status: AddToCollectionStatus.submitting),
-        AddToCollectionState(
+        const AddToCollectionState(
           status: AddToCollectionStatus.added,
           sync: CollectionSync.synced,
         ),

@@ -1,10 +1,9 @@
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/migration_policy.dart';
+import 'package:drift_storage/src/tables/device_preferences_table.dart';
+import 'package:drift_storage/src/tables/notification_summary_table.dart';
+import 'package:drift_storage/src/tables/server_config_table.dart';
 import 'package:flutter/foundation.dart';
-
-import '../tables/server_config_table.dart';
-import '../tables/device_preferences_table.dart';
-import '../tables/notification_summary_table.dart';
-import 'migration_policy.dart';
 
 part 'meta_database.g.dart';
 

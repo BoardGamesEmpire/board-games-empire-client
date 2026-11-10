@@ -95,7 +95,7 @@ class _BgeInertButtonState extends State<BgeInertButton> {
     onKeyEvent: _ignoreActivationRepeat,
   );
 
-  static final _activationKeys = {
+  static final Set<LogicalKeyboardKey> _activationKeys = {
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.numpadEnter,
     LogicalKeyboardKey.space,

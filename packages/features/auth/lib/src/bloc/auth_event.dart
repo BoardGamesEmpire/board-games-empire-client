@@ -1,9 +1,8 @@
+import 'package:auth/src/bloc/auth_bloc_state.dart' show SignOutCause;
 import 'package:equatable/equatable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart' show OidcStrategy;
 import 'package:observability/observability.dart';
-
-import 'auth_bloc_state.dart' show SignOutCause;
 
 sealed class AuthEvent extends Equatable {
   const AuthEvent();

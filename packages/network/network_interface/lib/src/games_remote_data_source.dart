@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// One game read by id, with the platform games the server sent beside it
 /// (#42).

@@ -1,12 +1,11 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/game_detail_event.dart';
+import 'package:game_catalog/src/bloc/game_detail_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'game_detail_event.dart';
-import 'game_detail_state.dart';
 
 /// Drives the game detail screen (#42): one game, read from the server, with
 /// the platform games a collection add picks from.

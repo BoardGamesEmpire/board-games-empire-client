@@ -153,7 +153,7 @@ Future<void> main(List<String> args) async {
   }
 
   if (check && missing) {
-    stderr.writeln('');
+    stderr.writeln();
     stderr.writeln('Run `melos run web:assets` to fetch them.');
     exit(1);
   }

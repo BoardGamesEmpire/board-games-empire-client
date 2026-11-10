@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:events/src/sync/event_hydration_status.dart';
+import 'package:events/src/sync/event_hydrator.dart';
+import 'package:events/src/sync/event_refresher.dart';
+import 'package:events/src/sync/household_events_hydrator.dart';
+import 'package:events/src/sync/household_events_sync.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'event_hydration_status.dart';
-import 'event_hydrator.dart';
-import 'event_refresher.dart';
-import 'household_events_hydrator.dart';
-import 'household_events_sync.dart';
 
 /// Starts the event hydrate when a user session activates (#496), and
 /// registers the [HouseholdEventsSync] the household screen reads a

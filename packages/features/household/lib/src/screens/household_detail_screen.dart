@@ -4,31 +4,29 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/awaiting_approval_count_cubit.dart';
+import 'package:household/src/bloc/household_detail_bloc.dart';
+import 'package:household/src/bloc/household_detail_event.dart';
+import 'package:household/src/bloc/household_detail_state.dart';
+import 'package:household/src/bloc/household_member_actions_bloc.dart';
+import 'package:household/src/bloc/household_member_actions_event.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/bloc/leave_household_bloc.dart';
+import 'package:household/src/bloc/leave_household_event.dart';
+import 'package:household/src/bloc/leave_household_state.dart';
+import 'package:household/src/members/leave_message.dart';
+import 'package:household/src/members/member_action_message.dart';
+import 'package:household/src/members/send_member_request.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/src/sync/household_hydration_status.dart';
+import 'package:household/src/widgets/household_role_label.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/awaiting_approval_count_cubit.dart';
-import '../bloc/household_detail_bloc.dart';
-import '../bloc/household_detail_event.dart';
-import '../bloc/household_detail_state.dart';
-import '../bloc/household_member_actions_bloc.dart';
-import '../bloc/household_member_actions_event.dart';
-import '../bloc/household_member_actions_state.dart';
-import '../bloc/leave_household_bloc.dart';
-import '../bloc/leave_household_event.dart';
-import '../bloc/leave_household_state.dart';
-import '../members/leave_message.dart';
-import '../members/member_action_message.dart';
-import '../members/send_member_request.dart';
-import '../permissions/household_actions.dart';
-import '../widgets/household_role_label.dart';
-import '../sync/household_hydration_status.dart';
 
 /// One household (#270): its name, its description, who is in it, and what
 /// the current user is in it.
@@ -831,7 +829,7 @@ class _InvitesEntry extends StatelessWidget {
 }
 
 /// The member actions a row's menu offers: every one there is (#480, #478).
-const _menuActions = {
+const Set<HouseholdMemberAction> _menuActions = {
   HouseholdMemberAction.changeRole,
   HouseholdMemberAction.remove,
   HouseholdMemberAction.makeOwner,
@@ -1638,7 +1636,7 @@ class _LeaveRowState extends State<_LeaveRow> {
     onKeyEvent: _ignoreActivationRepeat,
   );
 
-  static final _activationKeys = {
+  static final Set<LogicalKeyboardKey> _activationKeys = {
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.numpadEnter,
     LogicalKeyboardKey.space,

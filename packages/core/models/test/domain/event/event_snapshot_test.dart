@@ -37,16 +37,16 @@ void main() {
       //
       // Equal inputs must compare equal first, or the inequality below would
       // hold for any two snapshots and prove nothing.
-      expect(_snapshot(attendees: null), _snapshot(attendees: null));
+      expect(_snapshot(), _snapshot());
       expect(_snapshot(attendees: const []), _snapshot(attendees: const []));
 
-      expect(_snapshot(attendees: null), isNot(_snapshot(attendees: const [])));
+      expect(_snapshot(), isNot(_snapshot(attendees: const [])));
     });
   });
 
   group('EventAttendee', () {
     test('an attendee with no user is a guest', () {
-      expect(_attendee(userId: null, guestName: 'Sam').isGuest, isTrue);
+      expect(_attendee(guestName: 'Sam').isGuest, isTrue);
     });
 
     test('an attendee with a user is not a guest', () {

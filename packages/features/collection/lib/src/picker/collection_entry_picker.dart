@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/medium_label.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import '../medium_label.dart';
 
 /// Opens a picker over [items], the entries of one game, through
 /// [showBgePopup]: a sheet on a phone and a dialog on a wider window, on the

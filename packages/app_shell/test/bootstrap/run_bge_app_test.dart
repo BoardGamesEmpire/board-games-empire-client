@@ -530,7 +530,7 @@ void main() {
       tester,
     ) async {
       final container = SpyRootContainer();
-      final preRegistered = _FixedLocaleReader('xx');
+      const preRegistered = _FixedLocaleReader('xx');
       container.registerSingleton<ActiveLocaleReader>(preRegistered);
       final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
 

@@ -109,7 +109,7 @@ void main() {
       expect(web.window.location.href, staged);
     });
 
-    test('with another attempt\'s return id, reads no return', () {
+    test("with another attempt's return id, reads no return", () {
       leftForProvider();
       cameBackWith({providerSignInReturnKey: 'other'});
 

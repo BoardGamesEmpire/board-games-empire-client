@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('UserPreferences', () {
@@ -15,7 +15,7 @@ void main() {
     });
 
     test('handles notification preferences', () {
-      final preferences = UserPreferences(
+      const preferences = UserPreferences(
         id: 'pref123',
         userId: 'user123',
         emailNotifications: {'friendRequests': true, 'gameInvites': false},

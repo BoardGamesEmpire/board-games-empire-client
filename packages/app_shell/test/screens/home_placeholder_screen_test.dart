@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// the auth bloc only when pressed, so the harness provides neither.
 Widget _wrap({required ThemeData theme}) => MaterialApp(
   theme: theme,
-  localizationsDelegates: [
+  localizationsDelegates: const [
     ...ShellLocalizations.localizationsDelegates,
     AuthLocalizations.delegate,
     FeedbackLocalizations.delegate,

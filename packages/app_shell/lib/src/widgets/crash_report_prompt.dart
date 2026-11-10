@@ -1,8 +1,7 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
-
-import '../../l10n/shell_localizations.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Minimal accessible "ask each time" crash prompt (#69).
 ///

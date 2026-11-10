@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:markdown/markdown.dart' as md;
-
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:markdown/markdown.dart' as md;
 
 /// A game's description, rendered as Markdown (#472).
 ///

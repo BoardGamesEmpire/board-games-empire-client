@@ -441,7 +441,7 @@ Map<String, dynamic> _sessionJson() => {
 };
 
 // `platform/web/test/web_household_hydrate_seam_test.dart`.
-const _emptyHouseholdPage = {
+const Map<String, Object> _emptyHouseholdPage = {
   'households': <Object?>[],
   'pagination': {
     'page': 1,
@@ -453,7 +453,7 @@ const _emptyHouseholdPage = {
 };
 
 // `dio_network/test/game_collection/game_collection_remote_data_source_impl_test.dart`.
-const _emptyCollectionPage = {
+const Map<String, Object> _emptyCollectionPage = {
   'collections': <Object?>[],
   'pagination': {
     'page': 1,
@@ -467,7 +467,7 @@ const _emptyCollectionPage = {
 // `dio_network/test/event/event_remote_data_source_impl_test.dart`. An empty
 // list counts no pages: the hydrate treats a first page that counts one for
 // no events as contradicting itself, and the pass fails.
-const _emptyEventPage = {
+const Map<String, Object> _emptyEventPage = {
   'events': <Object?>[],
   'pagination': {
     'page': 1,

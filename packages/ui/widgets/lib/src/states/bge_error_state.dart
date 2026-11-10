@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/buttons/bge_submit_button.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../buttons/bge_submit_button.dart';
 
 /// A failure that fills its surface and offers a retry: an icon, a title, a
 /// body, and a retry button, with room for further actions below it (#102).

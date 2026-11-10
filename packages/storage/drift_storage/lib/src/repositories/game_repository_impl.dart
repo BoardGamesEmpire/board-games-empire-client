@@ -1,15 +1,14 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/expansion_links_codec.dart';
+import 'package:drift_storage/src/repositories/game_cache_access.dart';
+import 'package:drift_storage/src/repositories/stored_enum_name.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import '../tables/game_access_table.dart';
-import 'expansion_links_codec.dart';
-import 'game_cache_access.dart';
-import 'stored_enum_name.dart';
-import 'watch_disposal.dart';
 
 /// [GameRepository] over the per-server [ServerDatabase], for one user
 /// (#434).
@@ -129,7 +128,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   }
 
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.
-  static final RegExp _likeWildcardChars = RegExp(r'[%_]');
+  static final RegExp _likeWildcardChars = RegExp('[%_]');
 
   @override
   Future<List<Game>> searchGames(
@@ -282,8 +281,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
 
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) async {
     checkNotDisposed();

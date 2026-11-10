@@ -854,8 +854,11 @@ void main() {
       // Built at run time so == is tested by value, not by identity.
       // ignore: prefer_const_constructors
       expect(EventOverviewError(), EventOverviewError());
-      expect(EventOverviewError(), isNot(EventOverviewError(retrying: true)));
-      expect(EventOverviewLoading(), isNot(EventOverviewError()));
+      expect(
+        const EventOverviewError(),
+        isNot(const EventOverviewError(retrying: true)),
+      );
+      expect(const EventOverviewLoading(), isNot(const EventOverviewError()));
       expect(
         EventOverviewReady(groups: groupEvents([upcoming('e-1')], now: kNow)),
         EventOverviewReady(groups: groupEvents([upcoming('e-1')], now: kNow)),
@@ -883,7 +886,10 @@ void main() {
       // Built at run time so == is tested by value, not by identity.
       // ignore: prefer_const_constructors
       expect(EventOverviewCacheFailed(), EventOverviewCacheFailed());
-      expect(EventOverviewCacheFailed(), isNot(EventOverviewCacheEnded()));
+      expect(
+        const EventOverviewCacheFailed(),
+        isNot(const EventOverviewCacheEnded()),
+      );
       // Built at run time so == is tested by value, not by identity.
       // ignore: prefer_const_constructors
       expect(EventOverviewClockTicked(), EventOverviewClockTicked());

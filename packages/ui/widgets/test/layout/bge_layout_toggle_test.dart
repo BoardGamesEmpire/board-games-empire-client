@@ -1,5 +1,5 @@
-import 'dart:ui' show Tristate;
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';

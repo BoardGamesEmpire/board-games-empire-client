@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
+import 'package:di/src/dependency_container_impl.dart';
 import 'package:interfaces/orchestration.dart';
-
-import '../debug_report_swallowed.dart';
-import '../dependency_container_impl.dart';
 
 /// The per-user child-scope mechanism (#135), extracted so any composition
 /// root can host a user session (#289).

@@ -6,7 +6,7 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import 'sync_queue_drain.dart';
+import 'package:sync_queue/src/sync_queue_drain.dart';
 
 /// Starts the sync queue drain when a user session activates (#121).
 ///

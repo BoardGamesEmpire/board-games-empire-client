@@ -1,13 +1,12 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/settings/entries/language_settings_entry.dart';
+import 'package:app_shell/src/settings/entries/theme_mode_settings_entry.dart';
+import 'package:app_shell/src/settings/locale_cubit.dart';
+import 'package:app_shell/src/settings/settings_entry.dart';
+import 'package:app_shell/src/settings/settings_scope.dart';
+import 'package:app_shell/src/settings/settings_section.dart';
+import 'package:app_shell/src/settings/theme_mode_cubit.dart';
 import 'package:flutter/widgets.dart';
-
-import '../../l10n/shell_localizations.dart';
-import 'entries/language_settings_entry.dart';
-import 'entries/theme_mode_settings_entry.dart';
-import 'locale_cubit.dart';
-import 'settings_entry.dart';
-import 'settings_section.dart';
-import 'settings_scope.dart';
-import 'theme_mode_cubit.dart';
 
 /// Composes the settings sections the shell renders (#120).
 ///

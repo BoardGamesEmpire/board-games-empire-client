@@ -1,14 +1,13 @@
 import 'dart:io';
 
+import 'package:drift_storage/src/databases/encrypted_executor_factory.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/unsent_changes_notice_repository_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:storage_interface/storage_interface.dart';
-
-import '../databases/encrypted_executor_factory.dart';
-import '../databases/server_database.dart';
-import '../repositories/unsent_changes_notice_repository_impl.dart';
 
 /// [ServerScopeInstaller] for per-server storage: opens the
 /// encrypted [ServerDatabase] and registers it in the server's scope.

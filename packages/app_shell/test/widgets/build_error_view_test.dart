@@ -41,7 +41,7 @@ void main() {
   );
 
   group('BuildErrorView', () {
-    testWidgets('keeps a database error\'s bound values out of the '
+    testWidgets("keeps a database error's bound values out of the "
         'diagnostics (#463)', (tester) async {
       await tester.pumpWidget(
         localizedHarness(

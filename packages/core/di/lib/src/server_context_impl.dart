@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
+import 'package:di/src/dependency_container_impl.dart';
+import 'package:di/src/scope/user_scope_host.dart';
+import 'package:di/src/streams/replay_then_forward.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
-
-import 'debug_report_swallowed.dart';
-import 'dependency_container_impl.dart';
-import 'scope/user_scope_host.dart';
-import 'streams/replay_then_forward.dart';
 
 /// Concrete [ServerContext] implementation.
 ///

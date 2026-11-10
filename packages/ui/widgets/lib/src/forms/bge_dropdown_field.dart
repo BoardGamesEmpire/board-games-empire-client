@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/src/forms/live_error_announcer.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'live_error_announcer.dart';
 
 /// One choice a [BgeDropdownField] offers: the [value] a pick sets on the
 /// control, and the [label] the field and its menu show for it.

@@ -41,13 +41,13 @@ void main() {
     }
   });
 
-  test('an outlined chip\'s label reads as body text in all four schemes', () {
+  test("an outlined chip's label reads as body text in all four schemes", () {
     // Its label is the chip's 14 sp text, in `primary` on the surface.
     for (final MapEntry(key: name, value: scheme) in schemes.entries) {
       expect(
         Wcag.contrastRatio(scheme.primary, scheme.surface),
         greaterThanOrEqualTo(textMinimum[name]!),
-        reason: '$name: the outlined chip\'s label against the surface',
+        reason: "$name: the outlined chip's label against the surface",
       );
     }
   });

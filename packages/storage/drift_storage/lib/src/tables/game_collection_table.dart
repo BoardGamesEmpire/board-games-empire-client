@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'platform_game_table.dart';
+import 'package:drift_storage/src/tables/platform_game_table.dart';
 
 /// Indexed on [platformGameId] as well as [userId]: SQLite checks
 /// `platform_games`' foreign key from the parent side on every full

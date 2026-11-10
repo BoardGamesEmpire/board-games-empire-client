@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'auth_user.dart';
+import 'package:models/src/dto/auth/auth_user.dart';
 
 part 'auth_response.freezed.dart';
 part 'auth_response.g.dart';
@@ -28,8 +28,6 @@ const String _redactedToken = '<redacted>';
 /// The sign-in envelope also carries a `redirect` boolean, ignored here.
 @Freezed(toStringOverride: false)
 abstract class AuthResponse with _$AuthResponse {
-  const AuthResponse._();
-
   const factory AuthResponse({
     /// BetterAuth session token, or null where this envelope carries no
     /// bearer credential.
@@ -60,6 +58,7 @@ abstract class AuthResponse with _$AuthResponse {
     /// after sign-in until the session endpoint confirms it.
     DateTime? expiresAt,
   }) = _AuthResponse;
+  const AuthResponse._();
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) =>
       _$AuthResponseFromJson(json);
@@ -123,8 +122,6 @@ abstract class BgeSessionResponse with _$BgeSessionResponse {
 /// [AuthResponse.token] there is a reader that needs it.
 @Freezed(toStringOverride: false)
 abstract class BgeSession with _$BgeSession {
-  const BgeSession._();
-
   const factory BgeSession({
     required String id,
     required String token,
@@ -135,6 +132,7 @@ abstract class BgeSession with _$BgeSession {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _BgeSession;
+  const BgeSession._();
 
   factory BgeSession.fromJson(Map<String, dynamic> json) =>
       _$BgeSessionFromJson(json);

@@ -1,6 +1,5 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
 
 /// Installs one slice of per-user services into a server's **user-session
 /// scope** during `UserSessionScope.activate()` (#135).

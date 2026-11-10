@@ -1,6 +1,5 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Shown while `AppBootstrapCubit` is initializing.
 class SplashScreen extends StatelessWidget {

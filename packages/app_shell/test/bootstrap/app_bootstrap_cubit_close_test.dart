@@ -15,7 +15,7 @@ import '../support/fake_platform_bootstrap.dart';
 /// attempt open for as long as the test needs.
 class _GatedHydratedInitializer {
   final gate = Completer<void>();
-  var started = false;
+  bool started = false;
 
   Future<void> call(PlatformBootstrap _) async {
     started = true;
@@ -30,7 +30,7 @@ class _GatedResetBootstrap extends FakePlatformBootstrap {
     : super(outcomes: [initializeFailure]);
 
   final gate = Completer<void>();
-  var resetStarted = false;
+  bool resetStarted = false;
 
   @override
   Future<void> reset() async {
@@ -51,7 +51,7 @@ class _GatedSuccessfulResetBootstrap extends FakePlatformBootstrap {
     : super(outcomes: [initializeFailure]);
 
   final gate = Completer<void>();
-  var resetStarted = false;
+  bool resetStarted = false;
 
   @override
   Future<void> reset() async {

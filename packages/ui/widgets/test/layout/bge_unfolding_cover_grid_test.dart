@@ -60,7 +60,9 @@ Widget _grid(
 Finder _tile(String name) => find.byKey(ValueKey(name));
 
 /// The keyed grids the cover grid is drawn with.
-final _grids = find.byWidgetPredicate((widget) => widget is BgeKeyedSliverGrid);
+final Finder _grids = find.byWidgetPredicate(
+  (widget) => widget is BgeKeyedSliverGrid,
+);
 
 void main() {
   const six = ['a', 'b', 'c', 'd', 'e', 'f'];

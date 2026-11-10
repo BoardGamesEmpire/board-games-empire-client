@@ -8,16 +8,15 @@ import 'package:network_interface/network_interface.dart' show WellKnownClient;
 import 'package:observability/observability.dart' show BgeLogger, FeedbackSink;
 import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart';
+import 'package:web_platform/src/device_info/web_device_info_reader.dart';
+import 'package:web_platform/src/feedback/indexed_db_feedback_sink.dart';
+import 'package:web_platform/src/session/web_provider_sign_in_bindings.dart';
+import 'package:web_platform/src/session/web_session_bindings.dart';
+import 'package:web_platform/src/sync/web_cross_tab_lock.dart';
+import 'package:web_platform/src/web_platform_bootstrap.dart';
+import 'package:web_platform/src/web_root_module.dart';
+import 'package:web_platform/src/web_user_scope_installers.dart';
 import 'package:web_storage/web_storage.dart';
-
-import 'device_info/web_device_info_reader.dart';
-import 'feedback/indexed_db_feedback_sink.dart';
-import 'session/web_provider_sign_in_bindings.dart';
-import 'session/web_session_bindings.dart';
-import 'sync/web_cross_tab_lock.dart';
-import 'web_platform_bootstrap.dart';
-import 'web_root_module.dart';
-import 'web_user_scope_installers.dart';
 
 /// The production web server scope: the cookie-based network stack, the
 /// drift/wasm data layer (#288) with the sync drain's cross-tab lock (#447),
@@ -80,7 +79,7 @@ Future<void> installWebStorage(
   DependencyContainer container,
   ServerIdentity identity,
 ) async {
-  await WebStorageInstaller(onReport: reportWebStorage)
+  await const WebStorageInstaller(onReport: reportWebStorage)
       .install(container, identity);
   registerWebCrossTabLock(container);
 }

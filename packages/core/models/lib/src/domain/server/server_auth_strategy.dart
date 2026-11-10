@@ -130,13 +130,13 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
 ///   `{ code, code_verifier }` for `{ token, user }`.
 final class OidcStrategy extends ServerAuthStrategy {
   const OidcStrategy({
-    this.signUpDisabled = false,
     required this.providerId,
     required this.displayName,
     required this.discoveryUrl,
     required this.authorizationEndpoint,
     required this.appSignInEndpoint,
     required this.appTokenEndpoint,
+    this.signUpDisabled = false,
   });
 
   factory OidcStrategy.fromJson(Map<String, dynamic> json) {

@@ -1239,7 +1239,7 @@ void main() {
       expect(made.state, same(shown));
     });
 
-    test('an answer landing in close\'s own turn is dropped', () async {
+    test("an answer landing in close's own turn is dropped", () async {
       pool.onSample = (_) async => poolOf(['p-0']);
       final made = await drawn();
 

@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'member_invite_policy.dart';
+import 'package:models/src/domain/household/member_invite_policy.dart';
 
 part 'household_settings.freezed.dart';
 part 'household_settings.g.dart';

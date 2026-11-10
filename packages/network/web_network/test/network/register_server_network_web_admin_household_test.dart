@@ -29,7 +29,7 @@ void main() {
 
   group('registerServerNetworkWeb admin household remote (#684)', () {
     test(
-      'registers an AdminHouseholdRemoteDataSource on the server\'s Dio',
+      "registers an AdminHouseholdRemoteDataSource on the server's Dio",
       () {
         expect(
           container.get<AdminHouseholdRemoteDataSource>(),

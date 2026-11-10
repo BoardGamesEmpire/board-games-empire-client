@@ -8,10 +8,10 @@ abstract class UserDevice with _$UserDevice {
   const factory UserDevice({
     required String id,
     required String authenticationId,
-    String? deviceName,
     required String deviceIdentifier,
     required DateTime lastUsed,
     required bool isTrusted,
+    String? deviceName,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _UserDevice;

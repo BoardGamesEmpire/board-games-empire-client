@@ -1,14 +1,12 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/create/event_create_parts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/user_search.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import 'event_create_controls.dart';
-import 'event_create_parts.dart';
 
 /// The create form's *Who's invited* (#499): the people the event invites,
 /// found with the shared user search.

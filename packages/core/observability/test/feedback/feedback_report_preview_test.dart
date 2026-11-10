@@ -1,7 +1,7 @@
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-FeedbackReport _report() => FeedbackReport(
+FeedbackReport _report() => const FeedbackReport(
   category: FeedbackCategory.bug,
   severity: FeedbackSeverity.high,
   message: 'crash on add-to-collection',
@@ -9,7 +9,7 @@ FeedbackReport _report() => FeedbackReport(
   appVersion: '0.1.0',
   platform: 'android',
   locale: 'en-US',
-  deviceInfo: const {'model': 'Pixel 9', 'osVersion': '16'},
+  deviceInfo: {'model': 'Pixel 9', 'osVersion': '16'},
 );
 
 void main() {
@@ -92,12 +92,12 @@ void main() {
     );
 
     test('null deviceInfo key is not marked', () {
-      final report = FeedbackReport(
+      const report = FeedbackReport(
         category: FeedbackCategory.featureRequest,
         message: 'm',
-        deviceInfo: const {'model': null, 'osVersion': '16'},
+        deviceInfo: {'model': null, 'osVersion': '16'},
       );
-      final json = FeedbackReportPreview(report: report)
+      final json = const FeedbackReportPreview(report: report)
           .redactField('deviceInfo.model')
           .displayJson();
       final device = json['deviceInfo'] as Map<String, dynamic>;
@@ -147,7 +147,7 @@ void main() {
     });
 
     test(
-      'bare constructor with a marked report overrides the report\'s marks',
+      "bare constructor with a marked report overrides the report's marks",
       () {
         final report = _report().copyWith(userRedactedFields: ['title']);
         final submittable = FeedbackReportPreview(report: report)
@@ -165,23 +165,23 @@ void main() {
     });
 
     test('redacting a null field leaves it null', () {
-      final report = FeedbackReport(
+      const report = FeedbackReport(
         category: FeedbackCategory.featureRequest,
         message: 'm',
       );
-      final submittable = FeedbackReportPreview(report: report)
+      final submittable = const FeedbackReportPreview(report: report)
           .redactField('title')
           .toSubmittableReport();
       expect(submittable.title, isNull);
     });
 
     test('redacting a null deviceInfo key leaves it null', () {
-      final report = FeedbackReport(
+      const report = FeedbackReport(
         category: FeedbackCategory.featureRequest,
         message: 'm',
-        deviceInfo: const {'model': null, 'osVersion': '16'},
+        deviceInfo: {'model': null, 'osVersion': '16'},
       );
-      final submittable = FeedbackReportPreview(report: report)
+      final submittable = const FeedbackReportPreview(report: report)
           .redactField('deviceInfo.model')
           .toSubmittableReport();
       expect(submittable.deviceInfo!['model'], isNull);

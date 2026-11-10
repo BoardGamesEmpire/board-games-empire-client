@@ -71,8 +71,8 @@ library;
 
 import 'package:dio/dio.dart';
 
-import 'api_error_envelope.dart';
-import 'decode_json_body.dart';
+import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
 
 /// What an answered request that did not succeed says (#260).
 enum RemoteVerdict {

@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('User Model', () {
@@ -33,7 +33,7 @@ void main() {
         username: 'johndoe',
         email: 'john@example.com',
         emailVerified: true,
-        createdAt: DateTime.utc(2024, 1, 1),
+        createdAt: DateTime.utc(2024),
         updatedAt: DateTime.utc(2024, 1, 2),
       );
 

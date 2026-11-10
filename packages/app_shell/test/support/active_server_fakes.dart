@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:di/di.dart';
 import 'package:events/events.dart';
 import 'package:game_collection/game_collection.dart';
-import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
@@ -149,7 +149,7 @@ class FakeActiveServerScope implements ActiveServerScope {
 }
 
 /// A well-formed [ServerIdentity] fixture.
-ServerIdentity serverIdentity() => ServerIdentity(
+ServerIdentity serverIdentity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -162,7 +162,7 @@ ServerIdentity serverIdentity() => ServerIdentity(
   twoFactorSupported: false,
   anonymousAuthSupported: false,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',

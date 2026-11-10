@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/home/stats_cubit.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -7,10 +9,6 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import 'stats_cubit.dart';
 
 /// The home page's "Your stats" card (#614): how many games are in the user's
 /// collection, and how many their households share. See [StatsCubit] for what
@@ -178,7 +176,7 @@ class _Card extends StatelessWidget {
                   if (state.collectionGames case final games?) ...[
                     const BgeGap.sm(),
                     Padding(
-                      key: ValueKey(StatsCard.ownedKey),
+                      key: const ValueKey(StatsCard.ownedKey),
                       padding: side,
                       child: Text(
                         l10n.collectionStatsOwned(games),
@@ -192,7 +190,7 @@ class _Card extends StatelessWidget {
                     HouseholdStatCount(:final games) => [
                       const BgeGap.sm(),
                       Padding(
-                        key: ValueKey(StatsCard.householdsKey),
+                        key: const ValueKey(StatsCard.householdsKey),
                         padding: side,
                         child: Text(
                           l10n.collectionStatsHouseholds(games),

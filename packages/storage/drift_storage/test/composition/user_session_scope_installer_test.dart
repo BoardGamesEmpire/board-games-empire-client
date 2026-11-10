@@ -90,7 +90,7 @@ AuthResponse _session({String userId = _kUserId}) => AuthResponse(
   expiresAt: DateTime.utc(2099),
 );
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: _kServerId,
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -102,7 +102,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -434,7 +434,7 @@ void main() {
       expect(
         await scopeB.get<SyncQueueRepository>().getPendingCount(),
         0,
-        reason: '#147: another user\'s scope must not see the rows',
+        reason: "#147: another user's scope must not see the rows",
       );
     },
   );
@@ -529,7 +529,7 @@ void main() {
   );
 
   test(
-    'the collection repository enqueues through the same scope\'s sync queue '
+    "the collection repository enqueues through the same scope's sync queue "
     '— one user session, one outbound queue (#147)',
     () async {
       final container = _scopeContainer(
@@ -618,7 +618,7 @@ void main() {
     // the full records. Whoever the summary was recorded for can now read
     // them.
     final third = GameRepositoryImpl(db, userId: 'user-third');
-    final at = DateTime.utc(2026, 10, 1);
+    final at = DateTime.utc(2026, 10);
     await third.cacheGame(
       Game(id: 'g-1', title: 'Brass', createdAt: at, updatedAt: at),
     );

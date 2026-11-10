@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:logging/logging.dart';
-
-import '../logging/bge_log_level.dart';
-import '../logging/context_log_message.dart';
-import '../redaction/redaction.dart';
-import 'breadcrumb.dart';
+import 'package:observability/src/breadcrumbs/breadcrumb.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
+import 'package:observability/src/logging/context_log_message.dart';
+import 'package:observability/src/redaction/redaction.dart';
 
 /// Bounded ring buffer of sanitised [Breadcrumb]s captured from
 /// `Logger.root` (issue #8).

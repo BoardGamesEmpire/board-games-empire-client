@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../invites/invite_refusal_message.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
 
 /// Input to the invite inbox (#455).
 sealed class InviteInboxEvent extends Equatable {

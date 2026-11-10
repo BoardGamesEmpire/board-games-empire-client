@@ -197,7 +197,7 @@ void main() {
       HouseholdInviteTile.actionKey(HouseholdInviteRowAction.revoke, 'i_3'):
           'Revoke',
     };
-    for (final MapEntry(key: key, value: label) in buttons.entries) {
+    for (final MapEntry(:key, value: label) in buttons.entries) {
       final button = find.byKey(key);
       expect(button, findsOneWidget, reason: label);
       await tester.ensureVisible(button);

@@ -1,8 +1,7 @@
 import 'package:equatable/equatable.dart';
-
-import '../common/reach.dart';
-import '../user/person_name.dart';
-import 'household_member.dart';
+import 'package:models/src/domain/common/reach.dart';
+import 'package:models/src/domain/household/household_member.dart';
+import 'package:models/src/domain/user/person_name.dart';
 
 /// Which households the staff list shows (#685).
 ///

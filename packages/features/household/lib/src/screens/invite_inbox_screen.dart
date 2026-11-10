@@ -2,21 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/bloc/invite_inbox_bloc.dart';
+import 'package:household/src/bloc/invite_inbox_event.dart';
+import 'package:household/src/bloc/invite_inbox_state.dart';
+import 'package:household/src/invites/invite_expiry_line.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
+import 'package:household/src/widgets/household_invite_busy_indicator.dart';
+import 'package:household/src/widgets/household_role_label.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/household_invite_list_state.dart';
-import '../bloc/invite_inbox_bloc.dart';
-import '../bloc/invite_inbox_event.dart';
-import '../bloc/invite_inbox_state.dart';
-import '../invites/invite_expiry_line.dart';
-import '../invites/invite_refusal_message.dart';
-import '../widgets/household_invite_busy_indicator.dart';
-import '../widgets/household_role_label.dart';
 
 /// The invites sent to the current user (#455, #454): accept one to join
 /// its household, or decline it.

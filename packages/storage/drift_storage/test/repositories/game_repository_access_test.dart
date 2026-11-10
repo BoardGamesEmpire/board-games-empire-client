@@ -1,15 +1,14 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
 
-final _seeded = DateTime.utc(2026, 10, 1);
+final _seeded = DateTime.utc(2026, 10);
 
 Game _game({String id = 'g-1', String title = 'Brass: Birmingham'}) =>
     Game(id: id, title: title, createdAt: _seeded, updatedAt: _seeded);
@@ -45,7 +44,7 @@ Future<List<Object?>> _everyRead(GameRepositoryImpl repo) async => [
   await repo.getPlatformGamesForGame('g-1'),
 ];
 
-const _seesNothing = [
+const List<List<Object>?> _seesNothing = [
   null,
   <Game>[],
   <Game>[],

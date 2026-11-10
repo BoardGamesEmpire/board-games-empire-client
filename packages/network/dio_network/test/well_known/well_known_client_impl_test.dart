@@ -2,12 +2,11 @@ import 'dart:convert';
 
 import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import 'package:dio_network/dio_network.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -38,13 +37,12 @@ Response<String> _makeResponse(
 }) => Response(
   data: jsonEncode(data),
   statusCode: statusCode,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 Response<String> _makeEmptyResponse({int statusCode = 200}) => Response(
-  data: null,
   statusCode: statusCode,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 void main() {
@@ -220,7 +218,7 @@ void main() {
     group('empty body on 200', () {
       test('throws WellKnownInvalidResponseException', () async {
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
-            .thenAnswer((_) async => _makeEmptyResponse(statusCode: 200));
+            .thenAnswer((_) async => _makeEmptyResponse());
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -235,7 +233,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionTimeout,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -250,7 +248,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -265,7 +263,7 @@ void main() {
         () async {
           final dioError = DioException(
             type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           );
           when(() => mockDio.get<String>(any(), options: any(named: 'options')))
               .thenThrow(dioError);

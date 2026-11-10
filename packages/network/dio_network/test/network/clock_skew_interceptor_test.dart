@@ -2,10 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/clock_skew_interceptor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
-
-import 'package:dio_network/src/network/clock_skew_interceptor.dart';
 
 /// Captures recordSample calls without any estimation logic.
 class _RecordingRecorder implements ClockSkewRecorder {

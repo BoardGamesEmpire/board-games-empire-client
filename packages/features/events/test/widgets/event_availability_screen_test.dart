@@ -26,9 +26,9 @@ const _legendCopy =
 const _inProgressCopy = 'Refreshing…';
 const _offline = EventRemoteTransientException('offline');
 
-const _available = AvailabilityResponse.available;
-const _maybe = AvailabilityResponse.maybe;
-const _unavailable = AvailabilityResponse.unavailable;
+const AvailabilityResponse _available = AvailabilityResponse.available;
+const AvailabilityResponse _maybe = AvailabilityResponse.maybe;
+const AvailabilityResponse _unavailable = AvailabilityResponse.unavailable;
 
 /// How the page names the dates [_date] makes on the 6th and the 13th.
 const _nov6 = 'Fri, Nov 6 · 7:00 PM';
@@ -111,7 +111,7 @@ OccurrenceAvailability _tally(String id, List<AvailabilityVoter> voters) {
 /// The roster most tests use. Bo is a spectator and Cy a guest with no
 /// account, so neither votes. Di answered Not attending, so her vote is kept
 /// but doesn't count.
-final _roster = [
+final List<EventAttendee> _roster = [
   _person('att-me', 'Sam'),
   _person('att-2', 'Ada'),
   _person('att-3', 'Bo', role: EventRole.spectator),
@@ -121,7 +121,7 @@ final _roster = [
 
 /// Two Proposed dates, the 6th and the 13th, with a Confirmed date and a
 /// Declined one among them, in the cache's order.
-final _dates = [
+final List<EventOccurrence> _dates = [
   _date('o-1'),
   _date('o-c', day: 10, sortOrder: 1, status: OccurrenceStatus.confirmed),
   _date('o-2', day: 13, sortOrder: 2),
@@ -389,7 +389,7 @@ void main() {
     expect(find.text(_legendCopy), findsNothing);
   });
 
-  testWidgets('a voter the roster doesn\'t hold is named Someone not on the '
+  testWidgets("a voter the roster doesn't hold is named Someone not on the "
       'list', (tester) async {
     // Their vote counts, so the grid shows it as any other.
     await show(tester, _poll(_dates, roster: _roster), remote: serving());
@@ -482,7 +482,7 @@ void main() {
     expect(find.byKey(EventAvailabilityScreen.retryKey), findsNothing);
   });
 
-  testWidgets('it shows nowhere the poll can\'t be shown', (tester) async {
+  testWidgets("it shows nowhere the poll can't be shown", (tester) async {
     Future<void> expectHidden(String reason) async {
       expect(find.text(_hiddenCopy), findsOneWidget, reason: reason);
       expect(
@@ -652,7 +652,7 @@ void main() {
       expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
     });
 
-    testWidgets('a read answered 404 says the viewer can\'t see the answers', (
+    testWidgets("a read answered 404 says the viewer can't see the answers", (
       tester,
     ) async {
       await open(
@@ -668,7 +668,7 @@ void main() {
       expect(find.byKey(EventAvailabilityScreen.loadingKey), findsNothing);
     });
 
-    testWidgets('a read that withholds the roster says the viewer can\'t see '
+    testWidgets("a read that withholds the roster says the viewer can't see "
         'the answers', (tester) async {
       // The cache keeps no rows for an empty roster, so it reads back as none.
       when(() => repository.cacheEvent(any(), source: any(named: 'source')))

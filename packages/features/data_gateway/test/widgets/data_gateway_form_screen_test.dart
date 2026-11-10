@@ -26,7 +26,6 @@ void main() {
     name: 'BGG',
     description: 'The BGG bridge',
     connectionUrl: 'bgg.internal',
-    connectionPort: 50051,
   );
 
   setUp(() {

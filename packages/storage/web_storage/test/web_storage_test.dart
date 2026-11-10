@@ -36,10 +36,10 @@
 @TestOn('browser')
 library;
 
+import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
-import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -58,14 +58,6 @@ Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
   return Game(
     id: id,
     title: title,
-    contentType: ContentType.baseGame,
-    totalPlayCount: 0,
-    categories: const [],
-    mechanics: const [],
-    designers: const [],
-    publishers: const [],
-    tags: const [],
-    reach: Reach.public,
     createdAt: now,
     updatedAt: now,
   );
@@ -197,7 +189,7 @@ void main() {
         'bge_server_8f14e45f_ceea_467a_9d2b_1c0f',
       );
       expect(
-        WebWasmExecutorFactory.databaseName('a/b\\c.d'),
+        WebWasmExecutorFactory.databaseName(r'a/b\c.d'),
         'bge_server_a_b_c_d',
       );
       expect(WebWasmExecutorFactory.databaseName('plain'), 'bge_server_plain');
@@ -310,7 +302,7 @@ void main() {
 
         final notice = container.get<UnsentChangesNoticeRepository>();
         await notice.recordSessionStarted(_kUserId);
-        final clock = LocalClockService();
+        const clock = LocalClockService();
         await SyncQueueRepositoryImpl(
           container.get<ServerDatabase>(),
           clock,

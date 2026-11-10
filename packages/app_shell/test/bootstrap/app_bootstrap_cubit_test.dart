@@ -2,9 +2,9 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:logging/logging.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -288,7 +288,6 @@ void main() {
         'that supports it',
         build: () => buildCubit(
           bootstrap: FakePlatformBootstrap(outcomes: [bootFailure]),
-          resetOfferThreshold: 3,
         ),
         act: (cubit) async {
           await cubit.initialize();
@@ -355,7 +354,7 @@ void main() {
       test('a rapid double-tap does not throw: the second retry() lands '
           'while initializing and no-ops', () async {
         final bootstrap = FakePlatformBootstrap(
-          outcomes: [bootFailure, BootstrapResult(hasServer: false)],
+          outcomes: [bootFailure, const BootstrapResult(hasServer: false)],
         );
         final cubit = buildCubit(bootstrap: bootstrap);
         addTearDown(cubit.close);
@@ -467,7 +466,6 @@ void main() {
           final bootstrap = FakePlatformBootstrap(outcomes: [bootFailure]);
           final cubit = buildCubit(
             bootstrap: bootstrap,
-            resetOfferThreshold: 3,
           );
           addTearDown(cubit.close);
 
@@ -510,7 +508,7 @@ void main() {
 
     ServerOnboardingDeps deps() => ServerOnboardingDeps(
       wellKnownClient: _MockWellKnownClient(),
-      versionNegotiator: VersionNegotiatorImpl(),
+      versionNegotiator: const VersionNegotiatorImpl(),
       connectivityService: _MockConnectivityService(),
       buildInfo: BuildInfo.unknown,
     );

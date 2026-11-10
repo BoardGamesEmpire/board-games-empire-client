@@ -203,7 +203,7 @@ void main() {
     // The cache's end closes the stream; the status settling in the same
     // turn, before the close has reached the listener, must not add to it.
     await entries.close();
-    hydration.add(const Hydration(state: HydrationState.idle));
+    hydration.add(const Hydration());
     await hydration.close();
     await pumpEventQueue();
     expect(done, isTrue);

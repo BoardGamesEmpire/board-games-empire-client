@@ -1011,19 +1011,19 @@ void _selfTest() {
 
   const cmakeTemplate =
       '# Add preprocessor definitions for the build version.\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_MINOR=${FLUTTER_VERSION_MINOR}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_PATCH=${FLUTTER_VERSION_PATCH}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_BUILD=${FLUTTER_VERSION_BUILD}")'
       '\n'
       'target_compile_definitions(\${BINARY_NAME} PRIVATE "NOMINMAX")\n';
@@ -1044,10 +1044,10 @@ void _selfTest() {
             r'"FLUTTER_VERSION=\"2.0.0\""',
           )
           .replaceFirst(
-            'target_compile_definitions(\${BINARY_NAME} PRIVATE '
-                r'"FLUTTER_VERSION_BUILD',
-            '# target_compile_definitions(\${BINARY_NAME} PRIVATE '
-                r'"FLUTTER_VERSION_BUILD',
+            r'target_compile_definitions(${BINARY_NAME} PRIVATE '
+                '"FLUTTER_VERSION_BUILD',
+            r'# target_compile_definitions(${BINARY_NAME} PRIVATE '
+                '"FLUTTER_VERSION_BUILD',
           ),
     ),
     [
@@ -1094,8 +1094,8 @@ void _selfTest() {
       rcTemplate
           .replaceFirst('FILEVERSION VERSION_AS_NUMBER', 'FILEVERSION 1,0,0,1')
           .replaceFirst(
-            r'"ProductVersion", VERSION_AS_STRING',
-            r'"ProductVersion", "1.0.0.1"',
+            '"ProductVersion", VERSION_AS_STRING',
+            '"ProductVersion", "1.0.0.1"',
           ),
     ),
     [
@@ -1746,7 +1746,7 @@ String _lineEnding(String source) => source.contains('\r\n') ? '\r\n' : '\n';
 /// Matches the top-level `version:` key, anchored at column 0 for the
 /// reason [_environmentKey] is: a hosted dependency's constraint is also
 /// spelled `version:`, one level down.
-final _versionLine = RegExp(r'^version:');
+final _versionLine = RegExp('^version:');
 
 /// A `version:` line this rewriter can replace: a value on the line
 /// itself, quoted or not, and an optional trailing comment to keep.
@@ -1797,7 +1797,7 @@ String? _versionShapeProblem(String version) {
         '(e.g. 1.2.3+4). Found: $version';
   }
   // Length first, so a long run of digits never reaches int.parse.
-  final parts = version.split(RegExp(r'[.+]'));
+  final parts = version.split(RegExp('[.+]'));
   if (parts.any((p) => p.length > 5 || int.parse(p) > 65535) ||
       int.parse(parts.last) < 1) {
     return 'Root `version:` parts must each be at most 65535, the size of a '

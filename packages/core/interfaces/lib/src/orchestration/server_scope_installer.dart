@@ -1,6 +1,5 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
 
 /// Installs one slice of a server's per-scope services into its
 /// [DependencyContainer] during `ServerContext.activate()`.

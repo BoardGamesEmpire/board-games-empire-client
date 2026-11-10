@@ -60,7 +60,7 @@ void main() {
       expect(line, endsWith('nope'));
     });
 
-    test('a database error\'s bound values are not written', () {
+    test("a database error's bound values are not written", () {
       final line = formatter.formatLine(
         LogRecord(Level.SEVERE, 'crashed', 'bge.x', _DatabaseError()),
       );

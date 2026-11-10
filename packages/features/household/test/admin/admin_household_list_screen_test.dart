@@ -758,7 +758,7 @@ void main() {
       ('accents typed as marks of their own', accented),
       ('family emoji', family * 21),
     ]) {
-      testWidgets('$name past the server\'s 100 say so, as a live region, '
+      testWidgets("$name past the server's 100 say so, as a live region, "
           'and send no q', (tester) async {
         remote.listing([ada]);
         await pumpScreen(tester);

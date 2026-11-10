@@ -36,7 +36,7 @@ void main() {
   EventRemoteDataSource remote() => container.get<EventRemoteDataSource>();
 
   group('registerServerNetworkWeb event remote (#496)', () {
-    test('registers native\'s implementation under the interface', () {
+    test("registers native's implementation under the interface", () {
       expect(remote(), isA<EventRemoteDataSourceImpl>());
       expect(container.isRegistered<EventRemoteDataSourceImpl>(), isFalse);
     });

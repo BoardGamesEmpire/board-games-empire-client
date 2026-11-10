@@ -693,7 +693,7 @@ void main() {
           paddedKey(i),
       ];
       for (final key in keys) {
-        await sink.persist(record(key, queuedAt: DateTime.utc(2026, 1, 1)));
+        await sink.persist(record(key, queuedAt: DateTime.utc(2026)));
       }
       final stored = (await sink.rawKeys()).toSet();
 
@@ -929,7 +929,7 @@ void main() {
         // Queued oldest, but attempted most recently: it has waited least.
         await sink.persist(
           QueuedFeedbackReport(
-            report: FeedbackReport(
+            report: const FeedbackReport(
               category: FeedbackCategory.bug,
               severity: FeedbackSeverity.low,
               message: 'tried recently',
@@ -1187,7 +1187,7 @@ void main() {
         final first = record(
           'v1-a',
           message: 'first',
-          queuedAt: DateTime.utc(2026, 6, 1),
+          queuedAt: DateTime.utc(2026, 6),
         );
         final second = record(
           'v1-b',

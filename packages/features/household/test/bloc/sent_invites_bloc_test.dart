@@ -242,9 +242,10 @@ void main() {
     var reads = 0;
     remote
       ..onFetchSent = ((_, _, _) async => pageOf([
-        ++reads == 1
-            ? _sent('i_1')
-            : _sent('i_1', status: HouseholdInviteStatus.expired),
+        if (++reads == 1)
+          _sent('i_1')
+        else
+          _sent('i_1', status: HouseholdInviteStatus.expired),
       ]))
       ..onWithdraw = (_) async => throw refused(410);
     final bloc = build()..add(const SentInvitesLoadRequested());
@@ -256,7 +257,7 @@ void main() {
 
     expect(ready(bloc).outcome?.result, HouseholdInviteActionResult.refused);
     expect(
-      (ready(bloc).outcome?.error as HouseholdInviteRefusedException)
+      (ready(bloc).outcome!.error! as HouseholdInviteRefusedException)
           .statusCode,
       410,
     );

@@ -511,7 +511,6 @@ void main() {
       verify(
         () => remote.fetchHouseholdEvents(
           _id,
-          page: 1,
           limit: any(named: 'limit'),
         ),
       ).called(1);

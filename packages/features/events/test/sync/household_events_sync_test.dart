@@ -227,7 +227,7 @@ void main() {
   );
 
   group('close', () {
-    test('close closes every status\'s stream', () async {
+    test("close closes every status's stream", () async {
       await sync.refresh('h-1');
       final first = sync.watch('h-1');
       final second = sync.watch('h-2');

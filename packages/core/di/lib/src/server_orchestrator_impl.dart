@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:di/src/server_context_impl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import 'server_context_impl.dart';
 
 /// Concrete [ServerOrchestrator] implementation.
 ///
@@ -725,7 +724,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     _cancelBackgroundingTimer(serverId);
 
     final prefs = _cachedPreferences;
-    final configOverride = null; // TODO: read per-server override from repo
+    const configOverride = null; // TODO: read per-server override from repo
     final timeoutSeconds =
         configOverride ??
         (prefs?.backgroundingTimeoutSeconds(isDesktop: _isDesktop) ??

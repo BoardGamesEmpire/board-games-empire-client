@@ -1,5 +1,3 @@
-library;
-
 export 'package:hydration/hydration.dart' show Hydration, HydrationState;
 
 export 'src/add/add_to_collection_bloc.dart';

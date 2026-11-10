@@ -202,7 +202,7 @@ void main() {
     setUp(() => remote.onFetchPage = (_, _) async => throw unreachable());
 
     blocTest<GameBrowseBloc, GameBrowseState>(
-      'shows the cached games in the catalog\'s order',
+      "shows the cached games in the catalog's order",
       setUp: () => cache.cacheGames([catan, azul, brass]),
       build: build,
       act: (bloc) => bloc.add(const GameBrowseLoadRequested()),
@@ -347,7 +347,7 @@ void main() {
     );
 
     blocTest<GameBrowseBloc, GameBrowseState>(
-      'a refusal forgets this user\'s catalog, so a retry that fails shows '
+      "a refusal forgets this user's catalog, so a retry that fails shows "
       'nothing cached',
       setUp: () async {
         await cache.cacheGames([azul]);
@@ -408,7 +408,7 @@ void main() {
       'a refusal keeps games this user reaches through their collection',
       setUp: () async {
         await cache.cachePlatformGameSummaries([
-          PlatformGameSummary(
+          const PlatformGameSummary(
             id: 'pg_azul',
             platformId: 'plat_1',
             platformName: 'Platform',
@@ -470,7 +470,7 @@ void main() {
     final oldest = game(
       'g_oldest',
       title: 'Azul',
-    ).copyWith(createdAt: DateTime.utc(2026, 1));
+    ).copyWith(createdAt: DateTime.utc(2026));
     final middle = game(
       'g_middle',
       title: 'Catan',
@@ -1050,7 +1050,7 @@ void main() {
     tearDown(() => gone.close());
 
     blocTest<GameBrowseBloc, GameBrowseState>(
-      'is heard of wherever it was found, and the cache\'s next page starts '
+      "is heard of wherever it was found, and the cache's next page starts "
       'where it should',
       setUp: () async {
         await cache.cacheGames([azul, brass, catan]);
@@ -1182,7 +1182,7 @@ void main() {
       expect(await cache.getGames(['g_azul', 'g_brass']), isEmpty);
     });
 
-    test('stays forgotten when a closed list\'s next page is answered after '
+    test("stays forgotten when a closed list's next page is answered after "
         'it', () async {
       final next = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (page, _) async =>

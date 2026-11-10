@@ -6,11 +6,11 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart'
     show
         FlutterMemoryAllocations,
-        ValueListenable,
-        ValueNotifier,
         ObjectCreated,
         ObjectDisposed,
         ObjectEvent,
+        ValueListenable,
+        ValueNotifier,
         precisionErrorTolerance;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
@@ -1743,7 +1743,7 @@ void main() {
     });
 
     testWidgets("a focused menu keeps focus when the DataGateway's own banner "
-        'arrives in the footer, above the worklist\'s place there', (
+        "arrives in the footer, above the worklist's place there", (
       tester,
     ) async {
       listing({
@@ -1976,7 +1976,7 @@ void main() {
       expect(focusIsIn(tester, menu('c')), isTrue);
     });
 
-    testWidgets("a read that takes the row with focus leaves focus alone when "
+    testWidgets('a read that takes the row with focus leaves focus alone when '
         "the row in its place isn't built", (tester) async {
       final longList = [for (var n = 1; n <= 40; n++) languageLink('r$n')];
       reads([

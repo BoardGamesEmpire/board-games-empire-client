@@ -36,7 +36,7 @@ void main() {
       container.get<DataGatewayRemoteDataSource>();
 
   group('registerServerNetworkWeb DataGateway remote (#41)', () {
-    test('registers native\'s implementation under the interface', () {
+    test("registers native's implementation under the interface", () {
       expect(remote(), isA<DataGatewayRemoteDataSourceImpl>());
       expect(
         container.isRegistered<DataGatewayRemoteDataSourceImpl>(),

@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/bloc/game_search_bloc.dart';
+import 'package:game_catalog/src/bloc/game_search_event.dart';
+import 'package:game_catalog/src/bloc/game_search_state.dart';
+import 'package:game_catalog/src/screens/game_search_filter_sheet.dart';
+import 'package:game_catalog/src/search/game_length_band.dart';
+import 'package:game_catalog/src/widgets/catalog_chip_label.dart';
+import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_catalog/src/widgets/catalog_game_row.dart';
+import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../bloc/game_search_bloc.dart';
-import '../bloc/game_search_event.dart';
-import '../bloc/game_search_state.dart';
-import '../search/game_length_band.dart';
-import '../widgets/catalog_chip_label.dart';
-import '../widgets/catalog_facts.dart';
-import '../widgets/catalog_game_row.dart';
-import '../widgets/catalog_slivers.dart';
-import 'game_search_filter_sheet.dart';
 
 /// Searches this server and its DataGateways by title (#42).
 ///

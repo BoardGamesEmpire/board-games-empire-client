@@ -174,8 +174,8 @@ void main() {
     });
   });
 
-  group('the embedded game\'s expansion fields (#711)', () {
-    test('reads the embedded game\'s base games and content type', () async {
+  group("the embedded game's expansion fields (#711)", () {
+    test("reads the embedded game's base games and content type", () async {
       final row = _entry('gc_1');
       final platformGame = row['platformGame'] as Map<String, dynamic>;
       platformGame['game'] = <String, dynamic>{
@@ -224,7 +224,7 @@ void main() {
 
       final remote = remoteOver(cannedDio(body: body, statusCode: 200));
 
-      final page = await remote.fetchCollectionPage(limit: 100);
+      final page = await remote.fetchCollectionPage();
       expect(page.items, hasLength(100));
       expect(page.items.last.entry.id, 'gc_99');
     });

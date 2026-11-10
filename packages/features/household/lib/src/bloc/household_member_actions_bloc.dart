@@ -1,13 +1,12 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/household_member_actions_event.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/members/send_member_request.dart';
+import 'package:household/src/permissions/household_actions.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../members/send_member_request.dart';
-import '../permissions/household_actions.dart';
-import 'household_member_actions_event.dart';
-import 'household_member_actions_state.dart';
 
 /// Changes a household member's role, removes them, or makes them the
 /// owner, from the household screen (#480, #478).

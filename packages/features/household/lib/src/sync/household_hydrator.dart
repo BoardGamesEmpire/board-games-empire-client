@@ -170,7 +170,7 @@ class HouseholdHydrator {
       if (confirm != null && !await confirm()) {
         _logger.info(
           'Household hydrate stopped: a page came back once the session could '
-          'no longer be confirmed as this user\'s',
+          "no longer be confirmed as this user's",
           context: {'page': page},
         );
         return HydrateOutcome.failed;

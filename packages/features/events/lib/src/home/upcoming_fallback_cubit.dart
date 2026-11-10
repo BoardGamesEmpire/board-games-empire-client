@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
+import 'package:events/src/overview/event_groups.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../overview/event_groups.dart';
 
 /// What the home section's fallback holds (#613).
 sealed class UpcomingFallbackState extends Equatable {

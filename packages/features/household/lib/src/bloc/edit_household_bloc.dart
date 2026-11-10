@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/edit_household_event.dart';
+import 'package:household/src/bloc/edit_household_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'edit_household_event.dart';
-import 'edit_household_state.dart';
 
 /// Saves an edit of one household's name, description and member invite
 /// policy (#476).

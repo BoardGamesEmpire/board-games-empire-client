@@ -1419,7 +1419,7 @@ void main() {
       );
       await settleWith(
         tester,
-        roster: [_member('u-me', role: HouseholdRole.householdMember)],
+        roster: [_member('u-me')],
       );
 
       expect(built, everyElement(_id));

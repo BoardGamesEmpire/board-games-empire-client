@@ -2,16 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/bloc/game_import_bloc.dart';
+import 'package:game_catalog/src/bloc/game_import_event.dart';
+import 'package:game_catalog/src/bloc/game_import_state.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../bloc/game_import_bloc.dart';
-import '../bloc/game_import_event.dart';
-import '../bloc/game_import_state.dart';
 
 /// Imports one DataGateway result into the server, and shows how the import
 /// goes while it is open (#43).

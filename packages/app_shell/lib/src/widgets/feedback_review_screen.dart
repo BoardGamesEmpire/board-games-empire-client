@@ -1,12 +1,11 @@
 import 'dart:convert';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-import 'package:observability/observability.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Full feedback-report review & redaction surface (#76).
 ///
@@ -363,7 +362,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     // section and order; any *unknown* redactable field is still surfaced
     // (appended to the environment section) so it can never be silently
     // dropped from review.
-    final redactable = FeedbackReportPreview.redactableTopLevelFields;
+    const redactable = FeedbackReportPreview.redactableTopLevelFields;
     const reportFields = <String>['message', 'title'];
     const envFields = <String>['appVersion', 'platform', 'locale'];
     final knownFields = <String>{...reportFields, ...envFields};

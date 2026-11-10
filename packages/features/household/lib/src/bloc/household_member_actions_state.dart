@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../permissions/household_actions.dart';
+import 'package:household/src/permissions/household_actions.dart';
 
 /// How a member request ended: a role change, removal or ownership transfer
 /// (#480, #478), or a request to leave (#479).

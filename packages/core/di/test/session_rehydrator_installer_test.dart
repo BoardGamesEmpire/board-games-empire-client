@@ -11,7 +11,7 @@ ServerConfig _config() => ServerConfig(
   serverUrl: 'https://api.example.test',
   connectionState: ConnectionState.active,
   bgeServerId: 'server-1',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: 'server-1',
     issuer: 'https://api.example.test',
     wellKnownSchemaVersion: 1,
@@ -23,7 +23,7 @@ ServerConfig _config() => ServerConfig(
     passkeySupported: false,
     twoFactorSupported: false,
     anonymousAuthSupported: false,
-    strategies: const [
+    strategies: [
       EmailAndPasswordStrategy(
         signUpDisabled: false,
         signInEndpoint: '$_kAuthBase/sign-in/email',

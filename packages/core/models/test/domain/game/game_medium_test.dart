@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 GameCollection _makeCollection({required GameMedium medium}) {
   final now = DateTime.parse('2024-01-15T10:30:00Z');

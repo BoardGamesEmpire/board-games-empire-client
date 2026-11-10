@@ -17,15 +17,14 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:key_storage/key_storage.dart';
 import 'package:models/domain.dart';
+import 'package:native_platform/src/auth/flutter_web_auth_provider_sign_in_browser.dart';
+import 'package:native_platform/src/deep_links/app_links_deep_link_source.dart';
+import 'package:native_platform/src/logging/rotating_file_log_sink.dart';
+import 'package:native_platform/src/native_root_module.dart';
 import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 import 'package:sync_queue/sync_queue.dart';
-
-import 'deep_links/app_links_deep_link_source.dart';
-import 'auth/flutter_web_auth_provider_sign_in_browser.dart';
-import 'logging/rotating_file_log_sink.dart';
-import 'native_root_module.dart';
 
 /// Builds the orchestrator; injectable so tests can substitute a fake.
 typedef NativeOrchestratorFactory = ServerOrchestrator Function({

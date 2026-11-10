@@ -1,10 +1,10 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('Friendship', () {
     test('handles status transitions', () {
-      final friendship = Friendship(
+      const friendship = Friendship(
         id: 'f123',
         requestorId: 'user123',
         recipientId: 'user456',
@@ -17,7 +17,7 @@ void main() {
     });
 
     test('serializes FriendshipStatus enum', () {
-      final friendship = Friendship(
+      const friendship = Friendship(
         id: 'f123',
         requestorId: 'user123',
         recipientId: 'user456',

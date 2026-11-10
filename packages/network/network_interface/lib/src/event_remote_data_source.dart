@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// What [EventRemoteDataSource.createEvent] got back: the event the server
 /// holds, and whether it is deleted.

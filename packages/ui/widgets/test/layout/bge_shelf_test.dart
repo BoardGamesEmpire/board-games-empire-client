@@ -12,13 +12,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-const _spaceXxl = BgeTokens.spaceXxlValue;
+const double _spaceXxl = BgeTokens.spaceXxlValue;
 const _coverWidth = 100.0;
 const _coverCount = 10;
 
 /// Ten covers with their gaps: wider than the narrow window, and narrower than
 /// a wide enough one.
-const _rowWidth =
+const double _rowWidth =
     _coverCount * _coverWidth + (_coverCount - 1) * BgeTokens.spaceMdValue;
 
 const _narrow = Size(400, 600);
@@ -534,7 +534,7 @@ void main() {
       }
     });
 
-    testWidgets('it is drawn in the theme\'s disabled colour', (tester) async {
+    testWidgets("it is drawn in the theme's disabled colour", (tester) async {
       useViewSize(tester, _narrow);
       await _show(tester, _app(_shelf()));
 

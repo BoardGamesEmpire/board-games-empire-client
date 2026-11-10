@@ -3,19 +3,17 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/entry/collection_entry_bloc.dart';
+import 'package:game_collection/src/entry/collection_entry_event.dart';
+import 'package:game_collection/src/entry/collection_entry_state.dart';
+import 'package:game_collection/src/form/collection_quantity_field.dart';
+import 'package:game_collection/src/form/collection_rating_field.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import '../form/collection_quantity_field.dart';
-import '../form/collection_rating_field.dart';
-import 'collection_entry_bloc.dart';
-import 'collection_entry_event.dart';
-import 'collection_entry_state.dart';
 
 /// Opens the edit sheet over [context] for the entry [bloc] shows (#46).
 ///

@@ -1,11 +1,11 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../common/reach.dart';
-import 'event_scheduling_mode.dart';
-import 'event_type.dart';
-import 'game_addition_mode.dart';
-import 'vote_quorum_type.dart';
-import 'vote_threshold_type.dart';
+import 'package:models/src/domain/common/reach.dart';
+import 'package:models/src/domain/event/event_scheduling_mode.dart';
+import 'package:models/src/domain/event/event_type.dart';
+import 'package:models/src/domain/event/game_addition_mode.dart';
+import 'package:models/src/domain/event/vote_quorum_type.dart';
+import 'package:models/src/domain/event/vote_threshold_type.dart';
 
 part 'event_draft.freezed.dart';
 
@@ -17,8 +17,6 @@ part 'event_draft.freezed.dart';
 /// it into the request body.
 @freezed
 abstract class EventDraft with _$EventDraft {
-  const EventDraft._();
-
   const factory EventDraft({
     required String title,
 
@@ -43,6 +41,7 @@ abstract class EventDraft with _$EventDraft {
     /// The users invited with the event, at most [maxInvitees].
     @Default(<String>[]) List<String> inviteUserIds,
   }) = _EventDraft;
+  const EventDraft._();
 
   /// The server's ceiling on one create's `inviteUserIds`. A longer list is a
   /// 400.

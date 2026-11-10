@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';

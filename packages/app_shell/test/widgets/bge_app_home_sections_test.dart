@@ -205,8 +205,8 @@ class _Events implements EventRepository {
 class _GameCache implements GameRepository {
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) async => const [];
 
@@ -1019,8 +1019,8 @@ void main() {
   });
 
   group('another user on the same server', () {
-    final cover = NewestGamesSection.coverKey;
-    final toPlay = SomethingToPlaySection.coverKey;
+    const cover = NewestGamesSection.coverKey;
+    const toPlay = SomethingToPlaySection.coverKey;
 
     late _GamesRemote server;
     late _Pool pool;

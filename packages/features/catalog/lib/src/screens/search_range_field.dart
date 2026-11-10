@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
 /// A filter range's From and To fields, shared by the search's publish-year,
 /// player-count and play-time sections (#565, #580).

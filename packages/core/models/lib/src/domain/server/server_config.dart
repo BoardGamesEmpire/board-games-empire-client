@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'connection_state.dart';
-import 'server_identity.dart';
+import 'package:models/src/domain/server/connection_state.dart';
+import 'package:models/src/domain/server/server_identity.dart';
 
 part 'server_config.freezed.dart';
 part 'server_config.g.dart';
@@ -16,8 +16,6 @@ part 'server_config.g.dart';
 /// server.
 @freezed
 abstract class ServerConfig with _$ServerConfig {
-  const ServerConfig._();
-
   const factory ServerConfig({
     /// Client-generated local identifier (cuid). Root DB primary key.
     required String id,
@@ -43,6 +41,7 @@ abstract class ServerConfig with _$ServerConfig {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _ServerConfig;
+  const ServerConfig._();
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) =>
       _$ServerConfigFromJson(json);

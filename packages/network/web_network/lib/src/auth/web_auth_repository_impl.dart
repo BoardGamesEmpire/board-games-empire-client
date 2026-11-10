@@ -7,20 +7,19 @@ import 'package:dio/dio.dart';
 // #278).
 import 'package:dio_network/dio_network.dart'
     show
+        SessionReadStatus,
         decodeJsonBody,
         probeJsonBody,
         rateLimitedFrom,
-        readSessionStatus,
-        SessionReadStatus;
+        readSessionStatus;
+import 'package:http_status/http_status.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
-import 'package:http_status/http_status.dart';
-
-import 'provider_sign_in_bindings.dart';
-import 'session_channel.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
+import 'package:web_network/src/auth/session_channel.dart';
 
 /// Web implementation of [AuthRepository].
 ///

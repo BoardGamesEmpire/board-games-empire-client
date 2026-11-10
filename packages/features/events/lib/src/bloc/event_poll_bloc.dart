@@ -1,12 +1,11 @@
+import 'package:events/src/bloc/event_actions_state.dart';
+import 'package:events/src/bloc/event_poll_event.dart';
+import 'package:events/src/bloc/event_poll_state.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../detail/event_actions.dart';
-import 'event_actions_state.dart';
-import 'event_poll_event.dart';
-import 'event_poll_state.dart';
 
 /// A vote to send on one date: the event the screen showed when it was
 /// tapped, and the answer.

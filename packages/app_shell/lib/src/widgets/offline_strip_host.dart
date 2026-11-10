@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/services.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart'
     show BgeConnectivityScope, BgeOfflineStrip, BgeOfflineStripState;
-
-import '../../l10n/shell_localizations.dart';
 
 /// Turns [ConnectivityService.watch] into the window's offline strip and the
 /// debounced flag its controls read (#49).

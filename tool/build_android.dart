@@ -563,7 +563,7 @@ void _selfTest() {
   expect(
     'badging: does not take a longer permission for INTERNET',
     _badgingProblems(
-      "$packageLine$otherLines"
+      '$packageLine$otherLines'
       "uses-permission: name='android.permission.INTERNET_EXTRA'\n",
     ),
     [

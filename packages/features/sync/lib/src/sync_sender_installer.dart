@@ -5,8 +5,8 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import 'session_confirming_sender.dart';
-import 'sync_operation_sender_impl.dart';
+import 'package:sync_queue/src/session_confirming_sender.dart';
+import 'package:sync_queue/src/sync_operation_sender_impl.dart';
 
 /// Registers the session's [SyncOperationSender] (#121): the one delivery
 /// path the queue drain and the inline creates share, the household

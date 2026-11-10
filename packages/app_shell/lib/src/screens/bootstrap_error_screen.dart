@@ -1,7 +1,6 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Shown when bootstrap fails. Always offers retry; offers the destructive
 /// delete-local-data recovery only when [canOfferReset] is true (repeated

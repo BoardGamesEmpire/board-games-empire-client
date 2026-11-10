@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:models/dto.dart';
-
-import 'package:dio_network/src/auth/token_storage_service.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 
@@ -28,7 +27,7 @@ void main() {
 
   const key = 'bge_session_server-1';
 
-  final persistedAt = DateTime.utc(2026, 1, 1);
+  final persistedAt = DateTime.utc(2026);
   final confirmedExpiry = DateTime.utc(2026, 1, 8);
   final user = AuthUser.fromJson(_wireUser());
 
@@ -236,7 +235,7 @@ void main() {
       expect(
         restorable(
           session(expiresAt: confirmedExpiry, snapshot: user),
-          DateTime.utc(2026, 2, 1),
+          DateTime.utc(2026, 2),
         ),
         isFalse,
       );
@@ -247,7 +246,7 @@ void main() {
       final stored = session(
         expiresAt: confirmedExpiry,
         snapshot: user,
-        writtenAt: DateTime.utc(2026, 6, 1),
+        writtenAt: DateTime.utc(2026, 6),
       );
 
       expect(stored.isDeviceClockPlausibleAt(duringSession), isFalse);
@@ -653,7 +652,7 @@ void main() {
         final stores = Future.wait([
           storeToken(storage, 'tok-first'),
           storeToken(storage, 'tok-second'),
-        ], eagerError: false).then<void>((_) {}, onError: (Object _) {});
+        ]).then<void>((_) {}, onError: (Object _) {});
         await pumpEventQueue();
 
         // Settle the failing write first, then the one that lands.

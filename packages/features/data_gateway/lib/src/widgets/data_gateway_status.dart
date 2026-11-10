@@ -1,8 +1,7 @@
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 
 /// Why a DataGateway's last interview failed, as a phrase that follows a
 /// colon: "Not in use: it didn't answer" (#457).

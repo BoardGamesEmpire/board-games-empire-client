@@ -1,5 +1,28 @@
 import 'dart:async';
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_actions_bloc.dart';
+import 'package:events/src/bloc/event_actions_event.dart';
+import 'package:events/src/bloc/event_actions_state.dart';
+import 'package:events/src/bloc/event_detail_bloc.dart';
+import 'package:events/src/bloc/event_detail_event.dart';
+import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/bloc/event_poll_bloc.dart';
+import 'package:events/src/bloc/event_poll_event.dart';
+import 'package:events/src/bloc/event_poll_state.dart';
+import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_poll.dart';
+import 'package:events/src/detail/event_status_now.dart';
+import 'package:events/src/widgets/cancel_reason_dialog.dart';
+import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/destructive_button_style.dart';
+import 'package:events/src/widgets/event_date_dialogs.dart';
+import 'package:events/src/widgets/event_date_poll.dart';
+import 'package:events/src/widgets/event_detail_sections.dart';
+import 'package:events/src/widgets/event_labels.dart';
+import 'package:events/src/widgets/event_rsvp_controls.dart';
+import 'package:events/src/widgets/rsvp_note_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -7,31 +30,6 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_actions_bloc.dart';
-import '../bloc/event_actions_event.dart';
-import '../bloc/event_actions_state.dart';
-import '../bloc/event_detail_bloc.dart';
-import '../bloc/event_detail_event.dart';
-import '../bloc/event_detail_state.dart';
-import '../bloc/event_poll_bloc.dart';
-import '../bloc/event_poll_event.dart';
-import '../bloc/event_poll_state.dart';
-import '../detail/event_actions.dart';
-import '../detail/event_date_actions.dart';
-import '../detail/event_poll.dart';
-import '../detail/event_status_now.dart';
-import '../widgets/cancel_reason_dialog.dart';
-import '../widgets/confirm_dialog.dart';
-import '../widgets/destructive_button_style.dart';
-import '../widgets/event_date_dialogs.dart';
-import '../widgets/event_date_poll.dart';
-import '../widgets/event_detail_sections.dart';
-import '../widgets/event_labels.dart';
-import '../widgets/event_rsvp_controls.dart';
-import '../widgets/rsvp_note_dialog.dart';
 
 /// One event (#498): its header, its dates, who's coming and its games, read
 /// reactively from the local cache and from the server once per open.

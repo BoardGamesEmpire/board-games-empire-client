@@ -100,7 +100,7 @@ void main() {
       }
     });
 
-    test('an id that is not the marker\'s: not a return; the id is taken '
+    test("an id that is not the marker's: not a return; the id is taken "
         'out and a ?error= stays', () {
       final r = readProviderSignInReturn(
         marker: _kId,
@@ -159,7 +159,7 @@ void main() {
       }
     });
 
-    test('survives the server\'s check of a relative callback address', () {
+    test("survives the server's check of a relative callback address", () {
       // The server's pattern for a relative callback, from better-auth's
       // trusted-origins check.
       final relativeCallback = RegExp(

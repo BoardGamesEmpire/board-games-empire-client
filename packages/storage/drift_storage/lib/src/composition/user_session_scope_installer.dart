@@ -1,15 +1,14 @@
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
+import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:drift_storage/src/repositories/household_repository_impl.dart';
+import 'package:drift_storage/src/repositories/list_layout_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import '../repositories/event_repository_impl.dart';
-import '../repositories/game_collection_repository_impl.dart';
-import '../repositories/game_repository_impl.dart';
-import '../repositories/household_repository_impl.dart';
-import '../repositories/list_layout_repository_impl.dart';
-import '../repositories/sync_queue_repository_impl.dart';
 
 /// [UserScopeInstaller] for the user-session scope (#39, #135, #150).
 ///

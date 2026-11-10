@@ -229,7 +229,7 @@ void main() {
       );
     });
 
-    test('a hydrate result does not lift an ended cache\'s error', () async {
+    test("a hydrate result does not lift an ended cache's error", () async {
       // Nothing will answer on a closed stream, so a pass completing later
       // must not put the spinner back.
       final bloc = build();
@@ -567,7 +567,10 @@ void main() {
       // Built at run time so == is tested by value, not by identity.
       // ignore: prefer_const_constructors
       expect(GameCollectionListError(), GameCollectionListError());
-      expect(GameCollectionListLoading(), isNot(GameCollectionListError()));
+      expect(
+        const GameCollectionListLoading(),
+        isNot(const GameCollectionListError()),
+      );
     });
 
     test('events compare by value', () {
@@ -590,8 +593,8 @@ void main() {
       // ignore: prefer_const_constructors
       expect(GameCollectionListCacheFailed(), GameCollectionListCacheFailed());
       expect(
-        GameCollectionListCacheFailed(),
-        isNot(GameCollectionListCacheEnded()),
+        const GameCollectionListCacheFailed(),
+        isNot(const GameCollectionListCacheEnded()),
       );
     });
   });

@@ -1,6 +1,5 @@
+import 'package:data_gateway/src/bloc/language_link_list_state.dart';
 import 'package:equatable/equatable.dart';
-
-import 'language_link_list_state.dart';
 
 /// Events of `LanguageLinkListBloc`.
 sealed class LanguageLinkListEvent extends Equatable {

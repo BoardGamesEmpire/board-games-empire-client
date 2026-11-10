@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:game_collection/src/sync/game_collection_hydration_status.dart';
+import 'package:game_collection/src/sync/game_collection_hydrator.dart';
+import 'package:game_collection/src/sync/game_collection_refresher.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'game_collection_hydration_status.dart';
-import 'game_collection_hydrator.dart';
-import 'game_collection_refresher.dart';
 
 /// Starts the collection hydrate when a user session activates (#259, #44).
 ///

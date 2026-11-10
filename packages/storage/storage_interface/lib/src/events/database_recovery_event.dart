@@ -1,4 +1,4 @@
-import '../errors/database_key_error.dart';
+import 'package:storage_interface/src/errors/database_key_error.dart';
 
 /// Emitted when a per-server database is rebuilt because no key this device
 /// holds could open it (a `DatabaseKeyError`): the key and the file have

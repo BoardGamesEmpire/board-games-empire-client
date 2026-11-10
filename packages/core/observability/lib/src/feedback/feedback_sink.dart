@@ -1,4 +1,4 @@
-import 'queued_feedback_report.dart';
+import 'package:observability/src/feedback/queued_feedback_report.dart';
 
 /// Durable store for **user-approved** feedback reports that couldn't be
 /// sent yet — offline, unauthenticated, or with no active server (#69,

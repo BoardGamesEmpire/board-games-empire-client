@@ -1,10 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/network/user_projection.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/api_error_envelope.dart';
-import '../network/remote_failure.dart';
-import '../network/user_projection.dart';
 
 /// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499,
 /// #501).

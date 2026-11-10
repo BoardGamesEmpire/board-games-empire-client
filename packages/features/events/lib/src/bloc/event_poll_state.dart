@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:events/src/bloc/event_actions_state.dart';
 import 'package:models/domain.dart';
-
-import 'event_actions_state.dart';
 
 /// Where the read of the poll's summary stands (#507).
 enum EventPollLoad {

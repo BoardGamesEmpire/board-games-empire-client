@@ -86,7 +86,7 @@ void main() {
       // consumer of this shared type may not have one.
       expect(
         () => PaginatedResult.fromEnvelope(
-          _envelope(rows: const [])..['widgets'] = const ['oops'],
+          _envelope()..['widgets'] = const ['oops'],
           key: 'widgets',
           item: (json) => json,
         ),

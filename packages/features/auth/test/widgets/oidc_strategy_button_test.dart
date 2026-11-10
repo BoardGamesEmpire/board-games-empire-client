@@ -1,13 +1,12 @@
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/l10n/auth_localizations_en.dart';
+import 'package:auth/src/widgets/oidc_strategy_button.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:auth/l10n/auth_localizations.dart';
-import 'package:auth/l10n/auth_localizations_en.dart';
-import 'package:auth/src/widgets/oidc_strategy_button.dart';
 
 const _strategy = OidcStrategy(
   providerId: 'my-idp',

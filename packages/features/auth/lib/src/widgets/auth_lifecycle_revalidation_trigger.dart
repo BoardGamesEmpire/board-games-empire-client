@@ -1,8 +1,7 @@
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
 
 /// Dispatches [AuthSessionRevalidationRequested] when the app returns to
 /// the foreground (#141) — the third revalidation trigger for a session

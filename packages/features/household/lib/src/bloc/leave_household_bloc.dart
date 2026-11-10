@@ -1,12 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/bloc/leave_household_event.dart';
+import 'package:household/src/bloc/leave_household_state.dart';
+import 'package:household/src/members/send_member_request.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../members/send_member_request.dart';
-import 'household_member_actions_state.dart';
-import 'leave_household_event.dart';
-import 'leave_household_state.dart';
 
 /// Takes the signed-in person out of a household they chose to leave (#479).
 ///

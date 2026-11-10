@@ -1,7 +1,6 @@
-import 'package:models/dto.dart';
+import 'package:interfaces/src/repositories/provider_sign_in.dart';
 import 'package:models/domain.dart';
-
-import 'provider_sign_in.dart';
+import 'package:models/dto.dart';
 
 /// Per-server authentication repository.
 ///

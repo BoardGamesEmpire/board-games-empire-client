@@ -1,10 +1,9 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/settings/settings_scope.dart';
+import 'package:app_shell/src/settings/settings_section.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../settings/settings_scope.dart';
-import '../settings/settings_section.dart';
 
 /// The settings surface (#120): a scrollable, accessible list of
 /// [SettingsSection]s.

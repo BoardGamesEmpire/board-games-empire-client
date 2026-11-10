@@ -17,7 +17,7 @@ void main() {
   EventOccurrence date(
     String id, {
     OccurrenceStatus status = OccurrenceStatus.proposed,
-  }) => confirmed(id, DateTime.utc(2026, 11, 1)).copyWith(status: status);
+  }) => confirmed(id, DateTime.utc(2026, 11)).copyWith(status: status);
 
   EventAttendee attendee(
     String id, {

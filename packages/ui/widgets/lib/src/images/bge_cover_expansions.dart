@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/focus/bge_focus_ring.dart';
+import 'package:ui/src/focus/bge_pointer_focus.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../focus/bge_focus_ring.dart';
-import '../focus/bge_pointer_focus.dart';
 
 /// What a base game's cover says about its expansions (#711): how many there
 /// are, whether they are shown, and the words for both.

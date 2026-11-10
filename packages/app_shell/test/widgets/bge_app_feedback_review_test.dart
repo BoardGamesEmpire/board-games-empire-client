@@ -1,8 +1,8 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
 
 /// Pinned (#76): from a pending crash draft, `CrashReportPrompt`'s
 /// "Review details" affordance swaps the compact prompt for the full

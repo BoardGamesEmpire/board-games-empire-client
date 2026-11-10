@@ -107,11 +107,12 @@ abstract class LanguageLink with _$LanguageLink {
     /// canonicalized, an ISO code lowercased, a name's spaces collapsed.
     required String value,
 
+    required LanguageLinkStatus status,
+
     /// How [value] is spelled. The same value can be listed once per format,
     /// such as `en` as a tag and as an ISO code, so it takes both to say which
     /// link this is.
     @Default(LanguageCodeFormat.unknown) LanguageCodeFormat format,
-    required LanguageLinkStatus status,
 
     /// The tag it is linked to. Set only while [status] is
     /// [LanguageLinkStatus.resolved].

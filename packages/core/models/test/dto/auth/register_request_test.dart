@@ -1,10 +1,10 @@
-import 'package:test/test.dart';
 import 'package:models/dto.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('RegisterRequest', () {
     test('serializes all fields', () {
-      final request = RegisterRequest(
+      const request = RegisterRequest(
         email: 'john@example.com',
         password: 'secure_password',
         username: 'johndoe',

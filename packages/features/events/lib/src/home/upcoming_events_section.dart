@@ -1,3 +1,11 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_overview_bloc.dart';
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/home/upcoming_fallback_cubit.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/widgets/event_card.dart';
+import 'package:events/src/widgets/event_section_states.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
@@ -6,16 +14,6 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_overview_bloc.dart';
-import '../bloc/event_overview_event.dart';
-import '../bloc/event_overview_state.dart';
-import '../overview/event_groups.dart';
-import '../widgets/event_card.dart';
-import '../widgets/event_section_states.dart';
-import 'upcoming_fallback_cubit.dart';
 
 /// The home page's upcoming events (#613): the user's next few events, or, with
 /// none of their own, what's coming up that they could see. They sit side by

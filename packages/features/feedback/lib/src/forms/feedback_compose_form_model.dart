@@ -1,7 +1,6 @@
+import 'package:feedback/src/models/feedback_compose_result.dart';
 import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import '../models/feedback_compose_result.dart';
 
 /// The compose form's state model (#107): a host-owned wrapper around the
 /// `reactive_forms` [FormGroup].

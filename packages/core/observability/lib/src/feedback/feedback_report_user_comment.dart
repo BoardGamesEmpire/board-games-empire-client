@@ -1,5 +1,5 @@
-import 'feedback_constants.dart';
-import 'feedback_report.dart';
+import 'package:observability/src/feedback/feedback_constants.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
 
 /// Weaves the user's comment into an already-built crash [FeedbackReport]
 /// at approval time (#69).

@@ -72,18 +72,23 @@ double luminance(int rgb) {
 }
 
 double contrast(int a, int b) {
-  final la = luminance(a), lb = luminance(b);
-  final hi = math.max(la, lb), lo = math.min(la, lb);
+  final la = luminance(a);
+  final lb = luminance(b);
+  final hi = math.max(la, lb);
+  final lo = math.min(la, lb);
   return (hi + 0.05) / (lo + 0.05);
 }
 
 int? oklchToRgb(double L, double C, double hDeg) {
   final h = hDeg * math.pi / 180;
-  final a = C * math.cos(h), bb = C * math.sin(h);
+  final a = C * math.cos(h);
+  final bb = C * math.sin(h);
   final l_ = L + 0.3963377774 * a + 0.2158037573 * bb;
   final m_ = L - 0.1055613458 * a - 0.0638541728 * bb;
   final s_ = L - 0.0894841775 * a - 1.2914855480 * bb;
-  final l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+  final l = l_ * l_ * l_;
+  final m = m_ * m_ * m_;
+  final s = s_ * s_ * s_;
   final lr = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
   final lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
   final lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
@@ -107,7 +112,8 @@ double hueSeparationOf(int a, int b) =>
     hueSeparation(oklchHueOf(a), oklchHueOf(b));
 
 double maxChroma(double L, double hue) {
-  var lo = 0.0, hi = 0.45;
+  var lo = 0.0;
+  var hi = 0.45;
   for (var i = 0; i < 40; i++) {
     final mid = (lo + hi) / 2;
     if (oklchToRgb(L, mid, hue) != null) {

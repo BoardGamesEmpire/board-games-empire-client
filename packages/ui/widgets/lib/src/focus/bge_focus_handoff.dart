@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
-import 'focus_is_free.dart';
-import 'pointer_focus_flag.dart';
+import 'package:ui/src/focus/focus_is_free.dart';
+import 'package:ui/src/focus/pointer_focus_flag.dart';
 
 /// Where the items of one list or grid hand a game's keyboard focus to each
 /// other as the game changes form (#769, #711). Each item is wrapped in a

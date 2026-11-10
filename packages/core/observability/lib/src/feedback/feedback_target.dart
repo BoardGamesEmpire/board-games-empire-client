@@ -1,4 +1,4 @@
-import 'feedback_transport.dart';
+import 'package:observability/src/feedback/feedback_transport.dart';
 
 /// A snapshot of the active submission target, resolved fresh per
 /// `submit` / `drainPending` call (#97).

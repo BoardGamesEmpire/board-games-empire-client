@@ -837,7 +837,7 @@ void main() {
     for (final scale in [1.0, 2.0]) {
       testWidgets("the prompt's tint holds its label, with room at both ends "
           'and small corners, at $scale text', (tester) async {
-        final tokens = BgeTokens.standard;
+        const tokens = BgeTokens.standard;
         await show(
           tester,
           games: const [],
@@ -865,7 +865,7 @@ void main() {
                     .widget<TextButton>(byKey(StatsCard.promptKey))
                     .style!
                     .shape!
-                    .resolve(const {})
+                    .resolve(const {})!
                 as RoundedRectangleBorder;
         expect(shape.borderRadius, BorderRadius.circular(tokens.radiusSm));
         expect(tokens.radiusSm, lessThanOrEqualTo(tokens.spaceSm));

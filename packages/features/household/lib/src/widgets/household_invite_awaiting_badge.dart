@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-
 import 'package:household/l10n/household_localizations.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// "Awaiting approval" on an invite (#489), as an icon plus words, never
 /// color alone.

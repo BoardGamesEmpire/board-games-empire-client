@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'event_table.dart';
+import 'package:drift_storage/src/tables/event_table.dart';
 
 /// A cached copy of one of an event's occurrences, as `GET /events`,
 /// `GET /events/:id` and the household list embed them (#496): when it

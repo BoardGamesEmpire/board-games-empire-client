@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:data_gateway/src/access/data_gateway_names.dart';
+import 'package:data_gateway/src/access/read_allowed_since.dart';
+import 'package:data_gateway/src/bloc/data_gateway_list_event.dart';
+import 'package:data_gateway/src/bloc/data_gateway_list_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../access/data_gateway_names.dart';
-import '../access/read_allowed_since.dart';
-import 'data_gateway_list_event.dart';
-import 'data_gateway_list_state.dart';
 
 /// Drives the DataGateway list (#41): the server's rows, and the row actions
 /// that change them.

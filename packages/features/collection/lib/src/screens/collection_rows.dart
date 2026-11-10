@@ -1,6 +1,5 @@
+import 'package:game_collection/src/screens/collection_groups.dart';
 import 'package:models/domain.dart';
-
-import 'collection_groups.dart';
 
 /// One row of the collection list: a game's entries, as one stack when it is
 /// owned more than once (#709), with the base game it is shown under (#711).

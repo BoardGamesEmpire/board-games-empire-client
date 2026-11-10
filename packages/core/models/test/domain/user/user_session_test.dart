@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('UserSession', () {
@@ -10,7 +10,7 @@ void main() {
         authenticationId: 'auth123',
         token: 'token',
         lastActive: now,
-        expiresAt: now.add(Duration(hours: 1)),
+        expiresAt: now.add(const Duration(hours: 1)),
         isValid: true,
       );
 

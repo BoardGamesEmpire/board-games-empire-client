@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 PushRegistration _registration({PushPlatform platform = PushPlatform.fcm}) =>
     PushRegistration(

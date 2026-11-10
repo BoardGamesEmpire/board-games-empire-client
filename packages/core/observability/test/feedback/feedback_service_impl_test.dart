@@ -607,7 +607,7 @@ void main() {
       statusCode: 201,
     );
 
-    test('sends the active server\'s records and untagged records in '
+    test("sends the active server's records and untagged records in "
         'order, removing each on success, and returns the count', () async {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
@@ -893,8 +893,8 @@ void main() {
         );
         final sink = _RecordingSink(
           pendingList: [
-            QueuedFeedbackReport(
-              report: const FeedbackReport(
+            const QueuedFeedbackReport(
+              report: FeedbackReport(
                 category: FeedbackCategory.bug,
                 severity: FeedbackSeverity.low,
                 message: 'keyless',
@@ -1133,15 +1133,18 @@ void main() {
       for (final (label, error) in <(String, Object)>[
         (
           'a 429 throttle',
-          FeedbackTransientSubmissionException('throttled', statusCode: 429),
+          const FeedbackTransientSubmissionException(
+            'throttled',
+            statusCode: 429,
+          ),
         ),
         (
           'an offline device (no status)',
-          FeedbackTransientSubmissionException('offline'),
+          const FeedbackTransientSubmissionException('offline'),
         ),
         (
           'a 503',
-          FeedbackTransientSubmissionException('down', statusCode: 503),
+          const FeedbackTransientSubmissionException('down', statusCode: 503),
         ),
       ]) {
         test('$label stops the run and counts no attempt', () async {
@@ -1177,8 +1180,8 @@ void main() {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
         pendingList: [
-          QueuedFeedbackReport(
-            report: const FeedbackReport(
+          const QueuedFeedbackReport(
+            report: FeedbackReport(
               category: FeedbackCategory.bug,
               severity: FeedbackSeverity.low,
               message: 'no key',
@@ -1444,11 +1447,9 @@ class _RecordingTransport implements FeedbackTransport {
     sent.add(report);
     if (error == null) return;
     final threshold = failOnCall;
-    final fails = threshold == null
-        ? true
-        : failOnCallOnly
-        ? _calls == threshold
-        : _calls >= threshold;
+    final fails =
+        threshold == null ||
+        (failOnCallOnly ? _calls == threshold : _calls >= threshold);
     if (fails) throw error!;
   }
 }

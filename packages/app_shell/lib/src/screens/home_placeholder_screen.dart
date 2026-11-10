@@ -1,13 +1,12 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/router/app_router.dart';
 import 'package:auth/auth.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../router/app_router.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Temporary authenticated landing surface (#37).
 ///

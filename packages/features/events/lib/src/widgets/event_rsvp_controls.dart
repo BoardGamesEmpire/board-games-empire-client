@@ -1,14 +1,12 @@
 import 'dart:async';
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../screens/event_detail_screen.dart';
-import 'event_labels.dart';
 
 /// The viewer's own answer to an event's invitation (#508): Going, Maybe and
 /// Not going as one named group of chips, with their answer selected, and a
@@ -71,7 +69,7 @@ class EventRsvpControls extends StatefulWidget {
 }
 
 /// The answers with a chip, in the order they show.
-const _answers = [
+const List<EventParticipationStatus> _answers = [
   EventParticipationStatus.attending,
   EventParticipationStatus.maybe,
   EventParticipationStatus.notAttending,

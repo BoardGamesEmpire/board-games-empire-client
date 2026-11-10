@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 
-import 'server_database.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
 
 /// An in-memory [ServerDatabase] on the native (`dart:ffi`) executor.
 ///

@@ -1,5 +1,3 @@
-library;
-
 export 'package:hydration/hydration.dart' show Hydration, HydrationState;
 
 export 'src/bloc/create_event_bloc.dart';

@@ -1,10 +1,9 @@
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-
 import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
@@ -23,7 +22,7 @@ class _CapturingHandler extends RequestInterceptorHandler {
 void main() {
   late MockTokenStorage storage;
 
-  final persistedAt = DateTime.utc(2026, 1, 1);
+  final persistedAt = DateTime.utc(2026);
   final now = DateTime.utc(2026, 1, 2);
 
   TokenInterceptor build({DateTime? clockNow}) => TokenInterceptor(
@@ -85,7 +84,7 @@ void main() {
       ),
     );
 
-    final options = await run(build(clockNow: DateTime.utc(2026, 2, 1)));
+    final options = await run(build(clockNow: DateTime.utc(2026, 2)));
 
     expect(options.headers.containsKey('Authorization'), isFalse);
   });

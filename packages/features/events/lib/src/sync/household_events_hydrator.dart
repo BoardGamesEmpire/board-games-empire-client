@@ -1,9 +1,8 @@
+import 'package:events/src/sync/page_one.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'page_one.dart';
 
 /// What one [HouseholdEventsHydrator.hydrate] pass achieved (#503).
 ///
@@ -244,7 +243,7 @@ class HouseholdEventsHydrator {
     if (!confirmed) {
       _logger.info(
         'Household events hydrate stopped: an answer came back once the '
-        'session could no longer be confirmed as this user\'s',
+        "session could no longer be confirmed as this user's",
         context: context,
       );
     }

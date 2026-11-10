@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'data_gateway.dart';
+import 'package:models/src/domain/data_gateway/data_gateway.dart';
 
 part 'data_gateway_change_result.freezed.dart';
 

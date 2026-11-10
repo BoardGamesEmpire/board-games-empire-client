@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:models/domain.dart';
-
-import '../sync/collection_sync.dart';
 
 /// Where an add stands.
 enum AddToCollectionStatus {

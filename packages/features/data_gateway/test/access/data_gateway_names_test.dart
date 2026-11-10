@@ -12,7 +12,7 @@ void main() {
   setUp(() => remote = FakeDataGatewayRemote());
 
   test(
-    'reads every DataGateway\'s name, by id, to the end of the list',
+    "reads every DataGateway's name, by id, to the end of the list",
     () async {
       remote.onFetchPage = (page, _) async => page == 1
           ? pageOf([gateway('dg_1', name: 'BGG')], hasMore: true)

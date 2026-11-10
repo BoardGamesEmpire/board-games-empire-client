@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'game_table.dart';
+import 'package:drift_storage/src/tables/game_table.dart';
 
 /// Index on [PlatformGamesTable.gameId] backs the
 /// `getPlatformGamesForGame(gameId)` lookup in

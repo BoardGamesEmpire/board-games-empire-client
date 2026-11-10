@@ -4,7 +4,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import 'stuck_sync_op.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_op.dart';
 
 /// Lists the session's stuck ops, and retries or discards one by hand
 /// (#190).

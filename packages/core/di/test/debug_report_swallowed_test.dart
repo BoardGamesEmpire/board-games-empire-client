@@ -13,7 +13,7 @@ void main() {
     addTearDown(() => debugPrint = original);
   });
 
-  test('removes a database error\'s bound values (#463)', () {
+  test("removes a database error's bound values (#463)", () {
     debugReportSwallowed(
       'scope disposal threw',
       'Bad state: Tried to send Request (id = 3): StatementMethod.insert: '

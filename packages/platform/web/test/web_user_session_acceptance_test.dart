@@ -210,7 +210,7 @@ void main() {
   }
 
   test('a live watchHouseholds subscription closes on sign-out and the '
-      'rebuilt scope serves only the new user\'s data', () async {
+      "rebuilt scope serves only the new user's data", () async {
     await signIn(_kUserA);
     // Resolved through the facade, exactly as the shell's routes do.
     final repoA = container.get<HouseholdRepository>();

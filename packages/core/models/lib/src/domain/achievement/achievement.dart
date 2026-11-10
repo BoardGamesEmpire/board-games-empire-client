@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'achievement_type.dart';
+import 'package:models/src/domain/achievement/achievement_type.dart';
 
 part 'achievement.freezed.dart';
 part 'achievement.g.dart';
@@ -11,9 +11,9 @@ abstract class Achievement with _$Achievement {
     required String id,
     required String name,
     required String description,
-    String? icon,
     required AchievementType type,
     required int threshold,
+    String? icon,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _Achievement;

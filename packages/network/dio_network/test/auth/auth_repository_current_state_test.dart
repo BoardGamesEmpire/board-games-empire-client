@@ -1,14 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'bge-uuid-1',
   issuer: 'https://bge.example.com',
   wellKnownSchemaVersion: 1,
@@ -20,7 +20,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',

@@ -1,8 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/redact_uri.dart';
 import 'package:flutter/foundation.dart';
 import 'package:observability/observability.dart';
-
-import 'redact_uri.dart';
 
 /// Permanent network observability interceptor (#100), replacing the
 /// temporary `DevLogInterceptor` (#101).

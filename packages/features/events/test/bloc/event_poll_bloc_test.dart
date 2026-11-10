@@ -56,9 +56,9 @@ const _forbidden = EventRemoteForbiddenException('hidden', statusCode: 403);
 const _offline = EventRemoteTransientException('offline');
 const _rejected = EventRemotePermanentException('bad', statusCode: 400);
 
-const _available = AvailabilityResponse.available;
-const _maybe = AvailabilityResponse.maybe;
-const _unavailable = AvailabilityResponse.unavailable;
+const AvailabilityResponse _available = AvailabilityResponse.available;
+const AvailabilityResponse _maybe = AvailabilityResponse.maybe;
+const AvailabilityResponse _unavailable = AvailabilityResponse.unavailable;
 
 const _idle = EventPollState();
 const _loading = EventPollState(load: EventPollLoad.loading);
@@ -850,7 +850,7 @@ void main() {
           ('a gone', (_) => throw _gone),
         ]) {
       blocTest<EventPollBloc, EventPollState>(
-        '$name answered after the session moved is another user\'s, and the '
+        "$name answered after the session moved is another user's, and the "
         'read is failed, keeping the last summary',
         build: () => build(
           serving(summary: summary),

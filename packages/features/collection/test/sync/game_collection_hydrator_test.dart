@@ -29,7 +29,7 @@ GameCollectionWithSummary _row(
     quantity: quantity,
     deletedAt: deletedAt,
     createdAt: DateTime.utc(2026),
-    updatedAt: updatedAt ?? DateTime.utc(2026, 1, 1),
+    updatedAt: updatedAt ?? DateTime.utc(2026),
   ),
   summary: PlatformGameSummary(
     id: 'pg-$n',
@@ -340,7 +340,7 @@ void main() {
   // The remote attaches whichever token the server's store holds when it
   // sends, not this session's. A page answered for another user must not
   // record its games for this one (#434).
-  group('a page holding another user\'s entry', () {
+  group("a page holding another user's entry", () {
     test('writes nothing from that page and completes as failed', () async {
       final remote = FakeCollectionRemote(
         (_) => _page([_row(1), _row(2, userId: 'user-other')]),

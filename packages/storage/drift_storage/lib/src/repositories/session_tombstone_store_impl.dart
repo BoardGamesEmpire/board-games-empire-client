@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:interfaces/repositories.dart';
-
-import '../databases/meta_database.dart';
 
 /// [SessionTombstoneStore] over `server_configs.session_revoked_at` (#356).
 ///

@@ -58,13 +58,16 @@ const _lastOwnerCopy = 'Make another member the owner first.';
 const _onlyMemberCopy = "You're the only member.";
 const _beneathCopy = 'The page beneath';
 
-final _owner = _member('u-me', role: HouseholdRole.householdOwner);
-final _coOwner = _member(
+final HouseholdMember _owner = _member(
+  'u-me',
+  role: HouseholdRole.householdOwner,
+);
+final HouseholdMember _coOwner = _member(
   'u-2',
   role: HouseholdRole.householdOwner,
   displayName: 'Zed',
 );
-final _zed = _member('u-2', displayName: 'Zed');
+final HouseholdMember _zed = _member('u-2', displayName: 'Zed');
 
 /// Pins the Leave row on the household detail screen (#479): who is offered
 /// it, why it is disabled, its confirmation, the request it sends, and what
@@ -794,9 +797,9 @@ void main() {
   group('the Leave row and its confirmation fit at 320dp and 2.0 text', () {
     Future<void> pumpNarrow(
       WidgetTester tester, {
-      ValueListenable<bool>? offline,
       required Household household,
       required List<HouseholdMember> roster,
+      ValueListenable<bool>? offline,
     }) async {
       useViewSize(tester, const Size(320, 640));
       await tester.pumpWidget(

@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
-
-import 'app_bootstrap_cubit.dart';
-import 'platform_bootstrap.dart';
 
 /// The app's one teardown (#384), built by `runBgeApp`.
 ///

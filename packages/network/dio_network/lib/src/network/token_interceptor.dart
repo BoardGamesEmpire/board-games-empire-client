@@ -1,8 +1,7 @@
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:interfaces/services.dart' show ClockService;
-
-import '../auth/token_storage_service.dart';
 
 /// Attaches the per-server bearer token to outgoing requests.
 ///

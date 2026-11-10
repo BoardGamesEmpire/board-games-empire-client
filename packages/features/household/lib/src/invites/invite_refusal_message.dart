@@ -1,6 +1,5 @@
-import 'package:network_interface/network_interface.dart';
-
 import 'package:household/l10n/household_localizations.dart';
+import 'package:network_interface/network_interface.dart';
 
 /// Something a person does with an invite, for wording its failure.
 enum HouseholdInviteAction { send, accept, decline, withdraw, revoke, approve }

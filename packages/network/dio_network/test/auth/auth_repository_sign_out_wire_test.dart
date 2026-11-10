@@ -1,15 +1,14 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
-
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:dio_network/src/network/network_log_interceptor.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 
@@ -49,7 +48,7 @@ class _RecordingAdapter implements HttpClientAdapter {
 
 const _signOutEndpoint = '/api/auth/sign-out';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -62,7 +61,7 @@ ServerIdentity _identity() => ServerIdentity(
   twoFactorSupported: true,
   anonymousAuthSupported: true,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '/api/auth/sign-in/email',
       signUpEndpoint: '/api/auth/sign-up/email',

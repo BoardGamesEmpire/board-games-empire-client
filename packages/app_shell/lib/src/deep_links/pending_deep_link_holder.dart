@@ -1,4 +1,4 @@
-import 'deep_link_normalizer.dart';
+import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 
 /// Single-slot, latest-wins store for a deep link that cannot be acted on
 /// yet (#10 decision: one slot, no queue, no TTL).

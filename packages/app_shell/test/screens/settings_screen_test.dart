@@ -143,7 +143,6 @@ void main() {
       await pumpSettings(
         tester,
         sections: withPerServer(const [_FakeEntry()]),
-        activeServerAlias: null,
       );
 
       expect(find.text('Living Room Pi'), findsNothing);
@@ -234,7 +233,7 @@ void main() {
         BlocBuilder<ThemeModeCubit, ThemeMode>(
           bloc: themeModeCubit,
           builder: (context, mode) => MediaQuery(
-            data: const MediaQueryData(platformBrightness: Brightness.light),
+            data: const MediaQueryData(),
             child: MaterialApp(
               theme: BgeTheme.light(),
               darkTheme: BgeTheme.dark(),

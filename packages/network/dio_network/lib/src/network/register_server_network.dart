@@ -1,6 +1,21 @@
 import 'package:di/di.dart' show ServerSkewClockService;
 import 'package:dio/dio.dart';
-
+import 'package:dio_network/src/auth/auth_repository_impl.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:dio_network/src/data_gateway/data_gateway_remote_data_source_impl.dart';
+import 'package:dio_network/src/event/event_remote_data_source_impl.dart';
+import 'package:dio_network/src/feedback/feedback_dio_transport.dart';
+import 'package:dio_network/src/game_collection/game_collection_remote_data_source_impl.dart';
+import 'package:dio_network/src/games/games_remote_data_source_impl.dart';
+import 'package:dio_network/src/household/admin_household_remote_data_source_impl.dart';
+import 'package:dio_network/src/household/household_invite_remote_data_source_impl.dart';
+import 'package:dio_network/src/household/household_member_remote_data_source_impl.dart';
+import 'package:dio_network/src/household/household_remote_data_source_impl.dart';
+import 'package:dio_network/src/network/clock_skew_interceptor.dart';
+import 'package:dio_network/src/network/dio_factory.dart';
+import 'package:dio_network/src/network/network_log_interceptor.dart';
+import 'package:dio_network/src/network/token_interceptor.dart';
+import 'package:dio_network/src/user/user_remote_data_source_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart'
@@ -18,23 +33,6 @@ import 'package:network_interface/network_interface.dart'
         HouseholdRemoteDataSource,
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
-
-import '../auth/auth_repository_impl.dart';
-import '../auth/token_storage_service.dart';
-import '../data_gateway/data_gateway_remote_data_source_impl.dart';
-import '../event/event_remote_data_source_impl.dart';
-import '../feedback/feedback_dio_transport.dart';
-import '../game_collection/game_collection_remote_data_source_impl.dart';
-import '../games/games_remote_data_source_impl.dart';
-import '../household/admin_household_remote_data_source_impl.dart';
-import '../household/household_invite_remote_data_source_impl.dart';
-import '../household/household_member_remote_data_source_impl.dart';
-import '../household/household_remote_data_source_impl.dart';
-import '../user/user_remote_data_source_impl.dart';
-import 'clock_skew_interceptor.dart';
-import 'dio_factory.dart';
-import 'network_log_interceptor.dart';
-import 'token_interceptor.dart';
 
 /// Registers the mobile/desktop network stack for [config] into the per-server
 /// [container].

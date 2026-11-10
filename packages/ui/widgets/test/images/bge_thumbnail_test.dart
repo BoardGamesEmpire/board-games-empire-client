@@ -80,7 +80,7 @@ void main() {
         );
       });
 
-      testWidgets('decodes a thumbnail host\'s image as sent', (tester) async {
+      testWidgets("decodes a thumbnail host's image as sent", (tester) async {
         expect(
           await decodedSize(tester, width: 264, height: 352),
           const Size(264, 352),

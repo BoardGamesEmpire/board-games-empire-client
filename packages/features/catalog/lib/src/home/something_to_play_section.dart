@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/home/shelf_loading.dart';
+import 'package:game_catalog/src/home/something_to_play_cubit.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../quick_look/game_quick_look_seed.dart';
-import 'shelf_loading.dart';
-import 'something_to_play_cubit.dart';
 
 /// The home page's "Something to play" row (#616): a random pick of games from
 /// the households the user is in and their own collection, or the server's when

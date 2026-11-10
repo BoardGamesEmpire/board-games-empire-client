@@ -2,6 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/send_household_invite_bloc.dart';
+import 'package:household/src/bloc/send_household_invite_event.dart';
+import 'package:household/src/bloc/send_household_invite_state.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/src/widgets/household_role_label.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
@@ -9,15 +16,6 @@ import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/user_search.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/send_household_invite_bloc.dart';
-import '../bloc/send_household_invite_event.dart';
-import '../bloc/send_household_invite_state.dart';
-import '../invites/invite_refusal_message.dart';
-import '../permissions/household_actions.dart';
-import '../widgets/household_role_label.dart';
 
 /// The form for inviting someone to a household (#455): by email address,
 /// or by picking someone who has an account through user search.

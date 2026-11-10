@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'availability_response.dart';
+import 'package:models/src/domain/event/availability_response.dart';
 
 part 'availability_vote.freezed.dart';
 

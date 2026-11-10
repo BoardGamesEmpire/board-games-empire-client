@@ -749,7 +749,7 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
-      'stays down when the DataGateways\' names arrive after it',
+      "stays down when the DataGateways' names arrive after it",
       setUp: () => remote.onSearch = (_, _) async => results,
       build: () {
         final names = Completer<Map<String, String>>();
@@ -840,11 +840,11 @@ void main() {
       },
       skip: 2,
       expect: () => [
-        GameSearchReady(
+        const GameSearchReady(
           query: 'catan',
           fromCache: true,
           filter: _expansions,
-          onServer: const [
+          onServer: [
             GameSearchHit(
               externalId: 'g_seafarers',
               title: 'Catan: Seafarers',
@@ -875,11 +875,11 @@ void main() {
       },
       skip: 2,
       expect: () => [
-        GameSearchReady(
+        const GameSearchReady(
           query: 'catan',
           fromCache: true,
           filter: _expansions,
-          onServer: const [
+          onServer: [
             GameSearchHit(
               externalId: 'g_seafarers',
               title: 'Catan: Seafarers',

@@ -1,8 +1,8 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
 
 /// Pinned (#105): the crash flow honors newest-crash-wins even while the
 /// review surface is open. `BgeApp`'s review slot remembers the draft

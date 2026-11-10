@@ -1,10 +1,9 @@
 import 'dart:developer' as developer;
 
 import 'package:logging/logging.dart';
-
-import '../redaction/redaction.dart';
-import 'log_record_formatter.dart';
-import 'log_sink.dart';
+import 'package:observability/src/logging/log_record_formatter.dart';
+import 'package:observability/src/logging/log_sink.dart';
+import 'package:observability/src/redaction/redaction.dart';
 
 /// The `dart:developer` [developer.log] signature, extracted so tests can
 /// inject a spy in place of the real (side-effecting, hard-to-capture)

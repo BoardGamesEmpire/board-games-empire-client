@@ -215,7 +215,7 @@ void main() {
     expect(
       container.get<HouseholdRepository>(),
       isNot(same(firstHouseholds)),
-      reason: 'the reopened scope reused the closed one\'s repository',
+      reason: "the reopened scope reused the closed one's repository",
     );
 
     await awaitHydrated(container);

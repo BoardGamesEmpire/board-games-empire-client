@@ -4,8 +4,8 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_date_dialogs.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -4833,7 +4833,7 @@ void main() {
     }) => FakeEventRemote.detail(
       read ?? (_) => cached.snapshot,
       rsvp: answered ?? answer,
-      summary: (_) => AvailabilitySummary(occurrences: const []),
+      summary: (_) => const AvailabilitySummary(occurrences: []),
     );
 
     /// Shows [detail] from [remote], with a way back.
@@ -5668,7 +5668,7 @@ void main() {
     testWidgets('a date a sync brings while open moves the page on at its '
         'start', (tester) async {
       final undated = _detail(
-        event: _event(schedulingMode: EventSchedulingMode.fixed),
+        event: _event(),
         attendance: _attending(EventRole.host),
       );
       await showClocked(tester, undated, serving(undated));
@@ -5861,14 +5861,14 @@ void main() {
         ),
         remote: FakeEventRemote.detail(
           (_) => _detail().snapshot,
-          summary: (_) => AvailabilitySummary(
+          summary: (_) => const AvailabilitySummary(
             occurrences: [
               OccurrenceAvailability(
                 occurrenceId: 'o-1',
                 available: 1,
                 maybe: 0,
                 unavailable: 0,
-                voters: const [
+                voters: [
                   AvailabilityVoter(
                     attendeeId: 'att-2',
                     response: available,

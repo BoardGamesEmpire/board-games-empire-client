@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'content_type.dart';
-import 'expansion_link.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/expansion_link.dart';
 
 part 'platform_game_summary.freezed.dart';
 
@@ -26,14 +26,14 @@ abstract class PlatformGameSummary with _$PlatformGameSummary {
     required String platformId,
     required String platformName,
 
+    required GameSummary game,
+
     /// The platform game's own image override. Null means "use the game's".
     String? image,
 
     /// The platform game's own thumbnail override. Null means "use the
     /// game's".
     String? thumbnail,
-
-    required GameSummary game,
   }) = _PlatformGameSummary;
 }
 

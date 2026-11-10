@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/bloc/game_browse_bloc.dart';
+import 'package:game_catalog/src/bloc/game_browse_event.dart';
+import 'package:game_catalog/src/bloc/game_browse_state.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
+import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_catalog/src/widgets/catalog_game_row.dart';
+import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../bloc/game_browse_bloc.dart';
-import '../bloc/game_browse_event.dart';
-import '../bloc/game_browse_state.dart';
-import '../quick_look/game_quick_look_seed.dart';
-import '../widgets/catalog_facts.dart';
-import '../widgets/catalog_game_row.dart';
-import '../widgets/catalog_slivers.dart';
 
 /// The server's games, a page at a time (#42).
 ///
@@ -225,7 +223,9 @@ class _GameBrowsePage extends StatelessWidget {
         // Placed once per build, for the count and for the covers or the
         // rows drawn (#711). Not while the choice is read, when neither is.
         final placed = switch (state) {
-          GameBrowseReady ready when thumbnails != null => _placeBrowse(ready),
+          final GameBrowseReady ready when thumbnails != null => _placeBrowse(
+            ready,
+          ),
           _ => null,
         };
         final rows = placed == null || thumbnails == true

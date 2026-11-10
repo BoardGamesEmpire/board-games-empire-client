@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/src/forms/live_error_announcer.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'live_error_announcer.dart';
 
 /// The standard form field: an accessible text field bound to a reactive_forms
 /// control (#165).

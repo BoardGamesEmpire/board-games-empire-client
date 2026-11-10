@@ -15,7 +15,7 @@ class FakeSessionChannel implements SessionChannel {
 
   final posted = <SessionChange>[];
   final _incoming = StreamController<SessionChange>.broadcast();
-  var closed = false;
+  bool closed = false;
 
   /// Delivers [change] as if another tab had posted it.
   void deliver(SessionChange change) => _incoming.add(change);

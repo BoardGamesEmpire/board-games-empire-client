@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
+import 'package:app_shell/src/screens/not_yet_available_screen.dart';
+import 'package:app_shell/src/screens/route_not_found_screen.dart';
+import 'package:app_shell/src/screens/shell_placeholder_screen.dart';
+import 'package:app_shell/src/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
-
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import '../screens/bootstrap_error_screen.dart';
-import '../screens/not_yet_available_screen.dart';
-import '../screens/route_not_found_screen.dart';
-import '../screens/shell_placeholder_screen.dart';
-import '../screens/splash_screen.dart';
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -299,7 +298,12 @@ abstract final class AppRoutes {
   /// `settings` is deliberately absent: it is a normal post-ready
   /// destination, not a bootstrap leg, so a ready app is not bounced off
   /// it (#120).
-  static const bootstrapLocations = {splash, error, serverAdd, auth};
+  static const Set<String> bootstrapLocations = {
+    splash,
+    error,
+    serverAdd,
+    auth,
+  };
 }
 
 /// Reserved deep-link resource path patterns (#10), declared from day one

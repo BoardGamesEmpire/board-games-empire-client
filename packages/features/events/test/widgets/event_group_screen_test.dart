@@ -92,7 +92,7 @@ void main() {
       EventListItem(
         event: item('e-arch').event.copyWith(
           status: EventStatus.archived,
-          cancelledAt: DateTime.utc(2026, 10, 1),
+          cancelledAt: DateTime.utc(2026, 10),
         ),
         occurrences: const [],
       ),

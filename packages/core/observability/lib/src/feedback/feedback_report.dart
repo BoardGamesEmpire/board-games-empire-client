@@ -2,11 +2,11 @@ import 'dart:convert';
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../breadcrumbs/breadcrumb.dart';
-import 'feedback_category.dart';
-import 'feedback_constants.dart';
-import 'feedback_context.dart';
-import 'feedback_severity.dart';
+import 'package:observability/src/breadcrumbs/breadcrumb.dart';
+import 'package:observability/src/feedback/feedback_category.dart';
+import 'package:observability/src/feedback/feedback_constants.dart';
+import 'package:observability/src/feedback/feedback_context.dart';
+import 'package:observability/src/feedback/feedback_severity.dart';
 
 part 'feedback_report.freezed.dart';
 part 'feedback_report.g.dart';

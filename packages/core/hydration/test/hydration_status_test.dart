@@ -106,11 +106,7 @@ void main() {
     test('a status no pass has touched has established nothing', () async {
       expect(
         await current(),
-        const Hydration(
-          state: HydrationState.idle,
-          everRefreshed: false,
-          lastPassFailed: false,
-        ),
+        const Hydration(),
       );
     });
 
@@ -195,7 +191,6 @@ void main() {
           const Hydration(
             state: HydrationState.refreshed,
             everRefreshed: true,
-            lastPassFailed: false,
           ),
         );
         expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);

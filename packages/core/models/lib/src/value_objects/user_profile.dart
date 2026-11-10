@@ -1,23 +1,21 @@
 import 'package:equatable/equatable.dart';
-
-import '../domain/user/user.dart';
-import '../domain/user/user_preferences.dart';
-import '../domain/achievement/user_achievement.dart';
-import '../domain/social/friendship.dart';
-import '../domain/social/friendship_status.dart';
+import 'package:models/src/domain/achievement/user_achievement.dart';
+import 'package:models/src/domain/social/friendship.dart';
+import 'package:models/src/domain/social/friendship_status.dart';
+import 'package:models/src/domain/user/user.dart';
+import 'package:models/src/domain/user/user_preferences.dart';
 
 class UserProfile extends Equatable {
-  final User user;
-  final UserPreferences? preferences;
-  final List<UserAchievement> achievements;
-  final List<Friendship> friendships;
-
   const UserProfile({
     required this.user,
     this.preferences,
     this.achievements = const [],
     this.friendships = const [],
   });
+  final User user;
+  final UserPreferences? preferences;
+  final List<UserAchievement> achievements;
+  final List<Friendship> friendships;
 
   /// Stands in for [initials] when no name field yields a single character
   /// (#183).

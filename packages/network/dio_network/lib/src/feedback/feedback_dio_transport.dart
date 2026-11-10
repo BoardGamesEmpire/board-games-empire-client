@@ -1,8 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:observability/observability.dart';
-
-import '../network/decode_json_body.dart';
-import '../network/remote_failure.dart';
 
 /// Concrete [FeedbackTransport] posting through a **per-server** Dio
 /// instance (#69, #97).

@@ -540,7 +540,7 @@ void main() {
       expect(blocOf(tester).state.action, CollectionEntryAction.idle);
     });
 
-    testWidgets('a save that fails with the sheet open is the sheet\'s to '
+    testWidgets("a save that fails with the sheet open is the sheet's to "
         'show', (tester) async {
       when(callUpdate).thenThrow(StateError('disposed'));
       await show(tester);

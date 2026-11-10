@@ -4,12 +4,11 @@ import 'package:dio_network/dio_network.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:native_platform/src/build_info/package_info_build_info_reader.dart';
+import 'package:native_platform/src/device_info/native_device_info_reader.dart';
+import 'package:native_platform/src/feedback/file_feedback_sink.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'build_info/package_info_build_info_reader.dart';
-import 'device_info/native_device_info_reader.dart';
-import 'feedback/file_feedback_sink.dart';
 
 /// Registers the shared native (mobile + desktop) device-global services
 /// into the root container (#72).

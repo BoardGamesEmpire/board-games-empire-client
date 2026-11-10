@@ -157,7 +157,6 @@ void main() {
           result,
           const SchemaTooNew(
             serverSchemaVersion: 2,
-            supportedSchemaVersion: kSupportedWellKnownSchemaVersion,
           ),
         );
       });
@@ -177,7 +176,7 @@ void main() {
       test('the supported schema version itself is compatible', () {
         final result = negotiator.negotiate(
           buildInfo: _buildInfo('1.2.3'),
-          identity: _identity(schemaVersion: kSupportedWellKnownSchemaVersion),
+          identity: _identity(),
         );
 
         expect(result, const VersionCompatible());

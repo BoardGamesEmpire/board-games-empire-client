@@ -451,7 +451,7 @@ void main() {
             ),
           ),
           findsOneWidget,
-          reason: 'on the message that takes the card\'s place',
+          reason: "on the message that takes the card's place",
         );
         expect(textOf(tester), _plainMessage);
       });
@@ -648,7 +648,7 @@ void main() {
     }
 
     testWidgets(
-      'a failed reload leaves the card and its button\'s focus alone',
+      "a failed reload leaves the card and its button's focus alone",
       (tester) async {
         final handle = tester.ensureSemantics();
         await show(tester, onConnectDataGateway: (_) {});
@@ -682,7 +682,7 @@ void main() {
     );
 
     testWidgets(
-      'an offline blip leaves the card and its button\'s focus alone',
+      "an offline blip leaves the card and its button's focus alone",
       (tester) async {
         await show(
           tester,
@@ -716,9 +716,9 @@ void main() {
         useViewSize(tester, view);
         await tester.pumpWidget(
           MediaQuery(
-            data: MediaQueryData(
+            data: const MediaQueryData(
               size: view,
-              textScaler: const TextScaler.linear(2),
+              textScaler: TextScaler.linear(2),
             ),
             child: harness(onConnectDataGateway: connect),
           ),

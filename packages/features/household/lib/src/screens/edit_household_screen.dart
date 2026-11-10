@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/edit_household_bloc.dart';
+import 'package:household/src/bloc/edit_household_event.dart';
+import 'package:household/src/bloc/edit_household_state.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/src/widgets/edit_household_form.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/edit_household_bloc.dart';
-import '../bloc/edit_household_event.dart';
-import '../bloc/edit_household_state.dart';
-import '../permissions/household_actions.dart';
-import '../widgets/edit_household_form.dart';
 
 /// The screen for editing a household's name, description and member invite
 /// policy (#476).

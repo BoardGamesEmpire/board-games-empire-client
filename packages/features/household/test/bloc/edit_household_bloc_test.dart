@@ -2,12 +2,11 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import 'package:household/household.dart';
 
 class MockHouseholdRemote extends Mock implements HouseholdRemoteDataSource {}
 
@@ -24,8 +23,8 @@ Household _household({
   settings: policy == null
       ? null
       : HouseholdSettings(memberInvitePolicy: policy),
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 void main() {

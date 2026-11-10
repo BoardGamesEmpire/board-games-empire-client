@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
-
-import '../permissions/household_actions.dart';
-import 'household_invite_list_state.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/permissions/household_actions.dart';
 
 /// Input to the household's invite list (#455).
 sealed class HouseholdInviteListEvent extends Equatable {

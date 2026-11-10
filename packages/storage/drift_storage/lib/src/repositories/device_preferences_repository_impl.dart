@@ -1,9 +1,8 @@
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/meta_database.dart';
+import 'package:drift_storage/src/tables/device_preferences_table.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-
-import '../databases/meta_database.dart';
-import '../tables/device_preferences_table.dart';
 
 class DevicePreferencesRepositoryImpl implements DevicePreferencesRepository {
   DevicePreferencesRepositoryImpl(this._database);

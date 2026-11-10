@@ -1,19 +1,17 @@
 import 'dart:async';
 
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:data_gateway/src/bloc/language_link_list_bloc.dart';
+import 'package:data_gateway/src/bloc/language_link_list_event.dart';
+import 'package:data_gateway/src/bloc/language_link_list_state.dart';
+import 'package:data_gateway/src/widgets/data_gateway_status.dart';
+import 'package:data_gateway/src/widgets/language_tag_picker_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-
-import '../bloc/language_link_list_bloc.dart';
-import '../bloc/language_link_list_event.dart';
-import '../bloc/language_link_list_state.dart';
-import 'data_gateway_status.dart';
-import 'language_tag_picker_dialog.dart';
 
 /// A DataGateway's language worklist (#457): the values it uses for languages
 /// under a status filter, a page at a time, each with the actions that settle

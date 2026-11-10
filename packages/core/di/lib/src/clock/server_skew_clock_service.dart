@@ -1,8 +1,7 @@
 import 'dart:async';
 
+import 'package:di/src/streams/replay_then_forward.dart';
 import 'package:interfaces/services.dart';
-
-import '../streams/replay_then_forward.dart';
 
 /// Skew-corrected [ClockService] fed by server `Date` headers (#12).
 ///

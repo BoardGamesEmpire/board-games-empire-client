@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:events/src/bloc/event_detail_event.dart';
+import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../detail/event_actions.dart';
-import 'event_detail_event.dart';
-import 'event_detail_state.dart';
 
 /// Drives the event detail screen (#498): one cached event, read from the
 /// server once per open and written back, plus its household's name and
@@ -567,7 +566,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (!confirmed) {
       _logger.info(
         'Event detail read stopped: the session could not be confirmed as '
-        'this user\'s',
+        "this user's",
       );
     }
     return confirmed;

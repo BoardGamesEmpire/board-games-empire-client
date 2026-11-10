@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'bge_connectivity_scope.dart';
+import 'package:ui/src/connectivity/bge_connectivity_scope.dart';
 
 /// The reason line shared by [BgeOnlineOnly] and [BgeOnlineOnlyLabel]:
 /// `bodySmall` in `onSurfaceVariant`, which the scheme tests cover on every

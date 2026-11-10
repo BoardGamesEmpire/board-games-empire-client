@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'game_medium.dart';
-import 'platform_game.dart';
+import 'package:models/src/domain/game/game_medium.dart';
+import 'package:models/src/domain/game/platform_game.dart';
 
 part 'collection_add_option.freezed.dart';
 

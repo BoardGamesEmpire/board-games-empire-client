@@ -1,24 +1,23 @@
 import 'package:drift/drift.dart';
-
-import '../tables/event_access_table.dart';
-import '../tables/event_attendees_table.dart';
-import '../tables/event_generation_table.dart';
-import '../tables/event_moves_table.dart';
-import '../tables/event_occurrences_table.dart';
-import '../tables/event_policies_table.dart';
-import '../tables/event_table.dart';
-import '../tables/game_access_table.dart';
-import '../tables/game_table.dart';
-import '../tables/platform_game_access_table.dart';
-import '../tables/platform_game_table.dart';
-import '../tables/game_collection_table.dart';
-import '../tables/household_table.dart';
-import '../tables/household_moves_table.dart';
-import '../tables/household_members_table.dart';
-import '../tables/list_layouts_table.dart';
-import '../tables/sync_queue_table.dart';
-import '../tables/unsent_changes_users_table.dart';
-import 'migration_policy.dart';
+import 'package:drift_storage/src/databases/migration_policy.dart';
+import 'package:drift_storage/src/tables/event_access_table.dart';
+import 'package:drift_storage/src/tables/event_attendees_table.dart';
+import 'package:drift_storage/src/tables/event_generation_table.dart';
+import 'package:drift_storage/src/tables/event_moves_table.dart';
+import 'package:drift_storage/src/tables/event_occurrences_table.dart';
+import 'package:drift_storage/src/tables/event_policies_table.dart';
+import 'package:drift_storage/src/tables/event_table.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
+import 'package:drift_storage/src/tables/game_collection_table.dart';
+import 'package:drift_storage/src/tables/game_table.dart';
+import 'package:drift_storage/src/tables/household_members_table.dart';
+import 'package:drift_storage/src/tables/household_moves_table.dart';
+import 'package:drift_storage/src/tables/household_table.dart';
+import 'package:drift_storage/src/tables/list_layouts_table.dart';
+import 'package:drift_storage/src/tables/platform_game_access_table.dart';
+import 'package:drift_storage/src/tables/platform_game_table.dart';
+import 'package:drift_storage/src/tables/sync_queue_table.dart';
+import 'package:drift_storage/src/tables/unsent_changes_users_table.dart';
 
 part 'server_database.g.dart';
 

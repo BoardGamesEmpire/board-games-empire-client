@@ -152,14 +152,13 @@ abstract class ImportJob with _$ImportJob {
 /// game's job first, then any expansions'.
 @freezed
 abstract class ImportBatch with _$ImportBatch {
-  const ImportBatch._();
-
   const factory ImportBatch({
     required String batchId,
     required String correlationId,
     required ImportBatchStatus status,
     required List<ImportJob> jobs,
   }) = _ImportBatch;
+  const ImportBatch._();
 
   /// The first job that is not an expansion; null when the server listed
   /// none.

@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// Who an invite is for: an existing user, or an email address.
 sealed class HouseholdInvitee {

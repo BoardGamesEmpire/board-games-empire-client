@@ -1,10 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/user/user_access_json.dart';
+import 'package:dio_network/src/user/user_summary_json.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/remote_failure.dart';
-import 'user_access_json.dart';
-import 'user_summary_json.dart';
 
 /// [UserRemoteDataSource] over a **per-server** Dio instance (#499).
 ///

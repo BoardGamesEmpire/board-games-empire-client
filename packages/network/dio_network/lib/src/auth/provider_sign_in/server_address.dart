@@ -1,4 +1,4 @@
-import '../../network/dio_factory.dart';
+import 'package:dio_network/src/network/dio_factory.dart';
 
 /// Whether [a] and [b] name the same server (#583).
 ///

@@ -1,5 +1,32 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/admin/admin_section.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/deep_links/deep_link_handler.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/i18n/active_locale.dart';
+import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
+import 'package:app_shell/src/observability/shell_observability.dart';
+import 'package:app_shell/src/router/app_router.dart';
+import 'package:app_shell/src/screens/admin_dashboard_screen.dart';
+import 'package:app_shell/src/screens/feedback_flow_screen.dart';
+import 'package:app_shell/src/screens/home_menu_entry.dart';
+import 'package:app_shell/src/screens/home_screen.dart';
+import 'package:app_shell/src/screens/settings_screen.dart';
+import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/settings/locale_cubit.dart';
+import 'package:app_shell/src/settings/settings_sections_builder.dart';
+import 'package:app_shell/src/settings/theme_mode_cubit.dart';
+import 'package:app_shell/src/widgets/crash_report_prompt.dart';
+import 'package:app_shell/src/widgets/database_recovery_notice.dart';
+import 'package:app_shell/src/widgets/detached_rehydrate.dart';
+import 'package:app_shell/src/widgets/feedback_review_screen.dart';
+import 'package:app_shell/src/widgets/offline_strip_host.dart';
+import 'package:app_shell/src/widgets/ownership_once_refreshed.dart';
+import 'package:app_shell/src/widgets/router_back_interceptor.dart';
+import 'package:app_shell/src/widgets/session_rehydrate_trigger.dart';
 import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
@@ -28,43 +55,14 @@ import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-import 'package:user_search/l10n/user_search_localizations.dart';
-
 import 'package:ui/ui.dart'
     show
         BgeConnectivityScope,
         BgeLoadingState,
         BgePage,
         UnverifiedSessionBanner;
-
-import '../../l10n/shell_localizations.dart';
-import '../admin/admin_section.dart';
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import '../deep_links/deep_link_handler.dart';
-import '../deep_links/pending_deep_link_holder.dart';
-import '../i18n/active_locale.dart';
-import '../observability/feedback_uncaught_error_reporter.dart';
-import '../observability/shell_observability.dart';
-import '../router/app_router.dart';
-import '../screens/admin_dashboard_screen.dart';
-import '../screens/feedback_flow_screen.dart';
-import '../screens/home_menu_entry.dart';
-import '../screens/home_screen.dart';
-import '../screens/settings_screen.dart';
-import '../screens/splash_screen.dart';
-import '../settings/locale_cubit.dart';
-import '../settings/settings_sections_builder.dart';
-import '../settings/theme_mode_cubit.dart';
-import 'crash_report_prompt.dart';
-import 'database_recovery_notice.dart';
-import 'feedback_review_screen.dart';
-import 'offline_strip_host.dart';
-import 'ownership_once_refreshed.dart';
-import 'router_back_interceptor.dart';
-import 'detached_rehydrate.dart';
-import 'session_rehydrate_trigger.dart';
+import 'package:ui_tokens/ui_tokens.dart';
+import 'package:user_search/l10n/user_search_localizations.dart';
 
 /// The shared application widget.
 ///
@@ -2998,10 +2996,10 @@ class _AuthScope extends StatefulWidget {
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
-    this.connectivity,
     required this.unsentChanges,
     required this.homeSession,
     required this.child,
+    this.connectivity,
   });
 
   final ActiveServerScope? scope;

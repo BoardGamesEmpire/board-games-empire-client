@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'platform_type.dart';
+import 'package:models/src/domain/game/platform_type.dart';
 
 part 'platform_game.freezed.dart';
 part 'platform_game.g.dart';
@@ -11,14 +11,15 @@ part 'platform_game.g.dart';
 /// [platformName] is the denormalized platform name (e.g. "Tabletop", "Steam").
 @freezed
 abstract class PlatformGame with _$PlatformGame {
-  const PlatformGame._();
-
   const factory PlatformGame({
     required String id,
     required String gameId,
 
     required String platformId,
     required String platformName,
+
+    required DateTime createdAt,
+    required DateTime updatedAt,
 
     /// What kind of platform this is. Null means not known: no type was
     /// stored, or the server did not send one. [PlatformType.unknown] is a
@@ -40,10 +41,8 @@ abstract class PlatformGame with _$PlatformGame {
     @Default(false) bool hasAsyncPlay,
     @Default(false) bool hasRealtime,
     @Default(false) bool hasTutorial,
-
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _PlatformGame;
+  const PlatformGame._();
 
   factory PlatformGame.fromJson(Map<String, dynamic> json) =>
       _$PlatformGameFromJson(json);

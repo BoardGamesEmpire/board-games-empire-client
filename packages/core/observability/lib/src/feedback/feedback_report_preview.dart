@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'feedback_report.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
 
 part 'feedback_report_preview.freezed.dart';
 

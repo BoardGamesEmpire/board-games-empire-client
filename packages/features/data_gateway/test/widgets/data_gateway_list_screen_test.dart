@@ -24,7 +24,6 @@ void main() {
     'dg_1',
     name: 'BGG',
     connectionUrl: 'bgg.internal',
-    connectionPort: 50051,
   );
   final steam = gateway('dg_2', name: 'Steam', enabled: false);
 

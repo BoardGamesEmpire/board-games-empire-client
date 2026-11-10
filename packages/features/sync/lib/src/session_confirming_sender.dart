@@ -76,5 +76,5 @@ final class SessionNotConfirmedException implements Exception {
   @override
   String toString() =>
       'SessionNotConfirmedException: the session could not be confirmed as '
-      'this scope\'s user (${answer.name})';
+      "this scope's user (${answer.name})";
 }

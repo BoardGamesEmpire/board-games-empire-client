@@ -1,6 +1,6 @@
-import 'package:drift/drift.dart';
-
 import 'dart:convert';
+
+import 'package:drift/drift.dart';
 
 @DataClassName('ServerConfigData')
 class ServerConfigs extends Table {

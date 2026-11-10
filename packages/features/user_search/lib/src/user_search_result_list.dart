@@ -5,8 +5,8 @@ import 'package:ui/ui.dart';
 
 import 'package:user_search/l10n/user_search_localizations.dart';
 
-import 'user_search_bloc.dart';
-import 'user_search_state.dart';
+import 'package:user_search/src/user_search_bloc.dart';
+import 'package:user_search/src/user_search_state.dart';
 
 /// What a user search found, as rows to pick from (#455, #499).
 ///

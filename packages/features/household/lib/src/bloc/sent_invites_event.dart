@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../invites/sent_invite_filter.dart';
+import 'package:household/src/invites/sent_invite_filter.dart';
 
 /// Input to the list of invites the viewer sent (#487).
 sealed class SentInvitesEvent extends Equatable {

@@ -509,8 +509,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(created, 'hh_server');
-      verify(() => repo.create(name: 'Game Night HQ', description: null))
-          .called(2);
+      verify(() => repo.create(name: 'Game Night HQ')).called(2);
     });
 
     testWidgets('while the create is in flight the submit button is disabled '

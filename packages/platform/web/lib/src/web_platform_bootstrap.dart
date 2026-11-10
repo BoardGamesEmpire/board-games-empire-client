@@ -6,7 +6,7 @@ import 'package:observability/observability.dart';
 import 'package:url_strategy/url_strategy.dart';
 import 'package:web_network/web_network.dart';
 
-import 'web_root_module.dart';
+import 'package:web_platform/src/web_root_module.dart';
 
 /// Installs path-based URLs (no `#` fragments) so the reserved deep-link
 /// paths (#10) are real browser URLs, and makes pushed screens show in them,

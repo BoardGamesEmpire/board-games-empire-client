@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'occurrence_status.dart';
+import 'package:models/src/domain/event/occurrence_status.dart';
 
 part 'event_occurrence.freezed.dart';
 
@@ -16,6 +16,14 @@ abstract class EventOccurrence with _$EventOccurrence {
     required String id,
     required String eventId,
 
+    required OccurrenceStatus status,
+
+    /// Where this occurrence falls among the event's, lowest first. Occurrences
+    /// that share a value are ordered by id.
+    required int sortOrder,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+
     /// A name for this occurrence, such as "Day 1" or "Saturday Evening".
     String? label,
 
@@ -28,11 +36,6 @@ abstract class EventOccurrence with _$EventOccurrence {
 
     /// Overrides the event's place for this occurrence alone.
     String? location,
-    required OccurrenceStatus status,
-
-    /// Where this occurrence falls among the event's, lowest first. Occurrences
-    /// that share a value are ordered by id.
-    required int sortOrder,
 
     /// When a proposed occurrence was confirmed. Null for one created already
     /// confirmed, as in a fixed or multi-day event.
@@ -43,7 +46,5 @@ abstract class EventOccurrence with _$EventOccurrence {
     /// Why a cancelled date was cancelled, when the canceller gave a reason
     /// (backend#795).
     String? cancelReason,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _EventOccurrence;
 }

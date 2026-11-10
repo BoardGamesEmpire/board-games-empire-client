@@ -1,6 +1,5 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
 
 /// A read-only snapshot of the currently active server, as consumers
 /// outside the orchestration layer see it (#37).

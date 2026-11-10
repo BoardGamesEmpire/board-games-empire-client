@@ -60,7 +60,7 @@ void main() {
     expect(layerBoxes, hasLength(2));
     for (final b in layerBoxes) {
       final d = b.decoration as BoxDecoration;
-      expect((d.border as Border).top.color, scheme.outline);
+      expect((d.border! as Border).top.color, scheme.outline);
     }
     // Behind the child in paint order: they come before it in the tree.
     final order = find
@@ -102,7 +102,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the layers stay inside the marker\'s box', (tester) async {
+  testWidgets("the layers stay inside the marker's box", (tester) async {
     await tester.pumpWidget(
       _host(
         tester,

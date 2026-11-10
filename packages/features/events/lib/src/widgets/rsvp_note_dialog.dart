@@ -1,12 +1,10 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../create/event_create_controls.dart';
-import '../screens/event_detail_screen.dart';
 
 /// Asks for the note that goes with the viewer's answer to an event's
 /// invitation (#508), with [note], the one they left, in the field.

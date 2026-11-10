@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -7,9 +9,6 @@ import 'package:interfaces/services.dart'
     show ConnectivityService, ConnectivityState;
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
-
-import 'auth_event.dart';
-import 'auth_bloc_state.dart';
 
 /// Manages authentication state for a single server context.
 ///

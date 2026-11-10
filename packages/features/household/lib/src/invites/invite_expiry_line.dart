@@ -1,6 +1,5 @@
-import 'package:models/domain.dart';
-
 import 'package:household/l10n/household_localizations.dart';
+import 'package:models/domain.dart';
 
 /// The line on an invite's row that says when it runs out (#487), so every
 /// invite list words it alike.

@@ -179,9 +179,9 @@ Map<String, dynamic> _eventRow({
 };
 
 Map<String, dynamic> _pagination({
+  required int total,
   int page = 1,
   int limit = 100,
-  required int total,
   bool hasMore = false,
 }) => {
   'page': page,
@@ -431,7 +431,7 @@ void main() {
       },
     );
 
-    test('a cancelled event\'s reason and time are read', () async {
+    test("a cancelled event's reason and time are read", () async {
       final remote = answering(
         _listBody([
           _eventRow(
@@ -448,7 +448,7 @@ void main() {
       expect(event.cancelledAt, DateTime.utc(2026, 11, 4, 10));
     });
 
-    test('an event that isn\'t cancelled reads null for both', () async {
+    test("an event that isn't cancelled reads null for both", () async {
       final present = answering(_listBody([_eventRow()]));
       final presentEvent = (await present.fetchEvents()).items.single.event;
       expect(presentEvent.cancelReason, isNull);
@@ -794,7 +794,7 @@ void main() {
       expect(snapshot.attendees, isNull);
       expect(
         snapshot.attendance,
-        EventAttendance(
+        const EventAttendance(
           attendeeId: 'a1',
           status: EventParticipationStatus.maybe,
           role: EventRole.guest,
@@ -1009,7 +1009,7 @@ void main() {
     test('an attendee with no role binding has no role', () async {
       final remote = answering(
         _detailBody(
-          _eventRow(attendees: [_attendeeRow(user: _userRow(), role: null)]),
+          _eventRow(attendees: [_attendeeRow(user: _userRow())]),
         ),
       );
 
@@ -2290,7 +2290,7 @@ void main() {
 
     test('every method refuses an empty id before sending', () async {
       final remote = answering(occurrenceBody());
-      final draft = EventOccurrenceDraft(label: 'x');
+      const draft = EventOccurrenceDraft(label: 'x');
       final update = OccurrenceUpdate(clearLabel: true);
       final calls = <Future<Object?> Function()>[
         () => remote.addOccurrence('', draft, sortOrder: 0),
@@ -2551,7 +2551,7 @@ void main() {
       final remote = answering(
         summaryBody([
           summaryDate(occurrenceId: 'o2', voters: []),
-          summaryDate(occurrenceId: 'o1', voters: []),
+          summaryDate(voters: []),
         ]),
       );
 
@@ -2669,7 +2669,7 @@ void main() {
       'rsvpDate': null,
     };
 
-    final maybeGuest = EventAttendance(
+    const maybeGuest = EventAttendance(
       attendeeId: 'a1',
       status: EventParticipationStatus.maybe,
       role: EventRole.guest,

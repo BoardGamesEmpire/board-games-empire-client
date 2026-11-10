@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// Remote data source for the users routes: finding other users by name
 /// (#455, #499) and reading what the caller may do (#456).

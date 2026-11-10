@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:data_gateway/src/access/read_allowed_since.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_event.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../access/read_allowed_since.dart';
-import 'data_gateway_form_event.dart';
-import 'data_gateway_form_state.dart';
 
 /// Drives the add and edit forms (#41). One form, two modes: an edit is the
 /// add form filled from the row, which sends only the fields that changed.

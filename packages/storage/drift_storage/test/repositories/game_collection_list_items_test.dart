@@ -1,13 +1,12 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/system_clock.dart';
 
@@ -133,7 +132,7 @@ void main() {
     });
 
     test(
-      'a list item carries its game\'s base games and content type',
+      "a list item carries its game's base games and content type",
       () async {
         await hydrate(
           _summary(
@@ -312,7 +311,7 @@ void main() {
       expect(await collection.watchCollectionListItems().first, isEmpty);
     });
 
-    test('leaves out another user\'s entry', () async {
+    test("leaves out another user's entry", () async {
       await games.cachePlatformGameSummaries([
         _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
       ]);
@@ -387,7 +386,7 @@ void main() {
       expect(await collection.watchCollectionListItem('nope').first, isNull);
     });
 
-    test('emits null for another user\'s entry id', () async {
+    test("emits null for another user's entry id", () async {
       await games.cachePlatformGameSummaries([
         _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
       ]);
@@ -410,7 +409,7 @@ void main() {
       );
     });
 
-    test('re-emits when the game\'s title changes', () async {
+    test("re-emits when the game's title changes", () async {
       await hydrate(
         _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
         _entry(id: 'gc-1', platformGameId: 'pg-1'),

@@ -560,7 +560,6 @@ void main() {
     await h.collection.addToCollection(
       platformGameId: kPlatformGameId,
       medium: GameMedium.digital,
-      quantity: 1,
     );
     final create = await h.queuedCreate();
     h.collectionRemote.respond = (write) => write.method == 'POST'
@@ -569,7 +568,6 @@ void main() {
             userId: kUserId,
             platformGameId: kPlatformGameId,
             medium: GameMedium.digital,
-            quantity: 1,
             createdAt: DateTime.utc(2026, 10),
             updatedAt: DateTime.utc(2026, 10, 2),
           )

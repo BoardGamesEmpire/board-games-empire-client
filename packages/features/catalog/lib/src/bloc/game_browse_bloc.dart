@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/game_browse_event.dart';
+import 'package:game_catalog/src/bloc/game_browse_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'game_browse_event.dart';
-import 'game_browse_state.dart';
 
 /// Drives the browse screen (#42): the server's catalog, a page at a time.
 ///

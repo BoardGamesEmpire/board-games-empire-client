@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:access/src/caller_access_reader.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'caller_access_reader.dart';
 
 /// Registers the session's [CallerAccessRepository] and starts its first ask
 /// when a user session activates (#456).

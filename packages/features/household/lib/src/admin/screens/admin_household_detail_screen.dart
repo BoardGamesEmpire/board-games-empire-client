@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/admin/bloc/admin_household_detail_cubit.dart';
+import 'package:household/src/admin/bloc/admin_household_detail_state.dart';
+import 'package:household/src/widgets/household_role_label.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../../widgets/household_role_label.dart';
-import '../bloc/admin_household_detail_cubit.dart';
-import '../bloc/admin_household_detail_state.dart';
 
 /// Any household on the server, read-only, for server staff (#685).
 ///

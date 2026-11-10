@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import 'access_extent.dart';
+import 'package:models/src/domain/access/access_extent.dart';
 
 /// The caller's [AccessExtent] for each [AccessAction] on one resource type
 /// (#456).

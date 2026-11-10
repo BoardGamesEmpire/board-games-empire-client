@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:ui/src/layout/bge_keyed_sliver_grid.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'bge_keyed_sliver_grid.dart';
 
 /// A cover grid that can open a strip under one row (#711).
 ///

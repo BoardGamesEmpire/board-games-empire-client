@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 SyncQueueEntry _entry({required SyncStatus status}) => SyncQueueEntry(
   id: 'entry_1',

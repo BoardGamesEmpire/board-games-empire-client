@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/overview/event_groups.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../overview/event_groups.dart';
-import 'event_overview_event.dart';
-import 'event_overview_state.dart';
 
 /// Drives the events overview and each group's page (#497), home's upcoming
 /// section (#613) and a household's events on its screen (#503): the cached

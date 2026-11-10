@@ -222,7 +222,6 @@ class NewestGamesCubit extends Cubit<NewestGamesState> {
     final List<Game> answer;
     try {
       final page = await _remote.fetchPage(
-        page: 1,
         limit: shelfSize,
         sort: GameSort.newest,
       );

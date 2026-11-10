@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('UserAuthentication', () {
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('serializes AuthStrategy enum', () {
-      final auth = UserAuthentication(
+      const auth = UserAuthentication(
         id: 'auth123',
         userId: 'user123',
         email: 'john@example.com',

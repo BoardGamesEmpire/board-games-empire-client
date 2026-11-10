@@ -1,13 +1,12 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -24,8 +23,8 @@ const _kOtherUserId = 'user-other';
 
 // Every roster a test reads back through getEvent holds the current user:
 // the cache serves a roster only to a user on it.
-final _me = testAttendee('att-me', userId: _kUserId);
-final _other = testAttendee('att-other', userId: _kOtherUserId);
+final EventAttendee _me = testAttendee('att-me', userId: _kUserId);
+final EventAttendee _other = testAttendee('att-other', userId: _kOtherUserId);
 
 final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
 

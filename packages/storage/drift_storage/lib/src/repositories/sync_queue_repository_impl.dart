@@ -1,12 +1,12 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
+import 'package:drift_storage/src/tables/sync_queue_table.dart'
+    show syncQueueOutstandingStatuses;
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import '../tables/sync_queue_table.dart' show syncQueueOutstandingStatuses;
-import 'watch_disposal.dart';
 
 /// Per-user implementation of [SyncQueueRepository] over the per-server
 /// `sync_queue` table (#147).

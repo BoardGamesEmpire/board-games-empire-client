@@ -1,15 +1,13 @@
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_bloc.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_event.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_state.dart';
+import 'package:data_gateway/src/widgets/data_gateway_form.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-
-import '../bloc/data_gateway_form_bloc.dart';
-import '../bloc/data_gateway_form_event.dart';
-import '../bloc/data_gateway_form_state.dart';
-import '../widgets/data_gateway_form.dart';
 
 /// The add form, or the edit form when [editingId] is set (#41).
 ///

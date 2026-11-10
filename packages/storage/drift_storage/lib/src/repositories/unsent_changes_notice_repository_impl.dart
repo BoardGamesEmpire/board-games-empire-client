@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/tables/sync_queue_table.dart'
+    show syncQueueOutstandingStatuses;
 import 'package:interfaces/repositories.dart';
-
-import '../databases/server_database.dart';
-import '../tables/sync_queue_table.dart' show syncQueueOutstandingStatuses;
 
 /// [UnsentChangesNoticeRepository] over the per-server [ServerDatabase]
 /// (#142).
