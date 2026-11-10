@@ -118,10 +118,10 @@ import 'package:observability/observability.dart';
 /// every request would otherwise never drain, and every op type is safe to
 /// deliver twice. Native has one process and passes no lock.
 class SyncQueueDrain {
-  /// [collection] says which entries the server has yet to confirm, which
-  /// the ordering rules need. [revalidateSession] asks the auth layer
+  /// `collection` says which entries the server has yet to confirm, which
+  /// the ordering rules need. `revalidateSession` asks the auth layer
   /// whether the session still stands after a refused send; null skips the
-  /// question. [exclusive], when given, runs each pass holding the named
+  /// question. `exclusive`, when given, runs each pass holding the named
   /// cross-tab lock; null runs it unlocked (#447). [now] is the device clock,
   /// which stamps every attempt; a test drives it so a cooldown costs no real
   /// time.
@@ -675,7 +675,7 @@ class _Snapshot {
   /// The latest claim stamp this read found on an entry sharing [listed]'s
   /// target, or null when it found none of them claimed. [listed]'s own
   /// counts too: that is exact, since an entry's own live claim is caught
-  /// by [_readyAt] first, and an expired one is never the latest live claim.
+  /// by `_readyAt` first, and an expired one is never the latest live claim.
   DateTime? lastClaimed(_Listed listed) => _claimed[listed.target];
 
   /// Decodes [entry]'s op, or null for a payload that won't decode.

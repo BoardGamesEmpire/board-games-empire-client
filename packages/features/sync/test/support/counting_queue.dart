@@ -7,7 +7,7 @@ import 'package:models/domain.dart';
 /// A read loads every row it matches, so the number of reads a pass makes
 /// is what that pass costs as the queue grows.
 class CountingQueue implements SyncQueueRepository {
-  CountingQueue(this._inner);
+  CountingQueue(SyncQueueRepository inner) : _inner = inner;
 
   final SyncQueueRepository _inner;
 

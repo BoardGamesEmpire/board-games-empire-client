@@ -47,7 +47,7 @@ class _FakeLock implements CrossTabLock {
   final abandoned = <String>[];
 
   /// Thrown by [run] when set, as a lock the browser refuses would.
-  Object? failWith;
+  Error? failWith;
 
   /// Whether a waiter keeps waiting after its `abandon` completes, which a
   /// real lock never does but a grant racing the abort could look like.
