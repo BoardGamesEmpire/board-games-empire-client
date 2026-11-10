@@ -36,6 +36,7 @@ export 'src/domain/event/event_type.dart';
 export 'src/domain/event/game_addition_mode.dart';
 export 'src/domain/event/interested_weight.dart';
 export 'src/domain/event/occurrence_status.dart';
+export 'src/domain/event/offered_game.dart';
 export 'src/domain/event/vote_eligibility.dart';
 export 'src/domain/event/vote_quorum_type.dart';
 export 'src/domain/event/vote_threshold_type.dart';

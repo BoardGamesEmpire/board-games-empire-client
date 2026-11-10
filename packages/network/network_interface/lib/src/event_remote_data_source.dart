@@ -52,6 +52,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [updateAttendeeStatus] | `PATCH /api/events/:id/attendees/:aid/status` | `{ message, attendee }` |
 /// | [addAttendee] | `POST /api/events/:id/attendees` | `{ message, attendee }` |
 /// | [removeAttendee] | `DELETE /api/events/:id/attendees/:aid` | `{ message, attendee }` |
+/// | [fetchGamesPool] | `GET /api/events/:id/attendees/:aid/games`, once per attendee | `{ games: [...] }` |
+/// | [offerGame] | `POST /api/events/:id/attendees/:aid/games` | `{ message, entry }` |
+/// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -120,21 +123,24 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
-///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent] or
-///   [fetchHouseholdEvents]. From [fetchEvent] the event is gone, or the
-///   caller may not read it. From [deleteEvent] no live event has the id. From
-///   [fetchHouseholdEvents] the household is missing or deleted.
+///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent],
+///   [fetchHouseholdEvents] or a write naming a row ([fetchGamesPool] reads
+///   its own 404s, as its doc says). From [fetchEvent] the event is gone, or
+///   the caller may not read it. From [deleteEvent] no live event has the id.
+///   From [fetchHouseholdEvents] the household is missing or deleted.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   which says the API refused that write to an existing event (below).
+///   and from [offerGame] and [takeBackGame], which says the API refused that
+///   write to an existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
 ///   message, from a write to an existing event's dates or a vote on one
-///   (below).
+///   (below), or from [offerGame]; and a 409 carrying it from [addAttendee],
+///   [offerGame] or [takeBackGame].
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, a date write's
-///   included, and a 409 that is not
+///   included, and any other 409 that is not
 ///   asking for a retry), and a 2xx whose body cannot be read as the contract
 ///   above, such as a detail or a create with no roster.
 /// - [EventRemoteTransientException]: no response at all, 401, 407, 408, 429,
@@ -553,6 +559,72 @@ abstract class EventRemoteDataSource {
   /// removed row. A 404 is [EventRemoteNotFoundException] (no such attendee,
   /// or already removed) and a 403 is [EventWriteRefusedException].
   Future<EventAttendee> removeAttendee(String eventId, String attendeeId);
+
+  /// The event's games pool: every game the attendees in [attendeeIds] have
+  /// offered for it (#516), in [attendeeIds] order and then the server's
+  /// order for each attendee.
+  ///
+  /// The server has no read for a whole event's pool, so this sends
+  /// `GET /api/events/:eventId/attendees/:attendeeId/games` once per id, at
+  /// most four at a time, each answering `{ games: [...] }`. Each game
+  /// carries the owner's collection row whole, and only what [OfferedGame]
+  /// holds is read from it.
+  ///
+  /// An attendee whose read is a 404 carrying the envelope is left out: they
+  /// left the event since the roster was read. When every read is one, and
+  /// there was at least one id, it throws [EventRemoteNotFoundException]: the
+  /// event is gone, or everyone named left it. A 403 carrying the envelope on
+  /// any one read is [EventRemoteForbiddenException] for the whole pool, and
+  /// any other failure of any one read fails the whole pool with that read's
+  /// [EventRemoteException]. When two reads fail, the failure that lands
+  /// first is the one thrown, so a 403 does not outrank an earlier one. Reads
+  /// not yet started when one fails are not sent. An empty [attendeeIds]
+  /// answers `[]` with no request, and an empty id throws [ArgumentError]
+  /// before any is sent.
+  Future<List<OfferedGame>> fetchGamesPool(
+    String eventId, {
+    required List<String> attendeeIds,
+  });
+
+  /// `POST /api/events/:eventId/attendees/:attendeeId/games` with
+  /// `{ collectionId }`: offers the game in the attendee's collection entry
+  /// [collectionId] for the event (#516), and returns it as the server
+  /// holds it. Answers 201 `{ message, entry }`. The entry carries no
+  /// players or play time, so those are null on the returned game.
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]: the entry
+  /// is someone else's, or the caller may not offer for this attendee. A 404
+  /// carrying it is [EventRemoteNotFoundException]: the event, the attendee
+  /// or the collection entry is missing. A 409 carrying it, the game already
+  /// offered, and a 400 carrying it with one message, the entry removed from
+  /// the collection since, are [EventWriteConflictException]; a 409 marked
+  /// retryable stays transient.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<OfferedGame> offerGame(
+    String eventId,
+    String attendeeId, {
+    required String collectionId,
+  });
+
+  /// `DELETE /api/events/:eventId/attendees/:attendeeId/games/:offeredGameId`:
+  /// takes an offered game back off the pool (#516), and completes once the
+  /// server has. The body is not read, so any 2xx is a take-back.
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]. A 404
+  /// carrying it is [EventRemoteNotFoundException]: no such offered game, or
+  /// one already taken back. A 409 carrying it is
+  /// [EventWriteConflictException]: the game still supplies a nomination or
+  /// a lineup.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<void> takeBackGame(
+    String eventId,
+    String attendeeId,
+    String offeredGameId,
+  );
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
   /// every date of the event stands in its availability poll. Answers 200

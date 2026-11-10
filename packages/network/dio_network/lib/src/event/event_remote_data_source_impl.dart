@@ -500,6 +500,144 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
   }
 
+  /// How many attendees' games [fetchGamesPool] reads at once.
+  static const int _poolReadsAtOnce = 4;
+
+  @override
+  Future<List<OfferedGame>> fetchGamesPool(
+    String eventId, {
+    required List<String> attendeeIds,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    for (final attendeeId in attendeeIds) {
+      _checkId(attendeeId, name: 'attendeeIds');
+    }
+    if (attendeeIds.isEmpty) return const [];
+
+    // One slot per id, in the order given, so the answer keeps that order
+    // whichever read lands first. A slot left null is an attendee who
+    // answered 404.
+    final slots = List<List<OfferedGame>?>.filled(attendeeIds.length, null);
+    var next = 0;
+    var failed = false;
+    EventRemoteNotFoundException? notFound;
+
+    // A small pool of workers, each taking the next id as it finishes one,
+    // so a slow read holds up one worker rather than a batch. Once a read
+    // fails no worker starts another; reads already in flight finish, and
+    // what they answer is ignored.
+    Future<void> worker() async {
+      while (!failed && next < attendeeIds.length) {
+        final index = next++;
+        try {
+          slots[index] = await _fetchOfferedGames(eventId, attendeeIds[index]);
+        } on EventRemoteNotFoundException catch (error) {
+          // The attendee left the event since the roster was read.
+          notFound ??= error;
+        } on Object {
+          failed = true;
+          rethrow;
+        }
+      }
+    }
+
+    final workers = attendeeIds.length < _poolReadsAtOnce
+        ? attendeeIds.length
+        : _poolReadsAtOnce;
+    // Not eager: the pool settles once every read in flight has, and the
+    // first failure is what it throws. Future.wait handles the rest, so a
+    // second failure is never an unhandled error.
+    await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+
+    if (slots.every((games) => games == null)) {
+      // Every attendee answered 404: the event is gone, or all of them left.
+      throw notFound!;
+    }
+    return [for (final games in slots) ...?games];
+  }
+
+  /// One attendee's offered games, `{ games: [...] }`.
+  Future<List<OfferedGame>> _fetchOfferedGames(
+    String eventId,
+    String attendeeId,
+  ) async {
+    const action = 'Offered games';
+    const failures = _EventFailures(_Route.row);
+    final response = await sendForJson(
+      () => _dio.get<String>(
+        _offeredGamesPath(eventId, attendeeId),
+        options: _plainBody,
+      ),
+      action: action,
+      // The path names one attendee of one event, so an application 404 is
+      // the service saying either is gone.
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapObjects(
+        response.body['games'],
+        field: 'games',
+        item: _mapOfferedGame,
+      ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<OfferedGame> offerGame(
+    String eventId,
+    String attendeeId, {
+    required String collectionId,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+    _checkId(collectionId, name: 'collectionId');
+
+    const action = 'Offer game';
+    const failures = _EventFailures(_Route.gameOffer);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        _offeredGamesPath(eventId, attendeeId),
+        options: _plainBody,
+        data: {'collectionId': collectionId},
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapOfferedGame(_entryObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<void> takeBackGame(
+    String eventId,
+    String attendeeId,
+    String offeredGameId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+    _checkId(offeredGameId, name: 'offeredGameId');
+
+    await sendForJson(
+      () => _dio.delete<String>(
+        '${_offeredGamesPath(eventId, attendeeId)}/'
+        '${Uri.encodeComponent(offeredGameId)}',
+        options: _plainBody,
+      ),
+      action: 'Take back game',
+      family: const _EventFailures(_Route.gameTakeBack),
+      // The answer is `{ message, entry }`, which the take-back has no use
+      // for: a 2xx is a take-back that happened.
+      readBody: false,
+    );
+  }
+
   @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
@@ -568,6 +706,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _occurrencePath(String eventId, String occurrenceId) =>
       '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
+
+  static String _offeredGamesPath(String eventId, String attendeeId) =>
+      '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}/games';
 
   // ── Mapping ─────────────────────────────────────────────────────────
   //
@@ -650,6 +791,20 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       throw const FormatException('response is missing a "summary" object');
     }
     return summary;
+  }
+
+  /// Reads the offered game out of an offer's body, `{ "entry": { ... } }`.
+  static Map<String, dynamic> _entryObject(Map<String, dynamic> body) =>
+      _nestedObject(body['entry'], 'entry');
+
+  /// [raw] as an object, or a [FormatException] naming [field].
+  static Map<String, dynamic> _nestedObject(Object? raw, String field) {
+    if (raw is! Map<String, dynamic>) {
+      throw FormatException(
+        'offered game "$field" is ${raw.runtimeType}, expected an object',
+      );
+    }
+    return raw;
   }
 
   static Event _mapEvent(Map<String, dynamic> json) => Event(
@@ -861,6 +1016,63 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         eligible: json['eligible'] as bool,
       );
 
+  /// An offered game's medium, or null when [raw] is not a medium this client
+  /// knows: absent, null, not a string, or a name a newer server added
+  /// (#516).
+  ///
+  /// Lenient where the user's own collection rows are strict: the pool is
+  /// other people's rows, and one unknown medium must not fail every event's
+  /// pool read. Only `fromWire`'s own refusal of a name is caught.
+  static GameMedium? _offeredMediumOrNull(Object? raw) {
+    if (raw is! String) return null;
+    try {
+      return GameMedium.fromWire(raw);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Maps one offered game (#516): the list row's ids, and from the owner's
+  /// collection row its medium and the game and platform under it.
+  ///
+  /// The collection row comes whole, the owner's rating, comment and play
+  /// counts with it, and only the keys read here are read: the rest is the
+  /// owner's, and has no field to land in (backend#1185). The players and
+  /// play time are null when missing, as in an offer's answer. A thumbnail
+  /// that is an empty string is none, and so is a medium this client does
+  /// not know (see [_offeredMediumOrNull]).
+  static OfferedGame _mapOfferedGame(Map<String, dynamic> json) {
+    final collection = _nestedObject(json['collection'], 'collection');
+    final platformGame = _nestedObject(
+      collection['platformGame'],
+      'collection.platformGame',
+    );
+    final game = _nestedObject(
+      platformGame['game'],
+      'collection.platformGame.game',
+    );
+    final platform = _nestedObject(
+      platformGame['platform'],
+      'collection.platformGame.platform',
+    );
+    final thumbnail = game['thumbnail'] as String?;
+    return OfferedGame(
+      id: json['id'] as String,
+      attendeeId: json['attendeeId'] as String,
+      collectionId: json['collectionId'] as String,
+      platformGameId: platformGame['id'] as String,
+      gameId: game['id'] as String,
+      title: game['title'] as String,
+      platformName: platform['name'] as String,
+      thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
+      medium: _offeredMediumOrNull(collection['medium']),
+      minPlayers: game['minPlayers'] as int?,
+      maxPlayers: game['maxPlayers'] as int?,
+      minPlayTime: game['minPlayTime'] as int?,
+      maxPlayTime: game['maxPlayTime'] as int?,
+    );
+  }
+
   /// Maps each object in the list [raw]. A list that is missing or of the
   /// wrong type throws, because reading it as empty would pass a payload this
   /// client failed to read off as an event with none of them. [field] names it
@@ -1030,7 +1242,8 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
   /// per value it refused, and falls to permanent: the same request is
   /// refused again. The event delete shares this route, and the server never
   /// answers it 400. The event status writes share it too, and their 400 is a
-  /// conflict with the event's status as it stands.
+  /// conflict with the event's status as it stands. An offer's is too, for a
+  /// collection entry removed since (#516).
   @override
   EventRemoteException? refused(RemoteRefusal refusal) {
     if (!refusal.fromApi) return null;
@@ -1046,7 +1259,10 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
           statusCode: status,
           apiMessage: apiErrorField(body, 'message'),
         ),
-        _Route.write || _Route.attendeeAdd => EventWriteRefusedException(
+        _Route.write ||
+        _Route.attendeeAdd ||
+        _Route.gameOffer ||
+        _Route.gameTakeBack => EventWriteRefusedException(
           message,
           cause: cause,
           statusCode: status,
@@ -1066,7 +1282,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.row ||
         _Route.householdList ||
         _Route.write ||
-        _Route.attendeeAdd => EventRemoteNotFoundException(
+        _Route.attendeeAdd ||
+        _Route.gameOffer ||
+        _Route.gameTakeBack => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -1080,9 +1298,14 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.list => null,
       };
     }
-    if (status == 409 && route == _Route.attendeeAdd) {
-      // The user is already on the event. A 409 asking for a retry never
-      // gets here: the shared classifier reads it as transient first.
+    if (status == 409 &&
+        (route == _Route.attendeeAdd ||
+            route == _Route.gameOffer ||
+            route == _Route.gameTakeBack)) {
+      // The user is already on the event, the game is already offered, or
+      // the game still supplies a nomination or a lineup. A 409 asking for a
+      // retry never gets here: the shared classifier reads it as transient
+      // first.
       return EventWriteConflictException(
         message,
         cause: cause,
@@ -1091,7 +1314,7 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
       );
     }
     if (status == 400 &&
-        route == _Route.write &&
+        (route == _Route.write || route == _Route.gameOffer) &&
         apiErrorField(body, 'message') != null) {
       return EventWriteConflictException(
         message,
@@ -1116,7 +1339,8 @@ enum _Route {
   householdList,
 
   /// `GET /api/events/:id` and the poll's summary under it, which name one
-  /// event.
+  /// event, and `GET /api/events/:id/attendees/:aid/games`, which names one
+  /// attendee of it (#516).
   row,
 
   /// `POST /api/events`, whose 403 and 404 refuse that create.
@@ -1135,4 +1359,18 @@ enum _Route {
   /// user), its 403 a missing right or the invitee's block or preference, and
   /// its enveloped 409 a user already on the event.
   attendeeAdd,
+
+  /// `POST /api/events/:id/attendees/:aid/games` (#516). Its 403 refuses the
+  /// offer (the collection entry is someone else's, or the caller may not
+  /// offer for this attendee), its 404 is the event, the attendee or the
+  /// collection entry missing, its enveloped 409 a game already offered, and
+  /// its enveloped 400 with one message an entry removed from the collection
+  /// since.
+  gameOffer,
+
+  /// `DELETE /api/events/:id/attendees/:aid/games/:gid` (#516). Its 403
+  /// refuses the take-back, its 404 is no such offered game (or one already
+  /// taken back), and its enveloped 409 a game that still supplies a
+  /// nomination or a lineup. The server never answers it 400.
+  gameTakeBack,
 }

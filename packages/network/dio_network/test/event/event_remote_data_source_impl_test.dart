@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -229,6 +230,65 @@ String _deadlock() => jsonEncode({
   'retryable': true,
 });
 
+/// An offered game as `GET /api/events/:id/attendees/:aid/games` serves it
+/// (#516): every column of the list row, and the owner's collection row whole,
+/// their rating, comment and play count included, which the client must not
+/// read. [withPlayers] false is the add's `entry`, whose game carries no
+/// players or play time.
+Map<String, dynamic> _offeredRow({
+  String id = 'og_1',
+  String attendeeId = 'att_1',
+  String collectionId = 'col_1',
+  String title = 'Brass: Birmingham',
+  Object? thumbnail = 'https://cdn.example.com/brass.png',
+  Object? medium = 'Physical',
+  bool withPlayers = true,
+}) => {
+  'id': id,
+  'attendeeId': attendeeId,
+  'collectionId': collectionId,
+  'removedAt': null,
+  'createdAt': '2026-11-01T10:00:00.000Z',
+  'updatedAt': '2026-11-01T10:00:00.000Z',
+  'collection': {
+    'id': collectionId,
+    'userId': 'user_ada',
+    'platformGameId': 'pg_1',
+    'releaseId': null,
+    'medium': medium,
+    'quantity': 1,
+    'reach': 'Private',
+    'rating': 9,
+    'playCount': 4,
+    'playAgain': true,
+    'favorite': true,
+    'comment': 'mine',
+    'lastPlayed': '2026-10-30T20:00:00.000Z',
+    'lastUpdated': '2026-10-30T20:00:00.000Z',
+    'deletedAt': null,
+    'platformGame': {
+      'id': 'pg_1',
+      'game': {
+        'id': 'game_1',
+        'title': title,
+        'thumbnail': thumbnail,
+        if (withPlayers) ...{
+          'minPlayers': 2,
+          'maxPlayers': 4,
+          'minPlayTime': 60,
+          'maxPlayTime': 120,
+          'complexity': 3.9,
+        },
+      },
+      'platform': {'id': 'plat_1', 'name': 'Tabletop'},
+    },
+  },
+};
+
+/// A `GET /api/events/:id/attendees/:aid/games` body.
+String _gamesBody(List<Map<String, dynamic>> games) =>
+    jsonEncode({'games': games});
+
 /// One request as the transport received it.
 typedef _Sent = ({
   String method,
@@ -275,6 +335,56 @@ class _RecordingAdapter implements HttpClientAdapter {
   @override
   void close({bool force = false}) {}
 }
+
+/// One answer a [_PathAdapter] gives.
+typedef _Reply = ({String body, int status});
+
+/// Answers each request from [answer], which may wait or throw, records each
+/// path, and counts the requests in flight at once: for the games pool's
+/// per-attendee reads (#516).
+class _PathAdapter implements HttpClientAdapter {
+  _PathAdapter(this.answer);
+
+  final Future<_Reply> Function(RequestOptions options) answer;
+
+  /// Each path, in the order its request started.
+  final List<String> paths = [];
+
+  int _inFlight = 0;
+
+  /// The most requests that were in flight at one time.
+  int mostInFlight = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    paths.add(options.path);
+    _inFlight++;
+    if (_inFlight > mostInFlight) mostInFlight = _inFlight;
+    try {
+      final reply = await answer(options);
+      return ResponseBody.fromString(
+        reply.body,
+        reply.status,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    } finally {
+      _inFlight--;
+    }
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The attendee id a games pool read names, from its
+/// `/api/events/:id/attendees/:aid/games` path.
+String _attendeeOf(RequestOptions options) => options.path.split('/')[5];
 
 void main() {
   late _RecordingAdapter adapter;
@@ -3066,6 +3176,525 @@ void main() {
         remote.removeAttendee('e1', 'a9'),
         throwsA(isA<EventRemoteNotFoundException>()),
       );
+    });
+  });
+
+  group('offered games (#516)', () {
+    late _PathAdapter pathAdapter;
+
+    /// A data source whose transport answers each request from [answer].
+    EventRemoteDataSource routed(
+      Future<_Reply> Function(RequestOptions options) answer,
+    ) {
+      pathAdapter = _PathAdapter(answer);
+      final dio = Dio(BaseOptions(validateStatus: (_) => true))
+        ..httpClientAdapter = pathAdapter;
+      return EventRemoteDataSourceImpl(dio);
+    }
+
+    /// [reply], after [ms] milliseconds.
+    Future<_Reply> after(int ms, _Reply reply) =>
+        Future.delayed(Duration(milliseconds: ms), () => reply);
+
+    _Reply games(List<Map<String, dynamic>> rows) =>
+        (body: _gamesBody(rows), status: 200);
+
+    final notFound = (
+      body: _envelope(404, 'Not Found', 'Attendee not found'),
+      status: 404,
+    );
+
+    const expected = OfferedGame(
+      id: 'og_1',
+      attendeeId: 'att_1',
+      collectionId: 'col_1',
+      platformGameId: 'pg_1',
+      gameId: 'game_1',
+      title: 'Brass: Birmingham',
+      platformName: 'Tabletop',
+      thumbnail: 'https://cdn.example.com/brass.png',
+      medium: GameMedium.physical,
+      minPlayers: 2,
+      maxPlayers: 4,
+      minPlayTime: 60,
+      maxPlayTime: 120,
+    );
+
+    group('fetchGamesPool', () {
+      test('the pool reads each attendee and keeps their order', () async {
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            // The first attendee answers last, so the order is not the
+            // order the answers came in.
+            'a1' => after(
+              20,
+              games([
+                // The default id, og_1.
+                _offeredRow(attendeeId: 'a1'),
+                _offeredRow(id: 'og_2', attendeeId: 'a1'),
+              ]),
+            ),
+            'a2' => after(10, games([])),
+            _ => after(0, games([_offeredRow(id: 'og_3', attendeeId: 'a3')])),
+          },
+        );
+
+        final pool = await remote.fetchGamesPool(
+          'e1',
+          attendeeIds: ['a1', 'a2', 'a3'],
+        );
+
+        expect(pool.map((game) => game.id), ['og_1', 'og_2', 'og_3']);
+        expect(pathAdapter.paths, [
+          '/api/events/e1/attendees/a1/games',
+          '/api/events/e1/attendees/a2/games',
+          '/api/events/e1/attendees/a3/games',
+        ]);
+      });
+
+      test('the pool reads at most four at a time', () async {
+        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
+        final remote = routed((options) {
+          final id = _attendeeOf(options);
+          final index = ids.indexOf(id);
+          // Later ids answer sooner, so the slots free up out of order.
+          return after(
+            (9 - index) * 3,
+            games([_offeredRow(id: 'og_$index', attendeeId: id)]),
+          );
+        });
+
+        final pool = await remote.fetchGamesPool('e1', attendeeIds: ids);
+
+        expect(pathAdapter.mostInFlight, 4);
+        expect(pathAdapter.paths, hasLength(9));
+        expect(pool.map((game) => game.id), [
+          for (var i = 0; i < 9; i++) 'og_$i',
+        ]);
+      });
+
+      test('a slow read holds up only its own slot', () async {
+        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
+        // The first read answers only once the ninth has started, so the
+        // read can finish only if the other three slots took every
+        // remaining id while it was out. Waiting for a batch of four to
+        // finish would never start the ninth, and the test would time out.
+        final ninthStarted = Completer<void>();
+        int? startedWhileSlow;
+        final remote = routed((options) {
+          if (pathAdapter.paths.length == ids.length) ninthStarted.complete();
+          if (_attendeeOf(options) != 'a0') return Future.value(games([]));
+          return ninthStarted.future.then((_) {
+            startedWhileSlow = pathAdapter.paths.length;
+            return games([]);
+          });
+        });
+
+        await remote.fetchGamesPool('e1', attendeeIds: ids);
+
+        expect(startedWhileSlow, 9);
+      });
+
+      test('an attendee who answers 404 is left out', () async {
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            'a2' => after(0, notFound),
+            final id => after(0, games([_offeredRow(id: 'og_$id')])),
+          },
+        );
+
+        final pool = await remote.fetchGamesPool(
+          'e1',
+          attendeeIds: ['a1', 'a2', 'a3'],
+        );
+
+        expect(pool.map((game) => game.id), ['og_a1', 'og_a3']);
+      });
+
+      test('every attendee answering 404 is not found', () async {
+        final remote = routed((_) => after(0, notFound));
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2']),
+          throwsA(
+            isA<EventRemoteNotFoundException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              404,
+            ),
+          ),
+        );
+        expect(pathAdapter.paths, hasLength(2));
+      });
+
+      test('a 403 on one is forbidden for all', () async {
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            'a2' => after(0, (
+              body: _envelope(403, 'Forbidden', 'Not allowed'),
+              status: 403,
+            )),
+            _ => after(0, games([_offeredRow()])),
+          },
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2', 'a3']),
+          throwsA(
+            isA<EventRemoteForbiddenException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('a dropped connection on one fails the read', () async {
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            'a2' => throw DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: options,
+            ),
+            _ => after(0, games([_offeredRow()])),
+          },
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2', 'a3']),
+          throwsA(
+            isA<EventRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              isNull,
+            ),
+          ),
+        );
+      });
+
+      test('a failure starts none of the reads still waiting', () async {
+        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            'a0' => after(0, (
+              body: _envelope(403, 'Forbidden', 'Not allowed'),
+              status: 403,
+            )),
+            // A second failure, in flight when the first lands, is ignored.
+            'a1' => after(10, (
+              body: _envelope(500, 'Internal Server Error', 'Oops'),
+              status: 500,
+            )),
+            _ => after(10, games([_offeredRow()])),
+          },
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ids),
+          throwsA(isA<EventRemoteForbiddenException>()),
+        );
+        expect(pathAdapter.paths, [
+          for (var i = 0; i < 4; i++) '/api/events/e1/attendees/a$i/games',
+        ]);
+      });
+
+      test('no ids sends nothing', () async {
+        final remote = routed((_) => after(0, games([])));
+
+        final pool = await remote.fetchGamesPool('e1', attendeeIds: []);
+
+        expect(pool, isEmpty);
+        expect(pathAdapter.paths, isEmpty);
+      });
+
+      test('a game parses to what it shows', () async {
+        final remote = routed((_) => after(0, games([_offeredRow()])));
+
+        final pool = await remote.fetchGamesPool('e1', attendeeIds: ['att_1']);
+
+        expect(pool, [expected]);
+      });
+
+      test('an empty thumbnail and no medium are none', () async {
+        final remote = routed(
+          (_) => after(0, games([_offeredRow(thumbnail: '', medium: null)])),
+        );
+
+        final pool = await remote.fetchGamesPool('e1', attendeeIds: ['att_1']);
+
+        expect(pool.single.thumbnail, isNull);
+        expect(pool.single.medium, isNull);
+      });
+
+      test('a medium this client does not know is none', () async {
+        final remote = routed(
+          (options) => switch (_attendeeOf(options)) {
+            'a1' => after(
+              0,
+              games([_offeredRow(id: 'og_new', medium: 'PrintAndPlay')]),
+            ),
+            _ => after(0, games([_offeredRow(id: 'og_known')])),
+          },
+        );
+
+        final pool = await remote.fetchGamesPool(
+          'e1',
+          attendeeIds: ['a1', 'a2'],
+        );
+
+        expect(pool.map((game) => game.id), ['og_new', 'og_known']);
+        expect(pool.first.medium, isNull);
+        expect(pool.first.title, 'Brass: Birmingham');
+        expect(pool.last.medium, GameMedium.physical);
+      });
+
+      test('a games list that is missing is permanent', () async {
+        final remote = routed(
+          (_) =>
+              after(0, (body: jsonEncode({'other': <Object?>[]}), status: 200)),
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ['att_1']),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+    });
+
+    group('offerGame', () {
+      Future<OfferedGame> offer(EventRemoteDataSource remote) =>
+          remote.offerGame('e1', 'a 1', collectionId: 'col_1');
+
+      test('offering sends the collection id and parses the entry', () async {
+        final remote = answering(
+          jsonEncode({
+            'message': 'Game added',
+            'entry': _offeredRow(withPlayers: false),
+          }),
+          status: 201,
+        );
+
+        final game = await offer(remote);
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/attendees/a%201/games',
+        );
+        expect(adapter.sent.single.body, {'collectionId': 'col_1'});
+        expect(
+          game,
+          expected.copyWith(
+            minPlayers: null,
+            maxPlayers: null,
+            minPlayTime: null,
+            maxPlayTime: null,
+          ),
+        );
+      });
+
+      test('an offer answered 403 is refused', () async {
+        final remote = answering(
+          _envelope(403, 'Forbidden', 'Not your collection'),
+          status: 403,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(
+            isA<EventWriteRefusedException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('an offer answered 404 is not found', () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'No such collection entry'),
+          status: 404,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(
+            isA<EventRemoteNotFoundException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              404,
+            ),
+          ),
+        );
+      });
+
+      test('an offer answered 409 is a conflict', () async {
+        final remote = answering(
+          _envelope(409, 'Conflict', 'Already on the list'),
+          status: 409,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(
+            isA<EventWriteConflictException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+
+      test('an offer answered an enveloped 400 is a conflict', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Removed from the collection'),
+          status: 400,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(
+            isA<EventWriteConflictException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              400,
+            ),
+          ),
+        );
+      });
+
+      test("the validation pipe's 400 on an offer is permanent", () async {
+        final remote = answering(
+          jsonEncode({
+            'statusCode': 400,
+            'error': 'Bad Request',
+            'message': ['collectionId must be a string'],
+          }),
+          status: 400,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+
+      test('an offer answered retryable 409 is transient', () async {
+        final remote = answering(_deadlock(), status: 409);
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+      });
+    });
+
+    group('takeBackGame', () {
+      Future<void> takeBack(EventRemoteDataSource remote) =>
+          remote.takeBackGame('e1', 'a1', 'og 1');
+
+      test('taking back sends a DELETE and reads no body', () async {
+        final remote = answering('not the body this client reads');
+
+        await takeBack(remote);
+
+        expect(adapter.sent.single.method, 'DELETE');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/attendees/a1/games/og%201',
+        );
+      });
+
+      test('a take-back answered 403 is refused', () async {
+        final remote = answering(
+          _envelope(403, 'Forbidden', 'Not allowed'),
+          status: 403,
+        );
+
+        await expectLater(
+          takeBack(remote),
+          throwsA(
+            isA<EventWriteRefusedException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('a take-back answered 404 is not found', () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'Game list entry not found'),
+          status: 404,
+        );
+
+        await expectLater(
+          takeBack(remote),
+          throwsA(
+            isA<EventRemoteNotFoundException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              404,
+            ),
+          ),
+        );
+      });
+
+      test('a take-back answered retryable 409 is transient', () async {
+        // The take-back's route takes row locks, so it can deadlock; a
+        // retryable 409 is not the conflict the bloc reads as "nominated,
+        // or in the lineup".
+        final remote = answering(_deadlock(), status: 409);
+
+        await expectLater(
+          takeBack(remote),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+      });
+
+      test('a take-back answered 409 is a conflict', () async {
+        final remote = answering(
+          _envelope(409, 'Conflict', 'The game is still supplied'),
+          status: 409,
+        );
+
+        await expectLater(
+          takeBack(remote),
+          throwsA(
+            isA<EventWriteConflictException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+    });
+
+    test('an empty id is refused before anything is sent', () async {
+      final remote = answering(_gamesBody([]));
+
+      await expectLater(
+        remote.fetchGamesPool('', attendeeIds: ['a1']),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchGamesPool('e1', attendeeIds: ['a1', '']),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.offerGame('e1', 'a1', collectionId: ''),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.takeBackGame('e1', '', 'og_1'),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
     });
   });
 
