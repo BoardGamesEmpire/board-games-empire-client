@@ -12,14 +12,18 @@ _G _g(
 ExpansionLink _link(String id, {bool standalone = false}) =>
     ExpansionLink(gameId: id, isStandalone: standalone);
 
-List<PlacedGame<_G>> _place(List<_G> items, {bool complete = true}) =>
-    placeExpansions<_G>(
-      items,
-      gameIdOf: (g) => g.id,
-      baseGamesOf: (g) => g.links,
-      contentTypeOf: (g) => g.type,
-      complete: complete,
-    );
+List<PlacedGame<_G>> _place(
+  List<_G> items, {
+  bool complete = true,
+  Set<String>? owned,
+}) => placeExpansions<_G>(
+  items,
+  gameIdOf: (g) => g.id,
+  baseGamesOf: (g) => g.links,
+  contentTypeOf: (g) => g.type,
+  complete: complete,
+  ownedGameIds: owned,
+);
 
 void main() {
   group('placeExpansions', () {
@@ -338,6 +342,63 @@ void main() {
         PlacedGame(c),
         PlacedGame(d),
       ]);
+    });
+
+    // A list narrowed from a larger one (#715): where a game goes follows
+    // what is shown, and its mark follows what is owned.
+    group("with the whole list's game ids beside a narrowed one", () {
+      final exp = _g(
+        'exp',
+        links: [_link('base')],
+        type: ContentType.expansion,
+      );
+
+      test('an expansion whose base game is owned and not shown is top '
+          'level, unmarked', () {
+        expect(_place([exp], owned: {'base', 'exp'}), [PlacedGame(exp)]);
+      });
+
+      test("one whose base game isn't owned either stays marked", () {
+        expect(_place([exp], owned: {'exp', 'other'}), [
+          PlacedGame(exp, missingBase: true),
+        ]);
+      });
+
+      test('one base game owned of two is enough to leave it unmarked', () {
+        final both = _g(
+          'both',
+          links: [_link('gone'), _link('base')],
+          type: ContentType.expansion,
+        );
+        expect(_place([both], owned: {'base', 'both'}), [PlacedGame(both)]);
+      });
+
+      test('an unlinked expansion stays marked whatever is owned', () {
+        final lone = _g('lone', type: ContentType.expansion);
+        expect(_place([lone], owned: {'lone', 'base'}), [
+          PlacedGame(lone, missingBase: true),
+        ]);
+      });
+
+      test('it moves no game: one nests under a base game shown, and a '
+          'base game owned and not shown holds nothing', () {
+        final base = _g('base');
+        expect(_place([base, exp], owned: {'base', 'exp', 'other'}), [
+          PlacedGame(base, expansions: [exp]),
+        ]);
+        expect(
+          _place([exp], owned: {'base', 'exp'}).single.expansions,
+          isEmpty,
+        );
+      });
+
+      test("left out, the ids are the list's own", () {
+        expect(_place([exp]), _place([exp], owned: {'exp'}));
+      });
+
+      test('it changes nothing while the list is incomplete', () {
+        expect(_place([exp], complete: false, owned: {'base', 'exp'}), isEmpty);
+      });
     });
   });
 }

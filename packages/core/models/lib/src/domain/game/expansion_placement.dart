@@ -40,7 +40,17 @@ final class PlacedGame<T> extends Equatable {
 ///    when it is an [ContentType.expansion] or [ContentType.dlc]; any other
 ///    content type is an ordinary game.
 /// 2. A standalone item, unmarked.
-/// 3. Once the list is [complete], a linked item with `present` empty, marked.
+/// 3. Once the list is [complete], a linked item with `present` empty,
+///    marked unless one of its base games is owned (below).
+///
+/// [ownedGameIds] are the game ids of the whole list [items] was narrowed
+/// from, as a filter narrows a collection (#715); left out, they are
+/// [items]' own. They decide a mark and move no game: where an item goes
+/// follows what is shown, and an anchor of the third kind is marked only
+/// when none of its base games is owned either, so an expansion whose base
+/// game a filter hid is top level and unmarked. The mark is
+/// [lacksBaseGame]'s answer over them, the rule the collection's
+/// missing-base filter matches by.
 ///
 /// Pass 2 places the other linked items. Each is nested when any of its
 /// `present` base games is top level, and is top level, unmarked, when all
@@ -75,47 +85,46 @@ List<PlacedGame<T>> placeExpansions<T>(
   required List<ExpansionLink> Function(T item) baseGamesOf,
   required ContentType Function(T item) contentTypeOf,
   bool complete = true,
+  Set<String>? ownedGameIds,
 }) {
   final shown = {for (final item in items) gameIdOf(item)};
+  final owned = ownedGameIds ?? shown;
 
   final entries = <_ItemLinks<T>>[];
   for (final item in items) {
-    final id = gameIdOf(item);
-    final standaloneByBase = <String, bool>{};
-    for (final link in baseGamesOf(item)) {
-      if (link.gameId == id) continue;
-      standaloneByBase[link.gameId] =
-          (standaloneByBase[link.gameId] ?? false) || link.isStandalone;
-    }
+    final type = contentTypeOf(item);
+    final (:bases, :standalone) = countedBaseGameLinks(
+      gameId: gameIdOf(item),
+      baseGames: baseGamesOf(item),
+      contentType: type,
+    );
     final present = [
-      for (final base in standaloneByBase.keys)
+      for (final base in bases)
         if (shown.contains(base)) base,
     ];
-    final type = contentTypeOf(item);
     entries.add(
       _ItemLinks(
         item,
-        linked: standaloneByBase.isNotEmpty,
+        linked: bases.isNotEmpty,
         present: present,
-        someAbsent: present.length < standaloneByBase.length,
-        standalone:
-            standaloneByBase.values.any((s) => s) ||
-            type == ContentType.standaloneExpansion,
-        expansionOrDlc:
-            type == ContentType.expansion || type == ContentType.dlc,
+        someAbsent: present.length < bases.length,
+        standalone: standalone,
+        lacksBase: lacksBaseGame(
+          bases: bases,
+          standalone: standalone,
+          contentType: type,
+          gameIds: owned,
+        ),
       ),
     );
   }
 
   final anchors = <String, bool>{}; // id -> missingBase
   for (final entry in entries) {
-    final id = gameIdOf(entry.item);
-    if (!entry.linked) {
-      anchors[id] = entry.expansionOrDlc;
-    } else if (entry.standalone) {
-      anchors[id] = false;
-    } else if (entry.present.isEmpty && complete) {
-      anchors[id] = true;
+    if (!entry.linked ||
+        entry.standalone ||
+        (entry.present.isEmpty && complete)) {
+      anchors[gameIdOf(entry.item)] = entry.lacksBase;
     }
   }
 
@@ -193,6 +202,63 @@ List<PlacedGame<T>> placeExpansions<T>(
   ];
 }
 
+/// Which of a game's [baseGames] count, and whether it stands alone: the one
+/// reading of its links that [placeExpansions] places by (#711) and
+/// [lacksBaseGame] marks by.
+///
+/// `bases` are the ids of [baseGames] without a link to [gameId] itself,
+/// each once, in the order first seen. The game is `standalone` when any
+/// link `isStandalone` or [contentType] is [ContentType.standaloneExpansion].
+///
+/// Not part of the package's API: `domain.dart` hides it.
+({List<String> bases, bool standalone}) countedBaseGameLinks({
+  required String gameId,
+  required List<ExpansionLink> baseGames,
+  required ContentType contentType,
+}) {
+  // A key keeps its first-seen place when a later link updates its value.
+  final standaloneByBase = <String, bool>{};
+  for (final link in baseGames) {
+    if (link.gameId == gameId) continue;
+    standaloneByBase[link.gameId] =
+        (standaloneByBase[link.gameId] ?? false) || link.isStandalone;
+  }
+  return (
+    bases: [...standaloneByBase.keys],
+    standalone:
+        standaloneByBase.values.any((s) => s) ||
+        contentType == ContentType.standaloneExpansion,
+  );
+}
+
+/// Whether a game is an expansion without its base game among [gameIds]:
+/// the mark [placeExpansions] gives an anchor (#711), and what the
+/// collection's missing-base filter matches (#715), so the filter picks out
+/// exactly the rows the list marks.
+///
+/// [bases] and [standalone] are [countedBaseGameLinks]' reading of the
+/// game's links. The game lacks its base game:
+///
+/// - with no counted base game, exactly when it is a [ContentType.expansion]
+///   or [ContentType.dlc];
+/// - else, never when it is standalone;
+/// - else, when none of its counted base games is in [gameIds].
+///
+/// Not part of the package's API: `domain.dart` hides it.
+bool lacksBaseGame({
+  required List<String> bases,
+  required bool standalone,
+  required ContentType contentType,
+  required Set<String> gameIds,
+}) {
+  if (bases.isEmpty) {
+    return contentType == ContentType.expansion ||
+        contentType == ContentType.dlc;
+  }
+  if (standalone) return false;
+  return !bases.any(gameIds.contains);
+}
+
 /// An item and what its links to base games say about where it goes.
 class _ItemLinks<T> {
   const _ItemLinks(
@@ -201,7 +267,7 @@ class _ItemLinks<T> {
     required this.present,
     required this.someAbsent,
     required this.standalone,
-    required this.expansionOrDlc,
+    required this.lacksBase,
   });
 
   final T item;
@@ -218,6 +284,7 @@ class _ItemLinks<T> {
   /// Whether it is shown at top level whatever its base games do.
   final bool standalone;
 
-  /// Whether its content type is an expansion or DLC, marked when unlinked.
-  final bool expansionOrDlc;
+  /// Whether it is marked as missing its base game where it is an anchor:
+  /// [lacksBaseGame] over the owned game ids.
+  final bool lacksBase;
 }
