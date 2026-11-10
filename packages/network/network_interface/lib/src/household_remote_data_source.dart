@@ -20,7 +20,7 @@ typedef HouseholdWithMembers = ({
 /// A sample of the games in the caller's households, and how many there are
 /// altogether (#615).
 ///
-/// [gameCount] counts the whole pool, not the sample, so it is at least the
+/// `gameCount` counts the whole pool, not the sample, so it is at least the
 /// sample's length. A game several members own is one game in both.
 typedef GamePoolSample = ({List<GameSummary> games, int gameCount});
 
@@ -36,7 +36,7 @@ typedef GamePoolSample = ({List<GameSummary> games, int gameCount});
 ///
 /// [createHousehold] (#39), [fetchHouseholds] (#266), [updateHousehold]
 /// (#476) and [fetchGamePoolSample] (#615). Membership changes have their own
-/// online-only source, [HouseholdMemberRemoteDataSource] (#122). Delete is
+/// online-only source, `HouseholdMemberRemoteDataSource` (#122). Delete is
 /// still to come (#477).
 ///
 /// ## Failure classification
@@ -95,7 +95,7 @@ typedef GamePoolSample = ({List<GameSummary> games, int gameCount});
 /// Implementations must not gate the **404** rule on the API's own error
 /// envelope for those routes.
 /// A 404 needs that envelope before it can be read as a statement about a
-/// *row* (see [GameCollectionRemoteDataSource]), but the list and the create
+/// *row* (see `GameCollectionRemoteDataSource`), but the list and the create
 /// have no such reading, and Nest answers an unmatched route with the same
 /// envelope — so an envelope-gated rule would still call a partial deploy a
 /// rejection.
@@ -246,7 +246,7 @@ abstract class HouseholdRemoteDataSource {
   /// household the caller is in and has not excluded there, so it includes
   /// the caller's own shared entries. A game several members own is in it
   /// once, and a game the caller cannot open is left out. With no household
-  /// the server answers 200 with no games and a [GamePoolSample.gameCount]
+  /// the server answers 200 with no games and a `GamePoolSample.gameCount`
   /// of 0, which is a sample like any other, not a failure.
   ///
   /// Each game is a [GameSummary]: the id, the title and the thumbnail. The
@@ -342,6 +342,8 @@ sealed class HouseholdRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

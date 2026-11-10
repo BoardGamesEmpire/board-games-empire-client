@@ -4,13 +4,13 @@ import 'package:models/domain.dart';
 /// removing them, leaving the household, or handing it over (#480, #483,
 /// #479, #478).
 ///
-/// Online-only, like [HouseholdInviteRemoteDataSource]: each call is a person
+/// Online-only, like `HouseholdInviteRemoteDataSource`: each call is a person
 /// waiting on a screen, so nothing is queued and nothing is stored on the
 /// device (#122). A call that cannot reach the server fails, and the caller
 /// says so. What an answer changes locally is the caller's to write, from
 /// the member it returns.
 ///
-/// It is a separate interface from [HouseholdRemoteDataSource] on purpose.
+/// It is a separate interface from `HouseholdRemoteDataSource` on purpose.
 /// That one feeds the sync drain and classifies failures by whether a
 /// queued operation should be retried; these calls are made by a person
 /// waiting on a screen, and their refusals are answers to show them.
@@ -137,6 +137,8 @@ sealed class HouseholdMemberRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

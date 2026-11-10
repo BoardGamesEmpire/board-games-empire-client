@@ -42,6 +42,8 @@ sealed class WellKnownException implements Exception {
   final Object? cause;
 
   @override
+  // toString names the concrete subclass, so it needs the runtime type.
+  // ignore: no_runtimetype_tostring
   String toString() => '$runtimeType(serverUrl: $serverUrl, message: $message)';
 }
 

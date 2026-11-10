@@ -9,6 +9,7 @@ resolution: workspace
 dependencies:
   interfaces:
     path: ../../core/interfaces
+  meta: ^1.12.0
   models:
     path: ../../core/models
 
