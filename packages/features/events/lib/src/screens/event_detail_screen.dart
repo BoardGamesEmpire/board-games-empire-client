@@ -1451,9 +1451,10 @@ Future<bool> _sendRsvp(
         return (notes: notes, shownNote: shownNote);
       }
       if (status == EventParticipationStatus.notAttending) {
-        // It pauses the viewer's nominations and takes the games they
-        // offered off the dates ahead. Coming back brings the nominations
-        // back, but not the games they offered.
+        // It pauses the nominations of the games the viewer is bringing,
+        // whoever made them, and takes those games off the dates ahead
+        // (#823). Coming back brings the nominations back, but not the
+        // games.
         final l10n = EventsLocalizations.of(context);
         final confirmed = await showConfirmDialog(
           context,

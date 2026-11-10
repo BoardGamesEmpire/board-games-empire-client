@@ -284,9 +284,9 @@
   "@eventsRsvpNotGoingTitle": {
     "description": "Title of the dialog that opens when the user taps Not going among their own answer chips on an event's screen, asking them to confirm that answer before it is sent."
   },
-  "eventsRsvpNotGoingBody": "Any games you nominated will be paused, and the games you're bringing will come off every date still to come. Saying you're coming later won't put those games back.",
+  "eventsRsvpNotGoingBody": "Nominations of games you're bringing will be paused, and those games will come off every date still to come. Saying you're coming later brings the nominations back, but not the games.",
   "@eventsRsvpNotGoingBody": {
-    "description": "Body of the Not going dialog on an event's screen. Says three things, and a translation must keep all three: the games the user nominated for the event are paused, the games they offered to bring are taken off each of the event's dates that hasn't happened yet, and answering Going or Maybe later does not put the games they offered back on those dates. 'Those games' in the last sentence are the offered games only: the paused nominations do come back when the user answers Going or Maybe."
+    "description": "Body of the Not going dialog on an event's screen. Says three things, and a translation must keep all three: nominations of the games the user is bringing are paused, whoever made them; those games are taken off each of the event's dates that hasn't happened yet; and answering Going or Maybe later brings the nominations back, but does not put the games back on those dates."
   },
   "eventsRsvpNotGoingKeep": "Keep my answer",
   "@eventsRsvpNotGoingKeep": {

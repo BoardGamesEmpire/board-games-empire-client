@@ -87,9 +87,9 @@ const _statusFailedCopy =
 const _statusFailedUnexpectedCopy =
     "Something went wrong. Check the event's status before trying again.";
 const _rsvpNotGoingBodyCopy =
-    "Any games you nominated will be paused, and the games you're bringing "
+    "Nominations of games you're bringing will be paused, and those games "
     "will come off every date still to come. Saying you're coming later "
-    "won't put those games back.";
+    'brings the nominations back, but not the games.';
 const _rsvpSavedCopy = 'Your answer is saved.';
 const _rsvpGoneCopy = "You're no longer on this event, or it was deleted.";
 const _rsvpRefusedCopy = "You can't answer for this event any more.";
