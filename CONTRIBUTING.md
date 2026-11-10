@@ -89,8 +89,9 @@ A release is cut from a tested commit: the job waits for every gate. A run
 that is behind master releases nothing, and the next run's release covers its
 commits.
 
-**The first release, once.** The job counts commits from the last `v*` tag, so
-until one exists it does nothing, and `0.1.0` is tagged by hand:
+**The first release, once.** The job counts commits from the last `vX.Y.Z` tag
+in master's history, so until one exists it does nothing, and `0.1.0` is
+tagged by hand:
 
 1. Merge the PR that sets `0.1.0` (the one that added this section).
 2. `git tag v0.1.0 <merge commit> && git push origin v0.1.0`.

@@ -802,8 +802,9 @@ jobs:
   # this job runs makes its push fail, as a non-fast-forward, and leaves
   # that run red; the next run releases both merges.
   #
-  # Until a `v*` tag exists there is nothing to count commits from, so the
-  # job does nothing; the first release is tagged by hand.
+  # Until master's history has a `vX.Y.Z` tag there is nothing to count
+  # commits from, so the job does nothing; the first release is tagged by
+  # hand.
   #
   # It waits for every gate (`gates`): a release is cut from a tested
   # commit. Nothing depends on this job.
@@ -820,9 +821,11 @@ jobs:
     steps:
       # The App token does the pushing, so the checkout keeps no
       # credentials. Full history and tags: semantic-release reads them.
-      # The guard matches only version tags: semantic-release ignores a
-      # `vnext` or `v1.2`, so with only those it would find no release and
-      # cut its default first one, 1.0.0.
+      # The guard counts a tag the way semantic-release does: an exact
+      # `vX.Y.Z` (the pattern tool/release_tags.dart uses) in this commit's
+      # history (`--merged`). With only a `vnext`, a `v0.1.0x`, or a
+      # `v0.1.0` on a commit master never merged, semantic-release would
+      # find no release and cut its default first one, 1.0.0.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -831,7 +834,8 @@ jobs:
         id: guard
         run: |
           set -euo pipefail
-          if [ -z "$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*')" ]; then
+          tags="$(git tag --merged HEAD)"
+          if ! grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags"; then
             echo "::notice::No vX.Y.Z tag yet. The first release, v0.1.0, is tagged by hand (CONTRIBUTING.md, Releasing)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
