@@ -19,4 +19,5 @@ export 'src/game_filter_sheet.dart';
 export 'src/game_filters_button.dart';
 export 'src/game_filters_in_use.dart';
 export 'src/game_length_band.dart';
+export 'src/in_use_chips.dart';
 export 'src/search_range_field.dart';

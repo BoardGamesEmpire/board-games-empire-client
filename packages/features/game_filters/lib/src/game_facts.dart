@@ -43,6 +43,13 @@ String? platformTypeLabel(GameFiltersLocalizations l10n, PlatformType type) =>
       PlatformType.unknown => null,
     };
 
+/// The label of [medium], as the filters name it (#715).
+String mediumLabel(GameFiltersLocalizations l10n, GameMedium medium) =>
+    switch (medium) {
+      GameMedium.physical => l10n.gameFiltersMediumPhysical,
+      GameMedium.digital => l10n.gameFiltersMediumDigital,
+    };
+
 /// How many players a game takes, or null when neither bound is known.
 GameFact? playersFact(GameFiltersLocalizations l10n, int? min, int? max) =>
     switch ((min, max)) {

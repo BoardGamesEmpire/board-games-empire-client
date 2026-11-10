@@ -18,7 +18,8 @@ the reverse. There are two exceptions, `user_search` and this package, each a
 piece of UI more than one feature draws. To stay safe to share, this package
 may depend on `flutter`, `flutter_localizations`, `intl`, `models`, `ui` and
 `ui_tokens` and nothing else: no feature, no bloc, no `interfaces` and no
-`network_interface`. Today it needs all of them but `ui`.
+`network_interface`. It uses all six; from `ui`, only `focusIsFree`, the
+shared rule for focus whose control has left.
 
 So it reads no data and holds no filter of its own past the sheet's edits.
 The caller keeps a `CollectionFilter` from `models`, hands it to the sheet
@@ -30,21 +31,44 @@ rest.
 
 - `showGameFilterSheet` — opens the sheet on `initial` and calls `onChanged`
   with the whole filter after every edit. There is no Apply button. A range
-  that closes with the sheet on bounds it can't send is dropped, and
-  `onDropped`, or a SnackBar on the opener's messenger without one, says why.
+  that still holds bounds as the sheet closes commits them then, and
+  `onChanged` gets that filter once the frame ends, so a caller may call
+  `setState` from it. A range that closes with the sheet on bounds it can't
+  send is dropped, and `onDropped`, or a SnackBar on the opener's messenger
+  without one, says why.
 - `GameFilterOptions` — which sections the sheet offers. The defaults are the
   game search's: `searchContentTypes`, `searchPlatformTypes`, and the
   server's highest bound, `defaultMaxRangeBound`. `medium`,
-  `missingBaseGame` and `exclusion` are declared for the collection (#715)
-  and not acted on yet.
+  `missingBaseGame` and `exclusion`, off by default, are for the collection
+  (#715): a Medium section, a switch keeping only the expansions missing
+  their base game, and a switch under each section that flips it to leave
+  out what it matches. A flip goes with its section's last choice.
 - `GameFiltersButton` and `gameFiltersInUseCount` — the button that opens the
-  sheet, counting the filters in use.
-- `GameFiltersInUse` — a chip for each filter in use, which clears it.
+  sheet, counting the filters in use, with an optional `focusNode` for a
+  caller that sends focus to it. Pass the count the same `options` the
+  chips get, so it counts exactly the chips.
+- `GameFiltersInUse` — a chip for each filter in use, which clears it; a
+  flipped filter's chip starts with "Not". A chip's removal, by keyboard,
+  pointer or a screen reader's activation, hands focus to the chip that
+  takes its place, else the one before it, once the caller has applied the
+  filter it sent. The last chip calls `onEmptied` instead, for the caller to
+  focus a control of its own, such as its Filters button
+  (`GameFiltersButton.focusNode`). Focus moves only if it is free then: on
+  nothing, on the page, or still on the chip that left. So a pointer's
+  removal while keyboard focus sits on another control moves nothing. A
+  removal the caller doesn't apply is dropped at the filter's next change.
+  Keep the widget in the tree while it is empty: it draws nothing then, and
+  needs to be there to call `onEmptied`.
+- `InUseChips` — the row of removable chips `GameFiltersInUse` is drawn
+  with, and its focus hand-off, for a caller whose chips name something
+  else that narrows a list, as an event's Games tab names the people chosen
+  (#516). The caller gives each chip its id, key, label and the value its
+  removal leaves, and removes what the chip names in `onRemove`.
 - `GameFilterKeys` — the keys on all of the above, for a caller's tests.
 - `SearchRangeField`, `GameLengthBand`, `GameFilterChipLabel`, and the label
   helpers in `game_facts.dart` (`GameFact`, `contentTypeLabel`,
-  `platformTypeLabel`, `playersFact`, `playTimeRangeFact`, `yearText` and the
-  rest).
+  `platformTypeLabel`, `mediumLabel`, `playersFact`, `playTimeRangeFact`,
+  `yearText` and the rest).
 
 ## Server bounds
 

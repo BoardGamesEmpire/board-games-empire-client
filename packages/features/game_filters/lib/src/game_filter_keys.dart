@@ -26,8 +26,21 @@ abstract final class GameFilterKeys {
   static Key platformType(PlatformType type) =>
       Key('catalog_search.platform_${type.name}');
 
+  /// The sheet's chip for [medium] (#715).
+  static Key medium(GameMedium medium) =>
+      Key('catalog_search.medium_${medium.name}');
+
+  /// The sheet's switch that keeps only the expansions shown without their
+  /// base game (#715).
+  static const Key missingBaseGame = Key('catalog_search.missing_base_game');
+
+  /// The switch under [facet]'s section that leaves out what it matches
+  /// instead of keeping it (#715).
+  static Key exclude(CollectionFacet facet) =>
+      Key('catalog_search.exclude_${facet.name}');
+
   /// The chip for one filter in use: `content_<name>`, `platform_<name>`,
-  /// `year`, `players` or `time`.
+  /// `medium_<name>`, `year`, `players`, `time` or `missing_base_game`.
   static Key inUse(String id) => Key('catalog_search.in_use_$id');
 
   /// A range's From field, or its To field when [from] is false. [range]

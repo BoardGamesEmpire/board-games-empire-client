@@ -18,11 +18,17 @@ dependencies:
   intl: ^0.20.2
   models:
     path: ../../core/models
+  # The shared focus rule for a control that leaves while focused (#715).
+  ui:
+    path: ../../ui/widgets
   # The design system's scale (#165): spacing and the theme extension.
   ui_tokens:
     path: ../../ui/tokens
 
 dev_dependencies:
+  # The test view's size, for the sheet at 320dp and 200% text (#213).
+  bge_test_support:
+    path: ../../testing/support
   flutter_test:
     sdk: flutter
   l10n_test_support:

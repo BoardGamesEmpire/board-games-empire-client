@@ -7,9 +7,9 @@ import 'package:models/domain.dart';
 /// The defaults are the game search's: every content type and platform type
 /// it can send, and the highest bound the server accepts.
 ///
-/// [medium], [missingBaseGame] and [exclusion] are declared for the
-/// collection's filters (#715); the sheet and the chips don't act on them
-/// yet.
+/// [medium], [missingBaseGame] and [exclusion] are for the collection's
+/// filters (#715), and are off by default: the game search's sheet has none
+/// of them.
 @immutable
 class GameFilterOptions {
   const GameFilterOptions({
@@ -86,6 +86,7 @@ class GameFilterOptions {
   final bool missingBaseGame;
 
   /// Whether each section offers to leave out what it matches instead of
-  /// keeping it, putting its facet in [CollectionFilter.excluded].
+  /// keeping it, putting its facet in [CollectionFilter.excluded]. The chips
+  /// say "Not" for a flipped facet whether or not this is on.
   final bool exclusion;
 }

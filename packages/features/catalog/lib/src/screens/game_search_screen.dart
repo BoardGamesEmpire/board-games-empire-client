@@ -34,8 +34,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// (#474), and each filter in use shows as a chip under the field, which
 /// clears it. The filter lasts while the screen is open. The sheet, the
 /// button and the chips are `game_filters`' (#715), with their default
-/// options: the screen holds the filter in its bloc, hands them
-/// [CollectionFilter.game] and searches with what they hand back.
+/// options: the screen holds the search's filter in its bloc, wraps it in a
+/// [CollectionFilter] for them, and searches with the
+/// [CollectionFilter.game] of what they hand back.
 class GameSearchScreen extends StatelessWidget {
   const GameSearchScreen({
     required this.remote,
@@ -181,9 +182,15 @@ class _GameSearchPageState extends State<_GameSearchPage> {
 
   final TextEditingController _query = TextEditingController();
 
+  /// The Filters button's, which takes focus when the last chip under the
+  /// field is removed, however the press arrived, if focus is free then
+  /// (#715).
+  final _filtersFocus = FocusNode(debugLabel: 'GameSearchScreen filters');
+
   @override
   void dispose() {
     _query.dispose();
+    _filtersFocus.dispose();
     super.dispose();
   }
 
@@ -279,6 +286,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
                       widthFactor: 1,
                       heightFactor: 1,
                       child: GameFiltersButton(
+                        focusNode: _filtersFocus,
                         count: gameFiltersInUseCount(
                           CollectionFilter(game: state.filter),
                         ),
@@ -300,6 +308,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
                 filter: CollectionFilter(game: state.filter),
                 onChanged: (filter) =>
                     _filterChanged(context.read<GameSearchBloc>(), filter),
+                onEmptied: _filtersFocus.requestFocus,
               ),
             ),
           ),

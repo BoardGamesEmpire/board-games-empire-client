@@ -142,7 +142,7 @@
   },
   "gameFiltersButton": "{count, plural, =0{Filters} other{Filters ({count})}}",
   "@gameFiltersButton": {
-    "description": "The button beside the search field that opens the filters. It counts the filters in use, one per chosen type and one per range.",
+    "description": "The button beside the search field that opens the filters. It counts the filters in use, one per chip under the search field: one per chosen type or medium, one per range, and one for the missing-base-game switch.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -165,6 +165,58 @@
   "gameFiltersFilterPlatformType": "Platform",
   "@gameFiltersFilterPlatformType": {
     "description": "Heading over the platform-type filter choices, such as 'Tabletop' and 'PC'. With none chosen, every platform is shown."
+  },
+  "gameFiltersMedium": "Medium",
+  "@gameFiltersMedium": {
+    "description": "Heading over the filter choices for whether a copy in the collection is physical or digital. With none chosen, every copy is shown."
+  },
+  "gameFiltersMediumPhysical": "Physical",
+  "@gameFiltersMediumPhysical": {
+    "description": "A filter choice under the Medium heading, and a filter in use under the collection's search field: physical copies of a game, such as a boxed board game or a game disc."
+  },
+  "gameFiltersMediumDigital": "Digital",
+  "@gameFiltersMediumDigital": {
+    "description": "A filter choice under the Medium heading, and a filter in use under the collection's search field: digital copies of a game, such as a download or an app."
+  },
+  "gameFiltersMissingBaseGame": "Only expansions missing their base game",
+  "@gameFiltersMissingBaseGame": {
+    "description": "Switch, last in the filter sheet. On, the list keeps only the expansions whose base game isn't in it."
+  },
+  "gameFiltersMissingBaseGameInUse": "Missing base game",
+  "@gameFiltersMissingBaseGameInUse": {
+    "description": "The filter in use, shown as a chip under the collection's search field, that keeps only the expansions whose base game isn't in the list. Also names that filter's leave-out switch to a screen reader."
+  },
+  "gameFiltersMissingBaseGameExcluded": "Not missing base game",
+  "@gameFiltersMissingBaseGameExcluded": {
+    "description": "gameFiltersMissingBaseGameInUse flipped, shown as a chip under the collection's search field: the list leaves out the expansions whose base game isn't in it, and keeps everything else."
+  },
+  "gameFiltersExclude": "Leave these out instead",
+  "@gameFiltersExclude": {
+    "description": "Switch under each section of the filter sheet. On, the list leaves out what the section's choices match and keeps everything else."
+  },
+  "gameFiltersExcludeNamed": "{filter}, leave these out instead",
+  "@gameFiltersExcludeNamed": {
+    "description": "Accessible name, never shown, of gameFiltersExclude, so a screen reader says which section's switch it is. {filter} is the section's heading, such as Platform, or gameFiltersMissingBaseGameInUse.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Platform"
+      }
+    }
+  },
+  "gameFiltersExcludeNothingChosen": "Choose something above first",
+  "@gameFiltersExcludeNothingChosen": {
+    "description": "Under gameFiltersExclude while it can't be turned: its section has nothing chosen, so there is nothing to leave out."
+  },
+  "gameFiltersInUseExcluded": "Not {filter}",
+  "@gameFiltersInUseExcluded": {
+    "description": "A filter in use that is flipped, shown as a chip under the collection's search field and read by a screen reader: the list leaves out what the filter matches. {filter} is the chip's own label, such as Tabletop or 2–4 players.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Tabletop"
+      }
+    }
   },
   "gameFiltersFilterRemove": "Remove {filter}",
   "@gameFiltersFilterRemove": {
@@ -285,6 +337,18 @@
   "gameFiltersIncludeUnknownPlayTime": "Include games with no play time",
   "@gameFiltersIncludeUnknownPlayTime": {
     "description": "Switch under the play-time range. On, games with no known play time are kept. It changes nothing until a time is filled in."
+  },
+  "gameFiltersLeaveOutUnknownYear": "Leave out games with no year too",
+  "@gameFiltersLeaveOutUnknownYear": {
+    "description": "The same switch as gameFiltersIncludeUnknownYear, titled this instead while the publish-year section is flipped to leave out what it matches. The flip leaves out everything the range keeps, so on, games with no known publish year are left out as well."
+  },
+  "gameFiltersLeaveOutUnknownPlayers": "Leave out games with no player count too",
+  "@gameFiltersLeaveOutUnknownPlayers": {
+    "description": "The same switch as gameFiltersIncludeUnknownPlayers, titled this instead while the player-count section is flipped to leave out what it matches. The flip leaves out everything the range keeps, so on, games with no known player count are left out as well."
+  },
+  "gameFiltersLeaveOutUnknownPlayTime": "Leave out games with no play time too",
+  "@gameFiltersLeaveOutUnknownPlayTime": {
+    "description": "The same switch as gameFiltersIncludeUnknownPlayTime, titled this instead while the play-time section is flipped to leave out what it matches. The flip leaves out everything the range keeps, so on, games with no known play time are left out as well."
   },
   "gameFiltersFromYear": "From {year}",
   "@gameFiltersFromYear": {

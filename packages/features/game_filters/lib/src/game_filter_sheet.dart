@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:game_filters/l10n/game_filters_localizations.dart';
+import 'package:game_filters/src/collection_filter_flips.dart';
 import 'package:game_filters/src/game_facts.dart';
 import 'package:game_filters/src/game_filter_chip_label.dart';
 import 'package:game_filters/src/game_filter_keys.dart';
@@ -14,7 +15,20 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// The same sheet at every width, scroll-controlled and inside the safe
 /// area; Material 3 caps its width at 640dp, so a wide window doesn't
-/// stretch it. [options] says which sections it offers.
+/// stretch it. [options] says which sections it offers: always the content
+/// types and platform types it names and the three ranges; with
+/// [GameFilterOptions.medium], a Medium section after Platform; with
+/// [GameFilterOptions.missingBaseGame], a switch, last, keeping only the
+/// expansions shown without their base game (#715).
+///
+/// With [GameFilterOptions.exclusion], each section ends in a switch that
+/// flips it to leave out what it matches, putting its facet in
+/// [CollectionFilter.excluded]. The switch can be turned only while its
+/// section narrows ([CollectionFilter.facetsInUse]), and says why until
+/// then. A flip goes with its section's last choice, so a choice made later
+/// never starts out flipped. A flipped range leaves out the games with no
+/// value that its switch would keep, so that switch says so while the flip
+/// is on.
 ///
 /// It opens on [initial] and applies each change as it is made, with no
 /// Apply button: [onChanged] gets the whole filter after every edit, so the
@@ -22,6 +36,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// own copy and reads nothing else while it is open; nothing else changes
 /// the filter then, since the caller's controls sit under its barrier.
 /// [CollectionFilter.query] is the caller's own, carried through as given.
+///
+/// One change is sent later than it is made: a range field that still holds
+/// bounds as the sheet closes commits them as it is disposed, when nothing
+/// may be marked to build, so [onChanged] gets that filter once the frame
+/// ends. A caller may then rebuild from [onChanged] whenever it is called,
+/// and checks only that it is still there to.
 ///
 /// A range that closes with the sheet on bounds it can't send is dropped,
 /// and the sheet says why once the frame ends, as an outcome whose surface
@@ -94,14 +114,42 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
   /// has left the screen.
   late CollectionFilter _filter;
 
+  /// Whether the sheet has been taken out of the tree, as it is in the
+  /// frame that disposes it.
+  bool _leaving = false;
+
   @override
   void initState() {
     super.initState();
     _filter = widget.initial;
   }
 
+  @override
+  void activate() {
+    super.activate();
+    _leaving = false;
+  }
+
+  @override
+  void deactivate() {
+    _leaving = true;
+    super.deactivate();
+  }
+
+  /// Applies [change] to the filter and sends the result, with any flip
+  /// left with nothing chosen dropped (#715).
+  ///
+  /// A field closing with the sheet commits from its `dispose`, while the
+  /// tree is locked and a caller's `setState` would throw. That filter is
+  /// sent once the frame ends, in the order the fields committed.
   void _edit(CollectionFilter Function(CollectionFilter filter) change) {
-    final changed = change(_filter);
+    final changed = withoutIdleFlips(change(_filter));
+    if (_leaving) {
+      _filter = changed;
+      final onChanged = widget.onChanged;
+      WidgetsBinding.instance.addPostFrameCallback((_) => onChanged(changed));
+      return;
+    }
     setState(() => _filter = changed);
     widget.onChanged(changed);
   }
@@ -110,9 +158,29 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
   void _editGame(GameSearchFilter Function(GameSearchFilter game) change) =>
       _edit((filter) => filter.copyWith(game: change(filter.game)));
 
-  /// Every facet this sheet offers cleared: only the caller's query stays.
-  static CollectionFilter _cleared(CollectionFilter filter) =>
-      CollectionFilter(query: filter.query);
+  /// [filter] with every choice this sheet offers under its options cleared,
+  /// and with them the flips of the facets left with nothing chosen (#715).
+  ///
+  /// The caller's query stays, and so does what the options leave out, such
+  /// as a medium where the sheet has no Medium section, with its flip.
+  CollectionFilter _cleared(CollectionFilter filter) {
+    final options = widget.options;
+    final game = filter.game;
+    return withoutIdleFlips(
+      filter.copyWith(
+        game: GameSearchFilter(
+          contentTypes: game.contentTypes.difference(
+            options.contentTypes.toSet(),
+          ),
+          platformTypes: game.platformTypes.difference(
+            options.platformTypes.toSet(),
+          ),
+        ),
+        mediums: options.medium ? const {} : filter.mediums,
+        missingBaseGame: !options.missingBaseGame && filter.missingBaseGame,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,6 +207,10 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
               ),
             ),
         ],
+        exclude: _exclude(
+          CollectionFacet.contentType,
+          l10n.gameFiltersFilterContentType,
+        ),
       ),
       _ChipSection(
         heading: l10n.gameFiltersFilterPlatformType,
@@ -155,7 +227,29 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
               ),
             ),
         ],
+        exclude: _exclude(
+          CollectionFacet.platformType,
+          l10n.gameFiltersFilterPlatformType,
+        ),
       ),
+      if (options.medium)
+        _ChipSection(
+          heading: l10n.gameFiltersMedium,
+          chips: [
+            for (final medium in GameMedium.values)
+              FilterChip(
+                key: GameFilterKeys.medium(medium),
+                label: GameFilterChipLabel(mediumLabel(l10n, medium)),
+                selected: _filter.mediums.contains(medium),
+                onSelected: (on) => _edit(
+                  (filter) => filter.copyWith(
+                    mediums: _toggled(filter.mediums, medium, on),
+                  ),
+                ),
+              ),
+          ],
+          exclude: _exclude(CollectionFacet.medium, l10n.gameFiltersMedium),
+        ),
       _range(
         CollectionFacet.publishYear,
         heading: l10n.gameFiltersFilterYear,
@@ -164,6 +258,7 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
         helper: l10n.gameFiltersYearHelper,
         notApplied: l10n.gameFiltersYearNotApplied,
         includeUnknown: l10n.gameFiltersIncludeUnknownYear,
+        leaveOutUnknown: l10n.gameFiltersLeaveOutUnknownYear,
       ),
       _range(
         CollectionFacet.playerCount,
@@ -172,6 +267,7 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
         helper: l10n.gameFiltersPlayersHelper,
         notApplied: l10n.gameFiltersPlayersNotApplied,
         includeUnknown: l10n.gameFiltersIncludeUnknownPlayers,
+        leaveOutUnknown: l10n.gameFiltersLeaveOutUnknownPlayers,
       ),
       _range(
         CollectionFacet.playTime,
@@ -180,8 +276,27 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
         helper: l10n.gameFiltersPlayTimeHelper,
         notApplied: l10n.gameFiltersPlayTimeNotApplied,
         includeUnknown: l10n.gameFiltersIncludeUnknownPlayTime,
+        leaveOutUnknown: l10n.gameFiltersLeaveOutUnknownPlayTime,
         bands: _bands(l10n, tokens, game.playTime),
       ),
+      if (options.missingBaseGame)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SwitchListTile(
+              key: GameFilterKeys.missingBaseGame,
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.gameFiltersMissingBaseGame),
+              value: _filter.missingBaseGame,
+              onChanged: (on) =>
+                  _edit((filter) => filter.copyWith(missingBaseGame: on)),
+            ),
+            ?_exclude(
+              CollectionFacet.missingBaseGame,
+              l10n.gameFiltersMissingBaseGameInUse,
+            ),
+          ],
+        ),
     ];
 
     // As tall as its controls, scrolling once they outgrow the screen, and
@@ -235,8 +350,43 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
     );
   }
 
+  /// The switch ending [facet]'s section that leaves out what the section
+  /// matches instead (#715), or null where the options don't offer it.
+  ///
+  /// It can be turned only while the section narrows, and until then it
+  /// stays, disabled, and says why. A screen reader hears it named for its
+  /// section by [name], since every section's reads the same on screen.
+  Widget? _exclude(CollectionFacet facet, String name) {
+    if (!widget.options.exclusion) return null;
+    final l10n = GameFiltersLocalizations.of(context);
+    final narrows = _filter.facetsInUse.contains(facet);
+    return SwitchListTile(
+      key: GameFilterKeys.exclude(facet),
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        l10n.gameFiltersExclude,
+        semanticsLabel: l10n.gameFiltersExcludeNamed(name),
+      ),
+      subtitle: narrows ? null : Text(l10n.gameFiltersExcludeNothingChosen),
+      value: _filter.excluded.contains(facet),
+      onChanged: narrows
+          ? (on) => _edit(
+              (filter) => filter.copyWith(
+                excluded: _toggled(filter.excluded, facet, on),
+              ),
+            )
+          : null,
+    );
+  }
+
   /// The section for [range], one of the three ranges: the From and To
-  /// fields, the switch that keeps games with no value, and any [bands].
+  /// fields, the switch that keeps games with no value, any [bands], and the
+  /// switch that flips it where the options offer one.
+  ///
+  /// The no-value switch is titled [includeUnknown], or [leaveOutUnknown]
+  /// while the range is flipped: a flip leaves out everything the range
+  /// keeps, games with no value included (`filterCollection`), so there the
+  /// switch leaves them out (#715). Its key, its value and its place stay.
   Widget _range(
     CollectionFacet range, {
     required String heading,
@@ -244,10 +394,12 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
     required String helper,
     required String Function(String problem) notApplied,
     required String includeUnknown,
+    required String leaveOutUnknown,
     bool allowNegative = false,
     Widget? bands,
   }) {
     final value = _rangeOf(_filter.game, range);
+    final flipped = _filter.excluded.contains(range);
     return _RangeSection(
       heading: heading,
       bands: bands,
@@ -276,7 +428,7 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
       includeUnknown: SwitchListTile(
         key: GameFilterKeys.includeUnknown(range),
         contentPadding: EdgeInsets.zero,
-        title: Text(includeUnknown),
+        title: Text(flipped ? leaveOutUnknown : includeUnknown),
         value: value.includeUnknown,
         onChanged: (on) => _editGame(
           (game) => _withRange(
@@ -286,6 +438,7 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
           ),
         ),
       ),
+      exclude: _exclude(range, heading),
     );
   }
 
@@ -347,7 +500,14 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
     CollectionFacet.publishYear => game.publishYear,
     CollectionFacet.playerCount => game.playerCount,
     CollectionFacet.playTime => game.playTime,
-    _ => throw ArgumentError.value(range, 'range', 'is not a range'),
+    CollectionFacet.contentType ||
+    CollectionFacet.platformType ||
+    CollectionFacet.medium ||
+    CollectionFacet.missingBaseGame => throw ArgumentError.value(
+      range,
+      'range',
+      'is not a range',
+    ),
   };
 
   /// [game] with [range], one of the three ranges, set to [value].
@@ -359,7 +519,14 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
     CollectionFacet.publishYear => game.copyWith(publishYear: value),
     CollectionFacet.playerCount => game.copyWith(playerCount: value),
     CollectionFacet.playTime => game.copyWith(playTime: value),
-    _ => throw ArgumentError.value(range, 'range', 'is not a range'),
+    CollectionFacet.contentType ||
+    CollectionFacet.platformType ||
+    CollectionFacet.medium ||
+    CollectionFacet.missingBaseGame => throw ArgumentError.value(
+      range,
+      'range',
+      'is not a range',
+    ),
   };
 
   static Set<T> _toggled<T>(Set<T> set, T value, bool on) =>
@@ -367,12 +534,17 @@ class _GameFilterSheetState extends State<_GameFilterSheet> {
 }
 
 /// One axis's choices under its heading: any number chosen, and none
-/// chosen does not narrow.
+/// chosen does not narrow. Any [exclude] switch comes last.
 class _ChipSection extends StatelessWidget {
-  const _ChipSection({required this.heading, required this.chips});
+  const _ChipSection({
+    required this.heading,
+    required this.chips,
+    this.exclude,
+  });
 
   final String heading;
   final List<Widget> chips;
+  final Widget? exclude;
 
   @override
   Widget build(BuildContext context) {
@@ -390,25 +562,29 @@ class _ChipSection extends StatelessWidget {
           runSpacing: tokens.spaceSm,
           children: chips,
         ),
+        ?exclude,
       ],
     );
   }
 }
 
 /// One range under its heading: the bands, where it has them, then the From
-/// and To fields and the switch that keeps games with no value.
+/// and To fields, the switch that keeps games with no value, and any
+/// [exclude] switch.
 class _RangeSection extends StatelessWidget {
   const _RangeSection({
     required this.heading,
     required this.field,
     required this.includeUnknown,
     this.bands,
+    this.exclude,
   });
 
   final String heading;
   final Widget field;
   final Widget includeUnknown;
   final Widget? bands;
+  final Widget? exclude;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +600,7 @@ class _RangeSection extends StatelessWidget {
         if (bands != null) ...[bands, const BgeGap.md()],
         field,
         includeUnknown,
+        ?exclude,
       ],
     );
   }

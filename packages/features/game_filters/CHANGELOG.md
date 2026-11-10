@@ -9,5 +9,7 @@
   where a caller asks, a Medium section, a switch that keeps only the
   expansions shown without their base game, and a switch per section that
   leaves out what it matches. `GameFiltersInUse` hands focus on when a chip
-  is removed, to the next chip or to the caller's own control. The labels
-  the sheet and the chips share with the catalog's facts live here too.
+  is removed, to the next chip or to the caller's own control; `InUseChips`
+  is the row of chips it is drawn with, for chips that name something else.
+  The labels the sheet and the chips share with the catalog's facts live
+  here too.
