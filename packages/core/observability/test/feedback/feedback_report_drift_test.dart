@@ -89,7 +89,10 @@ void main() {
     test('validate flags a breadcrumb list past the serialized byte cap', () {
       // Ten ~10 KB crumbs serialize well past the 64 KB cap.
       final crumbs = List.generate(10, (i) => crumb('x' * 10000));
-      assert(serializedBytes(crumbs) > FeedbackConstants.maxBreadcrumbsBytes);
+      assert(
+        serializedBytes(crumbs) > FeedbackConstants.maxBreadcrumbsBytes,
+        'the setup crumbs should exceed the byte cap',
+      );
 
       final report = FeedbackReport(
         category: FeedbackCategory.bug,

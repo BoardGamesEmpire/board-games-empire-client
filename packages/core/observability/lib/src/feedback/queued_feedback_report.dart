@@ -179,7 +179,7 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// The sink's address for this record.
   ///
   /// This getter is the **only** place the wire vocabulary and the
-  /// storage vocabulary meet. [FeedbackSink] and its implementations know
+  /// storage vocabulary meet. `FeedbackSink` and its implementations know
   /// records by `storageKey`; the value they get is the report's
   /// [FeedbackReport.clientRequestId], because reusing the idempotency
   /// token as the address is what makes a drain racing a resubmission

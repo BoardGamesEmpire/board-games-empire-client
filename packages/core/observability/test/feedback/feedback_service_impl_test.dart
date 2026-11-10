@@ -172,7 +172,10 @@ void main() {
     test('trims the breadcrumb snapshot oldest-first to the byte cap', () {
       // Ten ~10 KB crumbs — well past the 64 KB serialized cap.
       final backing = List.generate(10, (i) => crumb('crumb-$i${'x' * 10000}'));
-      assert(serializedBytes(backing) > FeedbackConstants.maxBreadcrumbsBytes);
+      assert(
+        serializedBytes(backing) > FeedbackConstants.maxBreadcrumbsBytes,
+        'the setup crumbs should exceed the byte cap',
+      );
       final service = buildService(breadcrumbSource: () => backing);
 
       final report = service.buildReport(
@@ -1450,6 +1453,9 @@ class _RecordingTransport implements FeedbackTransport {
     final fails =
         threshold == null ||
         (failOnCallOnly ? _calls == threshold : _calls >= threshold);
+    // A test fake that throws whatever object it was given, which may be a
+    // non-Exception.
+    // ignore: only_throw_errors
     if (fails) throw error!;
   }
 }
@@ -1480,9 +1486,9 @@ class _RecordingSink implements FeedbackSink {
   @override
   final bool survivesRestart;
 
-  final Object? persistError;
-  final Object? updateError;
-  final Object? removeError;
+  final Error? persistError;
+  final Error? updateError;
+  final Error? removeError;
   final List<QueuedFeedbackReport> _pending;
 
   final List<QueuedFeedbackReport> persisted = [];
@@ -1540,11 +1546,11 @@ class _GateOneTransport implements FeedbackTransport {
   final String gateOn;
 
   /// Thrown by the gated send once released; null lets it succeed.
-  final Object? errorForGated;
+  final Exception? errorForGated;
 
   /// Thrown by every other send. An unrecognised type is run-level, so this
   /// is how a test stops the drain before it empties the queue.
-  final Object? errorForOthers;
+  final Error? errorForOthers;
 
   final _gate = Completer<void>();
   final _arrived = Completer<void>();

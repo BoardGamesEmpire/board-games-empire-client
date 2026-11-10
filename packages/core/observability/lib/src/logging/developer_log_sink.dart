@@ -73,7 +73,7 @@ class DeveloperLogSink implements LogSink {
       // rides there so DevTools can render it structurally. The exception
       // itself goes unless its text carries bound values, which are removed
       // by sending the stripped text instead.
-      final Object? errorArg = hasError
+      final errorArg = hasError
           ? Redaction.scrubBoundValues(record.error!)
           : (hasContext ? context : null);
 

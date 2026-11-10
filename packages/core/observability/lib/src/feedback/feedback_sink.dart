@@ -73,7 +73,7 @@ abstract interface class FeedbackSink {
   /// The queued message depends on it (#385). A report queued to a sink that
   /// survives is saved to send later; one queued to a sink that does not is
   /// held only until the app closes, so `submit` reports
-  /// [FeedbackSubmitResult.queuedForSession] and the outcome screens say the
+  /// `FeedbackSubmitResult.queuedForSession` and the outcome screens say the
   /// report will be lost rather than promising a later send.
   ///
   /// Answer for the storage itself. A store the browser may still clear under

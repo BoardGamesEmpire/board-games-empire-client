@@ -1,4 +1,4 @@
-/// The environment stamped onto a [FeedbackReport] at build time (#69).
+/// The environment stamped onto a `FeedbackReport` at build time (#69).
 ///
 /// Assembled at the composition root, where the pieces live: `appVersion`
 /// comes from the root container's `BuildInfo` (#35), `platform`/`locale`

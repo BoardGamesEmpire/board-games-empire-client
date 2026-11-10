@@ -1,6 +1,6 @@
 /// Structured log payload: a plain message plus a context map.
 ///
-/// [BgeLogger] wraps `(message, context)` pairs in this class before
+/// `BgeLogger` wraps `(message, context)` pairs in this class before
 /// handing them to `package:logging`, which stores non-String payloads on
 /// `LogRecord.object` while deriving `LogRecord.message` from [toString].
 ///

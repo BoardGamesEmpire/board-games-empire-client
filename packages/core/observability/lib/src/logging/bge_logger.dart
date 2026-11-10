@@ -84,7 +84,7 @@ class BgeLogger {
     StackTrace? stackTrace,
     Map<String, dynamic>? context,
   ) {
-    final Object payload = (context == null || context.isEmpty)
+    final payload = (context == null || context.isEmpty)
         ? message
         : ContextLogMessage(message, context);
     _logger.log(level.level, payload, error, stackTrace);

@@ -77,7 +77,7 @@ class LogRecordFormatter {
   /// Pulls the structured context map off a record's payload, or null when
   /// the record carried none.
   ///
-  /// [BgeLogger] wraps `(message, context)` pairs in [ContextLogMessage];
+  /// `BgeLogger` wraps `(message, context)` pairs in [ContextLogMessage];
   /// a raw `Map` logged directly is also honoured. Any other payload
   /// (including a plain `String`, where `record.object` is null) yields
   /// null.

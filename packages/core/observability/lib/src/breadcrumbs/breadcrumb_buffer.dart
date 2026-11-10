@@ -18,7 +18,7 @@ import 'package:observability/src/redaction/redaction.dart';
 /// - Messages run through [Redaction.redactEmailsIn].
 /// - Context maps (from [ContextLogMessage] payloads, or a raw `Map`
 ///   logged directly) run through [Redaction.redactJsonFields] against
-///   [redactedContextFields].
+///   `redactedContextFields`.
 /// - Stack traces are NOT buffered: `LogRecord.error` / `stackTrace` stay
 ///   on the live record for console handlers. Error text reaches the
 ///   buffer only if the caller put it in the message, where the email

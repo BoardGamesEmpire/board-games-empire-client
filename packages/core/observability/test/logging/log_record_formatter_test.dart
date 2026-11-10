@@ -129,8 +129,10 @@ void main() {
 class _DatabaseError {
   @override
   String toString() =>
-      'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
-      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
+      'SqliteException(2067): while executing statement, UNIQUE constraint '
+      'failed\n'
+      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, '
+      'Kitchen Table';
 }
 
 class _Unencodable {

@@ -22,6 +22,7 @@ class PrintLogSink implements LogSink {
   final LogRecordFormatter _formatter;
 
   static void _defaultOut(String line) {
+    // The sink's whole job is writing a line to stdout.
     // ignore: avoid_print
     print(line);
   }
