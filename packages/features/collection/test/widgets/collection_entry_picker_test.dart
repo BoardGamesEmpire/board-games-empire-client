@@ -67,7 +67,7 @@ bool _ringShows(WidgetTester tester, String entryId) {
   return (box.decoration as BoxDecoration).border != null;
 }
 
-/// A page with a button that opens the picker over [items], recording what
+/// A page with a button that opens the picker over `items`, recording what
 /// each tile's tap hands to `onOpen`.
 class _Host {
   final opener = FocusNode(debugLabel: 'opener');

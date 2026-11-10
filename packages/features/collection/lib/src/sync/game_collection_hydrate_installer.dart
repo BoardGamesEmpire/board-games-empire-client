@@ -137,9 +137,7 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
       logger: _log,
       guard: guard,
       context: {'serverId': server.serverId},
-    );
-
-    pass.registerRehydrate(container, 'collection', staleAfter: staleAfter);
+    )..registerRehydrate(container, 'collection', staleAfter: staleAfter);
 
     container.registerSingleton<GameCollectionRefresher>(
       GameCollectionRefresher(pass.run, afterChange: pass.runAfterSettled),

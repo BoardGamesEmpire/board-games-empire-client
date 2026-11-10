@@ -256,7 +256,7 @@ class _EditCollectionEntrySheetState extends State<_EditCollectionEntrySheet> {
           ),
           child: BlocBuilder<CollectionEntryBloc, CollectionEntryState>(
             buildWhen: (previous, current) => previous.action != current.action,
-            builder: (context, state) => _formFor(context, state),
+            builder: _formFor,
           ),
         ),
       ),

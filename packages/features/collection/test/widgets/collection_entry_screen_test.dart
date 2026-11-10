@@ -786,9 +786,7 @@ void main() {
         tester,
         CollectionEntryScreen.removeKey,
         l10n.collectionEntryRemove,
-      );
-
-      remove.requestFocus();
+      )..requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
@@ -855,12 +853,10 @@ void main() {
       expect(blocOf(tester).state.action, CollectionEntryAction.removing);
 
       // Pushed from outside the screen, which holds its own ways out.
-      unawaited(
-        Navigator.of(tester.element(find.byType(CollectionEntryDetail))).push(
-          MaterialPageRoute<void>(
-            builder: (_) =>
-                Scaffold(appBar: AppBar(), body: const Text(_coveringCopy)),
-          ),
+      Navigator.of(tester.element(find.byType(CollectionEntryDetail))).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              Scaffold(appBar: AppBar(), body: const Text(_coveringCopy)),
         ),
       );
       await tester.pumpAndSettle();

@@ -29,7 +29,7 @@ import 'package:observability/observability.dart';
 /// query, so the next table update delivers rows on the same subscription.
 /// Only rows clear it; a hydrate result is an annotation, not data.
 ///
-/// A null [hydration] stream means there is no hydrate to wait for, which
+/// A null `hydration` stream means there is no hydrate to wait for, which
 /// reads as settled rather than as loading forever.
 ///
 /// ## A re-check is not a first fill
@@ -56,7 +56,7 @@ import 'package:observability/observability.dart';
 ///
 /// ## The retry
 ///
-/// The bloc calls [onRetry] rather than the button, because starting a pass
+/// The bloc calls `onRetry` rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it.
 class GameCollectionListBloc

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -45,13 +43,11 @@ void main() {
           home: const Scaffold(body: Text('home')),
         ),
       );
-      unawaited(
-        Navigator.of(tester.element(find.text('home'))).push(
-          MaterialPageRoute<void>(
-            builder: (_) => GameCollectionListScreen(
-              repository: repository,
-              layouts: _Thumbnails(),
-            ),
+      Navigator.of(tester.element(find.text('home'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameCollectionListScreen(
+            repository: repository,
+            layouts: _Thumbnails(),
           ),
         ),
       );

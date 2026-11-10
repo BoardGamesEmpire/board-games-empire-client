@@ -316,10 +316,8 @@ void main() {
       expect(pool.reads, [1]);
       expect(find.byType(Card), findsNothing);
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       expect(pool.reads, [1], reason: 'covering it reads nothing');
@@ -452,7 +450,7 @@ void main() {
       // And it is drawn so: just inside the left edge, a little below the top
       // corner, is on a rounded rectangle's ring. A stadium this tall would
       // curve away from the edge there and leave the button's inside showing.
-      RenderObject boundary = tester.renderObject(byKey(StatsCard.promptKey));
+      var boundary = tester.renderObject(byKey(StatsCard.promptKey));
       while (!boundary.isRepaintBoundary) {
         boundary = boundary.parent!;
       }
@@ -524,10 +522,8 @@ void main() {
 
       // The page being uncovered reads again, and a user with no household has
       // nothing to read.
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();
@@ -570,10 +566,8 @@ void main() {
       await show(tester, inHouseholds: [household('h1')]);
       expect(pool.reads, [1]);
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       expect(pool.reads, [1], reason: 'covering it reads nothing');

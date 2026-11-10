@@ -1139,8 +1139,7 @@ void main() {
             matching: find.byIcon(Icons.view_list_outlined),
           ),
         ),
-      );
-      segment.requestFocus();
+      )..requestFocus();
       await tester.pump();
 
       status
@@ -2544,12 +2543,10 @@ void main() {
           tester,
           twice,
           layouts: layouts,
-          onOpen: (context, id) => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    Scaffold(appBar: AppBar(), body: Text('entry $id')),
-              ),
+          onOpen: (context, id) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  Scaffold(appBar: AppBar(), body: Text('entry $id')),
             ),
           ),
         );
@@ -2710,14 +2707,16 @@ void main() {
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: away);
       addTearDown(mouse.removePointer);
-      return (at) async {
+      Future<void> click(Offset at) async {
         await mouse.moveTo(at);
         await mouse.down(at);
         await tester.pump(const Duration(milliseconds: 50));
         await mouse.up();
         await mouse.moveTo(away);
         await tester.pumpAndSettle();
-      };
+      }
+
+      return click;
     }
 
     /// Clicks [stack], then closes its picker with a click on the barrier.

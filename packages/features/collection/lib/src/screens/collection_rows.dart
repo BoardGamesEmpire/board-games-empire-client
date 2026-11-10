@@ -42,7 +42,7 @@ final _placed = Expando<List<PlacedGame<List<GameCollectionListItem>>>>(
 /// [placeCollection] flattened: each top-level group, then the groups nested
 /// under it. An expansion of two owned base games appears under each.
 ///
-/// [titleOf] names a base game in [CollectionRow.parentTitle]; the screen
+/// [titleOf] names a base game in `CollectionRow.parentTitle`; the screen
 /// passes the formatter its own rows use, so the parent is named as its row
 /// names it, subtitle and all. It stays out of this file so the file needs no
 /// localizations.

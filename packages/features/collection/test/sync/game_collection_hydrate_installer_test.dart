@@ -87,7 +87,7 @@ void main() {
     // ones too, so the read and both writes must answer.
     if (collection) {
       final repository = _MockGameCollectionRepository();
-      when(() => repository.removalMark()).thenAnswer((_) async => 0);
+      when(repository.removalMark).thenAnswer((_) async => 0);
       when(
         () => repository.mergeFromServer(
           any(),
