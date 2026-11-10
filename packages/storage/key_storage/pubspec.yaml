@@ -12,10 +12,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  flutter_secure_storage: ^11.0.0
   interfaces:
     path: ../../core/interfaces
-
-  flutter_secure_storage: ^11.0.0
 
 dev_dependencies:
   flutter_test:
