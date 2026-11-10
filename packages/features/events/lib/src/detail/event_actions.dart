@@ -61,7 +61,9 @@ enum EventAction {
   /// Answer whether the viewer is coming (#508).
   rsvp,
 
-  /// Add people to the roster and remove them (#510).
+  /// Add people to the roster and remove them (#510). Held wherever
+  /// [attendeeReachFor] gives more than [AttendeeReach.none]: the role sets
+  /// below leave it out, so the reach is its one source.
   manageAttendees,
 
   /// Accept a nominated game (#518).
@@ -114,11 +116,135 @@ Set<EventAction> eventActionsFor(
           null => const <EventAction>{},
         };
 
-  return Set.unmodifiable({...fromEvent, ...fromHousehold});
+  // The roster's grants are written once, in [attendeeReachFor], so the
+  // action and the reach can't disagree.
+  final manages =
+      attendeeReachFor(
+        event,
+        eventRole: eventRole,
+        householdRole: householdRole,
+      ) !=
+      AttendeeReach.none;
+
+  return Set.unmodifiable({
+    ...fromEvent,
+    ...fromHousehold,
+    if (manages) EventAction.manageAttendees,
+  });
 }
 
+/// How far a viewer reaches over other people's roster rows (#510).
+enum AttendeeReach {
+  /// No attendee writes.
+  none,
+
+  /// `create:event_attendee:attending-role` and
+  /// `delete:event_attendee:attending-role`: an organizer or moderator gives,
+  /// and removes, Participant, Guest and Spectator only.
+  attendingRoles,
+
+  /// `manage:event_attendee` and its `:household` variant: the host, a
+  /// co-host, and a household owner or admin on a household event.
+  allRoles,
+}
+
+/// The wider of what [eventRole] and, on a household event, [householdRole]
+/// give: `manage:event_attendee` (host, co-host) and
+/// `manage:event_attendee:household` (household owner, admin) reach
+/// [AttendeeReach.allRoles]; the `:attending-role` slugs (organizer,
+/// moderator) reach [AttendeeReach.attendingRoles].
+///
+/// [AttendeeReach.none] for a local-only event, as [eventActionsFor] is.
+AttendeeReach attendeeReachFor(
+  Event event, {
+  EventRole? eventRole,
+  HouseholdRole? householdRole,
+}) {
+  if (event.isLocalOnly) return AttendeeReach.none;
+
+  final fromEvent = switch (eventRole) {
+    EventRole.host || EventRole.coHost => AttendeeReach.allRoles,
+    EventRole.organizer || EventRole.moderator => AttendeeReach.attendingRoles,
+    EventRole.participant ||
+    EventRole.guest ||
+    EventRole.spectator ||
+    EventRole.unknown ||
+    null => AttendeeReach.none,
+  };
+
+  final fromHousehold = event.householdId == null
+      ? AttendeeReach.none
+      : switch (householdRole) {
+          HouseholdRole.householdOwner ||
+          HouseholdRole.householdAdmin => AttendeeReach.allRoles,
+          HouseholdRole.householdMember ||
+          HouseholdRole.householdGuest ||
+          HouseholdRole.unknown ||
+          null => AttendeeReach.none,
+        };
+
+  // The enum runs narrowest to widest.
+  return fromEvent.index >= fromHousehold.index ? fromEvent : fromHousehold;
+}
+
+const _attendingRoles = <EventRole>[
+  EventRole.participant,
+  EventRole.guest,
+  EventRole.spectator,
+];
+
+const _allAssignableRoles = <EventRole>[
+  ..._attendingRoles,
+  EventRole.coHost,
+  EventRole.organizer,
+  EventRole.moderator,
+];
+
+/// The roles [reach] may give on an add (`create:event_attendee` under
+/// `manage:event_attendee`, or `create:event_attendee:attending-role`), in
+/// this order: participant, guest, spectator, then, for
+/// [AttendeeReach.allRoles], coHost, organizer, moderator. Never host or
+/// unknown. Unmodifiable.
+List<EventRole> assignableEventRoles(AttendeeReach reach) => switch (reach) {
+  AttendeeReach.none => const <EventRole>[],
+  AttendeeReach.attendingRoles => _attendingRoles,
+  AttendeeReach.allRoles => _allAssignableRoles,
+};
+
+/// Whether [reach] may remove [row] (`delete:event_attendee`, or
+/// `delete:event_attendee:attending-role`). Never the host's row, and never
+/// the viewer's own ([viewerAttendeeId]). A row whose role is null or
+/// unknown is not removable under any reach, because it can't be shown not to
+/// be the host's. Under [AttendeeReach.attendingRoles], only a participant's,
+/// guest's or spectator's row.
+bool canRemoveAttendee(
+  AttendeeReach reach,
+  EventAttendee row, {
+  required String? viewerAttendeeId,
+}) {
+  if (row.id == viewerAttendeeId) return false;
+  final role = row.role;
+  if (role == EventRole.host) return false;
+  return switch (reach) {
+    AttendeeReach.none => false,
+    AttendeeReach.attendingRoles => _attendingRoles.contains(role),
+    AttendeeReach.allRoles => role != null && role != EventRole.unknown,
+  };
+}
+
+/// Whether [reach] may set [row]'s answer (`update:event_attendee:status`,
+/// bound to the event rather than the actor's own row): any reach but
+/// [AttendeeReach.none], on any row but the viewer's own, which their chips
+/// answer (#508).
+bool canSetAnswerFor(
+  AttendeeReach reach,
+  EventAttendee row, {
+  required String? viewerAttendeeId,
+}) => reach != AttendeeReach.none && row.id != viewerAttendeeId;
+
 // The sets below are the backend's grants, slug by slug, from
-// `role-permission.catalog.ts`. The test asserts each one in full.
+// `role-permission.catalog.ts`, but for the roster's, which
+// [attendeeReachFor] holds. The test asserts each role's actions in full.
 
 /// `EventHost`: every action.
 const _host = <EventAction>{
@@ -148,8 +274,6 @@ const _host = <EventAction>{
   // actor's own row, so it covers the host's row too. A participant, guest or
   // spectator holds only the `:self` variant.
   EventAction.rsvp,
-  // `manage:event_attendee`
-  EventAction.manageAttendees,
   // `update:event_game_nomination:approve`
   EventAction.approveGame,
   // `update:event_game_nomination:reject`
@@ -173,7 +297,6 @@ const _coHost = <EventAction>{
   EventAction.removeDate,
   EventAction.voteAvailability,
   EventAction.rsvp,
-  EventAction.manageAttendees,
   EventAction.approveGame,
   EventAction.rejectGame,
   EventAction.resolveNomination,
@@ -192,11 +315,6 @@ const _organizer = <EventAction>{
   EventAction.voteAvailability,
   // `update:event_attendee:status`
   EventAction.rsvp,
-  // `create:event_attendee:attending-role` and
-  // `delete:event_attendee:attending-role`: the organizer adds and removes
-  // those who attend, without the appointing of hosts and moderators that
-  // `manage:event_attendee` carries (#539).
-  EventAction.manageAttendees,
 };
 
 /// `EventModerator`.
@@ -209,9 +327,6 @@ const _moderator = <EventAction>{
   EventAction.cancelDate,
   // `update:event_attendee:status`
   EventAction.rsvp,
-  // `create:event_attendee:attending-role` and
-  // `delete:event_attendee:attending-role`, as for the organizer.
-  EventAction.manageAttendees,
   // `update:event_game_nomination:resolve`
   EventAction.resolveNomination,
 };
@@ -257,8 +372,6 @@ const _householdOwnerOrAdmin = <EventAction>{
   EventAction.declineDate,
   // `update:event_occurrence:cancel:household`
   EventAction.cancelDate,
-  // `manage:event_attendee:household`
-  EventAction.manageAttendees,
   // `update:event_game_nomination:resolve:household`. Approving and rejecting
   // a nomination have no household variant.
   EventAction.resolveNomination,

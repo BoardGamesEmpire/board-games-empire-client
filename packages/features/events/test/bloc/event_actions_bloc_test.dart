@@ -516,6 +516,34 @@ void main() {
     });
   });
 
+  group('an RSVP failure (#748)', () {
+    test('a transient RSVP failure reads again', () {
+      const outcome = EventActionOutcome(
+        action: EventAction.rsvp,
+        result: EventActionResult.failed,
+        error: EventRemoteTransientException('x'),
+      );
+      expect(outcome.rereads, isTrue);
+    });
+
+    test('a transient attendee write failure reads again', () {
+      const outcome = EventActionOutcome(
+        action: EventAction.manageAttendees,
+        result: EventActionResult.failed,
+        error: EventRemoteTransientException('x'),
+      );
+      expect(outcome.rereads, isTrue);
+    });
+
+    test("a failure before the request went out still doesn't read again", () {
+      const outcome = EventActionOutcome(
+        action: EventAction.rsvp,
+        result: EventActionResult.failed,
+      );
+      expect(outcome.rereads, isFalse);
+    });
+  });
+
   group('date actions (#506)', () {
     // The real cache, as the detail bloc's tests use it: a date write is
     // judged by what the cache holds after it, and by when it held it.
@@ -1873,7 +1901,8 @@ void main() {
         'a network failure ends failed',
         _offline,
         EventActionResult.failed,
-        false,
+        // Amended by #748: the answer may have landed.
+        true,
       ),
     ];
     for (final (name, error, result, rereads) in failures) {
@@ -1925,6 +1954,286 @@ void main() {
 
       expect(state, ended(EventActionResult.done));
       verifyWarnings(1);
+    });
+  });
+
+  group('attendee writes (#510)', () {
+    final row = attendance(EventParticipationStatus.invited);
+
+    setUpAll(() => registerFallbackValue(row));
+
+    setUp(() {
+      when(() => repository.addCachedAttendee(any())).thenAnswer((_) async {
+        calls.add('cache add');
+        return true;
+      });
+      when(
+        () => repository.removeCachedAttendee(
+          eventId: any(named: 'eventId'),
+          attendeeId: any(named: 'attendeeId'),
+        ),
+      ).thenAnswer((_) async {
+        calls.add('cache remove');
+        return true;
+      });
+      when(() => repository.cacheAttendee(any())).thenAnswer((_) async {
+        calls.add('cache answer');
+        return true;
+      });
+    });
+
+    /// A server whose attendee writes answer as [answer] does, each
+    /// recorded in [calls].
+    FakeEventRemote serverAnswering(
+      FutureOr<EventAttendee> Function() answer,
+    ) => FakeEventRemote.detail(
+      (_) => throw UnimplementedError('the actions read nothing'),
+      added: (_) {
+        calls.add('add');
+        return answer();
+      },
+      removed: (_) {
+        calls.add('remove');
+        return answer();
+      },
+      rsvp: (_) {
+        calls.add('answer');
+        return answer();
+      },
+    );
+
+    EventActionsState ended(
+      EventAttendeeWrite write,
+      EventActionResult result, {
+      Object? error,
+      String? name,
+    }) => EventActionsState(
+      outcome: EventActionOutcome(
+        action: EventAction.manageAttendees,
+        result: result,
+        error: error,
+        attendeeWrite: write,
+        attendeeName: name,
+      ),
+    );
+
+    const add = EventAttendeeAddRequested(
+      'e-1',
+      'u-2',
+      EventRole.participant,
+      name: 'Sam',
+    );
+    const remove = EventAttendeeRemoveRequested('e-1', 'att-2', name: 'Sam');
+    const answer = EventAttendeeAnswerRequested(
+      'e-1',
+      'att-2',
+      EventParticipationStatus.attending,
+      name: 'Sam',
+    );
+
+    test('an add is sent, cached, and ends done', () async {
+      final remote = serverAnswering(() async => row);
+      final bloc = build(remote, confirmSession: answering([true]));
+      addTearDown(bloc.close);
+
+      bloc.add(add);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+      await pumpEventQueue();
+
+      expect(remote.adds, [
+        (eventId: 'e-1', userId: 'u-2', role: EventRole.participant),
+      ]);
+      verify(() => repository.addCachedAttendee(row)).called(1);
+      expect(calls, ['session', 'add', 'cache add']);
+      expect(
+        state,
+        ended(EventAttendeeWrite.add, EventActionResult.done, name: 'Sam'),
+      );
+      expect(state.outcome!.rereads, isTrue);
+    });
+
+    test('a remove is sent, cached, and ends done', () async {
+      final remote = serverAnswering(() async => row);
+      final bloc = build(remote, confirmSession: answering([true]));
+      addTearDown(bloc.close);
+
+      bloc.add(remove);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+      await pumpEventQueue();
+
+      expect(remote.removes, [(eventId: 'e-1', attendeeId: 'att-2')]);
+      verify(
+        () => repository.removeCachedAttendee(
+          eventId: 'e-1',
+          attendeeId: 'att-2',
+        ),
+      ).called(1);
+      expect(calls, ['session', 'remove', 'cache remove']);
+      expect(
+        state,
+        ended(EventAttendeeWrite.remove, EventActionResult.done, name: 'Sam'),
+      );
+    });
+
+    test('an answer is sent, cached, and ends done', () async {
+      final remote = serverAnswering(() async => row);
+      final bloc = build(remote, confirmSession: answering([true]));
+      addTearDown(bloc.close);
+
+      bloc.add(answer);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+      await pumpEventQueue();
+
+      expect(remote.rsvps, [
+        (
+          eventId: 'e-1',
+          attendeeId: 'att-2',
+          status: EventParticipationStatus.attending,
+          notes: null,
+        ),
+      ]);
+      verify(() => repository.cacheAttendee(row)).called(1);
+      expect(calls, ['session', 'answer', 'cache answer']);
+      expect(
+        state,
+        ended(EventAttendeeWrite.answer, EventActionResult.done, name: 'Sam'),
+      );
+    });
+
+    test('an add answered 409 is changed, and reads again', () async {
+      const conflict = EventWriteConflictException('already', statusCode: 409);
+      final bloc = build(serverAnswering(() async => throw conflict));
+      addTearDown(bloc.close);
+
+      bloc.add(add);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(
+        state,
+        ended(
+          EventAttendeeWrite.add,
+          EventActionResult.changed,
+          error: conflict,
+          name: 'Sam',
+        ),
+      );
+      expect(state.outcome!.rereads, isTrue);
+      verifyNever(() => repository.addCachedAttendee(any()));
+    });
+
+    test('a remove answered 404 is gone, and reads again', () async {
+      final bloc = build(serverAnswering(() async => throw _gone));
+      addTearDown(bloc.close);
+
+      bloc.add(remove);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(
+        state,
+        ended(
+          EventAttendeeWrite.remove,
+          EventActionResult.gone,
+          error: _gone,
+          name: 'Sam',
+        ),
+      );
+      expect(state.outcome!.rereads, isTrue);
+    });
+
+    test('an answer refused is refused', () async {
+      final bloc = build(serverAnswering(() async => throw _refused));
+      addTearDown(bloc.close);
+
+      bloc.add(answer);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(
+        state,
+        ended(
+          EventAttendeeWrite.answer,
+          EventActionResult.refused,
+          error: _refused,
+          name: 'Sam',
+        ),
+      );
+      verifyNever(() => repository.cacheAttendee(any()));
+    });
+
+    test('a transient add failure reads again', () async {
+      final bloc = build(serverAnswering(() async => throw _offline));
+      addTearDown(bloc.close);
+
+      bloc.add(add);
+      final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(state.outcome!.result, EventActionResult.failed);
+      expect(state.outcome!.rereads, isTrue);
+    });
+
+    test('a second request while one is out is dropped', () async {
+      final release = Completer<EventAttendee>();
+      final remote = serverAnswering(() => release.future);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc
+        ..add(add)
+        ..add(remove);
+      await pumpEventQueue();
+      expect(remote.adds, hasLength(1));
+      expect(remote.removes, isEmpty);
+      release.complete(row);
+      await bloc.stream.firstWhere((s) => s.outcome != null);
+
+      expect(remote.removes, isEmpty);
+    });
+
+    blocTest<EventActionsBloc, EventActionsState>(
+      "an attendee drop names its write and person, and isn't read again",
+      build: () => build(serving((_) {})),
+      act: (bloc) => bloc.add(
+        const EventWriteDropped.attendee(
+          EventAttendeeWrite.remove,
+          name: 'Sam',
+        ),
+      ),
+      expect: () => [
+        const EventActionsState(
+          outcome: EventActionOutcome(
+            action: EventAction.manageAttendees,
+            result: EventActionResult.changed,
+            attendeeWrite: EventAttendeeWrite.remove,
+            attendeeName: 'Sam',
+            dropped: true,
+          ),
+        ),
+      ],
+      verify: (bloc) {
+        expect(bloc.state.outcome!.rereads, isFalse);
+        expect(calls, isEmpty);
+      },
+    );
+
+    test('a session that says no sends nothing', () async {
+      final remote = serverAnswering(() async => row);
+      final bloc = build(remote, confirmSession: () async => false);
+      addTearDown(bloc.close);
+
+      for (final request in [add, remove, answer]) {
+        bloc.add(request);
+        final state = await bloc.stream.firstWhere((s) => s.outcome != null);
+        expect(state.outcome!.result, EventActionResult.failed);
+        expect(state.outcome!.error, isNull);
+        expect(state.outcome!.rereads, isFalse);
+        bloc.add(const EventActionOutcomeDismissed());
+        await bloc.stream.firstWhere((s) => s.outcome == null);
+      }
+
+      expect(remote.adds, isEmpty);
+      expect(remote.removes, isEmpty);
+      expect(remote.rsvps, isEmpty);
+      verifyNever(() => repository.addCachedAttendee(any()));
+      verifyNever(() => repository.cacheAttendee(any()));
     });
   });
 }

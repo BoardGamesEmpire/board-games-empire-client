@@ -172,6 +172,8 @@ void main() {
     registerFallbackValue(EventAccessSource.read);
     registerFallbackValue(const EventDraft(title: 'x'));
     registerFallbackValue(AvailabilityResponse.available);
+    registerFallbackValue(EventRole.participant);
+    registerFallbackValue(_hosting('e-0'));
   });
 
   setUp(() {
@@ -1252,6 +1254,235 @@ void main() {
           expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
         },
       );
+    });
+
+    group('adding people (#510)', () {
+      final at = DateTime.utc(2026);
+      EventAttendee person(
+        String id,
+        String userId,
+        String name,
+        EventRole role, {
+        EventParticipationStatus status = EventParticipationStatus.attending,
+      }) => EventAttendee(
+        id: id,
+        eventId: 'e-0',
+        userId: userId,
+        displayName: name,
+        status: status,
+        role: role,
+        createdAt: at,
+        updatedAt: at,
+      );
+
+      // The viewer hosts e-0, with Ada beside them on its roster.
+      final me = person('att-me', 'u1', 'Sam', EventRole.host);
+      final hosted = EventSnapshot(
+        event: _upcoming('e-0').event,
+        occurrences: _upcoming('e-0').occurrences,
+        attendees: [me, person('att-2', 'u2', 'Ada', EventRole.participant)],
+      );
+      const cy = UserSummary(id: 'u3', username: 'cy', displayName: 'Cy');
+
+      GoRouter routerOf(WidgetTester tester) =>
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+
+      /// A server that reads [hosted] and adds whom it is asked to, invited.
+      _MockEventRemote hosting() {
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.addAttendee(
+            any(),
+            userId: any(named: 'userId'),
+            role: any(named: 'role'),
+          ),
+        ).thenAnswer(
+          (call) async => person(
+            'att-3',
+            call.namedArguments[#userId] as String,
+            'Cy',
+            call.namedArguments[#role] as EventRole,
+            status: EventParticipationStatus.invited,
+          ),
+        );
+        return remote;
+      }
+
+      /// A user search that finds Cy.
+      _MockUserRemote finding() {
+        final users = _MockUserRemote();
+        when(
+          () => users.searchUsers(
+            any(),
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer(
+          (_) async => const PaginatedResult(
+            items: [cy],
+            meta: PaginationMeta(
+              page: 1,
+              limit: UserRemoteDataSource.maxSearchPageSize,
+              total: 1,
+              totalPages: 1,
+              hasMore: false,
+            ),
+          ),
+        );
+        return users;
+      }
+
+      /// Opens e-0's detail, which the viewer hosts.
+      Future<void> openHosted(
+        WidgetTester tester, {
+        required EventRemoteDataSource remote,
+        UserRemoteDataSource? users,
+      }) async {
+        when(() => repository.addCachedAttendee(any()))
+            .thenAnswer((_) async => true);
+        await pumpHome(
+          tester,
+          remote: remote,
+          users: users,
+          detailCache: Stream.multi(
+            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+          ),
+        );
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+      }
+
+      Future<void> tapShown(WidgetTester tester, Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets("the detail's Add people opens /events/:id/attendees/add", (
+        tester,
+      ) async {
+        final history = FakeBrowserHistory.install(tester);
+        final remote = hosting();
+        await openHosted(tester, remote: remote, users: finding());
+
+        await tapShown(tester, find.byKey(EventDetailScreen.addAttendeeKey));
+
+        expect(find.byType(AddAttendeeScreen), findsOneWidget);
+        // On web it has an address of its own (#321).
+        expect(history.locations.last, AppRoutes.eventAddAttendeeOf('e-0'));
+
+        // The session's user search finds Cy, and the page answers with
+        // them, as a participant.
+        await tester.enterText(find.byKey(AddAttendeeScreen.searchKey), 'cy');
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+        await tapShown(tester, find.byKey(AddAttendeeScreen.resultKey('u3')));
+        await tapShown(tester, find.byKey(AddAttendeeScreen.addKey));
+
+        // Back on the event, which sends the add.
+        expect(find.byType(AddAttendeeScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        verify(
+          () => remote.addAttendee(
+            'e-0',
+            userId: 'u3',
+            role: EventRole.participant,
+          ),
+        ).called(1);
+        expect(
+          find.text("Added Cy. They'll be asked whether they're coming."),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a deep link to the add page lands on the detail', (
+        tester,
+      ) async {
+        // The page's roles and roster come from the open detail, which a
+        // link, a refresh or a history entry doesn't carry.
+        final history = FakeBrowserHistory.install(tester);
+        await openHosted(tester, remote: hosting(), users: finding());
+
+        routerOf(tester).go(AppRoutes.eventAddAttendeeOf('e-0'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddAttendeeScreen), findsNothing);
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(
+          tester
+              .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+              .eventId,
+          'e-0',
+        );
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+      });
+
+      testWidgets("the closed page's own history entry gives way to the "
+          'event, in its place', (tester) async {
+        // Browser Back or Forward to it restores the stack the entry
+        // stored, where go_router keeps a push's extra only as JSON, which
+        // the page's isn't, and runs no route redirect on a restored push.
+        // The route leaves for the event at once, and the entry becomes the
+        // event's, so Back from there doesn't come straight back.
+        final history = FakeBrowserHistory.install(tester);
+        await openHosted(tester, remote: hosting(), users: finding());
+        await tapShown(tester, find.byKey(EventDetailScreen.addAttendeeKey));
+        expect(find.byType(AddAttendeeScreen), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final detail = AppRoutes.eventDetailOf('e-0');
+        final page = AppRoutes.eventAddAttendeeOf('e-0');
+        // The page's entry, between the event's before it and after it.
+        final before = history.allLocations;
+        expect(before.sublist(before.length - 3), [detail, page, detail]);
+        expect(history.locations, before);
+
+        Future<void> expectTheEvent() async {
+          expect(find.byType(AddAttendeeScreen), findsNothing);
+          expect(find.byType(NotYetAvailableScreen), findsNothing);
+          expect(find.byType(EventDetailScreen), findsOneWidget);
+        }
+
+        await history.back();
+        await expectTheEvent();
+        // Replaced, not followed by a new entry.
+        expect(history.allLocations, [
+          ...before.sublist(0, before.length - 2),
+          detail,
+          detail,
+        ]);
+        expect(history.locations, hasLength(before.length - 1));
+
+        // Forward is the event's entry it came back from.
+        await history.forward();
+        await expectTheEvent();
+        expect(history.locations, hasLength(before.length));
+        expect(history.locations.last, detail);
+
+        // And Back twice passes the event's entries, the page's gone.
+        await history.back();
+        await expectTheEvent();
+        expect(history.locations, hasLength(before.length - 1));
+        await history.back();
+        await expectTheEvent();
+        expect(history.locations, hasLength(before.length - 2));
+        expect(history.allLocations, hasLength(before.length));
+      });
+
+      testWidgets('no Add people where no user search is registered', (
+        tester,
+      ) async {
+        // The page finds people through it.
+        await openHosted(tester, remote: hosting());
+
+        expect(find.byKey(EventDetailScreen.attendeesKey), findsOneWidget);
+        expect(find.text('Ada'), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.addAttendeeKey), findsNothing);
+      });
     });
   });
 

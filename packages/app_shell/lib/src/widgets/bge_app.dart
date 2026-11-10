@@ -408,6 +408,7 @@ class _BgeAppState extends State<BgeApp> {
       eventCreateBuilder: _buildEventCreateRoute,
       eventDetailBuilder: _buildEventDetailRoute,
       eventAvailabilityBuilder: _buildEventAvailabilityRoute,
+      eventAddAttendeeBuilder: _buildEventAddAttendeeRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -2035,6 +2036,11 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// *Who answered* pushes the poll's page above the detail (#507), so back
   /// returns here and web shows the page's own address (#321).
+  ///
+  /// *Add people* pushes the Add people page above it the same way (#510),
+  /// with what the page offers as the push's `extra`, and the detail sends
+  /// the add the page pops with. Offered only where the server has the user
+  /// search the page finds people through.
   Widget? _buildEventDetailRoute(BuildContext context, String eventId) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -2049,6 +2055,12 @@ class _BgeAppState extends State<BgeApp> {
       onBack: (ctx) => ctx.pop(),
       onWhoAnswered: (ctx) =>
           unawaited(ctx.push<void>(AppRoutes.eventAvailabilityOf(eventId))),
+      onAddAttendee: container.isRegistered<UserRemoteDataSource>()
+          ? (ctx, args) => ctx.push<EventAttendeeAddition>(
+              AppRoutes.eventAddAttendeeOf(eventId),
+              extra: args,
+            )
+          : null,
     );
   }
 
@@ -2067,6 +2079,31 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       remote: _eventRemote(container),
       confirmSession: _confirmEventSession(container),
+    );
+  }
+
+  /// The #510 Add people page of the event [eventId], behind
+  /// [_eventsContainer]'s gate and the user search it finds people through,
+  /// as the detail's way to it is. [args] is what the detail pushed it with:
+  /// anything else, which nothing pushes, falls back to the placeholder.
+  ///
+  /// Back, or Add, pops it with its answer to the detail beneath it, which
+  /// sends the add.
+  Widget? _buildEventAddAttendeeRoute(
+    BuildContext context,
+    String eventId,
+    Object args,
+  ) {
+    final container = _eventsContainer();
+    if (container == null ||
+        args is! AddAttendeeArgs ||
+        !container.isRegistered<UserRemoteDataSource>()) {
+      return null;
+    }
+
+    return AddAttendeeScreen(
+      users: container.get<UserRemoteDataSource>(),
+      args: args,
     );
   }
 

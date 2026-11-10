@@ -227,6 +227,20 @@ abstract final class AppRoutes {
   static String eventAvailabilityOf(String eventId) =>
       '${eventDetailOf(eventId)}/$_eventAvailabilitySegment';
 
+  /// The Add people page of one event (#510), beneath its detail. Build a
+  /// concrete location with [eventAddAttendeeOf].
+  ///
+  /// The page is opened only from the detail, which hands it what to offer
+  /// as the push's `extra`. A deep link carries none, and is sent to the
+  /// detail: see [EventAddAttendeeScreenBuilder].
+  static const eventAddAttendee = '$eventDetail/$_eventAddAttendeeSegment';
+
+  static const _eventAddAttendeeSegment = 'attendees/add';
+
+  /// The location of one event's Add people page.
+  static String eventAddAttendeeOf(String eventId) =>
+      '${eventDetailOf(eventId)}/$_eventAddAttendeeSegment';
+
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
@@ -588,6 +602,32 @@ typedef EventAvailabilityScreenBuilder = Widget? Function(
   String eventId,
 );
 
+/// Builds one event's Add people page (#510) for the
+/// [AppRoutes.eventAddAttendee] route, given the `:eventId` the path carried
+/// and the `extra` the detail pushed it with: what the page offers, worked
+/// out from the open detail. Same null contract as
+/// [EventOverviewScreenBuilder], and null too for [args] the builder doesn't
+/// recognise.
+///
+/// [args] is `Object`, not the events feature's own type, so this file stays
+/// free of feature packages, as every other builder here is typed by ids.
+///
+/// A location that carries no `extra`, as a deep link or a `go` doesn't, is
+/// redirected to the event's detail, where the page is opened from. One
+/// more location carries none: the page's own browser history entry,
+/// restored by Back or Forward on the web once the page has closed. go_router
+/// keeps a push's `extra` there only as JSON, which the page's isn't, and
+/// runs no route redirect on a restored push. So there the route builds
+/// nothing and leaves for the detail beneath it at once, in that entry's
+/// place: not a page whose answer nobody awaits any more, nor a placeholder
+/// that says the page doesn't exist. Only `extra` the builder doesn't
+/// recognise, which nothing pushes, falls back to [NotYetAvailableScreen].
+typedef EventAddAttendeeScreenBuilder = Widget? Function(
+  BuildContext context,
+  String eventId,
+  Object args,
+);
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -710,6 +750,7 @@ GoRouter buildAppRouter({
   EventCreateScreenBuilder? eventCreateBuilder,
   EventDetailScreenBuilder? eventDetailBuilder,
   EventAvailabilityScreenBuilder? eventAvailabilityBuilder,
+  EventAddAttendeeScreenBuilder? eventAddAttendeeBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -1087,6 +1128,10 @@ GoRouter buildAppRouter({
             // #507: who answered the event's poll, nested for the reason
             // the household children are (#308): a `go` straight to it
             // builds the event beneath it, so back is a plain pop to there.
+            //
+            // #510: the Add people page, nested the same way. It is built
+            // only from what the detail pushed it with, so a deep link lands
+            // on the detail instead (see [EventAddAttendeeScreenBuilder]).
             routes: [
               GoRoute(
                 path: AppRoutes._eventAvailabilitySegment,
@@ -1095,6 +1140,28 @@ GoRouter buildAppRouter({
                   return _materialPage(
                     state,
                     eventAvailabilityBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+              GoRoute(
+                path: AppRoutes._eventAddAttendeeSegment,
+                redirect: (context, state) => state.extra == null
+                    ? AppRoutes.eventDetailOf(
+                        state.pathParameters[AppRoutes.eventIdParam] ?? '',
+                      )
+                    : null,
+                pageBuilder: (context, state) {
+                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
+                  final args = state.extra;
+                  // The page's own history entry, restored once the page
+                  // has closed, which the redirect never sees.
+                  if (args == null) {
+                    return _passThroughPage(state, _LeaveForEvent(eventId: id));
+                  }
+                  return _materialPage(
+                    state,
+                    eventAddAttendeeBuilder?.call(context, id, args) ??
                         const NotYetAvailableScreen(),
                   );
                 },
@@ -1250,8 +1317,66 @@ Page<void> _materialPage(GoRouterState state, Widget child) =>
 Page<void> _noTransitionPage(GoRouterState state, Widget child) =>
     _page(NoTransitionPage<void>.new, state, child);
 
+/// A page that leaves the route beneath it showing, and comes and goes with
+/// no transition, for a route that leaves as soon as it is built (#510).
+Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
+  ({required child, key, name, arguments, restorationId}) =>
+      CustomTransitionPage<void>(
+        key: key,
+        name: name,
+        arguments: arguments,
+        restorationId: restorationId,
+        opaque: false,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        transitionsBuilder: (_, _, _, child) => child,
+        child: child,
+      ),
+  state,
+  child,
+);
+
+/// What the Add people route builds where it has nothing to build the page
+/// from (#510): its own browser history entry, restored by Back or Forward
+/// once the page has closed (see [EventAddAttendeeScreenBuilder]).
+///
+/// It draws nothing, and after its first frame leaves for the event beneath
+/// it: a pop, or a `go` to the event where there is nothing to pop. Under
+/// [Router.neglect], so on the web the restored entry becomes the event's.
+/// Reported as a new entry instead, the event would follow the restored one
+/// in the history, and Back from it would come straight back here.
+class _LeaveForEvent extends StatefulWidget {
+  const _LeaveForEvent({required this.eventId});
+
+  final String eventId;
+
+  @override
+  State<_LeaveForEvent> createState() => _LeaveForEventState();
+}
+
+class _LeaveForEventState extends State<_LeaveForEvent> {
+  @override
+  void initState() {
+    super.initState();
+    // After the frame that built it: the restore it is part of has settled.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Router.neglect(context, () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AppRoutes.eventDetailOf(widget.eventId));
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
 /// Builds [child]'s page with [create], from the values go_router's own
-/// builder passes. Both page types go through here, so they can't drift.
+/// builder passes. Every page type goes through here, so they can't drift.
 Page<void> _page(
   Page<void> Function({
     required Widget child,

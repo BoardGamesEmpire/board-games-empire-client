@@ -673,15 +673,21 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
         : cached;
     final event = detail.snapshot.event;
     final householdId = event.householdId;
+    final householdRole = householdId == null
+        ? null
+        : _householdRoles[householdId];
     return EventDetailReady(
       detail: detail,
       householdName: householdId == null ? null : _householdNames[householdId],
       actions: eventActionsFor(
         event,
         eventRole: detail.attendance?.role,
-        householdRole: householdId == null
-            ? null
-            : _householdRoles[householdId],
+        householdRole: householdRole,
+      ),
+      attendeeReach: attendeeReachFor(
+        event,
+        eventRole: detail.attendance?.role,
+        householdRole: householdRole,
       ),
       refreshing: _refreshing,
       // A 404's forget is still the read: until it ends, the screen can't

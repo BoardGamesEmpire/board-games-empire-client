@@ -87,9 +87,10 @@ const _statusFailedCopy =
 const _statusFailedUnexpectedCopy =
     "Something went wrong. Check the event's status before trying again.";
 const _rsvpNotGoingBodyCopy =
-    "Any games you nominated will be paused, and the games you're bringing "
-    "will come off every date still to come. Saying you're coming later "
-    "won't put those games back.";
+    "Nominations of games you're bringing will be paused, and those games "
+    'will come off every date still to come. Your votes stop counting. '
+    "Saying you're coming later brings the nominations back, but not the "
+    'games.';
 const _rsvpSavedCopy = 'Your answer is saved.';
 const _rsvpGoneCopy = "You're no longer on this event, or it was deleted.";
 const _rsvpRefusedCopy = "You can't answer for this event any more.";
@@ -100,6 +101,21 @@ const _rsvpFailedCopy =
     'An error occurred while sending your answer. You may need to try again.';
 const _rsvpFailedUnexpectedCopy =
     'Something went wrong. Check your answer below before trying again.';
+const _removeAdaBodyCopy =
+    'Nominations of games Ada is bringing will be paused, and those games '
+    'will come off every date still to come. Their votes stop counting. '
+    'Adding them back brings the nominations back, but not the games.';
+const _notGoingForAdaBodyCopy =
+    'Nominations of games Ada is bringing will be paused, and those games '
+    'will come off every date still to come. Their votes stop counting. '
+    'Changing the answer back brings the nominations back, but not the games.';
+const _rosterChangedCopy =
+    'The roster changed before that went through. Check it below before '
+    'trying again.';
+const _attendeeWriteFailedCopy =
+    "Couldn't reach the server. Check the roster below before trying again.";
+const _attendeeWriteFailedUnexpectedCopy =
+    'Something went wrong. Check the roster below before trying again.';
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -232,6 +248,11 @@ void main() {
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
     void Function(BuildContext context)? onWhoAnswered,
+    Future<EventAttendeeAddition?> Function(
+      BuildContext context,
+      AddAttendeeArgs args,
+    )?
+    onAddAttendee,
     Future<bool> Function()? confirmSession,
     TextScaler? textScaler,
     ValueListenable<bool>? offline,
@@ -273,6 +294,7 @@ void main() {
       householdRole: householdRole,
       onBack: onBack,
       onWhoAnswered: onWhoAnswered,
+      onAddAttendee: onAddAttendee,
       confirmSession: confirmSession,
       now: clock ?? () => now,
     ),
@@ -295,6 +317,11 @@ void main() {
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
     void Function(BuildContext context)? onWhoAnswered,
+    Future<EventAttendeeAddition?> Function(
+      BuildContext context,
+      AddAttendeeArgs args,
+    )?
+    onAddAttendee,
     Future<bool> Function()? confirmSession,
     TextScaler? textScaler,
     ValueListenable<bool>? offline,
@@ -307,6 +334,7 @@ void main() {
         householdRole: householdRole,
         onBack: onBack,
         onWhoAnswered: onWhoAnswered,
+        onAddAttendee: onAddAttendee,
         confirmSession: confirmSession,
         textScaler: textScaler,
         offline: offline,
@@ -5294,7 +5322,7 @@ void main() {
           thrown: _offline,
           copy: _rsvpFailedCopy,
           tone: BgeBannerTone.error,
-          rereads: false,
+          rereads: true,
         ),
         (
           // A 2xx whose body didn't parse: the answer may have landed, so
@@ -5326,6 +5354,94 @@ void main() {
           );
         });
       }
+    });
+
+    testWidgets('a lost answer is read again, and the read brings the saved '
+        'answer back', (tester) async {
+      // The server saved Maybe, and the answer was lost.
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        final snapshot = invocation.positionalArguments.first as EventSnapshot;
+        final row = snapshot.attendees!.firstWhere((a) => a.id == 'att-me');
+        cached = EventDetail(snapshot: snapshot, attendance: row);
+        cache.add(cached);
+      });
+      final held = viewed(me(status: going));
+      final saved = viewed(me(status: maybe));
+      var served = held.snapshot;
+      final remote = answering(
+        read: (_) => served,
+        answered: (_) {
+          served = saved.snapshot;
+          throw _offline;
+        },
+      );
+      await showRsvp(tester, held, remote);
+      expect(chipOf(tester, going).selected, isTrue);
+      final reads = remote.detailRequests.length;
+
+      await press(tester, chip(maybe));
+
+      expect(inOutcome(_rsvpFailedCopy), findsOneWidget);
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(chipOf(tester, maybe).selected, isTrue);
+      expect(chipOf(tester, going).selected, isFalse);
+    });
+
+    testWidgets('offline, a failed answer and a failed read show one outcome '
+        'banner and hold no control', (tester) async {
+      final offline = ValueNotifier(false);
+      addTearDown(offline.dispose);
+      var failing = false;
+      final remote = answering(
+        read: (_) {
+          if (failing) throw _offline;
+          return cached.snapshot;
+        },
+        answered: (_) {
+          failing = true;
+          offline.value = true;
+          throw _offline;
+        },
+      );
+      await showRsvp(
+        tester,
+        viewed(me(status: going)),
+        remote,
+        offline: offline,
+      );
+      final reads = remote.detailRequests.length;
+
+      await press(tester, chip(maybe));
+      await settle(tester);
+
+      // Still offline: the failed answer was read again, and the read
+      // failed too.
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(outcome(), findsOneWidget);
+      expect(inOutcome(_rsvpFailedCopy), findsOneWidget);
+      expect(find.text(_rsvpFailedCopy), findsOneWidget);
+      // No control is held: every one is disabled, none with a spinner.
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNull, reason: '$status');
+        expect(chipOf(tester, status).avatar, isNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeesKey),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      // Back online, nothing stays held by the failed pair.
+      offline.value = false;
+      await tester.pump();
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNotNull);
     });
 
     testWidgets('a done answer reads the poll again', (tester) async {
@@ -5537,6 +5653,1414 @@ void main() {
         await tester.tap(find.text(keep));
         await animate(tester);
       }
+    });
+  });
+
+  group('the roster (#510)', () {
+    const going = EventParticipationStatus.attending;
+    const maybe = EventParticipationStatus.maybe;
+    const notGoing = EventParticipationStatus.notAttending;
+    const invited = EventParticipationStatus.invited;
+
+    /// What the cache holds: the detail a test shows, then each write's
+    /// answer over it.
+    late EventDetail cached;
+
+    setUpAll(() => registerFallbackValue(attendance(invited)));
+
+    /// [cached] with its roster as [change] leaves it, delivered by the
+    /// watch, as the repository's writes are.
+    void recache(
+      List<EventAttendee> Function(List<EventAttendee> roster) change,
+    ) {
+      cached = EventDetail(
+        snapshot: cached.snapshot.copyWith(
+          attendees: change(
+            cached.snapshot.attendees ?? const <EventAttendee>[],
+          ),
+        ),
+        attendance: cached.attendance,
+      );
+      cache.add(cached);
+    }
+
+    setUp(() {
+      when(() => repository.cacheAttendee(any())).thenAnswer((
+        invocation,
+      ) async {
+        final row = invocation.positionalArguments.single as EventAttendee;
+        recache(
+          (roster) => [
+            for (final a in roster)
+              if (a.id == row.id) row else a,
+          ],
+        );
+        return true;
+      });
+      when(
+        () => repository.removeCachedAttendee(
+          eventId: any(named: 'eventId'),
+          attendeeId: any(named: 'attendeeId'),
+        ),
+      ).thenAnswer((invocation) async {
+        final id = invocation.namedArguments[#attendeeId] as String;
+        recache(
+          (roster) => [
+            for (final a in roster)
+              if (a.id != id) a,
+          ],
+        );
+        return true;
+      });
+      when(() => repository.addCachedAttendee(any()))
+          .thenAnswer((invocation) async {
+            final row = invocation.positionalArguments.single as EventAttendee;
+            recache((roster) => [...roster, row]);
+            return true;
+          });
+    });
+
+    /// The viewer's own row on `e-1`, `att-me`, named Me, holding [role]
+    /// and going.
+    EventAttendee me(EventRole role) =>
+        attendance(going)
+            .copyWith(eventId: 'e-1', displayName: 'Me', role: role);
+
+    /// Ada, a participant who is going, and Bo, who may come.
+    final ada = _member('att-2', displayName: 'Ada');
+    final bo = _member('att-3', displayName: 'Bo', status: maybe);
+
+    /// Event `e-1`, Scheduled by a date ahead unless [status] says
+    /// otherwise, which the viewer holds [role] on, with [others] beside
+    /// them on its roster: Ada and Bo unless a test says.
+    EventDetail viewed({
+      EventRole role = EventRole.host,
+      EventStatus status = EventStatus.scheduled,
+      List<EventAttendee>? others,
+    }) => _detail(
+      event: _event(status: status),
+      occurrences: [_ahead()],
+      attendees: [
+        me(role),
+        ...(others ?? [ada, bo]),
+      ],
+      attendance: me(role),
+    );
+
+    /// Row [id] as the cache holds it.
+    EventAttendee rowOf(String id) =>
+        cached.snapshot.attendees!.firstWhere((row) => row.id == id);
+
+    /// A server whose reads serve what the cache holds, or answer from
+    /// [read]. An answer set for someone answers from [answered], by
+    /// default their row with that answer and the note it had, and a remove
+    /// from [removed], by default the row. An add answers from [added].
+    FakeEventRemote answering({
+      FutureOr<EventSnapshot> Function(String id)? read,
+      FutureOr<EventAttendee> Function(RsvpRequest request)? answered,
+      FutureOr<EventAttendee> Function(RemoveAttendeeRequest request)? removed,
+      FutureOr<EventAttendee> Function(AddAttendeeRequest request)? added,
+    }) => FakeEventRemote.detail(
+      read ?? (_) => cached.snapshot,
+      rsvp:
+          answered ??
+          (request) =>
+              rowOf(request.attendeeId).copyWith(status: request.status),
+      removed: removed ?? (request) => rowOf(request.attendeeId),
+      added: added ?? (_) => throw UnimplementedError('no add is sent'),
+      summary: (_) => const AvailabilitySummary(occurrences: []),
+    );
+
+    /// Shows [detail] from [remote], with a way back, and with
+    /// [onAddAttendee] as the way to the Add people page.
+    Future<void> showRoster(
+      WidgetTester tester,
+      EventDetail detail,
+      FakeEventRemote remote, {
+      TextScaler? textScaler,
+      Future<EventAttendeeAddition?> Function(
+        BuildContext context,
+        AddAttendeeArgs args,
+      )?
+      onAddAttendee,
+    }) async {
+      cached = detail;
+      await show(
+        tester,
+        detail,
+        remote: remote,
+        onBack: (_) {},
+        onAddAttendee: onAddAttendee,
+        textScaler: textScaler,
+      );
+      await settle(tester);
+    }
+
+    /// Lets the screen go, so the next [showRoster] starts with new blocs.
+    Future<void> leave(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+    }
+
+    Finder menuOf(String id) =>
+        find.byKey(EventDetailScreen.attendeeMenuKey(id));
+
+    Finder itemOf(String id, String item) =>
+        find.byKey(EventDetailScreen.attendeeActionKey(id, item));
+
+    Finder inGroup(EventParticipationStatus status, String text) =>
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeeGroupKey(status)),
+          matching: find.text(text),
+        );
+
+    /// Opens row [id]'s menu and picks [item], then lets what it opens
+    /// finish moving. The pick lands after the frame its tap ends in, which
+    /// [animate] covers.
+    Future<void> choose(WidgetTester tester, String id, String item) async {
+      await tester.ensureVisible(menuOf(id));
+      await tester.pump();
+      await tester.tap(menuOf(id));
+      await animate(tester);
+      await tester.tap(itemOf(id, item));
+      await animate(tester);
+    }
+
+    /// The colour [key]'s dialog button draws its label in.
+    Color? labelColourOf(WidgetTester tester, Key key) => tester
+        .widget<TextButton>(find.byKey(key))
+        .style
+        ?.foregroundColor
+        ?.resolve(const {});
+
+    Color errorColour(WidgetTester tester) =>
+        Theme.of(tester.element(find.byType(AlertDialog))).colorScheme.error;
+
+    testWidgets('Remove asks, then sends the remove', (tester) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      // Not on the viewer's own row: leaving is #512's.
+      expect(menuOf('att-me'), findsNothing);
+      expect(menuOf('att-2'), findsOneWidget);
+      final reads = remote.detailRequests.length;
+
+      await choose(tester, 'att-2', 'remove');
+
+      // It names them, and says what it does to their games and votes.
+      expect(find.text('Remove Ada?'), findsOneWidget);
+      expect(find.text(_removeAdaBodyCopy), findsOneWidget);
+      expect(find.text('Keep them'), findsOneWidget);
+      expect(
+        labelColourOf(tester, EventDetailScreen.attendeeRemoveConfirmKey),
+        errorColour(tester),
+      );
+      expect(remote.removes, isEmpty);
+
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.removes, [(eventId: 'e-1', attendeeId: 'att-2')]);
+      verify(
+        () => repository.removeCachedAttendee(
+          eventId: 'e-1',
+          attendeeId: 'att-2',
+        ),
+      ).called(1);
+      expect(inOutcome('Removed Ada.'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(find.text('Ada'), findsNothing);
+      expect(menuOf('att-2'), findsNothing);
+      // As after every write's done, so the roster shows what the server
+      // holds.
+      expect(remote.detailRequests, hasLength(reads + 1));
+    });
+
+    testWidgets('keeping them sends nothing', (tester) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      final reads = remote.detailRequests.length;
+
+      await choose(tester, 'att-2', 'remove');
+      await tester.tap(find.text('Keep them'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.removes, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inGroup(going, 'Ada'), findsOneWidget);
+      expect(remote.detailRequests, hasLength(reads));
+      // Nothing is held: the menu still takes a pick.
+      await tester.tap(menuOf('att-2'));
+      await animate(tester);
+      expect(
+        tester.widget<MenuItemButton>(itemOf('att-2', 'remove')).onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('a remove that finds them gone says they were already off', (
+      tester,
+    ) async {
+      // Removed on another device: the read after the remove shows the
+      // roster without them.
+      when(() => repository.cacheEvent(any(), source: any(named: 'source')))
+          .thenAnswer((invocation) async {
+            cached = EventDetail(
+              snapshot: invocation.positionalArguments.first as EventSnapshot,
+              attendance: cached.attendance,
+            );
+            cache.add(cached);
+          });
+      var served = viewed().snapshot;
+      final remote = answering(
+        read: (_) => served,
+        removed: (_) {
+          served = viewed(others: [bo]).snapshot;
+          throw const EventRemoteNotFoundException('gone');
+        },
+      );
+      await showRoster(tester, viewed(), remote);
+      final reads = remote.detailRequests.length;
+
+      await choose(tester, 'att-2', 'remove');
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(remote.removes, hasLength(1));
+      expect(inOutcome('Ada was already off the event.'), findsOneWidget);
+      // What the remove asked for, as a delete's gone is.
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(find.text('Ada'), findsNothing);
+      verifyNever(
+        () => repository.removeCachedAttendee(
+          eventId: any(named: 'eventId'),
+          attendeeId: any(named: 'attendeeId'),
+        ),
+      );
+    });
+
+    testWidgets('Not going for someone asks first, naming them', (
+      tester,
+    ) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+
+      await choose(tester, 'att-2', 'notGoing');
+
+      expect(find.text('Mark Ada as not going?'), findsOneWidget);
+      expect(find.text(_notGoingForAdaBodyCopy), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeeNotGoingConfirmKey),
+          matching: find.text('Not going'),
+        ),
+        findsOneWidget,
+      );
+      // In the error colour, as the viewer's own Not going is.
+      expect(
+        labelColourOf(tester, EventDetailScreen.attendeeNotGoingConfirmKey),
+        errorColour(tester),
+      );
+
+      // Kept, nothing is sent.
+      await tester.tap(find.text('Keep their answer'));
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inGroup(going, 'Ada'), findsOneWidget);
+
+      await choose(tester, 'att-2', 'notGoing');
+      await tester.tap(
+        find.byKey(EventDetailScreen.attendeeNotGoingConfirmKey),
+      );
+      await animate(tester);
+
+      expect(remote.rsvps, [
+        (eventId: 'e-1', attendeeId: 'att-2', status: notGoing, notes: null),
+      ]);
+      expect(inOutcome("Saved Ada's answer."), findsOneWidget);
+      expect(inGroup(notGoing, 'Ada'), findsOneWidget);
+    });
+
+    testWidgets('Not going for someone after a sync answered it sends '
+        'nothing', (tester) async {
+      // The server takes it as a new answer all the same.
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      await choose(tester, 'att-2', 'notGoing');
+
+      cached = viewed(
+        others: [
+          ada.copyWith(status: notGoing),
+          bo,
+        ],
+      );
+      cache.add(cached);
+      await settle(tester);
+      await tester.tap(
+        find.byKey(EventDetailScreen.attendeeNotGoingConfirmKey),
+      );
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inGroup(notGoing, 'Ada'), findsOneWidget);
+    });
+
+    testWidgets('Maybe for someone sends at once', (tester) async {
+      final remote = answering();
+      // Ada left a note, which an answer set for her leaves as it was.
+      await showRoster(
+        tester,
+        viewed(
+          others: [
+            ada.copyWith(notes: 'Bringing snacks'),
+            bo,
+          ],
+        ),
+        remote,
+      );
+
+      await choose(tester, 'att-2', 'maybe');
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.rsvps, [
+        (eventId: 'e-1', attendeeId: 'att-2', status: maybe, notes: null),
+      ]);
+      expect(inGroup(maybe, 'Ada'), findsOneWidget);
+      expect(inGroup(maybe, 'Bringing snacks'), findsOneWidget);
+    });
+
+    testWidgets('a row removed by a sync while the dialog was open drops the '
+        'remove with the roster-changed banner', (tester) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      final reads = remote.detailRequests.length;
+      await choose(tester, 'att-2', 'remove');
+
+      // From another device, through a sync.
+      cached = viewed(others: [bo]);
+      cache.add(cached);
+      await settle(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.removes, isEmpty);
+      // The banner is a live region, so a screen reader hears why nothing
+      // happened. The page already shows the roster as cached, so nothing is
+      // read again.
+      expect(inOutcome(_rosterChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, hasLength(reads));
+    });
+
+    testWidgets('the event cancelled while the Remove dialog was open drops '
+        'the remove', (tester) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      final reads = remote.detailRequests.length;
+      await choose(tester, 'att-2', 'remove');
+
+      // From another device, through a sync. The page offers no menus now.
+      cached = viewed(status: EventStatus.cancelled);
+      cache.add(cached);
+      await settle(tester);
+      expect(menuOf('att-2'), findsNothing);
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(remote.removes, isEmpty);
+      expect(inOutcome(_rosterChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, hasLength(reads));
+    });
+
+    testWidgets('a co-host made an organizer while removing a co-host drops '
+        'the remove', (tester) async {
+      final cleo = _member(
+        'att-6',
+        displayName: 'Cleo',
+        role: EventRole.coHost,
+      );
+      final remote = answering();
+      await showRoster(
+        tester,
+        viewed(role: EventRole.coHost, others: [cleo]),
+        remote,
+      );
+      await choose(tester, 'att-6', 'remove');
+
+      // An organizer removes only those who attend, and the server would
+      // refuse it: the page shows Cleo's menu without Remove.
+      cached = viewed(role: EventRole.organizer, others: [cleo]);
+      cache.add(cached);
+      await settle(tester);
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(remote.removes, isEmpty);
+      expect(inOutcome(_rosterChangedCopy), findsOneWidget);
+      await tester.ensureVisible(menuOf('att-6'));
+      await tester.pump();
+      await tester.tap(menuOf('att-6'));
+      await animate(tester);
+      expect(itemOf('att-6', 'notGoing'), findsOneWidget);
+      expect(itemOf('att-6', 'remove'), findsNothing);
+    });
+
+    testWidgets('a Not going dialog closed after the row left, or the viewer '
+        'lost the roster, drops the answer', (tester) async {
+      for (final (name, synced) in [
+        ('the row left', viewed(others: [bo])),
+        ('made a participant', viewed(role: EventRole.participant)),
+      ]) {
+        final remote = answering();
+        await showRoster(tester, viewed(), remote);
+        final reads = remote.detailRequests.length;
+        await choose(tester, 'att-2', 'notGoing');
+
+        cached = synced;
+        cache.add(cached);
+        await settle(tester);
+        await tester.tap(
+          find.byKey(EventDetailScreen.attendeeNotGoingConfirmKey),
+        );
+        await animate(tester);
+
+        expect(remote.rsvps, isEmpty, reason: name);
+        expect(inOutcome(_rosterChangedCopy), findsOneWidget, reason: name);
+        expect(toneOf(tester), BgeBannerTone.warning, reason: name);
+        expect(remote.detailRequests, hasLength(reads), reason: name);
+        await leave(tester);
+      }
+    });
+
+    testWidgets("a nameless row's remove that finds them gone starts its "
+        'sentence with This person', (tester) async {
+      final nobody = EventAttendee(
+        id: 'att-7',
+        eventId: 'e-1',
+        userId: 'user-7',
+        role: EventRole.participant,
+        status: going,
+        createdAt: kItemInstant,
+        updatedAt: kItemInstant,
+      );
+      final remote = answering(
+        removed: (_) => throw const EventRemoteNotFoundException('gone'),
+      );
+      await showRoster(tester, viewed(others: [nobody]), remote);
+      expect(find.byTooltip('Actions for this person'), findsOneWidget);
+
+      await choose(tester, 'att-7', 'remove');
+      // Mid-sentence, it is lower case.
+      expect(find.text('Remove this person?'), findsOneWidget);
+      await tester.tap(find.byKey(EventDetailScreen.attendeeRemoveConfirmKey));
+      await animate(tester);
+
+      expect(
+        inOutcome('This person was already off the event.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a roster menu waits for a running read, and for a request '
+        'already out', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final written = Completer<EventAttendee>();
+      final remote = answering(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+        answered: (_) => written.future,
+      );
+      await showRoster(tester, viewed(), remote);
+
+      /// Opens Bo's menu, says whether each item Bo may be given takes a
+      /// press, and closes it. Maybe is Bo's answer, and never does.
+      Future<List<bool>> bosItems() async {
+        // A banner that just landed scrolls itself into view first.
+        await animate(tester);
+        await tester.ensureVisible(menuOf('att-3'));
+        await tester.pump();
+        await tester.tap(menuOf('att-3'));
+        await animate(tester);
+        final pressable = [
+          for (final item in ['going', 'notGoing', 'remove'])
+            tester.widget<MenuItemButton>(itemOf('att-3', item)).onPressed !=
+                null,
+        ];
+        await tester.tap(menuOf('att-3'));
+        await animate(tester);
+        return pressable;
+      }
+
+      // The open's read runs, whose answer landing after a write would put
+      // the row back as it was (#589). The menu still opens.
+      expect(reads, hasLength(1));
+      expect(await bosItems(), [false, false, false]);
+      reads.single.complete(cached.snapshot);
+      await settle(tester);
+      expect(await bosItems(), [true, true, true]);
+
+      // Ada's answer is out.
+      await choose(tester, 'att-2', 'maybe');
+      expect(remote.rsvps, hasLength(1));
+      expect(await bosItems(), [false, false, false]);
+
+      // Its done reads again, and the menus wait for that read too.
+      written.complete(rowOf('att-2').copyWith(status: maybe));
+      await settle(tester);
+      expect(reads, hasLength(2));
+      expect(await bosItems(), [false, false, false]);
+      reads[1].complete(cached.snapshot);
+      await settle(tester);
+      expect(await bosItems(), [true, true, true]);
+    });
+
+    testWidgets('the remove and Not going dialogs fit at 320dp and 2.0 text', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      await showRoster(
+        tester,
+        viewed(
+          others: [
+            ada.copyWith(
+              displayName:
+                  'Maximiliana Theodora Featherstonehaugh-Cholmondeley',
+            ),
+          ],
+        ),
+        answering(),
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      expect(tester.takeException(), isNull);
+
+      // Each dialog's title and body scroll, and its buttons stay on screen.
+      for (final (item, confirm, keep) in [
+        ('remove', EventDetailScreen.attendeeRemoveConfirmKey, 'Keep them'),
+        (
+          'notGoing',
+          EventDetailScreen.attendeeNotGoingConfirmKey,
+          'Keep their answer',
+        ),
+      ]) {
+        await choose(tester, 'att-2', item);
+        expect(tester.takeException(), isNull, reason: item);
+        expect(find.byKey(confirm), findsOneWidget, reason: item);
+        final dialog = tester.getRect(find.byType(AlertDialog));
+        for (final button in [
+          find.byKey(confirm),
+          find.ancestor(
+            of: find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.text(keep),
+            ),
+            matching: find.byType(TextButton),
+          ),
+        ]) {
+          final rect = tester.getRect(button);
+          expect(dialog.intersect(rect), rect, reason: item);
+          expect(rect.bottom, lessThanOrEqualTo(640), reason: item);
+        }
+        await tester.tap(find.text(keep));
+        await animate(tester);
+      }
+    });
+
+    testWidgets('a done answer shows the saved banner and reads again', (
+      tester,
+    ) async {
+      final remote = answering();
+      await showRoster(tester, viewed(), remote);
+      final reads = remote.detailRequests.length;
+
+      await choose(tester, 'att-3', 'going');
+
+      expect(remote.rsvps, [
+        (eventId: 'e-1', attendeeId: 'att-3', status: going, notes: null),
+      ]);
+      verify(
+        () => repository.cacheAttendee(
+          any(
+            that: isA<EventAttendee>()
+                .having((row) => row.id, 'id', 'att-3')
+                .having((row) => row.status, 'status', going),
+          ),
+        ),
+      ).called(1);
+      expect(inOutcome("Saved Bo's answer."), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(inGroup(going, 'Bo'), findsOneWidget);
+      expect(remote.detailRequests, hasLength(reads + 1));
+    });
+
+    testWidgets('no row menu on a cancelled event', (tester) async {
+      // Nor on an archived one (#510): the host keeps the grant, and the
+      // event takes no such write.
+      for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+        await showRoster(tester, viewed(status: status), answering());
+
+        expect(inGroup(going, 'Ada'), findsOneWidget, reason: '$status');
+        expect(menuOf('att-2'), findsNothing, reason: '$status');
+        expect(menuOf('att-3'), findsNothing, reason: '$status');
+        await leave(tester);
+      }
+    });
+
+    group('Add people', () {
+      /// Whom the page answers with in these tests.
+      const cy = UserSummary(id: 'user-cy', username: 'cy', displayName: 'Cy');
+
+      /// Cy's row once added with [role]: invited, as every add is.
+      EventAttendee cysRow(EventRole role) => _member(
+        'att-cy',
+        displayName: 'Cy',
+        role: role,
+        status: invited,
+      ).copyWith(userId: cy.id);
+
+      Finder addPeople() => find.byKey(EventDetailScreen.addAttendeeKey);
+
+      /// A server whose add answers Cy's row, with the role asked for,
+      /// unless [added] says otherwise.
+      FakeEventRemote adding({
+        FutureOr<EventSnapshot> Function(String id)? read,
+        FutureOr<EventAttendee> Function(AddAttendeeRequest request)? added,
+      }) => answering(
+        read: read,
+        added: added ?? (request) => cysRow(request.role),
+      );
+
+      /// Presses Add people, and lets what it sends land.
+      Future<void> pressAddPeople(WidgetTester tester) async {
+        await tester.ensureVisible(addPeople());
+        await tester.pump();
+        await tester.tap(addPeople());
+        await animate(tester);
+      }
+
+      testWidgets("Add people opens the page with the roles and the roster's "
+          'user ids', (tester) async {
+        final opened = <AddAttendeeArgs>[];
+        Future<EventAttendeeAddition?> open(
+          BuildContext _,
+          AddAttendeeArgs args,
+        ) async {
+          opened.add(args);
+          // Back, from the page.
+          return null;
+        }
+
+        final remote = adding();
+        // Dee, a guest without an account, has no user id to leave out.
+        await showRoster(
+          tester,
+          viewed(others: [ada, bo, _guest('att-4', 'Dee')]),
+          remote,
+          onAddAttendee: open,
+        );
+        final reads = remote.detailRequests.length;
+        expect(
+          find.descendant(of: addPeople(), matching: find.text('Add people')),
+          findsOneWidget,
+        );
+        // Under the viewer's own answer, over the roster it adds to.
+        expect(
+          tester.getTopLeft(addPeople()).dy,
+          greaterThan(
+            tester
+                .getBottomLeft(
+                  find.byKey(
+                    EventDetailScreen.rsvpAnswerKey(
+                      EventParticipationStatus.attending,
+                    ),
+                  ),
+                )
+                .dy,
+          ),
+        );
+        expect(
+          tester.getBottomLeft(addPeople()).dy,
+          lessThan(
+            tester
+                .getTopLeft(
+                  find.byKey(EventDetailScreen.attendeeGroupKey(going)),
+                )
+                .dy,
+          ),
+        );
+
+        await pressAddPeople(tester);
+
+        expect(opened, [
+          AddAttendeeArgs(
+            roles: assignableEventRoles(AttendeeReach.allRoles),
+            rosterUserIds: const {'user-me', 'user-att-2', 'user-att-3'},
+          ),
+        ]);
+        // Back from the page sends nothing, and says nothing.
+        expect(remote.adds, isEmpty);
+        expect(outcome(), findsNothing);
+        expect(remote.detailRequests, hasLength(reads));
+
+        // An organizer's page offers those who attend.
+        await leave(tester);
+        await showRoster(
+          tester,
+          viewed(role: EventRole.organizer),
+          adding(),
+          onAddAttendee: open,
+        );
+        await pressAddPeople(tester);
+        expect(opened.last.roles, [
+          EventRole.participant,
+          EventRole.guest,
+          EventRole.spectator,
+        ]);
+      });
+
+      testWidgets('an addition sends the add', (tester) async {
+        final remote = adding();
+        await showRoster(
+          tester,
+          viewed(),
+          remote,
+          onAddAttendee: (_, _) async =>
+              const EventAttendeeAddition(user: cy, role: EventRole.guest),
+        );
+        final reads = remote.detailRequests.length;
+
+        await pressAddPeople(tester);
+
+        expect(remote.adds, [
+          (eventId: 'e-1', userId: 'user-cy', role: EventRole.guest),
+        ]);
+        verify(
+          () => repository.addCachedAttendee(
+            any(
+              that: isA<EventAttendee>()
+                  .having((row) => row.userId, 'userId', 'user-cy')
+                  .having((row) => row.role, 'role', EventRole.guest),
+            ),
+          ),
+        ).called(1);
+        expect(
+          inOutcome("Added Cy. They'll be asked whether they're coming."),
+          findsOneWidget,
+        );
+        expect(toneOf(tester), BgeBannerTone.success);
+        expect(inGroup(invited, 'Cy'), findsOneWidget);
+        // As after every write's done, so the roster shows what the server
+        // holds.
+        expect(remote.detailRequests, hasLength(reads + 1));
+      });
+
+      testWidgets('a role taken away while the page is open drops the add', (
+        tester,
+      ) async {
+        for (final (name, synced, role, stillOffered) in [
+          // An organizer still adds people, but appoints no co-hosts, and
+          // the server would refuse it.
+          (
+            'made an organizer',
+            viewed(role: EventRole.organizer),
+            EventRole.coHost,
+            true,
+          ),
+          (
+            'made a participant',
+            viewed(role: EventRole.participant),
+            EventRole.participant,
+            false,
+          ),
+          (
+            'the event cancelled',
+            viewed(status: EventStatus.cancelled),
+            EventRole.participant,
+            false,
+          ),
+        ]) {
+          final page = Completer<EventAttendeeAddition?>();
+          final remote = adding();
+          await showRoster(
+            tester,
+            viewed(),
+            remote,
+            onAddAttendee: (_, _) => page.future,
+          );
+          final reads = remote.detailRequests.length;
+          await pressAddPeople(tester);
+
+          // From another device, through a sync, while the page is open.
+          cached = synced;
+          cache.add(cached);
+          await settle(tester);
+          expect(
+            addPeople(),
+            stillOffered ? findsOneWidget : findsNothing,
+            reason: name,
+          );
+          page.complete(EventAttendeeAddition(user: cy, role: role));
+          await animate(tester);
+
+          expect(remote.adds, isEmpty, reason: name);
+          // The banner is a live region, so a screen reader hears why
+          // nothing happened. The page already shows the event as cached,
+          // so nothing is read again.
+          expect(inOutcome(_rosterChangedCopy), findsOneWidget, reason: name);
+          expect(toneOf(tester), BgeBannerTone.warning, reason: name);
+          expect(remote.detailRequests, hasLength(reads), reason: name);
+          await leave(tester);
+        }
+      });
+
+      testWidgets('someone added by a sync while the page was open drops the '
+          'add with the roster-changed banner', (tester) async {
+        final page = Completer<EventAttendeeAddition?>();
+        final remote = adding();
+        await showRoster(
+          tester,
+          viewed(),
+          remote,
+          onAddAttendee: (_, _) => page.future,
+        );
+        final reads = remote.detailRequests.length;
+        await pressAddPeople(tester);
+
+        // Added on another device: the page couldn't have offered them.
+        cached = viewed(others: [ada, bo, cysRow(EventRole.participant)]);
+        cache.add(cached);
+        await settle(tester);
+        page.complete(
+          const EventAttendeeAddition(user: cy, role: EventRole.participant),
+        );
+        await animate(tester);
+
+        expect(remote.adds, isEmpty);
+        expect(inOutcome(_rosterChangedCopy), findsOneWidget);
+        expect(toneOf(tester), BgeBannerTone.warning);
+        expect(remote.detailRequests, hasLength(reads));
+      });
+
+      testWidgets('a roster gone from view while the page is open drops the '
+          'add', (tester) async {
+        // Read as hidden from the viewer, or not yet read at all: the page
+        // beneath shows no roster, and no Add people.
+        for (final (name, roster) in [
+          ('hidden', const <EventAttendee>[]),
+          ('not read', null),
+        ]) {
+          final page = Completer<EventAttendeeAddition?>();
+          final remote = adding();
+          await showRoster(
+            tester,
+            viewed(),
+            remote,
+            onAddAttendee: (_, _) => page.future,
+          );
+          final reads = remote.detailRequests.length;
+          await pressAddPeople(tester);
+
+          cached = _detail(
+            event: _event(),
+            occurrences: [_ahead()],
+            attendees: roster,
+            attendance: me(EventRole.host),
+          );
+          cache.add(cached);
+          await settle(tester);
+          expect(addPeople(), findsNothing, reason: name);
+          page.complete(
+            const EventAttendeeAddition(user: cy, role: EventRole.participant),
+          );
+          await animate(tester);
+
+          expect(remote.adds, isEmpty, reason: name);
+          expect(inOutcome(_rosterChangedCopy), findsOneWidget, reason: name);
+          expect(toneOf(tester), BgeBannerTone.warning, reason: name);
+          expect(remote.detailRequests, hasLength(reads), reason: name);
+          await leave(tester);
+        }
+      });
+
+      testWidgets('a press that finds no role left to give opens nothing', (
+        tester,
+      ) async {
+        final opened = <AddAttendeeArgs>[];
+        final remote = adding();
+        await showRoster(
+          tester,
+          viewed(),
+          remote,
+          onAddAttendee: (_, args) async {
+            opened.add(args);
+            return null;
+          },
+        );
+        await tester.ensureVisible(addPeople());
+        await tester.pump();
+
+        // A sync makes the viewer a participant, and the detail has it, but
+        // no frame has shown it yet: the button is still there to press.
+        cached = viewed(role: EventRole.participant);
+        cache.add(cached);
+        for (var i = 0; i < 10; i++) {
+          await Future<void>.value();
+        }
+        final shown = blocOf(tester).state as EventDetailReady;
+        expect(shown.attendeeReach, AttendeeReach.none);
+        expect(addPeople(), findsOneWidget);
+
+        await tester.tap(addPeople());
+        await animate(tester);
+
+        // The page needs a role to offer, so it isn't opened.
+        expect(opened, isEmpty);
+        expect(remote.adds, isEmpty);
+        expect(outcome(), findsNothing);
+        expect(addPeople(), findsNothing);
+      });
+
+      testWidgets('a press on an event a sync has cancelled opens nothing', (
+        tester,
+      ) async {
+        // Nor archived: the host keeps the grant, and the event takes no
+        // such write.
+        for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+          final opened = <AddAttendeeArgs>[];
+          final remote = adding();
+          cached = viewed();
+          await showRoster(
+            tester,
+            viewed(),
+            remote,
+            onAddAttendee: (_, args) async {
+              opened.add(args);
+              return null;
+            },
+          );
+          await tester.ensureVisible(addPeople());
+          await tester.pump();
+
+          // The detail has it, but no frame has shown it yet: the button is
+          // still there to press, and the role table still gives roles.
+          cached = viewed(status: status);
+          cache.add(cached);
+          for (var i = 0; i < 10; i++) {
+            await Future<void>.value();
+          }
+          final shown = blocOf(tester).state as EventDetailReady;
+          expect(shown.detail.snapshot.event.status, status);
+          expect(shown.attendeeReach, isNot(AttendeeReach.none));
+          expect(addPeople(), findsOneWidget, reason: '$status');
+
+          await tester.tap(addPeople());
+          await animate(tester);
+
+          expect(opened, isEmpty, reason: '$status');
+          expect(remote.adds, isEmpty, reason: '$status');
+          expect(outcome(), findsNothing, reason: '$status');
+          expect(addPeople(), findsNothing, reason: '$status');
+          await leave(tester);
+        }
+      });
+
+      testWidgets("the add's 409 says they're already on", (tester) async {
+        final remote = adding(
+          added: (_) =>
+              throw const EventWriteConflictException('on', statusCode: 409),
+        );
+        await showRoster(
+          tester,
+          viewed(),
+          remote,
+          onAddAttendee: (_, _) async => const EventAttendeeAddition(
+            user: cy,
+            role: EventRole.participant,
+          ),
+        );
+        final reads = remote.detailRequests.length;
+
+        await pressAddPeople(tester);
+
+        expect(remote.adds, hasLength(1));
+        expect(inOutcome('Cy is already on this event.'), findsOneWidget);
+        expect(toneOf(tester), BgeBannerTone.warning);
+        // The read shows them.
+        expect(remote.detailRequests, hasLength(reads + 1));
+      });
+
+      testWidgets('no Add people without onAddAttendee', (tester) async {
+        await showRoster(tester, viewed(), adding());
+
+        expect(inGroup(going, 'Ada'), findsOneWidget);
+        expect(addPeople(), findsNothing);
+        await leave(tester);
+
+        // Nor without a server to send it to, where nothing is offered.
+        cached = viewed();
+        await show(tester, viewed(), onAddAttendee: (_, _) async => null);
+        expect(inGroup(going, 'Ada'), findsOneWidget);
+        expect(addPeople(), findsNothing);
+      });
+
+      testWidgets('no Add people on a cancelled event', (tester) async {
+        // Nor on an archived one (#510): the host keeps the grant, and the
+        // event takes no such write.
+        for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+          await showRoster(
+            tester,
+            viewed(status: status),
+            adding(),
+            onAddAttendee: (_, _) async => null,
+          );
+
+          expect(inGroup(going, 'Ada'), findsOneWidget, reason: '$status');
+          expect(addPeople(), findsNothing, reason: '$status');
+          await leave(tester);
+        }
+      });
+
+      testWidgets('no Add people for a participant, or with no roster to add '
+          'to', (tester) async {
+        Future<EventAttendeeAddition?> open(
+          BuildContext _,
+          AddAttendeeArgs _,
+        ) => Future.value();
+        final unread = _detail(
+          event: _event(),
+          occurrences: [_ahead()],
+          attendance: me(EventRole.host),
+        );
+        for (final (name, detail) in [
+          ('a participant', viewed(role: EventRole.participant)),
+          ('a roster not read yet', unread),
+          (
+            "a roster the viewer can't see",
+            _detail(
+              event: _event(),
+              occurrences: [_ahead()],
+              attendees: const [],
+              attendance: me(EventRole.host),
+            ),
+          ),
+        ]) {
+          await showRoster(tester, detail, adding(), onAddAttendee: open);
+
+          expect(
+            find.byKey(EventDetailScreen.attendeesKey),
+            findsOneWidget,
+            reason: name,
+          );
+          expect(addPeople(), findsNothing, reason: name);
+          await leave(tester);
+        }
+      });
+
+      testWidgets('Add people waits for a running read and for another '
+          'request, and keeps its focus through its own add', (tester) async {
+        final reads = <Completer<EventSnapshot>>[];
+        final written = Completer<EventAttendee>();
+        final added = Completer<EventAttendee>();
+        final remote = answering(
+          read: (_) {
+            final read = Completer<EventSnapshot>();
+            reads.add(read);
+            return read.future;
+          },
+          answered: (_) => written.future,
+          added: (_) => added.future,
+        );
+        await showRoster(
+          tester,
+          viewed(),
+          remote,
+          onAddAttendee: (_, _) async => const EventAttendeeAddition(
+            user: cy,
+            role: EventRole.participant,
+          ),
+        );
+        TextButton button() => tester.widget<TextButton>(addPeople());
+        Finder showing(String label) =>
+            find.descendant(of: addPeople(), matching: find.text(label));
+
+        // The open's read runs, whose answer landing after the add would
+        // leave the roster without them (#589).
+        expect(button().onPressed, isNull);
+        reads.single.complete(cached.snapshot);
+        await settle(tester);
+        expect(button().onPressed, isNotNull);
+
+        // Another request is out: Ada's answer, then the read its done
+        // starts.
+        await choose(tester, 'att-2', 'maybe');
+        expect(remote.rsvps, hasLength(1));
+        expect(button().onPressed, isNull);
+        written.complete(rowOf('att-2').copyWith(status: maybe));
+        await settle(tester);
+        expect(button().onPressed, isNull);
+        reads[1].complete(cached.snapshot);
+        await settle(tester);
+        await animate(tester);
+        expect(button().onPressed, isNotNull);
+
+        // Its own add, from the keyboard: the page hands the focus back to
+        // it as it closes, and a disabled button would drop it (#607).
+        final focus = button().focusNode!;
+        await tester.ensureVisible(addPeople());
+        await tester.pump();
+        focus.requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle(tester);
+        expect(remote.adds, hasLength(1));
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(showing('Adding…'), findsOneWidget);
+        expect(
+          tester.getSemantics(addPeople()),
+          isSemantics(label: 'Adding…', isEnabled: false, isFocused: true),
+        );
+        // A press meanwhile sends nothing more.
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle(tester);
+        expect(remote.adds, hasLength(1));
+
+        // Held through the read its done starts, then let go.
+        added.complete(cysRow(EventRole.participant));
+        await settle(tester);
+        expect(reads, hasLength(3));
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(showing('Adding…'), findsOneWidget);
+        reads[2].complete(cached.snapshot);
+        await settle(tester);
+        await animate(tester);
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(showing('Add people'), findsOneWidget);
+        expect(button().onPressed, isNotNull);
+      });
+    });
+
+    group('each other remove and answer end has its copy and tone', () {
+      final ends = [
+        (
+          name: "a remove's 403",
+          remove: true,
+          thrown: const EventWriteRefusedException('no', statusCode: 403),
+          copy: "You can't remove Ada from this event.",
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          // A roster that moved since it was read: the read shows how.
+          name: "a remove's 400",
+          remove: true,
+          thrown: const EventWriteConflictException('no', statusCode: 400),
+          copy: _rosterChangedCopy,
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: "an answer's 404",
+          remove: false,
+          thrown: const EventRemoteNotFoundException('gone'),
+          copy: 'Ada is no longer on this event.',
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: "an answer's 403",
+          remove: false,
+          thrown: const EventWriteRefusedException('no', statusCode: 403),
+          copy: "You can't change Ada's answer.",
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: "an answer's 400",
+          remove: false,
+          thrown: const EventWriteConflictException('no', statusCode: 400),
+          copy: _rosterChangedCopy,
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: "an answer's transient failure",
+          remove: false,
+          thrown: _offline,
+          copy: _attendeeWriteFailedCopy,
+          tone: BgeBannerTone.error,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          final remote = answering(
+            answered: (_) => throw end.thrown,
+            removed: (_) => throw end.thrown,
+          );
+          await showRoster(tester, viewed(), remote);
+          final reads = remote.detailRequests.length;
+
+          if (end.remove) {
+            await choose(tester, 'att-2', 'remove');
+            await tester.tap(
+              find.byKey(EventDetailScreen.attendeeRemoveConfirmKey),
+            );
+            await animate(tester);
+          } else {
+            await choose(tester, 'att-2', 'maybe');
+          }
+
+          expect(remote.removes, hasLength(end.remove ? 1 : 0));
+          expect(remote.rsvps, hasLength(end.remove ? 0 : 1));
+          expect(inOutcome(end.copy), findsOneWidget);
+          expect(toneOf(tester), end.tone);
+          // Each went out, so the roster is read again to show what the
+          // server holds.
+          expect(remote.detailRequests, hasLength(reads + 1));
+        });
+      }
+    });
+
+    group('each add end has its copy and tone', () {
+      // Task 10's page sends an add. Here the actions bloc is sent one
+      // directly, as the poll's outcome audit sends its bloc a vote.
+      final cy = _member('att-9', displayName: 'Cy', status: invited);
+      final ends = [
+        (
+          name: 'done',
+          answer: (AddAttendeeRequest _) => cy,
+          who: 'Cy',
+          copy: "Added Cy. They'll be asked whether they're coming.",
+          tone: BgeBannerTone.success,
+          rereads: true,
+        ),
+        (
+          // A person with no name is named for what they are.
+          name: 'done, for someone with no name',
+          answer: (AddAttendeeRequest _) => cy,
+          who: null,
+          copy: "Added this person. They'll be asked whether they're coming.",
+          tone: BgeBannerTone.success,
+          rereads: true,
+        ),
+        (
+          // On the event already, perhaps added on another device.
+          name: 'a 409',
+          answer: (AddAttendeeRequest _) =>
+              throw const EventWriteConflictException('on', statusCode: 409),
+          who: 'Cy',
+          copy: 'Cy is already on this event.',
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a 409, for someone with no name',
+          answer: (AddAttendeeRequest _) =>
+              throw const EventWriteConflictException('on', statusCode: 409),
+          who: null,
+          copy: 'This person is already on this event.',
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a 404',
+          answer: (AddAttendeeRequest _) =>
+              throw const EventRemoteNotFoundException('gone'),
+          who: 'Cy',
+          copy: "Couldn't add Cy: they or this event can't be found.",
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          // A grant gone, or the invitee's own settings: one copy for both.
+          name: 'a 403',
+          answer: (AddAttendeeRequest _) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+          who: 'Cy',
+          copy: "Cy can't be added to this event.",
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a transient failure',
+          answer: (AddAttendeeRequest _) => throw _offline,
+          who: 'Cy',
+          copy: _attendeeWriteFailedCopy,
+          tone: BgeBannerTone.error,
+          rereads: true,
+        ),
+        (
+          name: 'any other failure',
+          answer: (AddAttendeeRequest _) =>
+              throw const EventRemotePermanentException(
+                'unreadable',
+                statusCode: 200,
+              ),
+          who: 'Cy',
+          copy: _attendeeWriteFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+          rereads: true,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          final remote = answering(added: end.answer);
+          await showRoster(tester, viewed(), remote);
+          final reads = remote.detailRequests.length;
+
+          tester
+              .element(find.byKey(EventDetailScreen.attendeesKey))
+              .read<EventActionsBloc>()
+              .add(
+                EventAttendeeAddRequested(
+                  'e-1',
+                  'user-att-9',
+                  EventRole.participant,
+                  name: end.who,
+                ),
+              );
+          await settle(tester);
+
+          expect(remote.adds, [
+            (eventId: 'e-1', userId: 'user-att-9', role: EventRole.participant),
+          ]);
+          expect(inOutcome(end.copy), findsOneWidget);
+          expect(toneOf(tester), end.tone);
+          expect(
+            remote.detailRequests,
+            hasLength(reads + (end.rereads ? 1 : 0)),
+          );
+        });
+      }
+
+      testWidgets('dropped: $_rosterChangedCopy', (tester) async {
+        final remote = answering();
+        await showRoster(tester, viewed(), remote);
+        final reads = remote.detailRequests.length;
+
+        tester
+            .element(find.byKey(EventDetailScreen.attendeesKey))
+            .read<EventActionsBloc>()
+            .add(
+              const EventWriteDropped.attendee(
+                EventAttendeeWrite.add,
+                name: 'Cy',
+              ),
+            );
+        await settle(tester);
+
+        expect(remote.adds, isEmpty);
+        expect(inOutcome(_rosterChangedCopy), findsOneWidget);
+        expect(toneOf(tester), BgeBannerTone.warning);
+        expect(remote.detailRequests, hasLength(reads));
+      });
     });
   });
 
@@ -6423,6 +7947,7 @@ void main() {
           households: Stream.value([_household('h-1', 'The Smiths')]),
           onBack: (_) {},
           onWhoAnswered: (_) {},
+          onAddAttendee: (_, _) async => null,
           offline: isOffline ? offline : null,
         );
 
@@ -6445,6 +7970,7 @@ void main() {
         EventDetailScreen.addDateKey,
         EventDetailScreen.rsvpAnswerKey(notGoing),
         EventDetailScreen.rsvpNoteKey,
+        EventDetailScreen.addAttendeeKey,
       ]) {
         expect(find.byKey(key), findsOneWidget, reason: '$key');
       }
@@ -6492,6 +8018,38 @@ void main() {
       );
       expect(
         find.byKey(EventDetailScreen.rsvpNotGoingConfirmKey),
+        findsOneWidget,
+      );
+    }
+
+    /// Not going for Ada, from her menu on the roster (#510).
+    Future<void> openAttendeeNotGoingDialog(WidgetTester tester) async {
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.attendeeMenuKey('att-2')),
+      );
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.attendeeActionKey('att-2', 'notGoing')),
+      );
+      expect(
+        find.byKey(EventDetailScreen.attendeeNotGoingConfirmKey),
+        findsOneWidget,
+      );
+    }
+
+    /// Remove, from Ada's menu on the roster (#510).
+    Future<void> openRemoveAttendeeDialog(WidgetTester tester) async {
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.attendeeMenuKey('att-2')),
+      );
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.attendeeActionKey('att-2', 'remove')),
+      );
+      expect(
+        find.byKey(EventDetailScreen.attendeeRemoveConfirmKey),
         findsOneWidget,
       );
     }
@@ -6633,21 +8191,14 @@ void main() {
       },
     );
 
-    auditScreen(
-      'ready as host, scrolled to the end',
-      build: screen(),
-      arrange: (tester) async {
-        await showing(tester, host);
-        await scrollPageToEnd(tester);
-        expectHostsControls();
-      },
-    );
-
     // At 320dp × 2.0 the page is some 5400dp long, and its top and its end
     // leave the dates, the poll and the host's answer between them. At 390dp
     // × 1.0 everything under the first date is below the fold, and the end
     // isn't scrolled to there. This audits the page in a view tall enough
-    // to hold it whole (#50).
+    // to hold it whole (#50). It stands for the end too: scrolled there at
+    // 320dp × 2.0, the page leaves a roster row's menu button (#510) a
+    // sliver high under the top edge, which the tap-target check fails at
+    // its clipped size.
     auditScreen(
       'ready as host, whole page',
       build: screen(),
@@ -6655,6 +8206,14 @@ void main() {
         await showing(tester, host);
         await useWholePage(tester);
         expectHostsControls();
+        // Everyone else's row has a menu: the host reaches every role.
+        for (final id in ['att-2', 'att-3', 'att-4', 'att-5']) {
+          expect(
+            find.byKey(EventDetailScreen.attendeeMenuKey(id)),
+            findsOneWidget,
+            reason: id,
+          );
+        }
         expectWholePage(tester);
       },
     );
@@ -6667,6 +8226,7 @@ void main() {
         EventDetailScreen.dateMenuKey('o-3'),
         EventDetailScreen.confirmLeaderKey('o-1'),
         EventDetailScreen.addDateKey,
+        EventDetailScreen.addAttendeeKey,
       ]) {
         expect(find.byKey(key), findsNothing, reason: '$key');
       }
@@ -6899,14 +8459,22 @@ void main() {
           isNull,
         );
         // Under Add a date, Confirm this date and each proposed date's
-        // chips, and under the host's answer.
+        // chips, and under the host's answer and Add people.
         expect(
           inSection(EventDetailScreen.datesKey, _onlineOnlyCopy),
           findsNWidgets(4),
         );
         expect(
           inSection(EventDetailScreen.attendeesKey, _onlineOnlyCopy),
-          findsOneWidget,
+          findsNWidgets(2),
+        );
+        expect(
+          tester
+              .widget<ButtonStyleButton>(
+                find.byKey(EventDetailScreen.addAttendeeKey),
+              )
+              .onPressed,
+          isNull,
         );
         expectWholePage(tester);
       },
@@ -6953,6 +8521,66 @@ void main() {
           findsOneWidget,
         );
       },
+    );
+
+    // Cy's, who hasn't answered, so every item is enabled and measured (#510).
+    // A row's current answer is disabled in its menu, and a disabled
+    // control's dimmed label is exempt (WCAG 1.4.3).
+    auditScreen(
+      'attendee menu open',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        // Scrolled only until Cy's row shows, as a user reaching for it
+        // scrolls. Scrolled to its top edge, the page stops at its end,
+        // where at 390dp the host's answer chips sit half under the app bar,
+        // and Flutter's tap-target check fails them at their clipped size,
+        // a limit of the tool (`docs/design/ACCESSIBILITY_AUDIT.md` §3).
+        final menu = find.byKey(EventDetailScreen.attendeeMenuKey('att-4'));
+        await Scrollable.ensureVisible(
+          tester.element(menu),
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        expect(
+          find
+              .byKey(EventDetailScreen.attendeeActionKey('att-4', 'remove'))
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'remove attendee dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openRemoveAttendeeDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'remove attendee dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openRemoveAttendeeDialog),
+    );
+
+    auditScreen(
+      'attendee not going dialog',
+      build: screen(),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await openAttendeeNotGoingDialog(tester);
+      },
+    );
+
+    auditScreen(
+      'attendee not going dialog, whole page',
+      build: screen(),
+      arrange: (tester) => openWhole(tester, openAttendeeNotGoingDialog),
     );
 
     auditScreen(

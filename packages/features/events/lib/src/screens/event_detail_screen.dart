@@ -11,7 +11,9 @@ import 'package:events/src/bloc/event_poll_bloc.dart';
 import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
 import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_attendee_addition.dart';
 import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_poll.dart';
 import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/widgets/cancel_reason_dialog.dart';
@@ -47,10 +49,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Most actions. The bloc works out what the viewer may do, and the app
 /// bar's menu offers the event's status changes (#502) and Delete (#501),
 /// the dates their own (#506), a poll's dates their answers (#507), and
-/// who's coming the viewer's own answer to the invitation (#508), to a
-/// viewer the role table gives them. The other actions' issues (#500,
-/// #503–#518) add theirs. The games section says the event's games will
-/// show there, until #519 has something to show.
+/// who's coming the viewer's own answer to the invitation (#508), and
+/// adding people, someone else's answer and removal (#510), to a viewer the
+/// role table gives them. The other actions' issues (#500, #503–#518) add
+/// theirs. The games section says the event's games will show there, until
+/// #519 has something to show.
 ///
 /// ## Delete
 ///
@@ -58,11 +61,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// server, after a dialog that says it can't be undone and that nobody on the
 /// event is told. It is offered only with a [remote] and an [onBack]: the
 /// delete is never queued, and once the event is gone a screen that can't
-/// leave has nowhere to go. The status changes, the dates' actions and the
-/// viewer's answer share the bloc, so they are offered only there too. Where
-/// the menu offers Cancel, the dialog offers *Cancel event instead*, which
-/// closes it and opens Cancel's (#502): a cancel tells everyone and keeps
-/// the event.
+/// leave has nowhere to go. The status changes, the dates' actions, the
+/// viewer's answer and the roster's writes share the bloc, so they are
+/// offered only there too. Where the menu offers Cancel, the dialog offers
+/// *Cancel event instead*, which closes it and opens Cancel's (#502): a
+/// cancel tells everyone and keeps the event.
 ///
 /// Delete waits for the detail read, and the refresh banner's retry waits
 /// for the delete: a read's answer landing after the delete would cache the
@@ -169,6 +172,39 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// again as [EventActionOutcome.rereads] says, which reads a poll again too:
 /// whether the viewer's answers on its dates count follows their answer.
 ///
+/// ## The roster
+///
+/// Each other person on who's coming that the viewer may act on has a menu
+/// beside them (#510): Going, Maybe and Not going, their current answer
+/// checked and disabled, then *Remove from event*. The role table decides
+/// whose and which: no Remove on the host's row, and an organizer or a
+/// moderator removes only those who attend. The menus show only where the
+/// role table gives the viewer the roster and the event takes date writes:
+/// not once it is cancelled or archived. Each item goes straight to the
+/// server, so it waits for a connection, for a running read and for a
+/// request already out, as the dates' do.
+///
+/// Remove always asks first, naming them and saying what it does to the
+/// games they're bringing and to their votes. Not going asks first too, as
+/// the viewer's own does. Going and Maybe go at once, and send no note, so
+/// theirs stays. If a read started while a dialog was open, the write waits
+/// for it to end, and is sent for the row the detail shows then. Not at all
+/// if the row has left, its menu would no longer offer the write, or the
+/// event was cancelled meanwhile, and the banner says the roster changed.
+/// An answer the row already has sends nothing. Every end shows a banner,
+/// done included, and is read again as [EventActionOutcome.rereads] says.
+///
+/// *Add people* sits under the viewer's own answer, where the menus would
+/// show and a roster is shown to add to, and where there is a way to the
+/// page ([onAddAttendee]). The page answers with one person and the role
+/// they'll have, from the roles the role table lets the viewer give, and
+/// the screen sends the add as it does the menus' writes, once any read has
+/// ended. Not at all if the event was cancelled meanwhile, the viewer may no
+/// longer give that role, or a sync put the person on the roster, which the
+/// page couldn't have offered: the banner says the roster changed. The
+/// button keeps its focus through the add it sent, which the page hands it
+/// back as it closes, and through the read the add's end starts (#607).
+///
 /// ## The clock
 ///
 /// Nothing writes to the cache as time passes, so the page is built again at
@@ -191,6 +227,7 @@ class EventDetailScreen extends StatelessWidget {
     this.householdRole,
     this.onBack,
     this.onWhoAnswered,
+    this.onAddAttendee,
     this.now,
     super.key,
   });
@@ -244,6 +281,30 @@ class EventDetailScreen extends StatelessWidget {
 
   /// Key on the note dialog's Save note button (#508).
   static const Key rsvpNoteSaveKey = Key('event_detail.rsvp_note_save');
+
+  /// Key on the menu button beside someone on the roster (#510), by their
+  /// row's id.
+  static Key attendeeMenuKey(String attendeeId) =>
+      Key('event_detail.attendee_menu_$attendeeId');
+
+  /// Key on one item of a roster row's menu: [item] is `going`, `maybe`,
+  /// `notGoing` or `remove`.
+  static Key attendeeActionKey(String attendeeId, String item) =>
+      Key('event_detail.attendee_${item}_$attendeeId');
+
+  /// Key on the remove dialog's Remove button (#510).
+  static const Key attendeeRemoveConfirmKey = Key(
+    'event_detail.attendee_remove_confirm',
+  );
+
+  /// Key on the Not going dialog's confirm button, when the answer is set for
+  /// someone else (#510).
+  static const Key attendeeNotGoingConfirmKey = Key(
+    'event_detail.attendee_not_going_confirm',
+  );
+
+  /// Key on who's coming's *Add people* button (#510).
+  static const Key addAttendeeKey = Key('event_detail.add_attendee');
 
   /// Key on the games section.
   static const Key gamesKey = Key('event_detail.games');
@@ -366,6 +427,16 @@ class EventDetailScreen extends StatelessWidget {
   /// visible.
   final void Function(BuildContext context)? onWhoAnswered;
 
+  /// Opens the Add people page (#510) with [AddAttendeeArgs], with this
+  /// screen's context, and completes with whom it picked and their role, or
+  /// null on back: the feature package doesn't know the route table. Null
+  /// offers no *Add people*.
+  final Future<EventAttendeeAddition?> Function(
+    BuildContext context,
+    AddAttendeeArgs args,
+  )?
+  onAddAttendee;
+
   /// The clock that decides whether a date is this year's, whether a
   /// proposed one has passed, and where the event stands as its dates pass,
   /// which picks the menu's status changes (#502, #655). Defaults to the
@@ -412,6 +483,7 @@ class EventDetailScreen extends StatelessWidget {
       child: _EventDetailView(
         onBack: onBack,
         onWhoAnswered: onWhoAnswered,
+        onAddAttendee: onAddAttendee,
         now: now ?? DateTime.now,
         hasActions: hasActions,
       ),
@@ -425,11 +497,13 @@ class _EventDetailView extends StatelessWidget {
     required this.hasActions,
     this.onBack,
     this.onWhoAnswered,
+    this.onAddAttendee,
   });
 
   final DateTime Function() now;
   final void Function(BuildContext context)? onBack;
   final void Function(BuildContext context)? onWhoAnswered;
+  final _OpenAddAttendee? onAddAttendee;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -472,6 +546,7 @@ class _EventDetailView extends StatelessWidget {
             now: now,
             hasActions: hasActions,
             onWhoAnswered: onWhoAnswered,
+            onAddAttendee: onAddAttendee,
           ),
         };
       },
@@ -572,7 +647,7 @@ bool _covered(BuildContext context) =>
 Future<void> _rereadForPoll(BuildContext context) async {
   final actions = context.read<EventActionsBloc>();
   final detail = context.read<EventDetailBloc>();
-  await _readEnded(detail);
+  await readEnded(detail);
   final ended = actions.state.busy
       ? await actions.stream.firstWhere(
           (state) => !state.busy,
@@ -624,6 +699,7 @@ class _ReadyPage extends StatelessWidget {
     required this.now,
     required this.hasActions,
     this.onWhoAnswered,
+    this.onAddAttendee,
   });
 
   final EventDetailReady state;
@@ -633,6 +709,7 @@ class _ReadyPage extends StatelessWidget {
   /// above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
+  final _OpenAddAttendee? onAddAttendee;
 
   @override
   Widget build(BuildContext context) {
@@ -766,6 +843,21 @@ class _ReadyPage extends StatelessWidget {
           EventAttendeesSection(
             attendees: snapshot.attendees,
             controls: _rsvpControls(context, actionsState, acting: acting),
+            reach: actionsState == null
+                ? AttendeeReach.none
+                : _rosterReach(state),
+            viewerAttendeeId: state.detail.attendance?.id,
+            // As the dates' controls are: not while a read runs, whose answer
+            // landing after the write would put the row back as it was
+            // (#589), nor while a request is out or once the delete is done.
+            enabled: !state.reading && !acting,
+            onAnswer: actionsState == null
+                ? null
+                : (row, answer) => unawaited(_answerFor(context, row, answer)),
+            onRemove: actionsState == null
+                ? null
+                : (row) => unawaited(_removeAttendee(context, row)),
+            addButton: _addButton(context, actionsState, acting: acting),
           ),
           const BgeGap.lg(),
           const EventGamesSection(),
@@ -802,7 +894,152 @@ class _ReadyPage extends StatelessWidget {
       onEditNote: () => _sendRsvp(context, null, editNote: true),
     );
   }
+
+  /// *Add people* (#510), or null where it isn't offered: no way to the
+  /// page, no actions bloc, a role table that gives the viewer no roles to
+  /// give, an event that no longer takes the write, or no roster shown to add
+  /// to. [acting] is [_build]'s.
+  Widget? _addButton(
+    BuildContext context,
+    EventActionsState? actionsState, {
+    required bool acting,
+  }) {
+    final open = onAddAttendee;
+    final snapshot = state.detail.snapshot;
+    final roster = snapshot.attendees;
+    if (open == null ||
+        actionsState == null ||
+        assignableEventRoles(_rosterReach(state)).isEmpty ||
+        roster == null ||
+        roster.isEmpty) {
+      return null;
+    }
+
+    return _AddPeopleButton(
+      // As the roster's menus are: not while a read runs, whose answer
+      // landing after the add would leave the roster without them (#589),
+      // nor while a request is out or once the delete is done.
+      enabled: !state.reading && !acting,
+      onPressed: () => _addAttendee(context, open),
+    );
+  }
 }
+
+/// *Add people* (#510). Opens the Add people page, and is held through the
+/// add the page answers with, as the RSVP's note button is through its note
+/// ([EventRsvpControls]).
+///
+/// The page hands the focus back to it as it closes, just before the add
+/// goes out, and a disabled button can't hold focus (#607). So while it is
+/// unavailable after its own press, through the add and the read the add's
+/// end starts, it stays enabled and ignores presses, saying it is adding.
+/// While it is unavailable for another reason, a read or another request,
+/// it is disabled, and offline too (#49). The press is forgotten the first
+/// time it is built available after its add went out, and as soon as the
+/// page answers with nothing to send.
+class _AddPeopleButton extends StatefulWidget {
+  const _AddPeopleButton({required this.enabled, required this.onPressed});
+
+  /// Whether it may be pressed now: false while a read runs, a request is
+  /// out or the delete is done.
+  final bool enabled;
+
+  /// Opens the page and sends what it answers. Completes true when an add
+  /// was sent, and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<_AddPeopleButton> createState() => _AddPeopleButtonState();
+}
+
+class _AddPeopleButtonState extends State<_AddPeopleButton> {
+  /// A press is remembered: its page is open, or its add is out.
+  bool _pressed = false;
+
+  /// The remembered press's add went out.
+  bool _sent = false;
+
+  @override
+  void didUpdateWidget(_AddPeopleButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Built available after its add went out: the add and the read its
+    // outcome started have ended, or ended before a frame showed them.
+    if (_sent && widget.enabled) {
+      _pressed = false;
+      _sent = false;
+    }
+  }
+
+  Future<void> _press() async {
+    // One press at a time: the page is open, or its add is out.
+    if (_pressed) return;
+    _pressed = true;
+    var sent = false;
+    try {
+      sent = await widget.onPressed();
+    } finally {
+      if (sent) {
+        _sent = true;
+      } else if (mounted) {
+        setState(() => _pressed = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final offline = BgeConnectivityScope.offlineOf(context);
+    // Offline it is disabled, pressed or not: no press made it so (#49).
+    final inert = _pressed && !widget.enabled && !offline;
+    final label = inert
+        ? l10n.eventsAddAttendeeInProgress
+        : l10n.eventsAddAttendee;
+
+    return BgeOnlineOnly(
+      child: BgeInertButton(
+        inert: inert,
+        label: label,
+        onPressed: (widget.enabled && !offline) || inert
+            ? () => unawaited(_press())
+            : null,
+        builder: (context, focusNode, onPressed) => TextButton.icon(
+          key: EventDetailScreen.addAttendeeKey,
+          focusNode: focusNode,
+          onPressed: onPressed,
+          icon: inert
+              ? const _HeldSpinner()
+              : const Icon(Icons.person_add_alt_1_outlined),
+          label: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
+/// The held button's icon while the add its press sent runs: scaled with the
+/// label beside it, in the button's icon colour, as the RSVP note button's
+/// is.
+class _HeldSpinner extends StatelessWidget {
+  const _HeldSpinner();
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: BgeTextScale.clampedOf(context)
+        .scale(BgeTokens.of(context).spaceMd),
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: IconTheme.of(context).color,
+    ),
+  );
+}
+
+/// How the screen opens the Add people page:
+/// [EventDetailScreen.onAddAttendee].
+typedef _OpenAddAttendee = Future<EventAttendeeAddition?> Function(
+  BuildContext context,
+  AddAttendeeArgs args,
+);
 
 /// Builds the page again at its next time boundary (#502, #655): the
 /// event's start or end, or a proposed date passing ([nextDetailBoundary]).
@@ -968,24 +1205,25 @@ class _ActionsMenu extends StatelessWidget {
   }
 
   Future<void> _delete(BuildContext context) async {
-    // Read before the dialog opens: the page under it can rebuild without
-    // this menu, and take the context it was asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final choice = await _confirmDelete(context);
-    if (choice == _DeleteChoice.cancelInstead && context.mounted) {
-      // The delete's dialog has closed, and Cancel's opens in its place
-      // (#502), to be sent as Cancel from the menu is.
-      return _writeStatus(context, EventStatusWrite.cancel);
-    }
-    if (choice != _DeleteChoice.delete || actions.isClosed) return;
-
-    // A read can have started while the dialog was open, and Delete waits
-    // for it to end (#501). The id is the detail's then, not the one the
-    // screen was opened on, which a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-    actions.add(EventDeleteRequested(state.detail.snapshot.event.id));
+    // Cancel instead runs inside ask: only Delete's dialog chooses it, and
+    // that dialog opens inside ask, so the blocs are read before it opens.
+    await sendDetailWrite<_DeleteChoice>(
+      context,
+      ask: () async {
+        final choice = await _confirmDelete(context);
+        if (choice == _DeleteChoice.cancelInstead && context.mounted) {
+          // The delete's dialog has closed, and Cancel's opens in its place
+          // (#502), to be sent as Cancel from the menu is.
+          await _writeStatus(context, EventStatusWrite.cancel);
+        }
+        return choice == _DeleteChoice.delete ? choice : null;
+      },
+      // A read can have started while the dialog was open, and Delete waits
+      // for it to end (#501). The id is the detail's then, not the one the
+      // screen was opened on, which a reconcile can have moved (#499).
+      check: (state, _) =>
+          SendWrite(EventDeleteRequested(state.detail.snapshot.event.id)),
+    );
   }
 
   /// Delete's dialog. Where the menu offers Cancel, it offers *Cancel event
@@ -1039,37 +1277,37 @@ class _ActionsMenu extends StatelessWidget {
     BuildContext context,
     EventStatusWrite write,
   ) async {
-    // Read before a dialog opens: the page under it can rebuild without
-    // this menu, and take the context it was asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final request = await switch (write) {
-      EventStatusWrite.cancel => _askCancel(context),
-      EventStatusWrite.reopen => _askReopen(context),
-      // No dialog: they tell nobody, and one tap undoes the other.
-      EventStatusWrite.archive => Future.value(EventArchiveRequested.new),
-      EventStatusWrite.unarchive => Future.value(EventUnarchiveRequested.new),
-    };
-    if (request == null || actions.isClosed) return;
-
-    // A read can have started while a dialog was open, and the write waits
-    // for it to end, as Delete does (#501). The event is the detail's as it
-    // is then, whose id a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-
-    // A sync can have changed the status or the viewer's role meanwhile,
-    // or a date can have ended and moved the status on. The page already
-    // shows the menu as it is then, and nothing is sent that it no longer
-    // offers. Its banner says so, or a screen reader would hear nothing
-    // happen, and a typed reason would go without a word.
-    final shown = state.detail.snapshot;
-    final status = eventStatusAt(shown.event, shown.occurrences, now: now());
-    if (!_statusWritesFor(status, state.actions).contains(write)) {
-      actions.add(EventWriteDropped.status(write));
-      return;
-    }
-    actions.add(request(shown.event.id));
+    await sendDetailWrite<_StatusRequest>(
+      context,
+      ask: () => switch (write) {
+        EventStatusWrite.cancel => _askCancel(context),
+        EventStatusWrite.reopen => _askReopen(context),
+        // No dialog: they tell nobody, and one tap undoes the other.
+        EventStatusWrite.archive => Future.value(EventArchiveRequested.new),
+        EventStatusWrite.unarchive => Future.value(EventUnarchiveRequested.new),
+      },
+      // A read can have started while a dialog was open, and the write waits
+      // for it to end, as Delete does (#501). The event is the detail's as
+      // it is then, whose id a reconcile can have moved (#499).
+      check: (state, request) {
+        // A sync can have changed the status or the viewer's role
+        // meanwhile, or a date can have ended and moved the status on. The
+        // page already shows the menu as it is then, and nothing is sent
+        // that it no longer offers. Its banner says so, or a screen reader
+        // would hear nothing happen, and a typed reason would go without a
+        // word.
+        final shown = state.detail.snapshot;
+        final status = eventStatusAt(
+          shown.event,
+          shown.occurrences,
+          now: now(),
+        );
+        if (!_statusWritesFor(status, state.actions).contains(write)) {
+          return DropWrite(EventWriteDropped.status(write));
+        }
+        return SendWrite(request(shown.event.id));
+      },
+    );
   }
 
   /// Cancel's dialog, with its optional reason: null when the event is
@@ -1259,53 +1497,48 @@ class _Dates extends StatelessWidget {
     Future<_DateRequest?> Function() ask, {
     String? occurrenceId,
   }) async {
-    // Read before the dialog opens: the page under it can rebuild without
-    // these dates, and take the context they were asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final request = await ask();
-    if (request == null || actions.isClosed) return;
+    await sendDetailWrite<_DateRequest>(
+      context,
+      ask: ask,
+      // A read can have started while the dialog was open, and the write
+      // waits for it to end (#589). The event is the detail's as it is then,
+      // whose id a reconcile can have moved (#499).
+      check: (state, request) {
+        // A sync can have cancelled the event while the dialog was open, and
+        // the server still takes an edit or a removal on a cancelled event
+        // (backend#956). Or taken the action from the viewer, and the server
+        // still takes a confirm, decline or cancel from an organizer
+        // (backend#979). The page already shows either, without the
+        // control, and its banner says the write was dropped, or a screen
+        // reader would hear nothing happen (#655).
+        final shown = state.detail.snapshot;
+        if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
+          return DropWrite(EventWriteDropped(action));
+        }
 
-    // A read can have started while the dialog was open, and the write
-    // waits for it to end (#589). The event is the detail's as it is then,
-    // whose id a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-
-    // A sync can have cancelled the event while the dialog was open, and
-    // the server still takes an edit or a removal on a cancelled event
-    // (backend#956). Or taken the action from the viewer, and the server
-    // still takes a confirm, decline or cancel from an organizer
-    // (backend#979). The page already shows either, without the control,
-    // and its banner says the write was dropped, or a screen reader would
-    // hear nothing happen (#655).
-    final shown = state.detail.snapshot;
-    if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
-      actions.add(EventWriteDropped(action));
-      return;
-    }
-
-    // Or the date can have passed while the dialog was open, and the server
-    // still takes a confirm on a passed date (backend#1005), so the clock is
-    // read again (#655). The page moved on as it passed, without the
-    // control. A date that changed meanwhile is checked the same way, and
-    // one gone meanwhile goes on to the server, whose answer says so.
-    final occurrence = occurrenceId == null
-        ? null
-        : shown.occurrences.where((o) => o.id == occurrenceId).firstOrNull;
-    if (occurrence != null) {
-      final offered = dateActionsFor(
-        shown.event,
-        occurrence,
-        state.actions,
-        now: now(),
-      );
-      if (!offered.contains(action)) {
-        actions.add(EventWriteDropped(action));
-        return;
-      }
-    }
-    actions.add(request(shown));
+        // Or the date can have passed while the dialog was open, and the
+        // server still takes a confirm on a passed date (backend#1005), so
+        // the clock is read again (#655). The page moved on as it passed,
+        // without the control. A date that changed meanwhile is checked the
+        // same way, and one gone meanwhile goes on to the server, whose
+        // answer says so.
+        final occurrence = occurrenceId == null
+            ? null
+            : shown.occurrences.where((o) => o.id == occurrenceId).firstOrNull;
+        if (occurrence != null) {
+          final offered = dateActionsFor(
+            shown.event,
+            occurrence,
+            state.actions,
+            now: now(),
+          );
+          if (!offered.contains(action)) {
+            return DropWrite(EventWriteDropped(action));
+          }
+        }
+        return SendWrite(request(shown));
+      },
+    );
   }
 
   Future<_DateRequest?> _askAdd(BuildContext context) async {
@@ -1425,17 +1658,6 @@ List<String> _otherProposed(List<EventOccurrence> occurrences, String id) => [
       occurrence.id,
 ];
 
-/// [detail]'s state once no read is running: now, or when the running one
-/// ends. Its last state if it closes first. A write asked for through a
-/// dialog waits on it, Delete's, the status changes' and the dates' alike.
-Future<EventDetailState> _readEnded(EventDetailBloc detail) {
-  bool ended(EventDetailState state) =>
-      state is! EventDetailReady || !state.reading;
-
-  if (ended(detail.state)) return Future.value(detail.state);
-  return detail.stream.firstWhere(ended, orElse: () => detail.state);
-}
-
 /// A date's request, built from the event as the detail shows it once the
 /// dialog closes.
 typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
@@ -1451,88 +1673,295 @@ Future<bool> _sendRsvp(
   BuildContext context,
   EventParticipationStatus? status, {
   bool editNote = false,
-}) async {
-  // Read before a dialog opens: the page under it can rebuild without the
-  // controls, and take the context they were asked from with it.
-  final actions = context.read<EventActionsBloc>();
-  final detail = context.read<EventDetailBloc>();
-  final l10n = EventsLocalizations.of(context);
-
-  String? notes;
-  String? shownNote;
-  if (editNote) {
-    final shown = detail.state;
-    shownNote = shown is EventDetailReady
-        ? shown.detail.attendance?.notes
-        : null;
-    notes = await showRsvpNoteDialog(context, note: shownNote);
-    if (notes == null) return false;
-  } else if (status == EventParticipationStatus.notAttending) {
-    // It pauses the viewer's nominations and takes the games they offered
-    // off the dates ahead. Coming back brings the nominations back, but not
-    // the games they offered.
-    final confirmed = await showConfirmDialog(
-      context,
-      title: l10n.eventsRsvpNotGoingTitle,
-      body: l10n.eventsRsvpNotGoingBody,
-      keepLabel: l10n.eventsRsvpNotGoingKeep,
-      confirmLabel: l10n.eventsRsvpNotGoingConfirm,
-      destructive: true,
-      confirmKey: EventDetailScreen.rsvpNotGoingConfirmKey,
-    );
-    if (!confirmed) return false;
-  }
-  if (actions.isClosed) return false;
-
-  // A read can have started while a dialog was open, and the write waits for
-  // it to end, as a date's does (#589). The event and the viewer's row are
-  // the detail's as they are then, whose ids a reconcile can have moved
-  // (#499).
-  final state = await _readEnded(detail);
-  if (state is! EventDetailReady || actions.isClosed) return false;
-
-  // A sync can have cancelled or archived the event while a dialog was open,
-  // taken the viewer off it, or left their row with a role or an answer this
-  // client doesn't know, which a note would go out with. The page already
-  // shows that, without the controls or without the note, and the banner
-  // says the write was dropped, or a screen reader would hear nothing
-  // happen.
-  final event = state.detail.snapshot.event;
-  final attendance = state.detail.attendance;
-  // A note saved as the dialog showed it, or as it stands now, sends
-  // nothing, and so does the answer the viewer already gave. The server
-  // takes every send as a new answer: it notifies the host that the viewer
-  // answered, and an answer of Going or Not going takes a new date. Saving
-  // the note the dialog opened on would also put it back over one another
-  // device saved while the dialog was open.
-  if (notes != null &&
-      (notes == (shownNote ?? '').trim() ||
-          (attendance != null && notes == (attendance.notes ?? '').trim()))) {
-    return false;
-  }
-  if (status != null && status == attendance?.status) return false;
-  final answer = status ?? attendance?.status;
-  if (attendance == null ||
-      answer == null ||
-      answer == EventParticipationStatus.unknown ||
-      !takesDateWrites(event) ||
-      !state.actions.contains(EventAction.rsvp)) {
-    actions.add(const EventWriteDropped(EventAction.rsvp));
-    return false;
-  }
-  // One request at a time, and the bloc drops one sent while another is
-  // out. A press before a frame showed another control's request out, such
-  // as a date's, gets here, and has to hear that it sent nothing, or the
-  // controls would hold it.
-  if (actions.state.busy) return false;
-  actions.add(
-    EventRsvpRequested(event.id, attendance.id, answer, notes: notes),
+}) {
+  return sendDetailWrite<_RsvpAsked>(
+    context,
+    ask: () async {
+      if (editNote) {
+        final shown = context.read<EventDetailBloc>().state;
+        final shownNote = shown is EventDetailReady
+            ? shown.detail.attendance?.notes
+            : null;
+        final notes = await showRsvpNoteDialog(context, note: shownNote);
+        if (notes == null) return null;
+        return (notes: notes, shownNote: shownNote);
+      }
+      if (status == EventParticipationStatus.notAttending) {
+        // It pauses the nominations of the games the viewer is bringing,
+        // whoever made them, and takes those games off the dates ahead
+        // (#823). Coming back brings the nominations back, but not the
+        // games.
+        final l10n = EventsLocalizations.of(context);
+        final confirmed = await showConfirmDialog(
+          context,
+          title: l10n.eventsRsvpNotGoingTitle,
+          body: l10n.eventsRsvpNotGoingBody,
+          keepLabel: l10n.eventsRsvpNotGoingKeep,
+          confirmLabel: l10n.eventsRsvpNotGoingConfirm,
+          destructive: true,
+          confirmKey: EventDetailScreen.rsvpNotGoingConfirmKey,
+        );
+        if (!confirmed) return null;
+      }
+      return (notes: null, shownNote: null);
+    },
+    // A read can have started while a dialog was open, and the write waits
+    // for it to end, as a date's does (#589). The event and the viewer's row
+    // are the detail's as they are then, whose ids a reconcile can have
+    // moved (#499).
+    check: (state, asked) {
+      final (:notes, :shownNote) = asked;
+      // A sync can have cancelled or archived the event while a dialog was
+      // open, taken the viewer off it, or left their row with a role or an
+      // answer this client doesn't know, which a note would go out with.
+      // The page already shows that, without the controls or without the
+      // note, and the banner says the write was dropped, or a screen reader
+      // would hear nothing happen.
+      final event = state.detail.snapshot.event;
+      final attendance = state.detail.attendance;
+      // A note saved as the dialog showed it, or as it stands now, sends
+      // nothing, and so does the answer the viewer already gave. The server
+      // takes every send as a new answer: it notifies the host that the
+      // viewer answered, and an answer of Going or Not going takes a new
+      // date. Saving the note the dialog opened on would also put it back
+      // over one another device saved while the dialog was open.
+      if (notes != null &&
+          (notes == (shownNote ?? '').trim() ||
+              (attendance != null &&
+                  notes == (attendance.notes ?? '').trim()))) {
+        return const SkipWrite();
+      }
+      if (status != null && status == attendance?.status) {
+        return const SkipWrite();
+      }
+      final answer = status ?? attendance?.status;
+      if (attendance == null ||
+          answer == null ||
+          answer == EventParticipationStatus.unknown ||
+          !takesDateWrites(event) ||
+          !state.actions.contains(EventAction.rsvp)) {
+        return const DropWrite(EventWriteDropped(EventAction.rsvp));
+      }
+      return SendWrite(
+        EventRsvpRequested(event.id, attendance.id, answer, notes: notes),
+      );
+    },
   );
-  return true;
 }
 
-/// How the last action went (#501, #502, #506, #508), or the last vote (#507),
-/// over the event until dismissed or replaced. A live region, as every
+/// What an answer's dialog asked (#508): the note typed, and the note the
+/// dialog opened on, for a note's edit; neither for an answer.
+typedef _RsvpAsked = ({String? notes, String? shownNote});
+
+/// Removes [row] from the roster once its dialog is confirmed (#510). See
+/// [EventDetailScreen].
+Future<void> _removeAttendee(BuildContext context, EventAttendee row) async {
+  await sendDetailWrite<bool>(
+    context,
+    ask: () async {
+      // It pauses the nominations of the games they're bringing, whoever
+      // made them, takes those games off the dates ahead, and their votes
+      // stop counting, so it always asks, naming them (#510).
+      final l10n = EventsLocalizations.of(context);
+      final name = row.name ?? l10n.eventsAttendeeSomeone;
+      final confirmed = await showConfirmDialog(
+        context,
+        title: l10n.eventsAttendeeRemoveTitle(name),
+        body: l10n.eventsAttendeeRemoveBody(name),
+        keepLabel: l10n.eventsAttendeeRemoveKeep,
+        confirmLabel: l10n.eventsAttendeeRemoveConfirm,
+        destructive: true,
+        confirmKey: EventDetailScreen.attendeeRemoveConfirmKey,
+      );
+      return confirmed ? true : null;
+    },
+    // A read can have started while the dialog was open, and the write waits
+    // for it to end, as a date's does (#589). The event and the row are the
+    // detail's as they are then.
+    check: (state, _) {
+      final shown = _actableRow(state, row.id, canRemoveAttendee);
+      if (shown == null) {
+        return DropWrite(
+          EventWriteDropped.attendee(EventAttendeeWrite.remove, name: row.name),
+        );
+      }
+      return SendWrite(
+        EventAttendeeRemoveRequested(
+          state.detail.snapshot.event.id,
+          shown.id,
+          name: row.name,
+        ),
+      );
+    },
+  );
+}
+
+/// Sets [row]'s answer to [status] for them (#510): Not going once its
+/// dialog is confirmed, Going and Maybe at once. It sends no note, so theirs
+/// stays. See [EventDetailScreen].
+Future<void> _answerFor(
+  BuildContext context,
+  EventAttendee row,
+  EventParticipationStatus status,
+) async {
+  await sendDetailWrite<EventParticipationStatus>(
+    context,
+    ask: () async {
+      if (status != EventParticipationStatus.notAttending) return status;
+      // As the viewer's own Not going does (#823), it pauses the
+      // nominations of the games they're bringing and takes those games
+      // off the dates ahead, and their votes stop counting, so it asks
+      // first, naming them.
+      final l10n = EventsLocalizations.of(context);
+      final name = row.name ?? l10n.eventsAttendeeSomeone;
+      final confirmed = await showConfirmDialog(
+        context,
+        title: l10n.eventsAttendeeNotGoingTitle(name),
+        body: l10n.eventsAttendeeNotGoingBody(name),
+        keepLabel: l10n.eventsAttendeeNotGoingKeep,
+        confirmLabel: l10n.eventsRsvpNotGoingConfirm,
+        destructive: true,
+        confirmKey: EventDetailScreen.attendeeNotGoingConfirmKey,
+      );
+      return confirmed ? status : null;
+    },
+    // As Remove's does, against the detail once any read has ended.
+    check: (state, status) {
+      // The answer they already have sends nothing, as the viewer's own
+      // doesn't: the server takes every send as a new answer, and a sync
+      // can have brought it while the dialog was open.
+      final roster = state.detail.snapshot.attendees ?? const [];
+      if (roster.any((shown) => shown.id == row.id && shown.status == status)) {
+        return const SkipWrite();
+      }
+      final shown = _actableRow(state, row.id, canSetAnswerFor);
+      if (shown == null) {
+        return DropWrite(
+          EventWriteDropped.attendee(EventAttendeeWrite.answer, name: row.name),
+        );
+      }
+      return SendWrite(
+        EventAttendeeAnswerRequested(
+          state.detail.snapshot.event.id,
+          shown.id,
+          status,
+          name: row.name,
+        ),
+      );
+    },
+  );
+}
+
+/// Opens the Add people page through [open] (#510), with the roles the
+/// viewer may give and the people the roster holds, as the detail shows
+/// them now, and adds whom it answers with. Answers whether it sent the add:
+/// not when the page answered nothing, or the add was dropped. See
+/// [EventDetailScreen].
+Future<bool> _addAttendee(BuildContext context, _OpenAddAttendee open) =>
+    sendDetailWrite<EventAttendeeAddition>(
+      context,
+      ask: () async {
+        final shown = context.read<EventDetailBloc>().state;
+        if (shown is! EventDetailReady) return null;
+        // The detail can be a step ahead of the frame the button was built
+        // from: a sync can have left the viewer no role to give, or cancelled
+        // or archived the event, and the button is going with the next frame.
+        // The page needs a role to offer.
+        final roles = assignableEventRoles(_rosterReach(shown));
+        if (roles.isEmpty) return null;
+        return open(
+          context,
+          AddAttendeeArgs(
+            roles: roles,
+            // A guest without an account has no user id, and the page finds
+            // only people with one.
+            rosterUserIds: {
+              for (final row
+                  in shown.detail.snapshot.attendees ?? const <EventAttendee>[])
+                ?row.userId,
+            },
+          ),
+        );
+      },
+      // A read can have started while the page was open, and the add waits
+      // for it to end, as the menus' writes do (#589). The event is the
+      // detail's as it is then, whose id a reconcile can have moved (#499).
+      check: (state, addition) {
+        final user = addition.user;
+        // What the banner calls them.
+        final name = personName(
+          displayName: user.displayName,
+          username: user.username,
+        );
+        final snapshot = state.detail.snapshot;
+        final roster = snapshot.attendees;
+        // A sync can have cancelled or archived the event while the page was
+        // open, taken the roster from the viewer, or narrowed the roles they
+        // may give: the page beneath shows it, without Add people or with
+        // fewer roles to give. Or a sync put the person on the roster, whom
+        // the page couldn't have offered. Either way nothing is sent, and the
+        // banner says the roster changed, or a screen reader would hear
+        // nothing happen (#655).
+        if (!assignableEventRoles(_rosterReach(state))
+                .contains(addition.role) ||
+            roster == null ||
+            roster.isEmpty ||
+            roster.any((row) => row.userId == user.id)) {
+          return DropWrite(
+            EventWriteDropped.attendee(EventAttendeeWrite.add, name: name),
+          );
+        }
+        return SendWrite(
+          EventAttendeeAddRequested(
+            snapshot.event.id,
+            user.id,
+            addition.role,
+            name: name,
+          ),
+        );
+      },
+    );
+
+/// Row [id] of the roster [state] shows, where its menu would still offer
+/// the write [allows] decides on: the event takes it, the role table still
+/// gives the viewer the roster, and [allows] still holds for the row. Null
+/// where a sync changed any of that while a dialog was open, or took the
+/// row off. The page already shows that, without the item, and the write's
+/// banner says the roster changed, or a screen reader would hear nothing
+/// happen (#655).
+EventAttendee? _actableRow(
+  EventDetailReady state,
+  String id,
+  bool Function(
+    AttendeeReach reach,
+    EventAttendee row, {
+    required String? viewerAttendeeId,
+  })
+  allows,
+) {
+  final reach = _rosterReach(state);
+  if (reach == AttendeeReach.none) return null;
+  final row = state.detail.snapshot.attendees
+      ?.where((shown) => shown.id == id)
+      .firstOrNull;
+  if (row == null ||
+      !allows(reach, row, viewerAttendeeId: state.detail.attendance?.id)) {
+    return null;
+  }
+  return row;
+}
+
+/// How far [state]'s viewer reaches over its roster (#510): as the role
+/// table says while the event takes the write, and [AttendeeReach.none] once
+/// it is cancelled or archived. The menus, Add people and the writes'
+/// re-checks all ask this.
+AttendeeReach _rosterReach(EventDetailReady state) =>
+    takesDateWrites(state.detail.snapshot.event)
+    ? state.attendeeReach
+    : AttendeeReach.none;
+
+/// How the last action went (#501, #502, #506, #508, #510), or the last vote
+/// (#507), over the event until dismissed or replaced. A live region, as every
 /// [BgeInlineBanner] is. A delete's done has none: the screen leaves. Nor
 /// does a vote's: its chip shows it.
 class _ActionOutcomeBanner extends StatelessWidget {
@@ -1559,11 +1988,13 @@ class _ActionOutcomeBanner extends StatelessWidget {
       key: bannerKey,
       tone: switch (outcome.result) {
         EventActionResult.done => BgeBannerTone.success,
-        // Gone is what deleting and removing a date asked for: a second
-        // press after an answer was lost finds it so. Any other date write's
-        // is the date it named gone from under it.
+        // Gone is what deleting, removing a date and removing someone
+        // asked for: a second press after an answer was lost finds it so.
+        // Any other write's is what it named gone from under it.
         EventActionResult.gone =>
-          action == EventAction.delete || action == EventAction.removeDate
+          action == EventAction.delete ||
+                  action == EventAction.removeDate ||
+                  outcome.attendeeWrite == EventAttendeeWrite.remove
               ? BgeBannerTone.success
               : BgeBannerTone.warning,
         EventActionResult.refused ||
@@ -1571,11 +2002,19 @@ class _ActionOutcomeBanner extends StatelessWidget {
         EventActionResult.partlyDone => BgeBannerTone.warning,
         EventActionResult.failed => BgeBannerTone.error,
       },
-      message: switch (outcome.statusWrite) {
+      message: switch (outcome) {
         // Cancel and reopen share an action, as archive and unarchive do,
-        // so the outcome says which it was (#502).
-        final write? => _statusWriteMessage(l10n, write),
-        null => _actionMessage(l10n),
+        // so the outcome says which it was (#502). So do the roster's three
+        // writes (#510).
+        EventActionOutcome(:final statusWrite?) => _statusWriteMessage(
+          l10n,
+          statusWrite,
+        ),
+        EventActionOutcome(:final attendeeWrite?) => _attendeeMessage(
+          l10n,
+          attendeeWrite,
+        ),
+        _ => _actionMessage(l10n),
       },
       action: TextButton(
         onPressed: onDismiss,
@@ -1635,6 +2074,51 @@ class _ActionOutcomeBanner extends StatelessWidget {
           ? l10n.eventsStatusWriteFailed
           : l10n.eventsStatusWriteFailedUnexpected,
   };
+
+  /// A roster write's copy (#510). An end that names the person names them
+  /// as the write did, or says "this person" where they have no name: "This
+  /// person" where the sentence starts with them.
+  ///
+  /// No failure says the write didn't land: a transient one's answer was
+  /// lost, and it may have. Nor that the roster below is up to date: the
+  /// read after it can fail too, and one that sent nothing isn't read again
+  /// ([EventActionOutcome.rereads]). Each asks for the roster to be checked.
+  String _attendeeMessage(EventsLocalizations l10n, EventAttendeeWrite write) {
+    final name = outcome.attendeeName ?? l10n.eventsAttendeeSomeone;
+    final leading = outcome.attendeeName ?? l10n.eventsAttendeeSomeoneStart;
+    return switch (outcome.result) {
+      EventActionResult.done => switch (write) {
+        EventAttendeeWrite.add => l10n.eventsAttendeeAdded(name),
+        EventAttendeeWrite.remove => l10n.eventsAttendeeRemoved(name),
+        EventAttendeeWrite.answer => l10n.eventsAttendeeAnswerSaved(name),
+      },
+      // A 404. For an add, the person or the event, which the server
+      // doesn't tell apart.
+      EventActionResult.gone => switch (write) {
+        EventAttendeeWrite.add => l10n.eventsAttendeeAddGone(name),
+        EventAttendeeWrite.remove => l10n.eventsAttendeeRemoveGone(leading),
+        EventAttendeeWrite.answer => l10n.eventsAttendeeAnswerGone(leading),
+      },
+      // A 403. For an add, a grant gone or the person's own settings, which
+      // the client can't tell apart.
+      EventActionResult.refused => switch (write) {
+        EventAttendeeWrite.add => l10n.eventsAttendeeAddRefused(leading),
+        EventAttendeeWrite.remove => l10n.eventsAttendeeRemoveRefused(name),
+        EventAttendeeWrite.answer => l10n.eventsAttendeeAnswerRefused(name),
+      },
+      // An add's 409 is someone already on the event. Any other is a write
+      // the screen dropped, or a 400 for a roster that moved.
+      EventActionResult.changed =>
+        write == EventAttendeeWrite.add && !outcome.dropped
+            ? l10n.eventsAttendeeAddAlreadyOn(leading)
+            : l10n.eventsAttendeeRosterChanged,
+      // Each is one request, so it never ends partly done.
+      EventActionResult.failed || EventActionResult.partlyDone =>
+        outcome.error is EventRemoteTransientException
+            ? l10n.eventsAttendeeWriteFailed
+            : l10n.eventsAttendeeWriteFailedUnexpected,
+    };
+  }
 
   /// A vote's copy (#507). A failure never says the answer wasn't saved:
   /// one whose answer was lost may have landed.

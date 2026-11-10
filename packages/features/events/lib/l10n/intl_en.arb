@@ -284,9 +284,9 @@
   "@eventsRsvpNotGoingTitle": {
     "description": "Title of the dialog that opens when the user taps Not going among their own answer chips on an event's screen, asking them to confirm that answer before it is sent."
   },
-  "eventsRsvpNotGoingBody": "Any games you nominated will be paused, and the games you're bringing will come off every date still to come. Saying you're coming later won't put those games back.",
+  "eventsRsvpNotGoingBody": "Nominations of games you're bringing will be paused, and those games will come off every date still to come. Your votes stop counting. Saying you're coming later brings the nominations back, but not the games.",
   "@eventsRsvpNotGoingBody": {
-    "description": "Body of the Not going dialog on an event's screen. Says three things, and a translation must keep all three: the games the user nominated for the event are paused, the games they offered to bring are taken off each of the event's dates that hasn't happened yet, and answering Going or Maybe later does not put the games they offered back on those dates. 'Those games' in the last sentence are the offered games only: the paused nominations do come back when the user answers Going or Maybe."
+    "description": "Body of the Not going dialog on an event's screen. Says four things, and a translation must keep all four: nominations of the games the user is bringing are paused, whoever made them; those games are taken off each of the event's dates that hasn't happened yet; the user's votes no longer count; and answering Going or Maybe later brings the nominations back, but does not put the games back on those dates."
   },
   "eventsRsvpNotGoingKeep": "Keep my answer",
   "@eventsRsvpNotGoingKeep": {
@@ -339,6 +339,246 @@
   "eventsRsvpFailedUnexpected": "Something went wrong. Check your answer below before trying again.",
   "@eventsRsvpFailedUnexpected": {
     "description": "Banner on an event's screen when sending the user's answer to the invitation, or their note, failed for any reason other than the connection: the server rejected it, the server answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. An answer the app could not read may follow one that was saved, and the screen reads the event again, so the copy must not say it wasn't saved. Unlike the connection failure it does not invite a retry straight away."
+  },
+  "eventsAttendeeSomeone": "this person",
+  "@eventsAttendeeSomeone": {
+    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
+  },
+  "eventsAttendeeSomeoneStart": "This person",
+  "@eventsAttendeeSomeoneStart": {
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn."
+  },
+  "eventsAttendeeActions": "Actions for {name}",
+  "@eventsAttendeeActions": {
+    "description": "Tooltip and accessible name of the three-dot button beside a person in the who's-coming section of an event's screen. Opens a menu to set their answer to the invitation for them (Going, Maybe or Not going), or to remove them from the event. Every such person has one, so it names them: {name} is their name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRemove": "Remove from event",
+  "@eventsAttendeeRemove": {
+    "description": "Last item in the menu beside another person in the who's-coming section of an event's screen. Opens a dialog asking to confirm taking that person off the event."
+  },
+  "eventsAttendeeRemoveTitle": "Remove {name}?",
+  "@eventsAttendeeRemoveTitle": {
+    "description": "Title of the dialog asking the user to confirm removing a person from an event, opened from the menu beside another person in the who's-coming section of an event's screen. {name} is that person's name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRemoveBody": "Nominations of games {name} is bringing will be paused, and those games will come off every date still to come. Their votes stop counting. Adding them back brings the nominations back, but not the games.",
+  "@eventsAttendeeRemoveBody": {
+    "description": "Body of the remove dialog on an event's screen. Says four things, and a translation must keep all four: nominations of the games the person is bringing are paused, whoever made them; those games are taken off each of the event's dates that hasn't happened yet; the person's votes no longer count; and adding them to the event again brings the nominations back, but does not put the games back on those dates. Nominations the person made of games other people are bringing stay open, so it doesn't mention them.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRemoveKeep": "Keep them",
+  "@eventsAttendeeRemoveKeep": {
+    "description": "Button in the remove dialog on an event's screen that closes it, sends nothing, and leaves the person on the event. Deliberately not 'Cancel', which here could read as cancelling the event."
+  },
+  "eventsAttendeeRemoveConfirm": "Remove",
+  "@eventsAttendeeRemoveConfirm": {
+    "description": "Confirm button of the remove dialog on an event's screen, shown in the error colour. Takes the person off the event, with the consequences the dialog's body describes."
+  },
+  "eventsAttendeeNotGoingTitle": "Mark {name} as not going?",
+  "@eventsAttendeeNotGoingTitle": {
+    "description": "Title of the dialog that opens when the user picks Not going from the menu beside another person in the who's-coming section of an event's screen, asking them to confirm that answer for that person before it is sent: they are recording someone else's answer, such as one given in person. {name} is that person's name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeNotGoingBody": "Nominations of games {name} is bringing will be paused, and those games will come off every date still to come. Their votes stop counting. Changing the answer back brings the nominations back, but not the games.",
+  "@eventsAttendeeNotGoingBody": {
+    "description": "Body of that Not going dialog. Says four things, and a translation must keep all four: nominations of the games the person is bringing are paused, whoever made them; those games are taken off each of the event's dates that hasn't happened yet; the person's votes no longer count; and changing their answer to Going or Maybe later brings the nominations back, but does not put the games back on those dates.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeNotGoingKeep": "Keep their answer",
+  "@eventsAttendeeNotGoingKeep": {
+    "description": "Button in that Not going dialog that closes it, sends nothing, and leaves the person's answer as it was. Deliberately not 'Cancel', which here could read as cancelling the event. Its confirm button is eventsRsvpNotGoingConfirm."
+  },
+  "eventsAttendeeRemoved": "Removed {name}.",
+  "@eventsAttendeeRemoved": {
+    "description": "Banner on an event's screen once the server has taken the person off the event, after the user confirmed the remove dialog. {name} is that person's name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRemoveGone": "{name} was already off the event.",
+  "@eventsAttendeeRemoveGone": {
+    "description": "Banner on an event's screen when removing a person found them already gone: someone removed them, perhaps on another device, or the event itself is gone. Shown as a success, since they are off the event either way. The screen reads the event again, which shows the roster as it is. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRemoveRefused": "You can't remove {name} from this event.",
+  "@eventsAttendeeRemoveRefused": {
+    "description": "Banner on an event's screen when the server refused to remove the person: the user is no longer allowed to, for example because their own role on the event changed on another device. The screen reads the event again. A warning, not an error.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAnswerSaved": "Saved {name}'s answer.",
+  "@eventsAttendeeAnswerSaved": {
+    "description": "Banner on an event's screen once the server has saved the answer (Going, Maybe or Not going) the user set for another person from the menu beside another person in the who's-coming section of an event's screen. {name} is that person's name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAnswerGone": "{name} is no longer on this event.",
+  "@eventsAttendeeAnswerGone": {
+    "description": "Banner on an event's screen when setting another person's answer found them, or the event, gone: someone removed them, perhaps on another device. The screen reads the event again, which shows the roster as it is. A warning, not an error. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAnswerRefused": "You can't change {name}'s answer.",
+  "@eventsAttendeeAnswerRefused": {
+    "description": "Banner on an event's screen when the server refused the answer the user set for another person: the user is no longer allowed to, for example because their own role on the event changed on another device. The screen reads the event again. A warning, not an error.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAdded": "Added {name}. They'll be asked whether they're coming.",
+  "@eventsAttendeeAdded": {
+    "description": "Banner on an event's screen once the server has added the person the user picked on the Add people page. They are added as invited, and answer for themselves. {name} is that person's name, or eventsAttendeeSomeone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAddAlreadyOn": "{name} is already on this event.",
+  "@eventsAttendeeAddAlreadyOn": {
+    "description": "Banner on an event's screen when adding a person found them already on the event, perhaps added on another device meanwhile. The screen reads the event again, which shows them. A warning, not an error. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAddGone": "Couldn't add {name}: they or this event can't be found.",
+  "@eventsAttendeeAddGone": {
+    "description": "Banner on an event's screen when the server could find neither the person the user picked to add, nor perhaps the event: the person's account is gone, or the event was deleted. The server doesn't say which. The screen reads the event again. A warning, not an error.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeAddRefused": "{name} can't be added to this event.",
+  "@eventsAttendeeAddRefused": {
+    "description": "Banner on an event's screen when the server refused to add the person. It covers both the user no longer being allowed to add people with that role, and the person's own settings, such as whom they accept invitations from; the app can't tell which, so the copy doesn't say. The screen reads the event again. A warning, not an error. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsAttendeeRosterChanged": "The roster changed before that went through. Check it below before trying again.",
+  "@eventsAttendeeRosterChanged": {
+    "description": "Banner on an event's screen when adding or removing a person, or setting their answer, wasn't sent or was turned down because the event or its people had changed since the screen showed them: for example, the person was removed, the event was cancelled, or the user's own role changed, on another device while a dialog was open. 'The roster' is the event's who's-coming list. The screen may be reading the event again as it shows, so the copy must not say the list below is up to date. A warning, not an error."
+  },
+  "eventsAttendeeWriteFailed": "Couldn't reach the server. Check the roster below before trying again.",
+  "@eventsAttendeeWriteFailed": {
+    "description": "Banner on an event's screen when adding or removing a person, or setting their answer, ended without an answer that says what happened, most often because there was no connection. It may or may not have gone through, so the copy must not say it didn't. 'The roster' is the event's who's-coming list. The screen starts reading the event again as the banner shows, and with the server out of reach that read often fails too, so the copy must not say the list below is up to date."
+  },
+  "eventsAttendeeWriteFailedUnexpected": "Something went wrong. Check the roster below before trying again.",
+  "@eventsAttendeeWriteFailedUnexpected": {
+    "description": "Banner on an event's screen when adding or removing a person, or setting their answer, failed for any reason other than the connection: the server rejected it, answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. It may have gone through, so the copy must not say it didn't. 'The roster' is the event's who's-coming list. The screen reads the event again after most of these, but not when nothing was sent, so the copy must not say the list below is up to date."
+  },
+  "eventsAddAttendee": "Add people",
+  "@eventsAddAttendee": {
+    "description": "Button in the who's-coming section of an event's screen, shown to someone who may add people to the event, such as its host. Opens the Add people page (eventsAddAttendeeTitle), where they find someone with an account and pick the role they'll have."
+  },
+  "eventsAddAttendeeInProgress": "Adding…",
+  "@eventsAddAttendeeInProgress": {
+    "description": "Shown in place of eventsAddAttendee on that button, beside a spinner, once the user has picked someone on the Add people page and the event's screen is sending the add. The button can't be pressed until it ends, and a banner then says how it went."
+  },
+  "eventsAddAttendeeTitle": "Add people",
+  "@eventsAddAttendeeTitle": {
+    "description": "Title of the page, opened from an event's screen, where the user finds someone with an account by searching for them, picks the role they'll have at the event, and adds them. One person at a time; they are added as invited, and answer for themselves."
+  },
+  "eventsAddAttendeeRole": "Role",
+  "@eventsAddAttendeeRole": {
+    "description": "Heading on the Add people page over the roles the user may give the person they add, one to pick, each with a line on what it lets them do. 'Role' is the part the person will have at the event: participant, guest, spectator and so on."
+  },
+  "eventsAddAttendeeAdd": "Add",
+  "@eventsAddAttendeeAdd": {
+    "description": "Last button on the Add people page. Adds the person picked from the search to the event, with the role picked under the Role heading, and goes back to the event, which says how it went. Unavailable until someone is picked, and while offline."
+  },
+  "eventsAddAttendeeAlreadyOn": "{name} is already on this event.",
+  "@eventsAddAttendeeAlreadyOn": {
+    "description": "Note under the search field on the Add people page, announced as it appears, when the user picks someone from the search who is already on the event. They aren't picked, and the user can search for someone else. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsRoleDescriptionParticipant": "Answers, votes on dates and games, and brings games.",
+  "@eventsRoleDescriptionParticipant": {
+    "description": "On the Add people page, the line under the Participant role (eventsRoleLabelParticipant) saying what the person added may do: answer the invitation, vote on the proposed dates and on the games, and bring games of their own."
+  },
+  "eventsRoleDescriptionGuest": "Answers and votes on dates. Can't nominate or vote on games.",
+  "@eventsRoleDescriptionGuest": {
+    "description": "On the Add people page, the line under the Guest role (eventsRoleLabelGuest) saying what the person added may do: answer the invitation and vote on the proposed dates, but not put a game forward for the event or vote on one."
+  },
+  "eventsRoleDescriptionSpectator": "Comes to watch. Answers whether they're coming, and has no vote.",
+  "@eventsRoleDescriptionSpectator": {
+    "description": "On the Add people page, the line under the Spectator role (eventsRoleLabelSpectator) saying what the person added may do: come to watch rather than play, and answer whether they're coming, with no vote on the dates or the games."
+  },
+  "eventsRoleDescriptionCoHost": "Runs the event with you: its dates, people and games. Can't delete it.",
+  "@eventsRoleDescriptionCoHost": {
+    "description": "On the Add people page, the line under the Co-host role (eventsRoleLabelCoHost) saying what the person added may do: run the event alongside the user, its dates, who's on it and its games, everything but delete it. 'You' is the user adding them."
+  },
+  "eventsRoleDescriptionOrganizer": "Edits the event, proposes dates, and adds or removes participants, guests and spectators.",
+  "@eventsRoleDescriptionOrganizer": {
+    "description": "On the Add people page, the line under the Organizer role (eventsRoleLabelOrganizer) saying what the person added may do: change the event's details, propose dates, and add people to it or take them off, but only participants, guests and spectators."
+  },
+  "eventsRoleDescriptionModerator": "Edits the event and its dates, settles nominations, and adds or removes participants, guests and spectators.",
+  "@eventsRoleDescriptionModerator": {
+    "description": "On the Add people page, the line under the Moderator role (eventsRoleLabelModerator) saying what the person added may do: change the event's details and its dates, decide on the games put forward for it, and add people to it or take them off, but only participants, guests and spectators."
   },
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {

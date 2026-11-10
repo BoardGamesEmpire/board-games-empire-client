@@ -442,6 +442,65 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<EventAttendee> addAttendee(
+    String eventId, {
+    required String userId,
+    required EventRole role,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(userId, name: 'userId');
+    if (role == EventRole.host || role == EventRole.unknown) {
+      // The host belongs to whoever created the event, and unknown has no
+      // wire name.
+      throw ArgumentError.value(role, 'role', 'cannot be given to an attendee');
+    }
+
+    const action = 'Add attendee';
+    const failures = _EventFailures(_Route.attendeeAdd);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        '${_pathOf(eventId)}/attendees',
+        options: _plainBody,
+        data: {'userId': userId, 'role': role.toWire()},
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapAttendee(_attendeeObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<EventAttendee> removeAttendee(
+    String eventId,
+    String attendeeId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+
+    const action = 'Remove attendee';
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.delete<String>(
+        '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}',
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapAttendee(_attendeeObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
@@ -987,7 +1046,7 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
           statusCode: status,
           apiMessage: apiErrorField(body, 'message'),
         ),
-        _Route.write => EventWriteRefusedException(
+        _Route.write || _Route.attendeeAdd => EventWriteRefusedException(
           message,
           cause: cause,
           statusCode: status,
@@ -1006,7 +1065,8 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
       return switch (route) {
         _Route.row ||
         _Route.householdList ||
-        _Route.write => EventRemoteNotFoundException(
+        _Route.write ||
+        _Route.attendeeAdd => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -1019,6 +1079,16 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         ),
         _Route.list => null,
       };
+    }
+    if (status == 409 && route == _Route.attendeeAdd) {
+      // The user is already on the event. A 409 asking for a retry never
+      // gets here: the shared classifier reads it as transient first.
+      return EventWriteConflictException(
+        message,
+        cause: cause,
+        statusCode: status,
+        apiMessage: apiErrorField(body, 'message'),
+      );
     }
     if (status == 400 &&
         route == _Route.write &&
@@ -1059,4 +1129,10 @@ enum _Route {
   /// is a conflict with the row as it stands (#506), for a status write the
   /// event's status. The event delete is never answered 400.
   write,
+
+  /// `POST /api/events/:id/attendees` (#510). It maps as [write] does, and
+  /// its 404 is the event or the invitee (the service refuses an unknown
+  /// user), its 403 a missing right or the invitee's block or preference, and
+  /// its enveloped 409 a user already on the event.
+  attendeeAdd,
 }

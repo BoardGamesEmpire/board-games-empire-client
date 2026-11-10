@@ -50,6 +50,7 @@ final class EventDetailReady extends EventDetailState {
     this.reading = false,
     this.refreshFailed = false,
     this.canRetry = false,
+    this.attendeeReach = AttendeeReach.none,
   });
 
   final EventDetail detail;
@@ -66,6 +67,9 @@ final class EventDetailReady extends EventDetailState {
   final bool refreshFailed;
   final bool canRetry;
 
+  /// How far the viewer reaches over other people's roster rows (#510).
+  final AttendeeReach attendeeReach;
+
   @override
   List<Object?> get props => [
     detail,
@@ -75,6 +79,7 @@ final class EventDetailReady extends EventDetailState {
     reading,
     refreshFailed,
     canRetry,
+    attendeeReach,
   ];
 }
 

@@ -43,6 +43,12 @@ typedef RsvpRequest = ({
   String? notes,
 });
 
+/// What an add sent (#510): the event, the user and the role.
+typedef AddAttendeeRequest = ({String eventId, String userId, EventRole role});
+
+/// What a remove sent (#510): the event and the attendee.
+typedef RemoveAttendeeRequest = ({String eventId, String attendeeId});
+
 /// One whole page of [rows], as a browse read answers (#613).
 PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     PaginatedResult(
@@ -72,6 +78,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
     this.rsvp = _noRsvp,
+    this.added = _noAdd,
+    this.removed = _noRemove,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -87,6 +95,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
     this.rsvp = _noRsvp,
+    this.added = _noAdd,
+    this.removed = _noRemove,
   }) : respond = ((request) {
          // The fake throws what a test hands it: an Exception or an Error.
          // ignore: only_throw_errors
@@ -106,6 +116,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.summary = _noSummary,
     this.statusWritten = _noStatusWrite,
     this.rsvp = _noRsvp,
+    this.added = _noAdd,
+    this.removed = _noRemove,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -122,6 +134,12 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noRsvp(RsvpRequest request) =>
       throw UnimplementedError('updateAttendeeStatus is not faked');
+
+  static Never _noAdd(AddAttendeeRequest request) =>
+      throw UnimplementedError('addAttendee is not faked');
+
+  static Never _noRemove(RemoveAttendeeRequest request) =>
+      throw UnimplementedError('removeAttendee is not faked');
 
   static Never _noVote(EventVoteRequest request) =>
       throw UnimplementedError('submitAvailability is not faked');
@@ -172,6 +190,20 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each RSVP, in order, recorded before it is answered.
   final List<RsvpRequest> rsvps = [];
+
+  /// Answers each add with the attendee as the server holds it after, which
+  /// throws unless a test supplies one (#510).
+  final FutureOr<EventAttendee> Function(AddAttendeeRequest request) added;
+
+  /// Each add, in order, recorded before it is answered.
+  final List<AddAttendeeRequest> adds = [];
+
+  /// Answers each remove with the removed row, which throws unless a test
+  /// supplies one (#510).
+  final FutureOr<EventAttendee> Function(RemoveAttendeeRequest request) removed;
+
+  /// Each remove, in order, recorded before it is answered.
+  final List<RemoveAttendeeRequest> removes = [];
 
   final List<EventListRequest> requests = [];
 
@@ -429,6 +461,27 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     rsvps.add(request);
     return rsvp(request);
+  }
+
+  @override
+  Future<EventAttendee> addAttendee(
+    String eventId, {
+    required String userId,
+    required EventRole role,
+  }) async {
+    final request = (eventId: eventId, userId: userId, role: role);
+    adds.add(request);
+    return added(request);
+  }
+
+  @override
+  Future<EventAttendee> removeAttendee(
+    String eventId,
+    String attendeeId,
+  ) async {
+    final request = (eventId: eventId, attendeeId: attendeeId);
+    removes.add(request);
+    return removed(request);
   }
 
   @override

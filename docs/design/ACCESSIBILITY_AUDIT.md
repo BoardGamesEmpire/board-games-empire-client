@@ -203,7 +203,11 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 5. Settings, and the feedback flow with its review screen.
 6. The bootstrap error screen (stop the server, open the app).
 7. Event detail from Events: an answer, with its note and not-going dialogs,
-   then as host the actions and date menus and the dialogs they open.
+   then as host the actions and date menus and the dialogs they open. Then
+   a roster row's menu, with its Remove dialog and the Not going dialog for
+   someone else. Check that each dialog names the person. Then Add people:
+   the page's search, its role list and Add, and that focus is back on Add
+   people once the page closes.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog.
@@ -282,9 +286,10 @@ Flutter's semantics tree under `flutter test`.
 - **The unverified-session banner** (#98) gets the same container. A screen
   reader should reach it.
 - **Busy controls** (`BgeInertButton`: the refresh banners' retry, the
-  household member menu, the event poll's retry). While busy they should read
-  as in progress, not as an available action, keep one node through the pass,
-  and keep accessibility focus. On iOS they offer no focus action while busy.
+  household member menu, the event poll's retry, and event detail's Add
+  people while its own add is out). While busy they should read as in
+  progress, not as an available action, keep one node through the pass, and
+  keep accessibility focus. On iOS they offer no focus action while busy.
 - **Online-only controls while offline** (the `BgeOnlineOnly` family, about 30
   controls). The reason should be read as part of the control's name or hint.
   Menu items have it on a second line.
@@ -364,13 +369,14 @@ no false finding.
 
 ### Coverage
 
-From `dart run tool/check_a11y_audit.dart`: 34 screens checked, 34 audited.
+From `dart run tool/check_a11y_audit.dart`: 35 screens checked, 35 audited.
 A screen with more than one test file lists each file. Home's four sections
 and household detail's events section aren't `*_screen.dart`, so the check
 doesn't count them; they are listed after the audited screens.
 
 | Screen | Test file | Status |
 |---|---|---|
+| `AddAttendeeScreen` | `packages/features/events/test/widgets/add_attendee_screen_test.dart` | audited |
 | `AuthScreen` | `packages/features/auth/test/widgets/auth_screen_test.dart` | audited |
 | `BootstrapErrorScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
 | `CollectionEntryScreen` | `packages/features/collection/test/widgets/collection_entry_screen_test.dart` | audited |

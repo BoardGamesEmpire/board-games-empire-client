@@ -147,8 +147,11 @@ abstract class EventRepository {
   ///   onto the other list's access where they already have it. A detail read
   ///   copies its answer, a null one included, onto either list's access they
   ///   already have. Neither adds an `attending` access, and a household row
-  ///   leaves the user off the attending list. A non-null answer also updates
-  ///   their own row on a cached roster in place, adding none.
+  ///   leaves the user off the attending list. A detail read whose answer is
+  ///   null also removes the user's `attending` access, as the server saying
+  ///   they don't attend; their `read` and `household` access stays (#752).
+  ///   A non-null answer also updates their own row on a cached roster in
+  ///   place, adding none.
   ///
   /// For one read, such as the detail read #498 makes. The hydrate writes a
   /// page at a time, through [cacheEvents].
@@ -412,6 +415,26 @@ abstract class EventRepository {
   /// `isDirty` or `isLocalOnly`, or when no such row is cached. Stamps the
   /// generation, and [watchEvent] emits. Last-write-wins (#589).
   Future<bool> cacheAttendee(EventAttendee attendee);
+
+  /// Adds [attendee], whom an add answered, to its event's cached roster, or
+  /// replaces the row with its id (#510). When [attendee] is the user, the
+  /// event joins their attending list, as the server's does, and their answer
+  /// goes on their `attending` and `household` rows.
+  ///
+  /// Returns false, writing nothing, when the event isn't cached, is
+  /// `isDirty` or `isLocalOnly`, or has no roster cached: one row alone would
+  /// read as a roster of one. Stamps the generation, and [watchEvent] emits.
+  /// Last-write-wins (#589).
+  Future<bool> addCachedAttendee(EventAttendee attendee);
+
+  /// Removes the cached roster row [attendeeId] of [eventId], whom the server
+  /// removed (#510). Returns false, changing nothing, when it wasn't cached
+  /// or the event is `isDirty` or `isLocalOnly`. Stamps the generation, and
+  /// [watchEvent] emits. Last-write-wins (#589).
+  Future<bool> removeCachedAttendee({
+    required String eventId,
+    required String attendeeId,
+  });
 
   /// Writes [event], the row a status write returned (cancel, reopen,
   /// archive or unarchive), over the cached one with its id (#502).

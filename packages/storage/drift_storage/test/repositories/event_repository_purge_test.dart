@@ -96,7 +96,15 @@ void main() {
   test('an event still read by this user stays cached after its attending row '
       'goes', () async {
     await attend('e-1');
-    await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+    await a.cacheEvent(
+      testSnapshot(
+        'e-1',
+        attendance: EventAttendance.fromAttendee(
+          testAttendee('att-a', userId: _kUserA),
+        ),
+      ),
+      source: EventAccessSource.read,
+    );
     final emissions = a.watchAttendingEvents().take(2).toList();
     await pumpEventQueue();
 
@@ -381,7 +389,11 @@ void main() {
     await attend('e-1');
     final purgeable = await a.purgeableAttendance();
     await a.cacheEvent(
-      testSnapshot('e-1', attendees: [mine]),
+      testSnapshot(
+        'e-1',
+        attendees: [mine],
+        attendance: EventAttendance.fromAttendee(mine),
+      ),
       source: EventAccessSource.read,
     );
 

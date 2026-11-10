@@ -6,6 +6,7 @@ import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -365,7 +366,15 @@ void main() {
 
       // A later open's read, or a hydrate, caches the event while the first
       // read's 404 is still on its way.
-      await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+      await a.cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendance: EventAttendance.fromAttendee(
+            testAttendee('att-a', userId: _kUserA),
+          ),
+        ),
+        source: EventAccessSource.read,
+      );
 
       expect(await a.forgetEvent('e-1', lastWrite: lastWrite), isFalse);
 

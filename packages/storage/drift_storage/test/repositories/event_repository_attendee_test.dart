@@ -5,7 +5,7 @@ import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart'
-    show eventAccessSourceAttending;
+    show eventAccessSourceAttending, eventAccessSourceHousehold;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -183,5 +183,207 @@ void main() {
     expect(await repo.cacheAttendee(maybe(mine)), isTrue);
 
     expect(await repo.lastWrite('e1'), isNot(before));
+  });
+
+  group('an add or a remove (#510)', () {
+    final added = testAttendee('att-c', userId: 'user-c', eventId: 'e1');
+
+    Future<List<String>> rosterIds() async =>
+        (await db.select(db.eventAttendeesTable).get())
+            .map((r) => r.id)
+            .toList()
+          ..sort();
+
+    test('addCachedAttendee adds a row to a cached roster', () async {
+      await cacheWithRoster();
+
+      expect(await repo.addCachedAttendee(added), isTrue);
+
+      expect(await rosterIds(), ['att-a', 'att-b', 'att-c']);
+      final row = await (db.select(
+        db.eventAttendeesTable,
+      )..where((t) => t.id.equals('att-c'))).getSingle();
+      expect(row.displayName, added.displayName);
+      expect(row.eventId, 'e1');
+    });
+
+    test('addCachedAttendee replaces the row with the same id', () async {
+      await cacheWithRoster();
+
+      expect(await repo.addCachedAttendee(maybe(theirs)), isTrue);
+
+      expect(await rosterIds(), ['att-a', 'att-b']);
+      final row = await (db.select(
+        db.eventAttendeesTable,
+      )..where((t) => t.id.equals('att-b'))).getSingle();
+      expect(row.status, EventParticipationStatus.maybe.toWire());
+      expect(row.notes, 'Running late.');
+    });
+
+    test('addCachedAttendee writes nothing with no roster cached', () async {
+      await cache(testSnapshot('e1'));
+      final before = await repo.lastWrite('e1');
+
+      expect(await repo.addCachedAttendee(added), isFalse);
+
+      expect(await rosterIds(), isEmpty);
+      expect(await repo.lastWrite('e1'), before);
+    });
+
+    test(
+      'addCachedAttendee writes nothing for a dirty or local-only event',
+      () async {
+        expect(await repo.addCachedAttendee(added), isFalse);
+
+        await cacheWithRoster();
+        for (final flag in [
+          const EventsTableCompanion(isDirty: Value(true)),
+          const EventsTableCompanion(
+            isDirty: Value(false),
+            isLocalOnly: Value(true),
+          ),
+        ]) {
+          await mark('e1', flag);
+          final before = await repo.lastWrite('e1');
+
+          expect(await repo.addCachedAttendee(added), isFalse);
+
+          expect(await rosterIds(), ['att-a', 'att-b']);
+          expect(await repo.lastWrite('e1'), before);
+        }
+      },
+    );
+
+    test("addCachedAttendee puts the user's own answer on the household's "
+        'list', () async {
+      // A household owner or admin who isn't on the roster can find and add
+      // themselves.
+      await repo.cacheEvent(
+        testSnapshot('e1', attendees: [theirs]),
+        source: EventAccessSource.household,
+      );
+      final joined = mine.copyWith(status: EventParticipationStatus.invited);
+
+      expect(await repo.addCachedAttendee(joined), isTrue);
+
+      final item =
+          (await repo.watchHouseholdEventListItems('household-1').first).single;
+      expect(item.attendance, EventAttendance.fromAttendee(joined));
+      // From their `household` access, which the list reads before the
+      // roster.
+      final access =
+          await (db.select(db.eventAccessTable)..where(
+                (t) =>
+                    t.eventId.equals('e1') &
+                    t.userId.equals(_kUser) &
+                    t.source.equals(eventAccessSourceHousehold),
+              ))
+              .getSingle();
+      expect(access.attendeeId, joined.id);
+      expect(
+        access.attendanceStatus,
+        EventParticipationStatus.invited.toWire(),
+      );
+    });
+
+    test('addCachedAttendee puts an event the user added themselves to on '
+        'their attending list', () async {
+      // The server lists every event the user is on, so it does from the
+      // add, and the list needn't wait for the next hydrate to show it.
+      await repo.cacheEvent(
+        testSnapshot('e1', attendees: [theirs]),
+        source: EventAccessSource.household,
+      );
+      expect(await repo.watchAttendingEventListItems().first, isEmpty);
+      final joined = mine.copyWith(status: EventParticipationStatus.invited);
+
+      expect(await repo.addCachedAttendee(joined), isTrue);
+
+      final item = (await repo.watchAttendingEventListItems().first).single;
+      expect(item.event.id, 'e1');
+      expect(item.attendance, EventAttendance.fromAttendee(joined));
+    });
+
+    test(
+      "adding someone else leaves the user's attending list alone",
+      () async {
+        await repo.cacheEvent(
+          testSnapshot('e1', attendees: [theirs]),
+          source: EventAccessSource.household,
+        );
+
+        expect(await repo.addCachedAttendee(added), isTrue);
+
+        expect(await repo.watchAttendingEventListItems().first, isEmpty);
+        final attending = await (db.select(
+          db.eventAccessTable,
+        )..where((t) => t.source.equals(eventAccessSourceAttending))).get();
+        expect(attending, isEmpty);
+      },
+    );
+
+    test('removeCachedAttendee removes the row', () async {
+      await cacheWithRoster();
+      final before = await repo.lastWrite('e1');
+
+      expect(
+        await repo.removeCachedAttendee(eventId: 'e1', attendeeId: 'att-b'),
+        isTrue,
+      );
+
+      expect(await rosterIds(), ['att-a']);
+      expect(await repo.lastWrite('e1'), isNot(before));
+    });
+
+    test('removeCachedAttendee answers false for a row not cached', () async {
+      await cacheWithRoster();
+      final before = await repo.lastWrite('e1');
+
+      expect(
+        await repo.removeCachedAttendee(eventId: 'e1', attendeeId: 'nope'),
+        isFalse,
+      );
+      expect(
+        await repo.removeCachedAttendee(eventId: 'e2', attendeeId: 'att-b'),
+        isFalse,
+      );
+
+      expect(await rosterIds(), ['att-a', 'att-b']);
+      expect(await repo.lastWrite('e1'), before);
+    });
+
+    test('removeCachedAttendee writes nothing for a dirty event', () async {
+      await cacheWithRoster();
+      await mark('e1', const EventsTableCompanion(isDirty: Value(true)));
+
+      expect(
+        await repo.removeCachedAttendee(eventId: 'e1', attendeeId: 'att-b'),
+        isFalse,
+      );
+      expect(await rosterIds(), ['att-a', 'att-b']);
+    });
+
+    test('watchEvent emits after each', () async {
+      await cacheWithRoster();
+      final rosters = <List<String>>[];
+      final sub = repo
+          .watchEvent('e1')
+          .listen(
+            (d) => rosters.add(
+              d!.snapshot.attendees!.map((a) => a.id).toList()..sort(),
+            ),
+          );
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(rosters.last, ['att-a', 'att-b']);
+
+      await repo.addCachedAttendee(added);
+      await pumpEventQueue();
+      expect(rosters.last, ['att-a', 'att-b', 'att-c']);
+
+      await repo.removeCachedAttendee(eventId: 'e1', attendeeId: 'att-c');
+      await pumpEventQueue();
+      expect(rosters.last, ['att-a', 'att-b']);
+    });
   });
 }

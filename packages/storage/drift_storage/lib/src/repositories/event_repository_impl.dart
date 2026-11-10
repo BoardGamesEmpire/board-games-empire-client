@@ -369,6 +369,27 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                   t.source.isIn(_answerSources),
             );
           }
+          // `GET /events/:id` reads the caller's own row apart from the
+          // roster, so a null `attendance` is the server saying this user
+          // isn't attending, whatever the roster says: a roster is read under
+          // the reader's ceiling and can't say it. The event leaves their
+          // attending list, as the next hydrate's purge would take it; the
+          // `read` and `household` rows stay (#752).
+          if (source == EventAccessSource.read) {
+            final notAttending = [
+              for (final s in written)
+                if (s.attendance == null) s.event.id,
+            ];
+            if (notAttending.isNotEmpty) {
+              b.deleteWhere(
+                _db.eventAccessTable,
+                (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceAttending) &
+                    t.eventId.isIn(notAttending),
+              );
+            }
+          }
           // Whether the server showed this user the roster is a fact about
           // their detail read alone. A household's list row carries
           // `attendees: null`, which says nothing either way, so it leaves
@@ -968,24 +989,75 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                 ),
               );
 
-      // The user's own answer also lives on their `attending` and `household`
-      // rows, which the lists read first (#667, #503). Only theirs, and only
-      // where the rows exist.
-      var answerRows = 0;
-      if (attendee.userId == _userId) {
-        answerRows =
-            await (_db.update(_db.eventAccessTable)..where(
-                  (t) =>
-                      t.eventId.equals(eventId) &
-                      t.userId.equals(_userId) &
-                      t.source.isIn(_answerSources),
-                ))
-                .write(
-                  _answerToCompanion(EventAttendance.fromAttendee(attendee)),
-                );
-      }
+      final answerRows = await _writeOwnAnswer(attendee);
 
       if (rosterRows == 0 && answerRows == 0) return false;
+      await _db.batch((b) => _stampGeneration(b, [eventId]));
+      return true;
+    });
+  }
+
+  @override
+  Future<bool> addCachedAttendee(EventAttendee attendee) async {
+    checkNotDisposed();
+    final eventId = attendee.eventId;
+    return _db.transaction(() async {
+      if (!await _isCachedAndServerOwned(eventId)) return false;
+
+      // A roster this client never read gets no row: one alone would read as
+      // a roster of one.
+      final cachedRows = _db.eventAttendeesTable.id.count();
+      final count =
+          await (_db.selectOnly(_db.eventAttendeesTable)
+                ..addColumns([cachedRows])
+                ..where(_db.eventAttendeesTable.eventId.equals(eventId)))
+              .map((r) => r.read(cachedRows) ?? 0)
+              .getSingle();
+      if (count == 0) return false;
+
+      await _db
+          .into(_db.eventAttendeesTable)
+          .insertOnConflictUpdate(_attendeeToCompanion(attendee));
+
+      // A household owner or admin who isn't on the roster can add
+      // themselves (#510). The server lists every event the user is on, so
+      // the event joins their attending list now rather than at the next
+      // hydrate, and the answer their lists show follows.
+      if (attendee.userId == _userId) {
+        await _db
+            .into(_db.eventAccessTable)
+            .insert(
+              EventAccessTableCompanion.insert(
+                userId: _userId,
+                eventId: eventId,
+                source: eventAccessSourceAttending,
+              ),
+              mode: InsertMode.insertOrIgnore,
+            );
+      }
+      await _writeOwnAnswer(attendee);
+
+      await _db.batch((b) => _stampGeneration(b, [eventId]));
+      return true;
+    });
+  }
+
+  @override
+  Future<bool> removeCachedAttendee({
+    required String eventId,
+    required String attendeeId,
+  }) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      if (!await _isCachedAndServerOwned(eventId)) return false;
+
+      final removed =
+          await (_db.delete(_db.eventAttendeesTable)..where(
+                (t) => t.id.equals(attendeeId) & t.eventId.equals(eventId),
+              ))
+              .go();
+      if (removed == 0) return false;
+
       await _db.batch((b) => _stampGeneration(b, [eventId]));
       return true;
     });
@@ -1040,6 +1112,22 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       ..addColumns([t.id])
       ..where(t.id.equals(eventId) & t.isDirty.not() & t.isLocalOnly.not());
     return await query.getSingleOrNull() != null;
+  }
+
+  /// Writes [attendee]'s answer onto the user's `attending` and `household`
+  /// rows for its event, which the lists read first (#667, #503): only where
+  /// [attendee] is the user's own row, and only where the rows exist.
+  /// Answers how many rows it wrote. Run inside the transaction that writes
+  /// the roster row.
+  Future<int> _writeOwnAnswer(EventAttendee attendee) async {
+    if (attendee.userId != _userId) return 0;
+    return (_db.update(_db.eventAccessTable)..where(
+          (t) =>
+              t.eventId.equals(attendee.eventId) &
+              t.userId.equals(_userId) &
+              t.source.isIn(_answerSources),
+        ))
+        .write(_answerToCompanion(EventAttendance.fromAttendee(attendee)));
   }
 
   /// Deletes each of [eventIds] that no user, by any source, has an access

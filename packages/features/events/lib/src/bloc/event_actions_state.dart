@@ -55,6 +55,12 @@ enum EventStatusWrite {
   final EventAction action;
 }
 
+/// Which of the roster's three writes an outcome is for (#510).
+///
+/// All three run under [EventAction.manageAttendees]; the banner tells them
+/// apart.
+enum EventAttendeeWrite { add, remove, answer }
+
 /// The last event action's outcome, for the detail screen (#501).
 final class EventActionOutcome extends Equatable {
   const EventActionOutcome({
@@ -62,6 +68,8 @@ final class EventActionOutcome extends Equatable {
     required this.result,
     this.error,
     this.statusWrite,
+    this.attendeeWrite,
+    this.attendeeName,
     this.dropped = false,
   });
 
@@ -71,6 +79,14 @@ final class EventActionOutcome extends Equatable {
   /// Which status write this is, for the four that change the event's own
   /// status (#502). Null for every other action.
   final EventStatusWrite? statusWrite;
+
+  /// Which roster write this is, for the three of #510. Null for every
+  /// other action.
+  final EventAttendeeWrite? attendeeWrite;
+
+  /// The name of the person an attendee write was for, for the banner's
+  /// copy. Null where they have none, and for every other action.
+  final String? attendeeName;
 
   /// What the action ended with. Null when it was done, when it failed
   /// before the request went out, when a cancel then remove stopped before
@@ -106,6 +122,13 @@ final class EventActionOutcome extends Equatable {
   /// the read brings them. Changed is a 400 from a status that moved since
   /// it was read, and the read shows the status as it now stands.
   ///
+  /// For an RSVP (#508) and an attendee write (#510), a failure reads again
+  /// whatever its error, amending #508's write (#748): an answer lost after
+  /// the server saved it leaves the cache on the old answer, and the page
+  /// refuses the press that would correct it. A retried add answers 409, and
+  /// a lost remove or answer leaves the roster stale. The read shows what the
+  /// server holds before the controls are pressed again.
+  ///
   /// A write the screen dropped isn't read again: the page it was checked
   /// against is the event as the cache now holds it.
   ///
@@ -133,6 +156,8 @@ final class EventActionOutcome extends Equatable {
       EventActionResult.failed =>
         error != null &&
             (action == EventAction.addDate ||
+                action == EventAction.rsvp ||
+                action == EventAction.manageAttendees ||
                 error is! EventRemoteTransientException),
       EventActionResult.done ||
       EventActionResult.gone => action != EventAction.delete,
@@ -142,7 +167,15 @@ final class EventActionOutcome extends Equatable {
   }
 
   @override
-  List<Object?> get props => [action, result, error, statusWrite, dropped];
+  List<Object?> get props => [
+    action,
+    result,
+    error,
+    statusWrite,
+    attendeeWrite,
+    attendeeName,
+    dropped,
+  ];
 }
 
 /// The actions on one event detail screen (#501).
