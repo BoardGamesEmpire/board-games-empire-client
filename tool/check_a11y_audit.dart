@@ -35,19 +35,20 @@
 // comment, or in two unrelated places, counts, and so does a group that is
 // skipped. A skip carries its tracked finding, which is how a known gap is
 // kept visible; a group that really audits the screen is what the reviewer
-// checks. This gate catches the screen nobody thought of. It cannot be wrong the other way for a screen whose
-// audit follows the convention: the class name is matched as a whole word,
-// so `HouseholdScreen` is not satisfied by `HouseholdScreenView`.
+// checks. This gate catches the screen nobody thought of. It cannot be wrong
+// the other way for a screen whose audit follows the convention: the class
+// name is matched as a whole word, so `HouseholdScreen` is not satisfied by
+// `HouseholdScreenView`.
 //
 // ── Exemptions ─────────────────────────────────────────────────────
 //
 // [_deferred] lists screens an open unit is rewriting. When there are any,
-// they are printed on every run so they cannot be forgotten. It is keyed by the screen's path
-// from the workspace root, so a screen of the same name in another package
-// is not exempt with it, and an entry that matches no screen file is stale
-// and fails the check, so a rename, a move or a deletion cannot leave a
-// silent exemption behind. The map is empty when no unit is rewriting a
-// screen; an entry goes in with the unit that owns the rewrite and comes
+// they are printed on every run so they cannot be forgotten. It is keyed by
+// the screen's path from the workspace root, so a screen of the same name in
+// another package is not exempt with it, and an entry that matches no screen
+// file is stale and fails the check, so a rename, a move or a deletion cannot
+// leave a silent exemption behind. The map is empty when no unit is rewriting
+// a screen; an entry goes in with the unit that owns the rewrite and comes
 // out when that unit's screen gains its audit group.
 
 import 'dart:io';
@@ -103,8 +104,9 @@ class AuditResult {
 void main(List<String> args) {
   final unknown = args.where((a) => a != '--self-test');
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln('Usage: dart run tool/check_a11y_audit.dart [--self-test]');
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln('Usage: dart run tool/check_a11y_audit.dart [--self-test]');
     exit(64); // EX_USAGE
   }
 
@@ -280,7 +282,7 @@ AuditResult checkAudit(
 void _selfTest() {
   var failures = 0;
 
-  void expect(String name, bool condition, [String detail = '']) {
+  void expect(String name, {required bool condition, String detail = ''}) {
     if (condition) {
       stdout.writeln('  ok   $name');
     } else {
@@ -291,19 +293,20 @@ void _selfTest() {
 
   expect(
     'names a one-word screen',
-    classNameOf('home_screen.dart') == 'HomeScreen',
+    condition: classNameOf('home_screen.dart') == 'HomeScreen',
   );
   expect(
     'names a multi-word screen',
-    classNameOf('server_add_screen.dart') == 'ServerAddScreen',
+    condition: classNameOf('server_add_screen.dart') == 'ServerAddScreen',
   );
 
   final root = Directory.systemTemp.createTempSync('a11y_audit_');
   try {
     final paths = <String>[];
     void write(String path, String source) {
-      final file = File('${root.path}/$path')..createSync(recursive: true);
-      file.writeAsStringSync(source);
+      File('${root.path}/$path')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(source);
       paths.add(path);
     }
 
@@ -331,7 +334,8 @@ void _selfTest() {
       'packages/a/test/skipped_screen_test.dart',
       "void main() {\n  group(\n    'accessibility audit',\n"
           "    skip: 'a finding',\n    () {\n"
-          "      testWidgets('x', (t) async { await pump(SkippedScreen()); });\n"
+          "      testWidgets('x', (t) async { "
+          'await pump(SkippedScreen()); });\n'
           '    },\n  );\n}\n',
     );
     // Uncovered: nothing names it.
@@ -400,64 +404,70 @@ void _selfTest() {
 
     expect(
       'passes a covered screen',
-      !listed.contains('packages/a/lib/src/covered_screen.dart'),
+      condition: !listed.contains('packages/a/lib/src/covered_screen.dart'),
     );
     expect(
       'passes a screen whose group name is on its own line',
-      !listed.contains('packages/a/lib/src/skipped_screen.dart'),
+      condition: !listed.contains('packages/a/lib/src/skipped_screen.dart'),
     );
     expect(
       'flags an uncovered screen',
-      listed.contains('packages/a/lib/src/lonely_screen.dart'),
+      condition: listed.contains('packages/a/lib/src/lonely_screen.dart'),
     );
     expect(
       'passes an exempt screen',
-      !listed.contains('packages/a/lib/src/waiting_screen.dart'),
+      condition: !listed.contains('packages/a/lib/src/waiting_screen.dart'),
     );
     expect(
       'reports the exemption with its reason',
-      result.exempt['packages/a/lib/src/waiting_screen.dart'] == '#1 in flight',
+      condition:
+          result.exempt['packages/a/lib/src/waiting_screen.dart'] ==
+          '#1 in flight',
     );
     expect(
       "doesn't exempt a same-named screen in another package",
-      listed.contains('packages/g/lib/src/waiting_screen.dart') &&
+      condition:
+          listed.contains('packages/g/lib/src/waiting_screen.dart') &&
           result.exempt.length == 1,
     );
     expect(
       'flags a screen outside screens/',
-      listed.contains('packages/b/lib/src/widgets/deep_screen.dart'),
+      condition: listed.contains('packages/b/lib/src/widgets/deep_screen.dart'),
     );
     expect(
       "ignores another package's tests",
-      listed.contains('packages/b/lib/src/other_screen.dart'),
+      condition: listed.contains('packages/b/lib/src/other_screen.dart'),
     );
     expect(
       'flags a group naming another class',
-      listed.contains('packages/c/lib/src/mine_screen.dart'),
+      condition: listed.contains('packages/c/lib/src/mine_screen.dart'),
     );
     expect(
       'flags a class with no audit group',
-      listed.contains('packages/d/lib/src/plain_screen.dart'),
+      condition: listed.contains('packages/d/lib/src/plain_screen.dart'),
     );
     expect(
       'matches the class as a whole word',
-      listed.contains('packages/e/lib/src/home_screen.dart'),
+      condition: listed.contains('packages/e/lib/src/home_screen.dart'),
     );
     expect(
       'ignores a non-suite under test/',
-      listed.contains('packages/f/lib/src/helper_screen.dart'),
+      condition: listed.contains('packages/f/lib/src/helper_screen.dart'),
     );
     expect(
       'does not count non-screens or deleted files',
-      result.screens == 11 && listed.length == 8,
-      'screens=${result.screens} uncovered=${listed.length}',
+      condition: result.screens == 11 && listed.length == 8,
+      detail: 'screens=${result.screens} uncovered=${listed.length}',
     );
     expect(
       'names the class in the report',
-      result.uncovered.any((u) => u.className == 'LonelyScreen'),
+      condition: result.uncovered.any((u) => u.className == 'LonelyScreen'),
     );
-    expect('is not ok with uncovered screens', !result.ok);
-    expect('has no stale entry when all match', result.stale.isEmpty);
+    expect('is not ok with uncovered screens', condition: !result.ok);
+    expect(
+      'has no stale entry when all match',
+      condition: result.stale.isEmpty,
+    );
 
     final stale = checkAudit(root.path, paths, {
       'packages/a/lib/src/waiting_screen.dart': '#1 in flight',
@@ -467,10 +477,11 @@ void _selfTest() {
     });
     expect(
       'flags a stale exemption',
-      stale.stale.length == 2 &&
+      condition:
+          stale.stale.length == 2 &&
           stale.stale.contains('packages/a/lib/src/renamed_screen.dart') &&
           stale.stale.contains('waiting_screen.dart'),
-      'stale=${stale.stale}',
+      detail: 'stale=${stale.stale}',
     );
 
     final clean = checkAudit(root.path, [
@@ -479,7 +490,7 @@ void _selfTest() {
     ], const {});
     expect(
       'is ok when every screen is covered',
-      clean.ok && clean.uncovered.isEmpty && clean.screens == 1,
+      condition: clean.ok && clean.uncovered.isEmpty && clean.screens == 1,
     );
   } finally {
     root.deleteSync(recursive: true);

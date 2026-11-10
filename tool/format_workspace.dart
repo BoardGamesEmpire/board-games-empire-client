@@ -74,8 +74,9 @@ Future<void> main(List<String> args) async {
   final check = args.contains('--check');
   final unknown = args.where((a) => a != '--check').toList();
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln('Usage: dart run tool/format_workspace.dart [--check]');
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln('Usage: dart run tool/format_workspace.dart [--check]');
     exit(64); // EX_USAGE
   }
 

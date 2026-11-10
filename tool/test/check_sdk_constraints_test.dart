@@ -329,7 +329,8 @@ void main() {
       await workspace.delete(recursive: true);
     });
 
-    test('writes the root and every app, keeping the build number and the root text', () async {
+    test('writes the root and every app, keeping the build number and the '
+        'root text', () async {
       workspace = await createFixtureWorkspace(
         members: {
           'apps/app_b':

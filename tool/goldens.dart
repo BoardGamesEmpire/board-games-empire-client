@@ -104,12 +104,13 @@ const _handBackPath = '.dart_tool/goldens_out';
 Future<void> main(List<String> args) async {
   final unknown = args.where((a) => a != '--update' && a != '--image-tag');
   if (unknown.isNotEmpty || args.length > 1) {
-    stderr.writeln(
-      unknown.isNotEmpty
-          ? 'Unknown argument(s): ${unknown.join(', ')}'
-          : 'Pass at most one of --update and --image-tag.',
-    );
-    stderr.writeln(_usage);
+    stderr
+      ..writeln(
+        unknown.isNotEmpty
+            ? 'Unknown argument(s): ${unknown.join(', ')}'
+            : 'Pass at most one of --update and --image-tag.',
+      )
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 

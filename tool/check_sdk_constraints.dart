@@ -142,6 +142,11 @@
 // as the given major.minor.patch plus the build number already there, then
 // does what `--fix` does for the apps.
 
+// Lists here wrap one message or one template entry over adjacent
+// literals. A dropped comma would join two entries, which the self-test
+// or the real manifests fail on.
+// ignore_for_file: no_adjacent_strings_in_list
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -162,25 +167,29 @@ void main(List<String> args) {
         args[i],
   ];
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(_usage);
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 
   if (setVersion != null && !RegExp(r'^\d+\.\d+\.\d+$').hasMatch(setVersion)) {
-    stderr.writeln(
-      '--set-version takes major.minor.patch (e.g. 0.2.0), with no '
-      'prerelease and no build number: the build number stays as it is in '
-      'the root `version:`. Found: ${setVersion.isEmpty ? '(nothing)' : setVersion}',
-    );
-    stderr.writeln(_usage);
+    stderr
+      ..writeln(
+        '--set-version takes major.minor.patch (e.g. 0.2.0), with no '
+        'prerelease and no build number: the build number stays as it is in '
+        'the root `version:`. '
+        'Found: ${setVersion.isEmpty ? '(nothing)' : setVersion}',
+      )
+      ..writeln(_usage);
     exit(64);
   }
 
   if (args.contains('--self-test')) {
     if (setVersion != null) {
-      stderr.writeln('--set-version does not combine with --self-test.');
-      stderr.writeln(_usage);
+      stderr
+        ..writeln('--set-version does not combine with --self-test.')
+        ..writeln(_usage);
       exit(64);
     }
     _selfTest();
@@ -725,9 +734,10 @@ void _selfTest() {
       stdout.writeln('  ok   $name');
     } else {
       failures++;
-      stdout.writeln('  FAIL $name');
-      stdout.writeln('       expected: ${jsonEncode(expected)}');
-      stdout.writeln('       actual:   ${jsonEncode(actual)}');
+      stdout
+        ..writeln('  FAIL $name')
+        ..writeln('       expected: ${jsonEncode(expected)}')
+        ..writeln('       actual:   ${jsonEncode(actual)}');
     }
   }
 
@@ -1064,7 +1074,8 @@ void _selfTest() {
       '// Version\n'
       '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
       '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)\n'
-      '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
+      '#define VERSION_AS_NUMBER '
+      'FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
       'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD\n'
       '#else\n#define VERSION_AS_NUMBER 1,0,0,0\n#endif\n'
       '#if defined(FLUTTER_VERSION)\n'
@@ -1916,10 +1927,11 @@ List<String> _templateVersionProblems(
           setsVersion(source[i]))
         '`${source[i]}` overrides the version Flutter sets',
     for (final block in missing)
-      block.length == 1
-          ? 'lacks `${block.single}`'
-          : 'lacks the unbroken block from `${block.first}` to '
-                '`${block.last}`',
+      if (block.length == 1)
+        'lacks `${block.single}`'
+      else
+        'lacks the unbroken block from `${block.first}` to '
+            '`${block.last}`',
   ];
 }
 
@@ -1979,7 +1991,8 @@ List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   const [
     '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
         '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)\n'
-        '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
+        '#define VERSION_AS_NUMBER '
+        'FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
         'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD\n'
         '#else\n'
         '#define VERSION_AS_NUMBER 1,0,0,0\n'

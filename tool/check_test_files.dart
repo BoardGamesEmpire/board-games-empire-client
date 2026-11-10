@@ -51,8 +51,9 @@ final _main = RegExp(r'^(?:\w[\w<>?, ]*\s+)?main\s*\(', multiLine: true);
 void main(List<String> args) {
   final unknown = args.where((a) => a != '--self-test');
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln('Usage: dart run tool/check_test_files.dart [--self-test]');
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln('Usage: dart run tool/check_test_files.dart [--self-test]');
     exit(64); // EX_USAGE
   }
 
@@ -159,7 +160,12 @@ bool _isMisnamedSuite(String path, String source) =>
 void _selfTest() {
   var failures = 0;
 
-  void expect(String name, String path, String source, bool misnamed) {
+  void expect(
+    String name,
+    String path,
+    String source, {
+    required bool misnamed,
+  }) {
     if (_isMisnamedSuite(path, source) == misnamed) {
       stdout.writeln('  ok   $name');
     } else {
@@ -170,60 +176,70 @@ void _selfTest() {
 
   const suite = 'void main() {\n  test("x", () {});\n}\n';
 
-  expect('flags a suite without the suffix', 'p/test/a.dart', suite, true);
-  expect('flags one at the repo root', 'test/a.dart', suite, true);
-  expect('flags one nested deeper', 'p/test/x/y/a.dart', suite, true);
+  expect(
+    'flags a suite without the suffix',
+    'p/test/a.dart',
+    suite,
+    misnamed: true,
+  );
+  expect('flags one at the repo root', 'test/a.dart', suite, misnamed: true);
+  expect('flags one nested deeper', 'p/test/x/y/a.dart', suite, misnamed: true);
   expect(
     'flags an async main',
     'p/test/a.dart',
     'Future<void> main() async {}\n',
-    true,
+    misnamed: true,
   );
-  expect('flags a bare main', 'p/test/a.dart', 'main() {}\n', true);
+  expect('flags a bare main', 'p/test/a.dart', 'main() {}\n', misnamed: true);
   expect(
     'flags a main that takes arguments',
     'p/test/a.dart',
     'FutureOr<void> main(List<String> args) {}\n',
-    true,
+    misnamed: true,
   );
   expect(
     'flags a main below imports and helpers',
     'p/test/a.dart',
     "import 'x.dart';\n\nclass Fake {}\n\n$suite",
-    true,
+    misnamed: true,
   );
-  expect('passes a named suite', 'p/test/a_test.dart', suite, false);
+  expect('passes a named suite', 'p/test/a_test.dart', suite, misnamed: false);
   expect(
     'passes support code',
     'p/test/support/fakes.dart',
     'class Fake {\n  void run() {}\n}\n',
-    false,
+    misnamed: false,
   );
-  expect('passes a main outside test/', 'p/lib/a.dart', suite, false);
-  expect('passes a test-like dir name', 'p/testing/a.dart', suite, false);
+  expect('passes a main outside test/', 'p/lib/a.dart', suite, misnamed: false);
+  expect(
+    'passes a test-like dir name',
+    'p/testing/a.dart',
+    suite,
+    misnamed: false,
+  );
   expect(
     'passes a flutter_test_config',
     'p/test/flutter_test_config.dart',
     'Future<void> testExecutable(FutureOr<void> Function() main) async {}\n',
-    false,
+    misnamed: false,
   );
   expect(
     'passes a longer name starting with main',
     'p/test/a.dart',
     'void mainly() {}\n',
-    false,
+    misnamed: false,
   );
   expect(
     'passes a commented-out main',
     'p/test/a.dart',
     '// void main() {}\n',
-    false,
+    misnamed: false,
   );
   expect(
     'passes an indented call to main',
     'p/test/a.dart',
     'void run() {\n  main();\n}\n',
-    false,
+    misnamed: false,
   );
 
   if (failures > 0) {

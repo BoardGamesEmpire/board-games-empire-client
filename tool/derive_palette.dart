@@ -339,8 +339,12 @@ class Scheme {
   /// identical by hand, so adding a role meant remembering to add it twice or
   /// watching it silently drop out of the listing.
   void dump() {
+    // The listing is this tool's output, written to the console.
+    // ignore: avoid_print
     print('\n  // $name');
     for (final k in _order) {
+      // The listing is this tool's output, written to the console.
+      // ignore: avoid_print
       print('  ${k.padRight(22)} Color(${dart(v[k]!)}),');
     }
   }
@@ -467,8 +471,7 @@ Scheme build(
     s.v['surfaceContainer']!,
     s.v['surfaceContainerHigh']!,
     s.v['surfaceContainerHighest']!,
-  ];
-  family.sort((a, b) => luminance(a).compareTo(luminance(b)));
+  ]..sort((a, b) => luminance(a).compareTo(luminance(b)));
   final worstBg = dark ? family.last : family.first;
   s.v['onSurface'] = solve(
     hWalnut,
@@ -525,8 +528,8 @@ void main() {
   final schemes = [
     build('dark             ', dark: true, aa: 4.5, hc: false),
     build('light            ', dark: false, aa: 4.5, hc: false),
-    build('highContrastDark ', dark: true, aa: 7.0, hc: true),
-    build('highContrastLight', dark: false, aa: 7.0, hc: true),
+    build('highContrastDark ', dark: true, aa: 7, hc: true),
+    build('highContrastLight', dark: false, aa: 7, hc: true),
   ];
   // Verify in BOTH modes. Emit used to skip this entirely, so
   // `dart -Demit=true … > bge_color_schemes.dart` would write a palette that
@@ -538,6 +541,8 @@ void main() {
   // Aggregated across every scheme, then turned into an exit code: the whole
   // point of a verify mode is that a caller can act on the result without
   // reading the report.
+  // Without the annotation the conditional is a plain `Function`.
+  // ignore: omit_local_variable_types
   final void Function(String) report = emitMode ? stderr.writeln : print;
   var allPass = true;
   for (final s in schemes) {
