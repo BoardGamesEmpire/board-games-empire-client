@@ -121,8 +121,8 @@ void main() {
   void listing(
     Map<LanguageLinkFilter, List<LanguageLink>> byFilter, {
     bool hasMore = false,
-  }) => remote.onFetchLanguageLinks = (_, statuses, page, _) async =>
-      linkPageOf(
+  }) =>
+      remote.onFetchLanguageLinks = (_, statuses, page, _) async => linkPageOf(
         byFilter[filterOf(statuses)] ?? const [],
         page: page,
         hasMore: hasMore,

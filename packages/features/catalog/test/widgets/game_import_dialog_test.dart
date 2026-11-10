@@ -54,8 +54,8 @@ void main() {
   });
 
   /// Every start is queued, as batch [_batchId].
-  void queues() => remote.onStartImport = (_, _, correlationId) async =>
-      GameImportReceipt(
+  void queues() =>
+      remote.onStartImport = (_, _, correlationId) async => GameImportReceipt(
         batchId: _batchId,
         baseJobId: 'job_base',
         correlationId: correlationId,

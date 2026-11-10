@@ -402,12 +402,13 @@ void main() {
     auditScreen(
       'more to load',
       build: screenWith(
-        () => remote.onFetchHouseholdInvites = (_, _, page, limit) async =>
-            pageOf(
-              [for (var i = 0; i < 25; i++) invite('i_$i')],
-              limit: limit,
-              hasMore: true,
-            ),
+        () =>
+            remote.onFetchHouseholdInvites = (_, _, page, limit) async =>
+                pageOf(
+                  [for (var i = 0; i < 25; i++) invite('i_$i')],
+                  limit: limit,
+                  hasMore: true,
+                ),
       ),
       arrange: (tester) async {
         await shown(tester);
