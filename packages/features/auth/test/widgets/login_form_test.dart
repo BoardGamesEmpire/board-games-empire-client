@@ -244,7 +244,7 @@ void main() {
       ) async {
         await tester.pumpWidget(_wrap(const LoginForm(), mockBloc));
 
-        final SemanticsHandle handle = tester.ensureSemantics();
+        final handle = tester.ensureSemantics();
         await tester.pump();
 
         // Verify the submit button has a useful semantic label

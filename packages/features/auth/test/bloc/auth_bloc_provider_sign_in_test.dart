@@ -26,7 +26,8 @@ void main() {
   const loading = AuthLoading(providerId: 'authentik');
 
   blocTest<AuthBloc, AuthBlocState>(
-    'a completed provider sign-in: [AuthLoading(providerId), AuthAuthenticated]',
+    'a completed provider sign-in: '
+    '[AuthLoading(providerId), AuthAuthenticated]',
     build: () {
       when(() => repo.signInWithProvider(any()))
           .thenAnswer((_) async => ProviderSignInCompleted(testSession()));
@@ -270,8 +271,9 @@ void main() {
       return AuthBloc(authRepository: repo);
     },
     act: (b) {
-      b.add(const AuthProviderSignInRequested(kOidcStrategy));
-      b.add(const AuthProviderSignInRequested(kOidcStrategy));
+      b
+        ..add(const AuthProviderSignInRequested(kOidcStrategy))
+        ..add(const AuthProviderSignInRequested(kOidcStrategy));
     },
     expect: () => [loading],
     verify: (_) => verify(() => repo.signInWithProvider(any())).called(1),
@@ -295,8 +297,9 @@ void main() {
         return AuthBloc(authRepository: repo);
       },
       act: (b) async {
-        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
-        b.add(const AuthProviderSignInRequested(kOidcStrategy));
+        b
+          ..add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'))
+          ..add(const AuthProviderSignInRequested(kOidcStrategy));
         await pumpEventQueue();
       },
       expect: () => [const AuthLoading()],
@@ -316,15 +319,16 @@ void main() {
         return AuthBloc(authRepository: repo);
       },
       act: (b) async {
-        b.add(const AuthProviderSignInRequested(kOidcStrategy));
-        b.add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'));
-        b.add(
-          const AuthRegisterRequested(
-            email: 'a@b.c',
-            password: 'pw',
-            username: 'u',
-          ),
-        );
+        b
+          ..add(const AuthProviderSignInRequested(kOidcStrategy))
+          ..add(const AuthSignInRequested(email: 'a@b.c', password: 'pw'))
+          ..add(
+            const AuthRegisterRequested(
+              email: 'a@b.c',
+              password: 'pw',
+              username: 'u',
+            ),
+          );
         await pumpEventQueue();
       },
       expect: () => [loading],
@@ -394,7 +398,8 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
-    'a startup session check without one emits AuthUnauthenticated(sessionLost)',
+    'a startup session check without one emits '
+    'AuthUnauthenticated(sessionLost)',
     build: () {
       when(() => repo.getSession()).thenAnswer((_) async => null);
       when(() => repo.takeProviderSignInReturn()).thenReturn(null);

@@ -379,8 +379,7 @@ void main() {
           oidcStrategies: const [kOidcStrategy, _keycloak],
         ),
       );
-      final focus = _focusOf(tester, 'authentik');
-      focus.requestFocus();
+      final focus = _focusOf(tester, 'authentik')..requestFocus();
       await tester.pump();
       expect(FocusManager.instance.primaryFocus, same(focus), reason: 'sanity');
 
@@ -443,8 +442,7 @@ void main() {
     testWidgets('a cancelled sign-in returns the buttons to rest, with focus '
         'still on the pressed one', (tester) async {
       await pumpScreen(tester);
-      final focus = _focusOf(tester, 'authentik');
-      focus.requestFocus();
+      final focus = _focusOf(tester, 'authentik')..requestFocus();
       await tester.pump();
 
       await land(tester, const AuthLoading(providerId: 'authentik'));
@@ -870,8 +868,7 @@ void main() {
       useViewSize(tester, const Size(320, 480));
       await pumpReal(tester, failFast: true, textScale: 2);
       await tester.ensureVisible(_material('authentik'));
-      final focus = _focusOf(tester, 'authentik');
-      focus.requestFocus();
+      final focus = _focusOf(tester, 'authentik')..requestFocus();
       await tester.pump();
 
       // No frame between a press and its failure.

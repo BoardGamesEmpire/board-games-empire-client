@@ -45,7 +45,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// i18n (#37): all copy comes from [AuthLocalizations]; the bloc emits
 /// semantic failure kinds ([AuthOperationFailure]) which
-/// [_localizedFailure] maps to localized messages here — never in the
+/// `_localizedFailure` maps to localized messages here — never in the
 /// bloc.
 ///
 /// Callers are responsible for navigating away when the bloc emits
@@ -90,7 +90,7 @@ class AuthScreen extends StatefulWidget {
   /// notice arrives with the forms rather than pushing them down after they
   /// have painted (#142). Blank where none is given.
   ///
-  /// [AuthGate] passes its own splash, so a cold start reads as one
+  /// `AuthGate` passes its own splash, so a cold start reads as one
   /// continuous splash. The caller bounds the read; this screen waits for
   /// it.
   final Widget? splash;

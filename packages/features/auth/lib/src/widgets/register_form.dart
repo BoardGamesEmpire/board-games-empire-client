@@ -13,7 +13,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// Registration form for email/password sign-up.
 ///
-/// Only rendered when the server's [EmailAndPasswordStrategy.signUpDisabled]
+/// Only rendered when the server's `EmailAndPasswordStrategy.signUpDisabled`
 /// is false. Submits [AuthRegisterRequested] to the ancestor [AuthBloc].
 /// While its own registration is in flight ([AuthLoading] with no provider)
 /// the fields go read-only and the submit shows its progress. While a
@@ -71,7 +71,7 @@ class _RegisterFormState extends State<RegisterForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     super.dispose();
   }

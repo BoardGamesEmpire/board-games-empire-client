@@ -257,8 +257,9 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) {
-          b.add(const AuthSessionCheckRequested());
-          b.add(const AuthSessionCheckRequested());
+          b
+            ..add(const AuthSessionCheckRequested())
+            ..add(const AuthSessionCheckRequested());
         },
         wait: const Duration(milliseconds: 60),
         expect: () => [
@@ -1184,8 +1185,9 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) {
-          b.add(const AuthSessionCheckRequested());
-          b.add(const AuthRepositoryStateChanged(AuthStateUnauthenticated()));
+          b
+            ..add(const AuthSessionCheckRequested())
+            ..add(const AuthRepositoryStateChanged(AuthStateUnauthenticated()));
         },
         wait: const Duration(milliseconds: 30),
         expect: () => [

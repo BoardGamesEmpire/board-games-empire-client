@@ -62,7 +62,7 @@ class _LoginFormState extends State<LoginForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     super.dispose();
   }
