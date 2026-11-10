@@ -1,4 +1,3 @@
-import 'dart:async' show unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show Tristate;
 
@@ -879,7 +878,8 @@ void main() {
               ),
             ),
           );
-          // Not so far that the row, at the foot of the page, leaves the screen.
+          // Not so far that the row, at the foot of the page, leaves the
+          // screen.
           page.jumpTo(30);
           await tester.pumpAndSettle();
           // A pure vertical event, left to the framework, is the measure.
@@ -1245,10 +1245,8 @@ void main() {
           ),
         ),
       );
-      unawaited(
-        navigator.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const SizedBox()),
-        ),
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const SizedBox()),
       );
       await tester.pumpAndSettle();
 

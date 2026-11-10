@@ -13,7 +13,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// )
 /// ```
 ///
-/// Content, not a page: the caller supplies the page, or a [BgeStateSliver]
+/// Content, not a page: the caller supplies the page, or a `BgeStateSliver`
 /// on a sliver one. Pairs with `BgeErrorState` and `BgeLoadingState`.
 ///
 /// ## Accessibility

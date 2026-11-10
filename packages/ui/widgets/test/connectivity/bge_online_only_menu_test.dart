@@ -64,8 +64,7 @@ void main() {
     await tester.pumpWidget(_host(offline));
     await tester.tap(find.byKey(const Key('anchor')));
     await tester.pumpAndSettle();
-    final item = Focus.of(tester.element(find.text('Delete')));
-    item.requestFocus();
+    final item = Focus.of(tester.element(find.text('Delete')))..requestFocus();
     await tester.pump();
     expect(FocusManager.instance.primaryFocus, item);
     expect(item.hasPrimaryFocus, isTrue);

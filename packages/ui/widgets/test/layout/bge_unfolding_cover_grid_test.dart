@@ -218,10 +218,11 @@ void main() {
             keyOf: (item) => ValueKey(item.$1),
             idOf: (item) => item.$2,
             hasStrip: (item) => item.$3,
-            itemBuilder: (context, item, unfolded, toggle) => TextButton(
-              onPressed: toggle,
-              child: Text('${item.$1}${unfolded ? ' open' : ''}'),
-            ),
+            itemBuilder: (context, item, toggle, {required unfolded}) =>
+                TextButton(
+                  onPressed: toggle,
+                  child: Text('${item.$1}${unfolded ? ' open' : ''}'),
+                ),
             stripBuilder: (context, item) => SizedBox(
               key: _stripKey,
               height: _stripHeight,

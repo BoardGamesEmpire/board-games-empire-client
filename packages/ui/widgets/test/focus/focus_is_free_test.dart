@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
@@ -66,9 +68,11 @@ void main() {
 
   testWidgets('not free when a dialog route has focus', (tester) async {
     await _pumpPage(tester, control: control);
-    showDialog<void>(
-      context: _pageContext,
-      builder: (_) => const AlertDialog(content: Text('dialog')),
+    unawaited(
+      showDialog<void>(
+        context: _pageContext,
+        builder: (_) => const AlertDialog(content: Text('dialog')),
+      ),
     );
     await tester.pumpAndSettle();
 

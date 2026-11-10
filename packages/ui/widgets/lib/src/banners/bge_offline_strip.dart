@@ -27,7 +27,7 @@ enum BgeOfflineStripState {
 /// navigator, outside any `Scaffold`), and takes the status-bar inset only
 /// while it shows. The [SafeArea] sits outside the [AnimatedSize], so the
 /// inset switches in the same frame the host switches the content's own: the
-/// page below does not jump at either transition. While [hidden] it takes no
+/// page below does not jump at either transition. While `hidden` it takes no
 /// height at all, so a screen's own inset is the only one.
 ///
 /// ## Colour
@@ -43,7 +43,7 @@ enum BgeOfflineStripState {
 /// - One merged live-region node over icon and text, in the order
 ///   `UnverifiedSessionBanner` documents: [MergeSemantics] outside,
 ///   [Semantics] inside.
-/// - [offline] and [backOnline] are the same element, so the change of label
+/// - `offline` and `backOnline` are the same element, so the change of label
 ///   is what announces. A fresh node would announce too, but a collapsed
 ///   strip would lose the user's place between the two.
 /// - Not focusable and no action: a notice, not a control. Nothing moves

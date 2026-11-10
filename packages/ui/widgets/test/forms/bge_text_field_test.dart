@@ -11,9 +11,9 @@ FormGroup _form() => FormGroup({
 
 /// A `const` field, hoisted so that two `pumpWidget` calls hand the element the
 /// **identical** widget instance. That makes `didUpdateWidget` unreachable, so
-/// only the inherited dependency on the group can notice a swap (#186). A widget
-/// held in a `State` field and reused across builds is the same situation;
-/// `const` is just the tersest way to write it.
+/// only the inherited dependency on the group can notice a swap (#186). A
+/// widget held in a `State` field and reused across builds is the same
+/// situation; `const` is just the tersest way to write it.
 const BgeTextField _constField = BgeTextField(
   formControlName: 'email',
   label: 'Email',
@@ -36,8 +36,8 @@ Widget _host(FormGroup form, Widget child, {double scale = 1}) => MediaQuery(
 /// form does — it constructs its fields inside its own `build`, so each pump
 /// gets a fresh instance and `didUpdateWidget` carries the swap. Pass
 /// `() => _constField` to hand both pumps the same instance instead, which
-/// leaves the inherited group dependency as the only route by which the swap can
-/// be noticed.
+/// leaves the inherited group dependency as the only route by which the swap
+/// can be noticed.
 ///
 /// Disposal is registered here rather than at the end of each test body, so a
 /// failing expectation cannot leak a group into the tests that follow.
@@ -316,8 +316,8 @@ void main() {
     testWidgets('rebinds even when the child widget instance is unchanged', (
       tester,
     ) async {
-      // The swap arrives with no widget update at all: `_constField` is the same
-      // instance both times, so `didUpdateWidget` never fires. Only the
+      // The swap arrives with no widget update at all: `_constField` is the
+      // same instance both times, so `didUpdateWidget` never fires. Only the
       // inherited dependency on the group can see it, which is why that
       // dependency is registered despite firing on every keystroke — the cache
       // in `_BgeTextFieldState.build` is what pays for it (#186, D2).

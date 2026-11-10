@@ -22,28 +22,26 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-
+  # Forms. BgeTextField and BgeDropdownField bind to its controls.
+  reactive_forms: ^18.1.1
   # Design tokens (#32) — the dependency-cheap leaf. Widgets consume the theme
   # through it, feature packages depend on `ui`, the shell depends only on
   # `ui_tokens`.
   ui_tokens:
     path: ../tokens
 
-  # Forms. BgeTextField and BgeDropdownField bind to its controls.
-  reactive_forms: ^18.1.1
-
 dev_dependencies:
   # Testing — alchemist replaces the discontinued golden_toolkit (#32).
-  flutter_test:
-    sdk: flutter
   alchemist: ^0.14.0
-  # showBgePopup's tests run under the app's router shape: home on a
-  # ShellRoute's nested navigator, pages on the root one (#707).
-  go_router: ^18.0.0
   # Shared test helpers (#354, #213, #257): canned Dio transports and/or
   # widget-test viewport, semantics and scroll-geometry helpers.
   bge_test_support:
     path: ../../testing/support
+  flutter_test:
+    sdk: flutter
+  # showBgePopup's tests run under the app's router shape: home on a
+  # ShellRoute's nested navigator, pages on the root one (#707).
+  go_router: ^18.0.0
 
 flutter:
   uses-material-design: true

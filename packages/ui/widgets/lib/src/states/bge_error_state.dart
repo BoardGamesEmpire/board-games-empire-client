@@ -18,7 +18,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// )
 /// ```
 ///
-/// Content, not a page: the caller supplies the [BgePage] around it.
+/// Content, not a page: the caller supplies the `BgePage` around it.
 ///
 /// Replaces two views that re-implemented each other and drifted in both
 /// directions: the bootstrap failure screen had no autofocus and announced its

@@ -17,7 +17,7 @@ const double _semanticsAnchorExtent = 1;
 /// it appears: it announces [message], and is nothing while that is null.
 /// Deliberately 1x1 rather than zero-size — see [_semanticsAnchorExtent].
 ///
-/// The announcement rides a [Semantics.label] on a 1×1 box rather than
+/// The announcement rides a `Semantics.label` on a 1×1 box rather than
 /// rendering invisible text. An earlier version drew a real `Text` at
 /// `fontSize: 0` inside an `OverflowBox` — which put a raw font size in the
 /// widget tree purely to hide something, and is the kind of trick that gets

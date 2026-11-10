@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
     show
@@ -226,12 +224,10 @@ class _BgeShelfState extends State<BgeShelf> {
     if (duration == Duration.zero) {
       _controller.jumpTo(target);
     } else {
-      unawaited(
-        _controller.animateTo(
-          target,
-          duration: duration,
-          curve: BgeMotion.standard,
-        ),
+      _controller.animateTo(
+        target,
+        duration: duration,
+        curve: BgeMotion.standard,
       );
     }
   }

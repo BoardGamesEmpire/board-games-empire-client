@@ -237,17 +237,18 @@ class GameCollectionListScreen extends StatelessWidget {
             : () => layouts.readThumbnails(ListLayoutScreen.collection),
         write: layouts == null
             ? null
-            : (thumbnails) => layouts.writeThumbnails(
+            : ({required thumbnails}) => layouts.writeThumbnails(
                 ListLayoutScreen.collection,
                 thumbnails: thumbnails,
               ),
         onError: _layoutFailed,
-        builder: (context, thumbnails, onChanged) => _GameCollectionListPage(
-          thumbnails: thumbnails,
-          onLayoutChanged: onChanged,
-          onOpen: onOpen,
-          onBrowse: onBrowse,
-        ),
+        builder: (context, onChanged, {required thumbnails}) =>
+            _GameCollectionListPage(
+              thumbnails: thumbnails,
+              onLayoutChanged: onChanged,
+              onOpen: onOpen,
+              onBrowse: onBrowse,
+            ),
       ),
     );
   }
@@ -634,7 +635,7 @@ class _CollectionCovers extends StatelessWidget {
       },
       idOf: (placed) => placed.item.first.gameId,
       hasStrip: (placed) => placed.expansions.isNotEmpty,
-      itemBuilder: (context, placed, unfolded, toggle) {
+      itemBuilder: (context, placed, toggle, {required unfolded}) {
         final group = placed.item;
         final gameId = group.first.gameId;
         final count = placed.expansions.length;

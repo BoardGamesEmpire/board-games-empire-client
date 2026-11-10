@@ -17,7 +17,7 @@ import 'package:ui/src/focus/pointer_focus_flag.dart';
 /// The control calls [notePointerPress] with the kind of each press, before
 /// the tap that gives it focus. From a mouse's or a trackpad's press until the
 /// next key press [pointerFocus] is true, and the control hides its feedback:
-/// a [BgeFocusRing] through `suppressed`, and an ink's tint through
+/// a `BgeFocusRing` through `suppressed`, and an ink's tint through
 /// [pointerFocusColor] as its `focusColor`. It isn't cleared when focus goes:
 /// every press opens something, and the focus handed back would be drawn.
 ///

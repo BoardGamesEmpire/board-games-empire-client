@@ -22,7 +22,7 @@ import 'package:flutter/widgets.dart';
 /// Not exported: the package's own focus widgets share it.
 class PointerFocusFlag extends ValueNotifier<bool> {
   /// Creates a flag that is [value] to begin with.
-  PointerFocusFlag([super.value = false]) {
+  PointerFocusFlag({bool value = false}) : super(value) {
     if (value) HardwareKeyboard.instance.addHandler(_onKey);
   }
 

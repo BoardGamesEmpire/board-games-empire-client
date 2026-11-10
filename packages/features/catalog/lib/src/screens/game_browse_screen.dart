@@ -159,12 +159,12 @@ class GameBrowseScreen extends StatelessWidget {
             : () => layouts.readThumbnails(ListLayoutScreen.games),
         write: layouts == null
             ? null
-            : (thumbnails) => layouts.writeThumbnails(
+            : ({required thumbnails}) => layouts.writeThumbnails(
                 ListLayoutScreen.games,
                 thumbnails: thumbnails,
               ),
         onError: _layoutFailed,
-        builder: (context, thumbnails, onChanged) =>
+        builder: (context, onChanged, {required thumbnails}) =>
             BlocListener<GameBrowseBloc, GameBrowseState>(
               listenWhen: (previous, current) => _landedNothingShown(
                 previous,
@@ -556,7 +556,7 @@ class _BrowseCovers extends StatelessWidget {
       keyOf: (placed) => GameBrowseScreen.tileKey(placed.item.id),
       idOf: (placed) => placed.item.id,
       hasStrip: (placed) => placed.expansions.isNotEmpty,
-      itemBuilder: (context, placed, unfolded, toggle) {
+      itemBuilder: (context, placed, toggle, {required unfolded}) {
         final game = placed.item;
         return BgeFocusHandoff(
           identity: game.id,

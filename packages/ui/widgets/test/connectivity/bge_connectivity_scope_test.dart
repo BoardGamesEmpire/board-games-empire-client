@@ -5,14 +5,15 @@ import 'package:ui/ui.dart';
 const _reason = "Available when you're online";
 
 Widget _probe({
-  required void Function(bool offline, bool showing, String? reason) onRead,
+  required void Function((bool offline, bool showing, String? reason) read)
+  onRead,
 }) => Builder(
   builder: (context) {
-    onRead(
+    onRead((
       BgeConnectivityScope.offlineOf(context),
       BgeConnectivityScope.noticeShowingOf(context),
       BgeConnectivityScope.onlineOnlyReasonOf(context),
-    );
+    ));
     return const SizedBox.shrink();
   },
 );
@@ -21,7 +22,7 @@ void main() {
   group('BgeConnectivityScope', () {
     testWidgets('defaults to online with no scope', (tester) async {
       late (bool, bool, String?) read;
-      await tester.pumpWidget(_probe(onRead: (o, s, r) => read = (o, s, r)));
+      await tester.pumpWidget(_probe(onRead: (value) => read = value));
 
       expect(read, (false, false, null));
     });
@@ -33,7 +34,7 @@ void main() {
           offline: false,
           noticeShowing: true,
           onlineOnlyReason: _reason,
-          child: _probe(onRead: (o, s, r) => read = (o, s, r)),
+          child: _probe(onRead: (value) => read = value),
         ),
       );
 
@@ -47,7 +48,7 @@ void main() {
           offline: true,
           noticeShowing: true,
           onlineOnlyReason: _reason,
-          child: _probe(onRead: (o, s, r) => read = (o, s, r)),
+          child: _probe(onRead: (value) => read = value),
         ),
       );
 
@@ -56,15 +57,15 @@ void main() {
 
     testWidgets('a change rebuilds its readers', (tester) async {
       final reads = <bool>[];
-      Widget scope(bool offline) => BgeConnectivityScope(
+      Widget scope({required bool offline}) => BgeConnectivityScope(
         offline: offline,
         noticeShowing: offline,
         onlineOnlyReason: _reason,
-        child: _probe(onRead: (o, s, r) => reads.add(o)),
+        child: _probe(onRead: (read) => reads.add(read.$1)),
       );
 
-      await tester.pumpWidget(scope(false));
-      await tester.pumpWidget(scope(true));
+      await tester.pumpWidget(scope(offline: false));
+      await tester.pumpWidget(scope(offline: true));
 
       expect(reads, [false, true]);
     });

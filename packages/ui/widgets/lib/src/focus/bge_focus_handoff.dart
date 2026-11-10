@@ -88,7 +88,7 @@ class _Pending {
     this.place, {
     required this.control,
     required bool pointerFocus,
-  }) : pointerFocus = PointerFocusFlag(pointerFocus);
+  }) : pointerFocus = PointerFocusFlag(value: pointerFocus);
 
   final Object identity;
   final Object? place;
