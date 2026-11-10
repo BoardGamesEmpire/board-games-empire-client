@@ -172,7 +172,15 @@ Know these limits before trusting a green run.
   the Games tab's rows (#516): each is one merged node, its title, where it
   is played and who brings it, and its platform line speaks a comma where it
   draws a dot. Nor each Take back, which draws "Take back" and speaks "Take
-  back" with its game's title. The same colour pairs are measured elsewhere on the page.
+  back" with its game's title. The same colour pairs are measured
+  elsewhere on the page. Nor the Offer games page's rows, each one merged
+  node, its title, where it is played and, where it can't be picked, why.
+  There the reason a row can't be picked, in `bodySmall` and
+  `onSurfaceVariant`, is held to 4.5:1 against the surface under it, light
+  and dark, from the colours the widgets resolve, by
+  `offer_games_screen_test.dart`. The title and platform line of such a
+  row keep the disabled look, which WCAG 1.4.3 exempts, and are measured
+  nowhere.
 
 ---
 
@@ -219,22 +227,39 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    someone, and close it: focus is back on People, and the chip under the
    search names them. Turn on Not mine and check your own rows leave. Take
    one of your games back and check the footer reads "… is off your
-   games." Then stop the server and refresh the event, and check the
-   footer also reads "Couldn't update the games. These may be out of
-   date." under that outcome, and that both its Dismiss and its Try again
-   are reached, by the reader and with Tab, at the largest text. Then,
+   games." Then stop the server, and on Details change your answer (Going
+   to Maybe, say): the change fails, so the event is read again, and that
+   read fails, so the games are read again, and fail too. Back on Games,
+   check the footer also reads "Couldn't update the games. These may be
+   out of date." under that outcome, and that both its Dismiss and its Try
+   again are reached, by the reader and with Tab, at the largest text. Then,
    with the server back, take back a game that is nominated, or in the
    lineup for a date still to come (the server's 409), and check the
    footer reads "… is nominated, or in the lineup for a date still to
    come, so it can't come off your games yet.", and that its Dismiss is
-   reached. Offline,
-   check Offer games and each Take back say "Available when you're online"
-   as their hint, and that it is drawn once, under Offer games. As someone
-   who answered Not going, check Offer games is read as unavailable, with
-   why as its hint.
-   With a banner showing above the tabs (fail a refresh: stop the server,
-   pull the event to refresh), open Games, scroll the pool several screens
-   down, then with TalkBack swipe back from the first row in view, and note
+   reached. Offline, check Offer games and each Take back say "Available
+   when you're online" as their hint, and that it is drawn once, under
+   Offer games. As someone who answered Not going, check Offer games is
+   read as unavailable, with why as its hint.
+   Then, online, press Offer games, and check the page is read as "Offer
+   games", that each row is one item saying the game, where it is played
+   and whether it is checked, and that a game you offered already reads
+   "Already offered" and one added offline "Not synced yet", each as
+   unavailable, with Tab passing over both. Type in the search and check
+   the count ("3 games shown") is read as it changes. Open Filters, choose
+   a platform, close it, and press Select all shown: it reads "Clear
+   selection" and keeps focus. Search for something no game has, check "No
+   games match" is read, and that Clear filters puts you on Filters, with
+   no on-screen keyboard. Pick two games and press "Offer 2 games": back on the
+   event, focus is on Offer games, which reads "Offering…" while the
+   footer reads "Offering 1 of 2…", and then "2 games offered.". With ten
+   or more picked, check the footer's line is not read at every step and
+   doesn't run on after the run has ended.
+   With a banner showing above the tabs (stop the server and change your
+   answer on Details: the change and the read of the event after it fail,
+   and their banners show above the tabs), open Games, scroll the pool
+   several screens down, then with TalkBack swipe back from the first row
+   in view, and note
    whether focus jumps to the banner and whether the page scrolls. With
    VoiceOver, move focus to the banner by the rotor, and note whether the
    page scrolls to it.
@@ -323,8 +348,9 @@ Flutter's semantics tree under `flutter test`.
 - **The unverified-session banner** (#98) gets the same container. A screen
   reader should reach it.
 - **Busy controls** (`BgeInertButton`: the refresh banners' retry, the
-  household member menu, the event poll's retry, and event detail's Add
-  people while its own add is out). While busy they should read as in
+  household member menu, the event poll's retry, event detail's Add people
+  while its own add is out, and its Games tab's Offer games while its own
+  run of offers is out). While busy they should read as in
   progress, not as an available action, keep one node through the pass, and
   keep accessibility focus. On iOS they offer no focus action while busy.
 - **Online-only controls while offline** (the `BgeOnlineOnly` family, about 30
@@ -380,24 +406,47 @@ handed on:
 
 ### Focus hand-offs from #516
 
-The same check, for the event screen's Games tab. A control that removes
-itself hands focus on after its own press, however the press came: a key,
-a pointer, or the reader's double-tap, which moves no input focus. It moves
-focus only if focus is then free: on nothing, on the page, or still on the
-control that left. So with the reader, the cursor should land on the
-control named below; a press while input focus sits on another control
-moves nothing.
+The same check, for the event screen's Games tab and its Offer games page.
+A control that removes itself hands focus on after its own press, however
+the press came: a key, a pointer, or the reader's double-tap, which moves
+no input focus. It moves focus only if focus is then free: on nothing, on
+the page, or still on the control that left. So with the reader, the
+cursor should land on the control named below. A press while input focus
+stays on another control moves nothing, but two kinds of press free focus
+first, and then the hand-off moves it as expected:
+
+- On desktop and the web, a mouse press on a chip while the search field
+  has focus first takes focus off the field, so the chip's neighbour takes
+  it.
+- While one row's take-back is out, every other Take back is disabled, so
+  one that held keyboard focus drops it. Once the pressed row has gone,
+  focus goes on from that row, and can land back on the Take back that
+  dropped it.
+
+The hand-offs:
 
 - Take back, its row gone once the game is off the pool: the next of your
   rows' Take back, else the one before it, else Offer games, else the
   search field. Nothing moves if focus went elsewhere while it was out, or
-  if the take-back was refused and the row stays. If the games become
-  hidden, nothing of the tab is left to take it, and it stays on the page.
+  if the take-back was refused and the row stays, or if the read after it
+  failed and a later read takes the row away. If the games become hidden,
+  nothing of the tab is left to take it, and it stays on the page. On the
+  web, with the stale-data banner already showing (the pool's last read
+  failed), a Take back pressed by the reader's double-tap or a mouse
+  usually hands nothing on when its row goes: focus stays on the page.
+  That is the known limit of the session check, not a bug. Pressed by
+  keyboard, it is handed on as above.
 - A person's chip under the search, removed: the chip that takes its
   place, else the one before it, else People. A chip removed by pointer
   while focus is on another chip moves no focus.
 - Clear filters, in "No games match": the emptied search field.
 - *Whose games*, closed: People.
+- The Offer games page, closed by its Offer button or by Back: Offer games,
+  which keeps it, read as "Offering…", through the run it sent.
+- On the page, Clear filters, in "No games match", however it is pressed:
+  Filters, never the emptied search field. A filter chip removed: the chip
+  that takes its place, else the one before it, else Filters. Select all
+  shown keeps focus as it becomes Clear selection, and back.
 
 ### #322's selection and copy checks
 
@@ -442,7 +491,8 @@ no false finding.
 
 ### Coverage
 
-From `dart run tool/check_a11y_audit.dart`: 35 screens checked, 35 audited.
+`dart run tool/check_a11y_audit.dart` checks every `*_screen.dart`, prints
+how many it checked, and fails on any that is neither audited nor exempt.
 A screen with more than one test file lists each file. Home's four sections
 and household detail's events section aren't `*_screen.dart`, so the check
 doesn't count them; they are listed after the audited screens.
@@ -476,6 +526,7 @@ doesn't count them; they are listed after the audited screens.
 | `HouseholdListScreen` | `packages/features/household/test/widgets/household_list_screen_test.dart` | audited |
 | `InviteInboxScreen` | `packages/features/household/test/widgets/invite_inbox_screen_test.dart` | audited |
 | `NotYetAvailableScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
+| `OfferGamesScreen` | `packages/features/events/test/widgets/offer_games_screen_test.dart` | audited |
 | `RouteNotFoundScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
 | `SendHouseholdInviteScreen` | `packages/features/household/test/widgets/send_household_invite_screen_test.dart` | audited |
 | `SentInvitesScreen` | `packages/features/household/test/widgets/sent_invites_screen_test.dart` | audited |

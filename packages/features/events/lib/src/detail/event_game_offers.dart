@@ -64,7 +64,8 @@ final class OfferGamesArgs extends Equatable {
 }
 
 /// One game picked to offer: its [collectionId] is what the server is asked
-/// to add, and its [title] is what the outcome names.
+/// to add, and its [title] is the name its row on the Offer games page
+/// showed, subtitle and all.
 final class OfferPick extends Equatable {
   const OfferPick({required this.collectionId, required this.title});
 

@@ -14,8 +14,10 @@ import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
+import 'package:events/src/widgets/held_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_filters/game_filters.dart' show GameFilterChipLabel;
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -90,9 +92,9 @@ enum _Body {
 /// [BgeStateSliver]. The header stays above every state but the wait for
 /// a first answer (or for the event's read after the pool found it gone)
 /// and the games being hidden. The page's `semanticChildCount` is
-/// [rowCount]. The outcome of a take-back, and the stale-data banner after
-/// a failed read of games still shown, are [EventGamesFooter]'s, in the
-/// page's footer.
+/// [rowCount]. How far a run of offers has got, how the pool's last write
+/// went, and the stale-data banner after a failed read of games still
+/// shown, are [EventGamesFooter]'s, in the page's footer.
 ///
 /// ## Writes
 ///
@@ -111,6 +113,13 @@ enum _Body {
 /// and the game is still in the pool; otherwise nothing is sent, and the
 /// footer says so. When the row leaves, focus is handed on as
 /// [EventGamesTabScope] says.
+///
+/// Offer games opens the Offer games page ([onOfferGames]), and sends what
+/// it answers the same way: once any running detail read has ended, as a
+/// run of offers for the viewer's row, only if the viewer may still offer
+/// games; otherwise nothing is sent, and the footer says so. It is held,
+/// inert, from its press through the run, so the focus the page hands it
+/// back as it closes stays on it.
 ///
 /// ## The filter
 ///
@@ -396,10 +405,12 @@ class _PoolHeader extends StatelessWidget {
       children: [
         if (gate != OfferGamesGate.hidden && open != null) ...[
           _OfferGamesButton(
-            focusNode: controller.offerFocus,
+            area: controller.offerArea,
             notGoing: gate == OfferGamesGate.notGoing,
             enabled: gate == OfferGamesGate.open && writable,
-            onPressed: () => unawaited(_offer(context, open)),
+            runOver:
+                games.sending == null && games.load != EventGamesLoad.loading,
+            onPressed: () => _offer(context, open),
           ),
           const BgeGap.md(),
         ],
@@ -441,7 +452,7 @@ class _PoolHeader extends StatelessWidget {
             if (viewerId != null)
               FilterChip(
                 key: EventDetailScreen.poolNotMineKey,
-                label: PoolChipLabel(l10n.eventsGamesNotMine),
+                label: GameFilterChipLabel(l10n.eventsGamesNotMine),
                 selected: controller.isNotMine(viewerId),
                 onSelected: (on) => controller.setNotMine(viewerId, on: on),
               ),
@@ -484,11 +495,23 @@ class _PoolHeader extends StatelessWidget {
   }
 
   /// Opens the Offer games page with the collection entries the viewer's
-  /// own rows hold, so it can leave them out. The press opens the page and
-  /// does nothing with what it answers.
-  Future<void> _offer(BuildContext context, OpenOfferGames open) async {
+  /// own rows hold, so it can leave them out, and sends the games it
+  /// answers with (#516). Completes true when a run was sent, and false
+  /// when nothing was.
+  ///
+  /// No picks, or Back, send nothing and say nothing. With picks, the send
+  /// waits for any running detail read to end ([readEnded]), then goes for
+  /// the event, the viewer's row and the roster as the detail shows them
+  /// then, whose ids a reconcile can have moved (#499), but only if the
+  /// viewer may still offer games: otherwise nothing is sent, and the
+  /// footer says the picks weren't offered, as Take back's drop does.
+  Future<bool> _offer(BuildContext context, OpenOfferGames open) async {
+    // Read before anything is awaited: the page covers the tab, and a
+    // rebuild can take this context with the header.
+    final detail = context.read<EventDetailBloc>();
+    final pool = context.read<EventGamesBloc>();
     final viewerId = this.viewerId;
-    await open(
+    final picks = await open(
       context,
       OfferGamesArgs(
         offeredCollectionIds: {
@@ -497,6 +520,26 @@ class _PoolHeader extends StatelessWidget {
         },
       ),
     );
+    if (picks == null || picks.isEmpty || pool.isClosed) return false;
+
+    final state = await readEnded(detail);
+    if (state is! EventDetailReady || pool.isClosed) return false;
+    final viewer = state.detail.attendance;
+    if (offerGamesGate(state) != OfferGamesGate.open || viewer == null) {
+      pool.add(const EventGamesWriteDropped(EventGamesWrite.offer));
+      return false;
+    }
+    // One write at a time; the bloc would ignore this one.
+    if (pool.state.busy) return false;
+    pool.add(
+      EventGamesOffered(
+        state.detail.snapshot.event.id,
+        viewer.id,
+        picks,
+        attendeeIds: poolAttendeeIds(state.detail),
+      ),
+    );
+    return true;
   }
 
   /// Opens *Whose games*, and puts focus back on People once it has closed.
@@ -514,45 +557,105 @@ class _PoolHeader extends StatelessWidget {
   }
 }
 
-/// Offer games (#516). Disabled with its reason, as its hint and under it,
-/// while the viewer has answered Not going; disabled offline, through
-/// [BgeOnlineOnly], and while [enabled] is false.
-class _OfferGamesButton extends StatelessWidget {
+/// Offer games (#516). Opens the Offer games page, and is held through the
+/// run of offers the page answers with, as Add people is through its add.
+///
+/// The page hands the focus back to it as it closes, just before the run
+/// goes out, and a disabled button can't hold focus (#607). So while it is
+/// unavailable after its own press, through the run, it stays enabled and
+/// ignores presses, saying it is offering. While it is unavailable for
+/// another reason, another of the pool's writes, a detail read or the
+/// screen's own request, it is disabled; offline too, through
+/// [BgeOnlineOnly] (#49), and while the viewer has answered Not going, with
+/// that reason as its hint and under it. The press is held through
+/// [HeldPress], and forgotten as soon as the page answers with nothing to
+/// send, the first time the button is built available after its run went
+/// out, or once the run and the read of the pool after it are over
+/// ([runOver]), whatever else is running then. The read of the pool after
+/// its run holds it back no more than any read of the pool holds back the
+/// tab's other controls: the run over, it is available through that read,
+/// and a press then opens the page. A detail read still running as the run
+/// ends, which the run didn't start, keeps it from being available, and
+/// once [runOver] it is disabled then, as any control is.
+class _OfferGamesButton extends StatefulWidget {
   const _OfferGamesButton({
-    required this.focusNode,
+    required this.area,
     required this.notGoing,
     required this.enabled,
+    required this.runOver,
     required this.onPressed,
   });
 
-  final FocusNode focusNode;
+  /// Holds the button, so a hand-off can find it.
+  final FocusNode area;
   final bool notGoing;
 
-  /// Whether it may be pressed now, connection aside.
+  /// Whether it may be pressed, connection aside: false while another
+  /// of the pool's writes is out, a detail read runs, or the screen's own
+  /// request is out.
   final bool enabled;
-  final VoidCallback onPressed;
+
+  /// Whether no run of offers is out and no read of the pool is running,
+  /// as the read a run's end starts is: once a run went out, its own
+  /// action is over, if the button wasn't let go sooner by being built
+  /// available.
+  final bool runOver;
+
+  /// Opens the page and sends what it answers. Completes true when a run
+  /// was sent, and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<_OfferGamesButton> createState() => _OfferGamesButtonState();
+}
+
+class _OfferGamesButtonState extends State<_OfferGamesButton>
+    with HeldPress<_OfferGamesButton> {
+  @override
+  bool get heldActionOver => widget.runOver;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
+    final notGoing = widget.notGoing;
     final reason = notGoing ? l10n.eventsGamesOfferNotGoing : null;
+    // Offline, or not going, it is disabled, pressed or not: no press made
+    // it so (#49).
+    final inert = heldInert(
+      available: widget.enabled && !notGoing && !offline,
+      disabled: offline || notGoing,
+    );
+    final label = inert
+        ? l10n.eventsGamesOfferInProgress
+        : l10n.eventsGamesOffer;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        BgeOnlineOnly(
-          showNote: false,
-          child: Semantics(
-            hint: reason,
-            child: FilledButton.icon(
-              key: EventDetailScreen.offerGamesKey,
-              focusNode: focusNode,
-              onPressed: enabled && !notGoing && !offline ? onPressed : null,
-              icon: const Icon(Icons.add),
-              label: Text(l10n.eventsGamesOffer),
+        Focus(
+          focusNode: widget.area,
+          includeSemantics: false,
+          child: BgeOnlineOnly(
+            showNote: false,
+            child: Semantics(
+              hint: reason,
+              child: BgeInertButton(
+                inert: inert,
+                label: label,
+                onPressed: (widget.enabled && !notGoing && !offline) || inert
+                    ? () => unawaited(holdPress(widget.onPressed))
+                    : null,
+                builder: (context, focusNode, onPressed) => FilledButton.icon(
+                  key: EventDetailScreen.offerGamesKey,
+                  focusNode: focusNode,
+                  onPressed: onPressed,
+                  icon: inert ? const _HeldSpinner() : const Icon(Icons.add),
+                  label: Text(label),
+                ),
+              ),
             ),
           ),
         ),
@@ -709,7 +812,7 @@ class _PeopleInUseState extends State<_PeopleInUse> {
               child: InputChip(
                 key: EventDetailScreen.poolInUseKey(id),
                 focusNode: _focus[id]!.chip,
-                label: PoolChipLabel(label),
+                label: GameFilterChipLabel(label),
                 onPressed: () => _remove(id, index),
                 onDeleted: () => _remove(id, index),
                 deleteButtonTooltipMessage: l10n.eventsGamesPersonRemove(label),
@@ -836,7 +939,7 @@ class _TakeBackButton extends StatelessWidget {
             focusNode: focusNode,
             onPressed: onPressed,
             icon: inert
-                ? const _TakingBackSpinner()
+                ? const _HeldSpinner()
                 : const Icon(Icons.remove_circle_outline),
             label: Text(l10n.eventsGamesTakeBack),
           ),
@@ -846,10 +949,11 @@ class _TakeBackButton extends StatelessWidget {
   }
 }
 
-/// Take back's icon while its request is out: scaled with the label beside
-/// it, in the button's icon colour, as the screen's other held buttons'.
-class _TakingBackSpinner extends StatelessWidget {
-  const _TakingBackSpinner();
+/// A held button's icon while its write is out, Take back's or Offer
+/// games': scaled with the label beside it, in the button's icon colour, as
+/// the screen's other held buttons'.
+class _HeldSpinner extends StatelessWidget {
+  const _HeldSpinner();
 
   @override
   Widget build(BuildContext context) => SizedBox.square(

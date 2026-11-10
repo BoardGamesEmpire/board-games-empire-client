@@ -2,6 +2,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/material.dart';
+import 'package:game_filters/game_filters.dart' show GameFilterChipLabel;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -69,7 +70,7 @@ class _PeopleSheet extends StatelessWidget {
                   for (final (:id, :label) in people)
                     FilterChip(
                       key: EventDetailScreen.poolPersonKey(id),
-                      label: PoolChipLabel(label),
+                      label: GameFilterChipLabel(label),
                       selected: filter.attendeeIds.contains(id),
                       onSelected: (chosen) =>
                           controller.choose(id, chosen: chosen),
@@ -92,21 +93,4 @@ class _PeopleSheet extends StatelessWidget {
       },
     );
   }
-}
-
-/// A chip's label that shrinks to fit its chip rather than being cut, at a
-/// large text size on a narrow screen: a Material chip holds its label to
-/// one line, and can't grow taller to wrap it (#474). A label with room
-/// keeps its size.
-class PoolChipLabel extends StatelessWidget {
-  const PoolChipLabel(this.text, {super.key});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => FittedBox(
-    fit: BoxFit.scaleDown,
-    alignment: AlignmentDirectional.centerStart,
-    child: Text(text),
-  );
 }

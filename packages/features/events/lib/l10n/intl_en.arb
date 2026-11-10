@@ -676,7 +676,7 @@
   },
   "eventsGamesWhere": "{platform} · {medium}",
   "@eventsGamesWhere": {
-    "description": "Second line of a game on the Games tab of an event's screen: the platform the owner has it on, then whether their copy is physical or digital (eventsGamesMediumPhysical, eventsGamesMediumDigital), for example 'Tabletop · Physical'. A game whose copy is neither shows the platform alone. Screen readers hear eventsGamesWhereSpoken instead.",
+    "description": "Second line of a game on the Games tab of an event's screen, and on the Offer games page: the platform the owner has it on, then whether their copy is physical or digital (eventsGamesMediumPhysical, eventsGamesMediumDigital), for example 'Tabletop · Physical'. A game whose copy is neither shows the platform alone. Screen readers hear eventsGamesWhereSpoken instead.",
     "placeholders": {
       "platform": {
         "type": "String",
@@ -817,6 +817,160 @@
         "example": "Catan"
       }
     }
+  },
+  "eventsGamesOfferInProgress": "Offering…",
+  "@eventsGamesOfferInProgress": {
+    "description": "Shown in place of eventsGamesOffer on the Offer games button, beside a spinner, while the games the user picked on the Offer games page are being sent. The button can't be pressed until they have all gone, and a banner then says how it went."
+  },
+  "eventsGamesOffering": "Offering {done} of {total}…",
+  "@eventsGamesOffering": {
+    "description": "At the foot of an event's screen while the games the user picked on the Offer games page are sent, one at a time: how many have been dealt with so far, of all those picked. Read by a screen reader as it changes, though not at every step of a long run.",
+    "placeholders": {
+      "done": {
+        "type": "int",
+        "example": "3"
+      },
+      "total": {
+        "type": "int",
+        "example": "8"
+      }
+    }
+  },
+  "eventsGamesOfferedAll": "{count, plural, =1{1 game offered.} other{{count} games offered.}}",
+  "@eventsGamesOfferedAll": {
+    "description": "Banner at the foot of an event's screen once every game the user picked on the Offer games page is on the games they're bringing.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsGamesOfferedPartly": "{offered, plural, =1{1 game offered.} other{{offered} games offered.}} {notOffered, plural, =1{1 couldn't be offered.} other{{notOffered} couldn't be offered.}}",
+  "@eventsGamesOfferedPartly": {
+    "description": "Banner at the foot of an event's screen when only some of the games the user picked on the Offer games page are on the games they're bringing: {offered} are, and {notOffered} are not, for example because an entry left the collection or the sending stopped part way.",
+    "placeholders": {
+      "offered": {
+        "type": "int",
+        "example": "3"
+      },
+      "notOffered": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsGamesOfferedNone": "{count, plural, =1{That game couldn't be offered.} other{None of those {count} games could be offered.}}",
+  "@eventsGamesOfferedNone": {
+    "description": "Banner at the foot of an event's screen when none of the games the user picked on the Offer games page could be offered, for any reason but the server refusing the user: {count} is how many were picked.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsGamesOfferRefused": "You can't offer games to this event any more.",
+  "@eventsGamesOfferRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused the first of the games the user picked on the Offer games page, so none of them was offered: the user isn't allowed to offer games to the event."
+  },
+  "eventsGamesOfferDropped": "Those games weren't offered: the event changed while you were choosing.",
+  "@eventsGamesOfferDropped": {
+    "description": "Banner at the foot of an event's screen when the games the user picked on the Offer games page were not sent at all, because the event changed while the page was open: for example the user answered Not going, or the event was cancelled."
+  },
+  "eventsOfferTitle": "Offer games",
+  "@eventsOfferTitle": {
+    "description": "Title of the page, opened from the Games tab of an event's screen, that lists the user's collection so they can pick games to offer to bring to the event."
+  },
+  "eventsOfferSearchLabel": "Search your collection",
+  "@eventsOfferSearchLabel": {
+    "description": "Label of the search field on the Offer games page, which narrows the user's collection by title as they type."
+  },
+  "eventsOfferSearchClear": "Clear search",
+  "@eventsOfferSearchClear": {
+    "description": "Accessible name and tooltip of the button inside the Offer games page's search field (eventsOfferSearchLabel) that empties it."
+  },
+  "eventsOfferSelectAll": "Select all shown",
+  "@eventsOfferSelectAll": {
+    "description": "Button on the Offer games page that picks every game the search and the filters show that can be offered, adding them to the games already picked."
+  },
+  "eventsOfferClearSelection": "Clear selection",
+  "@eventsOfferClearSelection": {
+    "description": "Takes the place of eventsOfferSelectAll on the Offer games page once every game shown that can be offered is picked: it unpicks every game, those the filters hide included."
+  },
+  "eventsOfferNothingToSelect": "None of the games shown can be offered.",
+  "@eventsOfferNothingToSelect": {
+    "description": "Read by a screen reader with the Select all shown button (eventsOfferSelectAll) on the Offer games page while it can't be pressed: every game the search and the filters show is offered already or not on the server, and each of those says which."
+  },
+  "eventsOfferCount": "{count, plural, =1{1 game shown} other{{count} games shown}}",
+  "@eventsOfferCount": {
+    "description": "Under the search field and the filters on the Offer games page: how many of the user's games the search and the filters show.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "eventsOfferTitleWithSubtitle": "{title}: {subtitle}",
+  "@eventsOfferTitleWithSubtitle": {
+    "description": "A game's name on its row of the Offer games page when the game also has a subtitle, for example 'Catan: Seafarers', as the collection list names it. The subtitle is often what tells two rows apart. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "subtitle": {
+        "type": "String",
+        "example": "Seafarers"
+      }
+    }
+  },
+  "eventsOfferAlready": "Already offered",
+  "@eventsOfferAlready": {
+    "description": "Under a game on the Offer games page, which is ticked and can't be changed, because the user has already offered it to this event."
+  },
+  "eventsOfferNotSynced": "Not synced yet",
+  "@eventsOfferNotSynced": {
+    "description": "Under a game on the Offer games page that can't be picked, because the user added it to their collection while offline and the server doesn't have it."
+  },
+  "eventsOfferSend": "{count, plural, =0{Offer games} =1{Offer 1 game} other{Offer {count} games}}",
+  "@eventsOfferSend": {
+    "description": "Button at the foot of the Offer games page that goes back to the event and offers the games picked there; {count} is how many are picked, those the filters hide included. It can't be pressed with none picked.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsOfferEmptyTitle": "Your collection is empty",
+  "@eventsOfferEmptyTitle": {
+    "description": "On the Offer games page when the user's collection holds no games to offer."
+  },
+  "eventsOfferNoMatchesTitle": "No games match",
+  "@eventsOfferNoMatchesTitle": {
+    "description": "On the Offer games page when the user's collection has games but the search or the filters leave none of them."
+  },
+  "eventsOfferClearFilters": "Clear filters",
+  "@eventsOfferClearFilters": {
+    "description": "Button under eventsOfferNoMatchesTitle that empties the search and clears every filter, so the whole collection shows again."
+  },
+  "eventsOfferLoading": "Loading your collection",
+  "@eventsOfferLoading": {
+    "description": "Read by a screen reader, never drawn, while the Offer games page waits for the user's collection."
+  },
+  "eventsOfferFailedTitle": "Couldn't read your collection",
+  "@eventsOfferFailedTitle": {
+    "description": "On the Offer games page when the user's collection couldn't be read from this device, or stopped being readable, for example because the user signed out."
+  },
+  "eventsOfferFailedBody": "Go back to the event and try again.",
+  "@eventsOfferFailedBody": {
+    "description": "Under eventsOfferFailedTitle, above the button that goes back to the event (eventsOfferBack). Opening the page again reads the collection again."
+  },
+  "eventsOfferBack": "Back to the event",
+  "@eventsOfferBack": {
+    "description": "Button under eventsOfferFailedBody on the Offer games page: leaves the page without offering anything, back to the event's screen."
   },
   "eventsDetailAttendeesNotLoaded": "Not loaded yet.",
   "@eventsDetailAttendeesNotLoaded": {

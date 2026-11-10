@@ -33,6 +33,7 @@ import 'package:events/src/widgets/event_games_tab.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
+import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -93,11 +94,20 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// for the event and the roster the detail shows then
 /// ([poolAttendeeIds]); never before. With nobody to read it for, nothing
 /// is read and the tab says the games aren't shown. A read that finds the
-/// event gone reads the event again, as the poll's does. How a take-back
-/// went shows in the page's footer, under the list it answers, where it is
-/// on screen and heard however far down the list the user is; what answers
-/// the whole screen stays in the header. *Offer games* opens the page of
-/// the viewer's collection through [onOfferGames].
+/// event gone reads the event again, as the poll's does. The page's footer
+/// holds what answers the list: how far a run of offers has got while it
+/// is out, or how the pool's last write went, a run of offers or a
+/// take-back, then the stale-data banner while the games shown may be out
+/// of date. There each is on screen and heard however far down the list
+/// the user is; what answers the whole screen stays in the header.
+///
+/// *Offer games* opens the page of the viewer's collection through
+/// [onOfferGames], and sends the games picked there once it closes, one at
+/// a time, as Add people sends its add: once any read has ended, for the
+/// event as the detail shows it then, and not at all if the viewer may no
+/// longer offer games, which the footer says. The button keeps its focus
+/// through the run it sent, which the page hands it back as it closes
+/// (#607).
 ///
 /// ## Delete
 ///
@@ -392,8 +402,12 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the count of the games the filter keeps.
   static const Key poolCountKey = Key('event_detail.pool_count');
 
-  /// Key on the banner in the footer saying how the last take-back went.
+  /// Key on the banner in the footer saying how the pool's last write went:
+  /// a run of offers, or a take-back.
   static const Key poolOutcomeKey = Key('event_detail.pool_outcome');
+
+  /// Key on the line in the footer saying how far a run of offers has got.
+  static const Key poolProgressKey = Key('event_detail.pool_progress');
 
   /// Key on the footer's banner saying the games shown may be out of date,
   /// after a read of the pool failed.
@@ -1025,10 +1039,11 @@ class _ReadyPage extends StatelessWidget {
           EventGamesTab.rowCount(context, state, games),
         _ => null,
       },
-      // How the pool's last write went, on the Games tab (#516): an outcome
-      // on a long list, so on screen and heard wherever the list is
-      // scrolled. Passed on every build where there is a games bloc, empty
-      // on Details, so the page keeps one shape as the tabs swap.
+      // On the Games tab (#516), how far a run of offers has got or how the
+      // pool's last write went, then the stale-data banner: answers on a
+      // long list, so on screen and heard wherever the list is scrolled.
+      // Passed on every build where there is a games bloc, empty on
+      // Details, so the page keeps one shape as the tabs swap.
       footer: gamesState == null
           ? null
           : tab == EventDetailTab.games
@@ -1268,9 +1283,10 @@ class _ReadyPage extends StatelessWidget {
 /// unavailable after its own press, through the add and the read the add's
 /// end starts, it stays enabled and ignores presses, saying it is adding.
 /// While it is unavailable for another reason, a read or another request,
-/// it is disabled, and offline too (#49). The press is forgotten the first
-/// time it is built available after its add went out, and as soon as the
-/// page answers with nothing to send.
+/// it is disabled, and offline too (#49). The press is held through
+/// [HeldPress], and forgotten the first time the button is built available
+/// after its add went out, and as soon as the page answers with nothing to
+/// send.
 class _AddPeopleButton extends StatefulWidget {
   const _AddPeopleButton({required this.enabled, required this.onPressed});
 
@@ -1286,46 +1302,22 @@ class _AddPeopleButton extends StatefulWidget {
   State<_AddPeopleButton> createState() => _AddPeopleButtonState();
 }
 
-class _AddPeopleButtonState extends State<_AddPeopleButton> {
-  /// A press is remembered: its page is open, or its add is out.
-  bool _pressed = false;
-
-  /// The remembered press's add went out.
-  bool _sent = false;
-
+class _AddPeopleButtonState extends State<_AddPeopleButton>
+    with HeldPress<_AddPeopleButton> {
+  /// Built available after its add went out: the add and the read its
+  /// outcome started have ended, or ended before a frame showed them.
   @override
-  void didUpdateWidget(_AddPeopleButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Built available after its add went out: the add and the read its
-    // outcome started have ended, or ended before a frame showed them.
-    if (_sent && widget.enabled) {
-      _pressed = false;
-      _sent = false;
-    }
-  }
-
-  Future<void> _press() async {
-    // One press at a time: the page is open, or its add is out.
-    if (_pressed) return;
-    _pressed = true;
-    var sent = false;
-    try {
-      sent = await widget.onPressed();
-    } finally {
-      if (sent) {
-        _sent = true;
-      } else if (mounted) {
-        setState(() => _pressed = false);
-      }
-    }
-  }
+  bool get heldActionOver => widget.enabled;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
     // Offline it is disabled, pressed or not: no press made it so (#49).
-    final inert = _pressed && !widget.enabled && !offline;
+    final inert = heldInert(
+      available: widget.enabled && !offline,
+      disabled: offline,
+    );
     final label = inert
         ? l10n.eventsAddAttendeeInProgress
         : l10n.eventsAddAttendee;
@@ -1335,7 +1327,7 @@ class _AddPeopleButtonState extends State<_AddPeopleButton> {
         inert: inert,
         label: label,
         onPressed: (widget.enabled && !offline) || inert
-            ? () => unawaited(_press())
+            ? () => unawaited(holdPress(widget.onPressed))
             : null,
         builder: (context, focusNode, onPressed) => TextButton.icon(
           key: EventDetailScreen.addAttendeeKey,

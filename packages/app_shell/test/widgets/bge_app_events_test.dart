@@ -33,6 +33,22 @@ class _MockEventRemote extends Mock implements EventRemoteDataSource {}
 
 class _MockUserRemote extends Mock implements UserRemoteDataSource {}
 
+/// A collection cache holding [items], whose watch stays open, as Drift's
+/// does. Nothing else of it is read here.
+class _Collection implements GameCollectionRepository {
+  _Collection(this.items);
+
+  final List<GameCollectionListItem> items;
+
+  @override
+  Stream<List<GameCollectionListItem>> watchCollectionListItems() =>
+      Stream.multi((stream) => stream.add(items));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
 /// Answers every send as delivered under the server's [eventId], as the
 /// real sender does once the server has made the event and the cache holds
 /// it.
@@ -197,6 +213,8 @@ void main() {
   /// watch emits, for a cache the test drives.
   /// [sender] and [users] are what the create form sends through and finds
   /// invitees with, and a create writes the event here as `ev_local`.
+  /// [collection] is the session's collection cache, which the Offer games
+  /// page lists.
   Future<void> pumpHome(
     WidgetTester tester, {
     int events = 1,
@@ -214,6 +232,7 @@ void main() {
     SessionIdentityGuard? guard,
     SyncOperationSender? sender,
     UserRemoteDataSource? users,
+    GameCollectionRepository? collection,
   }) async {
     when(repository.watchAttendingEventListItems).thenAnswer(
       (_) =>
@@ -308,6 +327,7 @@ void main() {
           sessionRehydrator: rehydrator,
           syncOperationSender: sender,
           userRemoteDataSource: users,
+          gameCollectionRepository: collection,
         ),
       ),
     );
@@ -1482,6 +1502,214 @@ void main() {
         expect(find.byKey(EventDetailScreen.attendeesKey), findsOneWidget);
         expect(find.text('Ada'), findsOneWidget);
         expect(find.byKey(EventDetailScreen.addAttendeeKey), findsNothing);
+      });
+    });
+
+    group('offering games (#516)', () {
+      final at = DateTime.utc(2026);
+
+      // The viewer hosts e-0, alone on its roster.
+      final me = EventAttendee(
+        id: 'att-me',
+        eventId: 'e-0',
+        userId: 'u1',
+        displayName: 'Sam',
+        status: EventParticipationStatus.attending,
+        role: EventRole.host,
+        createdAt: at,
+        updatedAt: at,
+      );
+      final hosted = EventSnapshot(
+        event: _upcoming('e-0').event,
+        occurrences: _upcoming('e-0').occurrences,
+        attendees: [me],
+      );
+      final azul = GameCollectionListItem(
+        entry: GameCollection(
+          id: 'c-azul',
+          userId: 'u1',
+          platformGameId: 'pg-azul',
+          medium: GameMedium.physical,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        gameId: 'g-azul',
+        title: 'Azul',
+        platformName: 'Tabletop',
+      );
+
+      GoRouter routerOf(WidgetTester tester) =>
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+
+      /// A server that reads [hosted], an empty pool, and takes offers.
+      _MockEventRemote hosting() {
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.fetchGamesPool(
+            any(),
+            attendeeIds: any(named: 'attendeeIds'),
+          ),
+        ).thenAnswer((_) async => const []);
+        when(
+          () => remote.offerGame(
+            any(),
+            any(),
+            collectionId: any(named: 'collectionId'),
+          ),
+        ).thenAnswer(
+          (call) async => OfferedGame(
+            id: 'o-1',
+            attendeeId: 'att-me',
+            collectionId: call.namedArguments[#collectionId] as String,
+            platformGameId: 'pg-azul',
+            gameId: 'g-azul',
+            title: 'Azul',
+            platformName: 'Tabletop',
+          ),
+        );
+        return remote;
+      }
+
+      /// Opens e-0's detail, which the viewer hosts, on its Games tab.
+      Future<void> openGames(
+        WidgetTester tester, {
+        required EventRemoteDataSource remote,
+        GameCollectionRepository? collection,
+      }) async {
+        await pumpHome(
+          tester,
+          remote: remote,
+          collection: collection,
+          detailCache: Stream.multi(
+            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+          ),
+        );
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+        await tester.tap(
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> tapShown(WidgetTester tester, Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('the offer route with no args goes back to the event', (
+        tester,
+      ) async {
+        // What the page offers comes from the open detail, which a link, a
+        // refresh or a history entry doesn't carry.
+        final history = FakeBrowserHistory.install(tester);
+        await openGames(
+          tester,
+          remote: hosting(),
+          collection: _Collection([azul]),
+        );
+
+        routerOf(tester).go(AppRoutes.eventOfferGamesOf('e-0'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(
+          tester
+              .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+              .eventId,
+          'e-0',
+        );
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+      });
+
+      testWidgets('with args and a collection it builds the page', (
+        tester,
+      ) async {
+        final history = FakeBrowserHistory.install(tester);
+        final remote = hosting();
+        await openGames(
+          tester,
+          remote: remote,
+          collection: _Collection([azul]),
+        );
+
+        await tapShown(tester, find.byKey(EventDetailScreen.offerGamesKey));
+
+        expect(find.byType(OfferGamesScreen), findsOneWidget);
+        // On web it has an address of its own (#321).
+        expect(history.locations.last, AppRoutes.eventOfferGamesOf('e-0'));
+        expect(
+          AppRoutes.eventOfferGamesOf('e-0'),
+          '${AppRoutes.eventDetailOf('e-0')}/games/offer',
+        );
+
+        // The session's collection, and its pick sent from the event.
+        await tapShown(tester, find.byKey(OfferGamesScreen.rowKey('c-azul')));
+        await tapShown(tester, find.byKey(OfferGamesScreen.sendKey));
+
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        verify(
+          () => remote.offerGame('e-0', 'att-me', collectionId: 'c-azul'),
+        ).called(1);
+        expect(find.text('1 game offered.'), findsOneWidget);
+      });
+
+      testWidgets("the closed page's own history entry gives way to the "
+          'event, in its place', (tester) async {
+        // As Add people's: go_router keeps a push's extra only as JSON,
+        // which the page's isn't, and runs no route redirect on a restored
+        // push.
+        final history = FakeBrowserHistory.install(tester);
+        await openGames(
+          tester,
+          remote: hosting(),
+          collection: _Collection([azul]),
+        );
+        await tapShown(tester, find.byKey(EventDetailScreen.offerGamesKey));
+        expect(find.byType(OfferGamesScreen), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final detail = AppRoutes.eventDetailOf('e-0');
+        final page = AppRoutes.eventOfferGamesOf('e-0');
+        final before = history.allLocations;
+        expect(before.sublist(before.length - 3), [detail, page, detail]);
+
+        await history.back();
+
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(NotYetAvailableScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        // Replaced, not followed by a new entry.
+        expect(history.allLocations, [
+          ...before.sublist(0, before.length - 2),
+          detail,
+          detail,
+        ]);
+      });
+
+      testWidgets('no Offer games where no collection is registered, and the '
+          'route builds nothing', (tester) async {
+        await openGames(tester, remote: hosting());
+
+        expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+        expect(find.byKey(EventDetailScreen.offerGamesKey), findsNothing);
+
+        unawaited(
+          routerOf(tester).push<void>(
+            AppRoutes.eventOfferGamesOf('e-0'),
+            extra: const OfferGamesArgs(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(OfferGamesScreen), findsNothing);
+        expect(find.byType(NotYetAvailableScreen), findsOneWidget);
       });
     });
   });

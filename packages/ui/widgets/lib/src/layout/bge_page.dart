@@ -286,12 +286,14 @@ class BgePage extends StatelessWidget {
   ///
   /// ## When to pin (#211)
   ///
-  /// On a **flow step**, a **long review surface**, or for **the outcome of an
-  /// action on a long list or page**, and nowhere else. The pages that pin
-  /// are listed in the style guide's "Where the primary action goes"
-  /// (docs/design/STYLE_GUIDE.md). Short forms and vertically centred pages
-  /// keep their action inline, at the end of the form: server-add, sign-in,
-  /// register and create-household.
+  /// On a **flow step**, a **long review surface** or a **long picker**, or
+  /// for **the outcome of an action on a long list or a long page**, and
+  /// nowhere else. A long picker pins because its action counts the picks
+  /// across a list of any length. The pages that pin are listed in the style
+  /// guide's "Where the primary action goes" (docs/design/STYLE_GUIDE.md).
+  /// Short forms and vertically centred pages keep their action inline, at
+  /// the end of the form: server-add, sign-in, register and
+  /// create-household.
   ///
   /// - **A flow step pins because the next step does.** Compose hands over
   ///   to review, which pins its send button, and an action that scrolls on

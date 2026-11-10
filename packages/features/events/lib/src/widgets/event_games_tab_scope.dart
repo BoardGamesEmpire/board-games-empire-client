@@ -37,8 +37,12 @@ class EventGamesTabController extends ChangeNotifier {
   /// Remembers that the Games tab has shown on a ready detail.
   void markShown() => _shown = true;
 
-  /// Offer games' focus.
-  final FocusNode offerFocus = FocusNode(debugLabel: 'Offer games');
+  /// Holds Offer games, whose own node its held button keeps.
+  final FocusNode offerArea = FocusNode(
+    debugLabel: 'Offer games',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
 
   /// The People button's focus.
   final FocusNode peopleFocus = FocusNode(debugLabel: 'People');
@@ -56,6 +60,17 @@ class EventGamesTabController extends ChangeNotifier {
   /// The games whose Take back was pressed, and whose row leaving hands
   /// focus on.
   final Set<String> _armed = {};
+
+  /// The armed games whose take-back ended done, waiting for the read that
+  /// takes their rows away: true once that read has started. A read that
+  /// was already running as the take-back ended reads the pool as it was.
+  final Map<String, bool> _settling = {};
+
+  /// The games whose take-back ended done over a pool whose last read had
+  /// failed, disarmed until a read starts by the end of that frame. A read
+  /// the session check stops before it goes out leaves such a pool's state
+  /// as it was, and so is never seen to end.
+  final Set<String> _rearm = {};
 
   /// The node that holds offered game [id]'s Take back, made as it is first
   /// built and let go once the game leaves the pool.
@@ -169,13 +184,25 @@ class EventGamesTabController extends ChangeNotifier {
     EventGamesState current, {
     required String? viewerId,
   }) {
-    // A take-back that ended with its row still there hands nothing on.
+    // A take-back that ended with its row still there hands nothing on. One
+    // that ended done waits for the read after it.
     final ended = previous.takingBack;
-    if (ended != null &&
-        current.takingBack == null &&
-        current.outcome?.result != EventGamesResult.done) {
-      _armed.remove(ended);
+    if (ended != null && current.takingBack == null) {
+      if (current.outcome?.result != EventGamesResult.done) {
+        _armed.remove(ended);
+      } else if (current.load == EventGamesLoad.failed) {
+        // The read after it may end with no change to see: disarmed unless
+        // it starts before this frame is out.
+        _armed.remove(ended);
+        _rearm.add(ended);
+        WidgetsBinding.instance
+          ..addPostFrameCallback((_) => _rearm.remove(ended))
+          ..ensureVisualUpdate();
+      } else {
+        _settling[ended] = false;
+      }
     }
+    _readMoved(previous, current);
     if (identical(previous.games, current.games)) return;
 
     final before = previous.games;
@@ -199,6 +226,8 @@ class EventGamesTabController extends ChangeNotifier {
     // have gone too.
     final inPool = {for (final game in after) game.id};
     _armed.removeWhere((id) => !inPool.contains(id));
+    _settling.removeWhere((id, _) => !inPool.contains(id));
+    _rearm.removeWhere((id) => !inPool.contains(id));
     final gone = [
       for (final MapEntry(:key, :value) in _takeBackAreas.entries)
         if (!inPool.contains(key)) (key, value),
@@ -232,17 +261,59 @@ class EventGamesTabController extends ChangeNotifier {
           return;
         }
       }
-      if (offerFocus.context != null && offerFocus.canRequestFocus) {
-        offerFocus.requestFocus();
+      // Only where it is built and enabled.
+      final offer = offerArea.traversalDescendants.firstOrNull;
+      if (offer != null) {
+        offer.requestFocus();
         return;
       }
       focusSearch();
     });
   }
 
+  /// Follows the reads of the pool from [previous] to [current] for the
+  /// take-backs that ended done ([_settling]). The first read to start
+  /// after one ended is the one that takes its row away. Once that read
+  /// has ended with the row still in the pool, because it failed, or the
+  /// server still lists the game, the hand-off is disarmed: a later read
+  /// that takes the row away, a retry or a detail refresh minutes on, moves
+  /// no focus nobody asked for.
+  void _readMoved(EventGamesState previous, EventGamesState current) {
+    const loading = EventGamesLoad.loading;
+    final was = previous.load;
+    final now = current.load;
+    if (now == loading && was != loading) {
+      // The read after a take-back over a failed pool has started: armed
+      // again, for that read.
+      for (final id in _rearm) {
+        _armed.add(id);
+        _settling[id] = true;
+      }
+      _rearm.clear();
+    }
+    if (_settling.isEmpty) return;
+    if (now == loading) {
+      if (was != loading) _settling.updateAll((_, _) => true);
+      return;
+    }
+    // A read ends from loading, or straight to failed when the session
+    // stops it before it goes out.
+    final readEnded =
+        was == loading ||
+        (now == EventGamesLoad.failed && was != EventGamesLoad.failed);
+    if (!readEnded) return;
+    final inPool = {for (final game in current.games) game.id};
+    _settling.removeWhere((id, started) {
+      // The read that was running as the take-back ended: the next is its.
+      if (!started && was == loading) return false;
+      if (inPool.contains(id)) _armed.remove(id);
+      return true;
+    });
+  }
+
   @override
   void dispose() {
-    offerFocus.dispose();
+    offerArea.dispose();
     peopleFocus.dispose();
     searchArea.dispose();
     for (final node in _takeBackAreas.values) {
@@ -265,13 +336,26 @@ class EventGamesTabController extends ChangeNotifier {
 /// it, while a row that leaves is still built. When a row whose Take back
 /// was pressed leaves, or one whose Take back holds keyboard focus, focus
 /// goes, once that frame has ended, to the next own row's Take back among
-/// the rows shown, else the previous one's, else Offer games, else the
-/// search field. The press arms it however it came, so a screen reader's
-/// activation, which moves no input focus, is handed on too, and the
-/// reader's cursor follows. It moves focus only while focus is free then:
-/// on nothing, on the page, or still on the Take back that left. A press
-/// elsewhere meanwhile keeps its focus. A take-back that ends with its row
-/// still there, refused, failed or dropped, disarms it.
+/// the rows shown, else the previous one's, else Offer games where it is
+/// built and enabled, else the search field. The press arms it however it
+/// came, so a screen reader's activation, which moves no input focus, is
+/// handed on too, and the reader's cursor follows. It moves focus only
+/// while focus is free then: on nothing, on the page, or still on the Take
+/// back that left. A press elsewhere meanwhile keeps its focus. A
+/// take-back that ends with its row still there, refused, failed or
+/// dropped, disarms it. So does one that ends done, once the read after it
+/// has ended with the row still in the pool, failed or not: a later read
+/// that takes the row away hands nothing on. Over a pool whose last read
+/// failed, the read after a take-back can end with nothing changed to see,
+/// when the session check stops it, so there the hand-off is disarmed as
+/// the take-back ends, and armed again only if a read starts before that
+/// frame is out. Where there is no session check, on native, the read
+/// starts within the frame. On the web the session check usually outlasts
+/// it, so there a Take back pressed by a screen reader's activation or a
+/// pointer, over a pool whose last read had failed, usually hands nothing
+/// on when its row goes: focus stays on the page. A Take back pressed by
+/// keyboard holds focus, and that is handed on either way, as it doesn't
+/// depend on the arm.
 ///
 /// Where the tab has nothing left to take focus, as when the pool turns
 /// hidden and the header goes with the rows, nothing is focused: focus

@@ -33,6 +33,7 @@ export 'src/screens/event_availability_screen.dart';
 export 'src/screens/event_detail_screen.dart';
 export 'src/screens/event_group_screen.dart';
 export 'src/screens/event_overview_screen.dart';
+export 'src/screens/offer_games_screen.dart';
 export 'src/sync/event_hydrate_installer.dart';
 export 'src/sync/event_hydration_status.dart';
 export 'src/sync/event_hydrator.dart';

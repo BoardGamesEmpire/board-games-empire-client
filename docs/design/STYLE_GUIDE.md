@@ -379,13 +379,25 @@ over.
 
 ### Where the primary action goes
 
-Inline, at the end of the form, unless the page is a **flow step** or a **long
-review surface**. Those pin it with `BgePage.footer`, and so does the outcome
-of an action on a **long list** or a long page, which has no form to sit on.
-Today that is feedback compose and review, and the banners that answer actions
-on a DataGateway's page: on the DataGateway itself, and on its language
-worklist (#457). The reasoning, and the measurements behind it, are on
-`BgePage.footer`:
+Inline, at the end of the form, unless the page is a **flow step**, a **long
+review surface** or a **long picker**. Those pin it with `BgePage.footer`, and
+so does the outcome of an action on a **long list** or a long page, which has
+no form to sit on. A long picker pins because its action counts the picks
+across a list of any length: at the list's end it would be out of reach for
+as long as the user is choosing.
+
+The pages that pin, and this list is where a new one is added:
+
+- feedback compose and review;
+- the Offer games page, a picker of the viewer's whole collection, whose
+  Offer button counts the picks (#516);
+- the banners that answer actions on a DataGateway's page: on the DataGateway
+  itself, and on its language worklist (#457);
+- an event's screen, whose footer holds how far a run of offers has got and
+  how the Games tab's last write went, on either tab, and the Games tab's
+  stale-data banner (#516).
+
+The reasoning, and the measurements behind it, are on `BgePage.footer`:
 
 - a flow step pins because the step it hands over to does, and an action that
   scrolls on one step and is pinned on the next moves at the handoff;
@@ -674,7 +686,9 @@ legible body text on every surface role.
 - [ ] Built on `BgePage` — `BgePage.slivers` for a list surface, the box
       constructor otherwise
 - [ ] The primary action is inline at the end of the form, unless the page is
-      a flow step or a long review surface, which pin it with `footer:`
+      a flow step, a long review surface or a long picker, which pin it with
+      `footer:`, as does an outcome on a long list; a page that pins is
+      listed in "Where the primary action goes"
 - [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
       trailing control; the default 480 for prose, and for a surface mixing
       prose with rows
