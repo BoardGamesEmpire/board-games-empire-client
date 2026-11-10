@@ -33,9 +33,10 @@ typedef _HouseholdPass = ({
 /// joins it, which is what a retry pressed during the open's pass wants.
 /// [refreshAfterChange] waits that pass out and runs another instead: the
 /// running one may have read the list before the change the caller has just
-/// seen made, such as an event created from the screen. Two households' passes run side by side: each purges only its own
-/// household's rows. And each status is its household's own, so a failure on
-/// one household's screen never reads as another's.
+/// seen made, such as an event created from the screen. Two households'
+/// passes run side by side: each purges only its own household's rows. And
+/// each status is its household's own, so a failure on one household's screen
+/// never reads as another's.
 ///
 /// Every outcome but [HouseholdEventsOutcome.failed] reads as refreshed. A
 /// drained pass cached every page it was sent, and a household found missing
@@ -48,15 +49,15 @@ typedef _HouseholdPass = ({
 ///
 /// ## After [close]
 ///
-/// [refresh] and [refreshAfterChange] run nothing and return, and [watch] delivers the household's
-/// last reading, idle for one it never named, and ends: what a closed
-/// [HydrationStatus] gives a new watcher. No status is made after close, so
-/// none is left open. A pass still in flight at close reports into its
-/// closed status, which drops the update, and a [refreshAfterChange] waiting
-/// it out starts no other.
+/// [refresh] and [refreshAfterChange] run nothing and return, and [watch]
+/// delivers the household's last reading, idle for one it never named, and
+/// ends: what a closed [HydrationStatus] gives a new watcher. No status is
+/// made after close, so none is left open. A pass still in flight at close
+/// reports into its closed status, which drops the update, and a
+/// [refreshAfterChange] waiting it out starts no other.
 class HouseholdEventsSync {
-  /// [userId] is the session's user, whom [guard] is asked about; no guard,
-  /// as on native, is a confirmed session. [now] is the statuses' clock, the
+  /// `userId` is the session's user, whom `guard` is asked about; no guard,
+  /// as on native, is a confirmed session. `now` is the statuses' clock, the
   /// device's when null.
   HouseholdEventsSync({
     required this._hydrator,

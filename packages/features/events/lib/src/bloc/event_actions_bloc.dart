@@ -7,10 +7,6 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-/// A cache write a delete's answer calls for, run after its outcome is
-/// emitted.
-typedef _Write = Future<void> Function();
-
 /// Deletes an event from its detail screen (#501), and adds, changes and
 /// removes its dates (#506), beside the `EventDetailBloc` that reads it.
 ///
@@ -193,9 +189,9 @@ typedef _Write = Future<void> Function();
 /// ## The session
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
-/// moves it to another user under this screen (#432). So [confirmSession] is
+/// moves it to another user under this screen (#432). So `confirmSession` is
 /// asked before each request goes out, as the detail read asks it. A null
-/// [confirmSession], as on native, is always yes.
+/// `confirmSession`, as on native, is always yes.
 ///
 /// A no, or a throw, is failed with no error, and isn't read again: nothing
 /// reached the server, and a read would ask the same session. A cancel then
@@ -274,7 +270,9 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   /// Sends the delete of [eventId], and answers how it ended and the cache
   /// write the answer calls for, if any. Never throws, and neither does the
   /// write.
-  Future<(EventActionOutcome, _Write?)> _delete(String eventId) async {
+  Future<(EventActionOutcome, Future<void> Function()?)> _delete(
+    String eventId,
+  ) async {
     if (!await _confirmed('Event delete not sent')) {
       return (_outcome(EventActionResult.failed), null);
     }
@@ -305,7 +303,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         error: error,
       );
 
-  /// Whether the session is still this cache's user's: [confirmSession] said
+  /// Whether the session is still this cache's user's: `confirmSession` said
   /// yes, or there is none to ask. A no is logged, as is a throw, each
   /// saying what [stopped].
   Future<bool> _confirmed(String stopped) async {

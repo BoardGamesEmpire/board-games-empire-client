@@ -1148,20 +1148,18 @@ void main() {
           home: const Scaffold(body: Text('Home')),
         ),
       );
-      unawaited(
-        navigator.currentState!.push(
-          MaterialPageRoute<void>(
-            builder: (_) => EventDetailScreen(
-              eventId: 'e-1',
-              repository: repository,
-              remote: remote,
-              // The app's pops too.
-              onBack: (context) {
-                back(context);
-                Navigator.of(context).pop();
-              },
-              now: () => now,
-            ),
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => EventDetailScreen(
+            eventId: 'e-1',
+            repository: repository,
+            remote: remote,
+            // The app's pops too.
+            onBack: (context) {
+              back(context);
+              Navigator.of(context).pop();
+            },
+            now: () => now,
           ),
         ),
       );
@@ -1203,15 +1201,13 @@ void main() {
       await openDialog(tester);
       await confirm(tester);
 
-      unawaited(
-        tester
-            .state<NavigatorState>(find.byType(Navigator))
-            .push(
-              MaterialPageRoute<void>(
-                builder: (_) => const Scaffold(body: Text('Above')),
-              ),
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Above')),
             ),
-      );
+          );
       await animate(tester);
       deleting.complete();
       await animate(tester);
@@ -1248,15 +1244,13 @@ void main() {
       await settle(tester);
       await openDialog(tester);
       await confirm(tester);
-      unawaited(
-        tester
-            .state<NavigatorState>(find.byType(Navigator))
-            .push(
-              MaterialPageRoute<void>(
-                builder: (_) => const Scaffold(body: Text('Above')),
-              ),
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Above')),
             ),
-      );
+          );
       await animate(tester);
       deleting.complete();
       await animate(tester);
@@ -1807,13 +1801,14 @@ void main() {
           return snapshot.copyWith(
             occurrences: [
               for (final o in snapshot.occurrences)
-                o.status == OccurrenceStatus.confirmed
-                    ? o.copyWith(
-                        status: OccurrenceStatus.cancelled,
-                        cancelledAt: event.cancelledAt,
-                        cancelReason: event.cancelReason,
-                      )
-                    : o,
+                if (o.status == OccurrenceStatus.confirmed)
+                  o.copyWith(
+                    status: OccurrenceStatus.cancelled,
+                    cancelledAt: event.cancelledAt,
+                    cancelReason: event.cancelReason,
+                  )
+                else
+                  o,
             ],
           );
         },
@@ -2380,7 +2375,9 @@ void main() {
       final ends = [
         (
           name: 'a gone event',
-          thrown: const EventRemoteNotFoundException('gone') as Object,
+          thrown: const EventRemoteNotFoundException(
+            'gone',
+          ) as EventRemoteException,
           copy: _statusGoneCopy,
           tone: BgeBannerTone.warning,
           rereads: true,
@@ -2808,7 +2805,7 @@ void main() {
           name: 'an edit done',
           action: EventAction.editDate,
           status: OccurrenceStatus.proposed,
-          thrown: null as Object?,
+          thrown: null as EventRemoteException?,
           on: null as String?,
           session: true,
           copy: 'Date saved',
@@ -2848,7 +2845,9 @@ void main() {
           name: 'a gone date',
           action: EventAction.confirmDate,
           status: OccurrenceStatus.proposed,
-          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          thrown: const EventRemoteNotFoundException(
+            'gone',
+          ) as EventRemoteException?,
           on: null,
           session: true,
           copy: _dateGoneCopy,
@@ -2860,7 +2859,9 @@ void main() {
           name: 'a gone remove',
           action: EventAction.removeDate,
           status: OccurrenceStatus.proposed,
-          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          thrown: const EventRemoteNotFoundException(
+            'gone',
+          ) as EventRemoteException?,
           on: null,
           session: true,
           copy: _dateGoneCopy,
@@ -3969,7 +3970,9 @@ void main() {
       final ends = [
         (
           name: 'a gone date',
-          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          thrown: const EventRemoteNotFoundException(
+            'gone',
+          ) as EventRemoteException?,
           session: true,
           copy: _dateGoneCopy,
           tone: BgeBannerTone.warning,
@@ -4237,7 +4240,7 @@ void main() {
     testWidgets('a hidden poll says so, and a failed one offers a retry', (
       tester,
     ) async {
-      Object? fails = const EventRemoteForbiddenException(
+      EventRemoteException? fails = const EventRemoteForbiddenException(
         'not yours',
         statusCode: 403,
       );
@@ -4357,7 +4360,7 @@ void main() {
 
     testWidgets("the poll's retry keeps focus, and its banner, while its read "
         'runs', (tester) async {
-      Object? fails = _offline;
+      EventRemoteException? fails = _offline;
       final reads = <Completer<AvailabilitySummary>>[];
       final remote = serving(
         summary: (_) {
@@ -4688,7 +4691,7 @@ void main() {
       tester,
     ) async {
       useViewSize(tester, window.size);
-      Object? fails;
+      EventRemoteException? fails;
       Completer<AvailabilitySummary>? held;
       final remote = serving(
         summary: (_) {
@@ -4772,7 +4775,7 @@ void main() {
                 attendees: [
                   for (final attendee
                       in cached.snapshot.attendees ?? const <EventAttendee>[])
-                    attendee.id == row.id ? row : attendee,
+                    if (attendee.id == row.id) row else attendee,
                 ],
               ),
               attendance: row,
@@ -4899,8 +4902,7 @@ void main() {
         final ChoiceChip chip => chip.focusNode!,
         final ButtonStyleButton button => button.focusNode!,
         final widget => throw ArgumentError.value(widget),
-      };
-      node.requestFocus();
+      }..requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await animate(tester);
@@ -5273,7 +5275,9 @@ void main() {
         (
           // The event, or the viewer's row on it: the read tells which.
           name: 'a 404',
-          thrown: const EventRemoteNotFoundException('gone') as Object,
+          thrown: const EventRemoteNotFoundException(
+            'gone',
+          ) as EventRemoteException,
           copy: _rsvpGoneCopy,
           tone: BgeBannerTone.warning,
           rereads: true,

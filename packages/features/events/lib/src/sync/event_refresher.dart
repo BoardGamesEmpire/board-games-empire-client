@@ -21,7 +21,7 @@
 /// `EventHydrateInstaller` for which those are), which the screens read as
 /// "no retry to offer" rather than offering a button that does nothing.
 class EventRefresher {
-  /// Wraps [pass], the shared pass's `run`, which the installer also
+  /// Wraps `pass`, the shared pass's `run`, which the installer also
   /// registers with the `SessionRehydrator`, so a pressed refresh and a
   /// triggered one report the same way.
   const EventRefresher(this._pass);

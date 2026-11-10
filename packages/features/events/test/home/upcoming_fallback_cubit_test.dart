@@ -58,9 +58,7 @@ void main() {
 
   test('activate requests page 1 with limit 10', () async {
     remote.browse = (_) => browsePage(_snapshots(3));
-    final cubit = build();
-
-    cubit.activate();
+    build().activate();
     await _settle();
 
     expect(remote.browseRequests, [(page: 1, limit: 10)]);
@@ -83,9 +81,7 @@ void main() {
 
   test('orders rows and carries no rsvp', () async {
     remote.browse = (_) => browsePage(_snapshots(3).reversed.toList());
-    final cubit = build();
-
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     expect(_rowIds(cubit.state), ['e-0', 'e-1', 'e-2']);
@@ -95,9 +91,7 @@ void main() {
 
   test('caps the rows, whatever the server sends', () async {
     remote.browse = (_) => browsePage(_snapshots(12));
-    final cubit = build();
-
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     expect(_rowIds(cubit.state), [for (var n = 0; n < 10; n++) 'e-$n']);
@@ -105,9 +99,7 @@ void main() {
 
   test('a failed read is an empty ready', () async {
     remote.browse = (_) => throw const EventRemoteTransientException('down');
-    final cubit = build();
-
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     expect(cubit.state, const UpcomingFallbackReady([]));
@@ -115,9 +107,7 @@ void main() {
 
   test('offline makes no request', () async {
     connectivity.current = ConnectivityState.offline;
-    final cubit = build();
-
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     expect(remote.browseRequests, isEmpty);
@@ -127,9 +117,7 @@ void main() {
   test('an unknown connection is worth trying', () async {
     connectivity.current = ConnectivityState.unknown;
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     expect(remote.browseRequests, hasLength(1));
@@ -137,9 +125,7 @@ void main() {
   });
 
   test('a null remote is an empty ready', () async {
-    final cubit = build(hasRemote: false);
-
-    cubit.activate();
+    final cubit = build(hasRemote: false)..activate();
     await _settle();
 
     expect(cubit.state, const UpcomingFallbackReady([]));
@@ -147,9 +133,7 @@ void main() {
 
   test('no connectivity service still reads', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build(hasConnectivity: false);
-
-    cubit.activate();
+    final cubit = build(hasConnectivity: false)..activate();
     await _settle();
 
     expect(_rowIds(cubit.state), ['e-0']);
@@ -158,8 +142,7 @@ void main() {
   test('reconnecting reads again while active', () async {
     connectivity.current = ConnectivityState.offline;
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
     expect(remote.browseRequests, isEmpty);
 
@@ -184,8 +167,7 @@ void main() {
 
   test('going offline empties the rows', () async {
     remote.browse = (_) => browsePage(_snapshots(2));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
     expect(_rowIds(cubit.state), hasLength(2));
 
@@ -198,8 +180,7 @@ void main() {
   test('going offline drops a read in flight', () async {
     final answer = Completer<PaginatedResult<EventSnapshot>>();
     remote.browse = (_) => answer.future;
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     connectivity.change(ConnectivityState.offline);
@@ -212,9 +193,7 @@ void main() {
 
   test('the replayed connectivity state reads nothing extra', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-
-    cubit.activate();
+    build().activate();
     // Time for the service's replay of its current state to arrive.
     await _settle();
     await _settle();
@@ -224,8 +203,7 @@ void main() {
 
   test('reload keeps the rows up until it answers', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     final answer = Completer<PaginatedResult<EventSnapshot>>();
@@ -242,8 +220,7 @@ void main() {
 
   test('a failed reload keeps the rows up', () async {
     remote.browse = (_) => browsePage(_snapshots(2));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     remote.browse = (_) => throw const EventRemoteTransientException('down');
@@ -256,8 +233,7 @@ void main() {
 
   test('a failed reload after going offline shows nothing old', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     connectivity.change(ConnectivityState.offline);
@@ -272,8 +248,7 @@ void main() {
   test('a read replacing another wins, whichever answers first', () async {
     final first = Completer<PaginatedResult<EventSnapshot>>();
     remote.browse = (_) => first.future;
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     remote.browse = (_) => browsePage(_snapshots(2));
@@ -286,9 +261,7 @@ void main() {
   });
 
   test('reload while idle does nothing', () async {
-    final cubit = build();
-
-    cubit.reload();
+    final cubit = build()..reload();
     await _settle();
 
     expect(remote.browseRequests, isEmpty);
@@ -297,8 +270,7 @@ void main() {
 
   test('activate while active reads nothing more', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     cubit.activate();
@@ -310,8 +282,7 @@ void main() {
   test('deactivate drops a read in flight', () async {
     final answer = Completer<PaginatedResult<EventSnapshot>>();
     remote.browse = (_) => answer.future;
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     cubit.deactivate();
@@ -324,12 +295,12 @@ void main() {
 
   test('activating again after deactivating reads again', () async {
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
-    cubit.deactivate();
-    cubit.activate();
+    cubit
+      ..deactivate()
+      ..activate();
     expect(cubit.state, const UpcomingFallbackLoading());
     await _settle();
 
@@ -340,8 +311,7 @@ void main() {
   test('closing during a read throws nothing', () async {
     final answer = Completer<PaginatedResult<EventSnapshot>>();
     remote.browse = (_) => answer.future;
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     await cubit.close();
@@ -354,8 +324,7 @@ void main() {
   test('closing during a read that fails throws nothing', () async {
     final answer = Completer<PaginatedResult<EventSnapshot>>();
     remote.browse = (_) => answer.future;
-    final cubit = build();
-    cubit.activate();
+    final cubit = build()..activate();
     await _settle();
 
     await cubit.close();
@@ -369,8 +338,7 @@ void main() {
     final households = StreamController<List<Household>>.broadcast();
     addTearDown(households.close);
     remote.browse = (_) => browsePage(_snapshots(1, householdId: 'h-1'));
-    final cubit = build(households: households.stream);
-    cubit.activate();
+    final cubit = build(households: households.stream)..activate();
     await _settle();
     expect(
       (cubit.state as UpcomingFallbackReady).rows.single.householdName,
@@ -398,8 +366,7 @@ void main() {
     final households = StreamController<List<Household>>.broadcast();
     addTearDown(households.close);
     remote.browse = (_) => browsePage(_snapshots(1));
-    final cubit = build(households: households.stream);
-    cubit.activate();
+    final cubit = build(households: households.stream)..activate();
     await _settle();
 
     households.addError(StateError('no names'));

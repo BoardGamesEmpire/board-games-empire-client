@@ -25,14 +25,18 @@ typedef _Vote = ({String eventId, AvailabilityResponse response});
 ///
 /// ## Reads
 ///
-/// | Answer | Load | Summary |
-/// |---|---|---|
-/// | 2xx | loaded | the one read |
-/// | An enveloped 403 | hidden: not shown to this viewer | cleared |
-/// | An enveloped 404 | gone: the screen reads the event, which settles it | cleared |
-/// | Anything else | failed | the last one, kept |
-/// | None: the session said no, or threw (below) | failed | the last one, kept |
-/// | Any of the first three, once the session has moved (below) | failed | the last one, kept |
+/// Each answer to the read, with the load and the summary it leaves:
+///
+/// - 2xx; load: loaded; summary: the one read.
+/// - An enveloped 403; load: hidden: not shown to this viewer;
+///   summary: cleared.
+/// - An enveloped 404; load: gone: the screen reads the event,
+///   which settles it; summary: cleared.
+/// - Anything else; load: failed; summary: the last one, kept.
+/// - None: the session said no, or threw (below); load: failed;
+///   summary: the last one, kept.
+/// - Any of the first three, once the session has moved (below);
+///   load: failed; summary: the last one, kept.
 ///
 /// A read after a hidden or a gone keeps that load until it answers, rather
 /// than going through loading, so what a refused viewer sees doesn't change
@@ -62,14 +66,19 @@ typedef _Vote = ({String eventId, AvailabilityResponse response});
 ///
 /// The answers map as the actions' date writes do:
 ///
-/// | Answer | Outcome | Pending | An answer queued behind it | Event read again |
-/// |---|---|---|---|---|
-/// | 2xx | none: done isn't announced | kept until a read holds it | sent | no |
-/// | An enveloped 400 | changed: the date isn't proposed now | dropped | dropped | yes |
-/// | An enveloped 403 | refused | dropped | dropped | yes |
-/// | An enveloped 404 | gone: the date or its event | dropped | dropped | yes |
-/// | Anything else | failed | dropped | sent, and the failure isn't announced | no |
-/// | The session said no | failed, with no error | dropped | dropped | no |
+/// - 2xx; outcome: none: done isn't announced; pending: kept until a read
+///   holds it; an answer queued behind it: sent; event read again: no.
+/// - An enveloped 400; outcome: changed: the date isn't proposed now;
+///   pending: dropped; an answer queued behind it: dropped; event read
+///   again: yes.
+/// - An enveloped 403; outcome: refused; pending: dropped; an answer queued
+///   behind it: dropped; event read again: yes.
+/// - An enveloped 404; outcome: gone: the date or its event; pending:
+///   dropped; an answer queued behind it: dropped; event read again: yes.
+/// - Anything else; outcome: failed; pending: dropped; an answer queued
+///   behind it: sent, and the failure isn't announced; event read again: no.
+/// - The session said no; outcome: failed, with no error; pending: dropped;
+///   an answer queued behind it: dropped; event read again: no.
 ///
 /// [EventActionOutcome.rereads] says which, and the screen starts the event
 /// read.
@@ -93,9 +102,9 @@ typedef _Vote = ({String eventId, AvailabilityResponse response});
 /// ## The session
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
-/// moves it to another user under this screen (#432). So [confirmSession] is
+/// moves it to another user under this screen (#432). So `confirmSession` is
 /// asked before each vote goes out, a queued one included, and before each
-/// read, as the actions ask it. A null [confirmSession], as on native, is
+/// read, as the actions ask it. A null `confirmSession`, as on native, is
 /// always yes. A no, or a throw, sends nothing: a vote is failed with no
 /// error, and a read is failed, keeping the last summary, as the detail's
 /// read is. A page waiting on the read would otherwise wait for ever, and a
@@ -438,7 +447,7 @@ class EventPollBloc extends Bloc<EventPollEvent, EventPollState> {
           if (!dates.contains(date)) date: response,
       });
 
-  /// Whether the session is still this viewer's: [confirmSession] said yes,
+  /// Whether the session is still this viewer's: `confirmSession` said yes,
   /// or there is none to ask. A no is logged, as is a throw, each saying
   /// what [stopped].
   Future<bool> _confirmed(String stopped) async {

@@ -82,7 +82,7 @@ Future<OccurrenceUpdate?> showEditDateDialog(
 /// (#507), it also asks whether to decline those, off by default: a
 /// declined date can't be proposed again either.
 ///
-/// Null when kept. [declineOthers] is false unless [offerDeclineOthers] and
+/// Null when kept. `declineOthers` is false unless [offerDeclineOthers] and
 /// checked.
 Future<({bool declineOthers})?> showConfirmDateDialog(
   BuildContext context,
@@ -237,7 +237,10 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
 }
 
 // The add and edit form's controls.
-const _label = 'label', _start = 'start', _end = 'end', _location = 'location';
+const _label = 'label';
+const _start = 'start';
+const _end = 'end';
+const _location = 'location';
 
 /// The add and edit dialog: one form, empty to add, holding [editing]'s
 /// fields to edit it. It pops with the draft or the update the form shows.

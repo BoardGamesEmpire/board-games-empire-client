@@ -291,18 +291,21 @@ void main() {
     // The queued update is handled during close's own awaits, after the
     // timer was cancelled. A timer it set would fire into the closed bloc.
     final end = DateTime.now().add(const Duration(milliseconds: 50));
-    final bloc = build(now: DateTime.now);
-
-    bloc.add(
-      EventOverviewCacheUpdated([
-        item(
-          'e-1',
-          occurrences: [
-            confirmed('o-1', end.subtract(const Duration(hours: 1)), end: end),
-          ],
-        ),
-      ]),
-    );
+    final bloc = build(now: DateTime.now)
+      ..add(
+        EventOverviewCacheUpdated([
+          item(
+            'e-1',
+            occurrences: [
+              confirmed(
+                'o-1',
+                end.subtract(const Duration(hours: 1)),
+                end: end,
+              ),
+            ],
+          ),
+        ]),
+      );
     await bloc.close();
 
     await Future<void>.delayed(const Duration(milliseconds: 100));

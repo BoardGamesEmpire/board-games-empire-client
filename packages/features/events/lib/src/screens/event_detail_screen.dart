@@ -68,8 +68,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// for the delete: a read's answer landing after the delete would cache the
 /// event again. A read that starts while the dialog is open holds the
 /// delete back until it ends, and the delete is then sent if the event is
-/// still there to delete. Done leaves with a snackbar, and the page holds its last
-/// frame while the route leaves, since the removal's null would otherwise
+/// still there to delete. Done leaves with a snackbar, and the page holds its
+/// last frame while the route leaves, since the removal's null would otherwise
 /// draw not found under the exit. A done that lands under another route
 /// stays, and falls to not found for the user to find on their way back.
 /// Gone, refused and failed each show a
@@ -161,13 +161,13 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Going and Maybe go at once. Not going asks first, since it pauses the
 /// games the viewer nominated and takes the ones they offered off the dates
 /// ahead. Coming back brings the nominations back, but not the games they
-/// offered. The note opens a dialog, and goes with the answer they have. If a read started while a dialog was
-/// open, the write waits for it to end, as a date's does, and is sent for
-/// the event and the row the detail shows then. Not at all if the event was
-/// cancelled or archived meanwhile, or the viewer was taken off it. Every
-/// end shows a banner, done included, and is read again as
-/// [EventActionOutcome.rereads] says, which reads a poll again too: whether
-/// the viewer's answers on its dates count follows their answer.
+/// offered. The note opens a dialog, and goes with the answer they have. If a
+/// read started while a dialog was open, the write waits for it to end, as a
+/// date's does, and is sent for the event and the row the detail shows then.
+/// Not at all if the event was cancelled or archived meanwhile, or the viewer
+/// was taken off it. Every end shows a banner, done included, and is read
+/// again as [EventActionOutcome.rereads] says, which reads a poll again too:
+/// whether the viewer's answers on its dates count follows their answer.
 ///
 /// ## The clock
 ///
@@ -486,9 +486,9 @@ class _EventDetailView extends StatelessWidget {
               current.outcome != null && current.outcome != previous.outcome,
           listener: _onOutcome,
         ),
-        BlocListener<EventDetailBloc, EventDetailState>(
+        const BlocListener<EventDetailBloc, EventDetailState>(
           listenWhen: _pollDue,
-          listener: (context, state) => _readPoll(context, state),
+          listener: _readPoll,
         ),
         BlocListener<EventPollBloc, EventPollState>(
           // A vote's end the bloc announces, as the actions' outcomes are.
@@ -1043,7 +1043,7 @@ class _ActionsMenu extends StatelessWidget {
     // this menu, and take the context it was asked from with it.
     final actions = context.read<EventActionsBloc>();
     final detail = context.read<EventDetailBloc>();
-    final _StatusRequest? request = await switch (write) {
+    final request = await switch (write) {
       EventStatusWrite.cancel => _askCancel(context),
       EventStatusWrite.reopen => _askReopen(context),
       // No dialog: they tell nobody, and one tap undoes the other.
@@ -1086,7 +1086,9 @@ class _ActionsMenu extends StatelessWidget {
       confirmKey: EventDetailScreen.cancelConfirmKey,
     );
     if (reason == null) return null;
-    return (eventId) => EventCancelRequested(eventId, reason: reason);
+    EventActionsEvent cancelRequest(String eventId) =>
+        EventCancelRequested(eventId, reason: reason);
+    return cancelRequest;
   }
 
   /// Reopen's dialog, which asks first since a reopen tells everyone on the
@@ -1310,11 +1312,12 @@ class _Dates extends StatelessWidget {
     final draft = await showAddDateDialog(context, now: now);
     if (draft == null) return null;
     // After the event's last date, as the dates stand once it is sent.
-    return (shown) => EventDateAddRequested(
+    EventActionsEvent addRequest(EventSnapshot shown) => EventDateAddRequested(
       shown.event.id,
       draft,
       sortOrder: nextSortOrder(shown.occurrences),
     );
+    return addRequest;
   }
 
   Future<_DateRequest?> _ask(
@@ -1329,7 +1332,9 @@ class _Dates extends StatelessWidget {
       case EventAction.editDate:
         final update = await showEditDateDialog(context, occurrence, now: now);
         if (update == null) return null;
-        return (shown) => EventDateEditRequested(shown.event.id, id, update);
+        EventActionsEvent editRequest(EventSnapshot shown) =>
+            EventDateEditRequested(shown.event.id, id, update);
+        return editRequest;
       case EventAction.confirmDate:
         final confirm = await showConfirmDateDialog(
           context,
@@ -1338,16 +1343,20 @@ class _Dates extends StatelessWidget {
         );
         if (confirm == null) return null;
         // The others as the event stands once it is sent (#507).
-        return (shown) => EventDateConfirmRequested(
-          shown.event.id,
-          id,
-          decline: confirm.declineOthers
-              ? _otherProposed(shown.occurrences, id)
-              : const [],
-        );
+        EventActionsEvent confirmRequest(EventSnapshot shown) =>
+            EventDateConfirmRequested(
+              shown.event.id,
+              id,
+              decline: confirm.declineOthers
+                  ? _otherProposed(shown.occurrences, id)
+                  : const [],
+            );
+        return confirmRequest;
       case EventAction.declineDate:
         if (!await showDeclineDateDialog(context, name)) return null;
-        return (shown) => EventDateDeclineRequested(shown.event.id, id);
+        EventActionsEvent declineRequest(EventSnapshot shown) =>
+            EventDateDeclineRequested(shown.event.id, id);
+        return declineRequest;
       case EventAction.cancelDate:
         final reason = await showCancelDateDialog(
           context,
@@ -1355,8 +1364,9 @@ class _Dates extends StatelessWidget {
           removing: false,
         );
         if (reason == null) return null;
-        return (shown) =>
+        EventActionsEvent cancelRequest(EventSnapshot shown) =>
             EventDateCancelRequested(shown.event.id, id, reason: reason);
+        return cancelRequest;
       // The server removes a Confirmed date only once it is cancelled
       // (#446), so one dialog asks for both, and its reason goes with the
       // cancel.
@@ -1368,17 +1378,31 @@ class _Dates extends StatelessWidget {
           removing: true,
         );
         if (reason == null) return null;
-        return (shown) => EventDateRemoveRequested(
-          shown.event.id,
-          id,
-          cancelFirst: true,
-          reason: reason,
-        );
+        EventActionsEvent cancelAndRemoveRequest(EventSnapshot shown) =>
+            EventDateRemoveRequested(
+              shown.event.id,
+              id,
+              cancelFirst: true,
+              reason: reason,
+            );
+        return cancelAndRemoveRequest;
       case EventAction.removeDate:
         if (!await showRemoveDateDialog(context, name)) return null;
-        return (shown) => EventDateRemoveRequested(shown.event.id, id);
+        EventActionsEvent removeRequest(EventSnapshot shown) =>
+            EventDateRemoveRequested(shown.event.id, id);
+        return removeRequest;
       // A date's menu offers only the date actions above.
-      default:
+      case EventAction.edit:
+      case EventAction.delete:
+      case EventAction.cancel:
+      case EventAction.archive:
+      case EventAction.addDate:
+      case EventAction.voteAvailability:
+      case EventAction.rsvp:
+      case EventAction.manageAttendees:
+      case EventAction.approveGame:
+      case EventAction.rejectGame:
+      case EventAction.resolveNomination:
         return null;
     }
   }
@@ -1419,9 +1443,10 @@ typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
 /// Sends the viewer's answer [status], or with [editNote] their current
 /// answer with the note its dialog asks for (#508), and answers whether it
 /// sent it: not when a dialog was cancelled, the note was saved unchanged,
-/// the answer is already the viewer's, the read it waited for left no event to show, the write was dropped, or
-/// another request is out. The controls hold the control pressed only while
-/// what it sent is out. See [EventDetailScreen].
+/// the answer is already the viewer's, the read it waited for left no event to
+/// show, the write was dropped, or another request is out. The controls hold
+/// the control pressed only while what it sent is out. See
+/// [EventDetailScreen].
 Future<bool> _sendRsvp(
   BuildContext context,
   EventParticipationStatus? status, {

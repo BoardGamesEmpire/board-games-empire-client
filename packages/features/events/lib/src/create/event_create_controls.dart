@@ -536,8 +536,9 @@ final _digits = RegExp(r'^[0-9]+$');
 /// Sets [number] to [start], and checks it against its new type even when
 /// it held [start] already.
 void _startOver(FormControl<String> number, int? start) {
-  number.value = start?.toString();
-  number.updateValueAndValidity();
+  number
+    ..value = start?.toString()
+    ..updateValueAndValidity();
 }
 
 void _enable(AbstractControl<dynamic> control, bool enabled) =>

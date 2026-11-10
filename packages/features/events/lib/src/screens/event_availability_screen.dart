@@ -57,21 +57,28 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## When there is no grid
 ///
-/// The first row that matches decides:
+/// The first case below that matches decides what the page shows:
 ///
-/// | Where | The page |
-/// |---|---|
-/// | No [remote] | can't see the answers |
-/// | The cache can't be read | couldn't load, with no retry |
-/// | The cache still to answer | loading |
-/// | The server refuses the read (403), or has no such event (404) | can't see the answers |
-/// | A roster withheld from the viewer (#498), as the summary or the cache says | can't see the answers |
-/// | The event was cached, and has left the cache since | can't see the answers |
-/// | The read failed, or the session check stopped it (#432) | couldn't load, with a retry |
-/// | The event or its roster not cached, and the page's own read of the event answered 404 or withheld the roster | can't see the answers |
-/// | The event or its roster not cached, and that read failed | couldn't load, with a retry |
-/// | The event or its roster not cached yet, or the poll's read still to answer | loading |
-/// | No poll open: not a poll, or no Proposed date left | can't see the answers |
+/// - No [remote]: shows the page that says the answers can't be seen.
+/// - The cache can't be read: shows the failed-to-load page, with no retry.
+/// - The cache still to answer: shows the loading page.
+/// - The server refuses the read (403), or has no such event (404): shows
+///   the page that says the answers can't be seen.
+/// - A roster withheld from the viewer (#498), as the summary or the cache
+///   says: shows the page that says the answers can't be seen.
+/// - The event was cached, and has left the cache since: shows the page that
+///   says the answers can't be seen.
+/// - The read failed, or the session check stopped it (#432): shows the
+///   failed-to-load page, with a retry.
+/// - The event or its roster not cached, and the page's own read of the
+///   event answered 404 or withheld the roster: shows the page that says the
+///   answers can't be seen.
+/// - The event or its roster not cached, and that read failed: shows the
+///   failed-to-load page, with a retry.
+/// - The event or its roster not cached yet, or the poll's read still to
+///   answer: shows the loading page.
+/// - No poll open: not a poll, or no Proposed date left: shows the page that
+///   says the answers can't be seen.
 class EventAvailabilityScreen extends StatelessWidget {
   const EventAvailabilityScreen({
     required this.eventId,
@@ -468,7 +475,7 @@ class _PollGrid extends StatelessWidget {
         final room = width - nameWidth;
         // Leaves the next date's start showing: see Widths above.
         final widest = dates.length > 1
-            ? math.max(0.0, room - tokens.spaceXl)
+            ? math.max<double>(0, room - tokens.spaceXl)
             : room;
         final columns = [
           for (final heading in headings)
@@ -486,7 +493,7 @@ class _PollGrid extends StatelessWidget {
             [
               for (final (j, heading) in headings.indexed)
                 text.heightOf(heading, text.heading, inside(columns[j])),
-            ].fold(0.0, math.max) +
+            ].fold<double>(0, math.max) +
             2 * pad;
         // On one line, however narrow the column: an answer scales down
         // rather than wrap.
@@ -528,7 +535,8 @@ class _PollGrid extends StatelessWidget {
             Expanded(
               child: _DatesScroller(
                 overflows:
-                    columns.fold(0.0, (sum, column) => sum + column) > room,
+                    columns.fold<double>(0, (sum, column) => sum + column) >
+                    room,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

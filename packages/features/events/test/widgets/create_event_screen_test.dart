@@ -200,18 +200,16 @@ void main() {
     home: Builder(
       builder: (context) => Scaffold(
         body: TextButton(
-          onPressed: () => unawaited(
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => CreateEventScreen(
-                  repository: repo,
-                  sender: sender,
-                  users: users,
-                  households: households,
-                  householdId: householdId,
-                  now: () => now,
-                  onCreated: (_, eventId) => created.add(eventId),
-                ),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => CreateEventScreen(
+                repository: repo,
+                sender: sender,
+                users: users,
+                households: households,
+                householdId: householdId,
+                now: () => now,
+                onCreated: (_, eventId) => created.add(eventId),
               ),
             ),
           ),

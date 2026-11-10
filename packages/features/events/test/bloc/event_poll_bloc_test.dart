@@ -608,15 +608,16 @@ void main() {
       ]);
     });
 
-    for (final (name, error, result) in <(String, Object, EventActionResult)>[
-      (
-        'a 400 is changed and drops the pending answer',
-        _conflict,
-        EventActionResult.changed,
-      ),
-      ('a 403 is refused', _refused, EventActionResult.refused),
-      ('a 404 is gone', _gone, EventActionResult.gone),
-    ]) {
+    for (final (name, error, result)
+        in <(String, EventRemoteException, EventActionResult)>[
+          (
+            'a 400 is changed and drops the pending answer',
+            _conflict,
+            EventActionResult.changed,
+          ),
+          ('a 403 is refused', _refused, EventActionResult.refused),
+          ('a 404 is gone', _gone, EventActionResult.gone),
+        ]) {
       test(name, () async {
         final now = _summaryOf(const {});
         final remote = serving(voted: (_) => throw error, summary: (_) => now);
@@ -641,7 +642,7 @@ void main() {
       });
     }
 
-    for (final (kind, error) in <(String, Object)>[
+    for (final (kind, error) in <(String, EventRemoteException)>[
       ('transient', _offline),
       ('permanent', _rejected),
     ]) {
@@ -686,7 +687,7 @@ void main() {
   });
 
   group('a queued answer', () {
-    for (final (kind, error) in <(String, Object)>[
+    for (final (kind, error) in <(String, EventRemoteException)>[
       ('transient', _offline),
       ('permanent', _rejected),
     ]) {

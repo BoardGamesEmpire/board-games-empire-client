@@ -52,12 +52,13 @@ final class UpcomingFallbackReady extends UpcomingFallbackState {
 /// keeps the rows up until the new answer arrives.
 ///
 /// A suggestion list isn't worth an error surface on the landing page, so a
-/// failed read is logged and isn't an answer: rows already up stay up, and with
-/// none it reads as nothing to offer. The next uncover or reconnect reads again.
+/// failed read is logged and isn't an answer: rows already up stay up, and
+/// with none it reads as nothing to offer. The next uncover or reconnect reads
+/// again.
 ///
 /// ## The household names annotate
 ///
-/// As on the overview, [households] names each row's household where it's
+/// As on the overview, `households` names each row's household where it's
 /// cached. New names regroup the last answer rather than asking again, and a
 /// failed stream loses only the names.
 class UpcomingFallbackCubit extends Cubit<UpcomingFallbackState> {

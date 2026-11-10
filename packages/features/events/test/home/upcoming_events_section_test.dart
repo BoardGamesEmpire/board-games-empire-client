@@ -69,8 +69,8 @@ void main() {
     repository = _MockEventRepository();
     items = StreamController<List<EventListItem>>.broadcast();
     status = EventHydrationStatus();
-    remote = FakeEventRemote((_) => throw StateError('the list is not read'));
-    remote.browse = (_) => browsePage(const []);
+    remote = FakeEventRemote((_) => throw StateError('the list is not read'))
+      ..browse = (_) => browsePage(const []);
     connectivity = FakeConnectivity();
     when(repository.watchAttendingEventListItems)
         .thenAnswer((_) => items.stream);
@@ -750,10 +750,8 @@ void main() {
       await show(tester, const []);
       expect(remote.browseRequests, hasLength(1));
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();
@@ -776,10 +774,8 @@ void main() {
       final focused = FocusManager.instance.primaryFocus;
 
       remote.browse = (_) => throw const EventRemoteTransientException('down');
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();
@@ -795,10 +791,8 @@ void main() {
     testWidgets('uncovered with own events reads nothing', (tester) async {
       await show(tester, upcoming(1));
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();
@@ -958,8 +952,9 @@ void main() {
       await show(tester, const []);
       expect(rowOf('e-offer-0'), findsOneWidget);
 
-      status.started();
-      status.finished(EventHydrateOutcome.failed);
+      status
+        ..started()
+        ..finished(EventHydrateOutcome.failed);
       await settle(tester);
 
       expect(rowOf('e-offer-0'), findsNothing);

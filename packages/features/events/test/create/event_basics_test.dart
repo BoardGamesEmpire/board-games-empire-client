@@ -192,7 +192,7 @@ void main() {
       expect(draft.policy, isNull);
       expect(draft.inviteUserIds, isEmpty);
       expect(draft.schedulingMode, EventSchedulingMode.fixed);
-      expect(() => draft.checkSendable(), returnsNormally);
+      expect(draft.checkSendable, returnsNormally);
     });
   });
 }

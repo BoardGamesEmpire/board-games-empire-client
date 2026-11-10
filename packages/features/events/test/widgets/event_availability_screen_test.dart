@@ -869,7 +869,7 @@ void main() {
   testWidgets('the retry keeps focus, and its page, while its read runs', (
     tester,
   ) async {
-    Object? fails = _offline;
+    EventRemoteException? fails = _offline;
     final reads = <Completer<AvailabilitySummary>>[];
     final remote = serving(
       summary: (_) {
