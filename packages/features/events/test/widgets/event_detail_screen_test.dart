@@ -5294,7 +5294,7 @@ void main() {
           thrown: _offline,
           copy: _rsvpFailedCopy,
           tone: BgeBannerTone.error,
-          rereads: false,
+          rereads: true,
         ),
         (
           // A 2xx whose body didn't parse: the answer may have landed, so
@@ -5326,6 +5326,94 @@ void main() {
           );
         });
       }
+    });
+
+    testWidgets('a lost answer is read again, and the read brings the saved '
+        'answer back', (tester) async {
+      // The server saved Maybe, and the answer was lost.
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        final snapshot = invocation.positionalArguments.first as EventSnapshot;
+        final row = snapshot.attendees!.firstWhere((a) => a.id == 'att-me');
+        cached = EventDetail(snapshot: snapshot, attendance: row);
+        cache.add(cached);
+      });
+      final held = viewed(me(status: going));
+      final saved = viewed(me(status: maybe));
+      var served = held.snapshot;
+      final remote = answering(
+        read: (_) => served,
+        answered: (_) {
+          served = saved.snapshot;
+          throw _offline;
+        },
+      );
+      await showRsvp(tester, held, remote);
+      expect(chipOf(tester, going).selected, isTrue);
+      final reads = remote.detailRequests.length;
+
+      await press(tester, chip(maybe));
+
+      expect(inOutcome(_rsvpFailedCopy), findsOneWidget);
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(chipOf(tester, maybe).selected, isTrue);
+      expect(chipOf(tester, going).selected, isFalse);
+    });
+
+    testWidgets('offline, a failed answer and a failed read show one outcome '
+        'banner and hold no control', (tester) async {
+      final offline = ValueNotifier(false);
+      addTearDown(offline.dispose);
+      var failing = false;
+      final remote = answering(
+        read: (_) {
+          if (failing) throw _offline;
+          return cached.snapshot;
+        },
+        answered: (_) {
+          failing = true;
+          offline.value = true;
+          throw _offline;
+        },
+      );
+      await showRsvp(
+        tester,
+        viewed(me(status: going)),
+        remote,
+        offline: offline,
+      );
+      final reads = remote.detailRequests.length;
+
+      await press(tester, chip(maybe));
+      await settle(tester);
+
+      // Still offline: the failed answer was read again, and the read
+      // failed too.
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(outcome(), findsOneWidget);
+      expect(inOutcome(_rsvpFailedCopy), findsOneWidget);
+      expect(find.text(_rsvpFailedCopy), findsOneWidget);
+      // No control is held: every one is disabled, none with a spinner.
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNull, reason: '$status');
+        expect(chipOf(tester, status).avatar, isNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.attendeesKey),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      // Back online, nothing stays held by the failed pair.
+      offline.value = false;
+      await tester.pump();
+      for (final status in answers) {
+        expect(chipOf(tester, status).onSelected, isNotNull, reason: '$status');
+      }
+      expect(noteOf(tester).onPressed, isNotNull);
     });
 
     testWidgets('a done answer reads the poll again', (tester) async {

@@ -106,6 +106,13 @@ final class EventActionOutcome extends Equatable {
   /// the read brings them. Changed is a 400 from a status that moved since
   /// it was read, and the read shows the status as it now stands.
   ///
+  /// For an RSVP (#508) and an attendee write (#510), a failure reads again
+  /// whatever its error, amending #508's write (#748): an answer lost after
+  /// the server saved it leaves the cache on the old answer, and the page
+  /// refuses the press that would correct it. A retried add answers 409, and
+  /// a lost remove or answer leaves the roster stale. The read shows what the
+  /// server holds before the controls are pressed again.
+  ///
   /// A write the screen dropped isn't read again: the page it was checked
   /// against is the event as the cache now holds it.
   ///
@@ -133,6 +140,8 @@ final class EventActionOutcome extends Equatable {
       EventActionResult.failed =>
         error != null &&
             (action == EventAction.addDate ||
+                action == EventAction.rsvp ||
+                action == EventAction.manageAttendees ||
                 error is! EventRemoteTransientException),
       EventActionResult.done ||
       EventActionResult.gone => action != EventAction.delete,

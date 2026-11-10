@@ -516,6 +516,34 @@ void main() {
     });
   });
 
+  group('an RSVP failure (#748)', () {
+    test('a transient RSVP failure reads again', () {
+      const outcome = EventActionOutcome(
+        action: EventAction.rsvp,
+        result: EventActionResult.failed,
+        error: EventRemoteTransientException('x'),
+      );
+      expect(outcome.rereads, isTrue);
+    });
+
+    test('a transient attendee write failure reads again', () {
+      const outcome = EventActionOutcome(
+        action: EventAction.manageAttendees,
+        result: EventActionResult.failed,
+        error: EventRemoteTransientException('x'),
+      );
+      expect(outcome.rereads, isTrue);
+    });
+
+    test("a failure before the request went out still doesn't read again", () {
+      const outcome = EventActionOutcome(
+        action: EventAction.rsvp,
+        result: EventActionResult.failed,
+      );
+      expect(outcome.rereads, isFalse);
+    });
+  });
+
   group('date actions (#506)', () {
     // The real cache, as the detail bloc's tests use it: a date write is
     // judged by what the cache holds after it, and by when it held it.
@@ -1873,7 +1901,8 @@ void main() {
         'a network failure ends failed',
         _offline,
         EventActionResult.failed,
-        false,
+        // Amended by #748: the answer may have landed.
+        true,
       ),
     ];
     for (final (name, error, result, rereads) in failures) {
