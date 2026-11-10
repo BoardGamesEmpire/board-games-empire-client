@@ -403,6 +403,8 @@ void main() {
     act: (b) => b.add(const AuthSessionCheckRequested()),
     expect: () => [
       const AuthSessionCheckInProgress(),
+      // Pins the cause itself, not whatever the default is.
+      // ignore: avoid_redundant_argument_values
       const AuthUnauthenticated(cause: SignOutCause.sessionLost),
     ],
   );

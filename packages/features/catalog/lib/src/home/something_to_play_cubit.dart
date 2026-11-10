@@ -248,6 +248,9 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
     if (pool == null) return (sample: null, incomplete: false);
     if (offline) return (sample: null, incomplete: true);
     try {
+      // The argument must follow the constant the surrounding arithmetic
+      // also uses.
+      // ignore: avoid_redundant_argument_values
       final sample = await pool.fetchGamePoolSample(size: shelfSize);
       return (sample: sample, incomplete: false);
     } on Object catch (error, stackTrace) {
@@ -264,6 +267,9 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
   /// reconnecting could bring them.
   Future<({List<GameSummary>? games, bool incomplete})> _readRandom() async {
     try {
+      // The argument must follow the constant the surrounding arithmetic
+      // also uses.
+      // ignore: avoid_redundant_argument_values
       final games = await _remote.fetchRandom(size: shelfSize);
       return (games: games, incomplete: false);
     } on Object catch (error, stackTrace) {

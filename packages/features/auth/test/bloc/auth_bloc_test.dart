@@ -960,6 +960,8 @@ void main() {
             b.add(const AuthSignOutRequested(cause: SignOutCause.sessionLost)),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1042,6 +1044,8 @@ void main() {
         },
         seed: () => AuthAuthenticated(session: testSession()),
         expect: () => [
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1074,6 +1078,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1095,6 +1101,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1120,6 +1128,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1133,6 +1143,8 @@ void main() {
         act: (b) => b.add(const AuthSessionCheckRequested()),
         expect: () => [
           const AuthSessionCheckInProgress(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1140,6 +1152,8 @@ void main() {
       test('the two causes are different states', () {
         expect(
           const AuthUnauthenticated(cause: SignOutCause.user),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           isNot(const AuthUnauthenticated(cause: SignOutCause.sessionLost)),
         );
       });

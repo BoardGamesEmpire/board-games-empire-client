@@ -144,6 +144,9 @@ Future<void> runBgeApp({
   // (a file sink defers its directory lookup to first write).
   ShellObservability.initialize(
     sink: platformBootstrap.createLogSink(),
+    // The analyzer folds kReleaseMode to false, so this looks redundant;
+    // release needs warn.
+    // ignore: avoid_redundant_argument_values
     consoleThreshold: kReleaseMode ? BgeLogLevel.warn : BgeLogLevel.verbose,
   );
   WidgetsFlutterBinding.ensureInitialized();

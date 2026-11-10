@@ -848,7 +848,11 @@ void main() {
     test('states compare by value', () {
       // A bloc drops an emit equal to its current state, so re-deriving
       // the state the screen already shows does not rebuild it.
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewLoading(), EventOverviewLoading());
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewError(), EventOverviewError());
       expect(EventOverviewError(), isNot(EventOverviewError(retrying: true)));
       expect(EventOverviewLoading(), isNot(EventOverviewError()));
@@ -869,11 +873,19 @@ void main() {
         EventOverviewHouseholdsUpdated(households),
       );
       expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         EventOverviewHydrationUpdated(reading),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         EventOverviewHydrationUpdated(reading),
       );
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewCacheFailed(), EventOverviewCacheFailed());
       expect(EventOverviewCacheFailed(), isNot(EventOverviewCacheEnded()));
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewClockTicked(), EventOverviewClockTicked());
     });
   });

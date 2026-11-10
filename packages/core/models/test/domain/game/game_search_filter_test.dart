@@ -29,6 +29,7 @@ void main() {
         'empty sets', () {
       const empty = GameSearchFilter();
       // Built at run time, so the sets are not the const defaults.
+      // ignore: prefer_const_constructors
       final built = GameSearchFilter(
         contentTypes: <ContentType>{},
         platformTypes: <PlatformType>{},

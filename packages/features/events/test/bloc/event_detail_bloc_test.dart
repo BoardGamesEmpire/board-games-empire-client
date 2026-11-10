@@ -1676,7 +1676,11 @@ void main() {
       );
       expect(const EventDetailLoading(), isNot(const EventDetailNotFound()));
       expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_literals_to_create_immutables
         EventDetailReady(detail: _detail(), actions: {EventAction.rsvp}),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_literals_to_create_immutables
         EventDetailReady(detail: _detail(), actions: {EventAction.rsvp}),
       );
       expect(

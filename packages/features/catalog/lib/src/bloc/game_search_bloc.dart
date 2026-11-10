@@ -300,6 +300,9 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     try {
       final games = await cache.searchGames(
         query,
+        // The cache returns as many as an online page: the argument follows
+        // that constant, not the repository default.
+        // ignore: avoid_redundant_argument_values
         limit: GamesRemoteDataSource.searchPageSize,
         filter: filter,
       );

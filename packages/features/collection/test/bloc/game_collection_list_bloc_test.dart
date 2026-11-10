@@ -561,7 +561,11 @@ void main() {
     test('states compare by value', () {
       // A bloc drops an emit equal to its current state, so re-deriving
       // the state the screen already shows does not rebuild it.
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(GameCollectionListLoading(), GameCollectionListLoading());
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(GameCollectionListError(), GameCollectionListError());
       expect(GameCollectionListLoading(), isNot(GameCollectionListError()));
     });
@@ -575,9 +579,15 @@ void main() {
         GameCollectionListCacheUpdated(rows),
       );
       expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         GameCollectionListHydrationUpdated(reading),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         GameCollectionListHydrationUpdated(reading),
       );
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(GameCollectionListCacheFailed(), GameCollectionListCacheFailed());
       expect(
         GameCollectionListCacheFailed(),

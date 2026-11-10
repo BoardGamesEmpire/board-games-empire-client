@@ -279,6 +279,9 @@ class LanguageLinkListBloc
         _gatewayId,
         statuses: _statusesOf(filter),
         page: 1,
+        // The argument must follow the constant the surrounding arithmetic
+        // also uses.
+        // ignore: avoid_redundant_argument_values
         limit: _pageSize,
       );
       if (read != _readSequence) return;
@@ -351,6 +354,9 @@ class LanguageLinkListBloc
         _gatewayId,
         statuses: _statusesOf(filter),
         page: page,
+        // The argument must follow the constant the surrounding arithmetic
+        // also uses.
+        // ignore: avoid_redundant_argument_values
         limit: _pageSize,
       );
       if (dropped()) return;

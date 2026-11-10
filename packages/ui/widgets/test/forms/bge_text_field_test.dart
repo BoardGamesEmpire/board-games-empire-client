@@ -344,8 +344,14 @@ void main() {
 
       Widget host(FormGroup form) => _host(
         form,
+        // Not const: see the note on the last field below.
+        // ignore: prefer_const_constructors
         Column(
+          // Not const: see the note on the last field below.
+          // ignore: prefer_const_literals_to_create_immutables
           children: [
+            // Not const: see the note on the last field below.
+            // ignore: prefer_const_constructors
             BgeTextField(
               formControlName: 'email',
               label: 'Email',
@@ -354,6 +360,7 @@ void main() {
             // Not `const`: a const sibling would not rebind, would keep its
             // focus, and the scope would then skip the autofocus request —
             // which is the pinned case above, not the one under test.
+            // ignore: prefer_const_constructors
             BgeTextField(formControlName: 'password', label: 'Password'),
           ],
         ),
