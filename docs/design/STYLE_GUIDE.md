@@ -225,6 +225,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeSearchField` | nothing: a list narrowed as the user types had no shared field to do it with. The game search keeps its own field, because it submits a query rather than narrowing a list | A visible label, never a hint; a clear button shown only while there is text, which keeps focus on the field when pressed, with its name as tooltip and accessible name, and a 48dp target; `onChanged` on every edit and `''` on clear, not debounced; it owns its text, so `initial` seeds once (#715, #516) |
 | `BgeDropdownField` | reactive_forms' `ReactiveDropdownField` in 4 form menus, whose menu covered the field (#649, #648) | Visible label; the menu opens under the field, as wide as it, and above it near the bottom of the screen; a long choice wraps, closed and open; a button with an expanded state that Enter or Space opens, the arrows move through and Escape closes, with focus back on the field after; read-only stays focusable; live-region error announcement |
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
@@ -553,7 +554,8 @@ what they think they typed.
 **Adding a widget to `ui`:** wait until a second call site wants it. The package
 previously carried ~30 speculative dependencies (rive, lottie, fl_chart…) for
 widgets that were never built, and every feature package would have pulled them
-into all three app binaries.
+into all three app binaries. An exception is a decision, recorded with its
+reason in `ui.dart`'s library doc.
 
 ---
 
