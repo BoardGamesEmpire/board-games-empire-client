@@ -256,7 +256,7 @@ void main() {
   });
 
   group('fetchInbox', () {
-    test('names each row\'s household', () async {
+    test("names each row's household", () async {
       final remote = answering(
         _list('invites', [
           _row(
@@ -305,7 +305,7 @@ void main() {
       });
     });
 
-    test('names each row\'s household and reads its status', () async {
+    test("names each row's household and reads its status", () async {
       final remote = answering(
         _list('invites', [
           _row(
@@ -512,7 +512,7 @@ void main() {
       expect(error?.quota?.scope, 'User');
     });
 
-    test('a refusal never carries a quota but a 402\'s', () async {
+    test("a refusal never carries a quota but a 402's", () async {
       final error = await answering(_envelope(409), status: 409)
           .withdraw('i_1')
           .then<HouseholdInviteRefusedException?>((_) => null)

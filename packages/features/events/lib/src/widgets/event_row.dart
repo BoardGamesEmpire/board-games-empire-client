@@ -1,10 +1,8 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../overview/event_groups.dart';
-import 'event_labels.dart';
 
 /// One event on the overview or a group's page (#497): its title, when it
 /// happens, and where, whose and whether the user is going, as one semantics

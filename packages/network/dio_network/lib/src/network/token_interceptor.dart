@@ -1,12 +1,11 @@
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:interfaces/services.dart' show ClockService;
-
-import '../auth/token_storage_service.dart';
 
 /// Attaches the per-server bearer token to outgoing requests.
 ///
-/// Lives in the shared interceptor stack built by [DioFactory], not inside any
+/// Lives in the shared interceptor stack built by `DioFactory`, not inside any
 /// repository — so every repository sharing the server's [Dio] inherits token
 /// attachment regardless of construction order.
 ///
@@ -16,7 +15,10 @@ import '../auth/token_storage_service.dart';
 /// own, as sign-out does with the departing token (#433):
 ///
 /// ```dart
-/// dio.get(path, options: Options(extra: {TokenInterceptor.skipAuthKey: true}));
+/// dio.get(
+///   path,
+///   options: Options(extra: {TokenInterceptor.skipAuthKey: true}),
+/// );
 /// ```
 ///
 /// ## Expiry gating (#98)

@@ -104,12 +104,13 @@ const _handBackPath = '.dart_tool/goldens_out';
 Future<void> main(List<String> args) async {
   final unknown = args.where((a) => a != '--update' && a != '--image-tag');
   if (unknown.isNotEmpty || args.length > 1) {
-    stderr.writeln(
-      unknown.isNotEmpty
-          ? 'Unknown argument(s): ${unknown.join(', ')}'
-          : 'Pass at most one of --update and --image-tag.',
-    );
-    stderr.writeln(_usage);
+    stderr
+      ..writeln(
+        unknown.isNotEmpty
+            ? 'Unknown argument(s): ${unknown.join(', ')}'
+            : 'Pass at most one of --update and --image-tag.',
+      )
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 
@@ -177,9 +178,10 @@ Future<void> main(List<String> args) async {
     '-v',
     '${handBack.absolute.path}:/out',
     '-v',
-    pubCache == null || pubCache.isEmpty
-        ? 'bge-goldens-pub-cache:/root/.pub-cache'
-        : '$pubCache:/root/.pub-cache',
+    if (pubCache == null || pubCache.isEmpty)
+      'bge-goldens-pub-cache:/root/.pub-cache'
+    else
+      '$pubCache:/root/.pub-cache',
     if (owner != null) ...[
       '-e',
       'HOST_UID=${owner.uid}',
@@ -204,7 +206,7 @@ Future<void> main(List<String> args) async {
   if (handedBack.refused.isNotEmpty) {
     stderr.writeln(
       '\nThe container handed back ${handedBack.refused.length} path(s) '
-      'outside a golden package\'s test/goldens/, or not a plain file. '
+      "outside a golden package's test/goldens/, or not a plain file. "
       'None were copied:',
     );
     for (final path in handedBack.refused) {
@@ -217,7 +219,7 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       update
           ? '\nRegenerating the goldens failed.'
-          : '\nGolden tests failed. The diffs are under each package\'s '
+          : "\nGolden tests failed. The diffs are under each package's "
                 'test/goldens/failures/.',
     );
     exit(1);

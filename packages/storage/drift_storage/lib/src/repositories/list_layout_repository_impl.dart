@@ -1,9 +1,8 @@
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import 'watch_disposal.dart';
 
 /// [ListLayoutRepository] over the per-server database, for one user (#710).
 ///

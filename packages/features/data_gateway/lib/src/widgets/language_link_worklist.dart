@@ -1,19 +1,17 @@
 import 'dart:async';
 
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:data_gateway/src/bloc/language_link_list_bloc.dart';
+import 'package:data_gateway/src/bloc/language_link_list_event.dart';
+import 'package:data_gateway/src/bloc/language_link_list_state.dart';
+import 'package:data_gateway/src/widgets/data_gateway_status.dart';
+import 'package:data_gateway/src/widgets/language_tag_picker_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-
-import '../bloc/language_link_list_bloc.dart';
-import '../bloc/language_link_list_event.dart';
-import '../bloc/language_link_list_state.dart';
-import 'data_gateway_status.dart';
-import 'language_tag_picker_dialog.dart';
 
 /// A DataGateway's language worklist (#457): the values it uses for languages
 /// under a status filter, a page at a time, each with the actions that settle
@@ -51,19 +49,20 @@ import 'language_tag_picker_dialog.dart';
 ///   built leaves focus alone. The page keeps the rows its footer covers built
 ///   (see [BgePage.footer]), so that is a row the user has scrolled well away
 ///   from.
-/// - The page stays too. What takes focus is brought into view, as Tab does, for
-///   a user who can see focus, unless they moved the page on during the action.
+/// - The page stays too. What takes focus is brought into view, as Tab does,
+///   for a user who can see focus, unless they moved the page on during the
+///   action.
 ///
-/// Show more stays enabled while its page loads, and the bloc drops a press made
-/// meanwhile, because a disabled button gives up keyboard focus (#607).
+/// Show more stays enabled while its page loads, and the bloc drops a press
+/// made meanwhile, because a disabled button gives up keyboard focus (#607).
 ///
 /// ## Reading it
 ///
 /// A row's words read as one node, and its menu is a button of its own, named
-/// for the row by its value and how that is spelled, since a value can be listed
-/// once per format. What is loading, what failed and an empty list are each a live
-/// region, so assistive tech says them as they appear. A status is an icon and
-/// words, never color alone.
+/// for the row by its value and how that is spelled, since a value can be
+/// listed once per format. What is loading, what failed and an empty list are
+/// each a live region, so assistive tech says them as they appear. A status is
+/// an icon and words, never color alone.
 class LanguageLinkWorklist extends StatefulWidget {
   const LanguageLinkWorklist({required this.remote, super.key});
 
@@ -180,8 +179,9 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
         // wherever the picker gave it back.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          actedOn.pageAt = _pageOffset;
-          actedOn.focusAt = FocusManager.instance.primaryFocus;
+          actedOn
+            ..pageAt = _pageOffset
+            ..focusAt = FocusManager.instance.primaryFocus;
         });
       }
     } else if (actedOn.running) {

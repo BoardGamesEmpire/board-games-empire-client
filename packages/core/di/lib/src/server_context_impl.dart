@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
+import 'package:di/src/dependency_container_impl.dart';
+import 'package:di/src/scope/user_scope_host.dart';
+import 'package:di/src/streams/replay_then_forward.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
-
-import 'debug_report_swallowed.dart';
-import 'dependency_container_impl.dart';
-import 'scope/user_scope_host.dart';
-import 'streams/replay_then_forward.dart';
 
 /// Concrete [ServerContext] implementation.
 ///
@@ -166,7 +165,7 @@ class ServerContextImpl implements ServerContext {
           _container.registerSingleton<UserSessionScope>(
             _ContextUserSessionScope(this),
           );
-        } catch (_) {
+        } on Object catch (_) {
           // Discard partial registrations so a retry starts from a clean
           // scope; _transition's catch rolls the state back and rethrows.
           // The reset is guarded so a throwing dispose callback (GetIt does
@@ -174,7 +173,7 @@ class ServerContextImpl implements ServerContext {
           _activeUserId = null;
           try {
             await _container.replaceInner();
-          } catch (teardownError) {
+          } on Object catch (teardownError) {
             debugReportSwallowed(
               '${_diagnosticTagFor(serverId)}: scope reset after a failed '
               'activation threw (suppressed in favor of the original '
@@ -250,7 +249,7 @@ class ServerContextImpl implements ServerContext {
       _activeUserId = null;
       try {
         await _container.replaceInner();
-      } catch (e) {
+      } on Object catch (e) {
         debugReportSwallowed(
           '${_diagnosticTagFor(serverId)}: scope disposal threw during '
           'suspend()',
@@ -273,7 +272,7 @@ class ServerContextImpl implements ServerContext {
     if (inFlight != null) {
       try {
         await inFlight;
-      } catch (_) {
+      } on Object catch (_) {
         // The transition's own caller receives this error; disposal
         // continues regardless.
       }
@@ -291,7 +290,7 @@ class ServerContextImpl implements ServerContext {
     _setState(ServerContextState.disposed);
     try {
       await _container.dispose();
-    } catch (e) {
+    } on Object catch (e) {
       // A service's dispose callback threw. Log and continue — the state
       // stream must still close so disposal is reliably idempotent and the
       // orchestrator's teardown isn't left brittle.
@@ -417,7 +416,7 @@ class ServerContextImpl implements ServerContext {
     if (!_container.hasUserScope) return;
     try {
       await _container.endUserScope();
-    } catch (e) {
+    } on Object catch (e) {
       debugReportSwallowed(
         '${_diagnosticTagFor(serverId)}: user-scope disposal threw during '
         'session deactivation',
@@ -581,14 +580,14 @@ class _SwappableContainer implements DependencyContainer {
     StackTrace? firstStackTrace;
     try {
       await _userScope.close();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       firstError = e;
       firstStackTrace = s;
     }
     if (old != null) {
       try {
         await old.dispose();
-      } catch (e, s) {
+      } on Object catch (e, s) {
         firstError ??= e;
         firstStackTrace ??= s;
       }
@@ -636,14 +635,14 @@ class _SwappableContainer implements DependencyContainer {
     StackTrace? firstStackTrace;
     try {
       await _userScope.close();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       firstError = e;
       firstStackTrace = s;
     }
     if (old != null) {
       try {
         await old.dispose();
-      } catch (e, s) {
+      } on Object catch (e, s) {
         firstError ??= e;
         firstStackTrace ??= s;
       }
@@ -674,7 +673,7 @@ class _ContextUserSessionScope implements UserSessionScope {
 
 /// Factory function type for creating [ServerContext] instances.
 ///
-/// Injected into [ServerOrchestratorImpl] to allow test substitution
+/// Injected into `ServerOrchestratorImpl` to allow test substitution
 /// without exposing [ServerContextImpl] directly.
 typedef ServerContextFactory = ServerContext Function(ServerConfig config);
 

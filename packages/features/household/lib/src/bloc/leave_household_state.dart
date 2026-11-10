@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../members/send_member_request.dart';
+import 'package:household/src/members/send_member_request.dart';
 
 /// Where a request to leave a household stands (#479).
 enum LeavePhase {

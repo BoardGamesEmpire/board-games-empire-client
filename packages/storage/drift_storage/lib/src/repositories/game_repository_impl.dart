@@ -1,15 +1,14 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/expansion_links_codec.dart';
+import 'package:drift_storage/src/repositories/game_cache_access.dart';
+import 'package:drift_storage/src/repositories/stored_enum_name.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-
-import '../databases/server_database.dart';
-import '../tables/game_access_table.dart';
-import 'expansion_links_codec.dart';
-import 'game_cache_access.dart';
-import 'stored_enum_name.dart';
-import 'watch_disposal.dart';
 
 /// [GameRepository] over the per-server [ServerDatabase], for one user
 /// (#434).
@@ -56,7 +55,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   @override
   String get disposedRepositoryName => 'GameRepository';
 
-  // ── Game ───────────────────────────────────────────────────────────────────────
+  // ── Game ───────────────────────────────────────────────────────────────────
 
   /// Whether every game read may return the `games` row [t]: a full record,
   /// not a tombstone, cached for this user.
@@ -106,12 +105,13 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     await _db.batch((b) {
       for (final g in games) {
         final row = _gameToCompanion(g, now);
-        b.insert(_db.gamesTable, row, onConflict: DoUpdate((old) => row));
-        b.insert(
-          _db.gameAccessTable,
-          _gameAccess(g.id, cacheAccessSourceCatalog),
-          mode: InsertMode.insertOrIgnore,
-        );
+        b
+          ..insert(_db.gamesTable, row, onConflict: DoUpdate((old) => row))
+          ..insert(
+            _db.gameAccessTable,
+            _gameAccess(g.id, cacheAccessSourceCatalog),
+            mode: InsertMode.insertOrIgnore,
+          );
       }
     });
   }
@@ -129,7 +129,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   }
 
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.
-  static final RegExp _likeWildcardChars = RegExp(r'[%_]');
+  static final RegExp _likeWildcardChars = RegExp('[%_]');
 
   @override
   Future<List<Game>> searchGames(
@@ -282,8 +282,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
 
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) async {
     checkNotDisposed();
@@ -333,7 +333,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     )..where(_readableGame)).watch().map((rows) => rows.map(_mapGame).toList()),
   );
 
-  // ── PlatformGame ───────────────────────────────────────────────────────────────────
+  // ── PlatformGame ───────────────────────────────────────────────────────────
 
   /// Whether every platform game read may return the `platform_games` row
   /// [t]: a full record cached for this user. Platform games carry no
@@ -380,21 +380,22 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     await _db.batch((b) {
       for (final pg in platformGames) {
         final row = _platformGameToCompanion(pg, now);
-        b.insert(
-          _db.platformGamesTable,
-          row,
-          onConflict: DoUpdate((old) => row),
-        );
-        b.insert(
-          _db.platformGameAccessTable,
-          _platformGameAccess(pg.id, cacheAccessSourceCatalog),
-          mode: InsertMode.insertOrIgnore,
-        );
+        b
+          ..insert(
+            _db.platformGamesTable,
+            row,
+            onConflict: DoUpdate((old) => row),
+          )
+          ..insert(
+            _db.platformGameAccessTable,
+            _platformGameAccess(pg.id, cacheAccessSourceCatalog),
+            mode: InsertMode.insertOrIgnore,
+          );
       }
     });
   }
 
-  // ── Collection summary (#259) ──────────────────────────────────────────────────
+  // ── Collection summary (#259) ──────────────────────────────────────────────
 
   @override
   Future<void> cachePlatformGameSummaries(
@@ -496,7 +497,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         );
   }
 
-  // ── Access ─────────────────────────────────────────────────────────────────────
+  // ── Access ─────────────────────────────────────────────────────────────────
 
   /// This user's access row for the game [gameId], from [source].
   GameAccessTableCompanion _gameAccess(String gameId, String source) =>
@@ -517,7 +518,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     source: source,
   );
 
-  // ── Mappers ──────────────────────────────────────────────────────────────────────────
+  // ── Mappers ────────────────────────────────────────────────────────────────
 
   Game _mapGame(GamesTableData row) => Game(
     id: row.id,
@@ -665,7 +666,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   List<String> _decodeStringList(String json) {
     try {
       return (jsonDecode(json) as List).cast<String>().toList();
-    } catch (_) {
+    } on Object catch (_) {
       return [];
     }
   }

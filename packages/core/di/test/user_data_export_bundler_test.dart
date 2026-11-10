@@ -255,9 +255,9 @@ void main() {
         'exporter runs', () async {
       when(() => authRepository.getCachedSession())
           .thenAnswer((_) async => _session);
-      final corruption = CorruptedServerIdentityException(
+      const corruption = CorruptedServerIdentityException(
         _localServerId,
-        const FormatException('bad identity blob'),
+        FormatException('bad identity blob'),
       );
       when(() => serverRepository.getServer(_localServerId))
           .thenAnswer((_) async => throw corruption);

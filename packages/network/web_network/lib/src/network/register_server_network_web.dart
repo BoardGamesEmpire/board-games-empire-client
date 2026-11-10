@@ -32,12 +32,12 @@ import 'package:network_interface/network_interface.dart'
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
-import '../auth/provider_sign_in_bindings.dart';
-import '../auth/session_channel.dart';
-import '../auth/web_auth_repository_impl.dart';
-import '../auth/web_session_monitor.dart';
-import 'web_clock_skew_diagnostic_interceptor.dart';
-import 'web_dio_factory.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
+import 'package:web_network/src/auth/session_channel.dart';
+import 'package:web_network/src/auth/web_auth_repository_impl.dart';
+import 'package:web_network/src/auth/web_session_monitor.dart';
+import 'package:web_network/src/network/web_clock_skew_diagnostic_interceptor.dart';
+import 'package:web_network/src/network/web_dio_factory.dart';
 
 /// Registers the web network stack for the origin's server into [container].
 ///
@@ -158,91 +158,83 @@ void registerServerNetworkWeb({
   // the browser attaches the httpOnly session cookie the feedback
   // endpoint requires, so `FeedbackDioTransport` needs nothing
   // web-specific. Same installer-placement rationale as the native leg.
-  container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
-
-  // #125: the per-origin household remote. Same convention and the same
-  // placement as the feedback transport above and as native's registration —
-  // it shares this origin's Dio (base URL + the browser-owned session cookie
-  // the `/api/households` endpoints require) and adds no auth of its own.
-  // Const and stateless; the container owns the Dio.
-  //
-  // Native's implementation, not a web twin: it takes an injected Dio and
-  // nothing in it is platform-specific. Its two load-bearing assumptions hold
-  // here — `decodeJsonBody` offloads through `compute`, which runs inline on
-  // web, and its status classification needs the permissive `validateStatus`
-  // that `WebDioFactory` sets exactly as the native factory does. Keeping one
-  // implementation is what makes the 403 envelope rule (#350, #365) a single
-  // rule rather than two that drift.
-  container.registerSingleton<HouseholdRemoteDataSource>(
-    HouseholdRemoteDataSourceImpl(dio),
-  );
-
-  // #455: the per-origin household invite remote. Same convention, placement
-  // and reuse argument as the household remote above: native's
-  // implementation over this origin's Dio, whose permissive validateStatus
-  // is what lets it read a refusal's envelope.
-  container.registerSingleton<HouseholdInviteRemoteDataSource>(
-    HouseholdInviteRemoteDataSourceImpl(dio),
-  );
-
-  // #480: the per-origin household member remote. Same convention, placement
-  // and reuse argument as the remotes above: native's implementation over
-  // this origin's Dio, whose permissive validateStatus is what lets it read
-  // a refusal's envelope.
-  container.registerSingleton<HouseholdMemberRemoteDataSource>(
-    HouseholdMemberRemoteDataSourceImpl(dio),
-  );
-
-  // #499: the per-origin user remote. Same convention, placement and reuse
-  // argument as the invite remote above: native's implementation over this
-  // origin's Dio, whose permissive validateStatus is what lets it read an
-  // error's envelope.
-  container.registerSingleton<UserRemoteDataSource>(
-    UserRemoteDataSourceImpl(dio),
-  );
-
-  // #368: the per-origin collection remote. Same convention, same placement
-  // and the same reuse argument as the household remote above: it shares this
-  // origin's Dio (base URL + the browser-owned session cookie
-  // `/api/game-collections` requires) and adds no auth of its own. Const and
-  // stateless; the container owns the Dio.
-  //
-  // The collection hydrate reads through it on both platforms (#259), and
-  // the sync queue's sender writes through it (#121), and the drain over
-  // that sender on both platforms (#447).
-  container.registerSingleton<GameCollectionRemoteDataSource>(
-    GameCollectionRemoteDataSourceImpl(dio),
-  );
-
-  // #41: the per-origin DataGateway remote. Same convention, placement and
-  // reuse argument as the two remotes above: native's implementation over
-  // this origin's Dio, whose permissive validateStatus is what lets it read
-  // the 403 envelope the admin gating turns on.
-  container.registerSingleton<DataGatewayRemoteDataSource>(
-    DataGatewayRemoteDataSourceImpl(dio),
-  );
-
-  // #684: the per-origin staff households remote. Same convention, placement
-  // and reuse argument as the DataGateway remote: native's implementation
-  // over this origin's Dio.
-  container.registerSingleton<AdminHouseholdRemoteDataSource>(
-    AdminHouseholdRemoteDataSourceImpl(dio),
-  );
-
-  // #42: the per-origin games remote. Same convention, placement and reuse
-  // argument as the remotes above: native's implementation over this
-  // origin's Dio. The browser adapter honours the longer receive timeout its
-  // search asks for per request, as the native one does.
-  container.registerSingleton<GamesRemoteDataSource>(
-    GamesRemoteDataSourceImpl(dio),
-  );
-
-  // #496: the per-origin event remote. Same convention, placement and reuse
-  // argument as the remotes above: native's implementation over this origin's
-  // Dio, whose permissive validateStatus is what lets it read the 404 envelope
-  // that says an event is gone. Without it the event hydrate would find no
-  // remote on web and skip.
-  container.registerSingleton<EventRemoteDataSource>(
-    EventRemoteDataSourceImpl(dio),
-  );
+  container
+    ..registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio))
+    // #125: the per-origin household remote. Same convention and the same
+    // placement as the feedback transport above and as native's registration —
+    // it shares this origin's Dio (base URL + the browser-owned session cookie
+    // the `/api/households` endpoints require) and adds no auth of its own.
+    // Const and stateless; the container owns the Dio.
+    //
+    // Native's implementation, not a web twin: it takes an injected Dio and
+    // nothing in it is platform-specific. Its two load-bearing assumptions hold
+    // here — `decodeJsonBody` offloads through `compute`, which runs inline on
+    // web, and its status classification needs the permissive `validateStatus`
+    // that `WebDioFactory` sets exactly as the native factory does. Keeping one
+    // implementation is what makes the 403 envelope rule (#350, #365) a single
+    // rule rather than two that drift.
+    ..registerSingleton<HouseholdRemoteDataSource>(
+      HouseholdRemoteDataSourceImpl(dio),
+    )
+    // #455: the per-origin household invite remote. Same convention, placement
+    // and reuse argument as the household remote above: native's
+    // implementation over this origin's Dio, whose permissive validateStatus
+    // is what lets it read a refusal's envelope.
+    ..registerSingleton<HouseholdInviteRemoteDataSource>(
+      HouseholdInviteRemoteDataSourceImpl(dio),
+    )
+    // #480: the per-origin household member remote. Same convention, placement
+    // and reuse argument as the remotes above: native's implementation over
+    // this origin's Dio, whose permissive validateStatus is what lets it read
+    // a refusal's envelope.
+    ..registerSingleton<HouseholdMemberRemoteDataSource>(
+      HouseholdMemberRemoteDataSourceImpl(dio),
+    )
+    // #499: the per-origin user remote. Same convention, placement and reuse
+    // argument as the invite remote above: native's implementation over this
+    // origin's Dio, whose permissive validateStatus is what lets it read an
+    // error's envelope.
+    ..registerSingleton<UserRemoteDataSource>(
+      UserRemoteDataSourceImpl(dio),
+    )
+    // #368: the per-origin collection remote. Same convention, same placement
+    // and the same reuse argument as the household remote above: it shares this
+    // origin's Dio (base URL + the browser-owned session cookie
+    // `/api/game-collections` requires) and adds no auth of its own. Const and
+    // stateless; the container owns the Dio.
+    //
+    // The collection hydrate reads through it on both platforms (#259), and
+    // the sync queue's sender writes through it (#121), and the drain over
+    // that sender on both platforms (#447).
+    ..registerSingleton<GameCollectionRemoteDataSource>(
+      GameCollectionRemoteDataSourceImpl(dio),
+    )
+    // #41: the per-origin DataGateway remote. Same convention, placement and
+    // reuse argument as the two remotes above: native's implementation over
+    // this origin's Dio, whose permissive validateStatus is what lets it read
+    // the 403 envelope the admin gating turns on.
+    ..registerSingleton<DataGatewayRemoteDataSource>(
+      DataGatewayRemoteDataSourceImpl(dio),
+    )
+    // #684: the per-origin staff households remote. Same convention, placement
+    // and reuse argument as the DataGateway remote: native's implementation
+    // over this origin's Dio.
+    ..registerSingleton<AdminHouseholdRemoteDataSource>(
+      AdminHouseholdRemoteDataSourceImpl(dio),
+    )
+    // #42: the per-origin games remote. Same convention, placement and reuse
+    // argument as the remotes above: native's implementation over this
+    // origin's Dio. The browser adapter honours the longer receive timeout its
+    // search asks for per request, as the native one does.
+    ..registerSingleton<GamesRemoteDataSource>(
+      GamesRemoteDataSourceImpl(dio),
+    )
+    // #496: the per-origin event remote. Same convention, placement and reuse
+    // argument as the remotes above: native's implementation over this origin's
+    // Dio, whose permissive validateStatus is what lets it read the 404
+    // envelope that says an event is gone. Without it the event hydrate would
+    // find no remote on web and skip.
+    ..registerSingleton<EventRemoteDataSource>(
+      EventRemoteDataSourceImpl(dio),
+    );
 }

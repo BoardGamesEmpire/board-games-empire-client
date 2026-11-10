@@ -1,6 +1,6 @@
 import 'package:logging/logging.dart';
 
-import 'log_sink.dart';
+import 'package:observability/src/logging/log_sink.dart';
 
 /// Fans each record out to several [LogSink]s (issue #100).
 ///

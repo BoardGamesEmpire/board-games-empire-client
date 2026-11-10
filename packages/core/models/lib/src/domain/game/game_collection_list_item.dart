@@ -1,8 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'content_type.dart';
-import 'expansion_link.dart';
-import 'game_collection.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/expansion_link.dart';
+import 'package:models/src/domain/game/game_collection.dart';
 
 part 'game_collection_list_item.freezed.dart';
 
@@ -17,12 +17,12 @@ abstract class GameCollectionListItem with _$GameCollectionListItem {
   const factory GameCollectionListItem({
     required GameCollection entry,
 
-    /// The id of the [Game] the entry's platform game belongs to: what a
+    /// The id of the `Game` the entry's platform game belongs to: what a
     /// caller counts the distinct games in a collection by.
     required String gameId,
     required String title,
-    String? subtitle,
     required String platformName,
+    String? subtitle,
 
     /// The platform game's own picture when it has one, otherwise the
     /// game's: each one's thumbnail, else its full image (#709). Null when

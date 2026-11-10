@@ -244,10 +244,9 @@ void main() {
       final rehydrator = _RecordingRehydrator();
       await pumpHome(tester, rehydrator: rehydrator);
 
-      final router =
-          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
-              as GoRouter;
-      router.go(AppRoutes.householdDetailOf(_id));
+      (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter)
+          .go(AppRoutes.householdDetailOf(_id));
       await tester.pumpAndSettle();
       expect(find.byType(HouseholdDetailScreen), findsOneWidget);
 

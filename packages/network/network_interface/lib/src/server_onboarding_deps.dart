@@ -2,7 +2,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
-import 'well_known_client.dart';
+import 'package:network_interface/src/well_known_client.dart';
 
 /// The root-scope collaborators adding a server needs, registered and
 /// resolved as one unit (#216).

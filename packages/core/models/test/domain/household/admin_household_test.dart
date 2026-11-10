@@ -97,8 +97,8 @@ void main() {
       id: 'h1',
       name: 'Catan Club',
       reach: Reach.private,
-      createdAt: DateTime.utc(2026, 1, 1),
-      deletedAt: DateTime.utc(2026, 2, 1),
+      createdAt: DateTime.utc(2026),
+      deletedAt: DateTime.utc(2026, 2),
       memberCount: 3,
       owners: const [AdminHouseholdOwner(userId: 'u1', username: 'ada')],
     );
@@ -114,7 +114,7 @@ void main() {
           id: 'h1',
           name: 'Catan Club',
           reach: Reach.private,
-          createdAt: DateTime.utc(2026, 1, 1),
+          createdAt: DateTime.utc(2026),
           memberCount: 3,
           owners: const [AdminHouseholdOwner(userId: 'u1', username: 'ada')],
         ),
@@ -123,7 +123,7 @@ void main() {
   });
 
   group('AdminHouseholdDetail', () {
-    final createdAt = DateTime.utc(2026, 1, 1);
+    final createdAt = DateTime.utc(2026);
     HouseholdMember member(String id) => HouseholdMember(
       id: id,
       userId: 'user_$id',

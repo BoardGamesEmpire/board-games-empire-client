@@ -103,7 +103,7 @@ void main() {
       );
     });
 
-    test('keeps an http or https endpoint on the server\'s own origin', () {
+    test("keeps an http or https endpoint on the server's own origin", () {
       expect(
         resolveServerEndpoint(
           'https://example.com/bge',

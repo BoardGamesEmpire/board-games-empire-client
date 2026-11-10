@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-const _key = ValueKey('button');
+const ValueKey<String> _key = ValueKey('button');
 
 Widget _host({
   required bool inert,

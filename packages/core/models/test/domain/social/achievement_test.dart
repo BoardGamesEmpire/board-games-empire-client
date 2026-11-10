@@ -1,10 +1,10 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('Achievement', () {
     test('tracks progress against threshold', () {
-      final achievement = Achievement(
+      const achievement = Achievement(
         id: 'ach123',
         name: 'Play 10 Games',
         description: 'Play 10 different board games',
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('serializes AchievementType enum', () {
-      final achievement = Achievement(
+      const achievement = Achievement(
         id: 'ach123',
         name: 'Collector',
         description: 'Own 50 games',

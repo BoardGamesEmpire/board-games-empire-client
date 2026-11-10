@@ -577,8 +577,8 @@ void main() {
     test('a search waits for typing to pause', () {
       fakeAsync((async) {
         remote.listing([ada]);
-        final bloc = AdminHouseholdListBloc(remote: remote, access: access);
-        bloc.add(const AdminHouseholdListSearchChanged('a'));
+        final bloc = AdminHouseholdListBloc(remote: remote, access: access)
+          ..add(const AdminHouseholdListSearchChanged('a'));
         async.elapse(const Duration(milliseconds: 100));
         bloc.add(const AdminHouseholdListSearchChanged('ab'));
         async.elapse(const Duration(milliseconds: 299));
@@ -759,10 +759,13 @@ void main() {
     blocTest<AdminHouseholdListBloc, AdminHouseholdListState>(
       'a query change clears the last restore outcome',
       setUp: () {
-        remote.onRestore = (_) async {};
-        remote.onFetchPage = (request) async => adminPageOf(
-          request.status == AdminHouseholdStatus.deleted ? [gone, lost] : [ada],
-        );
+        remote
+          ..onRestore = (_) async {}
+          ..onFetchPage = (request) async => adminPageOf(
+            request.status == AdminHouseholdStatus.deleted
+                ? [gone, lost]
+                : [ada],
+          );
       },
       build: build,
       act: (bloc) async {
@@ -1217,9 +1220,10 @@ void main() {
       setUp: () {
         reload = Completer<_Page>();
         var reads = 0;
-        remote.onRestore = (_) async => throw _notFound;
-        remote.onFetchPage = (_) async =>
-            reads++ == 0 ? adminPageOf([gone, lost]) : reload.future;
+        remote
+          ..onRestore = ((_) async => throw _notFound)
+          ..onFetchPage = (_) async =>
+              reads++ == 0 ? adminPageOf([gone, lost]) : reload.future;
       },
       build: build,
       act: (bloc) async {
@@ -1523,12 +1527,13 @@ void main() {
         restore = Completer<void>();
         reload = Completer<_Page>();
         var reads = 0;
-        remote.onRestore = (_) => restore.future;
-        remote.onFetchPage = (_) async => switch (reads++) {
-          0 => adminPageOf([gone, lost]),
-          1 => reload.future,
-          _ => adminPageOf([lost]),
-        };
+        remote
+          ..onRestore = ((_) => restore.future)
+          ..onFetchPage = (_) async => switch (reads++) {
+            0 => adminPageOf([gone, lost]),
+            1 => reload.future,
+            _ => adminPageOf([lost]),
+          };
       },
       build: build,
       act: (bloc) async {
@@ -1576,9 +1581,10 @@ void main() {
           adminPageOf(_rows(2, 26), hasMore: true),
         ], later: (_) => throw StateError('answered by the completer'));
         final pages = remote.onFetchPage!;
-        remote.onRestore = (_) async {};
-        remote.onFetchPage = (request) =>
-            request.page == 2 ? more.future : pages(request);
+        remote
+          ..onRestore = (_) async {}
+          ..onFetchPage = (request) =>
+              request.page == 2 ? more.future : pages(request);
       },
       build: build,
       act: (bloc) async {
@@ -1790,9 +1796,10 @@ void main() {
         restore = Completer<void>();
         reload = Completer<_Page>();
         var reads = 0;
-        remote.onRestore = (_) => restore.future;
-        remote.onFetchPage = (_) async =>
-            reads++ == 0 ? adminPageOf([gone, lost]) : reload.future;
+        remote
+          ..onRestore = ((_) => restore.future)
+          ..onFetchPage = (_) async =>
+              reads++ == 0 ? adminPageOf([gone, lost]) : reload.future;
       },
       build: build,
       act: (bloc) async {

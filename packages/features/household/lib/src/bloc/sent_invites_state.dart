@@ -1,8 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/invites/sent_invite_filter.dart';
 import 'package:models/domain.dart';
-
-import '../invites/sent_invite_filter.dart';
-import 'household_invite_list_state.dart';
 
 /// What the list of invites the viewer sent is showing (#487).
 sealed class SentInvitesState extends Equatable {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'bge_connectivity_scope.dart';
+import 'package:ui/src/connectivity/bge_connectivity_scope.dart';
 
 /// Owns the [MenuController] of a menu whose every item waits for a
 /// connection (#49), and closes the menu when the connection drops while it

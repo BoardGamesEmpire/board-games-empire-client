@@ -8,11 +8,11 @@ abstract class UserLoginHistory with _$UserLoginHistory {
   const factory UserLoginHistory({
     required String id,
     required String authenticationId,
+    required bool success,
+    required DateTime createdAt,
     String? ipAddress,
     String? userAgent,
-    required bool success,
     String? failureReason,
-    required DateTime createdAt,
   }) = _UserLoginHistory;
 
   factory UserLoginHistory.fromJson(Map<String, dynamic> json) =>

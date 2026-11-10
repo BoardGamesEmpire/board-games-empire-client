@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:server_onboarding/l10n/server_onboarding_localizations.dart';
+import 'package:server_onboarding/src/widgets/server_add_form.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/server_onboarding_localizations.dart';
-import '../widgets/server_add_form.dart';
 
 /// First-run add-server screen (#36). Expects a `ServerOnboardingBloc`
 /// to be provided above it (the shell's router wiring owns bloc

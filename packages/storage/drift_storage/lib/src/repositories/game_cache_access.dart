@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 
-import '../databases/server_database.dart';
-import '../tables/game_access_table.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 
 /// Ends access records in the games cache, and deletes the `games` /
 /// `platform_games` rows they leave with no reader (#469, #557). Each method

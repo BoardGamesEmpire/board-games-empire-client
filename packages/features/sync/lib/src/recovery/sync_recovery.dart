@@ -4,7 +4,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import 'stuck_sync_op.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_op.dart';
 
 /// Lists the session's stuck ops, and retries or discards one by hand
 /// (#190).
@@ -24,7 +24,7 @@ import 'stuck_sync_op.dart';
 /// Built per screen from the session's container, so it never outlives the
 /// repositories it reads.
 class SyncRecovery {
-  /// [drain] runs a pass that reads the queue after the call. The three
+  /// `drain` runs a pass that reads the queue after the call. The three
   /// refreshes each run a hydrate of their cache. Each is optional because a
   /// composition may not have it, and then that step is skipped.
   SyncRecovery({

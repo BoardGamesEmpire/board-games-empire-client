@@ -1,14 +1,14 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// Remote data source for the users routes: finding other users by name
 /// (#455, #499) and reading what the caller may do (#456).
 ///
-/// Online-only, like [HouseholdInviteRemoteDataSource]: nothing here is stored
+/// Online-only, like `HouseholdInviteRemoteDataSource`: nothing here is stored
 /// on the device, and every call goes straight to the server.
 ///
-/// It is a separate interface from [HouseholdInviteRemoteDataSource] on
+/// It is a separate interface from `HouseholdInviteRemoteDataSource` on
 /// purpose. More than one feature picks people by searching: the household
 /// invite form (#455) and the event create form's invitees (#499). Neither
 /// owns the search.
@@ -92,6 +92,8 @@ sealed class UserRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

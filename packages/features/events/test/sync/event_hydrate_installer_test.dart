@@ -609,7 +609,7 @@ void main() {
       ]);
     });
 
-    test('asks the scope\'s guard about the scope\'s user, before a pass and '
+    test("asks the scope's guard about the scope's user, before a pass and "
         'before writing its page', () async {
       register();
       // The install-time event pass asks twice: before its pass, and before

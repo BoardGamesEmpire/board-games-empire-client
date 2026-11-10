@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:events/src/detail/event_status_now.dart';
 import 'package:models/domain.dart';
-
-import '../detail/event_status_now.dart';
 
 /// The overview's groups (#497), in the order it shows them. Each one's
 /// [name] is the route segment of its own page.

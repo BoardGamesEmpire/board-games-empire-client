@@ -20,7 +20,8 @@ class ServerAuthStrategyListConverter
       strategies.map((s) => s.toJson()).toList();
 }
 
-/// Discriminant values matching the backend [AuthStrategyType] enum wire values.
+/// Discriminant values matching the backend [AuthStrategyType] enum wire
+/// values.
 /// Values are snake_case per SnakeCaseInterceptor on the NestJS side.
 abstract final class AuthStrategyType {
   static const String emailAndPassword = 'email_and_password';
@@ -30,7 +31,7 @@ abstract final class AuthStrategyType {
 /// Sealed base for authentication strategies advertised by a BGE server via
 /// the /.well-known/bge-identity discovery document.
 ///
-/// This is distinct from [AuthStrategy], which records how a user historically
+/// This is distinct from `AuthStrategy`, which records how a user historically
 /// authenticated. [ServerAuthStrategy] describes what the server currently
 /// offers for login/registration.
 ///
@@ -73,7 +74,7 @@ sealed class ServerAuthStrategy extends Equatable {
 
 /// Email and password authentication strategy.
 ///
-/// Corresponds to [EmailAndPasswordStrategyDto] on the NestJS backend.
+/// Corresponds to `EmailAndPasswordStrategyDto` on the NestJS backend.
 /// When [signUpDisabled] is true, [signUpEndpoint] will be null and the
 /// client should hide or disable the registration flow.
 final class EmailAndPasswordStrategy extends ServerAuthStrategy {
@@ -117,7 +118,7 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
 
 /// OIDC (OpenID Connect) authentication strategy.
 ///
-/// Corresponds to [OidcStrategyDto] on the NestJS backend. One strategy is one
+/// Corresponds to `OidcStrategyDto` on the NestJS backend. One strategy is one
 /// provider the server lets people sign in through (#583).
 ///
 /// Two flows use it:
@@ -130,13 +131,13 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
 ///   `{ code, code_verifier }` for `{ token, user }`.
 final class OidcStrategy extends ServerAuthStrategy {
   const OidcStrategy({
-    this.signUpDisabled = false,
     required this.providerId,
     required this.displayName,
     required this.discoveryUrl,
     required this.authorizationEndpoint,
     required this.appSignInEndpoint,
     required this.appTokenEndpoint,
+    this.signUpDisabled = false,
   });
 
   factory OidcStrategy.fromJson(Map<String, dynamic> json) {

@@ -1,13 +1,12 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -15,7 +14,7 @@ class MockTokenStorage extends Mock implements TokenStorageService {}
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -28,7 +27,7 @@ ServerIdentity _identity() => ServerIdentity(
   twoFactorSupported: true,
   anonymousAuthSupported: true,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',
@@ -73,7 +72,7 @@ void main() {
       ).thenAnswer(
         (_) async => Response<String>(
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
 
@@ -86,7 +85,7 @@ void main() {
       ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
 
@@ -126,7 +125,7 @@ void main() {
         sentOptions = invocation.namedArguments[#options] as Options?;
         return Response<String>(
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         );
       });
 
@@ -248,7 +247,7 @@ void main() {
             },
           }),
           statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
       await repo.getSession();

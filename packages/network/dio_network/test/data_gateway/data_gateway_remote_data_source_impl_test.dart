@@ -1069,12 +1069,12 @@ void main() {
           status: 409,
         );
         final routes = <String, Future<Object?> Function()>{
-          'fetchPage': () => remote.fetchPage(),
+          'fetchPage': remote.fetchPage,
           'fetchOne': () => remote.fetchOne('dg_1'),
           'delete': () => remote.delete('dg_1'),
           'connect': () => remote.connect('dg_1'),
           'disconnect': () => remote.disconnect('dg_1'),
-          'fetchLanguageTags': () => remote.fetchLanguageTags(),
+          'fetchLanguageTags': remote.fetchLanguageTags,
         };
 
         for (final MapEntry(key: route, value: call) in routes.entries) {
@@ -1251,7 +1251,6 @@ void main() {
           'languageLinks',
           [
             _link(
-              id: 'll_1',
               value: 'Brazilian',
               status: 'Resolved',
               tag: _linkTag(),
@@ -1259,7 +1258,7 @@ void main() {
               suppliedNativeName: 'Português',
               suppliedIetfTag: 'pt-BR',
             ),
-            _link(id: 'll_2', value: 'Czech'),
+            _link(id: 'll_2'),
           ],
           total: 9,
           hasMore: true,
@@ -1302,7 +1301,7 @@ void main() {
     test('an unknown link status degrades, and the row survives', () async {
       final remote = answering(
         _pagedBody('languageLinks', [
-          _link(id: 'll_1', status: 'Archived', suppliedName: 'Czech'),
+          _link(status: 'Archived', suppliedName: 'Czech'),
         ]),
       );
 
@@ -1374,7 +1373,6 @@ void main() {
       final remote = answering(
         settled(
           _link(
-            id: 'll_1',
             value: 'Brazilian',
             status: 'Resolved',
             tag: _linkTag(id: 't_1'),

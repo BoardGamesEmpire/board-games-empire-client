@@ -192,8 +192,9 @@ void main() {
       await pump(tester);
 
       await tester.pumpWidget(const SizedBox.shrink());
-      connectivity.emit(ConnectivityState.offline);
-      connectivity.emit(ConnectivityState.online);
+      connectivity
+        ..emit(ConnectivityState.offline)
+        ..emit(ConnectivityState.online);
       await tester.pump();
 
       expect(rehydrator.passes, isZero);
@@ -202,7 +203,7 @@ void main() {
     testWidgets('a composition without connectivity mounts and does nothing', (
       tester,
     ) async {
-      await pump(tester, service: null);
+      await pump(tester);
       await tester.pump();
 
       expect(rehydrator.passes, isZero);
@@ -230,7 +231,7 @@ void main() {
     });
 
     testWidgets('resume works without a connectivity service', (tester) async {
-      await pump(tester, service: null);
+      await pump(tester);
 
       await resume(tester);
 

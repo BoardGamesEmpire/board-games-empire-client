@@ -1,9 +1,8 @@
+import 'package:auth/l10n/auth_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/auth_localizations.dart';
 
 /// Button representing a single OIDC authentication provider.
 ///
@@ -36,9 +35,9 @@ import '../../l10n/auth_localizations.dart';
 /// [BgeTokens.minTapTarget].
 class OidcStrategyButton extends StatelessWidget {
   const OidcStrategyButton({
-    super.key,
     required this.strategy,
     required this.onPressed,
+    super.key,
     this.busy = false,
     this.inert = false,
     this.unavailableOnDevice = false,

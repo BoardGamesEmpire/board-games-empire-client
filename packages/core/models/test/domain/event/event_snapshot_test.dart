@@ -30,23 +30,24 @@ EventAttendee _attendee({String? userId, String? guestName}) => EventAttendee(
 
 void main() {
   group('EventSnapshot', () {
-    test('a snapshot without a roster is not the same as an unreadable one', () {
+    test('a snapshot without a roster is not the same as '
+        'an unreadable one', () {
       // `GET /events` carries no roster and `GET /events/:id` carries an empty
       // one when the caller cannot read it, so a snapshot that folded the two
       // together would let a list read stand for "nobody is coming".
       //
       // Equal inputs must compare equal first, or the inequality below would
       // hold for any two snapshots and prove nothing.
-      expect(_snapshot(attendees: null), _snapshot(attendees: null));
+      expect(_snapshot(), _snapshot());
       expect(_snapshot(attendees: const []), _snapshot(attendees: const []));
 
-      expect(_snapshot(attendees: null), isNot(_snapshot(attendees: const [])));
+      expect(_snapshot(), isNot(_snapshot(attendees: const [])));
     });
   });
 
   group('EventAttendee', () {
     test('an attendee with no user is a guest', () {
-      expect(_attendee(userId: null, guestName: 'Sam').isGuest, isTrue);
+      expect(_attendee(guestName: 'Sam').isGuest, isTrue);
     });
 
     test('an attendee with a user is not a guest', () {

@@ -3,16 +3,18 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 /// Lifecycle states for a BGE server context.
 ///
 /// State machine transitions:
-/// ```
+/// ```text
 /// disconnected → active           (user connects)
-/// active → backgrounding          (user switches away; co-active window begins)
+/// active → backgrounding          (user switches away; co-active window
+///                                  begins)
 /// backgrounding → active          (user switches back within timeout)
 /// backgrounding → monitoring      (timeout expires or battery threshold)
 /// monitoring → active             (user re-activates server)
 /// any → disconnected              (explicit disconnect or unrecoverable error)
 /// ```
 enum ConnectionState {
-  /// No connection. DB and WS are closed. Default state for newly added servers.
+  /// No connection. DB and WS are closed. Default state for newly added
+  /// servers.
   @JsonValue('Disconnected')
   disconnected,
 
@@ -21,7 +23,7 @@ enum ConnectionState {
   active,
 
   /// Co-active window after the user switched to another server.
-  /// WS and DB remain open for [DevicePreferences.backgroundingTimeoutSeconds]
+  /// WS and DB remain open for `DevicePreferences.backgroundingTimeoutSeconds`
   /// (or the per-server override). In-flight and new operations are allowed.
   /// Transitions to [monitoring] on timeout or battery threshold.
   @JsonValue('Backgrounding')

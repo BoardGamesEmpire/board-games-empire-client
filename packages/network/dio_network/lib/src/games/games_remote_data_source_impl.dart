@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/remote_failure.dart';
-import 'game_summary_json.dart';
 
 /// What a request's path names, which is what lets an application 404 mean
 /// that thing is gone. A list or write route names nothing: see
@@ -566,7 +565,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// A UUID of any version, which is what the import routes accept for a
   /// correlation id (`@IsUUID`) and a batch id (`ParseUUIDPipe`).
   static final RegExp _uuid = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+    r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
 
   void _checkUuid(String value, String name) {

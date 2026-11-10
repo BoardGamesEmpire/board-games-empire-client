@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import 'stuck_sync_op.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_op.dart';
 
 sealed class StuckSyncOpsState extends Equatable {
   const StuckSyncOpsState();

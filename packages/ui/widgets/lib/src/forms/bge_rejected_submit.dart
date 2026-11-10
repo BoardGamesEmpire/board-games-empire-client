@@ -81,11 +81,10 @@ extension BgeRejectedSubmit on FormGroup {
           node,
     ];
     if (fields.isEmpty) return;
-    final node = ReadingOrderTraversalPolicy.sort(fields).first;
     // The node, not `control.focus()`: that call is skipped whenever the
     // control believes it already has focus, and the node's own change
     // reaches the control the same way a tap on the field does.
-    node.requestFocus();
+    final node = ReadingOrderTraversalPolicy.sort(fields).first..requestFocus();
 
     // Post-frame, because the errors `markAllAsTouched` just rendered change
     // the layout and the reveal has to measure the field where it will be.

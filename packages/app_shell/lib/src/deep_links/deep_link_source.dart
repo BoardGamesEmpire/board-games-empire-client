@@ -16,7 +16,7 @@ abstract interface class DeepLinkSource {
   /// Includes the **launch link** (the URI that cold-started the app, if
   /// any) followed by links arriving while the app is running. Emitted
   /// URIs are raw and unvalidated — `bge://` or otherwise — and must go
-  /// through [normalizeDeepLink] before any routing decision. Never log
-  /// an emitted URI directly; use [redactDeepLinkForLog].
+  /// through `normalizeDeepLink` before any routing decision. Never log
+  /// an emitted URI directly; use `redactDeepLinkForLog`.
   Stream<Uri> get uris;
 }

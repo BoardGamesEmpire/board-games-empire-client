@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:models/domain.dart';
-
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../search/game_length_band.dart';
+import 'package:game_catalog/src/search/game_length_band.dart';
+import 'package:models/domain.dart';
 
 /// One fact about a game, as it is shown and as a screen reader says it.
 typedef CatalogFact = ({String shown, String spoken});

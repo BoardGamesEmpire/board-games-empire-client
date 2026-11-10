@@ -53,11 +53,10 @@ GameCollectionWithSummary _row(DateTime updatedAt) => (
     userId: 'user-1',
     platformGameId: 'pg-1',
     medium: GameMedium.physical,
-    quantity: 1,
     createdAt: DateTime.utc(2026),
     updatedAt: updatedAt,
   ),
-  summary: PlatformGameSummary(
+  summary: const PlatformGameSummary(
     id: 'pg-1',
     platformId: 'plat-1',
     platformName: 'Tabletop',
@@ -88,7 +87,7 @@ void main() {
     // ones too, so the read and both writes must answer.
     if (collection) {
       final repository = _MockGameCollectionRepository();
-      when(() => repository.removalMark()).thenAnswer((_) async => 0);
+      when(repository.removalMark).thenAnswer((_) async => 0);
       when(
         () => repository.mergeFromServer(
           any(),

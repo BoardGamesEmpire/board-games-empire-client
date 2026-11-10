@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../common/visibility.dart';
+import 'package:models/src/domain/common/visibility.dart';
 
 part 'user_preferences.freezed.dart';
 part 'user_preferences.g.dart';

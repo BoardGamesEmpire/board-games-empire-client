@@ -1,5 +1,3 @@
-library;
-
 export 'src/dto/auth/auth_response.dart';
 export 'src/dto/auth/auth_user.dart';
 export 'src/dto/auth/login_request.dart';

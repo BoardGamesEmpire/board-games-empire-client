@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'event_attendee.dart';
-import 'event_snapshot.dart';
+import 'package:models/src/domain/event/event_attendee.dart';
+import 'package:models/src/domain/event/event_snapshot.dart';
 
 part 'event_detail.freezed.dart';
 

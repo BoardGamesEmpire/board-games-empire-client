@@ -12,7 +12,7 @@ import 'package:rxdart/rxdart.dart';
 ///
 /// - **Optimistic seed.** [current] is [ConnectivityState.online]
 ///   immediately at construction.
-/// - **Eager correction.** Construction fires one [connectivityCheck];
+/// - **Eager correction.** Construction fires one `connectivityCheck`;
 ///   its result corrects the seed — unless a change event has already
 ///   arrived, in which case the (older) check result is discarded.
 /// - **Never throws.** A failing check is swallowed; the seed stands
@@ -32,7 +32,7 @@ import 'package:rxdart/rxdart.dart';
 ///   register it with no callback and the composition root's container
 ///   teardown closes it.
 ///
-/// [connectivityChanges] and [connectivityCheck] are the injectable
+/// `connectivityChanges` and `connectivityCheck` are the injectable
 /// source seams for tests (same constructor-injection shape as
 /// `PackageInfoBuildInfoReader`); production defaults come from a
 /// [Connectivity] instance.

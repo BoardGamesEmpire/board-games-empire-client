@@ -24,7 +24,7 @@ ServerConfig _serverConfig() => ServerConfig(
   serverUrl: 'https://api.example.com',
   connectionState: ConnectionState.active,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
     issuer: 'https://api.example.com',
     wellKnownSchemaVersion: 1,
@@ -128,7 +128,7 @@ class _TestExecutorFactory extends EncryptedExecutorFactory {
 }
 
 /// An in-memory executor that records whether it was closed, and whose
-/// open can be held on [opening].
+/// open can be held on `opening`.
 class _SpyExecutor extends LazyDatabase {
   _SpyExecutor({Future<void>? opening})
     : super(() async {
@@ -311,8 +311,8 @@ void main() {
         final bootstrap = buildBootstrap(
           orchestratorFactory:
               ({
-                required ServerRepository serverRepository,
-                required DevicePreferencesRepository preferencesRepository,
+                required serverRepository,
+                required preferencesRepository,
                 required contextFactory,
               }) {
                 attempts++;
@@ -340,13 +340,13 @@ void main() {
       /// An orchestrator whose initialize() activates [server] through the
       /// context factory the bootstrap composed, as the real one does, and
       /// then throws [failWith] if set.
-      NativePlatformBootstrap buildActivating({Object? Function()? failWith}) {
+      NativePlatformBootstrap buildActivating({Error? Function()? failWith}) {
         final contexts = <ServerContext>[];
         return buildBootstrap(
           orchestratorFactory:
               ({
-                required ServerRepository serverRepository,
-                required DevicePreferencesRepository preferencesRepository,
+                required serverRepository,
+                required preferencesRepository,
                 required contextFactory,
               }) {
                 final activating = _MockServerOrchestrator();
@@ -454,8 +454,8 @@ void main() {
           final bootstrap = buildBootstrap(
             orchestratorFactory:
                 ({
-                  required ServerRepository serverRepository,
-                  required DevicePreferencesRepository preferencesRepository,
+                  required serverRepository,
+                  required preferencesRepository,
                   required contextFactory,
                 }) {
                   bootContextFactory = contextFactory;
@@ -736,12 +736,12 @@ void main() {
         final primaryError = StateError('orchestrator init failed');
         final secondaryError = StateError('dispose also failed');
         final failingOrchestrator = _MockServerOrchestrator();
-        when(() => failingOrchestrator.initialize()).thenThrow(primaryError);
-        when(() => failingOrchestrator.dispose()).thenThrow(secondaryError);
+        when(failingOrchestrator.initialize).thenThrow(primaryError);
+        when(failingOrchestrator.dispose).thenThrow(secondaryError);
         final bootstrap = buildBootstrap(
           orchestratorFactory: ({
-            required ServerRepository serverRepository,
-            required DevicePreferencesRepository preferencesRepository,
+            required serverRepository,
+            required preferencesRepository,
             required contextFactory,
           }) => failingOrchestrator,
         );

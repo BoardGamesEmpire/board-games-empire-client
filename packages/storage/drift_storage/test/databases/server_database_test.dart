@@ -4,34 +4,33 @@
 // keeps the companion-construction helper available while leaving
 // matcher's `isNull` unambiguous.
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import '../support/platform_game_fixture.dart';
 
-// ── Matchers ────────────────────────────────────────────────────────────────────
+// ── Matchers ─────────────────────────────────────────────────────────────────
 
 // Match against the underlying SqliteException's message text rather
 // than its type so we don't need to import package:sqlite3 (which is a
 // transitive dep of drift, not a direct dep of drift_storage).
-final _isFkViolation = throwsA(
+final Matcher _isFkViolation = throwsA(
   predicate<Object>(
     (e) => e.toString().contains('FOREIGN KEY constraint failed'),
     'an FK constraint violation',
   ),
 );
 
-final _isUniqueViolation = throwsA(
+final Matcher _isUniqueViolation = throwsA(
   predicate<Object>(
     (e) => e.toString().contains('UNIQUE constraint failed'),
     'a UNIQUE constraint violation',
   ),
 );
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-1';
 
@@ -148,7 +147,7 @@ void main() {
       // https://drift.simonbinder.eu/guides/datetime-migrations.
       test('UTC DateTime round-trips with isUtc preserved', () async {
         await seedPlatformGame(db);
-        final ts = DateTime.utc(2025, 6, 1);
+        final ts = DateTime.utc(2025, 6);
         await db
             .into(db.gameCollectionsTable)
             .insert(_collection(id: 'col-1', deletedAt: ts));
@@ -164,7 +163,7 @@ void main() {
         await db
             .into(db.gameCollectionsTable)
             .insert(
-              _collection(id: 'col-1', deletedAt: DateTime.utc(2025, 6, 1)),
+              _collection(id: 'col-1', deletedAt: DateTime.utc(2025, 6)),
             );
         final row = await db
             .customSelect(
@@ -267,9 +266,7 @@ void main() {
       });
 
       test('permits different medium for same (user, pg)', () async {
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(_collection(id: 'col-1', medium: 'Physical'));
+        await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
         await db
             .into(db.gameCollectionsTable)
             .insert(_collection(id: 'col-2', medium: 'Digital'));
@@ -325,7 +322,7 @@ void main() {
       });
 
       test('permits the same user in different households', () async {
-        await _seedHousehold(db, id: 'h-1');
+        await _seedHousehold(db);
         await _seedHousehold(db, id: 'h-2');
 
         final now = DateTime.now().toUtc();

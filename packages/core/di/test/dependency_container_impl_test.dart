@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:di/di.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart' show GetIt;
 import 'package:interfaces/orchestration.dart';
 
@@ -14,8 +14,8 @@ class _OtherService {}
 class _Closeable implements Disposable {
   _Closeable({this.error});
 
-  final Object? error;
-  var closes = 0;
+  final Error? error;
+  int closes = 0;
 
   @override
   Future<void> onDispose() async {
@@ -54,14 +54,14 @@ void main() {
 
     group('registerLazySingleton', () {
       test('calls factory only once', () {
-        int callCount = 0;
-        container.registerLazySingleton<_FakeService>(() {
-          callCount++;
-          return _FakeService();
-        });
-
-        container.get<_FakeService>();
-        container.get<_FakeService>();
+        var callCount = 0;
+        container
+          ..registerLazySingleton<_FakeService>(() {
+            callCount++;
+            return _FakeService();
+          })
+          ..get<_FakeService>()
+          ..get<_FakeService>();
 
         expect(callCount, 1);
       });
@@ -253,7 +253,7 @@ void main() {
 
         expect(other.isRegistered<_FakeService>(), isFalse);
 
-        other.dispose();
+        unawaited(other.dispose());
       });
     });
 
@@ -291,7 +291,7 @@ void main() {
       });
 
       test('registrations made directly on the wrapped GetIt resolve '
-          'through the wrapper — the seam injectable\'s generated init '
+          "through the wrapper — the seam injectable's generated init "
           'relies on', () {
         final instance = _OtherService();
         getIt.registerSingleton<_OtherService>(instance);

@@ -1,5 +1,17 @@
 import 'dart:async';
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
+import 'package:app_shell/src/bootstrap/shell_teardown.dart';
+import 'package:app_shell/src/deep_links/deep_link_handler.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/i18n/active_locale.dart';
+import 'package:app_shell/src/observability/active_server_feedback_target_resolver.dart';
+import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
+import 'package:app_shell/src/observability/global_error_hooks.dart';
+import 'package:app_shell/src/observability/shell_observability.dart';
+import 'package:app_shell/src/widgets/bge_app.dart';
+import 'package:app_shell/src/widgets/build_error_view.dart';
 import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,19 +19,6 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../deep_links/deep_link_handler.dart';
-import '../deep_links/pending_deep_link_holder.dart';
-import '../i18n/active_locale.dart';
-import '../observability/active_server_feedback_target_resolver.dart';
-import '../observability/feedback_uncaught_error_reporter.dart';
-import '../observability/global_error_hooks.dart';
-import '../observability/shell_observability.dart';
-import '../widgets/bge_app.dart';
-import '../widgets/build_error_view.dart';
-import 'app_bootstrap_cubit.dart';
-import 'platform_bootstrap.dart';
-import 'shell_teardown.dart';
 
 /// Boots the application. This is the entire contract of each app's
 /// `main.dart`: perform platform-specific setup, then hand a
@@ -33,7 +32,7 @@ import 'shell_teardown.dart';
 /// failures — is already captured for feedback reports.
 ///
 /// Observability wiring (#8, #100): [ShellObservability.initialize] pins
-/// the root logger to [Level.ALL] (breadcrumbs keep full fidelity) and
+/// the root logger to `Level.ALL` (breadcrumbs keep full fidelity) and
 /// attaches the platform [LogSink] from
 /// [PlatformBootstrap.createLogSink], gated on the sink path by the
 /// build-mode console threshold — `BgeLogLevel.warn` in release (never
@@ -43,13 +42,13 @@ import 'shell_teardown.dart';
 ///
 /// The root container (issue #72) is the app-scope, device-global
 /// [DependencyContainer], built by the platform composition root via
-/// [PlatformBootstrap.createRootContainer]. It is acquired *before* the
-/// error hooks and before the failure-prone platform [initialize], so
-/// device-global services (client version #35, feedback #69) exist even
-/// on a failed boot. Implementations must not throw (they register
-/// degraded values instead); as a belt-and-braces guard, a throw here is
-/// breadcrumbed at error level and boot proceeds on an empty fallback —
-/// error capture is never coupled to root-container success.
+/// [PlatformBootstrap.createRootContainer]. It is acquired *before* the error
+/// hooks and before the failure-prone platform [PlatformBootstrap.initialize],
+/// so device-global services (client version #35, feedback #69) exist even on a
+/// failed boot. Implementations must not throw (they register degraded values
+/// instead); as a belt-and-braces guard, a throw here is breadcrumbed at error
+/// level and boot proceeds on an empty fallback — error capture is never
+/// coupled to root-container success.
 ///
 /// Teardown (#384) is one [ShellTeardown]: close the cubit, dispose the
 /// platform bootstrap, then the root container. Two callers share it. The
@@ -144,6 +143,9 @@ Future<void> runBgeApp({
   // (a file sink defers its directory lookup to first write).
   ShellObservability.initialize(
     sink: platformBootstrap.createLogSink(),
+    // The analyzer folds kReleaseMode to false, so this looks redundant;
+    // release needs warn.
+    // ignore: avoid_redundant_argument_values
     consoleThreshold: kReleaseMode ? BgeLogLevel.warn : BgeLogLevel.verbose,
   );
   WidgetsFlutterBinding.ensureInitialized();
@@ -190,7 +192,7 @@ Future<void> runBgeApp({
   // while a detached controller silently tracks the negotiated locale).
   // So a foreign reader means `activeLocaleController` stays null and
   // BgeApp wires no capture.
-  final ActiveLocaleController? activeLocaleController =
+  final activeLocaleController =
       rootContainer.isRegistered<ActiveLocaleReader>()
       ? null
       : ActiveLocaleController(

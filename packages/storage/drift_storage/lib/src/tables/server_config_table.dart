@@ -1,6 +1,6 @@
-import 'package:drift/drift.dart';
-
 import 'dart:convert';
+
+import 'package:drift/drift.dart';
 
 @DataClassName('ServerConfigData')
 class ServerConfigs extends Table {
@@ -20,7 +20,7 @@ class ServerConfigs extends Table {
 
   TextColumn get connectionState => text().named('connection_state')();
 
-  /// Serialized [ServerIdentity] JSON.
+  /// Serialized `ServerIdentity` JSON.
   TextColumn get cachedIdentityJson => text().named('cached_identity_json')();
 
   /// UTC timestamp of last successful identity fetch.
@@ -30,7 +30,7 @@ class ServerConfigs extends Table {
       dateTime().named('last_active_at').nullable()();
 
   /// Per-server backgrounding timeout override (seconds).
-  /// Null = use device-level [DevicePreferences] value.
+  /// Null = use device-level `DevicePreferences` value.
   IntColumn get backgroundingTimeoutSeconds =>
       integer().named('backgrounding_timeout_seconds').nullable()();
 

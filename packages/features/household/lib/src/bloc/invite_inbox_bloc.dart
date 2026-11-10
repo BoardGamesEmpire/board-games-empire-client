@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/bloc/invite_inbox_event.dart';
+import 'package:household/src/bloc/invite_inbox_state.dart';
+import 'package:household/src/bloc/invite_pages.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../invites/invite_refusal_message.dart';
-import 'household_invite_list_state.dart';
-import 'invite_inbox_event.dart';
-import 'invite_inbox_state.dart';
-import 'invite_pages.dart';
 
 /// Drives the invite inbox (#455, #454): the pending invites sent to the
 /// user, and accepting or declining them. The server leaves out an invite
@@ -19,7 +18,7 @@ import 'invite_pages.dart';
 /// on screen when it ends, as the household invite list's actions do (see
 /// `HouseholdInviteListBloc`).
 ///
-/// After an accept, [onJoined] brings the household onto the device. It is
+/// After an accept, `onJoined` brings the household onto the device. It is
 /// not awaited: the inbox has its answer, and the hydrate pass reports
 /// through its own status.
 class InviteInboxBloc extends Bloc<InviteInboxEvent, InviteInboxState> {

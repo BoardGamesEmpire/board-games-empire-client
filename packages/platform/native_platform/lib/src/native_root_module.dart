@@ -4,12 +4,11 @@ import 'package:dio_network/dio_network.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:native_platform/src/build_info/package_info_build_info_reader.dart';
+import 'package:native_platform/src/device_info/native_device_info_reader.dart';
+import 'package:native_platform/src/feedback/file_feedback_sink.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'build_info/package_info_build_info_reader.dart';
-import 'device_info/native_device_info_reader.dart';
-import 'feedback/file_feedback_sink.dart';
 
 /// Registers the shared native (mobile + desktop) device-global services
 /// into the root container (#72).
@@ -44,7 +43,7 @@ import 'feedback/file_feedback_sink.dart';
 /// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free —
 /// per-platform implementations replace this registration in #111/#112),
 /// and the #36 server-onboarding pair:
-/// [WellKnownClient] (lazy; its dedicated unauthenticated [Dio] is not
+/// [WellKnownClient] (lazy; its dedicated unauthenticated `Dio` is not
 /// built until a boot with no server needs server-add) and
 /// [VersionNegotiator]
 /// (stateless, const). Both are **root**-scope by necessity: server-add

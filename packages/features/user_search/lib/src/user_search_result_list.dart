@@ -5,8 +5,8 @@ import 'package:ui/ui.dart';
 
 import 'package:user_search/l10n/user_search_localizations.dart';
 
-import 'user_search_bloc.dart';
-import 'user_search_state.dart';
+import 'package:user_search/src/user_search_bloc.dart';
+import 'package:user_search/src/user_search_state.dart';
 
 /// What a user search found, as rows to pick from (#455, #499).
 ///
@@ -29,7 +29,7 @@ class UserSearchResultList extends StatelessWidget {
     super.key,
   });
 
-  /// Whether [user] is picked. A picked user's row is selected and checked.
+  /// Whether `user` is picked. A picked user's row is selected and checked.
   final bool Function(UserSummary user) isPicked;
 
   /// Called with the user whose row is tapped. Null while the caller can take
@@ -37,7 +37,7 @@ class UserSearchResultList extends StatelessWidget {
   /// can be tapped.
   final void Function(UserSummary user)? onPick;
 
-  /// The key of the row for the user with [userId]. The caller's, so that its
+  /// The key of the row for the user with `userId`. The caller's, so that its
   /// tests keep finding rows by the keys they already use.
   final Key Function(String userId) resultKey;
 

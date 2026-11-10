@@ -56,9 +56,9 @@ const _forbidden = EventRemoteForbiddenException('hidden', statusCode: 403);
 const _offline = EventRemoteTransientException('offline');
 const _rejected = EventRemotePermanentException('bad', statusCode: 400);
 
-const _available = AvailabilityResponse.available;
-const _maybe = AvailabilityResponse.maybe;
-const _unavailable = AvailabilityResponse.unavailable;
+const AvailabilityResponse _available = AvailabilityResponse.available;
+const AvailabilityResponse _maybe = AvailabilityResponse.maybe;
+const AvailabilityResponse _unavailable = AvailabilityResponse.unavailable;
 
 const _idle = EventPollState();
 const _loading = EventPollState(load: EventPollLoad.loading);
@@ -608,15 +608,16 @@ void main() {
       ]);
     });
 
-    for (final (name, error, result) in <(String, Object, EventActionResult)>[
-      (
-        'a 400 is changed and drops the pending answer',
-        _conflict,
-        EventActionResult.changed,
-      ),
-      ('a 403 is refused', _refused, EventActionResult.refused),
-      ('a 404 is gone', _gone, EventActionResult.gone),
-    ]) {
+    for (final (name, error, result)
+        in <(String, EventRemoteException, EventActionResult)>[
+          (
+            'a 400 is changed and drops the pending answer',
+            _conflict,
+            EventActionResult.changed,
+          ),
+          ('a 403 is refused', _refused, EventActionResult.refused),
+          ('a 404 is gone', _gone, EventActionResult.gone),
+        ]) {
       test(name, () async {
         final now = _summaryOf(const {});
         final remote = serving(voted: (_) => throw error, summary: (_) => now);
@@ -641,7 +642,7 @@ void main() {
       });
     }
 
-    for (final (kind, error) in <(String, Object)>[
+    for (final (kind, error) in <(String, EventRemoteException)>[
       ('transient', _offline),
       ('permanent', _rejected),
     ]) {
@@ -686,7 +687,7 @@ void main() {
   });
 
   group('a queued answer', () {
-    for (final (kind, error) in <(String, Object)>[
+    for (final (kind, error) in <(String, EventRemoteException)>[
       ('transient', _offline),
       ('permanent', _rejected),
     ]) {
@@ -850,7 +851,7 @@ void main() {
           ('a gone', (_) => throw _gone),
         ]) {
       blocTest<EventPollBloc, EventPollState>(
-        '$name answered after the session moved is another user\'s, and the '
+        "$name answered after the session moved is another user's, and the "
         'read is failed, keeping the last summary',
         build: () => build(
           serving(summary: summary),

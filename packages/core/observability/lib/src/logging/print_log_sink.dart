@@ -1,7 +1,7 @@
 import 'package:logging/logging.dart';
 
-import 'log_record_formatter.dart';
-import 'log_sink.dart';
+import 'package:observability/src/logging/log_record_formatter.dart';
+import 'package:observability/src/logging/log_sink.dart';
 
 /// A [LogSink] that writes flat formatted lines through a print function —
 /// the web console sink (issue #100).
@@ -22,6 +22,7 @@ class PrintLogSink implements LogSink {
   final LogRecordFormatter _formatter;
 
   static void _defaultOut(String line) {
+    // The sink's whole job is writing a line to stdout.
     // ignore: avoid_print
     print(line);
   }

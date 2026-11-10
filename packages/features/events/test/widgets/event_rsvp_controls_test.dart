@@ -13,14 +13,15 @@ import '../support/event_list_items.dart';
 
 const _onlineOnlyCopy = "Available when you're online";
 
-const _going = EventParticipationStatus.attending;
-const _maybe = EventParticipationStatus.maybe;
-const _notGoing = EventParticipationStatus.notAttending;
-const _invited = EventParticipationStatus.invited;
-const _unknown = EventParticipationStatus.unknown;
+const EventParticipationStatus _going = EventParticipationStatus.attending;
+const EventParticipationStatus _maybe = EventParticipationStatus.maybe;
+const EventParticipationStatus _notGoing =
+    EventParticipationStatus.notAttending;
+const EventParticipationStatus _invited = EventParticipationStatus.invited;
+const EventParticipationStatus _unknown = EventParticipationStatus.unknown;
 
 /// The answers that have a chip, in the order they show.
-const _answers = [
+const List<(EventParticipationStatus, String)> _answers = [
   (_going, 'Going'),
   (_maybe, 'Maybe'),
   (_notGoing, 'Not going'),
@@ -42,7 +43,7 @@ EventAttendee _me(EventParticipationStatus status, {String? notes}) =>
 Finder _chip(EventParticipationStatus status) =>
     find.byKey(EventDetailScreen.rsvpAnswerKey(status));
 
-final _noteButton = find.byKey(EventDetailScreen.rsvpNoteKey);
+final Finder _noteButton = find.byKey(EventDetailScreen.rsvpNoteKey);
 
 ChoiceChip _chipOf(WidgetTester tester, EventParticipationStatus status) =>
     tester.widget<ChoiceChip>(_chip(status));

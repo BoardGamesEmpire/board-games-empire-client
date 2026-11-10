@@ -6,11 +6,11 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart'
     show
         FlutterMemoryAllocations,
-        ValueListenable,
-        ValueNotifier,
         ObjectCreated,
         ObjectDisposed,
         ObjectEvent,
+        ValueListenable,
+        ValueNotifier,
         precisionErrorTolerance;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
@@ -121,8 +121,8 @@ void main() {
   void listing(
     Map<LanguageLinkFilter, List<LanguageLink>> byFilter, {
     bool hasMore = false,
-  }) => remote.onFetchLanguageLinks = (_, statuses, page, _) async =>
-      linkPageOf(
+  }) =>
+      remote.onFetchLanguageLinks = (_, statuses, page, _) async => linkPageOf(
         byFilter[filterOf(statuses)] ?? const [],
         page: page,
         hasMore: hasMore,
@@ -162,8 +162,9 @@ void main() {
       ),
     );
     // A DataGateway with little to say, so the worklist sits high on the page.
-    remote.onFetchOne = (id) async => gateway(id, name: 'BGG');
-    remote.onFetchLanguageTags = (_, _, _) async => tagPageOf([czech, slovak]);
+    remote
+      ..onFetchOne = ((id) async => gateway(id, name: 'BGG'))
+      ..onFetchLanguageTags = (_, _, _) async => tagPageOf([czech, slovak]);
   });
 
   Widget app(
@@ -1293,12 +1294,13 @@ void main() {
       tester,
     ) async {
       var detailRead = 0;
-      remote.onFetchOne = (id) async {
-        if (++detailRead == 1) return gateway(id, name: 'BGG');
-        throw const DataGatewayNotFoundException('gone', statusCode: 404);
-      };
-      remote.onFetchLanguageLinks = (_, _, _, _) async =>
+      remote
+        ..onFetchOne = (id) async {
+          if (++detailRead == 1) return gateway(id, name: 'BGG');
           throw const DataGatewayNotFoundException('gone', statusCode: 404);
+        }
+        ..onFetchLanguageLinks = (_, _, _, _) async =>
+            throw const DataGatewayNotFoundException('gone', statusCode: 404);
 
       await pumpScreen(tester);
 
@@ -1312,10 +1314,11 @@ void main() {
       final worklistRead = Completer<PaginatedResult<LanguageLink>>();
       final detailAgain = Completer<DataGateway>();
       var detailRead = 0;
-      remote.onFetchOne = (id) => ++detailRead == 1
-          ? Future.value(gateway(id, name: 'BGG'))
-          : detailAgain.future;
-      remote.onFetchLanguageLinks = (_, _, _, _) => worklistRead.future;
+      remote
+        ..onFetchOne = ((id) => ++detailRead == 1
+            ? Future.value(gateway(id, name: 'BGG'))
+            : detailAgain.future)
+        ..onFetchLanguageLinks = (_, _, _, _) => worklistRead.future;
       await pumpScreen(tester, settle: false);
       expect(find.byKey(DataGatewayDetailScreen.nameKey), findsOneWidget);
 
@@ -1641,19 +1644,17 @@ void main() {
           ..physicalSize = const Size(800, 2400);
         addTearDown(tester.view.reset);
         await tester.pumpWidget(app(const Scaffold(body: Text('below'))));
-        unawaited(
-          tester
-              .state<NavigatorState>(find.byType(Navigator))
-              .push(
-                MaterialPageRoute<void>(
-                  builder: (_) => DataGatewayDetailScreen(
-                    remote: remote,
-                    id: 'dg_1',
-                    access: access,
-                  ),
+        tester
+            .state<NavigatorState>(find.byType(Navigator))
+            .push(
+              MaterialPageRoute<void>(
+                builder: (_) => DataGatewayDetailScreen(
+                  remote: remote,
+                  id: 'dg_1',
+                  access: access,
                 ),
               ),
-        );
+            );
         await tester.pumpAndSettle();
         await focusOn(tester, back);
         expect(focusIsIn(tester, find.byType(BackButton)), isTrue);
@@ -1743,7 +1744,7 @@ void main() {
     });
 
     testWidgets("a focused menu keeps focus when the DataGateway's own banner "
-        'arrives in the footer, above the worklist\'s place there', (
+        "arrives in the footer, above the worklist's place there", (
       tester,
     ) async {
       listing({
@@ -1976,7 +1977,7 @@ void main() {
       expect(focusIsIn(tester, menu('c')), isTrue);
     });
 
-    testWidgets("a read that takes the row with focus leaves focus alone when "
+    testWidgets('a read that takes the row with focus leaves focus alone when '
         "the row in its place isn't built", (tester) async {
       final longList = [for (var n = 1; n <= 40; n++) languageLink('r$n')];
       reads([
@@ -2124,11 +2125,12 @@ void main() {
 
     testWidgets('focus comes back once for an action', (tester) async {
       var read = 0;
-      remote.onFetchLanguageLinks = (_, _, _, _) async =>
-          linkPageOf([a, b, if (++read > 1) c]);
-      // Answered as still waiting, so the row stays and takes focus back.
-      remote.onIgnoreLanguageLink = (_, _) async =>
-          a.copyWith(status: LanguageLinkStatus.pending);
+      remote
+        ..onFetchLanguageLinks = ((_, _, _, _) async =>
+            linkPageOf([a, b, if (++read > 1) c]))
+        // Answered as still waiting, so the row stays and takes focus back.
+        ..onIgnoreLanguageLink = (_, _) async =>
+            a.copyWith(status: LanguageLinkStatus.pending);
       await pumpScreen(tester);
 
       await chooseByKeyboard(tester, 'a', LanguageLinkWorklist.ignoreKey);
@@ -2148,10 +2150,11 @@ void main() {
     testWidgets('an action asked for while more is out starts, and more goes '
         'on saying it is loading', (tester) async {
       final firstPage = [for (var n = 1; n <= 50; n++) languageLink('r$n')];
-      remote.onFetchLanguageLinks = (_, _, page, _) => page == 1
-          ? Future.value(linkPageOf(firstPage, hasMore: true))
-          : Completer<PaginatedResult<LanguageLink>>().future;
-      remote.onIgnoreLanguageLink = (_, _) => Completer<LanguageLink>().future;
+      remote
+        ..onFetchLanguageLinks = ((_, _, page, _) => page == 1
+            ? Future.value(linkPageOf(firstPage, hasMore: true))
+            : Completer<PaginatedResult<LanguageLink>>().future)
+        ..onIgnoreLanguageLink = (_, _) => Completer<LanguageLink>().future;
       await pumpScreen(tester);
 
       await bringIntoView(tester, moreButton);
@@ -2775,15 +2778,13 @@ void main() {
       });
       await pumpScreen(tester);
 
-      unawaited(
-        tester
-            .state<NavigatorState>(find.byType(Navigator))
-            .push(
-              MaterialPageRoute<void>(
-                builder: (_) => const Scaffold(body: Text('a page on top')),
-              ),
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('a page on top')),
             ),
-      );
+          );
       await tester.pumpAndSettle();
       expect(linkReads(), hasLength(1));
 

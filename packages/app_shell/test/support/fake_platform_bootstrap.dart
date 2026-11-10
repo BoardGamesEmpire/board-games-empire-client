@@ -8,7 +8,7 @@ import 'spy_root_container.dart';
 
 /// Scriptable [PlatformBootstrap] for shell tests.
 ///
-/// [outcomes] is consumed in order by successive [initialize] calls; each
+/// `outcomes` is consumed in order by successive [initialize] calls; each
 /// entry is either a [BootstrapResult] (returned) or an error object
 /// (thrown). The final entry repeats once the list is exhausted. With no
 /// outcomes configured, [initialize] succeeds with
@@ -17,7 +17,7 @@ import 'spy_root_container.dart';
 /// [createRootContainer] (#72) is scripted via [rootContainerOutcome]: a
 /// [DependencyContainer] is returned as-is, any other object is thrown,
 /// and `null` (the default) builds a fresh [SpyRootContainer] — the real
-/// [DependencyContainerImpl] with dispose spying, so tests exercise
+/// `DependencyContainerImpl` with dispose spying, so tests exercise
 /// production container semantics. [onCreateRootContainer] fires
 /// synchronously at the start of the call — the probe point sequencing
 /// tests use to observe process globals (e.g. "error hooks not installed
@@ -142,7 +142,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
 
   @override
   Future<HydratedStorageDirectory> hydratedStorageDirectory() async =>
-      HydratedStorageDirectory('unused-in-tests');
+      const HydratedStorageDirectory('unused-in-tests');
 
   @override
   Future<void> dispose() async {

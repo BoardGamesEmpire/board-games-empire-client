@@ -27,7 +27,7 @@ void main() {
     });
 
     test('a summary that says nothing of the roster does not withhold it', () {
-      expect(AvailabilitySummary(occurrences: const []).rosterVisible, isTrue);
+      expect(const AvailabilitySummary(occurrences: []).rosterVisible, isTrue);
     });
   });
 }

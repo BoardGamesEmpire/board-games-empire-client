@@ -10,7 +10,7 @@ class FakeGamePool implements HouseholdRemoteDataSource {
   /// The size of each read, in order.
   final List<int> reads = [];
 
-  /// Answers every read. Unset, the pool holds [GamePoolSample.gameCount] of 0.
+  /// Answers every read. Unset, the pool holds `GamePoolSample.gameCount` of 0.
   Future<GamePoolSample> Function(int size)? onSample;
 
   /// Every read answers a pool of [gameCount] games.

@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// Remote data source for the staff households section (#685).
 ///
@@ -116,6 +116,8 @@ sealed class AdminHouseholdRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

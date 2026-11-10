@@ -1,6 +1,5 @@
+import 'package:events/src/sync/event_hydrator.dart';
 import 'package:hydration/hydration.dart';
-
-import 'event_hydrator.dart';
 
 /// The event hydrate's status: what the event screens read to tell a cache
 /// that is *filling* from one that is *empty*, and rows that are current from

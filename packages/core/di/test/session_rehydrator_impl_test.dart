@@ -10,7 +10,7 @@ class _Entry {
   bool stale;
   int runs = 0;
   Completer<void>? gate;
-  Object? throwOnRun;
+  Error? throwOnRun;
 
   bool isStale() => stale;
 
@@ -215,11 +215,8 @@ void main() {
     test('the rejected duplicate does not displace the original', () async {
       final original = _Entry();
       add('household', original);
-      try {
-        add('household', _Entry());
-      } on ArgumentError {
-        // The point of the test is what survives the throw.
-      }
+      // The point of the test is what survives the throw.
+      expect(() => add('household', _Entry()), throwsArgumentError);
 
       await rehydrator.rehydrateStale();
 

@@ -41,6 +41,8 @@ void main() {
 
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
+        // The coverage report is the test's output: partial coverage is
+        // surfaced, not failed.
         // ignore: avoid_print
         print(report.describe());
       }

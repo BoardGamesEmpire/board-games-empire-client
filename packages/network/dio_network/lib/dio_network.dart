@@ -1,5 +1,3 @@
-library;
-
 export 'src/auth/auth_repository_impl.dart';
 export 'src/auth/rate_limited.dart';
 export 'src/auth/session_read_status.dart';

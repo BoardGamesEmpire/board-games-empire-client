@@ -18,10 +18,9 @@
 
 import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/feedback/feedback_dio_transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
-
-import 'package:dio_network/src/feedback/feedback_dio_transport.dart';
 
 const _kHtml = '<!doctype html><html><body>Sign in to continue</body></html>';
 const _kTruncated = '{"id":"fr_123","status":"acce';
@@ -232,7 +231,7 @@ void main() {
     });
 
     group('the isolate offload path', () {
-      test('a truncated body above decodeJsonBody\'s 50 KB threshold still '
+      test("a truncated body above decodeJsonBody's 50 KB threshold still "
           'classifies transient with its status, and the FormatException '
           'identity survives the isolate hop', () async {
         final big = '{"reports":[${'{"id":"fr_1"},' * 4000}';

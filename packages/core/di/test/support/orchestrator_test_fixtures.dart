@@ -57,19 +57,19 @@ MockServerContext mockServerContext(
   if (container != null) {
     when(() => ctx.container).thenReturn(container);
   }
-  when(() => ctx.activate()).thenAnswer((_) async {
+  when(ctx.activate).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.active);
   });
-  when(() => ctx.background()).thenAnswer((_) async {
+  when(ctx.background).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.backgrounding);
   });
-  when(() => ctx.suspend()).thenAnswer((_) async {
+  when(ctx.suspend).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.monitoring);
   });
-  when(() => ctx.dispose()).thenAnswer((_) async {
+  when(ctx.dispose).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.disposed);
   });
-  when(() => ctx.watchState())
+  when(ctx.watchState)
       .thenAnswer((_) => Stream.value(ServerContextState.active));
   return ctx;
 }
@@ -90,9 +90,9 @@ MockServerContext mockServerContext(
 stubbedOrchestrator({bool withContainers = false}) {
   final repo = MockServerRepository();
   final prefsRepo = MockDevicePreferencesRepository();
-  when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
-  when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
-  when(() => repo.getAllServers()).thenAnswer((_) async => []);
+  when(prefsRepo.get).thenAnswer((_) async => const DevicePreferences());
+  when(repo.getConnectedServers).thenAnswer((_) async => []);
+  when(repo.getAllServers).thenAnswer((_) async => []);
   when(
     () => repo.updateConnectionState(
       serverId: any(named: 'serverId'),

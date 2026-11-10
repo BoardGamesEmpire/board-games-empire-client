@@ -23,7 +23,7 @@ import '../support/fixed_clock.dart';
 class _FakeKeyService implements EncryptionKeyService {
   final Map<String, String> _keys = {};
   var _counter = 0;
-  var deletedServerKeys = 0;
+  int deletedServerKeys = 0;
 
   /// When set, every server-key call fails as a key store that can't be
   /// reached.
@@ -145,7 +145,7 @@ ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   serverUrl: 'https://api.example.com',
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
     issuer: 'https://api.example.com',
     wellKnownSchemaVersion: 1,
@@ -224,7 +224,7 @@ void main() {
       addTearDown(() async {
         try {
           await failing.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
       await expectLater(
         failing.customSelect('SELECT 1').get(),
@@ -346,8 +346,9 @@ void main() {
         'across a retry', () async {
       await makeInstaller().install(container, config);
       await container.dispose();
-      keys.loseServerKey(config.bgeServerId);
-      keys.cannotCreate = true;
+      keys
+        ..loseServerKey(config.bgeServerId)
+        ..cannotCreate = true;
 
       final events = <DatabaseRecoveryEvent>[];
       await expectLater(

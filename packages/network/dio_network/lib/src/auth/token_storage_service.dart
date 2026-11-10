@@ -273,7 +273,7 @@ class TokenStorageService {
     if (raw == null) return null;
     try {
       return _decode(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
+    } on Object catch (_) {
       await clear();
       return null;
     }
@@ -411,7 +411,7 @@ class TokenStorageService {
     if (value is! Map<String, dynamic>) return null;
     try {
       return AuthUser.fromJson(value);
-    } catch (_) {
+    } on Object catch (_) {
       return null;
     }
   }
@@ -423,7 +423,7 @@ class TokenStorageService {
 /// remembers about the session — including a user snapshot that is PII.
 /// Time-dependent questions take an explicit `now` rather than reading a
 /// clock, so this stays a pure value object and the caller's per-server
-/// [ClockService] remains the single time authority.
+/// `ClockService` remains the single time authority.
 @immutable
 class StoredSession {
   const StoredSession({

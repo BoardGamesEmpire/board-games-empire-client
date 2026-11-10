@@ -1,4 +1,4 @@
-import '../orchestration/server_context.dart';
+import 'package:interfaces/src/orchestration/server_context.dart';
 
 /// A single exportable category of the current user's data (GDPR
 /// Article 20 — right to data portability, #11).

@@ -23,10 +23,12 @@ abstract class NotificationSummaryRepository {
   /// is removed from the device.
   Future<void> deleteAllForServer(String localServerId);
 
-  /// Returns all unread notification summaries ordered by [receivedAt] desc.
+  /// Returns all unread notification summaries ordered by
+  /// [NotificationSummary.receivedAt] desc.
   Future<List<NotificationSummary>> getUnread();
 
-  /// Returns all summaries for a specific server ordered by [receivedAt] desc.
+  /// Returns all summaries for a specific server ordered by
+  /// [NotificationSummary.receivedAt] desc.
   Future<List<NotificationSummary>> getForServer(String localServerId);
 
   /// Total unread count across all servers. Powers the app badge.
@@ -35,7 +37,8 @@ abstract class NotificationSummaryRepository {
   /// Unread count for a specific server. Powers per-server badges.
   Future<int> getUnreadCountForServer(String localServerId);
 
-  /// Stream of all notifications ordered by [receivedAt] desc.
+  /// Stream of all notifications ordered by
+  /// [NotificationSummary.receivedAt] desc.
   /// Emits on any change (add, mark-read, delete).
   Stream<List<NotificationSummary>> watchAll();
 

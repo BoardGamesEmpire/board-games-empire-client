@@ -6,8 +6,8 @@ import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
-import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import 'support/orchestrator_test_fixtures.dart';
 
@@ -23,8 +23,8 @@ class _CountedInstaller implements ServerScopeInstaller {
   final Set<int> failOnCalls;
 
   /// Thrown on a failing call; a `StateError` when null.
-  final Object? error;
-  var calls = 0;
+  final Exception? error;
+  int calls = 0;
 
   @override
   Future<void> install(
@@ -33,14 +33,16 @@ class _CountedInstaller implements ServerScopeInstaller {
   ) async {
     calls++;
     if (failOnCalls.contains(calls)) {
-      throw error ?? StateError('installer boom #$calls');
+      final error = this.error;
+      if (error != null) throw error;
+      throw StateError('installer boom #$calls');
     }
   }
 }
 
 /// Disposes nothing until asked; records whether it was.
 class _DisposalRecordingInstaller implements ServerScopeInstaller {
-  var disposed = false;
+  bool disposed = false;
 
   @override
   Future<void> install(
@@ -162,7 +164,7 @@ void main() {
     // as a retryable error, and the server stays registered as connected
     // so the next attempt restores it.
     group('when the key store cannot be reached', () {
-      test('a failing restore fails initialize and keeps the server\'s '
+      test("a failing restore fails initialize and keeps the server's "
           'persisted state', () async {
         final server = testServerConfig(id: 'a', state: ConnectionState.active);
         installersById['a'] = _CountedInstaller(
@@ -185,7 +187,7 @@ void main() {
         );
       });
 
-      test('a failing promotion fails initialize and keeps the server\'s '
+      test("a failing promotion fails initialize and keeps the server's "
           'persisted state', () async {
         final server = testServerConfig(id: 'a', state: ConnectionState.active);
         installersById['a'] = _CountedInstaller(
@@ -244,7 +246,7 @@ void main() {
             .thenAnswer((_) async => []);
         when(() => serverRepository.getAllServers()).thenAnswer(
           (_) async => [
-            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+            testServerConfig(id: 'a'),
           ],
         );
 
@@ -274,7 +276,7 @@ void main() {
         when(() => serverRepository.getAllServers()).thenAnswer(
           (_) async => [
             testServerConfig(id: 'a', state: ConnectionState.active),
-            testServerConfig(id: 'b', state: ConnectionState.disconnected),
+            testServerConfig(id: 'b'),
           ],
         );
 
@@ -299,7 +301,7 @@ void main() {
         // The failed restore persisted it as disconnected.
         when(() => serverRepository.getAllServers()).thenAnswer(
           (_) async => [
-            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+            testServerConfig(id: 'a'),
           ],
         );
 
@@ -316,7 +318,7 @@ void main() {
           .thenAnswer((_) async => []);
       when(() => serverRepository.getAllServers()).thenAnswer(
         (_) async => [
-          testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          testServerConfig(id: 'a'),
         ],
       );
 
@@ -344,7 +346,7 @@ void main() {
             .thenAnswer((_) async => []);
         when(() => serverRepository.getAllServers()).thenAnswer(
           (_) async => [
-            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+            testServerConfig(id: 'a'),
           ],
         );
 
@@ -371,7 +373,7 @@ void main() {
           .thenAnswer((_) async => []);
       when(() => serverRepository.getAllServers()).thenAnswer(
         (_) async => [
-          testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          testServerConfig(id: 'a'),
         ],
       );
 
@@ -400,15 +402,13 @@ void main() {
           .thenAnswer((_) async => []);
       when(() => serverRepository.getAllServers()).thenAnswer(
         (_) async => [
-          testServerConfig(id: 'c', state: ConnectionState.disconnected),
+          testServerConfig(id: 'c'),
           testServerConfig(
             id: 'a',
-            state: ConnectionState.disconnected,
-          ).copyWith(lastActiveAt: DateTime.utc(2026, 1, 1)),
+          ).copyWith(lastActiveAt: DateTime.utc(2026)),
           testServerConfig(
             id: 'b',
-            state: ConnectionState.disconnected,
-          ).copyWith(lastActiveAt: DateTime.utc(2026, 2, 1)),
+          ).copyWith(lastActiveAt: DateTime.utc(2026, 2)),
         ],
       );
 
@@ -433,8 +433,8 @@ void main() {
           .thenAnswer((_) async => []);
       when(() => serverRepository.getAllServers()).thenAnswer(
         (_) async => [
-          testServerConfig(id: 'a', state: ConnectionState.disconnected),
-          testServerConfig(id: 'b', state: ConnectionState.disconnected),
+          testServerConfig(id: 'a'),
+          testServerConfig(id: 'b'),
         ],
       );
 

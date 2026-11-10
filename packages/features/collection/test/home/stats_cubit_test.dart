@@ -280,9 +280,7 @@ void main() {
     });
 
     test('a null households stream is hidden, and asks for nothing', () async {
-      final cubit = build(withHouseholds: false);
-
-      cubit.reload();
+      final cubit = build(withHouseholds: false)..reload();
       await _settle();
 
       expect(cubit.state.households, const HouseholdStatHidden());
@@ -818,8 +816,9 @@ void main() {
       households.add(const []);
       collectionHydration.add(_landed);
       householdHydration.add(_landed);
-      connectivity.change(ConnectivityState.offline);
-      connectivity.change(ConnectivityState.online);
+      connectivity
+        ..change(ConnectivityState.offline)
+        ..change(ConnectivityState.online);
       cubit.reload();
       await _settle();
 

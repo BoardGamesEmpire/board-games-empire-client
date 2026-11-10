@@ -25,7 +25,7 @@ void main() {
   EventOccurrence date(OccurrenceStatus status, {int sortOrder = 0}) =>
       confirmed(
         'o-$sortOrder',
-        DateTime.utc(2026, 11, 1),
+        DateTime.utc(2026, 11),
         sortOrder: sortOrder,
       ).copyWith(status: status);
 
@@ -229,7 +229,7 @@ void main() {
     test('is one past the highest', () {
       expect(
         nextSortOrder([
-          date(OccurrenceStatus.proposed, sortOrder: 0),
+          date(OccurrenceStatus.proposed),
           date(OccurrenceStatus.proposed, sortOrder: 5),
           date(OccurrenceStatus.proposed, sortOrder: 2),
         ]),

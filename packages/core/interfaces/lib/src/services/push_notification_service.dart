@@ -6,7 +6,7 @@ import 'package:models/domain.dart';
 /// app install, and notifications can arrive while any given
 /// `ServerContext` is suspended or monitoring — so this surface must
 /// not live inside a server scope. Per-server *registration* is the
-/// separate, per-scope [PushRegistrar]: the two are deliberately split
+/// separate, per-scope `PushRegistrar`: the two are deliberately split
 /// so this service never needs a server's authenticated client and the
 /// registrar never needs platform machinery.
 ///
@@ -33,7 +33,7 @@ abstract interface class PushNotificationService {
   ///
   /// Just-in-time only: called when the user opts into a push-needing
   /// feature (e.g. enabling chat notifications), never at app startup.
-  /// Deliberately separate from [PushRegistrar.register] to keep the
+  /// Deliberately separate from `PushRegistrar.register` to keep the
   /// prompt tied to user intent. Returns the resulting status.
   ///
   /// When [isPlatformSupported] is `false`, the returned [Future]

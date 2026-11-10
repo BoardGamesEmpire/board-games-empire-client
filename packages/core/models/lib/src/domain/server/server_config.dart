@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'connection_state.dart';
-import 'server_identity.dart';
+import 'package:models/src/domain/server/connection_state.dart';
+import 'package:models/src/domain/server/server_identity.dart';
 
 part 'server_config.freezed.dart';
 part 'server_config.g.dart';
@@ -16,8 +16,6 @@ part 'server_config.g.dart';
 /// server.
 @freezed
 abstract class ServerConfig with _$ServerConfig {
-  const ServerConfig._();
-
   const factory ServerConfig({
     /// Client-generated local identifier (cuid). Root DB primary key.
     required String id,
@@ -36,13 +34,14 @@ abstract class ServerConfig with _$ServerConfig {
     DateTime? lastActiveAt,
 
     /// Per-server backgrounding timeout override (seconds).
-    /// Null = use the device-level [DevicePreferences] default.
+    /// Null = use the device-level `DevicePreferences` default.
     int? backgroundingTimeoutSeconds,
 
     @Default({}) Map<String, dynamic> metadata,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _ServerConfig;
+  const ServerConfig._();
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) =>
       _$ServerConfigFromJson(json);

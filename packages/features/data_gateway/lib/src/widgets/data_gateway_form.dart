@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 
 /// The add and edit form for a DataGateway (#41): a name, the address and
 /// port the server dials, and an optional description.
@@ -30,9 +29,9 @@ class DataGatewayForm extends StatefulWidget {
   const DataGatewayForm({
     required this.onSubmit,
     required this.submitLabel,
-    this.initial,
     required this.maySave,
     required this.accessKnown,
+    this.initial,
     this.submitting = false,
     this.failure,
     this.onEdited,
@@ -157,7 +156,7 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     _actions.dispose();
     super.dispose();

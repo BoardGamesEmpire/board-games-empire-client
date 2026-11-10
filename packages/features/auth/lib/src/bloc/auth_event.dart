@@ -1,9 +1,8 @@
+import 'package:auth/src/bloc/auth_bloc_state.dart' show SignOutCause;
 import 'package:equatable/equatable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart' show OidcStrategy;
 import 'package:observability/observability.dart';
-
-import 'auth_bloc_state.dart' show SignOutCause;
 
 sealed class AuthEvent extends Equatable {
   const AuthEvent();
@@ -93,7 +92,7 @@ final class AuthRegisterRequested extends AuthEvent {
 final class AuthSignOutRequested extends AuthEvent {
   const AuthSignOutRequested({this.cause = SignOutCause.user});
 
-  /// Carried through to the [AuthUnauthenticated] this produces (#142).
+  /// Carried through to the `AuthUnauthenticated` this produces (#142).
   /// Defaults to [SignOutCause.user]: every dispatch but one is the user's
   /// own. The exception is the shell's recovery from a failed user-scope
   /// activation, which passes [SignOutCause.sessionLost]: the user didn't
@@ -107,15 +106,15 @@ final class AuthSignOutRequested extends AuthEvent {
 /// Internal — re-checks a session that was entered without server
 /// confirmation (#98).
 ///
-/// Dispatched by [AuthBloc] when [ConnectivityService] reports that
+/// Dispatched by `AuthBloc` when `ConnectivityService` reports that
 /// connectivity has returned. Not a user-facing action: the handler no-ops
-/// unless the current state is an [AuthAuthenticated] carrying
+/// unless the current state is an `AuthAuthenticated` carrying
 /// [SessionVerification.unverifiedOffline], so it is safe to fire
 /// speculatively — which matters, because `watch()` replays the current
 /// connectivity state to every new subscriber.
 ///
 /// Deliberately distinct from [AuthSessionCheckRequested] rather than
-/// reusing it. The startup check emits [AuthSessionCheckInProgress] and
+/// reusing it. The startup check emits `AuthSessionCheckInProgress` and
 /// owns the gate's splash; revalidation happens while the user is inside
 /// the app and must not send them back to a splash to re-verify a session
 /// they are actively using.
@@ -145,7 +144,7 @@ final class AuthRepositoryStateChanged extends AuthEvent {
   String toString() => 'AuthRepositoryStateChanged(${repoState.runtimeType})';
 }
 
-/// Retires an [AuthOperationFailure] that is no longer about anything the
+/// Retires an `AuthOperationFailure` that is no longer about anything the
 /// user can still see.
 ///
 /// The failure surface is an inline banner bound to bloc state (#191), so

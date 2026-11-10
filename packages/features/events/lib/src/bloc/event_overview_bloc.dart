@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/overview/event_groups.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../overview/event_groups.dart';
-import 'event_overview_event.dart';
-import 'event_overview_state.dart';
 
 /// Drives the events overview and each group's page (#497), home's upcoming
 /// section (#613) and a household's events on its screen (#503): the cached
@@ -35,19 +34,19 @@ import 'event_overview_state.dart';
 /// and a retry reads the cache again. Only rows clear it; a hydrate result
 /// is an annotation, not data.
 ///
-/// A null [hydration] stream means there is no hydrate to wait for, which
+/// A null `hydration` stream means there is no hydrate to wait for, which
 /// reads as settled rather than as loading forever.
 ///
 /// ## Whose events
 ///
-/// The cache read is the user's own list unless [items] makes another. A
+/// The cache read is the user's own list unless `items` makes another. A
 /// household's section reads that household's events through it (#503),
 /// with that household's pass as its hydrate. A retry's new subscription
 /// is made by the same function, so it reads the same events again.
 ///
 /// ## The households annotate
 ///
-/// A row names its household from [households], the cached households, when
+/// A row names its household from `households`, the cached households, when
 /// the event's is among them. The names are an annotation like the
 /// hydrate's: they are never waited on, so the rows are up before the first
 /// names arrive, and a stream error is logged and changes nothing. A null
@@ -55,7 +54,7 @@ import 'event_overview_state.dart';
 ///
 /// ## The clock
 ///
-/// Every derivation groups the cached events again against [now]. Nothing
+/// Every derivation groups the cached events again against `now`. Nothing
 /// writes to the cache when time passes, and while the screen stays open
 /// none of the streams need emit, so the bloc also sets a timer for the
 /// next instant a shown date ends ([nextRegroupAt]) and groups the same
@@ -88,7 +87,7 @@ import 'event_overview_state.dart';
 ///
 /// ## The retry
 ///
-/// The bloc calls [onRetry] rather than the button, because starting a pass
+/// The bloc calls `onRetry` rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it. A retry from a failed read
 /// runs the same pass, and the error says it is running until it ends, as

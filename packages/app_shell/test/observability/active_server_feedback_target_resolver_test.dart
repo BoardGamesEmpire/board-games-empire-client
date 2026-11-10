@@ -16,7 +16,7 @@ import 'package:observability/observability.dart';
 ///   server.
 /// - The transport is attached only when the active container holds an
 ///   authenticated [AuthRepository] AND a registered [FeedbackTransport].
-/// - The scope is read through [scopeSource] fresh per resolve — a
+/// - The scope is read through `scopeSource` fresh per resolve — a
 ///   replaced scope (bootstrap retry) is picked up without
 ///   re-registration.
 void main() {
@@ -75,10 +75,11 @@ void main() {
 
     test('active but unauthenticated → target with the identity serverId '
         '(bgeServerId) and a null transport', () {
-      container.registerSingleton<AuthRepository>(
-        _FakeAuthRepository(const AuthStateUnauthenticated()),
-      );
-      container.registerSingleton<FeedbackTransport>(_FakeTransport());
+      container
+        ..registerSingleton<AuthRepository>(
+          _FakeAuthRepository(const AuthStateUnauthenticated()),
+        )
+        ..registerSingleton<FeedbackTransport>(_FakeTransport());
 
       final target = resolver(_FakeScope(activeServer())).resolve();
 
@@ -98,10 +99,11 @@ void main() {
     test('authenticated with a registered transport → the transport is '
         'attached', () {
       final transport = _FakeTransport();
-      container.registerSingleton<AuthRepository>(
-        _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
-      );
-      container.registerSingleton<FeedbackTransport>(transport);
+      container
+        ..registerSingleton<AuthRepository>(
+          _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+        )
+        ..registerSingleton<FeedbackTransport>(transport);
 
       final target = resolver(_FakeScope(activeServer())).resolve();
 

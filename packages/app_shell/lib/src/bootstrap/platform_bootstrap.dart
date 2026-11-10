@@ -1,9 +1,8 @@
+import 'package:app_shell/src/deep_links/deep_link_source.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../deep_links/deep_link_source.dart';
 
 /// Initializes `HydratedBloc.storage`. Injectable so cubit tests can supply
 /// a no-op or counting fake; production wiring builds the real

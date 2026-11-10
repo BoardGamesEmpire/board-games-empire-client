@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'event_table.dart';
+import 'package:drift_storage/src/tables/event_table.dart';
 
 /// A cached copy of one person on an event's roster, as `GET /events/:id`
 /// embeds it (#496): an account holder, or a guest who has none.

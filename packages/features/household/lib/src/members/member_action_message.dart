@@ -1,9 +1,7 @@
-import 'package:network_interface/network_interface.dart';
-
 import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/household_member_actions_state.dart';
-import '../permissions/household_actions.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:network_interface/network_interface.dart';
 
 /// What to tell the person about [outcome], a role change, removal or
 /// ownership transfer (#480, #478).

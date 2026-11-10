@@ -1,9 +1,7 @@
-import 'package:network_interface/network_interface.dart';
-
 import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/household_member_actions_state.dart';
-import 'send_member_request.dart';
+import 'package:household/src/bloc/household_member_actions_state.dart';
+import 'package:household/src/members/send_member_request.dart';
+import 'package:network_interface/network_interface.dart';
 
 /// What to tell the person about [failure], a request to leave the household
 /// that did not go through (#479).

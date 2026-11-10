@@ -12,7 +12,7 @@ import 'package:models/domain.dart';
 /// required-field-heavy model, so three copies meant three edits to keep the
 /// package compiling whenever a field was added, and nothing stopped them
 /// drifting into asserting against different origins.
-ServerIdentity testServerIdentity() => ServerIdentity(
+ServerIdentity testServerIdentity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://bge.example.com',
   wellKnownSchemaVersion: 1,
@@ -24,7 +24,7 @@ ServerIdentity testServerIdentity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$testAuthBasePath/sign-in/email',

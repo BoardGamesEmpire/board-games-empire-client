@@ -3,7 +3,7 @@
 ///
 /// Two concrete contracts implement this:
 ///
-/// - [AuthUser] — the shape returned by `/api/auth/*` (BetterAuth), which
+/// - `AuthUser` — the shape returned by `/api/auth/*` (BetterAuth), which
 ///   names the display field `name` on the wire and omits BGE-specific
 ///   fields (`role`, `isServiceAccount`).
 /// - `User` — the canonical BGE domain user returned by `/api/user/*` and
@@ -24,7 +24,7 @@ abstract interface class UserBase {
   /// Stable user id (cuid2).
   String get id;
 
-  /// Display username. Sourced from the wire `name` field on [AuthUser]
+  /// Display username. Sourced from the wire `name` field on `AuthUser`
   /// and from `username` on `User`.
   String get username;
 

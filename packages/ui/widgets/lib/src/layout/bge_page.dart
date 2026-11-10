@@ -32,8 +32,9 @@ const double _footerCacheViewports = 1;
 /// `Scaffold` → `SafeArea` → `Center` → `SingleChildScrollView` →
 /// `ConstrainedBox(maxWidth: 480)` — each with its own hand-typed padding and
 /// its own decision about whether to scroll. All 12 such screens now use
-/// this; the widths are [BgeTokens.contentMaxWidth] and [BgeTokens.paneMaxWidth]
-/// (see [BgePageWidth]) and the padding is on the spacing scale.
+/// this; the widths are [BgeTokens.contentMaxWidth] and
+/// [BgeTokens.paneMaxWidth] (see [BgePageWidth]) and the padding is on the
+/// spacing scale.
 ///
 /// ```dart
 /// BgePage(
@@ -261,7 +262,7 @@ class BgePage extends StatelessWidget {
   ///   builds a different tree with a footer than without one, so a footer
   ///   that came and went would lose the scroll position and focus (#457).
   ///
-  /// A page that pins may pass a [BgeFormActions] here, so that a failure
+  /// A page that pins may pass a `BgeFormActions` here, so that a failure
   /// still sits on the action it answers.
   ///
   /// Cannot be combined with [floatingActionButton]: Scaffold floats the FAB
@@ -465,7 +466,7 @@ class BgePage extends StatelessWidget {
         builder: (context, constraints) {
           final resolved = contentPadding.resolve(Directionality.of(context));
           final available = constraints.maxWidth - resolved.horizontal;
-          final gutter = math.max(0.0, (available - maxWidth) / 2);
+          final gutter = math.max<double>(0, (available - maxWidth) / 2);
           return CustomScrollView(
             controller: scrollController,
             semanticChildCount: semanticChildCount,
@@ -610,6 +611,8 @@ class _RenderFooterRoom extends RenderShiftedBox {
   /// Keeping room for the footer now.
   bool _keeping = false;
 
+  ValueListenable<ScrollMetrics?> get pageMetrics => _pageMetrics;
+
   set pageMetrics(ValueListenable<ScrollMetrics?> value) {
     if (identical(value, _pageMetrics)) return;
     if (attached) {
@@ -663,7 +666,7 @@ class _RenderFooterRoom extends RenderShiftedBox {
     }
     child.layout(constraints.copyWith(minHeight: 0), parentUsesSize: true);
     final natural = child.size.height;
-    final extra = hasSize ? math.max(0.0, size.height - natural) : 0.0;
+    final extra = hasSize ? math.max<double>(0, size.height - natural) : 0.0;
     final height = constraints.constrainHeight(
       natural + extra - _mayGiveBack(extra),
     );

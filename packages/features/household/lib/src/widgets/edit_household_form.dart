@@ -1,14 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/widgets/household_name_validator.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import 'household_name_validator.dart';
 
 /// The household edit form (#476): the name and description, as the create
 /// form takes them, and the member invite policy as a three-way choice that
@@ -39,8 +37,8 @@ class EditHouseholdForm extends StatefulWidget {
   /// The household the form opens with. Read once.
   final Household initial;
 
-  /// Invoked with validated values. [description] is null when blank, and
-  /// [memberInvitePolicy] is null when no option is chosen.
+  /// Invoked with validated values. `description` is null when blank, and
+  /// `memberInvitePolicy` is null when no option is chosen.
   final void Function({
     required String name,
     String? description,

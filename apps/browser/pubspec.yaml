@@ -15,20 +15,17 @@ resolution: workspace
 # #288) — which arrives through web_platform's browser-only entry point,
 # `web_storage_composition.dart`. Hence still no storage dependency here.
 dependencies:
-  flutter:
-    sdk: flutter
-
   app_shell:
     path: ../../packages/app_shell
+  cupertino_icons: ^1.0.9
+  flutter:
+    sdk: flutter
   web_platform:
     path: ../../packages/platform/web
-
-  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

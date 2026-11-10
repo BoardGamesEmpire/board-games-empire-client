@@ -7,9 +7,8 @@
 /// the screen shows a control only when both agree.
 library;
 
+import 'package:events/src/detail/event_actions.dart';
 import 'package:models/domain.dart';
-
-import 'event_actions.dart';
 
 /// The date actions [allowed] (from eventActionsFor) leaves for [occurrence]
 /// on [event], by status (#506): any of editDate, confirmDate, declineDate,

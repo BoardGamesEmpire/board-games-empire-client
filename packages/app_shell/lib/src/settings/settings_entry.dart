@@ -16,6 +16,6 @@ abstract interface class SettingsEntry {
   String get id;
 
   /// Builds the entry's control. Called with a context beneath the
-  /// settings [Scaffold] and the shell [Localizations].
+  /// settings `Scaffold` and the shell [Localizations].
   Widget build(BuildContext context);
 }

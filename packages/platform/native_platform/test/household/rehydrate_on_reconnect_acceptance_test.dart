@@ -72,7 +72,7 @@ ServerConfig _config() => ServerConfig(
   serverUrl: 'https://api.example.test',
   connectionState: ConnectionState.active,
   bgeServerId: 'server-1',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: 'server-1',
     issuer: 'https://api.example.test',
     wellKnownSchemaVersion: 1,
@@ -84,7 +84,7 @@ ServerConfig _config() => ServerConfig(
     passkeySupported: false,
     twoFactorSupported: false,
     anonymousAuthSupported: false,
-    strategies: const [
+    strategies: [
       EmailAndPasswordStrategy(
         signUpDisabled: false,
         signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -241,7 +241,7 @@ void main() {
     connectivity.emit(ConnectivityState.online);
     await tester.pumpAndSettle();
 
-    verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+    verify(() => remote.fetchHouseholds()).called(1);
     verify(() => repo.cacheHouseholdWithRoster(any(), any())).called(1);
     expect(status.state, equals(HydrationState.refreshed));
   });

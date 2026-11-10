@@ -1,10 +1,9 @@
 import 'dart:developer' as developer;
 
 import 'package:logging/logging.dart';
-
-import '../redaction/redaction.dart';
-import 'log_record_formatter.dart';
-import 'log_sink.dart';
+import 'package:observability/src/logging/log_record_formatter.dart';
+import 'package:observability/src/logging/log_sink.dart';
+import 'package:observability/src/redaction/redaction.dart';
 
 /// The `dart:developer` [developer.log] signature, extracted so tests can
 /// inject a spy in place of the real (side-effecting, hard-to-capture)
@@ -74,7 +73,7 @@ class DeveloperLogSink implements LogSink {
       // rides there so DevTools can render it structurally. The exception
       // itself goes unless its text carries bound values, which are removed
       // by sending the stripped text instead.
-      final Object? errorArg = hasError
+      final errorArg = hasError
           ? Redaction.scrubBoundValues(record.error!)
           : (hasContext ? context : null);
 

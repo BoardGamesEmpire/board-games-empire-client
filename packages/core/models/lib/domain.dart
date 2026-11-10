@@ -1,17 +1,12 @@
-library;
-
 export 'src/domain/access/access_extent.dart';
 export 'src/domain/access/caller_access.dart';
 export 'src/domain/access/resource_access.dart';
 export 'src/domain/access/resource_type.dart';
-
-export 'src/domain/achievement/achievement_type.dart';
 export 'src/domain/achievement/achievement.dart';
+export 'src/domain/achievement/achievement_type.dart';
 export 'src/domain/achievement/user_achievement.dart';
-
 export 'src/domain/common/reach.dart';
 export 'src/domain/common/visibility.dart';
-
 export 'src/domain/data_gateway/data_gateway.dart';
 export 'src/domain/data_gateway/data_gateway_auth_type.dart';
 export 'src/domain/data_gateway/data_gateway_change_result.dart';
@@ -19,10 +14,8 @@ export 'src/domain/data_gateway/data_gateway_input.dart';
 export 'src/domain/data_gateway/data_gateway_interview.dart';
 export 'src/domain/data_gateway/data_gateway_interview_result.dart';
 export 'src/domain/data_gateway/language_link.dart';
-
 export 'src/domain/device/build_info.dart';
 export 'src/domain/device/device_preferences.dart';
-
 export 'src/domain/event/availability_response.dart';
 export 'src/domain/event/availability_summary.dart';
 export 'src/domain/event/availability_vote.dart';
@@ -46,25 +39,21 @@ export 'src/domain/event/occurrence_status.dart';
 export 'src/domain/event/vote_eligibility.dart';
 export 'src/domain/event/vote_quorum_type.dart';
 export 'src/domain/event/vote_threshold_type.dart';
-
 export 'src/domain/game/collection_add_option.dart';
 export 'src/domain/game/content_type.dart';
 export 'src/domain/game/expansion_link.dart';
 export 'src/domain/game/expansion_placement.dart';
+export 'src/domain/game/game.dart';
 export 'src/domain/game/game_collection.dart';
 export 'src/domain/game/game_collection_list_item.dart';
-export 'src/domain/game/game_medium.dart';
-export 'src/domain/game/game.dart';
 export 'src/domain/game/game_import.dart';
+export 'src/domain/game/game_medium.dart';
 export 'src/domain/game/game_search_filter.dart';
 export 'src/domain/game/game_search_results.dart';
 export 'src/domain/game/game_sort.dart';
 export 'src/domain/game/platform_game.dart';
 export 'src/domain/game/platform_game_summary.dart';
 export 'src/domain/game/platform_type.dart';
-
-export 'src/domain/list_layout.dart';
-
 export 'src/domain/household/admin_household.dart';
 export 'src/domain/household/household.dart';
 export 'src/domain/household/household_invite.dart';
@@ -73,12 +62,11 @@ export 'src/domain/household/household_member.dart';
 export 'src/domain/household/household_role.dart';
 export 'src/domain/household/household_settings.dart';
 export 'src/domain/household/member_invite_policy.dart';
-
+export 'src/domain/list_layout.dart';
 export 'src/domain/push/push_notification.dart';
 export 'src/domain/push/push_permission_status.dart';
 export 'src/domain/push/push_platform.dart';
 export 'src/domain/push/push_registration.dart';
-
 export 'src/domain/server/connection_state.dart';
 export 'src/domain/server/notification_summary.dart';
 export 'src/domain/server/scoped_server.dart';
@@ -86,22 +74,19 @@ export 'src/domain/server/server_auth_strategy.dart';
 export 'src/domain/server/server_capacity_exceeded_exception.dart';
 export 'src/domain/server/server_config.dart';
 export 'src/domain/server/server_identity.dart';
-
-export 'src/domain/social/friendship_status.dart';
 export 'src/domain/social/friendship.dart';
-
+export 'src/domain/social/friendship_status.dart';
 export 'src/domain/sync/sync_operation.dart';
 export 'src/domain/sync/sync_queue_entry.dart';
 export 'src/domain/sync/sync_status.dart';
-
 export 'src/domain/user/auth_strategy.dart';
 export 'src/domain/user/person_name.dart';
+export 'src/domain/user/user.dart';
 export 'src/domain/user/user_authentication.dart';
+export 'src/domain/user/user_base.dart';
 export 'src/domain/user/user_device.dart';
 export 'src/domain/user/user_external_identity.dart';
 export 'src/domain/user/user_login_history.dart';
 export 'src/domain/user/user_preferences.dart';
 export 'src/domain/user/user_session.dart';
 export 'src/domain/user/user_summary.dart';
-export 'src/domain/user/user_base.dart';
-export 'src/domain/user/user.dart';

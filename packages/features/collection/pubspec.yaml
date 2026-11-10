@@ -11,27 +11,25 @@ environment:
 resolution: workspace
 
 dependencies:
+  equatable: ^2.1.0
   flutter:
     sdk: flutter
+  flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
-
   hydration:
     path: ../../core/hydration
   interfaces:
     path: ../../core/interfaces
+  intl: ^0.20.2
   models:
     path: ../../core/models
   network_interface:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-
-  flutter_bloc: ^9.1.1
-  equatable: ^2.1.0
   # The add sheet's form (#45), as the other feature packages build theirs.
   reactive_forms: ^18.1.1
-  intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale; both declared directly because this package imports from both.
   ui:
@@ -40,8 +38,10 @@ dependencies:
     path: ../../ui/tokens
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
+  # Shared widget-test helpers: viewport sizing for the list's narrow-window
+  # and large-text checks.
+  bge_test_support:
+    path: ../../testing/support
   bloc_test: ^10.0.0
   # A real container for the hydrate installer's tests. Dev-only: nothing
   # under `lib/` names `di` — the installer takes the `DependencyContainer`
@@ -55,15 +55,11 @@ dev_dependencies:
   # by that database, so a fake could not prove it.
   drift_storage:
     path: ../../storage/drift_storage
-  mocktail: ^1.0.5
-  very_good_analysis: ^10.2.0
-  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
   l10n_test_support:
     path: ../../testing/l10n
-  # Shared widget-test helpers: viewport sizing for the list's narrow-window
-  # and large-text checks.
-  bge_test_support:
-    path: ../../testing/support
+  mocktail: ^1.0.5
 
 flutter:
   generate: true

@@ -41,7 +41,7 @@ void main() {
     });
 
     group('returns null for', () {
-      final rejected = <String, String>{
+      <String, String>{
         'obsolete RFC 850 form': 'Sunday, 06-Nov-94 08:49:37 GMT',
         'obsolete asctime form': 'Sun Nov  6 08:49:37 1994',
         'missing GMT designator': 'Sun, 06 Nov 1994 08:49:37',
@@ -57,9 +57,7 @@ void main() {
         'trailing junk': 'Tue, 21 Jul 2026 12:00:00 GMT extra',
         'empty string': '',
         'garbage': 'not-a-date',
-      };
-
-      rejected.forEach((label, input) {
+      }.forEach((label, input) {
         test(label, () => expect(tryParseHttpDate(input), isNull));
       });
     });

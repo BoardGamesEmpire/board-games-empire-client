@@ -1,13 +1,11 @@
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:data_gateway/src/bloc/language_tag_search_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-
-import '../bloc/language_tag_search_cubit.dart';
 
 /// Opens the language tag picker (#457) and answers the tag the admin chose,
 /// or null when the dialog is dismissed by Cancel, by a tap outside it or by

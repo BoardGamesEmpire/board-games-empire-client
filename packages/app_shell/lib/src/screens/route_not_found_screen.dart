@@ -1,10 +1,9 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/router/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../router/app_router.dart';
 
 /// The router's error page (#465): an address that matches no screen.
 ///

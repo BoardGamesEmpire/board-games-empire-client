@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/household_list_bloc.dart';
+import 'package:household/src/bloc/household_list_event.dart';
+import 'package:household/src/bloc/household_list_state.dart';
+import 'package:household/src/sync/household_hydration_status.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/household_list_bloc.dart';
-import '../bloc/household_list_event.dart';
-import '../bloc/household_list_state.dart';
-import '../sync/household_hydration_status.dart';
-
 /// The household list (#269): every household the signed-in user belongs
 /// to, read reactively from the local cache.
 ///
-/// Decoupled from DI like [CreateHouseholdScreen]: the caller resolves the
+/// Decoupled from DI like `CreateHouseholdScreen`: the caller resolves the
 /// user-session [HouseholdRepository] and the optional
 /// [HouseholdHydrationStatus] stream and passes them in; the screen owns
 /// its bloc.

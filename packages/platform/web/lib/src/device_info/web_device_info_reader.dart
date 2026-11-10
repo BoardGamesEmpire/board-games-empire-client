@@ -1,6 +1,6 @@
 import 'package:interfaces/services.dart';
 
-import 'browser_from_user_agent.dart';
+import 'package:web_platform/src/device_info/browser_from_user_agent.dart';
 
 /// [DeviceInfoReader] for the browser (#324): the OS the browser runs on, the
 /// browser's engine, and the browser itself by name and major version. The

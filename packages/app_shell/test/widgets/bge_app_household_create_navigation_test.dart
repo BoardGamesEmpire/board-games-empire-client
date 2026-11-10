@@ -406,10 +406,12 @@ void main() {
     /// A status whose last pass succeeded and has not aged out — the state
     /// in which the window would otherwise suppress the next entry's pass.
     HouseholdHydrationStatus freshlyRefreshed() {
-      final status = HouseholdHydrationStatus(
-        now: () => DateTime.utc(2026, 8, 27, 12),
-      )..started();
-      status.finished(HydrateOutcome.complete);
+      final status =
+          HouseholdHydrationStatus(
+              now: () => DateTime.utc(2026, 8, 27, 12),
+            )
+            ..started()
+            ..finished(HydrateOutcome.complete);
       addTearDown(status.close);
       return status;
     }

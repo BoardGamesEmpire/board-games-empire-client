@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'platform_game_table.dart';
+import 'package:drift_storage/src/tables/platform_game_table.dart';
 
 /// Which users each cached platform game was sent to (#434): one row per
 /// user, platform game and [source], the platform-game half of

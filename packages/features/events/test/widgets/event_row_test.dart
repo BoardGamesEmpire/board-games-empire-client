@@ -48,7 +48,7 @@ void main() {
   );
 
   EventRow dated(DateTime start, {EventParticipationStatus? rsvp}) => EventRow(
-    event: item('e-1', title: 'Game night').event,
+    event: item('e-1').event,
     group: EventGroup.upcoming,
     date: confirmed('o-1', start),
     rsvp: rsvp,

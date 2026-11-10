@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../url/server_url_input.dart';
+import 'package:server_onboarding/src/url/server_url_input.dart';
 
 /// States for `ServerOnboardingBloc` (#36).
 ///

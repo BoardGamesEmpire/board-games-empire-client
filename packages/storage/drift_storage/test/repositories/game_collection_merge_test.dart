@@ -1,13 +1,12 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 import 'package:drift_storage/src/tables/game_access_table.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/platform_game_fixture.dart';
 import '../support/system_clock.dart';
@@ -119,7 +118,7 @@ void main() {
       await repo.mergeFromServer([_server()], removalsSince: mark);
       await repo.updateCollectionEntry(id: 'gc-server', quantity: 9);
 
-      await repo.mergeFromServer([_server(quantity: 3)], removalsSince: mark);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.quantity, 9);
@@ -191,7 +190,7 @@ void main() {
         _server(quantity: 5, updatedAt: DateTime.utc(2026, 3)),
       ], removalsSince: mark);
 
-      await repo.mergeFromServer([_server(quantity: 3)], removalsSince: mark);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
       expect((await repo.getCollection()).single.quantity, 5);
     });
@@ -211,7 +210,7 @@ void main() {
       expect(await repo.getCollection(), hasLength(1));
     });
 
-    test('rejects a page holding another user\'s entry, and writes none of '
+    test("rejects a page holding another user's entry, and writes none of "
         'it', () async {
       final foreign = _server(id: 'gc-foreign')
           .copyWith(userId: 'someone-else');

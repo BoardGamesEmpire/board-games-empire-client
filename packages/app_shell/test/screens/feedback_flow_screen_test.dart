@@ -27,7 +27,7 @@ void main() {
   /// (the review surface reads ShellLocalizations) plus the feedback
   /// feature's single delegate.
   Widget harness() => MaterialApp(
-    localizationsDelegates: [
+    localizationsDelegates: const [
       ...ShellLocalizations.localizationsDelegates,
       FeedbackLocalizations.delegate,
     ],
@@ -51,7 +51,7 @@ void main() {
   /// The flow on its own, as the router builds it.
   Widget flowApp({ThemeData? theme}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    localizationsDelegates: [
+    localizationsDelegates: const [
       ...ShellLocalizations.localizationsDelegates,
       FeedbackLocalizations.delegate,
     ],

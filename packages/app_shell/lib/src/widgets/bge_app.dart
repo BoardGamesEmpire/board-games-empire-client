@@ -1,5 +1,32 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/admin/admin_section.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/deep_links/deep_link_handler.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
+import 'package:app_shell/src/i18n/active_locale.dart';
+import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
+import 'package:app_shell/src/observability/shell_observability.dart';
+import 'package:app_shell/src/router/app_router.dart';
+import 'package:app_shell/src/screens/admin_dashboard_screen.dart';
+import 'package:app_shell/src/screens/feedback_flow_screen.dart';
+import 'package:app_shell/src/screens/home_menu_entry.dart';
+import 'package:app_shell/src/screens/home_screen.dart';
+import 'package:app_shell/src/screens/settings_screen.dart';
+import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/settings/locale_cubit.dart';
+import 'package:app_shell/src/settings/settings_sections_builder.dart';
+import 'package:app_shell/src/settings/theme_mode_cubit.dart';
+import 'package:app_shell/src/widgets/crash_report_prompt.dart';
+import 'package:app_shell/src/widgets/database_recovery_notice.dart';
+import 'package:app_shell/src/widgets/detached_rehydrate.dart';
+import 'package:app_shell/src/widgets/feedback_review_screen.dart';
+import 'package:app_shell/src/widgets/offline_strip_host.dart';
+import 'package:app_shell/src/widgets/ownership_once_refreshed.dart';
+import 'package:app_shell/src/widgets/router_back_interceptor.dart';
+import 'package:app_shell/src/widgets/session_rehydrate_trigger.dart';
 import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
@@ -28,43 +55,14 @@ import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-import 'package:user_search/l10n/user_search_localizations.dart';
-
 import 'package:ui/ui.dart'
     show
         BgeConnectivityScope,
         BgeLoadingState,
         BgePage,
         UnverifiedSessionBanner;
-
-import '../../l10n/shell_localizations.dart';
-import '../admin/admin_section.dart';
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import '../deep_links/deep_link_handler.dart';
-import '../deep_links/pending_deep_link_holder.dart';
-import '../i18n/active_locale.dart';
-import '../observability/feedback_uncaught_error_reporter.dart';
-import '../observability/shell_observability.dart';
-import '../router/app_router.dart';
-import '../screens/admin_dashboard_screen.dart';
-import '../screens/feedback_flow_screen.dart';
-import '../screens/home_menu_entry.dart';
-import '../screens/home_screen.dart';
-import '../screens/settings_screen.dart';
-import '../screens/splash_screen.dart';
-import '../settings/locale_cubit.dart';
-import '../settings/settings_sections_builder.dart';
-import '../settings/theme_mode_cubit.dart';
-import 'crash_report_prompt.dart';
-import 'database_recovery_notice.dart';
-import 'feedback_review_screen.dart';
-import 'offline_strip_host.dart';
-import 'ownership_once_refreshed.dart';
-import 'router_back_interceptor.dart';
-import 'detached_rehydrate.dart';
-import 'session_rehydrate_trigger.dart';
+import 'package:ui_tokens/ui_tokens.dart';
+import 'package:user_search/l10n/user_search_localizations.dart';
 
 /// The shared application widget.
 ///
@@ -76,7 +74,7 @@ import 'session_rehydrate_trigger.dart';
 /// scaling is honored up to [BgeTextScale.maxScaleFactor] (WCAG 1.4.4:
 /// 200%) via a `MediaQuery` clamp in the app builder. The persisted user
 /// selection drives `MaterialApp`'s `themeMode`/`locale` via app-level
-/// [HydratedCubit]s created once hydrated storage is ready (#120);
+/// `HydratedCubit`s created once hydrated storage is ready (#120);
 /// [BgeApp.themeMode]/[BgeApp.locale] are the pre-storage-ready fallback
 /// and a test/embedder seam.
 ///
@@ -88,28 +86,26 @@ import 'session_rehydrate_trigger.dart';
 /// for #107) are appended next, then any
 /// [additionalLocalizationsDelegates] — never a feature's bundled
 /// `localizationsDelegates` list, which would re-include the `Global*`
-/// delegates. [supportedLocales] stays [ShellLocalizations.supportedLocales]
+/// delegates. `supportedLocales` stays [ShellLocalizations.supportedLocales]
 /// with `en` first.
 ///
-/// Auth wiring (#37): when the bootstrap cubit exposes an
-/// [ActiveServerScope] with an active server, the router subtree is
-/// wrapped in a [BlocProvider] of an [AuthBloc] bound to that server's
-/// [AuthRepository], keyed on `ActiveServer.serverId` so a server switch
-/// disposes the old bloc and builds a fresh one. A top-level
-/// [BlocListener] translates the bloc's terminal auth states into
-/// [AppBootstrapCubit.onAuthenticated] / [onSignedOut] — the presentation-
-/// layer coordination that drives the router gate (blocs never depend on
-/// blocs). The `/auth` route renders [AuthGate] and `/home` the
-/// navigation-drawer menu ([HomeScreen], #129); both resolve the same
-/// provided bloc. When no
-/// scope/active server is available (tests without a scope; web until
-/// #96) the router renders its placeholders and no auth subtree is
-/// mounted.
+/// Auth wiring (#37): when the bootstrap cubit exposes an [ActiveServerScope]
+/// with an active server, the router subtree is wrapped in a [BlocProvider] of
+/// an [AuthBloc] bound to that server's [AuthRepository], keyed on
+/// `ActiveServer.serverId` so a server switch disposes the old bloc and builds
+/// a fresh one. A top-level [BlocListener] translates the bloc's terminal auth
+/// states into [AppBootstrapCubit.onAuthenticated] /
+/// [AppBootstrapCubit.onSignedOut] — the presentation-layer coordination that
+/// drives the router gate (blocs never depend on blocs). The `/auth` route
+/// renders [AuthGate] and `/home` the navigation-drawer menu ([HomeScreen],
+/// #129); both resolve the same provided bloc. When no scope/active server is
+/// available (tests without a scope; web until #96) the router renders its
+/// placeholders and no auth subtree is mounted.
 ///
 /// Crash reporting (#69, #76): when a [feedbackReporter] is supplied, the
 /// app builder overlays the crash flow above the router's Navigator. A
 /// pending draft first surfaces the compact [CrashReportPrompt] (#69);
-/// tapping its "Review details" affordance seeds [_reviewPreview] (from
+/// tapping its "Review details" affordance seeds `_reviewPreview` (from
 /// the draft plus the typed comment) and the overlay swaps to the
 /// full-screen [FeedbackReviewScreen] (#76) in place — a route would
 /// render *under* the crash barrier, so the review surface lives in the
@@ -309,7 +305,7 @@ class _BgeAppState extends State<BgeApp> {
   /// App-level, persisted theme-mode + locale controllers (#120).
   ///
   /// Created lazily on the first storage-ready bootstrap state — never
-  /// eagerly. They are [HydratedCubit]s, and `HydratedBloc.storage` is
+  /// eagerly. They are `HydratedCubit`s, and `HydratedBloc.storage` is
   /// initialized inside `AppBootstrapCubit`'s bootstrap *before* it emits
   /// any post-init state (see [_isStorageReady]); constructing them before
   /// then would call `hydrate()` with no storage and throw
@@ -652,7 +648,7 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Renders the home route at navigation time — the navigation-drawer
-  /// menu (#129). Null (→ [NotYetAvailableScreen]) when no active server
+  /// menu (#129). Null (→ `NotYetAvailableScreen`) when no active server
   /// backs the auth bloc the sign-out entry needs. Entry labels are
   /// resolved here from each feature's localizations; each entry's action
   /// runs against the context [HomeScreen] hands back (its State context,
@@ -1059,7 +1055,7 @@ class _BgeAppState extends State<BgeApp> {
   /// The #269 household-list wiring: resolves the [HouseholdRepository]
   /// (per-user session scope, #135) from the *active server's* scoped
   /// container, plus the optional [HouseholdHydrationStatus] the hydrate
-  /// installer publishes (#267/#269 D1). Null (→ [NotYetAvailableScreen])
+  /// installer publishes (#267/#269 D1). Null (→ `NotYetAvailableScreen`)
   /// when no active server is resolvable or its container carries no
   /// repository (tests without a scope; no active user session — on either
   /// platform, since #137 gave web the same user tier).
@@ -1281,7 +1277,7 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<HouseholdRemoteDataSource>()
       : null;
 
-  /// The #476 household-edit wiring. Null (→ [NotYetAvailableScreen])
+  /// The #476 household-edit wiring. Null (→ `NotYetAvailableScreen`)
   /// without an active server, the user-session [HouseholdRepository] that
   /// holds the household and says who is looking, or the household remote
   /// the save is sent through.
@@ -1311,7 +1307,7 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// The #455 household-invites wiring. Null (→ [NotYetAvailableScreen])
+  /// The #455 household-invites wiring. Null (→ `NotYetAvailableScreen`)
   /// without an active server, the invite client, or the user-session
   /// [HouseholdRepository] that says who is looking. Its Invite button opens
   /// the send form where [_canSendInvites] says it builds.
@@ -1344,7 +1340,7 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// The #455 send-invite wiring. Null (→ [NotYetAvailableScreen]) without
+  /// The #455 send-invite wiring. Null (→ `NotYetAvailableScreen`) without
   /// an active server, or where [_canSendInvites] says this composition
   /// can't build it.
   ///
@@ -1432,7 +1428,7 @@ class _BgeAppState extends State<BgeApp> {
   /// The #129 create-household wiring: resolves the [HouseholdRepository]
   /// and the [SyncOperationSender] (both per-user session scope, #135,
   /// #121) from the *active server's* scoped container — not
-  /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
+  /// [BgeApp.rootContainer]. Null (→ `NotYetAvailableScreen`) when no
   /// active server is resolvable or its container lacks either (tests
   /// without a scope; no active user session). Both platforms register the
   /// sender in their user tier, so a real session on either reaches this
@@ -1540,7 +1536,7 @@ class _BgeAppState extends State<BgeApp> {
   /// The collection-list wiring (#44): resolves the
   /// [GameCollectionRepository] (user-session scope) from the active
   /// server's container, plus the optional [GameCollectionHydrationStatus],
-  /// the retry and the entry trigger. Null (→ [NotYetAvailableScreen]) when
+  /// the retry and the entry trigger. Null (→ `NotYetAvailableScreen`) when
   /// no active server is resolvable or its container has no repository.
   ///
   /// Everything is resolved when the route is built rather than held on
@@ -1584,7 +1580,7 @@ class _BgeAppState extends State<BgeApp> {
   /// [GameCollectionRepository] and [SyncOperationSender] from the active
   /// server's container, plus the optional [GameCollectionHydrationStatus],
   /// so an entry the cache doesn't hold yet loads rather than reads as
-  /// removed. Null (→ [NotYetAvailableScreen]) when no active server is
+  /// removed. Null (→ `NotYetAvailableScreen`) when no active server is
   /// resolvable or its container lacks the repository or the sender.
   ///
   /// Both are resolved at each build, as [_buildCollectionListRoute] does:
@@ -1781,7 +1777,7 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The active server's container, where it holds the per-server
   /// [GamesRemoteDataSource]: the gate every #42 catalog route shares. Null
-  /// (→ [NotYetAvailableScreen]) when no active server is resolvable or it
+  /// (→ `NotYetAvailableScreen`) when no active server is resolvable or it
   /// has no games remote.
   ///
   /// Resolved per route build, as the other screens are: anything held
@@ -1881,7 +1877,7 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The active server's container, where it holds the user-session
   /// [EventRepository]: the gate both #497 routes share. Null (→
-  /// [NotYetAvailableScreen]) when no active server is resolvable or it has
+  /// `NotYetAvailableScreen`) when no active server is resolvable or it has
   /// no repository.
   ///
   /// Resolved per route build, as [_buildCollectionListRoute] does: a
@@ -2155,7 +2151,7 @@ class _BgeAppState extends State<BgeApp> {
       container.isRegistered<EventRepository>() &&
       container.isRegistered<SyncQueueDrain>();
 
-  /// The #190 retry-or-discard wiring. Null (→ [NotYetAvailableScreen])
+  /// The #190 retry-or-discard wiring. Null (→ `NotYetAvailableScreen`)
   /// when no active server is resolvable or [_canRecoverStuckChanges] says
   /// no.
   ///
@@ -2195,7 +2191,7 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #41 DataGateway list: the per-server [DataGatewayRemoteDataSource]
   /// and the session's [CallerAccessRepository] from the active server's
-  /// container. Null (→ [NotYetAvailableScreen]) when no active server is
+  /// container. Null (→ `NotYetAvailableScreen`) when no active server is
   /// resolvable or it has no DataGateway client.
   ///
   /// Guarded on the client alone, not on access: a deep link by a user the
@@ -2302,7 +2298,7 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The admin dashboard (#684): the sections [_adminSections] offers on the
   /// active server, and the session's [CallerAccessRepository], which says
-  /// which of them show. Null (→ [NotYetAvailableScreen]) when no active
+  /// which of them show. Null (→ `NotYetAvailableScreen`) when no active
   /// server is resolvable.
   ///
   /// Not guarded on access, as no section's route is: a deep link by a user
@@ -2323,7 +2319,7 @@ class _BgeAppState extends State<BgeApp> {
   /// The #685 staff households list: the per-server
   /// [AdminHouseholdRemoteDataSource] and the session's
   /// [CallerAccessRepository] from the active server's container. Null
-  /// (→ [NotYetAvailableScreen]) when no active server is resolvable or it
+  /// (→ `NotYetAvailableScreen`) when no active server is resolvable or it
   /// has no staff households client.
   ///
   /// Guarded on the client alone, not on access, as the DataGateway list is:
@@ -2366,14 +2362,14 @@ class _BgeAppState extends State<BgeApp> {
   /// The #107 user-initiated feedback wiring: resolves the device-global
   /// [FeedbackService] from the root container (#72) — decoupled from
   /// [BgeApp.feedbackReporter], which may legitimately be absent — and
-  /// hosts the compose → review flow. Null (→ [NotYetAvailableScreen])
+  /// hosts the compose → review flow. Null (→ `NotYetAvailableScreen`)
   /// when no container or no registered service exists (tests; a platform
   /// composition without feedback wiring).
   ///
   /// Not logged, unlike [_buildServerAddRoute]: this route is *pushed*
   /// from the home menu rather than pinned by a bootstrap redirect, so the
   /// fallback is a screen the user chose to open and the app is still
-  /// working — and [NotYetAvailableScreen]'s app bar gives it the same back
+  /// working — and `NotYetAvailableScreen`'s app bar gives it the same back
   /// button as the real flow (#308).
   Widget? _buildFeedbackRoute(BuildContext context) {
     final feedbackService = _rootService<FeedbackService>();
@@ -2397,7 +2393,7 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// Bootstrap resolves the same bundle before it pins the app here, and
   /// fails boot when it cannot (#218), so this route is normally reached
-  /// with the set in hand. Null (→ the server-add [ShellPlaceholderScreen])
+  /// with the set in hand. Null (→ the server-add `ShellPlaceholderScreen`)
   /// is the backstop: no container at all (tests), a bundle that cannot
   /// resolve on a cubit built without the check, or no orchestrator.
   Widget? _buildServerAddRoute(BuildContext context) {
@@ -2522,7 +2518,7 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Renders the #120 settings surface at navigation time. Null (→
-  /// [NotYetAvailableScreen], matching the feedback guard) until the
+  /// `NotYetAvailableScreen`, matching the feedback guard) until the
   /// controllers exist. Composes the app-level section (theme; language
   /// only when >1 supported locale) and passes the active server's alias
   /// so the per-server section is shown/omitted correctly — at launch
@@ -2820,19 +2816,21 @@ class _BgeAppState extends State<BgeApp> {
                                             child: ValueListenableBuilder<bool>(
                                               valueListenable:
                                                   _promptDismissArmed,
-                                              builder: (context, dismissArmed, _) {
+                                              builder: (context, armed, _) {
                                                 return CrashReportPrompt(
                                                   report: draft,
-                                                  // #106: after a first intercepted
-                                                  // back, surface the localized
-                                                  // live-region dismiss hint.
-                                                  showDismissHint: dismissArmed,
+                                                  // #106: after a first
+                                                  // intercepted back, surface
+                                                  // the localized live-region
+                                                  // dismiss hint.
+                                                  showDismissHint: armed,
                                                   onSubmit:
                                                       reporter.service.submit,
-                                                  // #76: seed the review slot from
-                                                  // the draft plus the typed
-                                                  // comment; the overlay then swaps
-                                                  // to the full surface below.
+                                                  // #76: seed the review slot
+                                                  // from the draft plus the
+                                                  // typed comment; the overlay
+                                                  // then swaps to the full
+                                                  // surface below.
                                                   onReviewDetails: (comment) =>
                                                       _openReview(
                                                         draft,
@@ -2856,7 +2854,8 @@ class _BgeAppState extends State<BgeApp> {
                                         child: FeedbackReviewScreen(
                                           preview: reviewPreview,
                                           onSubmit: reporter.service.submit,
-                                          // Back out of review → compact prompt.
+                                          // Back out of review → compact
+                                          // prompt.
                                           onCancel: _closeReview,
                                           // Dismiss after a terminal outcome →
                                           // clear every slot.
@@ -2973,15 +2972,15 @@ class _BgeAppState extends State<BgeApp> {
 /// await returns, not merely on activation succeeding. For the same
 /// reason the failure leg's recovery sign-out is conditional too: it
 /// exists to stop a live authenticated session being stranded without
-/// services, and dispatches only while there is still such a session. **Sign-out**: `onSignedOut()` runs first —
-/// synchronously, in the listener — and the scope pop follows, so the
-/// home subtree is already unmounting when its repositories are disposed
-/// and no live widget can dispatch into a disposed service; the pop still
-/// closes vended streams regardless of UI disposal, which is what the
-/// #135 acceptance relies on. A container with no registered
-/// [UserSessionScope] (shell tests that don't provide one; any composition
-/// with no per-user services) skips the scope step entirely, keeping the
-/// prior behavior.
+/// services, and dispatches only while there is still such a session.
+/// **Sign-out**: `onSignedOut()` runs first — synchronously, in the listener —
+/// and the scope pop follows, so the home subtree is already unmounting when
+/// its repositories are disposed and no live widget can dispatch into a
+/// disposed service; the pop still closes vended streams regardless of UI
+/// disposal, which is what the #135 acceptance relies on. A container with no
+/// registered [UserSessionScope] (shell tests that don't provide one; any
+/// composition with no per-user services) skips the scope step entirely,
+/// keeping the prior behavior.
 ///
 /// The same two transitions are reported to [unsentChanges] (#142), which
 /// keeps the record behind the sign-in screen's unsent-changes notice.
@@ -2998,10 +2997,10 @@ class _AuthScope extends StatefulWidget {
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
-    this.connectivity,
     required this.unsentChanges,
     required this.homeSession,
     required this.child,
+    this.connectivity,
   });
 
   final ActiveServerScope? scope;

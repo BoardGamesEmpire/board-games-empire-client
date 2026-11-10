@@ -1,16 +1,15 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
+import 'package:dio_network/src/user/user_access_json.dart';
+import 'package:dio_network/src/user/user_summary_json.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/remote_failure.dart';
-import 'user_access_json.dart';
-import 'user_summary_json.dart';
 
 /// [UserRemoteDataSource] over a **per-server** Dio instance (#499).
 ///
 /// The body is asked for as a `String` with the response type pinned on
 /// every request, and `sendForJson` decodes it after the status is read and
-/// classifies a failure through [_UserFailures]. It does not build or own
+/// classifies a failure through [_failures]. It does not build or own
 /// its Dio; the network installer constructs it from the per-server
 /// container.
 ///

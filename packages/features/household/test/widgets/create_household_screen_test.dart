@@ -111,14 +111,12 @@ void main() {
     home: Builder(
       builder: (context) => Scaffold(
         body: TextButton(
-          onPressed: () => unawaited(
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => CreateHouseholdScreen(
-                  repository: repo,
-                  sender: sender,
-                  onCreated: (_, householdId) => onCreated(householdId),
-                ),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => CreateHouseholdScreen(
+                repository: repo,
+                sender: sender,
+                onCreated: (_, householdId) => onCreated(householdId),
               ),
             ),
           ),
@@ -509,8 +507,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(created, 'hh_server');
-      verify(() => repo.create(name: 'Game Night HQ', description: null))
-          .called(2);
+      verify(() => repo.create(name: 'Game Night HQ')).called(2);
     });
 
     testWidgets('while the create is in flight the submit button is disabled '

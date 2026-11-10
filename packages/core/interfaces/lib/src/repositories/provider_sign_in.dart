@@ -1,7 +1,7 @@
 import 'package:models/dto.dart';
 
 /// How an attempt to sign in through a sign-in provider ended, when it ended
-/// without a refusal (#583). A refusal is an [AuthProviderSignInException].
+/// without a refusal (#583). A refusal is an `AuthProviderSignInException`.
 sealed class ProviderSignInOutcome {
   const ProviderSignInOutcome();
 }
@@ -48,8 +48,8 @@ final class ProviderSignInAddressMismatch extends ProviderSignInAvailability {
 /// Why a provider sign-in was refused.
 ///
 /// [rateLimited] and [network] have no wire code: they name client-side
-/// outcomes that the bloc maps from [AuthRateLimitedException] and
-/// [AuthNetworkException].
+/// outcomes that the bloc maps from `AuthRateLimitedException` and
+/// `AuthNetworkException`.
 enum ProviderSignInFailureReason {
   registrationDisabled,
   emailUnverified,

@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../games/game_summary_json.dart';
-import '../network/remote_failure.dart';
 
 /// What a 404 means for the request that produced it (#253 **D6**).
 ///
@@ -34,7 +33,7 @@ enum _NotFoundMeaning { missingRow, alreadyRemoved, unreachableEndpoint }
 /// (TokenInterceptor) on native, and by the browser, as its session cookie,
 /// on web. This class adds no auth handling of its own; it is constructed
 /// from the per-server container by the network installer, so like
-/// [HouseholdRemoteDataSourceImpl] it does **not** build or own its Dio and is
+/// `HouseholdRemoteDataSourceImpl` it does **not** build or own its Dio and is
 /// intentionally not an injectable global singleton.
 ///
 /// Reading of the answer and its failures is shared; see the library doc in

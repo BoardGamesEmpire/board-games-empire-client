@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/game_browse_event.dart';
+import 'package:game_catalog/src/bloc/game_browse_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'game_browse_event.dart';
-import 'game_browse_state.dart';
 
 /// Drives the browse screen (#42): the server's catalog, a page at a time.
 ///
@@ -69,7 +68,7 @@ import 'game_browse_state.dart';
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read,
-/// is taken down when [gone] says so, wherever it was found: from this list,
+/// is taken down when `gone` says so, wherever it was found: from this list,
 /// or from a search opened over it. The rest of the list stays as it was.
 /// Read from the cache, the next page then starts where it should: the game
 /// is gone from the cache, too.
@@ -134,7 +133,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
   final GameRepository? _cache;
   final BgeLogger _logger;
 
-  /// The order the list is read in: [initialSort], then each change.
+  /// The order the list is read in: `initialSort`, then each change.
   GameSort _sort;
 
   /// Completes when the sort changes, and the new sort gets a new one. A read

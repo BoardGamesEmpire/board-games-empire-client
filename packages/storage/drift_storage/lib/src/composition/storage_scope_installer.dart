@@ -1,14 +1,13 @@
 import 'dart:io';
 
+import 'package:drift_storage/src/databases/encrypted_executor_factory.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/unsent_changes_notice_repository_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:storage_interface/storage_interface.dart';
-
-import '../databases/encrypted_executor_factory.dart';
-import '../databases/server_database.dart';
-import '../repositories/unsent_changes_notice_repository_impl.dart';
 
 /// [ServerScopeInstaller] for per-server storage: opens the
 /// encrypted [ServerDatabase] and registers it in the server's scope.
@@ -34,7 +33,7 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 /// 2. delete the database file (and its `-wal`/`-shm`/`-journal` companions).
 ///    What the file held that the server never received, every user's
 ///    unsent changes included, is lost: nothing can decrypt it,
-/// 3. report via [onRecovery]. The native bootstrap logs the event, and the
+/// 3. report via `onRecovery`. The native bootstrap logs the event, and the
 ///    shell tells the user (#428),
 /// 4. reopen — a new empty database, rebuilt by sync.
 ///
@@ -106,14 +105,14 @@ class StorageScopeInstaller implements ServerScopeInstaller {
       db = await _recover(config, error.failure);
     }
 
-    container.registerSingleton<ServerDatabase>(
-      db,
-      dispose: (database) => database.close(),
-    );
-
-    container.registerSingleton<UnsentChangesNoticeRepository>(
-      UnsentChangesNoticeRepositoryImpl(db),
-    );
+    container
+      ..registerSingleton<ServerDatabase>(
+        db,
+        dispose: (database) => database.close(),
+      )
+      ..registerSingleton<UnsentChangesNoticeRepository>(
+        UnsentChangesNoticeRepositoryImpl(db),
+      );
   }
 
   /// Constructs the database over the encrypted executor and forces the
@@ -141,7 +140,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   /// still-undecryptable file triggers the same recovery on the next
   /// attempt. The reverse order would let a retry silently "succeed"
   /// against a fresh file under the stale key, skipping rotation and the
-  /// [onRecovery] notification.
+  /// `onRecovery` notification.
   ///
   /// The report comes **before** the reopen for the same reason. Once the
   /// file is gone, the next attempt finds nothing to recover, so a reopen
@@ -191,7 +190,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   Future<void> _safeClose(ServerDatabase db) async {
     try {
       await db.close();
-    } catch (_) {
+    } on Object catch (_) {
       // Best-effort: the executor never opened successfully.
     }
   }

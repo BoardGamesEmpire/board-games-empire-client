@@ -52,8 +52,8 @@ enum HouseholdRosterWrite {
 /// This device's own membership changes go straight to the server (#122).
 /// Their answers are written through [updateCachedMembers] and
 /// [removeCachedMember]. A hydrate that read the roster before such a
-/// change can write the old roster back after it. The caller therefore marks the
-/// list stale and runs another pass (`refreshAfterMembershipChange`), and
+/// change can write the old roster back after it. The caller therefore marks
+/// the list stale and runs another pass (`refreshAfterMembershipChange`), and
 /// that pass corrects it.
 /// Nothing is queued, so there is no pending window to hold against the two
 /// writers above.
@@ -239,7 +239,7 @@ abstract class HouseholdRepository {
   ///
   /// Only for a create that is stuck: the server refused it, or its retries
   /// ran out. The household is deleted with its member rows, and the queue
-  /// entry with them through [SyncQueueRepository.discardStuck], in one
+  /// entry with them through `SyncQueueRepository.discardStuck`, in one
   /// transaction; a create that isn't stuck by then, such as one another tab
   /// retried, changes nothing. Only a household still
   /// [Household.isLocalOnly] is deleted. If the server did make it, a lost

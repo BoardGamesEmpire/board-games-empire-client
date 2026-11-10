@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'feedback_report.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
 
 part 'queued_feedback_report.freezed.dart';
 part 'queued_feedback_report.g.dart';
@@ -70,6 +70,9 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
     DateTime? lastAttemptAt,
   }) = _QueuedFeedbackReport;
 
+  factory QueuedFeedbackReport.fromJson(Map<String, dynamic> json) =>
+      _$QueuedFeedbackReportFromJson(json);
+
   const QueuedFeedbackReport._();
 
   /// Attempts before a record stops being retried.
@@ -135,8 +138,8 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// read once and never mutated, and [exempt] is compared with `==`.
   static List<K> keysToEvict<K>(
     Iterable<(K, DateTime)> entries, {
-    K? exempt,
     required Comparator<K> tieBreak,
+    K? exempt,
   }) {
     final all = entries.toList();
     final excess = all.length - maxQueuedReports;
@@ -173,13 +176,10 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
     return now.difference(last) >= retryCooldown;
   }
 
-  factory QueuedFeedbackReport.fromJson(Map<String, dynamic> json) =>
-      _$QueuedFeedbackReportFromJson(json);
-
   /// The sink's address for this record.
   ///
   /// This getter is the **only** place the wire vocabulary and the
-  /// storage vocabulary meet. [FeedbackSink] and its implementations know
+  /// storage vocabulary meet. `FeedbackSink` and its implementations know
   /// records by `storageKey`; the value they get is the report's
   /// [FeedbackReport.clientRequestId], because reusing the idempotency
   /// token as the address is what makes a drain racing a resubmission

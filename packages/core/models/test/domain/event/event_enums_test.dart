@@ -5,8 +5,8 @@ import 'package:test/test.dart';
 /// (#496) as one group of three tests.
 ///
 /// [wireNames] is written out by hand from the backend's own enum, so a
-/// `fromWire` or `toWire` arm that is mistyped, or that maps to the wrong value,
-/// fails the first test whichever of the two it sits in.
+/// `fromWire` or `toWire` arm that is mistyped, or that maps to the wrong
+/// value, fails the first test whichever of the two it sits in.
 void _wireContract<T extends Enum>({
   required List<String> wireNames,
   required List<T> values,
@@ -31,9 +31,9 @@ void _wireContract<T extends Enum>({
         );
       }
 
-      // `fromWire` ends in a `_` arm, so a value left out of its switch reads as
-      // `unknown` instead of failing to compile. Holding the list to the enum's
-      // own values is what turns that miss into a failure here.
+      // `fromWire` ends in a `_` arm, so a value left out of its switch reads
+      // as `unknown` instead of failing to compile. Holding the list to the
+      // enum's own values is what turns that miss into a failure here.
       expect(
         wireNames.map(fromWire).toSet(),
         values.where((value) => value != unknown).toSet(),

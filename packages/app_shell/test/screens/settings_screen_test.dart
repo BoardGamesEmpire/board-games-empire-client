@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -35,8 +37,8 @@ void main() {
   });
 
   tearDown(() {
-    themeModeCubit.close();
-    localeCubit.close();
+    unawaited(themeModeCubit.close());
+    unawaited(localeCubit.close());
   });
 
   Widget settingsApp({
@@ -143,7 +145,6 @@ void main() {
       await pumpSettings(
         tester,
         sections: withPerServer(const [_FakeEntry()]),
-        activeServerAlias: null,
       );
 
       expect(find.text('Living Room Pi'), findsNothing);
@@ -234,7 +235,7 @@ void main() {
         BlocBuilder<ThemeModeCubit, ThemeMode>(
           bloc: themeModeCubit,
           builder: (context, mode) => MediaQuery(
-            data: const MediaQueryData(platformBrightness: Brightness.light),
+            data: const MediaQueryData(),
             child: MaterialApp(
               theme: BgeTheme.light(),
               darkTheme: BgeTheme.dark(),

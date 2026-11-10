@@ -172,7 +172,10 @@ void main() {
     test('trims the breadcrumb snapshot oldest-first to the byte cap', () {
       // Ten ~10 KB crumbs — well past the 64 KB serialized cap.
       final backing = List.generate(10, (i) => crumb('crumb-$i${'x' * 10000}'));
-      assert(serializedBytes(backing) > FeedbackConstants.maxBreadcrumbsBytes);
+      assert(
+        serializedBytes(backing) > FeedbackConstants.maxBreadcrumbsBytes,
+        'the setup crumbs should exceed the byte cap',
+      );
       final service = buildService(breadcrumbSource: () => backing);
 
       final report = service.buildReport(
@@ -607,7 +610,7 @@ void main() {
       statusCode: 201,
     );
 
-    test('sends the active server\'s records and untagged records in '
+    test("sends the active server's records and untagged records in "
         'order, removing each on success, and returns the count', () async {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
@@ -893,8 +896,8 @@ void main() {
         );
         final sink = _RecordingSink(
           pendingList: [
-            QueuedFeedbackReport(
-              report: const FeedbackReport(
+            const QueuedFeedbackReport(
+              report: FeedbackReport(
                 category: FeedbackCategory.bug,
                 severity: FeedbackSeverity.low,
                 message: 'keyless',
@@ -1133,15 +1136,18 @@ void main() {
       for (final (label, error) in <(String, Object)>[
         (
           'a 429 throttle',
-          FeedbackTransientSubmissionException('throttled', statusCode: 429),
+          const FeedbackTransientSubmissionException(
+            'throttled',
+            statusCode: 429,
+          ),
         ),
         (
           'an offline device (no status)',
-          FeedbackTransientSubmissionException('offline'),
+          const FeedbackTransientSubmissionException('offline'),
         ),
         (
           'a 503',
-          FeedbackTransientSubmissionException('down', statusCode: 503),
+          const FeedbackTransientSubmissionException('down', statusCode: 503),
         ),
       ]) {
         test('$label stops the run and counts no attempt', () async {
@@ -1177,8 +1183,8 @@ void main() {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
         pendingList: [
-          QueuedFeedbackReport(
-            report: const FeedbackReport(
+          const QueuedFeedbackReport(
+            report: FeedbackReport(
               category: FeedbackCategory.bug,
               severity: FeedbackSeverity.low,
               message: 'no key',
@@ -1444,11 +1450,12 @@ class _RecordingTransport implements FeedbackTransport {
     sent.add(report);
     if (error == null) return;
     final threshold = failOnCall;
-    final fails = threshold == null
-        ? true
-        : failOnCallOnly
-        ? _calls == threshold
-        : _calls >= threshold;
+    final fails =
+        threshold == null ||
+        (failOnCallOnly ? _calls == threshold : _calls >= threshold);
+    // A test fake that throws whatever object it was given, which may be a
+    // non-Exception.
+    // ignore: only_throw_errors
     if (fails) throw error!;
   }
 }
@@ -1479,9 +1486,9 @@ class _RecordingSink implements FeedbackSink {
   @override
   final bool survivesRestart;
 
-  final Object? persistError;
-  final Object? updateError;
-  final Object? removeError;
+  final Error? persistError;
+  final Error? updateError;
+  final Error? removeError;
   final List<QueuedFeedbackReport> _pending;
 
   final List<QueuedFeedbackReport> persisted = [];
@@ -1539,11 +1546,11 @@ class _GateOneTransport implements FeedbackTransport {
   final String gateOn;
 
   /// Thrown by the gated send once released; null lets it succeed.
-  final Object? errorForGated;
+  final Exception? errorForGated;
 
   /// Thrown by every other send. An unrecognised type is run-level, so this
   /// is how a test stops the drain before it empties the queue.
-  final Object? errorForOthers;
+  final Error? errorForOthers;
 
   final _gate = Completer<void>();
   final _arrived = Completer<void>();

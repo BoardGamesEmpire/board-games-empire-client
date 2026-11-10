@@ -1,5 +1,5 @@
 // Verifies the invariants that hold across every package in the
-// workspace. Five of them today:
+// workspace. Six of them today:
 //
 //   1. SDK constraints match the root pubspec (#153) — the bulk of this
 //      file. `--fix` repairs it.
@@ -10,6 +10,8 @@
 //      (#159, #426). Check-only.
 //   5. No native app depends, however indirectly, on a web
 //      implementation (#51). Check-only.
+//   6. Every package's `analysis_options.yaml` includes the root one
+//      and changes none of its rules (#194). Check-only.
 //
 // Kept under this filename because CI, the `check:constraints` melos
 // script, and a handful of comments all reference it; the name is
@@ -96,6 +98,30 @@
 //
 // Check-only: the fix is a change of dependency, not a pubspec rewrite.
 //
+// ── 6. analysis_options ────────────────────────────────────────────
+//
+// The root `analysis_options.yaml` is the one rule set for the workspace.
+// Each member's own file must include it: its top-level `include:` equals
+// `../` once per segment of the member's directory, then
+// `analysis_options.yaml` (`packages/core/di` includes
+// `../../../analysis_options.yaml`). Compared as a parsed value, so a
+// package lint set, a missing key, or a list such as
+// `[../../analysis_options.yaml, package:flutter_lints/flutter.yaml]`
+// that layers another set over the root all fail the same way.
+//
+// Nothing after the include may change a rule either. A member's file
+// holds `include:` and `analyzer:`, and its `analyzer:` holds only
+// `exclude:` (its own platform folders) and `errors:`. `errors:` may
+// name only the codes in `_memberErrorCodes`: analyzer warnings a code
+// generator's documented pattern sets off, not rules of the set. So
+// `linter: rules: x: false`, `analyzer: errors: x: ignore` and
+// `analyzer: language: strict-casts: false` all fail.
+//
+// Check-only, like publish_to: the fix is a one-line edit, and a rewrite
+// would have to guess which of a file's other keys (its own
+// `analyzer: exclude:`) to keep. The root's own file is only checked for
+// existence: it includes a package, not itself.
+//
 // ── Coverage ───────────────────────────────────────────────────────
 //
 // Packages are discovered from the root `workspace:` list, not from
@@ -115,6 +141,11 @@
 // client version with `--set-version` (#419): it writes the root `version:`
 // as the given major.minor.patch plus the build number already there, then
 // does what `--fix` does for the apps.
+
+// Lists here wrap one message or one template entry over adjacent
+// literals. A dropped comma would join two entries, which the self-test
+// or the real manifests fail on.
+// ignore_for_file: no_adjacent_strings_in_list
 
 import 'dart:convert';
 import 'dart:io';
@@ -136,25 +167,29 @@ void main(List<String> args) {
         args[i],
   ];
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(_usage);
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 
   if (setVersion != null && !RegExp(r'^\d+\.\d+\.\d+$').hasMatch(setVersion)) {
-    stderr.writeln(
-      '--set-version takes major.minor.patch (e.g. 0.2.0), with no '
-      'prerelease and no build number: the build number stays as it is in '
-      'the root `version:`. Found: ${setVersion.isEmpty ? '(nothing)' : setVersion}',
-    );
-    stderr.writeln(_usage);
+    stderr
+      ..writeln(
+        '--set-version takes major.minor.patch (e.g. 0.2.0), with no '
+        'prerelease and no build number: the build number stays as it is in '
+        'the root `version:`. '
+        'Found: ${setVersion.isEmpty ? '(nothing)' : setVersion}',
+      )
+      ..writeln(_usage);
     exit(64);
   }
 
   if (args.contains('--self-test')) {
     if (setVersion != null) {
-      stderr.writeln('--set-version does not combine with --self-test.');
-      stderr.writeln(_usage);
+      stderr
+        ..writeln('--set-version does not combine with --self-test.')
+        ..writeln(_usage);
       exit(64);
     }
     _selfTest();
@@ -247,6 +282,7 @@ void main(List<String> args) {
   final sdkProblems = <String>[];
   final versionProblems = <String>[];
   final publishProblems = <String>[];
+  final analysisProblems = <String>[];
   final unfixable = <String>[];
   // A set, since one pubspec can need both rewrites.
   final rewrittenPaths = <String>{};
@@ -261,6 +297,8 @@ void main(List<String> args) {
   // target `board_games_empire` — so it gets the publish_to check even
   // though it is not one of its own `workspace:` members.
   _checkPublishTo('pubspec.yaml', rootYaml, publishProblems);
+
+  final rootOptionsMissing = !File('analysis_options.yaml').existsSync();
 
   for (final dir in members) {
     final path = '$dir/pubspec.yaml';
@@ -278,6 +316,13 @@ void main(List<String> args) {
 
     // Before the environment checks, which `continue` past this point.
     _checkPublishTo(path, yaml, publishProblems);
+    final optionsFile = File('$dir/analysis_options.yaml');
+    final optionsProblem = _analysisOptionsProblem(
+      '$dir/analysis_options.yaml',
+      optionsFile.existsSync() ? optionsFile.readAsStringSync() : null,
+      _expectedRootInclude(dir),
+    );
+    if (optionsProblem != null) analysisProblems.add(optionsProblem);
 
     // Only the apps: nothing reads a library's `version:`.
     if (apps.contains(dir)) {
@@ -451,18 +496,42 @@ void main(List<String> args) {
     );
   }
 
+  if (rootOptionsMissing) {
+    stderr.writeln(
+      'analysis_options.yaml does not exist at the workspace root. It is '
+      'the one rule set every package includes (#194): restore it.',
+    );
+  }
+  if (analysisProblems.isNotEmpty) {
+    stderr.writeln(
+      '${analysisProblems.length} analysis_options.yaml file(s) do not hold '
+      'to the root rule set:',
+    );
+    for (final p in analysisProblems) {
+      stderr.writeln('  $p');
+    }
+    stderr.writeln(
+      '\nEvery package analyses under the root rule set alone (#194): '
+      'its file includes the path shown and changes no rule. This check '
+      'does not rewrite it for you.',
+    );
+  }
+
   final checkOnlyFailed =
       publishProblems.isNotEmpty ||
       manifestProblems.isNotEmpty ||
       digestProblems.isNotEmpty ||
-      separationProblems.isNotEmpty;
+      separationProblems.isNotEmpty ||
+      rootOptionsMissing ||
+      analysisProblems.isNotEmpty;
   final problems = [...sdkProblems, ...versionProblems];
 
   if (problems.isEmpty) {
     if (checkOnlyFailed) exit(1);
     stdout.writeln(
       'Workspace invariants hold across ${members.length} packages plus '
-      'the root (Flutter $pin, sdk $expectedSdk, publish_to none, version '
+      'the root (Flutter $pin, sdk $expectedSdk, publish_to none, the root '
+      'analysis_options in every package, version '
       '$expectedVersion in ${apps.length} apps and $manifestCount native '
       'manifests, the Flutter release digest, and no native app reaching a '
       'web implementation).',
@@ -521,6 +590,68 @@ void _checkPublishTo(String path, YamlMap pubspec, List<String> problems) {
   final actual = pubspec['publish_to']?.toString();
   if (actual == 'none') return;
   problems.add('$path: publish_to is ${_show(actual)}, expected "none"');
+}
+
+/// The `include:` a member's `analysis_options.yaml` must carry: the
+/// relative path from [memberDir] to the root file.
+String _expectedRootInclude(String memberDir) =>
+    '${'../' * memberDir.split('/').length}analysis_options.yaml';
+
+/// The `analyzer: errors:` codes a member may set. Each is an analyzer
+/// warning, not a rule of the set.
+const _memberErrorCodes = {
+  // Freezed models put `@JsonKey` on constructor parameters, the pattern
+  // json_serializable documents (core/models).
+  'invalid_annotation_target',
+};
+
+/// What is wrong with a member's `analysis_options.yaml` at [path], given
+/// its text ([source], null when absent) and the [expected] include, or
+/// null when its top-level `include:` is exactly that one string and
+/// nothing after it changes a rule.
+///
+/// A list include is a problem even when it names the root: it can layer
+/// another rule set over it, and the point is a single rule set. Only the
+/// first problem is reported.
+String? _analysisOptionsProblem(String path, String? source, String expected) {
+  if (source == null) {
+    return '$path: does not exist — it must include the root '
+        'analysis_options.yaml';
+  }
+  final Object? yaml;
+  try {
+    yaml = loadYaml(source);
+  } on YamlException {
+    return '$path: is not valid YAML';
+  }
+  final include = yaml is YamlMap ? yaml['include'] : null;
+  if (yaml is! YamlMap || include is! String || include != expected) {
+    return '$path: include is ${_show(include?.toString())}, expected '
+        '"$expected"';
+  }
+  for (final key in yaml.keys) {
+    if (key != 'include' && key != 'analyzer') {
+      return '$path: sets `$key:`, which only the root file may';
+    }
+  }
+  final analyzer = yaml['analyzer'];
+  if (analyzer == null) return null;
+  if (analyzer is! YamlMap) return '$path: `analyzer:` is not a map';
+  for (final key in analyzer.keys) {
+    if (key != 'exclude' && key != 'errors') {
+      return '$path: sets `analyzer: $key:`, which only the root file may';
+    }
+  }
+  final errors = analyzer['errors'];
+  if (errors == null) return null;
+  if (errors is! YamlMap) return '$path: `analyzer: errors:` is not a map';
+  for (final code in errors.keys) {
+    if (!_memberErrorCodes.contains(code)) {
+      return '$path: sets `analyzer: errors: $code:`, which only the root '
+          'file may';
+    }
+  }
+  return null;
 }
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';
@@ -603,9 +734,10 @@ void _selfTest() {
       stdout.writeln('  ok   $name');
     } else {
       failures++;
-      stdout.writeln('  FAIL $name');
-      stdout.writeln('       expected: ${jsonEncode(expected)}');
-      stdout.writeln('       actual:   ${jsonEncode(actual)}');
+      stdout
+        ..writeln('  FAIL $name')
+        ..writeln('       expected: ${jsonEncode(expected)}')
+        ..writeln('       actual:   ${jsonEncode(actual)}');
     }
   }
 
@@ -889,19 +1021,19 @@ void _selfTest() {
 
   const cmakeTemplate =
       '# Add preprocessor definitions for the build version.\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_MINOR=${FLUTTER_VERSION_MINOR}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_PATCH=${FLUTTER_VERSION_PATCH}")'
       '\n'
-      'target_compile_definitions(\${BINARY_NAME} PRIVATE '
+      r'target_compile_definitions(${BINARY_NAME} PRIVATE '
       r'"FLUTTER_VERSION_BUILD=${FLUTTER_VERSION_BUILD}")'
       '\n'
       'target_compile_definitions(\${BINARY_NAME} PRIVATE "NOMINMAX")\n';
@@ -922,10 +1054,10 @@ void _selfTest() {
             r'"FLUTTER_VERSION=\"2.0.0\""',
           )
           .replaceFirst(
-            'target_compile_definitions(\${BINARY_NAME} PRIVATE '
-                r'"FLUTTER_VERSION_BUILD',
-            '# target_compile_definitions(\${BINARY_NAME} PRIVATE '
-                r'"FLUTTER_VERSION_BUILD',
+            r'target_compile_definitions(${BINARY_NAME} PRIVATE '
+                '"FLUTTER_VERSION_BUILD',
+            r'# target_compile_definitions(${BINARY_NAME} PRIVATE '
+                '"FLUTTER_VERSION_BUILD',
           ),
     ),
     [
@@ -942,7 +1074,8 @@ void _selfTest() {
       '// Version\n'
       '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
       '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)\n'
-      '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
+      '#define VERSION_AS_NUMBER '
+      'FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
       'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD\n'
       '#else\n#define VERSION_AS_NUMBER 1,0,0,0\n#endif\n'
       '#if defined(FLUTTER_VERSION)\n'
@@ -972,8 +1105,8 @@ void _selfTest() {
       rcTemplate
           .replaceFirst('FILEVERSION VERSION_AS_NUMBER', 'FILEVERSION 1,0,0,1')
           .replaceFirst(
-            r'"ProductVersion", VERSION_AS_STRING',
-            r'"ProductVersion", "1.0.0.1"',
+            '"ProductVersion", VERSION_AS_STRING',
+            '"ProductVersion", "1.0.0.1"',
           ),
     ),
     [
@@ -1323,6 +1456,130 @@ void _selfTest() {
     <String>[],
   );
 
+  expect(
+    'analysis_options: expected include for a two-segment member',
+    _expectedRootInclude('apps/mobile'),
+    '../../analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: expected include for a three-segment member',
+    _expectedRootInclude('packages/core/di'),
+    '../../../analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: a conforming include passes',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n',
+      '../../analysis_options.yaml',
+    ),
+    null,
+  );
+
+  expect(
+    'analysis_options: a package lint set is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: package:flutter_lints/flutter.yaml\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: include is '
+        '"package:flutter_lints/flutter.yaml", expected '
+        '"../../analysis_options.yaml"',
+  );
+
+  // The root beside another set is still not the root alone.
+  expect(
+    'analysis_options: a list include is rejected',
+    _analysisOptionsProblem(
+          'packages/a/analysis_options.yaml',
+          'include: [../../analysis_options.yaml]\n',
+          '../../analysis_options.yaml',
+        ) !=
+        null,
+    true,
+  );
+
+  expect(
+    'analysis_options: an absent file is reported',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      null,
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: does not exist — it must include '
+        'the root analysis_options.yaml',
+  );
+
+  expect(
+    'analysis_options: an unparseable file is reported',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: [unclosed',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: is not valid YAML',
+  );
+
+  expect(
+    'analysis_options: its own excludes and a listed errors code pass',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  errors:\n'
+          '    invalid_annotation_target: ignore\n'
+          '  exclude:\n'
+          '    - build/**\n',
+      '../../analysis_options.yaml',
+    ),
+    null,
+  );
+
+  expect(
+    'analysis_options: a rule turned off under linter: is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'linter:\n'
+          '  rules:\n'
+          '    avoid_print: false\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `linter:`, which only the root '
+        'file may',
+  );
+
+  expect(
+    'analysis_options: a rule silenced under analyzer: errors: is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  errors:\n'
+          '    avoid_print: ignore\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `analyzer: errors: '
+        'avoid_print:`, which only the root file may',
+  );
+
+  expect(
+    'analysis_options: a strict mode turned off is rejected',
+    _analysisOptionsProblem(
+      'packages/a/analysis_options.yaml',
+      'include: ../../analysis_options.yaml\n'
+          'analyzer:\n'
+          '  language:\n'
+          '    strict-casts: false\n',
+      '../../analysis_options.yaml',
+    ),
+    'packages/a/analysis_options.yaml: sets `analyzer: language:`, which '
+        'only the root file may',
+  );
+
   if (failures > 0) {
     stderr.writeln('\n$failures self-test failure(s).');
     exit(1);
@@ -1500,7 +1757,7 @@ String _lineEnding(String source) => source.contains('\r\n') ? '\r\n' : '\n';
 /// Matches the top-level `version:` key, anchored at column 0 for the
 /// reason [_environmentKey] is: a hosted dependency's constraint is also
 /// spelled `version:`, one level down.
-final _versionLine = RegExp(r'^version:');
+final _versionLine = RegExp('^version:');
 
 /// A `version:` line this rewriter can replace: a value on the line
 /// itself, quoted or not, and an optional trailing comment to keep.
@@ -1551,7 +1808,7 @@ String? _versionShapeProblem(String version) {
         '(e.g. 1.2.3+4). Found: $version';
   }
   // Length first, so a long run of digits never reaches int.parse.
-  final parts = version.split(RegExp(r'[.+]'));
+  final parts = version.split(RegExp('[.+]'));
   if (parts.any((p) => p.length > 5 || int.parse(p) > 65535) ||
       int.parse(parts.last) < 1) {
     return 'Root `version:` parts must each be at most 65535, the size of a '
@@ -1670,10 +1927,11 @@ List<String> _templateVersionProblems(
           setsVersion(source[i]))
         '`${source[i]}` overrides the version Flutter sets',
     for (final block in missing)
-      block.length == 1
-          ? 'lacks `${block.single}`'
-          : 'lacks the unbroken block from `${block.first}` to '
-                '`${block.last}`',
+      if (block.length == 1)
+        'lacks `${block.single}`'
+      else
+        'lacks the unbroken block from `${block.first}` to '
+            '`${block.last}`',
   ];
 }
 
@@ -1733,7 +1991,8 @@ List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   const [
     '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
         '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)\n'
-        '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
+        '#define VERSION_AS_NUMBER '
+        'FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
         'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD\n'
         '#else\n'
         '#define VERSION_AS_NUMBER 1,0,0,0\n'

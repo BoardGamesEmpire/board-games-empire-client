@@ -90,7 +90,7 @@ void main() {
     }
   }
 
-  testWidgets('shows the game\'s facts', (tester) async {
+  testWidgets("shows the game's facts", (tester) async {
     remote.onFetchGame = (_) async =>
         (game: catan, platformGames: const <PlatformGame>[]);
 
@@ -111,7 +111,7 @@ void main() {
     );
   });
 
-  testWidgets('reads an imported game\'s play time from its range', (
+  testWidgets("reads an imported game's play time from its range", (
     tester,
   ) async {
     // What the server's import writes: a minimum and a maximum, in minutes.
@@ -418,7 +418,7 @@ void main() {
         });
       }
 
-      testWidgets('is held to the display\'s width, keeping its shape', (
+      testWidgets("is held to the display's width, keeping its shape", (
         tester,
       ) async {
         final display = tester.view.display.size.width;
@@ -848,7 +848,7 @@ void main() {
       expect(ringOn('pg_2'), isNull);
     });
 
-    testWidgets('the ring follows the chip\'s own corners, a margin out', (
+    testWidgets("the ring follows the chip's own corners, a margin out", (
       tester,
     ) async {
       await showOwning(tester, [entry('pg_1', GameMedium.physical)]);

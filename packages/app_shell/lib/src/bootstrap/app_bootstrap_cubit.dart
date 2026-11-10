@@ -1,13 +1,12 @@
 import 'dart:async';
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
+import 'package:app_shell/src/bootstrap/server_add_composition_error.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'app_bootstrap_state.dart';
-import 'platform_bootstrap.dart';
-import 'server_add_composition_error.dart';
 
 /// Drives the application bootstrap sequence over a platform-supplied
 /// [PlatformBootstrap] and exposes the outcome as [AppBootstrapState]s that

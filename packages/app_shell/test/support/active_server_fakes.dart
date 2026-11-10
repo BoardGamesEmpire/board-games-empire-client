@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:di/di.dart';
 import 'package:events/events.dart';
 import 'package:game_collection/game_collection.dart';
-import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
@@ -13,7 +13,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:sync_queue/sync_queue.dart' show SyncQueueDrain;
 
 /// Shared fakes for shell widget tests that need a *faithful* post-auth
-/// state — one where the bootstrap cubit reports [AppBootstrapReady] AND
+/// state — one where the bootstrap cubit reports `AppBootstrapReady` AND
 /// exposes an active-server scope. That pairing is an invariant of the real
 /// cubit (the bootstrap attempt sets the scope before it can emit
 /// `NeedsAuth`, and `onAuthenticated` — the only path to `Ready` — fires
@@ -36,7 +36,7 @@ class FakeAuthRepository implements AuthRepository {
   /// When non-null, [getSession] throws it instead of answering — models
   /// an unreachable server so the shell's #98 offline-restore path can be
   /// driven. Clear it to model connectivity returning.
-  Object? sessionCheckError;
+  Exception? sessionCheckError;
 
   /// When non-null, [restoreCachedSession] adopts it as an
   /// unverified-offline session, mirroring the production contract
@@ -149,7 +149,7 @@ class FakeActiveServerScope implements ActiveServerScope {
 }
 
 /// A well-formed [ServerIdentity] fixture.
-ServerIdentity serverIdentity() => ServerIdentity(
+ServerIdentity serverIdentity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -162,7 +162,7 @@ ServerIdentity serverIdentity() => ServerIdentity(
   twoFactorSupported: false,
   anonymousAuthSupported: false,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',

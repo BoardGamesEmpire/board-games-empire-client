@@ -1,8 +1,4 @@
 class ServerCapacityExceededException implements Exception {
-  final int currentConnected;
-  final int maxCapacity;
-  final String message;
-
   const ServerCapacityExceededException({
     required this.currentConnected,
     required this.maxCapacity,
@@ -10,6 +6,9 @@ class ServerCapacityExceededException implements Exception {
            'Cannot monitor additional servers. Currently monitoring '
            '$currentConnected of $maxCapacity allowed. Disconnect an existing '
            'monitored server before connecting another.';
+  final int currentConnected;
+  final int maxCapacity;
+  final String message;
 
   @override
   String toString() => 'ServerCapacityExceededException: $message';

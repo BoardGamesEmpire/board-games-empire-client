@@ -1,14 +1,13 @@
 import 'dart:io';
 
 import 'package:drift/native.dart' show NativeDatabase;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:storage_interface/storage_interface.dart';
-
-import 'package:drift_storage/src/databases/meta_database.dart';
-import 'package:drift_storage/src/databases/server_database.dart';
-import 'package:drift_storage/src/databases/migration_policy.dart';
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
+import 'package:drift_storage/src/databases/meta_database.dart';
+import 'package:drift_storage/src/databases/migration_policy.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:storage_interface/storage_interface.dart';
 
 void main() {
   group('guardAgainstDowngrade', () {

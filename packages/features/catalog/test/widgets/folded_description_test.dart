@@ -162,8 +162,7 @@ void main() {
 
   testWidgets('the toggle keeps focus through More and Less', (tester) async {
     await show(tester, long);
-    final focus = Focus.of(tester.element(find.text('More')));
-    focus.requestFocus();
+    final focus = Focus.of(tester.element(find.text('More')))..requestFocus();
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);

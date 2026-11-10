@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../detail/event_actions.dart';
 
 /// How an action on an event ended (#501, #506, #502).
 enum EventActionResult {

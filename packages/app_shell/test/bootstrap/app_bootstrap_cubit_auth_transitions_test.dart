@@ -45,8 +45,9 @@ void main() {
       build: () => buildCubit(bootstrap: serverRegistered()),
       act: (cubit) async {
         await cubit.initialize();
-        cubit.onAuthenticated();
-        cubit.onAuthenticated();
+        cubit
+          ..onAuthenticated()
+          ..onAuthenticated();
       },
       expect: () => const [AppBootstrapNeedsAuth(), AppBootstrapReady()],
     );
@@ -82,8 +83,9 @@ void main() {
       build: () => buildCubit(bootstrap: serverRegistered()),
       act: (cubit) async {
         await cubit.initialize();
-        cubit.onAuthenticated();
-        cubit.onSignedOut();
+        cubit
+          ..onAuthenticated()
+          ..onSignedOut();
       },
       expect: () => const [
         AppBootstrapNeedsAuth(),
@@ -99,8 +101,9 @@ void main() {
       build: () => buildCubit(bootstrap: serverRegistered()),
       act: (cubit) async {
         await cubit.initialize();
-        cubit.onSignedOut();
-        cubit.onSignedOut();
+        cubit
+          ..onSignedOut()
+          ..onSignedOut();
       },
       expect: () => const [AppBootstrapNeedsAuth()],
     );
@@ -122,9 +125,10 @@ void main() {
       build: () => buildCubit(bootstrap: serverRegistered()),
       act: (cubit) async {
         await cubit.initialize();
-        cubit.onAuthenticated();
-        cubit.onSignedOut();
-        cubit.onAuthenticated();
+        cubit
+          ..onAuthenticated()
+          ..onSignedOut()
+          ..onAuthenticated();
       },
       expect: () => const [
         AppBootstrapNeedsAuth(),

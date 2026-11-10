@@ -1,7 +1,7 @@
 /// Thrown when encryption is required but the bundled SQLite build does not
 /// provide it — i.e. `PRAGMA cipher` reports no cipher support.
 ///
-/// Unlike [DatabaseKeyError] this is **not** a recoverable runtime
+/// Unlike `DatabaseKeyError` this is **not** a recoverable runtime
 /// condition: it means the application was built without the
 /// SQLite3MultipleCiphers user-define (`hooks: user_defines: sqlite3:
 /// source: sqlite3mc` in the workspace-root `pubspec.yaml`) or the build
@@ -23,6 +23,6 @@ class EncryptionUnavailableError extends Error {
   String toString() =>
       'EncryptionUnavailableError: the bundled SQLite build has no cipher '
       'support. The workspace root pubspec.yaml must select an encrypted '
-      "build via `hooks: user_defines: sqlite3: source: sqlite3mc`."
+      'build via `hooks: user_defines: sqlite3: source: sqlite3mc`.'
       '${detail == null ? '' : ' ($detail)'}';
 }

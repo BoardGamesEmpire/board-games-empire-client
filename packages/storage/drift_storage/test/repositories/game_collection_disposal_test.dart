@@ -1,12 +1,11 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/platform_game_fixture.dart';
 import '../support/system_clock.dart';
@@ -15,7 +14,7 @@ class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
-const _kMedium = GameMedium.physical;
+const GameMedium _kMedium = GameMedium.physical;
 
 /// Disposal contract for [GameCollectionRepositoryImpl] (#150), mirroring
 /// the group `sync_queue_user_scoping_test.dart` holds for the queue.
@@ -23,7 +22,7 @@ const _kMedium = GameMedium.physical;
 /// The repository is registered in the **user-session scope** (#135), which
 /// pops on every authentication transition, while its Drift streams are
 /// tied to the per-server database that outlives that scope. Without the
-/// shared [WatchDisposal] contract a subscription taken under user A keeps
+/// shared `WatchDisposal` contract a subscription taken under user A keeps
 /// emitting A's frozen rows after B signs in — the #138 leak.
 void main() {
   setUpAll(() {
@@ -248,7 +247,7 @@ void main() {
       await expectLater(repoA.onDispose(), completes);
     });
 
-    test('disposing one user\'s repository does not disturb another\'s live '
+    test("disposing one user's repository does not disturb another's live "
         'stream over the same table', () async {
       // The only case that needs a second live repository over the same
       // database — the shared-device shape.

@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/home/shelf_loading.dart';
+import 'package:game_catalog/src/home/something_to_play_cubit.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../quick_look/game_quick_look_seed.dart';
-import 'shelf_loading.dart';
-import 'something_to_play_cubit.dart';
 
 /// The home page's "Something to play" row (#616): a random pick of games from
 /// the households the user is in and their own collection, or the server's when
@@ -43,9 +41,9 @@ import 'something_to_play_cubit.dart';
 ///
 /// The cubit lives as long as the section and is created when it is. When the
 /// section is uncovered it draws again only if there is nothing up, as the
-/// server may have been filled meanwhile, or the first draw may have failed with
-/// nothing else to try it again. With rows up it doesn't, so that the pick stays
-/// as the user left it. With none up, nothing can change under them: see
+/// server may have been filled meanwhile, or the first draw may have failed
+/// with nothing else to try it again. With rows up it doesn't, so that the pick
+/// stays as the user left it. With none up, nothing can change under them: see
 /// [SomethingToPlayCubit.drawIfNothing].
 class SomethingToPlaySection extends StatelessWidget {
   const SomethingToPlaySection({
@@ -133,7 +131,8 @@ class _Section extends StatelessWidget {
             context,
             placeholder: const ShelfLoading(
               key: SomethingToPlaySection.loadingKey,
-              // "Recently added" is offered with this section, and announces it.
+              // "Recently added" is offered with this section, and announces
+              // it.
               live: false,
             ),
           ),

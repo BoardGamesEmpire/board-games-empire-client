@@ -147,13 +147,12 @@ void main() {
 
       test('discards samples where the response predates the request '
           'without quarantining them', () {
-        final clock = ServerSkewClockService(localNowUtc: () => t0);
-
-        clock.recordSample(
-          serverDate: t0.subtract(const Duration(minutes: 5)),
-          requestSentAt: t0,
-          responseReceivedAt: t0.subtract(const Duration(seconds: 1)),
-        );
+        final clock = ServerSkewClockService(localNowUtc: () => t0)
+          ..recordSample(
+            serverDate: t0.subtract(const Duration(minutes: 5)),
+            requestSentAt: t0,
+            responseReceivedAt: t0.subtract(const Duration(seconds: 1)),
+          );
         expect(clock.skewEstimate, isNull);
 
         // A discarded sample must not act as the first of an agreeing

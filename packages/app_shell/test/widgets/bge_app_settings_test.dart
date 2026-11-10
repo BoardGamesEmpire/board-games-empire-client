@@ -80,8 +80,7 @@ void main() {
       states.add(const AppBootstrapReady());
       await tester.pumpAndSettle();
 
-      final router = materialApp(tester).routerConfig! as GoRouter;
-      router.go(AppRoutes.settings);
+      (materialApp(tester).routerConfig! as GoRouter).go(AppRoutes.settings);
       await tester.pumpAndSettle();
 
       expect(find.byType(SettingsScreen), findsOneWidget);

@@ -1,8 +1,7 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Which shell route a [ShellPlaceholderScreen] stands in for.
 enum ShellPlaceholderKind {

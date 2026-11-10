@@ -3,7 +3,7 @@ import 'package:models/domain.dart';
 /// Repository for BGE server configurations stored in the root DB.
 ///
 /// Capacity enforcement (max monitored servers) is NOT the responsibility of
-/// this repository — it belongs in [ServerOrchestrator], which has access to
+/// this repository — it belongs in `ServerOrchestrator`, which has access to
 /// [DevicePreferences]. This repository stores and retrieves state faithfully.
 ///
 /// Any method that maps a stored row into a [ServerConfig] can throw
@@ -111,16 +111,16 @@ class DuplicateServerException implements Exception {
 }
 
 class ServerNotFoundException implements Exception {
-  final String serverId;
   const ServerNotFoundException(this.serverId);
+  final String serverId;
   @override
   String toString() =>
       'ServerNotFoundException: No server found with id $serverId';
 }
 
 class ActiveServerException implements Exception {
-  final String serverId;
   const ActiveServerException(this.serverId);
+  final String serverId;
   @override
   String toString() =>
       'ActiveServerException: Cannot remove active server $serverId. '
@@ -137,9 +137,9 @@ class ActiveServerException implements Exception {
 /// removing and re-adding the server, which re-fetches a fresh,
 /// current-shape identity document.
 class CorruptedServerIdentityException implements Exception {
+  const CorruptedServerIdentityException(this.serverId, this.cause);
   final String serverId;
   final Object cause;
-  const CorruptedServerIdentityException(this.serverId, this.cause);
   @override
   String toString() =>
       'CorruptedServerIdentityException: Cached identity for server '

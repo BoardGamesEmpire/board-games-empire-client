@@ -94,7 +94,6 @@ void main() {
         metadata: '{"colour":"teal"}',
         createdAt: at,
         updatedAt: later,
-        sessionRevokedAt: null,
       ),
       const v2.ServerConfigsData(
         id: 'sc_v1_2',
@@ -107,7 +106,6 @@ void main() {
         metadata: '{}',
         createdAt: at,
         updatedAt: at,
-        sessionRevokedAt: null,
       ),
     ];
 

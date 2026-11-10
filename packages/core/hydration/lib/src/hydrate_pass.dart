@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:hydration/src/hydration_status.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
-
-import 'hydration_status.dart';
 
 /// A feature's hydrate pass: its drain, run one at a time, behind the
 /// session check, with the [HydrationStatus] driven around it (#407).
@@ -75,10 +74,10 @@ import 'hydration_status.dart';
 /// a failure-driven retry (#311), not something a staleness rule can
 /// answer; a screen's manual retry covers it in the meantime.
 final class HydratePass<O extends Object> {
-  /// [feature] is the capitalised subject of the log lines (`'Household'`).
-  /// [drain] is the feature's page loop, and [failed] the outcome reported
-  /// for a drain that was held off or threw. [userId] is the scope's user,
-  /// whom [guard] is asked about. [context] is merged into every log line.
+  /// `feature` is the capitalised subject of the log lines (`'Household'`).
+  /// `drain` is the feature's page loop, and `failed` the outcome reported
+  /// for a drain that was held off or threw. `userId` is the scope's user,
+  /// whom `guard` is asked about. `context` is merged into every log line.
   HydratePass({
     required this._feature,
     required this._drain,
@@ -208,7 +207,7 @@ final class HydratePass<O extends Object> {
     if (answer != null && answer != SessionConfirmation.confirmed) {
       _logger.info(
         '$_feature hydrate held off: the session could not be confirmed as '
-        'this scope\'s user',
+        "this scope's user",
         context: {..._context, 'answer': answer.name},
       );
       _status.finished(_failed);

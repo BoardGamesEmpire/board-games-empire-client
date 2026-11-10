@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
+import 'package:di/src/dependency_container_impl.dart';
 import 'package:interfaces/orchestration.dart';
-
-import '../debug_report_swallowed.dart';
-import '../dependency_container_impl.dart';
 
 /// The per-user child-scope mechanism (#135), extracted so any composition
 /// root can host a user session (#289).
@@ -16,13 +15,13 @@ import '../dependency_container_impl.dart';
 /// streams.
 ///
 /// This class owns *only* that mechanism. It deliberately knows nothing
-/// about [UserScopeInstaller], [ServerConfig], user ids, or the state of the
+/// about [UserScopeInstaller], `ServerConfig`, user ids, or the state of the
 /// scope that hosts it — those belong to the owner:
 ///
 /// - `ServerContextImpl` keeps its context-state machine, its serialized
 ///   scope-operation chain, and the `UserSessionScope` adapter it registers,
 ///   and delegates the mechanism here;
-/// - [ContainerUserSessionScope] does the same over a fixed parent, which is
+/// - `ContainerUserSessionScope` does the same over a fixed parent, which is
 ///   the shape web's origin-scoped container needs (#137).
 ///
 /// Two copies of this lifecycle is exactly what #289 exists to prevent: the
@@ -41,7 +40,7 @@ import '../dependency_container_impl.dart';
 /// is the owner's job, and the owner is the only thing that knows it has
 /// been torn down. Both owners now do it, in about three lines each:
 /// `ServerContextImpl` guards on its container facade before delegating
-/// here, and [ContainerUserSessionScope] — web's holder (#137) — refuses
+/// here, and `ContainerUserSessionScope` — web's holder (#137) — refuses
 /// once its own `dispose` has run. #327 weighed moving the guard in here and
 /// the second implementation argued against it: the owners are where the
 /// knowledge is, and neither wanted the primitive to hold it.
@@ -122,10 +121,10 @@ class UserScopeHost {
     _scope = child;
     try {
       await install(_UserScopeView(user: child, base: _parent));
-    } catch (_) {
+    } on Object catch (_) {
       try {
         await close();
-      } catch (teardownError) {
+      } on Object catch (teardownError) {
         debugReportSwallowed(
           '$_label: user-scope reset after a failed session activation '
           'threw (suppressed in favor of the original installer error)',

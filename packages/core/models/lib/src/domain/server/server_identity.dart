@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'server_auth_strategy.dart';
+import 'package:models/src/domain/server/server_auth_strategy.dart';
 
 part 'server_identity.freezed.dart';
 part 'server_identity.g.dart';
@@ -8,7 +8,7 @@ part 'server_identity.g.dart';
 /// Immutable representation of the BGE server discovery document served at
 /// /.well-known/bge-identity.
 ///
-/// Modeled directly from [BgeDiscoveryDto] on the NestJS backend. All fields
+/// Modeled directly from `BgeDiscoveryDto` on the NestJS backend. All fields
 /// use explicit [JsonKey] names to match the snake_case wire format produced
 /// by the backend's SnakeCaseInterceptor.
 ///
@@ -26,12 +26,10 @@ part 'server_identity.g.dart';
 /// (`ServerConfig.serverUrl`) by the per-server `Dio` instance built by the
 /// `DioFactory`. The client already knows the base — the user typed it to reach
 /// well-known in the first place — so the document never needs to repeat an
-/// absolute origin. [discoveryUrl] on an [OidcStrategy] is the one exception:
+/// absolute origin. `discoveryUrl` on an [OidcStrategy] is the one exception:
 /// it points at an external identity provider and remains absolute.
 @freezed
 abstract class ServerIdentity with _$ServerIdentity {
-  const ServerIdentity._();
-
   const factory ServerIdentity({
     /// Schema version of the discovery document. Bumped only on a breaking
     /// shape change; the client refuses documents newer than it understands
@@ -40,22 +38,13 @@ abstract class ServerIdentity with _$ServerIdentity {
     required int wellKnownSchemaVersion,
 
     /// Stable UUID identifying this BGE server instance.
-    /// Corresponds to the `bge_server_id` field in [BgeDiscoveryDto].
+    /// Corresponds to the `bge_server_id` field in `BgeDiscoveryDto`.
     @JsonKey(name: 'bge_server_id') required String serverId,
 
     /// Human-readable server display name, shown when choosing which server
     /// to add. Also the default alias suggestion in the server-add flow
     /// (#36).
     required String name,
-
-    /// Minimum semver client version this server accepts. Clients older
-    /// than this refuse to proceed past server-add. Null = no minimum.
-    /// Compared against [BuildInfo.version] by the version negotiator (#13).
-    @JsonKey(name: 'bge_min_client_version') String? minClientVersion,
-
-    /// Maximum semver client version this server accepts. Clients newer
-    /// than this refuse to proceed. Null = no maximum.
-    @JsonKey(name: 'bge_max_client_version') String? maxClientVersion,
 
     /// Canonical base URL of this BGE server. Equivalent to `issuer` in
     /// RFC 8414. Informational only: used to confirm the client is talking to
@@ -97,6 +86,15 @@ abstract class ServerIdentity with _$ServerIdentity {
     @JsonKey(name: 'bge_anonymous_auth_supported')
     required bool anonymousAuthSupported,
 
+    /// Minimum semver client version this server accepts. Clients older
+    /// than this refuse to proceed past server-add. Null = no minimum.
+    /// Compared against `BuildInfo.version` by the version negotiator (#13).
+    @JsonKey(name: 'bge_min_client_version') String? minClientVersion,
+
+    /// Maximum semver client version this server accepts. Clients newer
+    /// than this refuse to proceed. Null = no maximum.
+    @JsonKey(name: 'bge_max_client_version') String? maxClientVersion,
+
     /// Authentication strategies currently enabled on this server.
     /// An empty list means only device flow or passkey authentication is
     /// available. Deserialized via [ServerAuthStrategyListConverter].
@@ -104,6 +102,7 @@ abstract class ServerIdentity with _$ServerIdentity {
     @Default([])
     List<ServerAuthStrategy> strategies,
   }) = _ServerIdentity;
+  const ServerIdentity._();
 
   factory ServerIdentity.fromJson(Map<String, dynamic> json) =>
       _$ServerIdentityFromJson(json);

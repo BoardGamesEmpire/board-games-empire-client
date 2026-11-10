@@ -1,18 +1,18 @@
 import 'dart:convert';
 
-import '../common/reach.dart';
-import '../event/event_draft.dart';
-import '../event/event_scheduling_mode.dart';
-import '../event/event_type.dart';
-import '../event/game_addition_mode.dart';
-import '../event/vote_quorum_type.dart';
-import '../event/vote_threshold_type.dart';
+import 'package:models/src/domain/common/reach.dart';
+import 'package:models/src/domain/event/event_draft.dart';
+import 'package:models/src/domain/event/event_scheduling_mode.dart';
+import 'package:models/src/domain/event/event_type.dart';
+import 'package:models/src/domain/event/game_addition_mode.dart';
+import 'package:models/src/domain/event/vote_quorum_type.dart';
+import 'package:models/src/domain/event/vote_threshold_type.dart';
 
 /// Sealed hierarchy of operations the sync queue can process.
 ///
 /// Each variant carries exactly the data needed to reconstruct the server
 /// request without reading from any other local table. Serialised to JSON
-/// and stored in the [SyncQueueEntry.payload] column.
+/// and stored in the `SyncQueueEntry.payload` column.
 sealed class SyncOperation {
   const SyncOperation();
 
@@ -31,12 +31,12 @@ sealed class SyncOperation {
     };
   }
 
+  factory SyncOperation.deserialize(String payload) =>
+      SyncOperation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
+
   Map<String, dynamic> toJson();
 
   String get serialized => jsonEncode(toJson());
-
-  static SyncOperation deserialize(String payload) =>
-      SyncOperation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
 }
 
 // ── GameCollection operations ────────────────────────────────────────
@@ -52,8 +52,6 @@ final class AddToCollectionOperation extends SyncOperation {
     this.raised,
   });
 
-  static const String type = 'add_to_collection';
-
   factory AddToCollectionOperation.fromJson(Map<String, dynamic> json) =>
       AddToCollectionOperation(
         localId: json['local_id'] as String,
@@ -65,7 +63,9 @@ final class AddToCollectionOperation extends SyncOperation {
         raised: json['raised'] as bool?,
       );
 
-  /// The local id of the [GameCollection] row this op writes. Generated
+  static const String type = 'add_to_collection';
+
+  /// The local id of the `GameCollection` row this op writes. Generated
   /// by `GameCollectionRepositoryImpl.addToCollection` as a cuid2 id
   /// (via `package:cuid2`) **before** the insert, so it's present on
   /// both the local row and the enqueued op.
@@ -124,8 +124,6 @@ final class UpdateCollectionOperation extends SyncOperation {
     this.comment,
   });
 
-  static const String type = 'update_collection';
-
   /// Ignores `play_count` and `last_played` if a payload still carries
   /// them. The server owns play history and rejects both on an update
   /// (#258), so they are not carried forward.
@@ -138,6 +136,8 @@ final class UpdateCollectionOperation extends SyncOperation {
         favorite: json['favorite'] as bool?,
         comment: json['comment'] as String?,
       );
+
+  static const String type = 'update_collection';
 
   final String collectionId;
   final int? quantity;
@@ -161,12 +161,12 @@ final class UpdateCollectionOperation extends SyncOperation {
 final class RemoveFromCollectionOperation extends SyncOperation {
   const RemoveFromCollectionOperation({required this.collectionId});
 
-  static const String type = 'remove_from_collection';
-
   factory RemoveFromCollectionOperation.fromJson(Map<String, dynamic> json) =>
       RemoveFromCollectionOperation(
         collectionId: json['collection_id'] as String,
       );
+
+  static const String type = 'remove_from_collection';
 
   final String collectionId;
 
@@ -207,8 +207,6 @@ final class CreateHouseholdOperation extends SyncOperation {
     this.visibility,
   });
 
-  static const String type = 'create_household';
-
   factory CreateHouseholdOperation.fromJson(Map<String, dynamic> json) =>
       CreateHouseholdOperation(
         localId: json['local_id'] as String,
@@ -219,7 +217,9 @@ final class CreateHouseholdOperation extends SyncOperation {
         visibility: json['visibility'] as String?,
       );
 
-  /// Local cuid2 id of the optimistic [Household] row this op creates.
+  static const String type = 'create_household';
+
+  /// Local cuid2 id of the optimistic `Household` row this op creates.
   ///
   /// Also the create's idempotency key: it goes to the server as
   /// `clientRequestId`, and the server returns the household the first
@@ -280,8 +280,6 @@ final class CreateHouseholdOperation extends SyncOperation {
 final class CreateEventOperation extends SyncOperation {
   const CreateEventOperation({required this.localId, required this.draft});
 
-  static const String type = 'create_event';
-
   factory CreateEventOperation.fromJson(Map<String, dynamic> json) {
     final policy = json['policy'] as Map<String, dynamic>?;
     return CreateEventOperation(
@@ -320,11 +318,13 @@ final class CreateEventOperation extends SyncOperation {
     );
   }
 
+  static const String type = 'create_event';
+
   /// The [localId] of the event create [payload] holds, read without
   /// decoding the rest, or null when [payload] holds no event create or no
   /// readable id.
   ///
-  /// For an entry whose [SyncQueueEntry.operation] throws: one a newer build
+  /// For an entry whose `SyncQueueEntry.operation` throws: one a newer build
   /// queued with an enum name this build can't read still names the local
   /// event a discard has to delete with it.
   static String? localIdOf(String payload) {

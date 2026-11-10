@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/bloc/game_detail_bloc.dart';
+import 'package:game_catalog/src/bloc/game_detail_event.dart';
+import 'package:game_catalog/src/bloc/game_detail_state.dart';
+import 'package:game_catalog/src/screens/game_detail_collection.dart';
+import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_catalog/src/widgets/cover_beside_title.dart';
+import 'package:game_catalog/src/widgets/game_description.dart';
+import 'package:game_catalog/src/widgets/game_detail_platforms.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -7,18 +17,6 @@ import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../bloc/game_detail_bloc.dart';
-import '../bloc/game_detail_event.dart';
-import '../bloc/game_detail_state.dart';
-import '../widgets/catalog_facts.dart';
-import '../widgets/catalog_slivers.dart';
-import '../widgets/cover_beside_title.dart';
-import '../widgets/game_description.dart';
-import '../widgets/game_detail_platforms.dart';
-import 'game_detail_collection.dart';
 
 /// One game (#42): its facts, its description as Markdown (#472), and the
 /// platforms it is available on.

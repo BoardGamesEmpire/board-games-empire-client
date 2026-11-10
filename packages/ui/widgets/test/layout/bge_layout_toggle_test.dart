@@ -1,5 +1,5 @@
-import 'dart:ui' show Tristate;
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -56,7 +56,7 @@ void main() {
   group('BgeRememberedLayout', () {
     Widget host({
       required Future<bool?> Function()? read,
-      required Future<void> Function(bool)? write,
+      required Future<void> Function({required bool thumbnails})? write,
       required List<bool?> seen,
       void Function(ValueChanged<bool>)? onBuilt,
       List<({Object error, bool writing})>? failures,
@@ -67,7 +67,7 @@ void main() {
           ? null
           : (error, _, {required writing}) =>
                 failures.add((error: error, writing: writing)),
-      builder: (context, thumbnails, onChanged) {
+      builder: (context, onChanged, {required thumbnails}) {
         seen.add(thumbnails);
         onBuilt?.call(onChanged);
         return const SizedBox();
@@ -164,7 +164,7 @@ void main() {
       await tester.pumpWidget(
         host(
           read: () async => false,
-          write: (value) async => written.add(value),
+          write: ({required thumbnails}) async => written.add(thumbnails),
           seen: seen,
           onBuilt: (onChanged) => change = onChanged,
         ),
@@ -188,7 +188,7 @@ void main() {
       await tester.pumpWidget(
         host(
           read: () => completer.future,
-          write: (value) async => written.add(value),
+          write: ({required thumbnails}) async => written.add(thumbnails),
           seen: seen,
           onBuilt: (onChanged) => change = onChanged,
         ),
@@ -216,7 +216,7 @@ void main() {
       await tester.pumpWidget(
         host(
           read: () async => false,
-          write: (_) async => throw StateError('disk full'),
+          write: ({required thumbnails}) async => throw StateError('disk full'),
           seen: seen,
           onBuilt: (onChanged) => change = onChanged,
           failures: failures,

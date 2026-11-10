@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/home/stats_cubit.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -7,10 +9,6 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import 'stats_cubit.dart';
 
 /// The home page's "Your stats" card (#614): how many games are in the user's
 /// collection, and how many their households share. See [StatsCubit] for what
@@ -37,21 +35,21 @@ import 'stats_cubit.dart';
 /// ## With nothing to say
 ///
 /// With neither line, the card draws nothing, heading included, because a
-/// heading with nothing under it says nothing. It comes up when a line does. The
-/// cubit is the same throughout, so it goes on reading, including when the page
-/// is uncovered.
+/// heading with nothing under it says nothing. It comes up when a line does.
+/// The cubit is the same throughout, so it goes on reading, including when the
+/// page is uncovered.
 ///
 /// ## The link
 ///
 /// A [TextButton], which stays enabled and focusable throughout. Its target is
-/// at least [BgeTokens.minTapTarget] tall at any text scale, and its label wraps
-/// within the card, as the counts do. Nothing here is clipped or cut short: at
-/// 200% text on a narrow window the lines get taller.
+/// at least [BgeTokens.minTapTarget] tall at any text scale, and its label
+/// wraps within the card, as the counts do. Nothing here is clipped or cut
+/// short: at 200% text on a narrow window the lines get taller.
 ///
 /// Its label lines up with the lines above it at rest. Its tint, on hover and
-/// keyboard focus, reaches [BgeTokens.spaceSm] past the label on each side, with
-/// small corners, so that it holds the label whole. All of it is inside the
-/// card's column, so a press or a hover anywhere on it reaches the button.
+/// keyboard focus, reaches [BgeTokens.spaceSm] past the label on each side,
+/// with small corners, so that it holds the label whole. All of it is inside
+/// the card's column, so a press or a hover anywhere on it reaches the button.
 ///
 /// The cubit lives as long as the card and is created with it, and reads the
 /// count again when the page is uncovered, as the other readers of the server
@@ -178,7 +176,7 @@ class _Card extends StatelessWidget {
                   if (state.collectionGames case final games?) ...[
                     const BgeGap.sm(),
                     Padding(
-                      key: ValueKey(StatsCard.ownedKey),
+                      key: const ValueKey(StatsCard.ownedKey),
                       padding: side,
                       child: Text(
                         l10n.collectionStatsOwned(games),
@@ -192,7 +190,7 @@ class _Card extends StatelessWidget {
                     HouseholdStatCount(:final games) => [
                       const BgeGap.sm(),
                       Padding(
-                        key: ValueKey(StatsCard.householdsKey),
+                        key: const ValueKey(StatsCard.householdsKey),
                         padding: side,
                         child: Text(
                           l10n.collectionStatsHouseholds(games),
@@ -221,8 +219,8 @@ class _Card extends StatelessWidget {
   ///
   /// The label lines up with the lines above it: the button is inset from the
   /// card's edge by what the lines are, less what it pads its label with. The
-  /// tint is then wholly inside the column, so that a press or hover anywhere on
-  /// it reaches the button.
+  /// tint is then wholly inside the column, so that a press or hover anywhere
+  /// on it reaches the button.
   Widget _prompt(
     BuildContext context,
     BgeTokens tokens,

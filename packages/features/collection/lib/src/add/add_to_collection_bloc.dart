@@ -1,12 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/src/add/add_to_collection_event.dart';
+import 'package:game_collection/src/add/add_to_collection_state.dart';
+import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import '../sync/collection_sync.dart';
-import 'add_to_collection_event.dart';
-import 'add_to_collection_state.dart';
 
 /// Drives the add sheet (#45): adds a game to the user's collection on the
 /// platform game chosen (#708), and says what is already there on the

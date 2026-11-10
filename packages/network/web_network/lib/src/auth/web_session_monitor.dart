@@ -5,8 +5,8 @@ import 'package:interfaces/repositories.dart'
     show AuthState, AuthStateAuthenticated, AuthStateUnknown;
 import 'package:observability/observability.dart';
 
-import 'session_channel.dart';
-import 'web_auth_repository_impl.dart';
+import 'package:web_network/src/auth/session_channel.dart';
+import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 /// Keeps one tab's session in step with the cookie every tab shares (#432).
 ///

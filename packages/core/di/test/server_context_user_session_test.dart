@@ -78,7 +78,7 @@ class BaseResolvingUserInstaller implements UserScopeInstaller {
 
 /// User installer that always throws, for activation-failure paths.
 class FailingUserInstaller implements UserScopeInstaller {
-  var calls = 0;
+  int calls = 0;
 
   @override
   Future<void> install(
@@ -93,7 +93,7 @@ class FailingUserInstaller implements UserScopeInstaller {
 
 /// A [Disposable] probe that counts its closes.
 class DisposableUserProbe implements Disposable {
-  var closes = 0;
+  int closes = 0;
 
   @override
   Future<void> onDispose() async {
@@ -141,7 +141,7 @@ ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   serverUrl: 'https://api.example.com',
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
     issuer: 'https://api.example.com',
     wellKnownSchemaVersion: 1,
@@ -240,7 +240,7 @@ void main() {
       expect(installer.probes.single.disposed, isFalse);
     });
 
-    test('a different user replaces the scope: the prior user\'s services '
+    test("a different user replaces the scope: the prior user's services "
         'are disposed and per-user singleton identity differs', () async {
       final installer = RecordingUserInstaller();
       final context = ServerContextImpl(
@@ -451,7 +451,7 @@ void main() {
     });
 
     test('a deactivation issued concurrently with a transition is queued, '
-        'never skipped: the caller\'s future completes with the scope '
+        "never skipped: the caller's future completes with the scope "
         'gone (#135 review)', () async {
       final installer = RecordingUserInstaller();
       final context = ServerContextImpl(

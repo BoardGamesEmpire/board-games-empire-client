@@ -59,7 +59,7 @@ const _assets = <String>['sqlite3.wasm', 'drift_worker.js'];
 ///
 /// After a drift bump, replace the entry with the new release's digests.
 /// GitHub lists each asset's digest on the release page
-/// (https://github.com/simolus3/drift/releases/tag/drift-<version>).
+/// (`https://github.com/simolus3/drift/releases/tag/drift-<version>`).
 const _checksums = <String, Map<String, String>>{
   'drift-2.34.3': {
     'sqlite3.wasm':
@@ -103,10 +103,11 @@ Future<void> main(List<String> args) async {
   final force = args.contains('--force');
   final unknown = args.where((a) => a != '--check' && a != '--force');
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(
-      'Usage: dart run tool/fetch_web_assets.dart [--check] [--force]',
-    );
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln(
+        'Usage: dart run tool/fetch_web_assets.dart [--check] [--force]',
+      );
     exit(64); // EX_USAGE
   }
   if (check && force) {
@@ -153,8 +154,9 @@ Future<void> main(List<String> args) async {
   }
 
   if (check && missing) {
-    stderr.writeln('');
-    stderr.writeln('Run `melos run web:assets` to fetch them.');
+    stderr
+      ..writeln()
+      ..writeln('Run `melos run web:assets` to fetch them.');
     exit(1);
   }
 }
@@ -262,13 +264,14 @@ Future<void> _download(String url, File target, String sha256Hex) async {
     final actual = _sha256Of(partial);
     if (actual != sha256Hex) {
       _discard(partial);
-      stderr.writeln('$url does not match its committed checksum.');
-      stderr.writeln('  expected sha256 $sha256Hex');
-      stderr.writeln('  received sha256 $actual');
-      stderr.writeln(
-        'The release asset changed or the download was corrupted. Find out '
-        'which before changing the checksum.',
-      );
+      stderr
+        ..writeln('$url does not match its committed checksum.')
+        ..writeln('  expected sha256 $sha256Hex')
+        ..writeln('  received sha256 $actual')
+        ..writeln(
+          'The release asset changed or the download was corrupted. Find out '
+          'which before changing the checksum.',
+        );
       exit(1);
     }
     partial.renameSync(target.path);

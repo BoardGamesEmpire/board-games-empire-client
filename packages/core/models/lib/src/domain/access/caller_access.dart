@@ -1,8 +1,8 @@
 import 'package:equatable/equatable.dart';
 
-import 'access_extent.dart';
-import 'resource_access.dart';
-import 'resource_type.dart';
+import 'package:models/src/domain/access/access_extent.dart';
+import 'package:models/src/domain/access/resource_access.dart';
+import 'package:models/src/domain/access/resource_type.dart';
 
 /// What the server says the caller may do, by resource type (#456).
 ///

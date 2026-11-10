@@ -1,4 +1,4 @@
-import 'user_data_exporter.dart';
+import 'package:interfaces/src/portability/user_data_exporter.dart';
 
 /// Root-scope collection of [UserDataExporter]s (#11).
 ///

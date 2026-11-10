@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'game_table.dart';
+import 'package:drift_storage/src/tables/game_table.dart';
 
 /// Which users each cached game was sent to (#434): one row per user, game
 /// and [source].

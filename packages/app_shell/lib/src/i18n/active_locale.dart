@@ -20,7 +20,7 @@ import 'package:interfaces/services.dart';
 /// does not notify.
 class ActiveLocaleController extends ValueNotifier<Locale>
     implements ActiveLocaleReader {
-  ActiveLocaleController(super.value);
+  ActiveLocaleController(super._value);
 
   @override
   String get languageTag => value.toLanguageTag();

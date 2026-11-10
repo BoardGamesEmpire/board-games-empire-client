@@ -258,7 +258,7 @@ class _DataGatewayRemote implements DataGatewayRemoteDataSource {
   int reads = 0;
 
   /// Thrown by every list read, when set.
-  Object? error;
+  Exception? error;
 
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
@@ -296,7 +296,9 @@ const _oneDataGateway = PaginatedResult<DataGateway>(
 );
 
 /// The answer of a caller who may read DataGateways.
-final _mayRead = FakeCallerAccessRepository.dataGateway(read: AccessExtent.all);
+final CallerAccess _mayRead = FakeCallerAccessRepository.dataGateway(
+  read: AccessExtent.all,
+);
 
 /// The Games entry in the home drawer and the screens behind it (#42).
 void main() {
@@ -534,8 +536,8 @@ void main() {
     await pumpHome(tester);
     final router =
         tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
-            as GoRouter;
-    router.go(AppRoutes.games);
+              as GoRouter
+          ..go(AppRoutes.games);
     await tester.pumpAndSettle();
     games.sorts.clear();
 
@@ -590,7 +592,7 @@ void main() {
   });
 
   testWidgets('a game found gone after a sign-out is not taken off the next '
-      'user\'s list', (tester) async {
+      "user's list", (tester) async {
     final repo = FakeAuthRepository(initialSession: sampleSession());
     final app = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
@@ -804,7 +806,6 @@ void main() {
         () => collection.addToCollection(
           platformGameId: 'pg_1',
           medium: GameMedium.physical,
-          quantity: 1,
         ),
       ).called(1);
       // Sent at once, through the session's sender (#45).
@@ -1113,7 +1114,6 @@ void main() {
         () => current.addToCollection(
           platformGameId: 'pg_1',
           medium: GameMedium.physical,
-          quantity: 1,
         ),
       ).called(1);
       verifyNever(

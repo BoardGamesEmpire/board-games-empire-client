@@ -19,10 +19,10 @@ class SyncQueueTable extends Table {
   /// migrating session would attribute rows that may not be theirs).
   TextColumn get userId => text()();
 
-  /// Serialised [SyncOperation] JSON.
+  /// Serialised `SyncOperation` JSON.
   TextColumn get payload => text()();
 
-  /// [SyncStatus] enum name.
+  /// `SyncStatus` enum name.
   TextColumn get status => text().withDefault(const Constant('pending'))();
 
   IntColumn get retryCount => integer().withDefault(const Constant(0))();

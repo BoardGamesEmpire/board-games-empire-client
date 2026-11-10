@@ -1,8 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-
-import '../user/person_name.dart';
-import 'event_participation_status.dart';
-import 'event_role.dart';
+import 'package:models/src/domain/event/event_participation_status.dart';
+import 'package:models/src/domain/event/event_role.dart';
+import 'package:models/src/domain/user/person_name.dart';
 
 part 'event_attendee.freezed.dart';
 
@@ -16,11 +15,13 @@ part 'event_attendee.freezed.dart';
 /// it.
 @freezed
 abstract class EventAttendee with _$EventAttendee {
-  const EventAttendee._();
-
   const factory EventAttendee({
     required String id,
     required String eventId,
+
+    required EventParticipationStatus status,
+    required DateTime createdAt,
+    required DateTime updatedAt,
 
     /// The attendee's account. Null for a guest, who has none.
     String? userId,
@@ -38,7 +39,6 @@ abstract class EventAttendee with _$EventAttendee {
 
     /// A free-text note, typically left with an answer to the invitation.
     String? notes,
-    required EventParticipationStatus status,
 
     /// The attendee's role. Null when the server returns no role binding. A
     /// role name this client does not know reads as [EventRole.unknown].
@@ -46,9 +46,8 @@ abstract class EventAttendee with _$EventAttendee {
 
     /// When the attendee last answered yes or no. Null until they have.
     DateTime? rsvpDate,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _EventAttendee;
+  const EventAttendee._();
 
   /// True when the attendee has no account ([userId] is null), so the roster
   /// can only name them by [guestName].

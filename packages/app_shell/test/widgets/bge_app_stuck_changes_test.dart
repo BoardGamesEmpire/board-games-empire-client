@@ -191,7 +191,7 @@ void main() {
   });
 
   testWidgets("a discard undoes through the session's repository and "
-      "refreshes the collection with a pass of its own", (tester) async {
+      'refreshes the collection with a pass of its own', (tester) async {
     var joins = 0;
     var refreshes = 0;
     await pumpHome(

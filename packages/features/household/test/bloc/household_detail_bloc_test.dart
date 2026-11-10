@@ -271,7 +271,7 @@ void main() {
       addTearDown(bloc.close);
 
       households.add([_household(_id)]);
-      members.add([_member('u-me', role: HouseholdRole.householdMember)]);
+      members.add([_member('u-me')]);
       await settle();
       members.add([_member('u-me', role: HouseholdRole.householdAdmin)]);
 
@@ -745,7 +745,7 @@ void main() {
       await expectLater(bloc.stream, emitsThrough(isA<HouseholdDetailReady>()));
     });
 
-    test('an emission on one stream does not clear the other stream\'s '
+    test("an emission on one stream does not clear the other stream's "
         'failure', () async {
       // The two streams fail independently. Treating them as one flag let
       // a household emission clear a member-stream failure and drop the

@@ -80,7 +80,7 @@ void main() {
       );
     });
 
-    test('a 402 on the sender\'s daily invites says it is theirs', () {
+    test("a 402 on the sender's daily invites says it is theirs", () {
       expect(
         message(
           HouseholdInviteAction.send,
@@ -96,7 +96,7 @@ void main() {
       );
     });
 
-    test('any other 402 names the household\'s daily limit', () {
+    test("any other 402 names the household's daily limit", () {
       const household =
           'This household has reached its daily invite limit. Try again '
           'tomorrow.';

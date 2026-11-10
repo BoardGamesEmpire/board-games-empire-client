@@ -84,8 +84,9 @@ void main() {
     });
 
     test('lazy singletons and factories reach the origin scope too', () {
-      container.registerLazySingleton<int>(() => 1);
-      container.registerFactory<String>(() => 'made');
+      container
+        ..registerLazySingleton<int>(() => 1)
+        ..registerFactory<String>(() => 'made');
 
       expect(container.get<int>(), 1);
       expect(container.get<String>(), 'made');

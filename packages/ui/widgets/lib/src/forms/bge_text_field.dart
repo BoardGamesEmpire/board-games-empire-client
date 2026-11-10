@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/src/forms/live_error_announcer.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'live_error_announcer.dart';
 
 /// The standard form field: an accessible text field bound to a reactive_forms
 /// control (#165).
@@ -37,10 +36,10 @@ import 'live_error_announcer.dart';
 /// Resetting a form by handing `ReactiveForm` a **new `FormGroup`** with the
 /// same control names is an idiomatic `reactive_forms` move, and this widget
 /// used to strand itself when it happened (#186): the swapped-away control went
-/// on receiving the user's keystrokes while the new one's validation errors were
-/// neither rendered nor announced — and errors raised on the dead control still
-/// reached the live region, so a screen-reader user heard a complaint about a
-/// form they had left.
+/// on receiving the user's keystrokes while the new one's validation errors
+/// were neither rendered nor announced — and errors raised on the dead control
+/// still reached the live region, so a screen-reader user heard a complaint
+/// about a form they had left.
 ///
 /// `ReactiveFormField` **does** re-resolve its control, in
 /// `didChangeDependencies` (reactive_forms 18.2.2,
@@ -185,13 +184,14 @@ class BgeTextField extends StatefulWidget {
   /// was already captured at submit and further edits would be silently
   /// discarded.
   ///
-  /// **This is deliberately `readOnly` rather than `enabled: false`, app-wide.**
+  /// **This is deliberately `readOnly` rather than `enabled: false`,
+  /// app-wide.**
   /// A disabled field is removed from focus traversal, so a screen-reader or
   /// keyboard user mid-form has the control vanish underneath them for the
   /// duration of a network call. Read-only keeps it present and readable —
   /// the user can still review what they submitted — and still tears down the
   /// input connection, which closes the keyboard submit path. The in-flight
-  /// signal is carried by [BgeSubmitButton]'s label and spinner instead.
+  /// signal is carried by `BgeSubmitButton`'s label and spinner instead.
   ///
   /// This widget intentionally exposes no `enabled`: offering both would let
   /// two screens make opposite choices about the same moment, which is the

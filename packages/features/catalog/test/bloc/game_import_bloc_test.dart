@@ -44,20 +44,23 @@ void main() {
   setUp(() => remote = FakeGamesRemote());
 
   /// Every start is queued, as batch [_batchId].
-  void queues() => remote.onStartImport = (_, _, correlationId) async =>
-      GameImportReceipt(
+  void queues() =>
+      remote.onStartImport = (_, _, correlationId) async => GameImportReceipt(
         batchId: _batchId,
         baseJobId: 'job_base',
         correlationId: correlationId,
       );
 
   /// Answers each poll with the next of [answers]: a batch to return, or
-  /// anything else to throw.
+  /// an [Exception] to throw.
   void polls(List<Object> answers) {
     final queue = Queue.of(answers);
     remote.onFetchImport = (_) async => switch (queue.removeFirst()) {
       final ImportBatch batch => batch,
-      final failure => throw failure,
+      final Exception failure => throw failure,
+      final other => throw StateError(
+        'polls answers a batch or an Exception: $other',
+      ),
     };
   }
 

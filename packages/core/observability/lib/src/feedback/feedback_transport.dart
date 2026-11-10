@@ -1,5 +1,5 @@
-import 'feedback_report.dart';
-import 'feedback_service.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
+import 'package:observability/src/feedback/feedback_service.dart';
 
 /// Sends a [FeedbackReport] to a server's feedback endpoint (#69).
 ///

@@ -7,8 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// One item in the list: a game's, when [game] is set, drawn as a [_Row] or,
-/// with [stack], as a [_Stack]; else a plain line that holds no focus.
+/// One item in the list: a game's, when `game` is set, drawn as a [_Row] or,
+/// with `stack`, as a [_Stack]; else a plain line that holds no focus.
 typedef _Item = ({
   String key,
   String label,
@@ -364,21 +364,19 @@ void main() {
         late BuildContext above;
         final button = FocusNode(debugLabel: 'above');
         addTearDown(button.dispose);
-        unawaited(
-          Navigator.of(pageContext(tester)).push(
-            MaterialPageRoute<void>(
-              barrierDismissible: escape,
-              builder: (context) {
-                above = context;
-                return Scaffold(
-                  body: TextButton(
-                    focusNode: button,
-                    onPressed: () {},
-                    child: const Text('above'),
-                  ),
-                );
-              },
-            ),
+        Navigator.of(pageContext(tester)).push(
+          MaterialPageRoute<void>(
+            barrierDismissible: escape,
+            builder: (context) {
+              above = context;
+              return Scaffold(
+                body: TextButton(
+                  focusNode: button,
+                  onPressed: () {},
+                  child: const Text('above'),
+                ),
+              );
+            },
           ),
         );
         await tester.pumpAndSettle();
@@ -417,14 +415,12 @@ void main() {
     await tester.pump();
 
     late BuildContext above;
-    unawaited(
-      Navigator.of(pageContext(tester)).push(
-        MaterialPageRoute<void>(
-          builder: (context) {
-            above = context;
-            return const Text('above');
-          },
-        ),
+    Navigator.of(pageContext(tester)).push(
+      MaterialPageRoute<void>(
+        builder: (context) {
+          above = context;
+          return const Text('above');
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -453,14 +449,12 @@ void main() {
     await focus(tester, 'Wingspan');
 
     late BuildContext above;
-    unawaited(
-      Navigator.of(pageContext(tester)).push(
-        MaterialPageRoute<void>(
-          builder: (context) {
-            above = context;
-            return const Text('above');
-          },
-        ),
+    Navigator.of(pageContext(tester)).push(
+      MaterialPageRoute<void>(
+        builder: (context) {
+          above = context;
+          return const Text('above');
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -875,14 +869,12 @@ void main() {
           await showCover(tester);
           await click(tester, 'stack');
           late BuildContext above;
-          unawaited(
-            Navigator.of(tester.element(find.text('other'))).push(
-              MaterialPageRoute<void>(
-                builder: (context) {
-                  above = context;
-                  return const Text('above');
-                },
-              ),
+          Navigator.of(tester.element(find.text('other'))).push(
+            MaterialPageRoute<void>(
+              builder: (context) {
+                above = context;
+                return const Text('above');
+              },
             ),
           );
           await tester.pumpAndSettle();
@@ -916,14 +908,12 @@ void main() {
           await showCover(tester);
           await click(tester, 'stack');
           late BuildContext above;
-          unawaited(
-            Navigator.of(tester.element(find.text('other'))).push(
-              MaterialPageRoute<void>(
-                builder: (context) {
-                  above = context;
-                  return const Text('above');
-                },
-              ),
+          Navigator.of(tester.element(find.text('other'))).push(
+            MaterialPageRoute<void>(
+              builder: (context) {
+                above = context;
+                return const Text('above');
+              },
             ),
           );
           await tester.pumpAndSettle();

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
+import 'package:ui/src/layout/bge_keyed_child_delegate.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'bge_keyed_child_delegate.dart';
 
 /// How many covers fit across a grid, from the window's [width] (not the
 /// padded or capped width of the pane the grid sits in): 2 below

@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
-
 import 'package:dio_network/src/network/dio_factory.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const factory = DefaultDioFactory();

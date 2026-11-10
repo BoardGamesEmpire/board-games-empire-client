@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/banners/bge_inline_banner.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../banners/bge_inline_banner.dart';
 
 /// A form's failed submit, shown by [BgeFormActions].
 ///
@@ -96,7 +95,7 @@ class BgeFormFailure {
 ///   width, whether or not the column around it stretches its children. An
 ///   action that would size to its label, like `BgeSubmitButton(expand:
 ///   false)`, is widened too: a form's primary action spans its column, as
-///   [BgeSubmitButton.expand] already assumes.
+///   `BgeSubmitButton.expand` already assumes.
 /// - **The title rule**, through [BgeFormFailure.title].
 ///
 /// ## What it does not own
@@ -106,13 +105,13 @@ class BgeFormFailure {
 /// second mechanism here would be one more place for them to disagree.
 ///
 /// **Where the action sits.** A form places this where its submit already
-/// was. A page that pins its action ([BgePage.footer]) may pass this as the
+/// was. A page that pins its action (`BgePage.footer`) may pass this as the
 /// footer instead, when the screen holds the state that drives it.
 class BgeFormActions extends StatelessWidget {
   /// Creates the action area.
   const BgeFormActions({required this.action, this.failure, super.key});
 
-  /// The submit control, normally a [BgeSubmitButton].
+  /// The submit control, normally a `BgeSubmitButton`.
   final Widget action;
 
   /// The failure to show above [action], or null when there is none.

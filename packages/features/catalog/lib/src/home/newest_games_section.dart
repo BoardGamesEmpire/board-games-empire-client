@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/home/empty_server_card.dart';
+import 'package:game_catalog/src/home/newest_games_cubit.dart';
+import 'package:game_catalog/src/home/shelf_loading.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../quick_look/game_quick_look_seed.dart';
-import 'empty_server_card.dart';
-import 'newest_games_cubit.dart';
-import 'shelf_loading.dart';
 
 /// The home page's "Recently added" row (#615): the games most recently added
 /// to the server, newest first, in a row that moves side to side.

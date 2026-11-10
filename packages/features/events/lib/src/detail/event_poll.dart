@@ -14,10 +14,9 @@
 library;
 
 import 'package:equatable/equatable.dart';
+import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_date_actions.dart';
 import 'package:models/domain.dart';
-
-import 'event_actions.dart';
-import 'event_date_actions.dart';
 
 /// Whether the poll shows on [event], holding [occurrences] (#507): a Poll
 /// event of known status with a Proposed date.

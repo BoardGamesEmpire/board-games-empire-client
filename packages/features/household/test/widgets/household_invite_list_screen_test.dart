@@ -197,7 +197,7 @@ void main() {
       HouseholdInviteTile.actionKey(HouseholdInviteRowAction.revoke, 'i_3'):
           'Revoke',
     };
-    for (final MapEntry(key: key, value: label) in buttons.entries) {
+    for (final MapEntry(:key, value: label) in buttons.entries) {
       final button = find.byKey(key);
       expect(button, findsOneWidget, reason: label);
       await tester.ensureVisible(button);
@@ -402,12 +402,13 @@ void main() {
     auditScreen(
       'more to load',
       build: screenWith(
-        () => remote.onFetchHouseholdInvites = (_, _, page, limit) async =>
-            pageOf(
-              [for (var i = 0; i < 25; i++) invite('i_$i')],
-              limit: limit,
-              hasMore: true,
-            ),
+        () =>
+            remote.onFetchHouseholdInvites = (_, _, page, limit) async =>
+                pageOf(
+                  [for (var i = 0; i < 25; i++) invite('i_$i')],
+                  limit: limit,
+                  hasMore: true,
+                ),
       ),
       arrange: (tester) async {
         await shown(tester);

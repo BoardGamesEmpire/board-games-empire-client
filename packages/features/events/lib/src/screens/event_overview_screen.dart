@@ -1,5 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_overview_bloc.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/widgets/event_list_slivers.dart';
+import 'package:events/src/widgets/event_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
@@ -7,14 +13,6 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_overview_bloc.dart';
-import '../bloc/event_overview_state.dart';
-import '../overview/event_groups.dart';
-import '../widgets/event_list_slivers.dart';
-import '../widgets/event_row.dart';
 
 /// The events overview (#497): the user's events as Upcoming, Planning, Past
 /// and Archived (#502), in that order, each showing its first [groupCap],

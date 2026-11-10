@@ -439,7 +439,7 @@ void main() {
 
     for (final (emptied, kept) in [('stats', 'events'), ('events', 'stats')]) {
       testWidgets(
-        'the $emptied slot emptying keeps the $kept section\'s state',
+        "the $emptied slot emptying keeps the $kept section's state",
         (tester) async {
           final mounts = <String, int>{};
           void count(String name) => mounts[name] = (mounts[name] ?? 0) + 1;

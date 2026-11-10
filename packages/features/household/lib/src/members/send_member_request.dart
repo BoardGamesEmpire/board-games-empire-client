@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:household/src/bloc/household_member_actions_state.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../bloc/household_member_actions_state.dart';
 
 /// How a member request ended: the result, and what it failed with. The
 /// error is null when it was done.

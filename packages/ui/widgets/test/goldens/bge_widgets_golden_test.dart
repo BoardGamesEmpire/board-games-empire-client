@@ -114,13 +114,13 @@ void main() {
                 child: _Host(
                   theme: theme,
                   scale: scale,
-                  child: BgeEmptyState(
+                  child: const BgeEmptyState(
                     icon: Icons.event_busy_outlined,
                     title: 'No upcoming events',
                     body: 'Plan one, or wait for an invitation.',
                     action: FilledButton(
                       onPressed: _noop,
-                      child: const Text('Plan an event'),
+                      child: Text('Plan an event'),
                     ),
                   ),
                 ),

@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:data_gateway/src/access/read_allowed_since.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_event.dart';
+import 'package:data_gateway/src/bloc/data_gateway_form_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../access/read_allowed_since.dart';
-import 'data_gateway_form_event.dart';
-import 'data_gateway_form_state.dart';
 
 /// Drives the add and edit forms (#41). One form, two modes: an edit is the
 /// add form filled from the row, which sends only the fields that changed.
@@ -21,8 +20,8 @@ import 'data_gateway_form_state.dart';
 ///
 /// The save is offered while the caller's access, as the server answers it,
 /// says they may save (#456): create for an add, update for an edit. It
-/// follows [access] as its answer changes, up or down, while the form is
-/// open. While the answer is unknown, and with no [access] to ask, the form
+/// follows `access` as its answer changes, up or down, while the form is
+/// open. While the answer is unknown, and with no `access` to ask, the form
 /// opens read-only and reads as unknown, so it says nothing yet about what
 /// the caller's role allows.
 ///
@@ -36,14 +35,14 @@ import 'data_gateway_form_state.dart';
 /// new user's roles (backend#490). A refused read that comes after such an
 /// answer, while the read was out, reads again too, once: no change is left
 /// to say so by then. A refused save says why on the form, and
-/// does not withdraw the save. Both ask [access] again, and the form follows
+/// does not withdraw the save. Both ask `access` again, and the form follows
 /// what it answers. The refusal is the server's word that the
 /// answer here may be out of date, as when the caller's role changed since
 /// it was asked. A save already in flight runs on, whatever access does
 /// meanwhile, and answers for itself.
 ///
 /// An edit's read that succeeds while the answer is still unknown asks
-/// [access] again too. The first ask can fail with the server up, as on a
+/// `access` again too. The first ask can fail with the server up, as on a
 /// 502 from a proxy, and nothing else asks again until a rehydrate trigger.
 /// The server has just answered this caller, so an ask now is likely to be
 /// answered too.

@@ -4,8 +4,10 @@ import 'package:test/test.dart';
 /// A `SqliteException`'s text as drift surfaces it: the statement, then the
 /// bound values after `, parameters: `.
 const _sqlite =
-    'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
-    '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
+    'SqliteException(2067): while executing statement, UNIQUE constraint '
+    'failed\n'
+    '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, '
+    'Kitchen Table';
 
 /// What drift's isolate channel throws for a statement sent after the
 /// connection closed: no `Causing statement`, and the values follow `with`.
@@ -88,14 +90,17 @@ void main() {
     test('removes the parameters and keeps the statement', () {
       expect(
         Redaction.stripBoundValues(_sqlite),
-        'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
-        '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: <redacted>',
+        'SqliteException(2067): while executing statement, UNIQUE constraint '
+        'failed\n'
+        '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: '
+        '<redacted>',
       );
     });
 
     test('removes every set when a wrapper holds two errors', () {
       const twice =
-          'Bad state: rollback failed. Cause: $_sqlite\nWhile rolling back: $_sqlite';
+          'Bad state: rollback failed. Cause: $_sqlite\nWhile rolling back: '
+          '$_sqlite';
       final out = Redaction.stripBoundValues(twice);
       expect(out, isNot(contains('user-42')));
       expect(out, isNot(contains('Kitchen Table')));

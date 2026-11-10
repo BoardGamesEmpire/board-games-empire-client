@@ -86,7 +86,8 @@ class SecureStorageEncryptionKeyService implements EncryptionKeyService {
   ///
   /// [_storage] holds the keys. [_legacyStorage], when given, is the store
   /// keys used to live in; a key found only there moves to [_storage] (see
-  /// the class docs). Production uses [SecureStorageEncryptionKeyService.platform].
+  /// the class docs). Production uses
+  /// [SecureStorageEncryptionKeyService.platform].
   ///
   /// [random] must be cryptographically secure and defaults to
   /// [Random.secure] — it is injectable only so tests can make generation
@@ -217,6 +218,8 @@ class SecureStorageEncryptionKeyService implements EncryptionKeyService {
     _tails[entry] = tail;
     unawaited(
       tail.then((_) {
+        // Map.remove hands back the finished tail itself; nothing starts.
+        // ignore: discarded_futures
         if (identical(_tails[entry], tail)) _tails.remove(entry);
       }),
     );

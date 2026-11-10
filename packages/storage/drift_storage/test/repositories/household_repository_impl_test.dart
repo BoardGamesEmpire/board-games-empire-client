@@ -1,16 +1,15 @@
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/household_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kOtherUserId = 'user-other';
@@ -236,7 +235,8 @@ void main() {
     });
 
     group('getMembers()', () {
-      test('returns all members when the current user is a member of the household', () async {
+      test('returns all members when the current '
+          'user is a member of the household', () async {
         await _seedHousehold(db, id: 'h-1');
         await _seedMember(
           db,
@@ -289,7 +289,8 @@ void main() {
         expect(await repo.getMembers('nonexistent'), isEmpty);
       });
 
-      test('returns empty for a tombstoned household even when the current user is a member', () async {
+      test('returns empty for a tombstoned household '
+          'even when the current user is a member', () async {
         final now = DateTime.now().toUtc();
         await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
         await _seedMember(
@@ -495,7 +496,6 @@ void main() {
             userId: _kUserId,
             householdId: 'h-1',
             role: HouseholdRole.householdOwner,
-            showAllGames: true,
             createdAt: now,
             updatedAt: now,
           ),
@@ -534,7 +534,6 @@ void main() {
               userId: _kUserId,
               householdId: 'h-1',
               role: HouseholdRole.householdOwner,
-              showAllGames: true,
               createdAt: now,
               updatedAt: now,
             ),
@@ -956,7 +955,7 @@ void main() {
         }, equals({'m-other-1': 'HouseholdOwner'}));
       });
 
-      test('updateCachedMembers replaces a synthesized owner row\'s id, as '
+      test("updateCachedMembers replaces a synthesized owner row's id, as "
           'the upserts do (#267)', () async {
         await _seedHousehold(db, id: 'h-1');
         await _seedMember(
@@ -1034,7 +1033,7 @@ void main() {
         expect(remaining.map((r) => r.id), equals(['m-me-1']));
       });
 
-      test('removeCachedMember ignores the household\'s sync flags', () async {
+      test("removeCachedMember ignores the household's sync flags", () async {
         // The flags guard the household's own fields against a server copy.
         // This applies the server's answer about one member, so a household
         // with a pending change loses the row all the same.
@@ -1173,7 +1172,8 @@ void main() {
         },
       );
 
-      test('emits an empty list for a tombstoned household even when the current user is a member', () async {
+      test('emits an empty list for a tombstoned household '
+          'even when the current user is a member', () async {
         final now = DateTime.now().toUtc();
         await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
         await _seedMember(

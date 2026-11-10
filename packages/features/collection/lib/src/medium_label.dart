@@ -1,6 +1,5 @@
-import 'package:models/domain.dart';
-
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:models/domain.dart';
 
 /// The name of [medium] wherever the collection shows one: an entry's row and
 /// tile, its page, the picker's tiles, and the add sheet's Medium field.

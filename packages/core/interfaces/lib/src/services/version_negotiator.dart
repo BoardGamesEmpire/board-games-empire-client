@@ -1,3 +1,4 @@
+import 'package:meta/meta.dart';
 import 'package:models/domain.dart';
 
 /// Newest /.well-known/bge-identity document schema version this client
@@ -55,8 +56,10 @@ abstract interface class VersionNegotiator {
 /// ```dart
 /// final message = switch (result) {
 ///   VersionCompatible() => null,
-///   ClientTooOld(:final requiredMinimum) => l10n.clientTooOld(requiredMinimum),
-///   ClientTooNew(:final supportedMaximum) => l10n.clientTooNew(supportedMaximum),
+///   ClientTooOld(:final requiredMinimum) =>
+///     l10n.clientTooOld(requiredMinimum),
+///   ClientTooNew(:final supportedMaximum) =>
+///     l10n.clientTooNew(supportedMaximum),
 ///   SchemaTooNew() => l10n.schemaTooNew,
 /// };
 /// ```
@@ -69,6 +72,7 @@ sealed class VersionNegotiationResult {
 
 /// The client may proceed: schema understood, version within bounds
 /// (or bounds open).
+@immutable
 final class VersionCompatible extends VersionNegotiationResult {
   const VersionCompatible();
 
@@ -84,6 +88,7 @@ final class VersionCompatible extends VersionNegotiationResult {
 
 /// The client is older than the server's `minClientVersion`.
 /// The user should update the client.
+@immutable
 final class ClientTooOld extends VersionNegotiationResult {
   const ClientTooOld({
     required this.clientVersion,
@@ -115,6 +120,7 @@ final class ClientTooOld extends VersionNegotiationResult {
 
 /// The client is newer than the server's `maxClientVersion`.
 /// The user should use an older client or wait for the server to update.
+@immutable
 final class ClientTooNew extends VersionNegotiationResult {
   const ClientTooNew({
     required this.clientVersion,
@@ -146,6 +152,7 @@ final class ClientTooNew extends VersionNegotiationResult {
 
 /// The identity document uses a schema newer than this client
 /// understands. The user should update the client.
+@immutable
 final class SchemaTooNew extends VersionNegotiationResult {
   const SchemaTooNew({
     required this.serverSchemaVersion,

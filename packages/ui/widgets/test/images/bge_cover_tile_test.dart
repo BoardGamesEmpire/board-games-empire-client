@@ -36,7 +36,7 @@ BgeCoverExpansions _expansions({
 );
 
 /// The expansions badge.
-final _badge = find.byKey(BgeCoverTile.expansionsBadgeKey);
+final Finder _badge = find.byKey(BgeCoverTile.expansionsBadgeKey);
 
 /// The tile's node, the one its picture is merged into.
 ///
@@ -324,7 +324,7 @@ void main() {
       );
     });
 
-    testWidgets('the ring goes when focus is only a pointer\'s', (
+    testWidgets("the ring goes when focus is only a pointer's", (
       tester,
     ) async {
       final tile = await showTile(tester);
@@ -543,7 +543,7 @@ void main() {
       expect(
         pixel(keyed, onTheTileRing.dx, onTheTileRing.dy),
         isNot(primary),
-        reason: 'the ring is the badge\'s own, not the tile\'s',
+        reason: "the ring is the badge's own, not the tile's",
       );
 
       // A fresh page, and a mouse's click on the badge.
@@ -875,7 +875,7 @@ void main() {
 
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
-        final tokens = BgeTokens.standard;
+        const tokens = BgeTokens.standard;
         for (final (index, _) in counts.indexed) {
           final tile = tester.getRect(find.byKey(ValueKey(index)));
           final target = tester.getRect(

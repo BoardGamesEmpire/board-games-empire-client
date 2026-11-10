@@ -50,6 +50,7 @@ void main() {
       // sets would burden contributors adding a new language. Print for
       // visibility only.
       if (report.hasUntranslated) {
+        // The test deliberately reports through stdout (see above).
         // ignore: avoid_print
         print(report.describe());
       }
@@ -57,7 +58,7 @@ void main() {
   });
 
   group('locale policy (#33)', () {
-    test('en is the first supported locale — Flutter\'s default '
+    test("en is the first supported locale — Flutter's default "
         'resolution makes it the fallback with no custom callback', () {
       expect(ShellLocalizations.supportedLocales.first, const Locale('en'));
     });

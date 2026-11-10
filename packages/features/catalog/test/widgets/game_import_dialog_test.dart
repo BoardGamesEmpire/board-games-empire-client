@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:collection';
 
 import 'package:bge_test_support/widgets.dart';
@@ -54,20 +53,23 @@ void main() {
   });
 
   /// Every start is queued, as batch [_batchId].
-  void queues() => remote.onStartImport = (_, _, correlationId) async =>
-      GameImportReceipt(
+  void queues() =>
+      remote.onStartImport = (_, _, correlationId) async => GameImportReceipt(
         batchId: _batchId,
         baseJobId: 'job_base',
         correlationId: correlationId,
       );
 
   /// Answers each poll with the next of [answers]: a batch to return, or
-  /// anything else to throw.
+  /// an [Exception] to throw.
   void polls(List<Object> answers) {
     final queue = Queue.of(answers);
     remote.onFetchImport = (_) async => switch (queue.removeFirst()) {
       final ImportBatch batch => batch,
-      final failure => throw failure,
+      final Exception failure => throw failure,
+      final other => throw StateError(
+        'polls answers a batch or an Exception: $other',
+      ),
     };
   }
 
@@ -375,10 +377,8 @@ void main() {
     await tester.pumpWidget(catalogApp(host()));
     await open(tester);
 
-    unawaited(
-      Navigator.of(tester.element(find.byType(GameImportDialog)))
-          .push(MaterialPageRoute<void>(builder: (_) => const Text('Above'))),
-    );
+    Navigator.of(tester.element(find.byType(GameImportDialog)))
+        .push(MaterialPageRoute<void>(builder: (_) => const Text('Above')));
     // The dialog's spinner never settles: wait out the page's transition.
     await tester.pump(const Duration(milliseconds: 500));
     await poll(tester);

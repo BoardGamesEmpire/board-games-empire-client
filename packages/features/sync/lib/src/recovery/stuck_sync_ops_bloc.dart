@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:observability/observability.dart';
 
-import 'stuck_sync_op.dart';
-import 'stuck_sync_ops_event.dart';
-import 'stuck_sync_ops_state.dart';
-import 'sync_recovery.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_op.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_ops_event.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_ops_state.dart';
+import 'package:sync_queue/src/recovery/sync_recovery.dart';
 
 /// Drives the retry-or-discard screen (#190) from [SyncRecovery].
 ///

@@ -21,8 +21,8 @@ final _mine = HouseholdMember(
   userId: 'u-me',
   householdId: 'h-1',
   role: HouseholdRole.householdMember,
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 const _gone = HouseholdMemberRefusedException('gone', statusCode: 404);

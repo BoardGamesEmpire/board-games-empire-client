@@ -47,7 +47,7 @@ void main() {
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     theme: BgeTheme.light(),
-    localizationsDelegates: [
+    localizationsDelegates: const [
       ...EventsLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
     ],

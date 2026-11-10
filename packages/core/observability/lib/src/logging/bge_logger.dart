@@ -1,7 +1,7 @@
 import 'package:logging/logging.dart';
 
-import 'bge_log_level.dart';
-import 'context_log_message.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
+import 'package:observability/src/logging/context_log_message.dart';
 
 /// Thin wrapper around `package:logging`'s [Logger] exposing the BGE
 /// five-level scheme (issue #8).
@@ -84,7 +84,7 @@ class BgeLogger {
     StackTrace? stackTrace,
     Map<String, dynamic>? context,
   ) {
-    final Object payload = (context == null || context.isEmpty)
+    final payload = (context == null || context.isEmpty)
         ? message
         : ContextLogMessage(message, context);
     _logger.log(level.level, payload, error, stackTrace);

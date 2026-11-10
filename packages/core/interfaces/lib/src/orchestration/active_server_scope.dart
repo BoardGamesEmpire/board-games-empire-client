@@ -1,11 +1,11 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
+import 'package:meta/meta.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
 
 /// A read-only snapshot of the currently active server, as consumers
 /// outside the orchestration layer see it (#37).
 ///
-/// This is deliberately narrower than [ServerContext]: no lifecycle
+/// This is deliberately narrower than `ServerContext`: no lifecycle
 /// surface (`activate` / `suspend` / `dispose`), only what the widget
 /// layer and per-server service consumers actually need —
 ///
@@ -19,8 +19,9 @@ import 'dependency_container.dart';
 ///   identity reads [identity] instead.
 ///
 /// Values are snapshots taken when the server was connected (sourced from
-/// the active [ServerContext]'s `config` on native); a rename-server flow
+/// the active `ServerContext`'s `config` on native); a rename-server flow
 /// does not exist yet, so staleness is not a concern in alpha.
+@immutable
 class ActiveServer {
   const ActiveServer({
     required this.serverId,
@@ -85,8 +86,8 @@ class ActiveServer {
 /// the backing:
 ///
 /// - **Native**: `OrchestratorActiveServerScope` in `core/di`, a thin
-///   adapter over [ServerOrchestrator.watchActiveContext] that re-reads the
-///   active [ServerContext]'s `config` on each emission.
+///   adapter over `ServerOrchestrator.watchActiveContext` that re-reads the
+///   active `ServerContext`'s `config` on each emission.
 /// - **Web** (#96): a one-shot holder emitting the single origin-scoped
 ///   container — web has no orchestrator by design (#31), and this seam
 ///   is intentionally not a degenerate one.

@@ -199,8 +199,8 @@ abstract class GameRepository {
   /// first under [GameSort.newest]. [offset] must be at least 0 and [limit]
   /// at least 1; anything else throws [ArgumentError].
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   });
 

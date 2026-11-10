@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:events/src/sync/event_hydration_status.dart';
+import 'package:events/src/sync/event_hydrator.dart';
+import 'package:events/src/sync/event_refresher.dart';
+import 'package:events/src/sync/household_events_hydrator.dart';
+import 'package:events/src/sync/household_events_sync.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'event_hydration_status.dart';
-import 'event_hydrator.dart';
-import 'event_refresher.dart';
-import 'household_events_hydrator.dart';
-import 'household_events_sync.dart';
 
 /// Starts the event hydrate when a user session activates (#496), and
 /// registers the [HouseholdEventsSync] the household screen reads a
@@ -161,27 +160,25 @@ class EventHydrateInstaller implements UserScopeInstaller {
       logger: _log,
       guard: guard,
       context: {'serverId': server.serverId},
-    );
+    )..registerRehydrate(container, 'events', staleAfter: staleAfter);
 
-    pass.registerRehydrate(container, 'events', staleAfter: staleAfter);
-
-    container.registerSingleton<EventRefresher>(EventRefresher(pass.run));
-
-    container.registerSingleton<HouseholdEventsSync>(
-      HouseholdEventsSync(
-        hydrator: HouseholdEventsHydrator(
-          repository: repository,
-          remote: remote,
-          confirmSession: confirmSession,
+    container
+      ..registerSingleton<EventRefresher>(EventRefresher(pass.run))
+      ..registerSingleton<HouseholdEventsSync>(
+        HouseholdEventsSync(
+          hydrator: HouseholdEventsHydrator(
+            repository: repository,
+            remote: remote,
+            confirmSession: confirmSession,
+          ),
+          userId: userId,
+          guard: guard,
+          now: now,
         ),
-        userId: userId,
-        guard: guard,
-        now: now,
-      ),
-      // As the event status: a pass in flight at teardown reports into a
-      // closed status, which drops it.
-      dispose: (s) => s.close(),
-    );
+        // As the event status: a pass in flight at teardown reports into a
+        // closed status, which drops it.
+        dispose: (s) => s.close(),
+      );
 
     // Unawaited, and the status is running before this returns: a screen
     // built in that window must not read idle.

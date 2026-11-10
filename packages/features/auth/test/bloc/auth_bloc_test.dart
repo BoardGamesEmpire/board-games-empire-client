@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:models/dto.dart';
-
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
 
 import '../support/auth_test_fixtures.dart';
 
@@ -258,8 +257,9 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) {
-          b.add(const AuthSessionCheckRequested());
-          b.add(const AuthSessionCheckRequested());
+          b
+            ..add(const AuthSessionCheckRequested())
+            ..add(const AuthSessionCheckRequested());
         },
         wait: const Duration(milliseconds: 60),
         expect: () => [
@@ -960,6 +960,8 @@ void main() {
             b.add(const AuthSignOutRequested(cause: SignOutCause.sessionLost)),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1042,6 +1044,8 @@ void main() {
         },
         seed: () => AuthAuthenticated(session: testSession()),
         expect: () => [
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1074,6 +1078,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1095,6 +1101,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1120,6 +1128,8 @@ void main() {
         ),
         expect: () => [
           const AuthLoading(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1133,6 +1143,8 @@ void main() {
         act: (b) => b.add(const AuthSessionCheckRequested()),
         expect: () => [
           const AuthSessionCheckInProgress(),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           const AuthUnauthenticated(cause: SignOutCause.sessionLost),
         ],
       );
@@ -1140,6 +1152,8 @@ void main() {
       test('the two causes are different states', () {
         expect(
           const AuthUnauthenticated(cause: SignOutCause.user),
+          // Pins the cause itself, not whatever the default is.
+          // ignore: avoid_redundant_argument_values
           isNot(const AuthUnauthenticated(cause: SignOutCause.sessionLost)),
         );
       });
@@ -1171,8 +1185,9 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) {
-          b.add(const AuthSessionCheckRequested());
-          b.add(const AuthRepositoryStateChanged(AuthStateUnauthenticated()));
+          b
+            ..add(const AuthSessionCheckRequested())
+            ..add(const AuthRepositoryStateChanged(AuthStateUnauthenticated()));
         },
         wait: const Duration(milliseconds: 30),
         expect: () => [

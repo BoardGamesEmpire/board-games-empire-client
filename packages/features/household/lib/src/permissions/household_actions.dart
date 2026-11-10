@@ -138,8 +138,8 @@ const _member = <HouseholdAction>{
 };
 
 /// The Member column under `Direct` or `NeedsApproval`: they leave, send
-/// invites and create events. Under `NeedsApproval` an owner or admin approves each one first,
-/// which is the invite row's business and not this table's.
+/// invites and create events. Under `NeedsApproval` an owner or admin approves
+/// each one first, which is the invite row's business and not this table's.
 const _memberWhoMaySend = <HouseholdAction>{
   HouseholdAction.leave,
   HouseholdAction.sendInvite,

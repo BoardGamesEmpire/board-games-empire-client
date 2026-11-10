@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 // Canonical fixture matching the /.well-known/bge-identity wire format.
 // Keys are snake_case per SnakeCaseInterceptor on the NestJS backend.

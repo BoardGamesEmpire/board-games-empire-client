@@ -231,7 +231,7 @@ void main() {
     }
 
     testWidgets('a private-network http address is accepted — the policy is '
-        'the bloc\'s, not a stricter copy', (tester) async {
+        "the bloc's, not a stricter copy", (tester) async {
       await tester.pumpWidget(wrap());
 
       // The validator runs `normalizeServerUrl` rather than reimplementing

@@ -31,7 +31,7 @@ final class PlatformOwnership {
 
   bool owns(String platformGameId) => entriesOn(platformGameId).isNotEmpty;
 
-  /// Platform games with a free medium, in [platformGames] order.
+  /// Platform games with a free medium, in `platformGames` order.
   List<CollectionAddOption> get addOptions => [
     for (final platformGame in _platformGames)
       if (_freeMediums(platformGame.id) case final free when free.isNotEmpty)

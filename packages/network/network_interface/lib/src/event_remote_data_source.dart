@@ -1,11 +1,12 @@
+import 'package:meta/meta.dart';
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// What [EventRemoteDataSource.createEvent] got back: the event the server
 /// holds, and whether it is deleted.
 ///
-/// [deletedAt] is null for a live event. A repeat of a create whose event was
+/// `deletedAt` is null for a live event. A repeat of a create whose event was
 /// deleted since returns that event with the time it was deleted (#499).
 typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 
@@ -265,8 +266,8 @@ abstract class EventRemoteDataSource {
   /// Upcoming events only: a confirmed date that hasn't ended, not cancelled or
   /// archived. The order is soonest first, then by id, so the first page is the
   /// next few. Rows have the shape of [fetchEvents]' rows, each snapshot with
-  /// `attendees: null`, and `attendance: null` because the caller has no RSVP on
-  /// an event they don't attend.
+  /// `attendees: null`, and `attendance: null` because the caller has no RSVP
+  /// on an event they don't attend.
   ///
   /// [page] is 1-based and [limit] is in `1..maxPageSize`. Failures classify as
   /// [fetchEvents]' do.
@@ -317,7 +318,7 @@ abstract class EventRemoteDataSource {
   /// create carrying a key it has already seen creates nothing, and notifies
   /// no one again: it returns the event the first one made, answered 201
   /// again, **ignoring the repeat's payload**. That holds if the event has
-  /// since been deleted, and [CreatedEvent.deletedAt] then says when.
+  /// since been deleted, and `CreatedEvent.deletedAt` then says when.
   ///
   /// So pass the queued create's `localId`, the same value on every attempt at
   /// one create: then a response lost in transit cannot turn the retry into a
@@ -562,6 +563,7 @@ abstract class EventRemoteDataSource {
 /// be cleared.
 ///
 /// Equal by its fields, as the bloc event carrying it is compared.
+@immutable
 final class OccurrenceUpdate {
   OccurrenceUpdate({
     String? label,
@@ -652,6 +654,8 @@ sealed class EventRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

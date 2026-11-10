@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/invites/invite_expiry_line.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/src/widgets/household_invite_awaiting_badge.dart';
+import 'package:household/src/widgets/household_invite_busy_indicator.dart';
+import 'package:household/src/widgets/household_role_label.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../invites/invite_expiry_line.dart';
-import '../permissions/household_actions.dart';
-import 'household_invite_awaiting_badge.dart';
-import 'household_invite_busy_indicator.dart';
-import 'household_role_label.dart';
 
 /// One invite on a household's invite list (#455): who it is for, the role
 /// it offers, who sent it and when it expires, and the actions the viewer

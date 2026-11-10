@@ -1,12 +1,11 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/game_import_event.dart';
+import 'package:game_catalog/src/bloc/game_import_state.dart';
+import 'package:game_catalog/src/bloc/uuid_v4.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'game_import_event.dart';
-import 'game_import_state.dart';
-import 'uuid_v4.dart';
 
 /// Imports one DataGateway result into the server, and follows the import
 /// until its base game's job ends (#43).

@@ -42,8 +42,8 @@ class DependencyContainerImpl implements DependencyContainer {
         getIt,
         'getIt',
         'DependencyContainerImpl.fromGetIt must wrap a GetIt.asNewInstance(); '
-            'the global GetIt.instance leaks registrations into global state and '
-            'breaks scope isolation.',
+            'the global GetIt.instance leaks registrations into global state '
+            'and breaks scope isolation.',
       );
     }
   }
@@ -125,6 +125,9 @@ class DependencyContainerImpl implements DependencyContainer {
     // order, then removes all registrations. A registration that came
     // without a callback was given the Disposable default when it was
     // made, so a Disposable service needs nothing from its installer.
+    // Disposal is this call's purpose, so it is stated rather than left
+    // to get_it's default.
+    // ignore: avoid_redundant_argument_values
     await _getIt.reset(dispose: true);
   }
 

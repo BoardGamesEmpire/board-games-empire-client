@@ -82,7 +82,7 @@ final class Hydration extends Equatable {
 /// answer either question: both are an empty list.
 ///
 /// It is generic over the feature's outcome type [O] and never names a
-/// feature. [landed] is the feature's own answer to "did this outcome put
+/// feature. `landed` is the feature's own answer to "did this outcome put
 /// rows in the cache?", which is the only thing this class asks of it.
 ///
 /// ## Who writes, who reads
@@ -128,7 +128,7 @@ final class Hydration extends Equatable {
 /// async error on the one path — sign-in — where a throw signs the user
 /// out. So a closed status ignores updates.
 class HydrationStatus<O extends Object> {
-  /// [landed] says whether an outcome put rows in the cache. [now] defaults
+  /// `landed` says whether an outcome put rows in the cache. [now] defaults
   /// to the device clock. Injected so a five-minute window is testable
   /// without waiting five real minutes.
   HydrationStatus({required this._landed, DateTime Function()? now})

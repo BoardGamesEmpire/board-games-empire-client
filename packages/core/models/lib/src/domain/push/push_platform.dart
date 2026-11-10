@@ -1,4 +1,4 @@
-/// Push transport that issued a [PushRegistration.platformToken] (#15).
+/// Push transport that issued a `PushRegistration.platformToken` (#15).
 ///
 /// Deliberately open-ended: the backend transport is the hoster's choice
 /// (plugin vs. env config — backend investigation

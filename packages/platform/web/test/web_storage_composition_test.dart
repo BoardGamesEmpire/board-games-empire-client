@@ -22,8 +22,8 @@ import 'package:interfaces/repositories.dart' show AuthRepository;
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:logging/logging.dart';
-import 'package:models/domain.dart' show ServerIdentity;
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart' show ServerIdentity;
 import 'package:network_interface/network_interface.dart'
     show HouseholdRemoteDataSource;
 import 'package:observability/observability.dart';
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('initialize() builds the scope with web storage, the per-user tier '
-        'and the origin\'s remotes (#325)', () async {
+        "and the origin's remotes (#325)", () async {
       // Until this test, dropping `serverScopeBuilder` from
       // `bgeWebPlatformBootstrap` (or `installStorage` / `userInstallers` from
       // the scope it builds) passed every suite: the app would boot with no
@@ -192,7 +192,7 @@ void main() {
 
   group('installWebStorage', () {
     test(
-      'registers the database and the drain\'s CrossTabLock (#447)',
+      "registers the database and the drain's CrossTabLock (#447)",
       () async {
         // The server scope installs storage through this function, so removing
         // its lock registration leaves the web drain unlocked with nothing else
@@ -229,7 +229,7 @@ void main() {
       Logger.root.level = Level.INFO;
     });
 
-    test('registers the Web Lock as the drain\'s CrossTabLock (#447)', () {
+    test("registers the Web Lock as the drain's CrossTabLock (#447)", () {
       final container = DependencyContainerImpl();
       addTearDown(container.dispose);
 

@@ -55,7 +55,7 @@ void main() {
               child: child!,
             ),
           ),
-    localizationsDelegates: [
+    localizationsDelegates: const [
       ...HouseholdLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
     ],
@@ -143,7 +143,7 @@ void main() {
       expect(await roleChoices(tester), {'Member', 'Guest'});
     });
 
-    testWidgets('a role no longer the viewer\'s to offer is unpicked when '
+    testWidgets("a role no longer the viewer's to offer is unpicked when "
         'their role changes', (tester) async {
       await tester.pumpWidget(harness());
       await tester.pumpAndSettle();
@@ -220,7 +220,7 @@ void main() {
         find.descendant(
           of: find.byKey(SendHouseholdInviteScreen.approvalNoteKey),
           matching: find.text(
-            "An owner or admin has to approve this invite before the person "
+            'An owner or admin has to approve this invite before the person '
             "you're inviting sees it.",
           ),
         ),
@@ -466,8 +466,8 @@ void main() {
 
     for (final (label, role) in [
       ('a guest', HouseholdRole.householdGuest),
-      ('a role the app doesn\'t know', HouseholdRole.unknown),
-      ('a role the cache can\'t say', null),
+      ("a role the app doesn't know", HouseholdRole.unknown),
+      ("a role the cache can't say", null),
     ]) {
       testWidgets('a send still on its way when the viewer becomes $label '
           'calls onMemberSent, not onSent', (tester) async {

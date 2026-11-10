@@ -871,7 +871,7 @@ void main() {
           ['Me'],
         );
 
-    test('a detail open on a local event follows it onto the server\'s '
+    test("a detail open on a local event follows it onto the server's "
         'id', () async {
       final created = await createHere();
       final remote = serverOnly();
@@ -896,7 +896,7 @@ void main() {
       expect(remote.detailRequests, ['ev-server']);
     });
 
-    test('a detail built on a local id after its move opens the server\'s '
+    test("a detail built on a local id after its move opens the server's "
         'event', () async {
       final created = await createHere();
       await reconcile(created);
@@ -1186,7 +1186,7 @@ void main() {
     // A delete that lands while a read is out would be undone by the read's
     // 200, which caches the event again. The screen holds Delete on this
     // until the read has settled, whoever asked for it.
-    test('the open\'s read is reading, not refreshing', () async {
+    test("the open's read is reading, not refreshing", () async {
       final read = Completer<EventSnapshot>();
       final bloc = build(remote: FakeEventRemote.detail((_) => read.future));
       addTearDown(bloc.close);
@@ -1676,7 +1676,11 @@ void main() {
       );
       expect(const EventDetailLoading(), isNot(const EventDetailNotFound()));
       expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_literals_to_create_immutables
         EventDetailReady(detail: _detail(), actions: {EventAction.rsvp}),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_literals_to_create_immutables
         EventDetailReady(detail: _detail(), actions: {EventAction.rsvp}),
       );
       expect(

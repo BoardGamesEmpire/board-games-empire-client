@@ -68,8 +68,9 @@ const _required = <String>[
 Future<void> main(List<String> args) async {
   final unknown = args.where((a) => a != '--self-test');
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln('Usage: dart run tool/build_web.dart [--self-test]');
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln('Usage: dart run tool/build_web.dart [--self-test]');
     exit(64); // EX_USAGE
   }
 
@@ -235,8 +236,9 @@ void _selfTest() {
 
   // The shape flutter_tools writes, with the loader's own lookup after it.
   String bootstrap(String hashes) =>
-      '_flutter.buildConfig = {"engineRevision":"5d53",'
-      '"wasmHashes":$hashes,"builds":[{"compileTarget":"dart2js"}]};\n'
+      '_flutter.buildConfig = '
+      '{"engineRevision":"5d53","wasmHashes":$hashes,'
+      '"builds":[{"compileTarget":"dart2js"}]};\n'
       'var b=(n,e)=>{let s=window._flutter?.buildConfig?.wasmHashes};\n';
 
   // The orders CI's build and a macOS build of 28a49e6 wrote.

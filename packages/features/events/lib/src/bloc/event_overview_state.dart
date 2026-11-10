@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../overview/event_groups.dart';
+import 'package:events/src/overview/event_groups.dart';
 
 /// What the events overview is showing (#497).
 ///

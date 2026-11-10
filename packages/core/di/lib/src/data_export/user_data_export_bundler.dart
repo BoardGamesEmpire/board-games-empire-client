@@ -29,7 +29,7 @@ import 'package:models/dto.dart';
 ///   client version ([schemaVersion]).
 /// - `bgeClientVersion` is [BuildInfo.version] — the root-scope
 ///   singleton read once at boot (#35).
-/// - `exportedAt` is ISO-8601 UTC from the injected [now] clock,
+/// - `exportedAt` is ISO-8601 UTC from the injected `now` clock,
 ///   injectable for deterministic tests.
 /// - `serverId` is the stable, server-vended [ServerConfig.bgeServerId]
 ///   and `serverName` is the server-vended [ServerIdentity.name] from

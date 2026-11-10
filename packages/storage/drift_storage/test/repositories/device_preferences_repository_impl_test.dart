@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:drift_storage/src/repositories/device_preferences_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 

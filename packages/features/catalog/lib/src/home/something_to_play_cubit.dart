@@ -93,7 +93,7 @@ final class SomethingToPlayReady extends SomethingToPlayState {
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read, is
-/// taken down when [gone] says so, with no redraw, and is left out of later
+/// taken down when `gone` says so, with no redraw, and is left out of later
 /// draws. Losing the last row is [SomethingToPlayNothing].
 class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
   /// Starts the first draw: at once with no [collection], or when it answers.
@@ -248,6 +248,9 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
     if (pool == null) return (sample: null, incomplete: false);
     if (offline) return (sample: null, incomplete: true);
     try {
+      // The argument must follow the constant the surrounding arithmetic
+      // also uses.
+      // ignore: avoid_redundant_argument_values
       final sample = await pool.fetchGamePoolSample(size: shelfSize);
       return (sample: sample, incomplete: false);
     } on Object catch (error, stackTrace) {
@@ -264,6 +267,9 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
   /// reconnecting could bring them.
   Future<({List<GameSummary>? games, bool incomplete})> _readRandom() async {
     try {
+      // The argument must follow the constant the surrounding arithmetic
+      // also uses.
+      // ignore: avoid_redundant_argument_values
       final games = await _remote.fetchRandom(size: shelfSize);
       return (games: games, incomplete: false);
     } on Object catch (error, stackTrace) {

@@ -1,7 +1,6 @@
+import 'package:drift_storage/src/repositories/expansion_links_codec.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
-
-import 'package:drift_storage/src/repositories/expansion_links_codec.dart';
 
 void main() {
   group('decodeExpansionLinks', () {

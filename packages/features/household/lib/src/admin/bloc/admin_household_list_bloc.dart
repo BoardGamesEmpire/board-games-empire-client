@@ -3,13 +3,12 @@ import 'dart:math' as math;
 
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/admin/bloc/admin_household_list_event.dart';
+import 'package:household/src/admin/bloc/admin_household_list_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'admin_household_list_event.dart';
-import 'admin_household_list_state.dart';
 
 /// Drives the staff households list (#685): every household on the server,
 /// searched, filtered by status and sorted, a page at a time, and the
@@ -409,7 +408,6 @@ class AdminHouseholdListBloc
         query: query.sentQuery,
         sort: query.sort,
         page: page,
-        limit: _pageSize,
       );
       final current = _rows;
       if (read != _generation || current == null) return;

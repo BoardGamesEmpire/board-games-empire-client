@@ -52,7 +52,7 @@ void main() {
 
       expect(inAppBar("Ada's table"), findsOneWidget);
       expect(find.text('Friday board games'), findsOneWidget);
-      expect(find.text('Visible to: Members\' friends'), findsOneWidget);
+      expect(find.text("Visible to: Members' friends"), findsOneWidget);
       expect(find.text('Language: English'), findsOneWidget);
       expect(find.text('Created Mar 14, 2026'), findsOneWidget);
       expect(remote.calls, ['fetchDetail(h_1)']);

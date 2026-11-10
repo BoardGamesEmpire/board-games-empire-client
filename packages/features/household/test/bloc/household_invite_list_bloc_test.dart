@@ -106,8 +106,8 @@ void main() {
     blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(
       'a filter changed before the first read answers is shown at once',
       // The open read never answers, so the filter changes before it does.
-      setUp: () => remote.onFetchHouseholdInvites = (_, status, _, _) =>
-          status == null
+      setUp: () =>
+          remote.onFetchHouseholdInvites = (_, status, _, _) => status == null
           ? Completer<PaginatedResult<HouseholdInvite>>().future
           : Future.value(
               pageOf([

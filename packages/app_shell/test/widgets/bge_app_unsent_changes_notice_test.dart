@@ -255,7 +255,7 @@ void main() {
       expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
     });
 
-    testWidgets("the recovery sign-out still leaves the notice, though the "
+    testWidgets('the recovery sign-out still leaves the notice, though the '
         "session's record hadn't landed when it ran", (tester) async {
       final repo = FakeAuthRepository(initialSession: sampleSession());
       final record = Completer<void>();
@@ -302,7 +302,7 @@ void main() {
     expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
   });
 
-  testWidgets("a record write that fails is logged without the user id the "
+  testWidgets('a record write that fails is logged without the user id the '
       "database's error carries", (tester) async {
     final records = <LogRecord>[];
     final previousLevel = Logger.root.level;

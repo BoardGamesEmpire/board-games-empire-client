@@ -1,13 +1,12 @@
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 import '../support/platform_game_fixture.dart';
@@ -18,7 +17,7 @@ class MockSyncQueue extends Mock implements SyncQueueRepository {}
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
-const _kMedium = GameMedium.physical;
+const GameMedium _kMedium = GameMedium.physical;
 
 /// Default stubs for [MockSyncQueue]. Extracted so the post-`reset`
 /// re-stub paths can share the same baseline.
@@ -47,7 +46,7 @@ void _stubMockSyncDefaults(MockSyncQueue mockSync) {
   ).thenAnswer((_) async => const []);
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
   setUpAll(() {
@@ -150,7 +149,8 @@ void main() {
     });
 
     group('addToCollection() — duplicate triplet', () {
-      test('resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)', () async {
+      test('resurrects a tombstoned row (clears '
+          'deletedAt, keeps id, overwrites fields)', () async {
         final first = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
@@ -170,7 +170,6 @@ void main() {
         final second = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-          quantity: 1,
           rating: 9,
         )).entry;
 
@@ -228,7 +227,8 @@ void main() {
         },
       );
 
-      test('resurrects the MOST RECENT tombstone when multiple coexist for the triplet', () async {
+      test('resurrects the MOST RECENT tombstone '
+          'when multiple coexist for the triplet', () async {
         final now = DateTime.now().toUtc();
         final older = now.subtract(const Duration(hours: 1));
 
@@ -270,7 +270,6 @@ void main() {
         final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-          quantity: 1,
           rating: 9,
         )).entry;
 
@@ -334,7 +333,6 @@ void main() {
         final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-          quantity: 1,
           rating: 9,
         )).entry;
 
@@ -448,7 +446,7 @@ void main() {
         // again", last played on a known date. Play history is
         // server-owned, so it arrives the way it does in
         // production: on a server copy of the entry.
-        final lastPlayedTimestamp = DateTime.utc(2025, 6, 1);
+        final lastPlayedTimestamp = DateTime.utc(2025, 6);
         await repo.reconcileFromServer(
           first.copyWith(
             playCount: 5,
@@ -467,7 +465,6 @@ void main() {
         final second = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-          quantity: 1,
           // rating + comment intentionally omitted.
         )).entry;
 
@@ -633,7 +630,8 @@ void main() {
         },
       );
 
-      test('does NOT enqueue a sync op when the entry is not found (transaction rolled back)', () async {
+      test('does NOT enqueue a sync op when the entry '
+          'is not found (transaction rolled back)', () async {
         await expectLater(
           () => repo.updateCollectionEntry(id: 'nonexistent', rating: 1),
           throwsStateError,
@@ -852,7 +850,8 @@ void main() {
         },
       );
 
-      test('updateCollectionEntry accepts null quantity (leave-unchanged semantic)', () async {
+      test('updateCollectionEntry accepts null '
+          'quantity (leave-unchanged semantic)', () async {
         // Sanity: the validation only fires on non-null negatives.
         // null means "don't touch this field" by API contract, which
         // is the path callers use to update other fields without
@@ -1169,8 +1168,6 @@ void main() {
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             quantity: 3,
-            isDirty: false,
-            isLocalOnly: false,
             createdAt: now,
             updatedAt: now,
           );
@@ -1198,9 +1195,6 @@ void main() {
             userId: 'someone-else',
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-            quantity: 1,
-            isDirty: false,
-            isLocalOnly: false,
             createdAt: now,
             updatedAt: now,
           );
@@ -1220,9 +1214,6 @@ void main() {
               userId: 'someone-else',
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
               createdAt: now,
               updatedAt: now,
             );
@@ -1356,9 +1347,6 @@ void main() {
               userId: _kUserId,
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
               deletedAt: now,
               createdAt: now,
               updatedAt: now,
@@ -1386,9 +1374,6 @@ void main() {
               userId: _kUserId,
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
               deletedAt: now,
               createdAt: now,
               updatedAt: now,
@@ -1447,7 +1432,6 @@ void main() {
           final resurrected = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-            quantity: 1,
             rating: 9,
           )).entry;
           expect(resurrected.id, equals('shared-id'));
@@ -1463,9 +1447,6 @@ void main() {
             userId: _kUserId,
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-            quantity: 1,
-            isDirty: false,
-            isLocalOnly: false,
             deletedAt: t0,
             createdAt: t0.subtract(const Duration(hours: 1)),
             updatedAt: t0,
@@ -1570,9 +1551,6 @@ void main() {
               userId: _kUserId,
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
               createdAt: now,
               updatedAt: now,
             );

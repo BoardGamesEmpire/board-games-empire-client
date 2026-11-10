@@ -33,8 +33,7 @@ void main() {
     });
 
     test('each method emits at its mapped package:logging level', () {
-      final logger = BgeLogger('bge.test.levels');
-      logger
+      BgeLogger('bge.test.levels')
         ..verbose('v')
         ..debug('d')
         ..info('i')
@@ -59,8 +58,9 @@ void main() {
     });
 
     test('context map travels on record.object as a ContextLogMessage', () {
-      final logger = BgeLogger('bge.test.context');
-      logger.info('with ctx', context: {'requestId': 'r-1'});
+      BgeLogger(
+        'bge.test.context',
+      ).info('with ctx', context: {'requestId': 'r-1'});
       final object = records.single.object;
       expect(object, isA<ContextLogMessage>());
       expect((object! as ContextLogMessage).context, {'requestId': 'r-1'});
@@ -70,8 +70,7 @@ void main() {
     });
 
     test('omitted or empty context emits a plain String message', () {
-      final logger = BgeLogger('bge.test.nocontext');
-      logger
+      BgeLogger('bge.test.nocontext')
         ..info('plain')
         ..info('empty', context: {});
       expect(records[0].object, isNull);

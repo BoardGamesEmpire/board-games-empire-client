@@ -1,11 +1,10 @@
 import 'dart:async';
 
+import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
+import 'package:app_shell/src/deep_links/deep_link_redaction.dart';
+import 'package:app_shell/src/deep_links/deep_link_source.dart';
+import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:observability/observability.dart';
-
-import 'deep_link_normalizer.dart';
-import 'deep_link_redaction.dart';
-import 'deep_link_source.dart';
-import 'pending_deep_link_holder.dart';
 
 /// Receives raw deep links, normalizes them, and stores the latest valid
 /// one in the [PendingDeepLinkHolder] (#10).
@@ -30,6 +29,8 @@ class DeepLinkHandler {
   final BgeLogger _logger;
 
   bool _started = false;
+  // Cancelled in dispose(), through a local copy the lint can't follow.
+  // ignore: cancel_subscriptions
   StreamSubscription<Uri>? _subscription;
 
   /// Subscribes to the source. Call exactly once; a second call is a

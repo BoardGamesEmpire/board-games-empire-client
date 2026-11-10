@@ -47,8 +47,8 @@ import 'package:web/web.dart' as web;
 ///
 /// `ageMs` is always written. IndexedDB leaves a record out of an index when
 /// the indexed property is missing, and a record outside `byAge` is one the
-/// persist cap can neither count nor evict — so every write builds its value with
-/// [_storedValue], which takes both properties as required arguments.
+/// persist cap can neither count nor evict — so every write builds its value
+/// with [_storedValue], which takes both properties as required arguments.
 ///
 /// It does duplicate `queuedAt`, which is what #292 objected to in a cache of
 /// stamps like native's. The difference is where the copies come from: both
@@ -404,7 +404,11 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   @visibleForTesting
   Future<List<String>> rawKeys() => _transaction((store) async {
     final entries = await _entriesIn(store);
-    return [for (final entry in entries ?? const []) ?entry.key];
+    return [
+      for (final entry
+          in entries ?? const <({JSAny? rawKey, String? key, String? value})>[])
+        ?entry.key,
+    ];
   });
 
   /// Holds the store at [QueuedFeedbackReport.maxQueuedReports], deleting
@@ -523,7 +527,7 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   }
 
   /// The largest magnitude [DateTime.fromMillisecondsSinceEpoch] accepts.
-  static const double _maxEpochMs = 8.64e15;
+  static const double _maxEpochMs = 8_640_000_000_000_000;
 
   /// How long this record has been waiting for a send it has not had.
   ///

@@ -57,7 +57,7 @@ Widget _revealHost({
           child: ValueListenableBuilder<String?>(
             valueListenable: message,
             builder: (context, value, _) {
-              Widget banner = value == null
+              var banner = value == null
                   ? const SizedBox.shrink()
                   : BgeInlineBanner(
                       tone: BgeBannerTone.error,
@@ -65,8 +65,8 @@ Widget _revealHost({
                       reveal: reveal,
                     );
               if (inHorizontalStrip && value != null) {
-                // A nearer scrollable on the other axis. The reveal has to reach
-                // past it to the vertical page it is actually hosted in.
+                // A nearer scrollable on the other axis. The reveal has to
+                // reach past it to the vertical page it is actually hosted in.
                 banner = SizedBox(
                   // Tall enough for the banner itself — a strip that clips it
                   // would fail on overflow before reaching the assertion.
@@ -108,10 +108,10 @@ Widget _revealHost({
                   // only ever reachable at maxScrollExtent, which makes the
                   // already-visible case impossible to construct.
                   //
-                  // Taller than the 480dp viewport on purpose: the scroll extent
-                  // has to allow the banner's top edge to actually reach the
-                  // viewport start, or a correct reveal still lands a few dp
-                  // short and the assertions here would be measuring the
+                  // Taller than the 480dp viewport on purpose: the scroll
+                  // extent has to allow the banner's top edge to actually reach
+                  // the viewport start, or a correct reveal still lands a few
+                  // dp short and the assertions here would be measuring the
                   // harness's geometry rather than the widget's behaviour.
                   const SizedBox(height: 600, child: Placeholder()),
                 ],
@@ -512,7 +512,7 @@ void main() {
 
     for (final MapEntry(key: name, value: theme) in themes.entries) {
       testWidgets("$name: Tab rings each action in the banner's foreground, "
-          'on the app buttons\' shape and placement, in every tone', (
+          "on the app buttons' shape and placement, in every tone", (
         tester,
       ) async {
         final appShape = theme.textButtonTheme.style!.shape!.resolve(
@@ -1958,12 +1958,10 @@ void main() {
       final pos = recording.position as _RecordingPosition;
       await tester.pump(const Duration(milliseconds: 40));
 
-      unawaited(
-        recording.animateTo(
-          100,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.linear,
-        ),
+      recording.animateTo(
+        100,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.linear,
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
@@ -2371,9 +2369,9 @@ void main() {
 
       await tester.pumpWidget(
         MediaQuery(
-          data: MediaQueryData(
-            size: const Size(320, 480),
-            textScaler: const TextScaler.linear(2),
+          data: const MediaQueryData(
+            size: Size(320, 480),
+            textScaler: TextScaler.linear(2),
           ),
           child: MaterialApp(
             theme: BgeTheme.light(),

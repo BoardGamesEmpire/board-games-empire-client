@@ -27,14 +27,20 @@ GameCollectionListItem _entry(
   medium: medium,
 );
 
-final _tabletopPhysical = _entry('e-1', platformName: 'Tabletop');
-final _tabletopDigital = _entry(
+final GameCollectionListItem _tabletopPhysical = _entry(
+  'e-1',
+  platformName: 'Tabletop',
+);
+final GameCollectionListItem _tabletopDigital = _entry(
   'e-2',
   platformName: 'Tabletop',
   medium: GameMedium.digital,
 );
-final _steam = _entry('e-3', platformName: 'Steam');
-final _longPlatform = _entry('e-4', platformName: 'Nintendo Switch 2 Edition');
+final GameCollectionListItem _steam = _entry('e-3', platformName: 'Steam');
+final GameCollectionListItem _longPlatform = _entry(
+  'e-4',
+  platformName: 'Nintendo Switch 2 Edition',
+);
 
 Finder _tile(String entryId) =>
     find.byKey(CollectionEntryPicker.tileKey(entryId));
@@ -61,7 +67,7 @@ bool _ringShows(WidgetTester tester, String entryId) {
   return (box.decoration as BoxDecoration).border != null;
 }
 
-/// A page with a button that opens the picker over [items], recording what
+/// A page with a button that opens the picker over `items`, recording what
 /// each tile's tap hands to `onOpen`.
 class _Host {
   final opener = FocusNode(debugLabel: 'opener');

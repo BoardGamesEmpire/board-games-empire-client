@@ -1,8 +1,8 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:drift_storage/src/repositories/notification_summary_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
@@ -127,7 +127,7 @@ void main() {
 
     group('getUnread', () {
       test('returns only unread, ordered by receivedAt desc', () async {
-        final older = DateTime(2024, 1, 1).toUtc();
+        final older = DateTime(2024).toUtc();
         final newer = DateTime(2024, 1, 2).toUtc();
 
         final n1 = await repository.add(_makeNotification(receivedAt: older));
@@ -304,7 +304,7 @@ void main() {
 
     group('watchUnreadCountForServer', () {
       test('is isolated to the given server '
-          '(server-b mutations never raise server-a\'s count)', () async {
+          "(server-b mutations never raise server-a's count)", () async {
         // Listener-based capture rather than take(N). The prior
         // test capped emissions with take(2), which cancelled the
         // subscription as soon as [0, 1] arrived — BEFORE the
@@ -349,7 +349,7 @@ void main() {
         expect(
           emissions.last,
           equals(1),
-          reason: 'server-b add must not change server-a\'s count',
+          reason: "server-b add must not change server-a's count",
         );
         expect(
           emissions,

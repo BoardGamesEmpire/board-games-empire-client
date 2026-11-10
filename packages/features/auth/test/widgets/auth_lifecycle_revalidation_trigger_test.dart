@@ -1,14 +1,13 @@
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/widgets/auth_lifecycle_revalidation_trigger.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
-
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/widgets/auth_lifecycle_revalidation_trigger.dart';
 
 import '../support/auth_test_fixtures.dart';
 

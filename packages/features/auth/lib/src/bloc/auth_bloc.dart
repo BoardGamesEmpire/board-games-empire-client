@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -7,9 +9,6 @@ import 'package:interfaces/services.dart'
     show ConnectivityService, ConnectivityState;
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
-
-import 'auth_event.dart';
-import 'auth_bloc_state.dart';
 
 /// Manages authentication state for a single server context.
 ///
@@ -288,6 +287,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // Rejected, not indeterminate. Defensive: the repository normally
       // expresses rejection by returning null (see the class docs), so
       // this covers a transport-level 401/403 surfacing as an exception.
+      // Stated, not defaulted: the cause decides whether the
+      // unsent-changes notice survives sign-in (#142).
+      // ignore: avoid_redundant_argument_values
       emit(const AuthUnauthenticated(cause: SignOutCause.sessionLost));
     } on AuthException catch (e, s) {
       // Indeterminate (network, timeout, 5xx).
@@ -309,6 +311,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   AuthBlocState _noSessionState() {
     final failure = _authRepository.takeProviderSignInReturn();
     return failure == null
+        // Stated, not defaulted: the cause decides whether the
+        // unsent-changes notice survives sign-in (#142).
+        // ignore: avoid_redundant_argument_values
         ? const AuthUnauthenticated(cause: SignOutCause.sessionLost)
         : AuthFailureProviderSignIn(failure.reason, cause: failure);
   }
@@ -339,10 +344,16 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(
         session != null
             ? AuthAuthenticated(session: session)
+            // Stated, not defaulted: the cause decides whether the
+            // unsent-changes notice survives sign-in (#142).
+            // ignore: avoid_redundant_argument_values
             : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
       );
     } on AuthInvalidCredentialsException {
       if (!identical(state, current)) return;
+      // Stated, not defaulted: the cause decides whether the
+      // unsent-changes notice survives sign-in (#142).
+      // ignore: avoid_redundant_argument_values
       emit(const AuthUnauthenticated(cause: SignOutCause.sessionLost));
     } on AuthException {
       // Still unreachable. Keep the optimistic session and its banner: the

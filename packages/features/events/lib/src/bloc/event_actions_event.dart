@@ -1,9 +1,8 @@
 import 'package:equatable/equatable.dart';
+import 'package:events/src/bloc/event_actions_state.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../detail/event_actions.dart';
-import 'event_actions_state.dart';
 
 /// Input to the actions on an event's detail screen: the delete (#501), the
 /// date writes (#506) and the event's status writes (#502).

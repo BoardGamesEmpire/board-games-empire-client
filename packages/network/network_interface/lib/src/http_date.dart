@@ -1,7 +1,7 @@
 /// Matches RFC 9110 §5.6.7 IMF-fixdate, the mandatory `Date` format
 /// modern servers emit: `Sun, 06 Nov 1994 08:49:37 GMT`.
 final RegExp _imfFixdate = RegExp(
-  r'^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), '
+  '^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), '
   r'(\d{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) '
   r'(\d{2}):(\d{2}):(\d{2}) GMT$',
 );

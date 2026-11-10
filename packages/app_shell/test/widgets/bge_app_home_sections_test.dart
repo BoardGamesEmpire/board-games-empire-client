@@ -119,7 +119,9 @@ class _Pool implements HouseholdRemoteDataSource {
 /// A collection cache holding one entry per id in [gameIds]. Its stream stays
 /// open, as Drift's does, or fails when [fails] says so.
 class _Collection implements GameCollectionRepository {
-  _Collection([this.gameIds = const [], this.fails = false]);
+  _Collection([this.gameIds = const []]) : fails = false;
+
+  _Collection.failing() : gameIds = const [], fails = true;
 
   final List<String> gameIds;
   final bool fails;
@@ -205,8 +207,8 @@ class _Events implements EventRepository {
 class _GameCache implements GameRepository {
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) async => const [];
 
@@ -941,7 +943,7 @@ void main() {
     ) async {
       await pumpHome(
         tester,
-        collection: _Collection(const [], true),
+        collection: _Collection.failing(),
         events: _Events(),
       );
 
@@ -1019,8 +1021,8 @@ void main() {
   });
 
   group('another user on the same server', () {
-    final cover = NewestGamesSection.coverKey;
-    final toPlay = SomethingToPlaySection.coverKey;
+    const cover = NewestGamesSection.coverKey;
+    const toPlay = SomethingToPlaySection.coverKey;
 
     late _GamesRemote server;
     late _Pool pool;

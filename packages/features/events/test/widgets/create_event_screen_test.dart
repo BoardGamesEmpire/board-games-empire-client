@@ -50,12 +50,12 @@ Event _localEvent(String id) => Event(
 Household _household(String id, String name) => Household(
   id: id,
   name: name,
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
-final _home = _household('h_1', 'Home');
-final _club = _household('h_2', 'Club');
+final Household _home = _household('h_1', 'Home');
+final Household _club = _household('h_2', 'Club');
 
 const _ana = UserSummary(id: 'u_1', username: 'ana', displayName: 'Ana B');
 const _bo = UserSummary(id: 'u_2', username: 'bo', displayName: 'Bo C');
@@ -181,7 +181,7 @@ void main() {
     ThemeData? theme,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
-    localizationsDelegates: [
+    localizationsDelegates: const [
       ...EventsLocalizations.localizationsDelegates,
       UserSearchLocalizations.delegate,
     ],
@@ -200,18 +200,16 @@ void main() {
     home: Builder(
       builder: (context) => Scaffold(
         body: TextButton(
-          onPressed: () => unawaited(
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => CreateEventScreen(
-                  repository: repo,
-                  sender: sender,
-                  users: users,
-                  households: households,
-                  householdId: householdId,
-                  now: () => now,
-                  onCreated: (_, eventId) => created.add(eventId),
-                ),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => CreateEventScreen(
+                repository: repo,
+                sender: sender,
+                users: users,
+                households: households,
+                householdId: householdId,
+                now: () => now,
+                onCreated: (_, eventId) => created.add(eventId),
               ),
             ),
           ),
@@ -728,7 +726,7 @@ void main() {
       expect(created, isEmpty);
     });
 
-    testWidgets("a refusal with no one invited and no household blames "
+    testWidgets('a refusal with no one invited and no household blames '
         'neither', (tester) async {
       stubDeliveries([_refusedQuietly]);
       await open(tester, households: Stream.value([_home]));

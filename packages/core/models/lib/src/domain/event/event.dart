@@ -1,9 +1,9 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../common/reach.dart';
-import 'event_scheduling_mode.dart';
-import 'event_status.dart';
-import 'event_type.dart';
+import 'package:models/src/domain/common/reach.dart';
+import 'package:models/src/domain/event/event_scheduling_mode.dart';
+import 'package:models/src/domain/event/event_status.dart';
+import 'package:models/src/domain/event/event_type.dart';
 
 part 'event.freezed.dart';
 
@@ -11,8 +11,8 @@ part 'event.freezed.dart';
 /// caches it for the signed-in user (#496).
 ///
 /// The event holds what is true of the whole gathering. Its dates are
-/// [EventOccurrence]s, its roster [EventAttendee]s and its rules an
-/// [EventPolicy]; an [EventSnapshot] carries the parts one read returned.
+/// `EventOccurrence`s, its roster `EventAttendee`s and its rules an
+/// `EventPolicy`; an `EventSnapshot` carries the parts one read returned.
 ///
 /// ## What is deliberately not here
 ///
@@ -31,6 +31,13 @@ abstract class Event with _$Event {
     /// The account that created the event.
     required String createdById,
 
+    required EventType type,
+    required Reach reach,
+    required EventStatus status,
+    required EventSchedulingMode schedulingMode,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+
     /// The household the event belongs to. Null for an event outside any
     /// household.
     String? householdId,
@@ -40,10 +47,6 @@ abstract class Event with _$Event {
     /// The event-level place. An occurrence may override it with its own.
     String? location,
     String? url,
-    required EventType type,
-    required Reach reach,
-    required EventStatus status,
-    required EventSchedulingMode schedulingMode,
 
     /// Why the host cancelled the event. Null for an event that isn't
     /// cancelled, and for one cancelled without a reason (#502).
@@ -62,7 +65,5 @@ abstract class Event with _$Event {
     /// not yet confirmed it (#499). The reconcile replaces it with the
     /// server's copy, which carries neither flag.
     @Default(false) bool isLocalOnly,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _Event;
 }

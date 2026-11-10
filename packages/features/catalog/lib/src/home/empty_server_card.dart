@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// What the home page says in the place of "Recently added" when the server
 /// has no games (#617), to someone who can connect a DataGateway: a card with

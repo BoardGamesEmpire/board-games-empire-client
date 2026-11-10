@@ -1,8 +1,8 @@
-library;
-
 export 'src/clock/local_clock_service.dart';
 export 'src/clock/server_skew_clock_service.dart';
 export 'src/container_lookups.dart';
+export 'src/data_export/user_data_export_bundler.dart';
+export 'src/data_export/user_data_export_registry_impl.dart';
 export 'src/dependency_container_impl.dart';
 export 'src/orchestrator_active_server_scope.dart';
 export 'src/scope/container_user_session_scope.dart';
@@ -13,6 +13,4 @@ export 'src/session/session_rehydrator_impl.dart';
 export 'src/session/session_rehydrator_installer.dart';
 export 'src/streams/replay_then_forward.dart';
 export 'src/unsupported_push_notification_service.dart';
-export 'src/data_export/user_data_export_bundler.dart';
-export 'src/data_export/user_data_export_registry_impl.dart';
 export 'src/version_negotiator_impl.dart';

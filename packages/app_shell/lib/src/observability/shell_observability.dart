@@ -1,16 +1,15 @@
 import 'dart:async';
 
+import 'package:app_shell/src/observability/uncaught_error_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:observability/observability.dart';
-
-import 'uncaught_error_record.dart';
 
 /// Process-wide observability wiring owned by the shell.
 ///
 /// `package:logging` is inherently global (loggers propagate to
 /// [Logger.root]), so the shell owns the single [BreadcrumbBuffer] attached
-/// to it. [runBgeApp] initializes this before anything else logs, ensuring
+/// to it. `runBgeApp` initializes this before anything else logs, ensuring
 /// the ring buffer has history from the very first bootstrap step — which
 /// is exactly what a feedback report about "the app won't start" needs.
 ///
@@ -83,6 +82,9 @@ abstract final class ShellObservability {
   /// fast instead. (`installGlobalErrorHooks` additionally guards its
   /// capture path, so a mis-ordered production install degrades to a
   /// warn-level log rather than a secondary crash.)
+  // A setter cannot be torn off, and `installGlobalErrorHooks` takes this
+  // as its default `RecordUncaughtError` callback.
+  // ignore: use_setters_to_change_properties
   static void recordUncaughtError(UncaughtErrorRecord record) {
     _lastUncaughtErrorOrThrow.value = record;
   }

@@ -173,7 +173,6 @@ class LanguageTagSearchCubit extends Cubit<LanguageTagSearchState> {
     try {
       result = await _remote.fetchLanguageTags(
         name: name.isEmpty ? null : name,
-        page: 1,
       );
     } on Object catch (error, stackTrace) {
       if (_dropped(read)) return;

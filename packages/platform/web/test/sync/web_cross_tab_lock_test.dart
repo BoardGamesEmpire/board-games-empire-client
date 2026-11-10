@@ -222,6 +222,8 @@ web.LockManager _grantingOn(Future<void> grant) {
     String name,
     JSObject options,
     JSFunction callback,
+    // The JS callback must receive explicit nulls, not absent arguments.
+    // ignore: avoid_redundant_argument_values
   ) => grant.then((_) => callback.callAsFunction(null, null)).toJS).toJS;
   return manager as web.LockManager;
 }

@@ -1,5 +1,3 @@
-library;
-
 export 'l10n/server_onboarding_localizations.dart';
 
 export 'src/bloc/server_onboarding_bloc.dart';

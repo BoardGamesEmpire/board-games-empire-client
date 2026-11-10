@@ -441,13 +441,12 @@ void main() {
 
     /// Pushes a page over the list, as the app's route to the detail screen
     /// does.
-    void openDetail(BuildContext context, String householdId) => unawaited(
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => Scaffold(body: Text('Detail $householdId')),
-        ),
-      ),
-    );
+    void openDetail(BuildContext context, String householdId) =>
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(body: Text('Detail $householdId')),
+          ),
+        );
 
     Finder detail() => find.textContaining('Detail ', skipOffstage: false);
 
@@ -829,11 +828,9 @@ void main() {
       popDetail(tester);
       await tester.pumpAndSettle();
       const other = 'Other page';
-      unawaited(
-        Navigator.of(tester.element(find.text('Alpha'))).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const Scaffold(body: Text(other)),
-          ),
+      Navigator.of(tester.element(find.text('Alpha'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text(other)),
         ),
       );
       await tester.pumpAndSettle();
@@ -851,11 +848,9 @@ void main() {
       const form = 'Create form';
       await tester.pumpWidget(
         harness(
-          onCreate: (context) => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const Scaffold(body: Text(form)),
-              ),
+          onCreate: (context) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text(form)),
             ),
           ),
           onOpen: openDetail,

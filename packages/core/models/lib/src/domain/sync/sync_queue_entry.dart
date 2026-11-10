@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'sync_operation.dart';
-import 'sync_status.dart';
+import 'package:models/src/domain/sync/sync_operation.dart';
+import 'package:models/src/domain/sync/sync_status.dart';
 
 part 'sync_queue_entry.freezed.dart';
 part 'sync_queue_entry.g.dart';
@@ -13,14 +13,13 @@ part 'sync_queue_entry.g.dart';
 /// (#121).
 @freezed
 abstract class SyncQueueEntry with _$SyncQueueEntry {
-  const SyncQueueEntry._();
-
   const factory SyncQueueEntry({
     required String id,
 
     /// Serialised [SyncOperation]. Use [operation] to deserialize.
     required String payload,
 
+    required DateTime createdAt,
     @Default(SyncStatus.pending) SyncStatus status,
 
     /// Counted failed attempts (#121). At [maxRetries] the entry is
@@ -30,10 +29,9 @@ abstract class SyncQueueEntry with _$SyncQueueEntry {
 
     /// Last error message for diagnostics. Null on first attempt.
     String? lastError,
-
-    required DateTime createdAt,
     DateTime? lastAttemptAt,
   }) = _SyncQueueEntry;
+  const SyncQueueEntry._();
 
   factory SyncQueueEntry.fromJson(Map<String, dynamic> json) =>
       _$SyncQueueEntryFromJson(json);

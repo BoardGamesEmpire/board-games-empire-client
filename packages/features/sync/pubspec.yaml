@@ -10,32 +10,33 @@ environment:
 resolution: workspace
 
 dependencies:
+  equatable: ^2.1.0
   flutter:
     sdk: flutter
+  # The retry-or-discard screen and its notice (#190) use flutter_bloc,
+  # equatable, intl, ui and ui_tokens.
+  flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
-
   interfaces:
     path: ../../core/interfaces
+  intl: ^0.20.2
   models:
     path: ../../core/models
   network_interface:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-
-  # The retry-or-discard screen and its notice (#190).
-  flutter_bloc: ^9.1.1
-  equatable: ^2.1.0
-  intl: ^0.20.2
   ui:
     path: ../../ui/widgets
   ui_tokens:
     path: ../../ui/tokens
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
+  # Shared widget-test helpers: viewport, semantics and scroll geometry.
+  bge_test_support:
+    path: ../../testing/support
+  bloc_test: ^10.0.0
   # A real container for the installers' tests. Dev-only: nothing under `lib/`
   # names `di` — the installers take the `DependencyContainer` abstraction
   # from `interfaces`. Same shape as `game_collection`'s.
@@ -48,15 +49,11 @@ dev_dependencies:
   # so a fake could not prove what lands together.
   drift_storage:
     path: ../../storage/drift_storage
-  bloc_test: ^10.0.0
-  mocktail: ^1.0.5
-  very_good_analysis: ^10.2.0
-  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
   l10n_test_support:
     path: ../../testing/l10n
-  # Shared widget-test helpers: viewport, semantics and scroll geometry.
-  bge_test_support:
-    path: ../../testing/support
+  mocktail: ^1.0.5
 
 flutter:
   generate: true

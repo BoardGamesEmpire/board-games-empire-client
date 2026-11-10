@@ -46,9 +46,10 @@ void main() {
       final c = cubit(feedbackService: service);
       addTearDown(c.close);
 
-      c.onAuthenticated();
-      c.onAuthenticated();
-      c.onAuthenticated();
+      c
+        ..onAuthenticated()
+        ..onAuthenticated()
+        ..onAuthenticated();
 
       expect(service.drainCalls, 3);
     });
@@ -83,7 +84,7 @@ void main() {
 class _RecordingFeedbackService implements FeedbackService {
   _RecordingFeedbackService({this.error});
 
-  final Object? error;
+  final Error? error;
   int drainCalls = 0;
 
   @override

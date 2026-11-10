@@ -8,20 +8,19 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/auth_repository_impl.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
-import 'package:dio_network/src/auth/auth_repository_impl.dart';
-import 'package:dio_network/src/auth/token_storage_service.dart';
-
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -34,7 +33,7 @@ ServerIdentity _identity() => ServerIdentity(
   twoFactorSupported: true,
   anonymousAuthSupported: true,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',
@@ -110,7 +109,7 @@ void main() {
       (_) async => StoredSession(
         token: 'session-tok-abc',
         expiresAt: DateTime(2099).toUtc(),
-        persistedAt: DateTime.utc(2026, 1, 1),
+        persistedAt: DateTime.utc(2026),
         user: AuthUser.fromJson({
           'id': 'user-1',
           'name': 'testuser',

@@ -1,30 +1,31 @@
+import 'package:events/src/create/event_link.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import 'event_link.dart';
 
 /// The names of the event create form's controls (#499). The form is one
 /// [FormGroup] across all its sections, built by [buildEventCreateForm].
 abstract final class EventCreateControls {
-  static const title = 'title',
-      household = 'household',
-      type = 'type',
-      reach = 'reach',
-      description = 'description',
-      location = 'location',
-      url = 'url',
-      mode = 'mode',
-      dates = 'dates',
-      invitees = 'invitees',
-      gameAddition = 'gameAddition',
-      threshold = 'threshold',
-      thresholdValue = 'thresholdValue',
-      quorum = 'quorum',
-      quorumValue = 'quorumValue',
-      windowHours = 'windowHours';
+  static const title = 'title';
+  static const household = 'household';
+  static const type = 'type';
+  static const reach = 'reach';
+  static const description = 'description';
+  static const location = 'location';
+  static const url = 'url';
+  static const mode = 'mode';
+  static const dates = 'dates';
+  static const invitees = 'invitees';
+  static const gameAddition = 'gameAddition';
+  static const threshold = 'threshold';
+  static const thresholdValue = 'thresholdValue';
+  static const quorum = 'quorum';
+  static const quorumValue = 'quorumValue';
+  static const windowHours = 'windowHours';
 
   // Each row of [dates] is a group of these, built by [buildEventDateRow].
-  static const start = 'start', end = 'end', label = 'label';
+  static const start = 'start';
+  static const end = 'end';
+  static const label = 'label';
 }
 
 /// The errors the form's dates check sets (#499), beside reactive_forms'
@@ -40,7 +41,7 @@ abstract final class EventCreateErrors {
   /// Read it on the mode control. A group's `errors` file each child's
   /// errors under the child's name, so whenever a row has an error, the
   /// form's entry under this key is the dates' errors instead.
-  static const tooFewDates = EventCreateControls.dates;
+  static const String tooFewDates = EventCreateControls.dates;
 
   /// On one of the rules' numbers that isn't a whole number its setting
   /// takes. Its value is the [WholeNumberRange] taken, for the message to
@@ -535,8 +536,9 @@ final _digits = RegExp(r'^[0-9]+$');
 /// Sets [number] to [start], and checks it against its new type even when
 /// it held [start] already.
 void _startOver(FormControl<String> number, int? start) {
-  number.value = start?.toString();
-  number.updateValueAndValidity();
+  number
+    ..value = start?.toString()
+    ..updateValueAndValidity();
 }
 
 void _enable(AbstractControl<dynamic> control, bool enabled) =>

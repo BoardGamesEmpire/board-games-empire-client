@@ -95,7 +95,7 @@ void main() {
         await sink.persist(
           record(
             'k$i',
-            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
           ),
         );
       }
@@ -110,11 +110,11 @@ void main() {
       // Inserted newest-first, so insertion order and age disagree: k0 is
       // the youngest stored record and the LAST one inserted is the oldest.
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
-        final oldest = QueuedFeedbackReport.maxQueuedReports - 1;
+        const oldest = QueuedFeedbackReport.maxQueuedReports - 1;
         await sink.persist(
           record(
             'k$i',
-            queuedAt: DateTime.utc(2026, 6, 1).subtract(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2026, 6).subtract(Duration(minutes: i)),
           ),
         );
         if (i == oldest) break;
@@ -141,7 +141,7 @@ void main() {
         'has to mean the record is stored', () async {
       final sink = MemoryFeedbackSink();
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
-        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026, 6, 1)));
+        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026, 6)));
       }
       // A clock that stepped backwards makes the new record look oldest.
       await sink.persist(record('backdated', queuedAt: DateTime.utc(1999)));
@@ -160,7 +160,7 @@ void main() {
         await sink.persist(
           record(
             'k$i',
-            queuedAt: DateTime.utc(2020, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2020).add(Duration(minutes: i)),
           ),
         );
       }
@@ -174,9 +174,9 @@ void main() {
     test('re-persisting an existing key does not grow the queue', () async {
       final sink = MemoryFeedbackSink();
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
-        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026, 1, 1)));
+        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026)));
       }
-      await sink.persist(record('k0', queuedAt: DateTime.utc(2026, 1, 1)));
+      await sink.persist(record('k0', queuedAt: DateTime.utc(2026)));
 
       expect(
         await sink.pending(),
@@ -248,8 +248,8 @@ void main() {
 
     test('rejects an un-addressable record, exactly as persist does', () async {
       final sink = MemoryFeedbackSink();
-      final keyless = QueuedFeedbackReport(
-        report: const FeedbackReport(
+      const keyless = QueuedFeedbackReport(
+        report: FeedbackReport(
           category: FeedbackCategory.bug,
           severity: FeedbackSeverity.low,
           message: 'pending',
@@ -263,12 +263,12 @@ void main() {
         'queue', () async {
       final sink = MemoryFeedbackSink();
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
-        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026, 1, 1)));
+        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026)));
       }
 
       // The oldest record, which is what an eviction pass would take.
       await sink.update(
-        record('k0', message: 'bumped', queuedAt: DateTime.utc(2026, 1, 1)),
+        record('k0', message: 'bumped', queuedAt: DateTime.utc(2026)),
       );
 
       final pending = await sink.pending();

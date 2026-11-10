@@ -333,7 +333,7 @@ void main() {
 /// The real games cache, with a hook before each write the bloc makes, and a
 /// count of them.
 class _GatedCache extends GameRepositoryImpl {
-  _GatedCache(super.db, {required super.userId});
+  _GatedCache(super._db, {required super.userId});
 
   Future<void> Function()? beforeCacheGame;
   Future<void> Function()? beforeCachePlatformGames;
@@ -341,7 +341,7 @@ class _GatedCache extends GameRepositoryImpl {
   int platformGameWrites = 0;
 
   /// Thrown by [getPlatformGamesForGame] when set.
-  Object? platformGamesReadError;
+  Error? platformGamesReadError;
 
   @override
   Future<List<PlatformGame>> getPlatformGamesForGame(String gameId) async {

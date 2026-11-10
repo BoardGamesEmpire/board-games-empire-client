@@ -1,12 +1,11 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/widgets/router_back_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import 'router_back_interceptor.dart';
 
 /// Tells the user, once per boot, that the data saved on this device for a
 /// server could not be opened and was rebuilt empty, so changes made on
@@ -27,10 +26,11 @@ import 'router_back_interceptor.dart';
 ///
 /// A dialog route would also own keyboard focus, and above the Navigator
 /// nothing does, so the notice does it itself. The app behind it can't take
-/// focus while it is up, so a field there that asked for focus can't take
-/// what is typed. The notice's button takes focus instead, takes it back
-/// from a screen that opens behind it, and Tab stays on it. Acknowledging gives focus back to wherever it was before, or to
-/// [fallbackFocus] when a redirect has taken that away.
+/// focus while it is up, so a field there that asked for focus can't take what
+/// is typed. The notice's button takes focus instead, takes it back from a
+/// screen that opens behind it, and Tab stays on it. Acknowledging gives focus
+/// back to wherever it was before, or to [fallbackFocus] when a redirect has
+/// taken that away.
 ///
 /// [child] is always the first child of the same [Stack], so showing or
 /// closing the notice never remounts the app beneath it.

@@ -632,7 +632,6 @@ void main() {
             footer: const SizedBox(key: Key('footer'), height: 48),
             child: Column(children: List.generate(40, (i) => Text('row $i'))),
           ),
-          size: const Size(400, 800),
         ),
       );
 
@@ -807,7 +806,6 @@ void main() {
         hostAtSize(
           tester,
           const BgePage(centerVertically: true, child: Text('centered')),
-          size: const Size(400, 800),
         ),
       );
 
@@ -1510,7 +1508,6 @@ void main() {
               ],
             ),
           ),
-          size: const Size(400, 800),
         ),
       );
       final scrollable = find.byType(Scrollable).first;
@@ -1567,7 +1564,6 @@ void main() {
               ),
             ],
           ),
-          size: const Size(400, 800),
         ),
       );
 

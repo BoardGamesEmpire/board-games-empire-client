@@ -6,7 +6,7 @@ import 'dart:async';
 /// built once per boot by the platform composition root
 /// (`PlatformBootstrap.createRootContainer`, #72) and holds services that
 /// outlive any single server (client version, feedback, connectivity).
-/// Per-server containers are owned by their [ServerContext] — exactly one
+/// Per-server containers are owned by their `ServerContext` — exactly one
 /// each — providing full isolation between server scopes. Implementations
 /// use `GetIt.asNewInstance()` to guarantee this isolation; root services
 /// reach per-server containers by explicit constructor injection at

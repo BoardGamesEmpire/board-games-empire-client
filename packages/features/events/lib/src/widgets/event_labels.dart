@@ -1,9 +1,7 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/overview/event_groups.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../overview/event_groups.dart';
 
 // The words for an event's values, where the overview and the detail screen
 // show them (#497, #498).

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'bge_keyed_child_delegate.dart';
+import 'package:ui/src/layout/bge_keyed_child_delegate.dart';
 
 /// A sliver list of rows that keep their state when a row above them leaves
 /// or arrives (#549).

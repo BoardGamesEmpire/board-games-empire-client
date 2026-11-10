@@ -1,4 +1,3 @@
-import 'dart:async' show unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show Tristate;
 
@@ -12,13 +11,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-const _spaceXxl = BgeTokens.spaceXxlValue;
+const double _spaceXxl = BgeTokens.spaceXxlValue;
 const _coverWidth = 100.0;
 const _coverCount = 10;
 
 /// Ten covers with their gaps: wider than the narrow window, and narrower than
 /// a wide enough one.
-const _rowWidth =
+const double _rowWidth =
     _coverCount * _coverWidth + (_coverCount - 1) * BgeTokens.spaceMdValue;
 
 const _narrow = Size(400, 600);
@@ -534,7 +533,7 @@ void main() {
       }
     });
 
-    testWidgets('it is drawn in the theme\'s disabled colour', (tester) async {
+    testWidgets("it is drawn in the theme's disabled colour", (tester) async {
       useViewSize(tester, _narrow);
       await _show(tester, _app(_shelf()));
 
@@ -879,7 +878,8 @@ void main() {
               ),
             ),
           );
-          // Not so far that the row, at the foot of the page, leaves the screen.
+          // Not so far that the row, at the foot of the page, leaves the
+          // screen.
           page.jumpTo(30);
           await tester.pumpAndSettle();
           // A pure vertical event, left to the framework, is the measure.
@@ -1245,10 +1245,8 @@ void main() {
           ),
         ),
       );
-      unawaited(
-        navigator.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const SizedBox()),
-        ),
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const SizedBox()),
       );
       await tester.pumpAndSettle();
 

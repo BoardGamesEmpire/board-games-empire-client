@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../network/remote_failure.dart';
 
 /// [DataGatewayRemoteDataSource] over a **per-server** Dio instance (#41).
 ///
@@ -585,7 +584,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   /// Capability names, kept as the server sent them (#457). Copied here, so a
   /// name that is not a string fails the parse rather than a later read.
-  static List<String> _names(Object? wire) => List<String>.from(wire as List);
+  static List<String> _names(Object? wire) => List<String>.from(wire! as List);
 
   static DateTime? _dateOrNull(Object? wire) =>
       wire == null ? null : DateTime.parse(wire as String);

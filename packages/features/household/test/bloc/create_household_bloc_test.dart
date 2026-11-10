@@ -1,11 +1,10 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
-
-import 'package:household/household.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 class MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -253,7 +252,7 @@ void main() {
             .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
       ],
       verify: (_) {
-        verify(() => repo.create(name: 'HQ', description: null)).called(1);
+        verify(() => repo.create(name: 'HQ')).called(1);
         verify(() => sender.deliver(any(), any())).called(1);
       },
     );
@@ -293,7 +292,7 @@ void main() {
             .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
       ],
       verify: (_) {
-        verify(() => repo.create(name: 'HQ', description: null)).called(2);
+        verify(() => repo.create(name: 'HQ')).called(2);
       },
     );
   });

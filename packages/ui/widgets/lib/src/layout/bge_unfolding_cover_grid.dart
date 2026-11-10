@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:ui/src/layout/bge_keyed_sliver_grid.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'bge_keyed_sliver_grid.dart';
 
 /// A cover grid that can open a strip under one row (#711).
 ///
@@ -132,9 +131,9 @@ class BgeUnfoldingCoverGrid<T> extends StatelessWidget {
 typedef BgeUnfoldingTileBuilder<T> = Widget Function(
   BuildContext context,
   T item,
-  bool unfolded,
-  VoidCallback toggle,
-);
+  VoidCallback toggle, {
+  required bool unfolded,
+});
 
 /// A [BgeUnfoldingCoverGrid] that holds which item is unfolded (#711).
 ///
@@ -149,7 +148,7 @@ typedef BgeUnfoldingTileBuilder<T> = Widget Function(
 ///   keyOf: (game) => ValueKey(game.id),
 ///   idOf: (game) => game.id,
 ///   hasStrip: (game) => expansionsOf(game).isNotEmpty,
-///   itemBuilder: (context, game, unfolded, toggle) => BgeCoverTile(
+///   itemBuilder: (context, game, toggle, {required unfolded}) => BgeCoverTile(
 ///     label: game.title,
 ///     extent: null,
 ///     expansions: BgeCoverExpansions(expanded: unfolded, onToggle: toggle,
@@ -235,8 +234,8 @@ class _BgeUnfoldingCoversState<T> extends State<BgeUnfoldingCovers<T>> {
       return widget.itemBuilder(
         context,
         item,
-        _unfolded == id,
         () => _toggle(id),
+        unfolded: _unfolded == id,
       );
     },
     stripBuilder: widget.stripBuilder,

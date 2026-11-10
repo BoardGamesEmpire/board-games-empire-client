@@ -23,7 +23,7 @@ BuildContext _content(WidgetTester tester) =>
 
 /// The strip's one live-region node: the element whose label change is
 /// what a screen reader announces.
-final _liveRegion = find.descendant(
+final Finder _liveRegion = find.descendant(
   of: find.byType(BgeOfflineStrip),
   matching: find.byType(MergeSemantics),
 );

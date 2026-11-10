@@ -1,15 +1,14 @@
 import 'dart:async';
 
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import '../../l10n/auth_localizations.dart';
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
-import '../bloc/auth_bloc_state.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Email and password sign-in form.
 ///
@@ -63,7 +62,7 @@ class _LoginFormState extends State<LoginForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     super.dispose();
   }
@@ -135,7 +134,6 @@ class _LoginFormState extends State<LoginForm> {
                   autocorrect: false,
                   enableSuggestions: false,
                   autofillHints: const [AutofillHints.email],
-                  textInputAction: TextInputAction.next,
                   readOnly: isLoading,
                   autofocus: true,
                   validationMessages: {

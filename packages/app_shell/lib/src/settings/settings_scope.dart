@@ -1,4 +1,4 @@
-/// The two composition scopes a [SettingsSection] can belong to (#120),
+/// The two composition scopes a `SettingsSection` can belong to (#120),
 /// mirroring the app's DI topology (app-level vs. per-server).
 ///
 /// The distinction is behavioural, not cosmetic: [appLevel] sections are

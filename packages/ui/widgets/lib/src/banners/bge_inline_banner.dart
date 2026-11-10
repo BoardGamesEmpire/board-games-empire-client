@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show clampDouble, precisionErrorTolerance;
 import 'package:flutter/gestures.dart'
@@ -11,10 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show RenderSliverMultiBoxAdaptor, ScrollDirection;
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyUpEvent;
+import 'package:ui/src/banners/banner_action_layout.dart';
+import 'package:ui/src/banners/banner_focus_ring.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'banner_action_layout.dart';
-import 'banner_focus_ring.dart';
 
 /// The tone of a [BgeInlineBanner], which selects its color pair and icon.
 enum BgeBannerTone {
@@ -75,7 +76,7 @@ enum BgeBannerTone {
 ///   page's scroll view, where even a banner taller than the viewport never
 ///   makes anything unreachable: the page scrolls past it, to its [action]
 ///   and to whatever follows. A cap with a scroll view of its own, the way
-///   [BgePage.footer] does it, would stop every page drag that starts on the
+///   `BgePage.footer` does it, would stop every page drag that starts on the
 ///   banner. The footer's cap-and-scroll pair works only because the footer
 ///   sits *outside* the page's scroll view; inside it, the capped region
 ///   becomes a dead zone for touch. Truncating instead would hide part of the
@@ -85,7 +86,7 @@ enum BgeBannerTone {
 ///
 ///   The one exception is an outcome that answers an action on a long list
 ///   or page, such as a DataGateway's (#457). It sits in the page's
-///   [BgePage.footer], where it is always built and on screen, because inside
+///   `BgePage.footer`, where it is always built and on screen, because inside
 ///   the list it can be scrolled away before it lands, and at the head of the
 ///   page it takes the page from the control it answers.
 /// - **The icon is not decorative.** Tone here is conveyed by color *and*
@@ -144,7 +145,7 @@ class BgeInlineBanner extends StatefulWidget {
   /// `Scrollable.ensureVisible` does, so a banner inside an inner vertical
   /// scroller can be revealed within that scroller while the scroller itself
   /// sits off screen in the page. No surface here nests vertical scroll views —
-  /// that is what [BgePage.slivers] exists to avoid — but a call site that
+  /// that is what `BgePage.slivers` exists to avoid — but a call site that
   /// introduces one owns keeping the outer page in the right place.
   ///
   /// This is the one guarantee on this widget that depends on its host.
@@ -448,9 +449,11 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
       position.jumpTo(target);
     } else {
       final reveal = _startWatchingReveal(position);
-      position
-          .animateTo(target, duration: duration, curve: BgeMotion.enter)
-          .then((_) => _afterReveal(position, target, reveal));
+      unawaited(
+        position
+            .animateTo(target, duration: duration, curve: BgeMotion.enter)
+            .then((_) => _afterReveal(position, target, reveal)),
+      );
     }
   }
 

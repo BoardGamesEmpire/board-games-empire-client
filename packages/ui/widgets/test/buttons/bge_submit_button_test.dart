@@ -40,9 +40,9 @@ void main() {
     // stay clean, forever, at every call site — which is the reason this
     // treatment lives in a widget rather than in a documented pattern.
     for (final (name, size, scale) in <(String, Size, double)>[
-      ('narrow phone', Size(320, 640), 1),
-      ('narrow phone at 2.0 text scale', Size(320, 640), 2),
-      ('very narrow', Size(240, 640), 2),
+      ('narrow phone', const Size(320, 640), 1),
+      ('narrow phone at 2.0 text scale', const Size(320, 640), 2),
+      ('very narrow', const Size(240, 640), 2),
     ]) {
       testWidgets('does not overflow: $name', (tester) async {
         await tester.pumpWidget(

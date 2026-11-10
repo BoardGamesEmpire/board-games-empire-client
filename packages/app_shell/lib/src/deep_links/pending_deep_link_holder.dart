@@ -1,4 +1,4 @@
-import 'deep_link_normalizer.dart';
+import 'package:app_shell/src/deep_links/deep_link_normalizer.dart';
 
 /// Single-slot, latest-wins store for a deep link that cannot be acted on
 /// yet (#10 decision: one slot, no queue, no TTL).
@@ -19,6 +19,9 @@ class PendingDeepLinkHolder {
   NormalizedDeepLink? get peek => _slot;
 
   /// Stores [link], replacing any previously held link (latest wins).
+  // The slot's verbs are set/take/clear/peek, and a setter could not pair
+  // with the `peek` getter by name; the call sites read as verbs.
+  // ignore: use_setters_to_change_properties
   void set(NormalizedDeepLink link) => _slot = link;
 
   /// Returns the held link and empties the slot, or null when empty.

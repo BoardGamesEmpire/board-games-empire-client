@@ -1,6 +1,6 @@
-import 'package:test/test.dart';
-import 'package:models/value_objects.dart';
 import 'package:models/domain.dart';
+import 'package:models/value_objects.dart';
+import 'package:test/test.dart';
 
 /// Builds a [User] with the now-required identity fields filled in, so each
 /// test only specifies the fields it actually exercises.
@@ -18,7 +18,7 @@ User buildUser({
   image: image,
   email: 'test@example.com',
   emailVerified: true,
-  createdAt: DateTime.utc(2024, 1, 1),
+  createdAt: DateTime.utc(2024),
   updatedAt: DateTime.utc(2024, 1, 2),
 );
 
@@ -70,19 +70,19 @@ void main() {
     test('counts accepted friends', () {
       final user = buildUser();
       final friendships = [
-        Friendship(
+        const Friendship(
           id: 'f1',
           requestorId: 'user123',
           recipientId: 'user456',
           status: FriendshipStatus.accepted,
         ),
-        Friendship(
+        const Friendship(
           id: 'f2',
           requestorId: 'user789',
           recipientId: 'user123',
           status: FriendshipStatus.accepted,
         ),
-        Friendship(
+        const Friendship(
           id: 'f3',
           requestorId: 'user123',
           recipientId: 'user999',
@@ -247,7 +247,7 @@ void main() {
 
     test('maintains equality', () {
       final user = buildUser();
-      final preferences = UserPreferences(id: 'pref123', userId: 'user123');
+      const preferences = UserPreferences(id: 'pref123', userId: 'user123');
 
       final profile1 = UserProfile(user: user, preferences: preferences);
       final profile2 = UserProfile(user: user, preferences: preferences);

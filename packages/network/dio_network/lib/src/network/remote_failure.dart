@@ -71,8 +71,8 @@ library;
 
 import 'package:dio/dio.dart';
 
-import 'api_error_envelope.dart';
-import 'decode_json_body.dart';
+import 'package:dio_network/src/network/api_error_envelope.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
 
 /// What an answered request that did not succeed says (#260).
 enum RemoteVerdict {
@@ -173,7 +173,7 @@ final class RemoteRefusal {
 /// two tear-offs to `super`, and overrides a hook: [refused] or
 /// [unanswered]. Each hook returns null to take the default. So what a
 /// subclass declares is exactly what is special about its source.
-class RemoteFailureFamily<E extends Object> {
+class RemoteFailureFamily<E extends Exception> {
   const RemoteFailureFamily({required this.transient, required this.permanent});
 
   /// Builds a failure a later attempt at the same request can survive.
@@ -202,7 +202,7 @@ class RemoteFailureFamily<E extends Object> {
 /// [message] is the diagnostic, which a transient verdict that needs
 /// explaining extends. [body] is the raw, undecoded body when there is one.
 /// [cause] is the [DioException] the answer arrived in, if it arrived in one.
-E failureForStatus<E extends Object>(
+E failureForStatus<E extends Exception>(
   RemoteFailureFamily<E> family,
   int status,
   String message, {
@@ -248,7 +248,7 @@ E failureForStatus<E extends Object>(
 /// body are read as if they had been returned. Without one the failure is a
 /// connection-level fault, transient unless the source's
 /// [RemoteFailureFamily.unanswered] says otherwise.
-E failureForDioException<E extends Object>(
+E failureForDioException<E extends Exception>(
   RemoteFailureFamily<E> family,
   DioException error, {
   required String action,
@@ -298,7 +298,7 @@ typedef RemoteJson = ({Map<String, dynamic> body, int status});
 ///
 /// With [readBody] false the body is not read, and the result's is empty: for
 /// a route whose 2xx carries nothing the caller needs.
-Future<RemoteJson> sendForJson<E extends Object>(
+Future<RemoteJson> sendForJson<E extends Exception>(
   Future<Response<String>> Function() request, {
   required String action,
   required RemoteFailureFamily<E> family,
@@ -369,7 +369,7 @@ Future<RemoteJson> sendForJson<E extends Object>(
 /// Runs [map] over a 2xx body, and turns anything it throws into [family]'s
 /// permanent failure with the 2xx [status]: the same request returns the same
 /// body, so one that cannot be mapped now never will be.
-T parseRemote<E extends Object, T>(
+T parseRemote<E extends Exception, T>(
   RemoteFailureFamily<E> family,
   T Function() map, {
   required String action,

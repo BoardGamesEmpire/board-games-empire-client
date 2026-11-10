@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:sync_queue/l10n/sync_localizations.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_op.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_ops_bloc.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_ops_event.dart';
+import 'package:sync_queue/src/recovery/stuck_sync_ops_state.dart';
+import 'package:sync_queue/src/recovery/sync_recovery.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:sync_queue/l10n/sync_localizations.dart';
-
-import 'stuck_sync_op.dart';
-import 'stuck_sync_ops_bloc.dart';
-import 'stuck_sync_ops_event.dart';
-import 'stuck_sync_ops_state.dart';
-import 'sync_recovery.dart';
 
 /// The changes that couldn't sync, each with a retry and a discard (#190).
 ///

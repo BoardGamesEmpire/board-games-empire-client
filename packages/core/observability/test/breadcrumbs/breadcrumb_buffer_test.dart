@@ -22,8 +22,7 @@ void main() {
     test('captures records in order up to capacity', () {
       final buffer = BreadcrumbBuffer(capacity: 5)..attach();
       addTearDown(buffer.detach);
-      final logger = BgeLogger('bge.test.order');
-      logger
+      BgeLogger('bge.test.order')
         ..info('one')
         ..info('two')
         ..info('three');
@@ -53,8 +52,7 @@ void main() {
     test('clear empties the buffer without detaching', () {
       final buffer = BreadcrumbBuffer(capacity: 3)..attach();
       addTearDown(buffer.detach);
-      final logger = BgeLogger('bge.test.clear');
-      logger.info('before');
+      final logger = BgeLogger('bge.test.clear')..info('before');
       buffer.clear();
       expect(buffer.length, 0);
       logger.info('after');
@@ -66,7 +64,7 @@ void main() {
       addTearDown(buffer.detach);
       BgeLogger('bge.test.snapshot').info('only');
       final snap = buffer.snapshot();
-      expect(() => snap.clear(), throwsUnsupportedError);
+      expect(snap.clear, throwsUnsupportedError);
       // A later record does not retroactively appear in the old snapshot.
       BgeLogger('bge.test.snapshot').info('later');
       expect(snap, hasLength(1));
@@ -76,8 +74,7 @@ void main() {
   group('BreadcrumbBuffer attach/detach', () {
     test('records are not captured before attach or after detach', () async {
       final buffer = BreadcrumbBuffer(capacity: 5);
-      final logger = BgeLogger('bge.test.lifecycle');
-      logger.info('pre-attach');
+      final logger = BgeLogger('bge.test.lifecycle')..info('pre-attach');
       expect(buffer.length, 0);
 
       buffer.attach();

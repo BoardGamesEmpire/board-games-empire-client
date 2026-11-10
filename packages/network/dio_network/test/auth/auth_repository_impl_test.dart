@@ -1,14 +1,13 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-import 'package:models/dto.dart';
-
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
+import 'package:models/dto.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -19,7 +18,7 @@ class MockTokenStorage extends Mock implements TokenStorageService {}
 // to Dio unchanged.
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -32,7 +31,7 @@ ServerIdentity _identity() => ServerIdentity(
   twoFactorSupported: true,
   anonymousAuthSupported: true,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',
@@ -74,13 +73,13 @@ Map<String, dynamic> _sessionJson() => {
 Response<String> _ok(Map<String, dynamic> data) => Response(
   data: jsonEncode(data),
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
   data: data == null ? null : jsonEncode(data),
   statusCode: code,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// A response whose body is passed through as given, for bodies that are
@@ -88,7 +87,7 @@ Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
 Response<String> _raw(int code, String? body) => Response(
   data: body,
   statusCode: code,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 void main() {
@@ -97,7 +96,7 @@ void main() {
   late AuthRepositoryImpl repo;
 
   final expiry = DateTime(2099).toUtc();
-  final persistedAt = DateTime.utc(2026, 1, 1);
+  final persistedAt = DateTime.utc(2026);
 
   setUp(() {
     mockDio = MockDio();
@@ -263,7 +262,7 @@ void main() {
         ).thenThrow(
           DioException(
             type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 
@@ -577,7 +576,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 

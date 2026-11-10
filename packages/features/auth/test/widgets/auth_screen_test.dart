@@ -1,24 +1,23 @@
 import 'dart:async';
 
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/screens/auth_screen.dart';
+import 'package:auth/src/widgets/login_form.dart';
+import 'package:auth/src/widgets/oidc_strategy_button.dart';
+import 'package:auth/src/widgets/register_form.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
-import 'package:interfaces/repositories.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:auth/l10n/auth_localizations.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/screens/auth_screen.dart';
-import 'package:auth/src/widgets/login_form.dart';
-import 'package:auth/src/widgets/register_form.dart';
-import 'package:auth/src/widgets/oidc_strategy_button.dart';
 
 import '../support/auth_test_fixtures.dart';
 
@@ -340,7 +339,7 @@ void main() {
         // The server answered; only this device failed to read the reply.
         expect(
           find.text(
-            'This device could not read the server\'s reply. Please '
+            "This device could not read the server's reply. Please "
             'try again.',
           ),
           findsOneWidget,

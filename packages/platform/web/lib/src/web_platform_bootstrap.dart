@@ -6,7 +6,7 @@ import 'package:observability/observability.dart';
 import 'package:url_strategy/url_strategy.dart';
 import 'package:web_network/web_network.dart';
 
-import 'web_root_module.dart';
+import 'package:web_platform/src/web_root_module.dart';
 
 /// Installs path-based URLs (no `#` fragments) so the reserved deep-link
 /// paths (#10) are real browser URLs, and makes pushed screens show in them,
@@ -22,12 +22,12 @@ void configureWebUrlStrategy() {
 /// The browser can only talk to the origin in the address bar: a server is
 /// present by construction, there is no MetaDB, no server switching, and no
 /// orchestration (confirmed #31 design). Auth is cookie-owned via
-/// `web_network`; [initialize] fetches the origin's [ServerIdentity] from
+/// `web_network`; [initialize] fetches the origin's `ServerIdentity` from
 /// its well-known document and assembles the single-origin scope (#96).
 ///
 /// Since #288 the production scope also carries a `ServerDatabase` over
 /// `web_storage`'s drift/wasm executor, but that composition is injected
-/// rather than built here — see [bgeWebPlatformBootstrap] in
+/// rather than built here — see `bgeWebPlatformBootstrap` in
 /// `web_storage_composition.dart` and the note on [_serverScopeBuilder].
 class WebPlatformBootstrap implements PlatformBootstrap {
   /// Not const since #384: the instance holds the server [initialize] built,
@@ -47,7 +47,7 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// drift/wasm data layer in here would drag `dart:js_interop` into this
   /// library and make this package — and its whole test suite — browser-only.
   /// The composed builder lives in `web_storage_composition.dart`; the
-  /// browser app gets it from [bgeWebPlatformBootstrap], and that is the
+  /// browser app gets it from `bgeWebPlatformBootstrap`, and that is the
   /// only production caller.
   final Future<ActiveServerScope> Function()? _serverScopeBuilder;
 
@@ -62,7 +62,7 @@ class WebPlatformBootstrap implements PlatformBootstrap {
 
   /// Builds the web root container (#72): a fresh, isolated
   /// [DependencyContainerImpl] populated by the injected root module
-  /// (production default: [registerWebRootModule] — [BuildInfo] from
+  /// (production default: [registerWebRootModule] — `BuildInfo` from
   /// `version.json` plus the in-memory [FeedbackSink] stand-in; #35,
   /// #69).
   ///
@@ -119,7 +119,7 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// server scope (#96), returning it in the [BootstrapResult].
   ///
   /// Web has exactly one server — the origin in the address bar — so there
-  /// is no MetaDB to open and no orchestrator to construct: [hasServer] is
+  /// is no MetaDB to open and no orchestrator to construct: `hasServer` is
   /// always `true` and `orchestrator` is always `null`. The scope comes from
   /// [_serverScopeBuilder] — for the browser app, `buildWebServerScope` from
   /// `web_storage_composition.dart`, which fetches

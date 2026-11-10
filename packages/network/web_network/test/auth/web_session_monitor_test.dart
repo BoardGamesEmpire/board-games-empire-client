@@ -19,7 +19,7 @@ class MockDio extends Mock implements Dio {}
 const _kAuthBase = '/api/auth';
 const _kSession = '$_kAuthBase/get-session';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -51,14 +51,14 @@ Response<String> _sessionFor(String userId) => Response(
     },
   }),
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// BetterAuth's answer for no session: 200 with a null body.
 Response<String> _noSession() => Response(
   data: 'null',
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// The web session monitor (#432): what a tab does when another tab signs in
@@ -181,7 +181,7 @@ void main() {
           .thenThrow(
             DioException(
               type: DioExceptionType.connectionError,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -227,7 +227,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 

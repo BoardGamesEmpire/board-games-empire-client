@@ -268,7 +268,7 @@ void main() {
 
     testWidgets('the title names the value being linked', (tester) async {
       listing([t1]);
-      await open(tester, value: 'Czech');
+      await open(tester);
       await tester.pumpAndSettle();
 
       expect(find.text('Link "Czech" to a language'), findsOneWidget);
@@ -277,7 +277,7 @@ void main() {
     testSemantics('a screen reader is told what the dialog is for as it '
         'opens', (tester) async {
       listing([t1]);
-      await open(tester, value: 'Czech');
+      await open(tester);
       await tester.pumpAndSettle();
 
       final naming = [
@@ -509,8 +509,7 @@ void main() {
       final focus = focusAround(
         tester,
         find.descendant(of: moreButton, matching: find.text('Show more')),
-      );
-      focus.requestFocus();
+      )..requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();

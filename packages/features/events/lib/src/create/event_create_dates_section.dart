@@ -1,15 +1,13 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/create/event_create_parts.dart';
+import 'package:events/src/widgets/event_labels.dart';
+import 'package:events/src/widgets/event_when_field.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../widgets/event_labels.dart';
-import '../widgets/event_when_field.dart';
-import 'event_create_controls.dart';
-import 'event_create_parts.dart';
 
 /// The create form's *When* (#499): how the date is settled, and the dates.
 ///

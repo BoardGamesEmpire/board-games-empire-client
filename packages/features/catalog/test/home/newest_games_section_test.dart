@@ -231,10 +231,8 @@ void main() {
     await show(tester);
     expect(remote.calls, hasLength(1));
 
-    unawaited(
-      navigatorKey.currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-      ),
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
     expect(remote.calls, hasLength(1), reason: 'covering it reads nothing');
@@ -451,7 +449,7 @@ void main() {
             ),
           ),
           findsOneWidget,
-          reason: 'on the message that takes the card\'s place',
+          reason: "on the message that takes the card's place",
         );
         expect(textOf(tester), _plainMessage);
       });
@@ -648,7 +646,7 @@ void main() {
     }
 
     testWidgets(
-      'a failed reload leaves the card and its button\'s focus alone',
+      "a failed reload leaves the card and its button's focus alone",
       (tester) async {
         final handle = tester.ensureSemantics();
         await show(tester, onConnectDataGateway: (_) {});
@@ -658,10 +656,8 @@ void main() {
         expect(focused, isNotNull);
 
         remote.onFetchPage = (_, _) async => throw unreachable();
-        unawaited(
-          navigatorKey.currentState!.push(
-            MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-          ),
+        navigatorKey.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
         );
         await tester.pumpAndSettle();
         navigatorKey.currentState!.pop();
@@ -682,7 +678,7 @@ void main() {
     );
 
     testWidgets(
-      'an offline blip leaves the card and its button\'s focus alone',
+      "an offline blip leaves the card and its button's focus alone",
       (tester) async {
         await show(
           tester,
@@ -716,9 +712,9 @@ void main() {
         useViewSize(tester, view);
         await tester.pumpWidget(
           MediaQuery(
-            data: MediaQueryData(
+            data: const MediaQueryData(
               size: view,
-              textScaler: const TextScaler.linear(2),
+              textScaler: TextScaler.linear(2),
             ),
             child: harness(onConnectDataGateway: connect),
           ),
@@ -966,10 +962,8 @@ void main() {
       final answer = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (_, _) => answer.future;
 
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();

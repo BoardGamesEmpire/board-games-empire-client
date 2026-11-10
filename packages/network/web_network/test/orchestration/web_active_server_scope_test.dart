@@ -6,7 +6,7 @@ import 'package:web_network/src/orchestration/web_active_server_scope.dart';
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://bge.example.com',
   wellKnownSchemaVersion: 1,
@@ -18,7 +18,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',

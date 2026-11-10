@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
-
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// The spinner that stands in for a home page row while its first read runs.
 ///

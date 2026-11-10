@@ -1,15 +1,13 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_overview_bloc.dart';
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/screens/event_overview_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_overview_bloc.dart';
-import '../bloc/event_overview_event.dart';
-import '../bloc/event_overview_state.dart';
-import '../overview/event_groups.dart';
-import '../screens/event_overview_screen.dart';
 
 /// What the overview and every group's page show around their rows (#497):
 /// the couldn't-refresh banner over whatever the cache holds, the

@@ -1,6 +1,6 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// Who an invite is for: an existing user, or an email address.
 sealed class HouseholdInvitee {
@@ -105,7 +105,7 @@ final class HouseholdInviteDraft {
 /// caller just joined.
 ///
 /// The server's accept answer names the household only through the new
-/// membership, so [householdId] is read from there.
+/// membership, so `householdId` is read from there.
 typedef AcceptedHouseholdInvite = ({
   HouseholdInvite invite,
   String householdId,
@@ -130,13 +130,13 @@ final class InviteQuota {
 
 /// Remote data source for household invites (#455, #454, #489).
 ///
-/// Online-only, like [DataGatewayRemoteDataSource]: nothing here is stored on
+/// Online-only, like `DataGatewayRemoteDataSource`: nothing here is stored on
 /// the device. Each invite screen reads the server when it opens, and every
 /// action goes straight to it. Accepting an invite creates a membership,
 /// which reaches the device through the household hydrate pass, not through
 /// this interface.
 ///
-/// It is a separate interface from [HouseholdRemoteDataSource] on purpose.
+/// It is a separate interface from `HouseholdRemoteDataSource` on purpose.
 /// That one feeds the sync drain and classifies failures by whether a
 /// queued operation should be retried; these calls are made by a person
 /// waiting on a screen, and their refusals are answers to show them.
@@ -284,6 +284,8 @@ sealed class HouseholdInviteRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

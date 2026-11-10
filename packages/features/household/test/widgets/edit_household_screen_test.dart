@@ -46,8 +46,8 @@ Household _household({
   isDirty: isLocalOnly,
   isLocalOnly: isLocalOnly,
   settings: HouseholdSettings(memberInvitePolicy: policy),
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 HouseholdMember _me(HouseholdRole? role) => HouseholdMember(
@@ -55,8 +55,8 @@ HouseholdMember _me(HouseholdRole? role) => HouseholdMember(
   userId: 'u_me',
   householdId: _id,
   role: role,
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 const _notAllowedCopy = "Only the household's owners and admins can edit it.";

@@ -35,10 +35,8 @@ void main() {
   ) async {
     final navigator = await pumpScreen(tester);
 
-    unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(builder: (_) => const Text('form')),
-      ),
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('form')),
     );
     await tester.pumpAndSettle();
     expect(uncovered, 0);

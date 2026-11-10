@@ -1,8 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../common/reach.dart';
-import 'content_type.dart';
-import 'expansion_link.dart';
+import 'package:models/src/domain/common/reach.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/expansion_link.dart';
 
 part 'game.freezed.dart';
 part 'game.g.dart';
@@ -14,11 +14,11 @@ part 'game.g.dart';
 /// a dozen join tables in the local DB while keeping display data available.
 @freezed
 abstract class Game with _$Game {
-  const Game._();
-
   const factory Game({
     required String id,
     required String title,
+    required DateTime createdAt,
+    required DateTime updatedAt,
     String? subtitle,
     String? description,
     String? image,
@@ -72,9 +72,8 @@ abstract class Game with _$Game {
     String? createdById,
 
     DateTime? deletedAt,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _Game;
+  const Game._();
 
   factory Game.fromJson(Map<String, dynamic> json) => _$GameFromJson(json);
 

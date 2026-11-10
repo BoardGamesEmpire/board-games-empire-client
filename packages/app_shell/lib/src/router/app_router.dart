@@ -1,17 +1,16 @@
 import 'dart:async';
 
+import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
+import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
+import 'package:app_shell/src/screens/not_yet_available_screen.dart';
+import 'package:app_shell/src/screens/route_not_found_screen.dart';
+import 'package:app_shell/src/screens/shell_placeholder_screen.dart';
+import 'package:app_shell/src/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
-
-import '../bootstrap/app_bootstrap_cubit.dart';
-import '../bootstrap/app_bootstrap_state.dart';
-import '../screens/bootstrap_error_screen.dart';
-import '../screens/not_yet_available_screen.dart';
-import '../screens/route_not_found_screen.dart';
-import '../screens/shell_placeholder_screen.dart';
-import '../screens/splash_screen.dart';
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -299,7 +298,12 @@ abstract final class AppRoutes {
   /// `settings` is deliberately absent: it is a normal post-ready
   /// destination, not a bootstrap leg, so a ready app is not bounced off
   /// it (#120).
-  static const bootstrapLocations = {splash, error, serverAdd, auth};
+  static const Set<String> bootstrapLocations = {
+    splash,
+    error,
+    serverAdd,
+    auth,
+  };
 }
 
 /// Reserved deep-link resource path patterns (#10), declared from day one
@@ -317,7 +321,7 @@ const reservedDeepLinkPathPatterns = <String>[
 ];
 
 /// Builds the real server-add screen subtree (#36) for the
-/// [AppRoutes.serverAdd] route. Always supplied by [BgeApp]; returns null
+/// [AppRoutes.serverAdd] route. Always supplied by `BgeApp`; returns null
 /// at navigation time when the composition cannot back the flow, in which
 /// case the route falls back to the placeholder.
 ///
@@ -334,7 +338,7 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
-/// Always supplied by [BgeApp]; returns null at navigation time when no
+/// Always supplied by `BgeApp`; returns null at navigation time when no
 /// active server is resolvable, in which case the route falls back to the
 /// placeholder.
 ///
@@ -345,7 +349,7 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the
-/// [AppRoutes.feedback] route. Supplied by [BgeApp]; returns null at
+/// [AppRoutes.feedback] route. Supplied by `BgeApp`; returns null at
 /// navigation time when the root container carries no `FeedbackService`
 /// (tests without a container; a platform composition that skipped
 /// feedback wiring), in which case the route falls back to
@@ -360,7 +364,7 @@ typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the settings surface (#120) for the [AppRoutes.settings] route.
-/// Supplied by [BgeApp]; returns null at navigation time when the
+/// Supplied by `BgeApp`; returns null at navigation time when the
 /// app-level settings controllers are not yet available (before the first
 /// storage-ready bootstrap state, or a boot where hydrated storage was
 /// unavailable), in which case the route falls back to
@@ -374,7 +378,7 @@ typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the create-household flow (#129) for the
-/// [AppRoutes.householdCreate] route. Supplied by [BgeApp]; returns null at
+/// [AppRoutes.householdCreate] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
 /// carries no `HouseholdRepository` / `SyncOperationSender` (tests without a
 /// container; no active user session), in which case the route falls back
@@ -389,7 +393,7 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the household list (#269) for the [AppRoutes.household] route.
-/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// Supplied by `BgeApp`; returns null at navigation time when no active
 /// server is resolvable or its container carries no `HouseholdRepository`
 /// (tests without a container; no active user session on either platform,
 /// since #137 gave web the same user tier), in which case the route falls
@@ -406,7 +410,7 @@ typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds one household's detail screen (#270) for the
 /// [AppRoutes.householdDetail] route, given the `:householdId` the path
-/// carried. Supplied by [BgeApp]; returns null on the same conditions as
+/// carried. Supplied by `BgeApp`; returns null on the same conditions as
 /// [HouseholdListScreenBuilder] — no resolvable server, or a container
 /// with no `HouseholdRepository` — in which case the route falls back to
 /// [NotYetAvailableScreen].
@@ -428,13 +432,13 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 );
 
 /// Builds the invite inbox (#455) for the [AppRoutes.invites] route.
-/// Supplied by [BgeApp]; returns null when no active server is resolvable
+/// Supplied by `BgeApp`; returns null when no active server is resolvable
 /// or its container lacks the `HouseholdInviteRemoteDataSource`, in which
 /// case the route falls back to [NotYetAvailableScreen].
 typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the invites the current user sent (#487) for the
-/// [AppRoutes.invitesSent] route. Supplied by [BgeApp]; same null contract
+/// [AppRoutes.invitesSent] route. Supplied by `BgeApp`; same null contract
 /// as [InviteInboxScreenBuilder], so the two routes are available together.
 typedef SentInvitesScreenBuilder = Widget? Function(BuildContext context);
 
@@ -474,7 +478,7 @@ typedef EditHouseholdScreenBuilder = Widget? Function(
 );
 
 /// Builds the collection list (#44) for the [AppRoutes.collection] route.
-/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// Supplied by `BgeApp`; returns null at navigation time when no active
 /// server is resolvable or its container carries no
 /// `GameCollectionRepository` (tests without a container; no active user
 /// session), in which case the route falls back to [NotYetAvailableScreen].
@@ -497,7 +501,7 @@ typedef CollectionEntryScreenBuilder = Widget? Function(
 );
 
 /// Builds the game browse screen (#42) for the [AppRoutes.games] route.
-/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// Supplied by `BgeApp`; returns null at navigation time when no active
 /// server is resolvable or its container carries no `GamesRemoteDataSource`,
 /// in which case the route falls back to [NotYetAvailableScreen].
 ///
@@ -528,7 +532,7 @@ typedef GameDetailScreenBuilder = Widget? Function(
 );
 
 /// Builds the events overview (#497) for the [AppRoutes.events] route.
-/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// Supplied by `BgeApp`; returns null at navigation time when no active
 /// server is resolvable or its container carries no `EventRepository`
 /// (tests without a container; no active user session), in which case the
 /// route falls back to [NotYetAvailableScreen].
@@ -548,7 +552,7 @@ typedef EventGroupScreenBuilder = Widget? Function(
 
 /// Builds the create form (#499) for the [AppRoutes.eventCreate] route,
 /// given the household its `?household=` query names, or null where it names
-/// none. Supplied by [BgeApp]; returns null at navigation time when no active
+/// none. Supplied by `BgeApp`; returns null at navigation time when no active
 /// server is resolvable or its container lacks the `EventRepository`, the
 /// `SyncOperationSender` the create is sent through, or the
 /// `UserRemoteDataSource` its invitee search reads, in which case the route
@@ -585,7 +589,7 @@ typedef EventAvailabilityScreenBuilder = Widget? Function(
 );
 
 /// Builds the retry-or-discard screen (#190) for the
-/// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
+/// [AppRoutes.stuckChanges] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
 /// lacks the queue or either repository a discard undoes through (tests
 /// without a container; no active user session), in which case the route
@@ -597,7 +601,7 @@ typedef EventAvailabilityScreenBuilder = Widget? Function(
 typedef StuckChangesScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the DataGateway admin list (#41) for the
-/// [AppRoutes.adminDataGateways] route. Supplied by [BgeApp]; returns null
+/// [AppRoutes.adminDataGateways] route. Supplied by `BgeApp`; returns null
 /// when no active server is resolvable or its container carries no
 /// `DataGatewayRemoteDataSource`, in which case the route falls back to
 /// [NotYetAvailableScreen].
@@ -623,7 +627,7 @@ typedef DataGatewayDetailScreenBuilder = Widget? Function(
 );
 
 /// Builds the admin dashboard (#684) for the [AppRoutes.admin] route.
-/// Supplied by [BgeApp]; returns null when no active server is resolvable,
+/// Supplied by `BgeApp`; returns null when no active server is resolvable,
 /// in which case the route falls back to [NotYetAvailableScreen].
 ///
 /// Not gated on the user's access, as [DataGatewayListScreenBuilder] isn't:
@@ -631,7 +635,7 @@ typedef DataGatewayDetailScreenBuilder = Widget? Function(
 typedef AdminDashboardScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the staff households list (#685) for the [AppRoutes.adminHouseholds]
-/// route. Supplied by [BgeApp]; returns null when no active server is
+/// route. Supplied by `BgeApp`; returns null when no active server is
 /// resolvable or its container carries no `AdminHouseholdRemoteDataSource`,
 /// in which case the route falls back to [NotYetAvailableScreen].
 ///
@@ -1271,7 +1275,7 @@ Page<void> _page(
 );
 
 /// Builds the real home screen subtree for the [AppRoutes.home] route —
-/// the navigation-drawer menu (#129). Always supplied by [BgeApp] so the
+/// the navigation-drawer menu (#129). Always supplied by `BgeApp` so the
 /// menu's sign-out entry can reach the active server's auth bloc; returns
 /// null at navigation time when no active server backs the bloc (a
 /// transient pre-active state), in which case the route falls back to
@@ -1280,7 +1284,7 @@ typedef HomeScreenBuilder = Widget? Function(BuildContext context);
 
 /// Wraps the auth+home [ShellRoute] child with the active server's
 /// `AuthBloc` provider and the bootstrap-gate listener (#37). Supplied by
-/// [BgeApp]; when null the child renders bare (tests without a scope) and
+/// `BgeApp`; when null the child renders bare (tests without a scope) and
 /// the route builders fall back to placeholders.
 ///
 /// Lives at the router layer because go_router builds route widgets under

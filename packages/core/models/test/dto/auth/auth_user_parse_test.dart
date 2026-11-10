@@ -1,6 +1,6 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
+import 'package:test/test.dart';
 
 /// Pins parsing against the real BetterAuth `/api/auth/*` payloads
 /// (captured from the running backend): `name` maps to `username`, the

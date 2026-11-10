@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// The list or thumbnails choice for a screen of games, as a two-option
@@ -101,9 +103,9 @@ class BgeRememberedLayout extends StatefulWidget {
   final Future<bool?> Function()? read;
 
   /// Stores `thumbnails` as the choice.
-  final Future<void> Function(bool thumbnails)? write;
+  final Future<void> Function({required bool thumbnails})? write;
 
-  /// Told of a [read] or a [write] that failed, [writing] for a write. A
+  /// Told of a [read] or a [write] that failed, `writing` for a write. A
   /// screen logs it. Null drops it.
   final void Function(
     Object error,
@@ -115,9 +117,9 @@ class BgeRememberedLayout extends StatefulWidget {
   /// Builds the screen with the choice, `null` while it is being read.
   final Widget Function(
     BuildContext context,
-    bool? thumbnails,
-    ValueChanged<bool> onChanged,
-  )
+    ValueChanged<bool> onChanged, {
+    required bool? thumbnails,
+  })
   builder;
 
   @override
@@ -138,7 +140,7 @@ class _BgeRememberedLayoutState extends State<BgeRememberedLayout> {
       _thumbnails = false;
       return;
     }
-    _load(read);
+    unawaited(_load(read));
   }
 
   Future<void> _load(Future<bool?> Function() read) async {
@@ -166,7 +168,7 @@ class _BgeRememberedLayoutState extends State<BgeRememberedLayout> {
       return;
     }
     try {
-      await write(thumbnails);
+      await write(thumbnails: thumbnails);
     } on Object catch (error, stack) {
       onError?.call(error, stack, writing: true);
     }
@@ -174,5 +176,5 @@ class _BgeRememberedLayoutState extends State<BgeRememberedLayout> {
 
   @override
   Widget build(BuildContext context) =>
-      widget.builder(context, _thumbnails, _change);
+      widget.builder(context, _change, thumbnails: _thumbnails);
 }

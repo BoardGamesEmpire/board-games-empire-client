@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/wasm.dart';
 
-import 'web_storage_persistence.dart';
+import 'package:web_storage/src/databases/web_storage_persistence.dart';
 
 /// The outcome of opening a web database: the executor, plus what kind of
 /// storage the browser turned out to offer.
@@ -118,7 +118,7 @@ typedef DriftWasmOpen = Future<WasmDatabaseResult> Function({
 class WebWasmExecutorFactory {
   /// Creates the factory.
   ///
-  /// [sqlite3Uri] and [driftWorkerUri] locate the two assets fetched by
+  /// `sqlite3Uri` and `driftWorkerUri` locate the two assets fetched by
   /// `melos run web:assets`. They default to bare filenames, resolved by the
   /// browser against the document — correct both for the app (assets sit in
   /// `apps/browser/web/`, served at the root) and for a browser test (assets
@@ -126,7 +126,7 @@ class WebWasmExecutorFactory {
   /// root). Override them for a deployment that serves the app from a
   /// sub-path.
   ///
-  /// [open] is the drift entry point, injectable so a test can drive the
+  /// `open` is the drift entry point, injectable so a test can drive the
   /// factory's own logic without a browser.
   const WebWasmExecutorFactory({
     this._sqlite3Uri,
@@ -134,8 +134,8 @@ class WebWasmExecutorFactory {
     this._open,
   });
 
-  static final _defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
-  static final _defaultDriftWorkerUri = Uri.parse('drift_worker.js');
+  static final Uri _defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
+  static final Uri _defaultDriftWorkerUri = Uri.parse('drift_worker.js');
 
   /// Prefix for every database name this factory produces.
   static const _databaseNamePrefix = 'bge_server';

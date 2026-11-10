@@ -30,7 +30,7 @@ class _FakeSecureStorage extends Fake implements FlutterSecureStorage {
   Completer<void>? readGate;
 
   /// Thrown by the next read, which then clears it.
-  Object? nextReadFailure;
+  Exception? nextReadFailure;
 
   @override
   Future<String?> read({

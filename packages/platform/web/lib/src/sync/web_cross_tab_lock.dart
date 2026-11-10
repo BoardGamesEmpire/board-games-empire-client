@@ -19,7 +19,7 @@ import 'package:web/web.dart' as web;
 /// callback from running the body. Aborting a granted request does nothing,
 /// so a body already running finishes holding the lock.
 class WebCrossTabLock implements CrossTabLock {
-  /// Requests through [locks], or through `navigator.locks` when it is null.
+  /// Requests through `locks`, or through `navigator.locks` when it is null.
   /// A test passes one that grants when told to, to put a grant after an
   /// abort on cue.
   const WebCrossTabLock({this._locks});

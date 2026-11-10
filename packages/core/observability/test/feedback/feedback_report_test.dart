@@ -1,7 +1,7 @@
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-FeedbackReport _validBugReport() => FeedbackReport(
+FeedbackReport _validBugReport() => const FeedbackReport(
   category: FeedbackCategory.bug,
   severity: FeedbackSeverity.medium,
   message: 'the collection list flickers on resync',
@@ -9,7 +9,7 @@ FeedbackReport _validBugReport() => FeedbackReport(
   appVersion: '0.1.0',
   platform: 'android',
   locale: 'en-US',
-  deviceInfo: const {'model': 'Pixel 9'},
+  deviceInfo: {'model': 'Pixel 9'},
   clientRequestId: 'ck-001',
 );
 
@@ -30,7 +30,7 @@ void main() {
     });
 
     test('feature requests do not require a severity', () {
-      final report = FeedbackReport(
+      const report = FeedbackReport(
         category: FeedbackCategory.featureRequest,
         message: 'dark mode for the kitchen table please',
       );
@@ -48,7 +48,7 @@ void main() {
     });
 
     test('context defaults to unknown, list fields default empty', () {
-      final report = FeedbackReport(
+      const report = FeedbackReport(
         category: FeedbackCategory.featureRequest,
         message: 'm',
       );

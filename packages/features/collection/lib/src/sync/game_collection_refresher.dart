@@ -11,11 +11,11 @@
 /// It needs no guard of its own: `HydratePass` single-flights (#302), so a
 /// press landing on a running pass joins it and waits for it.
 class GameCollectionRefresher {
-  /// Wraps [pass], the same pass the installer registers with the
+  /// Wraps `pass`, the same pass the installer registers with the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one report
   /// the same way.
   ///
-  /// [afterChange] backs [refreshAfterChange]; without it, that is
+  /// `afterChange` backs [refreshAfterChange]; without it, that is
   /// [refresh].
   const GameCollectionRefresher(this._pass, {this._afterChange});
 

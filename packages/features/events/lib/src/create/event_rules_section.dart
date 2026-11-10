@@ -1,14 +1,12 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/create/event_create_parts.dart';
+import 'package:events/src/create/event_policy_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import 'event_create_controls.dart';
-import 'event_create_parts.dart';
-import 'event_policy_labels.dart';
 
 /// The create form's *Advanced: rules* (#499): how games get added to the
 /// event, and while attendees vote on them, how a vote is decided and how
@@ -147,7 +145,7 @@ class _EventRulesSectionState extends State<EventRulesSection> {
 }
 
 /// The controls a rule is set in, for finding one with an error.
-const _rules = [
+const List<String> _rules = [
   EventCreateControls.gameAddition,
   EventCreateControls.threshold,
   EventCreateControls.thresholdValue,

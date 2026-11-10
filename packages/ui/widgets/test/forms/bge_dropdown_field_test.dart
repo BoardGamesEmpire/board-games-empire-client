@@ -167,7 +167,7 @@ String? _focusedItem(WidgetTester tester) {
   return null;
 }
 
-final _platforms = TargetPlatformVariant({
+const _platforms = TargetPlatformVariant({
   TargetPlatform.android,
   TargetPlatform.macOS,
 });
@@ -455,8 +455,9 @@ void main() {
         ),
       );
 
-      control.setErrors({'server': 'Taken'});
-      control.markAsTouched();
+      control
+        ..setErrors({'server': 'Taken'})
+        ..markAsTouched();
       await tester.pumpAndSettle();
 
       expect(find.text('Taken'), findsOneWidget);

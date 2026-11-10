@@ -2,12 +2,11 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import 'package:household/household.dart';
 
 class MockHouseholdRemote extends Mock implements HouseholdRemoteDataSource {}
 
@@ -24,8 +23,8 @@ Household _household({
   settings: policy == null
       ? null
       : HouseholdSettings(memberInvitePolicy: policy),
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 void main() {
@@ -415,7 +414,7 @@ void main() {
   group('after a save that may have landed', () {
     // The first save is answered with a 2xx this device could not read, so
     // the server most likely holds it; the second is answered.
-    void failThenAnswer(Object error) {
+    void failThenAnswer(HouseholdRemoteException error) {
       var calls = 0;
       when(() => remote.updateHousehold(any(), any())).thenAnswer((_) async {
         if (calls++ == 0) throw error;
@@ -510,7 +509,10 @@ void main() {
       ),
     );
 
-    void expectSentBack(String description, {required Object error}) {
+    void expectSentBack(
+      String description, {
+      required HouseholdRemoteException error,
+    }) {
       blocTest<EditHouseholdBloc, EditHouseholdState>(
         description,
         setUp: () => failThenAnswer(error),
@@ -526,7 +528,7 @@ void main() {
 
     void expectNothingSentBack(
       String description, {
-      required Object error,
+      required HouseholdRemoteException error,
       required EditHouseholdFailure reason,
     }) {
       blocTest<EditHouseholdBloc, EditHouseholdState>(

@@ -2,20 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/bloc/household_invite_list_bloc.dart';
+import 'package:household/src/bloc/household_invite_list_event.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
+import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/src/widgets/household_invite_tile.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/household_invite_list_bloc.dart';
-import '../bloc/household_invite_list_event.dart';
-import '../bloc/household_invite_list_state.dart';
-import '../invites/invite_refusal_message.dart';
-import '../permissions/household_actions.dart';
-import '../widgets/household_invite_tile.dart';
 
 /// A household's open invites, for its owners and admins (#455, #454,
 /// #489), with withdraw, revoke and approve.

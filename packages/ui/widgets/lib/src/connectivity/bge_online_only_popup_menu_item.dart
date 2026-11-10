@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'bge_connectivity_scope.dart';
-import 'bge_online_only.dart';
+import 'package:ui/src/connectivity/bge_connectivity_scope.dart';
+import 'package:ui/src/connectivity/bge_online_only.dart';
 
 /// An item of a [PopupMenuButton] that waits for a connection (#49): enabled
 /// online, and offline disabled with [label] and the reason as its two lines.

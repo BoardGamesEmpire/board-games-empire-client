@@ -1,11 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/admin/bloc/admin_household_detail_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'admin_household_detail_state.dart';
 
 /// Reads one household for server staff (#685).
 ///

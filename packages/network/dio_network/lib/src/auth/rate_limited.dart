@@ -13,8 +13,8 @@ const String retryAfterHeader = 'x-retry-after';
 ///
 /// A header sent more than once, as when a proxy adds its own beside the
 /// server's, names no one wait, so the rate limit carries none. Read through
-/// `Headers.value` instead, it would throw a plain `Exception`, which leaves the
-/// auth method unmodelled and strands the form on its loading state.
+/// `Headers.value` instead, it would throw a plain `Exception`, which leaves
+/// the auth method unmodelled and strands the form on its loading state.
 AuthRateLimitedException rateLimitedFrom(Headers? headers) {
   final values = headers?[retryAfterHeader];
   return AuthRateLimitedException(

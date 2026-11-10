@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 HouseholdMember _makeMember({HouseholdRole? role}) {
   final now = DateTime.parse('2024-01-15T10:30:00Z');
@@ -41,7 +41,8 @@ void main() {
           _makeMember(role: entry.key).toJson()['role'],
           equals(entry.value),
           reason:
-              'HouseholdRole.${entry.key.name} should serialize as "${entry.value}"',
+              'HouseholdRole.${entry.key.name} '
+              'should serialize as "${entry.value}"',
         );
       }
     });
@@ -88,7 +89,8 @@ void main() {
             HouseholdRole.fromWire(wire),
             equals(value),
             reason:
-                'fromWire("$wire") should resolve to HouseholdRole.${value.name} '
+                'fromWire("$wire") should resolve to '
+                'HouseholdRole.${value.name} '
                 '— its @JsonValue says that is its wire name',
           );
         }

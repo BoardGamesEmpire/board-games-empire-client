@@ -18,7 +18,6 @@ void main() {
     name: 'BGG',
     description: 'The BGG bridge',
     connectionUrl: 'bgg.internal',
-    connectionPort: 50051,
   );
 
   const input = DataGatewayInput(
@@ -171,13 +170,14 @@ void main() {
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'sends only the fields that changed (#41)',
       setUp: () {
-        remote.onFetchOne = (_) async => bgg;
-        remote.onUpdate = (_, changes) async {
-          // A mismatch throws into the bloc, which reports a failed save
-          // rather than the saved state below.
-          expect(changes, const DataGatewayChanges(connectionPort: 50060));
-          return changed(bgg.copyWith(connectionPort: 50060));
-        };
+        remote
+          ..onFetchOne = ((_) async => bgg)
+          ..onUpdate = (_, changes) async {
+            // A mismatch throws into the bloc, which reports a failed save
+            // rather than the saved state below.
+            expect(changes, const DataGatewayChanges(connectionPort: 50060));
+            return changed(bgg.copyWith(connectionPort: 50060));
+          };
       },
       build: () => editing('dg_1'),
       act: (bloc) async {
@@ -200,13 +200,14 @@ void main() {
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'emptying the description is a change that clears it',
       setUp: () {
-        remote.onFetchOne = (_) async => bgg;
-        remote.onUpdate = (_, changes) async {
-          // A mismatch throws into the bloc, which reports a failed save
-          // rather than the saved state below.
-          expect(changes, const DataGatewayChanges(description: ''));
-          return changed(bgg.copyWith(description: null));
-        };
+        remote
+          ..onFetchOne = ((_) async => bgg)
+          ..onUpdate = (_, changes) async {
+            // A mismatch throws into the bloc, which reports a failed save
+            // rather than the saved state below.
+            expect(changes, const DataGatewayChanges(description: ''));
+            return changed(bgg.copyWith(description: null));
+          };
       },
       build: () => editing('dg_1'),
       act: (bloc) async {
@@ -247,9 +248,10 @@ void main() {
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a row deleted meanwhile is said so',
       setUp: () {
-        remote.onFetchOne = (_) async => bgg;
-        remote.onUpdate = (_, _) async =>
-            throw const DataGatewayNotFoundException('gone', statusCode: 404);
+        remote
+          ..onFetchOne = ((_) async => bgg)
+          ..onUpdate = (_, _) async =>
+              throw const DataGatewayNotFoundException('gone', statusCode: 404);
       },
       build: () => editing('dg_1'),
       act: (bloc) async {
@@ -581,8 +583,9 @@ void main() {
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a refused save asks access again',
       setUp: () {
-        remote.onFetchOne = (_) async => bgg;
-        remote.onUpdate = (_, _) async => throw forbidden();
+        remote
+          ..onFetchOne = ((_) async => bgg)
+          ..onUpdate = (_, _) async => throw forbidden();
       },
       build: () => editing('dg_1'),
       act: (bloc) async {

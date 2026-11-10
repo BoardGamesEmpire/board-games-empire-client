@@ -227,7 +227,7 @@ void main() {
       build: build,
       act: (bloc) async {
         await show(bloc, row());
-        bloc.add(edit(quantity: 3, favorite: false));
+        bloc.add(edit(quantity: 3));
       },
       skip: 1,
       expect: () => [
@@ -243,10 +243,6 @@ void main() {
           () => repository.updateCollectionEntry(
             id: 'gc_1',
             quantity: 3,
-            rating: null,
-            playAgain: null,
-            favorite: null,
-            comment: null,
           ),
         ).called(1);
         verify(() => sender.deliver('sq_1', _updateOp)).called(1);
@@ -266,7 +262,6 @@ void main() {
       verify: (_) => verify(
         () => repository.updateCollectionEntry(
           id: 'gc_1',
-          quantity: null,
           rating: 9,
           playAgain: false,
           favorite: true,
@@ -423,10 +418,6 @@ void main() {
       verify: (_) => verify(
         () => repository.updateCollectionEntry(
           id: 'gc_1',
-          quantity: null,
-          rating: null,
-          playAgain: null,
-          favorite: null,
           comment: 'better',
         ),
       ).called(1),
@@ -629,7 +620,7 @@ void main() {
     );
   });
 
-  group('the watch\'s null during the bloc\'s own removal', () {
+  group("the watch's null during the bloc's own removal", () {
     blocTest<CollectionEntryBloc, CollectionEntryState>(
       'leaves view ready while removing',
       setUp: () {
@@ -1097,11 +1088,7 @@ void main() {
     verify: (_) => verify(
       () => repository.updateCollectionEntry(
         id: 'gc_1',
-        quantity: null,
-        rating: null,
-        playAgain: null,
         favorite: true,
-        comment: null,
       ),
     ).called(1),
   );

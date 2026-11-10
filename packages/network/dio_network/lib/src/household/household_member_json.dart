@@ -1,6 +1,5 @@
+import 'package:dio_network/src/network/user_projection.dart';
 import 'package:models/domain.dart';
-
-import '../network/user_projection.dart';
 
 /// Maps a server member payload to the domain [HouseholdMember].
 ///

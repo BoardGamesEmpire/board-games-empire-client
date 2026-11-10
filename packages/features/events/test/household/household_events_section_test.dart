@@ -202,10 +202,8 @@ void main() {
 
   /// Pushes an opaque page over the section, then pops it.
   Future<void> coverAndUncover(WidgetTester tester) async {
-    unawaited(
-      navigatorKey.currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-      ),
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
     expect(sync.refreshes, hasLength(1), reason: 'covering it reads nothing');

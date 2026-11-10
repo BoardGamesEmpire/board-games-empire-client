@@ -60,7 +60,7 @@ void main() {
       expect(line, endsWith('nope'));
     });
 
-    test('a database error\'s bound values are not written', () {
+    test("a database error's bound values are not written", () {
       final line = formatter.formatLine(
         LogRecord(Level.SEVERE, 'crashed', 'bge.x', _DatabaseError()),
       );
@@ -129,8 +129,10 @@ void main() {
 class _DatabaseError {
   @override
   String toString() =>
-      'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
-      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
+      'SqliteException(2067): while executing statement, UNIQUE constraint '
+      'failed\n'
+      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, '
+      'Kitchen Table';
 }
 
 class _Unencodable {

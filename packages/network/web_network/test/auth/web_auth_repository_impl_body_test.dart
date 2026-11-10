@@ -24,7 +24,7 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 const _kAuthBase = '/api/auth';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -37,7 +37,7 @@ ServerIdentity _identity() => ServerIdentity(
   twoFactorSupported: true,
   anonymousAuthSupported: true,
   strategies: [
-    const EmailAndPasswordStrategy(
+    EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
       signUpEndpoint: '$_kAuthBase/sign-up/email',
@@ -46,8 +46,8 @@ ServerIdentity _identity() => ServerIdentity(
 );
 
 const _kHtml =
-    '<!doctype html><html><head><title>Sign in</title></head>'
-    '<body><h1>Corporate proxy</h1></body></html>';
+    '<!doctype html><html><head><title>Sign '
+    'in</title></head><body><h1>Corporate proxy</h1></body></html>';
 
 Map<String, dynamic> _grantJson() => {
   'token': 'session-tok-web',
@@ -541,7 +541,7 @@ void main() {
     });
 
     test('but a non-JSON body the reconcile cannot rescue still surfaces the '
-        'reconcile\'s own failure', () async {
+        "reconcile's own failure", () async {
       final repo = repoWith(
         routingDio({
           '/sign-in/email': (_kHtml, 200),
@@ -580,7 +580,7 @@ void main() {
       },
     );
 
-    test('on a sign-in whose reconcile cannot decode either, the reconcile\'s '
+    test("on a sign-in whose reconcile cannot decode either, the reconcile's "
         'retryable failure surfaces', () async {
       final repo = repoWith(
         routingDio({

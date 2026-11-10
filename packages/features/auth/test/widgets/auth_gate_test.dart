@@ -1,18 +1,17 @@
 import 'dart:async';
 
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/screens/auth_gate.dart';
+import 'package:auth/src/screens/auth_screen.dart';
+import 'package:auth/src/widgets/login_form.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-
-import 'package:auth/l10n/auth_localizations.dart';
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
-import 'package:auth/src/screens/auth_gate.dart';
-import 'package:auth/src/screens/auth_screen.dart';
-import 'package:auth/src/widgets/login_form.dart';
 
 import '../support/auth_test_fixtures.dart';
 

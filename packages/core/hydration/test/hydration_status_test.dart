@@ -32,8 +32,9 @@ void main() {
     final sub = status.watch().map((h) => h.state).listen(seen.add);
     addTearDown(sub.cancel);
 
-    status.started();
-    status.finished(_Outcome.complete);
+    status
+      ..started()
+      ..finished(_Outcome.complete);
     await Future<void>.delayed(Duration.zero);
 
     expect(
@@ -106,11 +107,7 @@ void main() {
     test('a status no pass has touched has established nothing', () async {
       expect(
         await current(),
-        const Hydration(
-          state: HydrationState.idle,
-          everRefreshed: false,
-          lastPassFailed: false,
-        ),
+        const Hydration(),
       );
     });
 
@@ -195,7 +192,6 @@ void main() {
           const Hydration(
             state: HydrationState.refreshed,
             everRefreshed: true,
-            lastPassFailed: false,
           ),
         );
         expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);
@@ -301,9 +297,8 @@ void main() {
     test('markStale drops the timestamp (#300)', () {
       stamped
         ..started()
-        ..finished(_Outcome.complete);
-
-      stamped.markStale();
+        ..finished(_Outcome.complete)
+        ..markStale();
 
       // The state is untouched — the rows on screen are still the rows we
       // have. Only the claim that they are current goes away.
@@ -316,9 +311,10 @@ void main() {
       // server after this pass read from it, so its result cannot be
       // treated as current. Otherwise a create racing the install-time
       // drain would be papered over for the whole window.
-      stamped.started();
-      stamped.markStale();
-      stamped.finished(_Outcome.complete);
+      stamped
+        ..started()
+        ..markStale()
+        ..finished(_Outcome.complete);
 
       expect(stamped.sinceRefresh, isNull);
     });
@@ -326,10 +322,8 @@ void main() {
     test('a pass started after markStale stamps normally', () {
       stamped
         ..started()
-        ..finished(_Outcome.complete);
-      stamped.markStale();
-
-      stamped
+        ..finished(_Outcome.complete)
+        ..markStale()
         ..started()
         ..finished(_Outcome.complete);
 
@@ -415,9 +409,8 @@ void main() {
       test('markStale is stale immediately (#300)', () {
         stamped
           ..started()
-          ..finished(_Outcome.complete);
-
-        stamped.markStale();
+          ..finished(_Outcome.complete)
+          ..markStale();
 
         // A create does not wait out the remaining minutes.
         expect(stamped.isStaleAfter(window), isTrue);

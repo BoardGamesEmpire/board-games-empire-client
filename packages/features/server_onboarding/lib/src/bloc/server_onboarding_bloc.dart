@@ -5,10 +5,9 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../url/server_url_input.dart';
-import 'server_onboarding_event.dart';
-import 'server_onboarding_state.dart';
+import 'package:server_onboarding/src/bloc/server_onboarding_event.dart';
+import 'package:server_onboarding/src/bloc/server_onboarding_state.dart';
+import 'package:server_onboarding/src/url/server_url_input.dart';
 
 /// Drives the first-run server-add flow (#36):
 ///
@@ -153,7 +152,7 @@ class ServerOnboardingBloc
       emit(const ServerOnboardingDuplicate());
     } on ServerCapacityExceededException {
       emit(const ServerOnboardingCapacityExceeded());
-    } catch (e, st) {
+    } on Object catch (e, st) {
       _logger.error(
         'Server onboarding failed after negotiation',
         error: e,

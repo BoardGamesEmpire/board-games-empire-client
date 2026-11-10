@@ -174,8 +174,8 @@ void main() {
     });
   });
 
-  group('the embedded game\'s expansion fields (#711)', () {
-    test('reads the embedded game\'s base games and content type', () async {
+  group("the embedded game's expansion fields (#711)", () {
+    test("reads the embedded game's base games and content type", () async {
       final row = _entry('gc_1');
       final platformGame = row['platformGame'] as Map<String, dynamic>;
       platformGame['game'] = <String, dynamic>{
@@ -209,8 +209,8 @@ void main() {
     });
   });
 
-  // Every request asks for `Response<String>`, which takes the body out from under
-  // Dio's transformer — including the 50 KB isolate offload it applies.
+  // Every request asks for `Response<String>`, which takes the body out from
+  // under Dio's transformer — including the 50 KB isolate offload it applies.
   group('a large body still decodes off-isolate', () {
     test('a page over the 50 KB threshold parses correctly', () async {
       // A full page and no more: the server never returns more than `limit`.
@@ -224,7 +224,7 @@ void main() {
 
       final remote = remoteOver(cannedDio(body: body, statusCode: 200));
 
-      final page = await remote.fetchCollectionPage(limit: 100);
+      final page = await remote.fetchCollectionPage();
       expect(page.items, hasLength(100));
       expect(page.items.last.entry.id, 'gc_99');
     });
@@ -237,8 +237,8 @@ void main() {
   group('responseType is pinned per request', () {
     for (final type in [ResponseType.bytes, ResponseType.stream]) {
       test(
-        'an injected Dio set to responseType.${type.name} cannot reintroduce the '
-        'status-losing cast',
+        'an injected Dio set to responseType.${type.name} cannot reintroduce '
+        'the status-losing cast',
         () async {
           final dio = cannedDio(body: _kHtml, statusCode: 400)
             ..options.responseType = type;

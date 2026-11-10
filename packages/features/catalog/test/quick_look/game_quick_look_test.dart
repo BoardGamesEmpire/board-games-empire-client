@@ -23,10 +23,10 @@ void main() {
   late List<String> viewed;
 
   setUp(() {
-    remote = FakeGamesRemote();
     // Made as the read starts, in the test's fake-async zone. Made here, it
     // would complete in the real zone, which pumping never runs.
-    remote.onFetchGame = (_) => (read = Completer()).future;
+    remote = FakeGamesRemote()
+      ..onFetchGame = (_) => (read = Completer()).future;
     viewed = [];
   });
 
@@ -290,8 +290,7 @@ void main() {
       GameQuickLookSeed.fromSummary(summary),
       cache: FakeGamesCache([wingspan]),
     );
-    final focus = tester.widget<TextButton>(retry()).focusNode!;
-    focus.requestFocus();
+    final focus = tester.widget<TextButton>(retry()).focusNode!..requestFocus();
     await tester.pump();
 
     // The read fails and the cache answers before the next frame.
@@ -399,8 +398,7 @@ void main() {
     );
     final answer = Completer<GameWithPlatformGames>();
     remote.onFetchGame = (_) => answer.future;
-    final focus = tester.widget<TextButton>(retry()).focusNode!;
-    focus.requestFocus();
+    final focus = tester.widget<TextButton>(retry()).focusNode!..requestFocus();
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -493,12 +491,10 @@ void main() {
                       GameQuickLookSeed.fromSummary(summary),
                       onViewDetails: (context, gameId) {
                         mountedWhenPressed = context.mounted;
-                        unawaited(
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  Scaffold(body: Text('Details of $gameId')),
-                            ),
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                Scaffold(body: Text('Details of $gameId')),
                           ),
                         );
                       },

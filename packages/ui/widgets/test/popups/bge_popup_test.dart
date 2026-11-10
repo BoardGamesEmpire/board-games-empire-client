@@ -14,7 +14,7 @@ const _narrow = Size(400, 800);
 const _wide = Size(800, 600);
 
 /// Both page transitions #707's hand-off was measured under.
-final _platforms = TargetPlatformVariant(const <TargetPlatform>{
+const _platforms = TargetPlatformVariant(<TargetPlatform>{
   TargetPlatform.android,
   TargetPlatform.iOS,
 });
@@ -141,7 +141,7 @@ class _App {
 }
 
 /// The pop-up, on screen or under a page.
-final _anyPopup = find.byKey(_popupKey, skipOffstage: false);
+final Finder _anyPopup = find.byKey(_popupKey, skipOffstage: false);
 
 /// The labels of the nodes that name a route, as a screen reader announces
 /// one on arrival.

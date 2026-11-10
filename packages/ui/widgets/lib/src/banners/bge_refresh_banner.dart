@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/banners/bge_inline_banner.dart';
+import 'package:ui/src/buttons/bge_inert_button.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../buttons/bge_inert_button.dart';
-import 'bge_inline_banner.dart';
 
 /// The stale-data banner and the retry that shares it (#269, #300, #573).
 ///

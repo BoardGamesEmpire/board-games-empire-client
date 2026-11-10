@@ -88,15 +88,17 @@ Future<void> main(List<String> args) async {
       // The flag's value is the next argument, whatever it looks like: a
       // bad one is reported as a bad build number, not as an unknown flag.
       if (i + 1 >= args.length) {
-        stderr.writeln('$_buildNumberFlag needs a value.');
-        stderr.writeln(_usage);
+        stderr
+          ..writeln('$_buildNumberFlag needs a value.')
+          ..writeln(_usage);
         exit(64); // EX_USAGE
       }
       try {
         buildNumber = _parseBuildNumber(args[++i]);
       } on FormatException catch (e) {
-        stderr.writeln('$_buildNumberFlag: ${e.message} (${e.source}).');
-        stderr.writeln(_usage);
+        stderr
+          ..writeln('$_buildNumberFlag: ${e.message} (${e.source}).')
+          ..writeln(_usage);
         exit(64); // EX_USAGE
       }
     } else if (a != '--self-test' && a != _requireReleaseSigning) {
@@ -104,8 +106,9 @@ Future<void> main(List<String> args) async {
     }
   }
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(_usage);
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 
@@ -175,9 +178,9 @@ Future<void> main(List<String> args) async {
   );
   if (sdk == null) {
     stderr.writeln(
-      'Found no Android SDK to check the APK with: $_app/android/'
-      'local.properties has no sdk.dir, and neither ANDROID_HOME nor '
-      'ANDROID_SDK_ROOT is set.',
+      'Found no Android SDK to check the APK with: '
+      '$_app/android/local.properties has no sdk.dir, and neither '
+      'ANDROID_HOME nor ANDROID_SDK_ROOT is set.',
     );
     exit(1);
   }
@@ -431,6 +434,8 @@ List<String> _signerProblems(String printCerts, String expected) {
   return [
     for (final digest in digests)
       if (digest != want)
+        // One message wrapped over two literals, not two list elements.
+        // ignore: no_adjacent_strings_in_list
         'a signer certificate has SHA-256 digest $digest, not the release '
             "key's $want",
   ];
@@ -479,9 +484,10 @@ void _selfTest() {
       stdout.writeln('  ok   $name');
     } else {
       failures++;
-      stdout.writeln('  FAIL $name');
-      stdout.writeln('       expected: ${jsonEncode(expected)}');
-      stdout.writeln('       actual:   ${jsonEncode(actual)}');
+      stdout
+        ..writeln('  FAIL $name')
+        ..writeln('       expected: ${jsonEncode(expected)}')
+        ..writeln('       actual:   ${jsonEncode(actual)}');
     }
   }
 
@@ -542,6 +548,8 @@ void _selfTest() {
       okBadging.replaceFirst(_package, 'com.boardgamesempire.mobile.mobile'),
     ),
     [
+      // One message wrapped over two literals, not two list elements.
+      // ignore: no_adjacent_strings_in_list
       'package is com.boardgamesempire.mobile.mobile, not '
           'com.boardgamesempire.app',
     ],
@@ -550,6 +558,8 @@ void _selfTest() {
     'badging: flags a release build with no network',
     _badgingProblems('$packageLine$otherLines'),
     [
+      // One message wrapped over two literals, not two list elements.
+      // ignore: no_adjacent_strings_in_list
       'no android.permission.INTERNET: a release build could not reach any '
           'server',
     ],
@@ -563,10 +573,12 @@ void _selfTest() {
   expect(
     'badging: does not take a longer permission for INTERNET',
     _badgingProblems(
-      "$packageLine$otherLines"
+      '$packageLine$otherLines'
       "uses-permission: name='android.permission.INTERNET_EXTRA'\n",
     ),
     [
+      // One message wrapped over two literals, not two list elements.
+      // ignore: no_adjacent_strings_in_list
       'no android.permission.INTERNET: a release build could not reach any '
           'server',
     ],
@@ -678,6 +690,8 @@ void _selfTest() {
       keytoolDigest,
     ),
     [
+      // One message wrapped over two literals, not two list elements.
+      // ignore: no_adjacent_strings_in_list
       'a signer certificate has SHA-256 digest $otherDigest, not the '
           "release key's $releaseDigest",
     ],
@@ -690,6 +704,8 @@ void _selfTest() {
       keytoolDigest,
     ),
     [
+      // One message wrapped over two literals, not two list elements.
+      // ignore: no_adjacent_strings_in_list
       'a signer certificate has SHA-256 digest $otherDigest, not the '
           "release key's $releaseDigest",
     ],

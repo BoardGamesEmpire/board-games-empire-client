@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'availability_response.dart';
+import 'package:models/src/domain/event/availability_response.dart';
 
 part 'availability_summary.freezed.dart';
 
@@ -29,8 +29,6 @@ part 'availability_summary.freezed.dart';
 /// **`totalVotes`.** It is the three tallies added up.
 @freezed
 abstract class AvailabilitySummary with _$AvailabilitySummary {
-  const AvailabilitySummary._();
-
   const factory AvailabilitySummary({
     /// Every date the server listed, of every status, in its order.
     required List<OccurrenceAvailability> occurrences,
@@ -41,6 +39,7 @@ abstract class AvailabilitySummary with _$AvailabilitySummary {
     /// and true is one a detail read will bring if the cache lacks it yet.
     @Default(true) bool rosterVisible,
   }) = _AvailabilitySummary;
+  const AvailabilitySummary._();
 
   /// The tallies for the date [occurrenceId], or null when the summary does
   /// not list it.

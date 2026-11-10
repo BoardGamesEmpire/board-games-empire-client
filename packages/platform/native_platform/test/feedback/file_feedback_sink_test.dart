@@ -94,9 +94,9 @@ void main() {
   /// throwing.
   String legacyEnvelopeJson(String key, {String? serverId}) {
     final envelope = record(key, serverId: serverId).toJson();
-    final reportJson = envelope['report']! as Map<String, dynamic>;
-    reportJson.remove('clientRequestId');
-    reportJson['correlationKey'] = key;
+    (envelope['report']! as Map<String, dynamic>)
+      ..remove('clientRequestId')
+      ..['correlationKey'] = key;
     return jsonEncode(envelope);
   }
 
@@ -331,8 +331,8 @@ void main() {
       expect(byKey['key-b']!.serverId, isNull);
     });
 
-    test('pending drains oldest-first by write time, not by cuid2-'
-        'lexical filename — a throttle-stopped drain sends the oldest '
+    test('pending drains oldest-first by write time, not by '
+        'cuid2-lexical filename — a throttle-stopped drain sends the oldest '
         'records', () async {
       final sink = buildSink();
       // Keys chosen so lexical order ('aaa' first) contradicts write
@@ -341,7 +341,7 @@ void main() {
       await sink.persist(record('zzz-oldest'));
       await sink.persist(record('aaa-newest'));
       await File('${tempDir.path}/zzz-oldest.json')
-          .setLastModified(DateTime(2026, 1, 1));
+          .setLastModified(DateTime(2026));
       await File('${tempDir.path}/aaa-newest.json')
           .setLastModified(DateTime(2026, 1, 2));
 
@@ -615,7 +615,7 @@ void main() {
         await sink.persist(
           record(
             'k$i',
-            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
           ),
         );
       }
@@ -634,7 +634,7 @@ void main() {
         await sink.persist(
           record(
             'old$i',
-            queuedAt: DateTime.utc(2020, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2020).add(Duration(minutes: i)),
           ),
         );
       }
@@ -644,7 +644,7 @@ void main() {
       await sink.update(
         record(
           'old0',
-          queuedAt: DateTime.utc(2020, 1, 1),
+          queuedAt: DateTime.utc(2020),
         ).copyWith(retryCount: 1),
       );
       // One more record tips the directory over the cap.
@@ -669,7 +669,7 @@ void main() {
           await sink.persist(
             record(
               'k$i',
-              queuedAt: DateTime.utc(2024, 1, 1).add(Duration(minutes: i)),
+              queuedAt: DateTime.utc(2024).add(Duration(minutes: i)),
             ),
           );
         }
@@ -694,7 +694,7 @@ void main() {
       for (var i = 0; i < over; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
         );
       }
       const newest = 'k${over - 1}';
@@ -718,7 +718,7 @@ void main() {
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
         );
       }
       await File('${tempDir.path}/broken.json').writeAsString('not json');
@@ -751,7 +751,7 @@ void main() {
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
         );
       }
       final locked = File('${tempDir.path}/locked.json');
@@ -782,7 +782,7 @@ void main() {
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
         );
       }
       final locked = File('${tempDir.path}/locked.json');
@@ -829,7 +829,7 @@ void main() {
         await sink.persist(
           record(
             'k$i',
-            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
           ),
         );
       }
@@ -852,7 +852,7 @@ void main() {
         for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
           await writeRecord(
             'k$i',
-            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+            queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
           );
         }
         final cached = File('${tempDir.path}/cached.json');
@@ -891,12 +891,12 @@ void main() {
       // Another process removes the file behind the sink's back.
       File('${tempDir.path}/stale.json').deleteSync();
       // A cap pass at or under the bound still prunes the cache.
-      await sink.persist(record('trigger', queuedAt: DateTime.utc(2026, 6, 1)));
+      await sink.persist(record('trigger', queuedAt: DateTime.utc(2026, 6)));
       await writeRecord('stale', queuedAt: DateTime.utc(2030));
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 2; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
         );
       }
 
@@ -917,7 +917,7 @@ void main() {
       () async {
         final sink = buildSink();
         for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
-          await writeRecord('k$i', queuedAt: DateTime.utc(2026, 6, 1));
+          await writeRecord('k$i', queuedAt: DateTime.utc(2026, 6));
         }
         // A clock that stepped backwards makes the new record look oldest.
         await sink.persist(record('backdated', queuedAt: DateTime.utc(1999)));
@@ -936,7 +936,7 @@ void main() {
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 7; i++) {
         await writeRecord(
           'k$i',
-          queuedAt: DateTime.utc(2025, 1, 1).add(Duration(minutes: i)),
+          queuedAt: DateTime.utc(2025).add(Duration(minutes: i)),
         );
       }
 
@@ -976,8 +976,7 @@ void main() {
       await sink.persist(record('key-b'));
       // Set explicitly so the test is immune to filesystem timestamp
       // resolution. Both are in the past, so the update's rename wins.
-      await File('${tempDir.path}/key-a.json')
-          .setLastModified(DateTime(2026, 1, 1));
+      await File('${tempDir.path}/key-a.json').setLastModified(DateTime(2026));
       await File('${tempDir.path}/key-b.json')
           .setLastModified(DateTime(2026, 1, 2));
 
@@ -1017,8 +1016,8 @@ void main() {
 
     test('rejects an un-addressable record, exactly as persist does', () async {
       final sink = buildSink();
-      final keyless = QueuedFeedbackReport(
-        report: const FeedbackReport(
+      const keyless = QueuedFeedbackReport(
+        report: FeedbackReport(
           category: FeedbackCategory.bug,
           severity: FeedbackSeverity.low,
           message: 'pending',

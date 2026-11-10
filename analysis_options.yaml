@@ -1,0 +1,19 @@
+# The one rule set for the whole workspace: every member includes it (#194).
+# public_member_api_docs is off as nothing here is published, and
+# one_member_abstracts as the injected seams are one-method interfaces by design.
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  errors:
+    # one_member_abstracts is deprecated (Dart 3.13), and naming it under
+    # linter: rules, even as false, draws a deprecated_lint warning.
+    one_member_abstracts: ignore
+  exclude:
+    - build/**
+    # json_serializable output is gitignored, regenerated and carries no
+    # lint-ignore header, so the rule set would flag code nobody edits.
+    - "**/*.g.dart"
+
+linter:
+  rules:
+    public_member_api_docs: false

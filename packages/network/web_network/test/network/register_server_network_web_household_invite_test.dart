@@ -36,7 +36,7 @@ void main() {
       container.get<HouseholdInviteRemoteDataSource>();
 
   group('registerServerNetworkWeb household invite remote (#455)', () {
-    test('registers native\'s implementation under the interface', () {
+    test("registers native's implementation under the interface", () {
       expect(container.isRegistered<HouseholdInviteRemoteDataSource>(), isTrue);
       expect(remote(), isA<HouseholdInviteRemoteDataSourceImpl>());
       expect(

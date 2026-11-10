@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
-import 'content_type.dart';
-import 'expansion_link.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/expansion_link.dart';
 
 /// One top-level item of a list, with the expansions shown under it (#711).
 final class PlacedGame<T> extends Equatable {

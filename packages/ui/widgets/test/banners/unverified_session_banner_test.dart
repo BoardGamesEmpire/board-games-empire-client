@@ -92,7 +92,7 @@ void main() {
   });
 
   testWidgets('the dismiss control reports through onDismiss — hiding is '
-      'the HOST\'s decision, expressed back through visible (dismissal and '
+      "the HOST's decision, expressed back through visible (dismissal and "
       'layout inset compensation must share an owner)', (tester) async {
     var dismissed = 0;
     await tester.pumpWidget(

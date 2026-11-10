@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:server_onboarding/l10n/server_onboarding_localizations.dart';
+import 'package:server_onboarding/src/bloc/server_onboarding_bloc.dart';
+import 'package:server_onboarding/src/bloc/server_onboarding_event.dart';
+import 'package:server_onboarding/src/bloc/server_onboarding_state.dart';
+import 'package:server_onboarding/src/url/server_url_input.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../bloc/server_onboarding_bloc.dart';
-import '../bloc/server_onboarding_event.dart';
-import '../bloc/server_onboarding_state.dart';
-import '../../l10n/server_onboarding_localizations.dart';
-import '../url/server_url_input.dart';
 
 /// The add-server form (#36): one URL field, one optional alias field,
 /// one submit button.
@@ -218,7 +217,7 @@ class _RetireFailureOnEditState extends State<_RetireFailureOnEdit> {
   void didUpdateWidget(_RetireFailureOnEdit oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.control, widget.control)) {
-      _sub?.cancel();
+      unawaited(_sub?.cancel());
       _sub = widget.control.valueChanges.listen(_onChanged);
     }
   }
@@ -235,7 +234,7 @@ class _RetireFailureOnEditState extends State<_RetireFailureOnEdit> {
 
   @override
   void dispose() {
-    _sub?.cancel();
+    unawaited(_sub?.cancel());
     super.dispose();
   }
 

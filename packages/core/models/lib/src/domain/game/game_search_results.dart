@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'content_type.dart';
-import 'platform_type.dart';
+import 'package:models/src/domain/game/content_type.dart';
+import 'package:models/src/domain/game/platform_type.dart';
 
 part 'game_search_results.freezed.dart';
 
@@ -10,8 +10,8 @@ part 'game_search_results.freezed.dart';
 abstract class GameSearchPlatform with _$GameSearchPlatform {
   const factory GameSearchPlatform({
     required String name,
-    String? abbreviation,
     required PlatformType platformType,
+    String? abbreviation,
   }) = _GameSearchPlatform;
 }
 
@@ -22,8 +22,6 @@ abstract class GameSearchPlatform with _$GameSearchPlatform {
 /// the game itself by that id.
 @freezed
 abstract class GameSearchHit with _$GameSearchHit {
-  const GameSearchHit._();
-
   const factory GameSearchHit({
     /// The game's id where it was found: the server's game id for a result
     /// from this server, the DataGateway's own id otherwise.
@@ -43,6 +41,7 @@ abstract class GameSearchHit with _$GameSearchHit {
     String? thumbnailUrl,
     @Default(<GameSearchPlatform>[]) List<GameSearchPlatform> platforms,
   }) = _GameSearchHit;
+  const GameSearchHit._();
 
   /// Whether this server already holds the game.
   bool get isOnServer => gameId != null;

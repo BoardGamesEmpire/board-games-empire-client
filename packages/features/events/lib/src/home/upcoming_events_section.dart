@@ -1,3 +1,11 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_overview_bloc.dart';
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/home/upcoming_fallback_cubit.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/widgets/event_card.dart';
+import 'package:events/src/widgets/event_section_states.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydration/hydration.dart';
@@ -6,16 +14,6 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_overview_bloc.dart';
-import '../bloc/event_overview_event.dart';
-import '../bloc/event_overview_state.dart';
-import '../overview/event_groups.dart';
-import '../widgets/event_card.dart';
-import '../widgets/event_section_states.dart';
-import 'upcoming_fallback_cubit.dart';
 
 /// The home page's upcoming events (#613): the user's next few events, or, with
 /// none of their own, what's coming up that they could see. They sit side by
@@ -26,11 +24,11 @@ import 'upcoming_fallback_cubit.dart';
 ///
 /// The user's own events come from an [EventOverviewBloc], so grouping, the
 /// clock and the first hydrate behave as they do on the overview. An
-/// [UpcomingFallbackCubit] owns the fallback, and is told to read only once that
-/// bloc is ready with nothing upcoming and no first fill running. So the first
-/// sync can't flash other people's events ahead of the user's own, even with
-/// planning or past rows already cached, and the user's own event arriving
-/// replaces the fallback at once.
+/// [UpcomingFallbackCubit] owns the fallback, and is told to read only once
+/// that bloc is ready with nothing upcoming and no first fill running. So the
+/// first sync can't flash other people's events ahead of the user's own, even
+/// with planning or past rows already cached, and the user's own event
+/// arriving replaces the fallback at once.
 ///
 /// A failed pass holds the fallback back, and the section shows its empty text
 /// until one lands. The pass may not have reached the user's events, so saying

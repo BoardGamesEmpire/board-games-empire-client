@@ -9,102 +9,90 @@ environment:
 resolution: workspace
 
 dependencies:
-  flutter:
-    sdk: flutter
-
-  app_shell:
-    path: ../../app_shell
-
   access:
     path: ../../core/access
-  interfaces:
-    path: ../../core/interfaces
-  models:
-    path: ../../core/models
-  di:
-    path: ../../core/di
-  observability:
-    path: ../../core/observability
+  app_shell:
+    path: ../../app_shell
   connectivity_platform:
     path: ../connectivity_platform
-  web_network:
-    path: ../../network/web_network
-
-  # `buildWebServerScope` and `bgeWebPlatformBootstrap` name `WellKnownClient`
-  # in their test seams (#325): a direct dependency on the same rule as the
-  # others, this package names the symbol.
-  network_interface:
-    path: ../../network/network_interface
-
-  # The web data layer (#288): this package is where the drift/wasm executor
-  # and the network scope are composed, because `web_network` must not depend
-  # on a browser-only library (see `WebServerScopeInstall`).
-  web_storage:
-    path: ../../storage/web_storage
-
+  data_gateway:
+    path: ../../features/data_gateway
+  di:
+    path: ../../core/di
   # The platform-neutral half of the data layer (#287), for the shared
   # `UserSessionScopeInstaller` web's per-user tier runs (#137). A direct
   # dependency rather than a transitive one through `web_storage`: this
   # package names the symbol.
   drift_storage:
     path: ../../storage/drift_storage
-
+  # The events feature, for the shared `EventHydrateInstaller` (#496), on the
+  # same rule.
+  events:
+    path: ../../features/events
+  flutter:
+    sdk: flutter
+  # The collection feature, for the shared `GameCollectionHydrateInstaller`
+  # (#259), on the same rule as `household` below.
+  game_collection:
+    path: ../../features/collection
   # The household feature, for the shared `HouseholdHydrateInstaller` web's
   # user tier runs since #125. Direct rather than transitive through
   # `app_shell`, on the same rule as `drift_storage` above: this package names
   # the symbol.
   household:
     path: ../../features/household
-  data_gateway:
-    path: ../../features/data_gateway
-
-  # The collection feature, for the shared `GameCollectionHydrateInstaller`
-  # (#259), on the same rule as `household` above.
-  game_collection:
-    path: ../../features/collection
-
-  # The events feature, for the shared `EventHydrateInstaller` (#496), on the
-  # same rule.
-  events:
-    path: ../../features/events
-
+  # Web-specific
+  hydrated_bloc: ^11.0.0
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  # `buildWebServerScope` and `bgeWebPlatformBootstrap` name `WellKnownClient`
+  # in their test seams (#325): a direct dependency on the same rule as the
+  # others, this package names the symbol.
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+  # Web-specific
+  package_info_plus: ^10.2.1
   # The sync queue feature, for the shared `SyncSenderInstaller` the create
   # screen sends through (#121) and the `SyncQueueDrainInstaller` over it
   # (#447), on the same rule.
   sync_queue:
     path: ../../features/sync
-
+  # Web-specific
+  url_strategy: ^0.3.0
   # The browser bindings the durable feedback sink is written against (#292).
   # IndexedDB rather than a second drift/wasm database: the queue is a
   # key -> opaque-JSON store, and a device-global drift database would open a
   # second wasm worker on every authenticated session.
   web: ^1.1.1
-
-  # Web-specific
-  url_strategy: ^0.3.0
-  hydrated_bloc: ^11.0.0
-  package_info_plus: ^10.2.1
+  web_network:
+    path: ../../network/web_network
+  # The web data layer (#288): this package is where the drift/wasm executor
+  # and the network scope are composed, because `web_network` must not depend
+  # on a browser-only library (see `WebServerScopeInstall`).
+  web_storage:
+    path: ../../storage/web_storage
 
 dev_dependencies:
-  # Browser-only suite for the storage composition (#288): asserts the log
-  # level the storage report emits, and needs drift's storage enum to build
-  # the cases.
-  drift: ^2.34.3
-  # Swaps the transport under the Dio `registerServerNetworkWeb` registers, so
-  # the hydrate-seam suite (#125) can drive the real remote without a network.
-  dio: ^5.11.0
-  logging: ^1.2.0
-  mocktail: ^1.0.5
-
   auth:
     path: ../../features/auth
   # `ScriptedServer`, the transport the session suite answers through (#369).
   bge_test_support:
     path: ../../testing/support
+  # Swaps the transport under the Dio `registerServerNetworkWeb` registers, so
+  # the hydrate-seam suite (#125) can drive the real remote without a network.
+  dio: ^5.11.0
+  # Browser-only suite for the storage composition (#288): asserts the log
+  # level the storage report emits, and needs drift's storage enum to build
+  # the cases.
+  drift: ^2.34.3
   flutter_test:
     sdk: flutter
-  very_good_analysis: ^10.2.0
-  flutter_lints: ^6.0.0
+  logging: ^1.2.0
+  mocktail: ^1.0.5
 
 flutter:
   uses-material-design: true

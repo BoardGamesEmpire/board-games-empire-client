@@ -1,6 +1,5 @@
-import 'package:models/domain.dart';
-
 import 'package:household/l10n/household_localizations.dart';
+import 'package:models/domain.dart';
 
 /// The words for [role]: the current user's on the household screen, and
 /// the one an invite offers.

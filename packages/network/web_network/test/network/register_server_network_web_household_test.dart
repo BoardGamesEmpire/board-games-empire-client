@@ -48,10 +48,10 @@ String _envelopeBody(int status) => jsonEncode({
 });
 
 /// #125: the per-origin household remote is the web network installer's to
-/// register, on the same convention as native's (`register_server_network.dart`)
-/// and the `FeedbackTransport` beside it — it shares the per-origin Dio, which
-/// carries the base URL and the browser-owned session cookie, and adds no auth
-/// of its own.
+/// register, on the same convention as native's
+/// (`register_server_network.dart`) and the `FeedbackTransport` beside it — it
+/// shares the per-origin Dio, which carries the base URL and the browser-owned
+/// session cookie, and adds no auth of its own.
 ///
 /// The classification group covers the half of that reuse this suite can
 /// reach. #125 reuses `HouseholdRemoteDataSourceImpl` rather than writing a

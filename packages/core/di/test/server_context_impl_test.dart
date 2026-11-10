@@ -1,11 +1,11 @@
 import 'dart:async';
 
+import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
-import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 class MockDependencyContainer extends Mock implements DependencyContainer {}
 
@@ -38,7 +38,7 @@ class RecordingInstaller implements ServerScopeInstaller {
 
 /// Installer that always throws, for activation-failure paths.
 class FailingInstaller implements ServerScopeInstaller {
-  var calls = 0;
+  int calls = 0;
 
   @override
   Future<void> install(
@@ -56,7 +56,7 @@ ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   serverUrl: 'https://api.example.com',
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: ServerIdentity(
+  cachedIdentity: const ServerIdentity(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
     issuer: 'https://api.example.com',
     wellKnownSchemaVersion: 1,
@@ -457,7 +457,7 @@ void main() {
         addTearDown(() async {
           try {
             await masked.dispose();
-          } catch (_) {}
+          } on Object catch (_) {}
         });
 
         await expectLater(
@@ -497,7 +497,7 @@ class _FlakyInstaller implements ServerScopeInstaller {
   _FlakyInstaller({required this.failuresBeforeSuccess});
 
   final int failuresBeforeSuccess;
-  var calls = 0;
+  int calls = 0;
 
   @override
   Future<void> install(

@@ -1,9 +1,10 @@
-/// Lifecycle states a [ServerContext] transitions through.
+/// Lifecycle states a `ServerContext` transitions through.
 ///
 /// Valid transitions:
-/// ```
+/// ```text
 /// initializing → active          (first activation)
-/// active → backgrounding         (user switches server; co-active window begins)
+/// active → backgrounding         (user switches server; co-active window
+///                                 begins)
 /// backgrounding → active         (user switches back within timeout)
 /// backgrounding → monitoring     (timeout expires or battery threshold)
 /// monitoring → active            (user re-activates)

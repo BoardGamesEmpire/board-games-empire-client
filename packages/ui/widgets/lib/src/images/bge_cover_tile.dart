@@ -2,13 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:ui/src/focus/bge_focus_ring.dart';
+import 'package:ui/src/focus/bge_pointer_focus.dart';
+import 'package:ui/src/images/bge_cover_expansions.dart';
+import 'package:ui/src/images/bge_stack_marker.dart';
+import 'package:ui/src/images/bge_thumbnail.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../focus/bge_focus_ring.dart';
-import '../focus/bge_pointer_focus.dart';
-import 'bge_cover_expansions.dart';
-import 'bge_stack_marker.dart';
-import 'bge_thumbnail.dart';
 
 /// A game's cover alone, as one tappable tile (#707).
 ///
@@ -145,7 +144,9 @@ class _BgeCoverTileState extends State<BgeCoverTile>
   /// but the cover would be built again under a new semantics node, and a
   /// screen reader on it would lose its place. With it the cover keeps its
   /// elements, its ink and its node.
-  final _coverKey = GlobalKey(debugLabel: 'BgeCoverTile.cover');
+  final GlobalKey<State<StatefulWidget>> _coverKey = GlobalKey(
+    debugLabel: 'BgeCoverTile.cover',
+  );
 
   /// The expansions badge's focus, held here so that the tile can tell when
   /// the badge goes while it holds focus (#711).

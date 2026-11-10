@@ -1,12 +1,11 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
-
-import 'package:dio_network/dio_network.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -311,7 +310,6 @@ void main() {
       stubGet(
         _resp({
           'collection': _entryJson(
-            releaseId: null,
             rating: null,
             playCount: null,
             playAgain: null,
@@ -387,7 +385,7 @@ void main() {
       expect(summary.game.title, 'Brass: Birmingham');
     });
 
-    test('null image overrides map to null, not the game\'s', () async {
+    test("null image overrides map to null, not the game's", () async {
       final json = _entryJson();
       json['platformGame'] = <String, dynamic>{
         ...json['platformGame'] as Map<String, dynamic>,
@@ -666,7 +664,7 @@ void main() {
       test('a page past the depth ceiling throws ArgumentError', () {
         // (1002 - 1) * 100 = 100,100, past the 100,000 ceiling.
         expect(
-          () => remote.fetchCollectionPage(page: 1002, limit: 100),
+          () => remote.fetchCollectionPage(page: 1002),
           throwsArgumentError,
         );
         expectNoRequest();
@@ -688,7 +686,7 @@ void main() {
       // VM's.
       test('a page whose depth would overflow an int is still rejected', () {
         expect(
-          () => remote.fetchCollectionPage(page: (1 << 62) + 1, limit: 100),
+          () => remote.fetchCollectionPage(page: (1 << 62) + 1),
           throwsArgumentError,
         );
         expectNoRequest();
@@ -698,7 +696,7 @@ void main() {
         stubGet(_resp(_listEnvelope(const [])));
 
         // (1001 - 1) * 100 = 100,000: exactly the ceiling, at exactly the cap.
-        await remote.fetchCollectionPage(page: 1001, limit: 100);
+        await remote.fetchCollectionPage(page: 1001);
 
         expect(capturedQuery(), equals({'page': 1001, 'limit': 100}));
       });
@@ -730,7 +728,8 @@ void main() {
       });
     });
 
-    test('a 2xx whose body is not a JSON object is permanent, not transient', () {
+    test('a 2xx whose body is not a JSON object is permanent, '
+        'not transient', () {
       // Dio would cast the body to Map itself if we asked it for a typed
       // Response, and the TypeError would surface as a status-less transient
       // failure that retries forever. A captive-portal HTML page served with a
@@ -1089,11 +1088,6 @@ void main() {
       await remote.updateEntry(
         id: 'gc_server_1',
         quantity: 4,
-        rating: null,
-        comment: null,
-        favorite: null,
-        playAgain: null,
-        releaseId: null,
       );
 
       final body = capturedBody();
@@ -1363,7 +1357,7 @@ void main() {
       );
     });
 
-    test('a 404 missing the envelope\'s error label is transient, NOT '
+    test("a 404 missing the envelope's error label is transient, NOT "
         'completion', () {
       // `{ statusCode, message, error }` is one shape, not three optional
       // fields: `translateException` always sets the label. A two-field

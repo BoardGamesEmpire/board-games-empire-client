@@ -1,17 +1,15 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/widgets/cancel_reason_dialog.dart';
+import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/event_labels.dart';
+import 'package:events/src/widgets/event_when_field.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../create/event_create_controls.dart';
-import 'cancel_reason_dialog.dart';
-import 'confirm_dialog.dart';
-import 'event_labels.dart';
-import 'event_when_field.dart';
 
 // The dialogs an event's dates are changed through (#506): add and edit,
 // which share one form, and confirm, decline, cancel and remove, which ask
@@ -84,7 +82,7 @@ Future<OccurrenceUpdate?> showEditDateDialog(
 /// (#507), it also asks whether to decline those, off by default: a
 /// declined date can't be proposed again either.
 ///
-/// Null when kept. [declineOthers] is false unless [offerDeclineOthers] and
+/// Null when kept. `declineOthers` is false unless [offerDeclineOthers] and
 /// checked.
 Future<({bool declineOthers})?> showConfirmDateDialog(
   BuildContext context,
@@ -239,7 +237,10 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
 }
 
 // The add and edit form's controls.
-const _label = 'label', _start = 'start', _end = 'end', _location = 'location';
+const _label = 'label';
+const _start = 'start';
+const _end = 'end';
+const _location = 'location';
 
 /// The add and edit dialog: one form, empty to add, holding [editing]'s
 /// fields to edit it. It pops with the draft or the update the form shows.

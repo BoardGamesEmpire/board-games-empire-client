@@ -5,7 +5,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import 'build_info/package_info_build_info_reader.dart';
+import 'package:web_platform/src/build_info/package_info_build_info_reader.dart';
 
 /// Registers the web device-global services into the root container
 /// (#72).

@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'auth_strategy.dart';
+import 'package:models/src/domain/user/auth_strategy.dart';
 
 part 'user_authentication.freezed.dart';
 part 'user_authentication.g.dart';
@@ -13,14 +13,14 @@ abstract class UserAuthentication with _$UserAuthentication {
     required String email,
     required AuthStrategy authStrategy,
     required bool emailVerified,
-    DateTime? lastPasswordChange,
     required bool accountLocked,
-    DateTime? accountLockedUntil,
     required int failedLoginAttempts,
-    DateTime? lastFailedLogin,
-    DateTime? lastLogin,
     required bool twoFactorEnabled,
     required bool isExternalUser,
+    DateTime? lastPasswordChange,
+    DateTime? accountLockedUntil,
+    DateTime? lastFailedLogin,
+    DateTime? lastLogin,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _UserAuthentication;

@@ -1,21 +1,19 @@
 import 'dart:async';
 
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_overview_bloc.dart';
+import 'package:events/src/bloc/event_overview_event.dart';
+import 'package:events/src/bloc/event_overview_state.dart';
+import 'package:events/src/overview/event_groups.dart';
+import 'package:events/src/sync/household_events_sync.dart';
+import 'package:events/src/widgets/event_row.dart';
+import 'package:events/src/widgets/event_section_states.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_overview_bloc.dart';
-import '../bloc/event_overview_event.dart';
-import '../bloc/event_overview_state.dart';
-import '../overview/event_groups.dart';
-import '../sync/household_events_sync.dart';
-import '../widgets/event_row.dart';
-import '../widgets/event_section_states.dart';
 
 /// A household's upcoming events, on the household's screen (#503): the
 /// events this user can see in the household, from the cache, soonest first.

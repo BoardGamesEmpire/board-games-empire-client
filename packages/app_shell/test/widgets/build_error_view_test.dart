@@ -41,7 +41,7 @@ void main() {
   );
 
   group('BuildErrorView', () {
-    testWidgets('keeps a database error\'s bound values out of the '
+    testWidgets("keeps a database error's bound values out of the "
         'diagnostics (#463)', (tester) async {
       await tester.pumpWidget(
         localizedHarness(
@@ -52,6 +52,8 @@ void main() {
                   '  Causing statement: INSERT INTO t (a) VALUES (?), '
                   'parameters: user-42',
             ),
+            // The default is kDebugMode; the test pins the value explicitly.
+            // ignore: avoid_redundant_argument_values
             showDiagnostics: true,
           ),
         ),
@@ -118,6 +120,8 @@ void main() {
         '(debug behaviour, decision 1a)', (tester) async {
       await tester.pumpWidget(
         localizedHarness(
+          // The default is kDebugMode; the test pins the value explicitly.
+          // ignore: avoid_redundant_argument_values
           BuildErrorView(details: details(), showDiagnostics: true),
         ),
       );
@@ -144,6 +148,8 @@ void main() {
     ) async {
       await tester.pumpWidget(
         localizedHarness(
+          // The default is kDebugMode; the test pins the value explicitly.
+          // ignore: avoid_redundant_argument_values
           BuildErrorView(details: details(), showDiagnostics: true),
         ),
       );

@@ -1,15 +1,15 @@
-import 'package:models/dto.dart';
+import 'package:interfaces/src/repositories/provider_sign_in.dart';
+import 'package:meta/meta.dart';
 import 'package:models/domain.dart';
-
-import 'provider_sign_in.dart';
+import 'package:models/dto.dart';
 
 /// Per-server authentication repository.
 ///
 /// Scoped to a single BGE server. All endpoint URLs are sourced from the
 /// [ServerIdentity] injected at construction — never hardcoded.
 ///
-/// Mobile/desktop: backed by [AuthRepositoryImpl] with [TokenStorageService].
-/// Web: backed by [WebAuthRepositoryImpl] using browser-managed httpOnly
+/// Mobile/desktop: backed by `AuthRepositoryImpl` with `TokenStorageService`.
+/// Web: backed by `WebAuthRepositoryImpl` using browser-managed httpOnly
 /// cookies.
 abstract class AuthRepository {
   /// Signs in with email and password.
@@ -139,7 +139,7 @@ abstract class AuthRepository {
   ///   [getSession], never guessed at sign-in. An unconfirmed expiry is not
   ///   "unexpired", it is *unknown*, and unknown is not good enough to
   ///   enter the app on;
-  /// - that expiry is in the future by the per-server [ClockService] —
+  /// - that expiry is in the future by the per-server `ClockService` —
   ///   expiry lives on the *server's* timeline, so it wants the
   ///   skew-corrected reading;
   /// - a persisted user snapshot exists (the per-(server, user) scope in
@@ -310,19 +310,21 @@ enum SessionVerification {
 ///   it would make the successful revalidation invisible to every
 ///   value-comparing consumer downstream (#98).
 ///
-/// Value equality matters for [AuthRepositoryStateChanged] in the
-/// bloc layer: that event extends Equatable with `props =
-/// [repoState]`, and Equatable's equality only works correctly if
+/// Value equality matters for `AuthRepositoryStateChanged` in the
+/// bloc layer: that event extends Equatable with
+/// `props = [repoState]`, and Equatable's equality only works correctly if
 /// `repoState`'s own `==` is value-based. Without these overrides,
 /// `AuthRepositoryStateChanged(AuthStateAuthenticated(s)) ==
 /// AuthRepositoryStateChanged(AuthStateAuthenticated(s))` returned
 /// false for freshly-constructed instances, breaking bloc-test
 /// matchers like
-/// `emits(AuthRepositoryStateChanged(AuthStateAuthenticated(expectedSession)))`.
+/// `emits(AuthRepositoryStateChanged(
+///   AuthStateAuthenticated(expectedSession)))`.
 sealed class AuthState {
   const AuthState();
 }
 
+@immutable
 final class AuthStateUnknown extends AuthState {
   const AuthStateUnknown();
 
@@ -334,6 +336,7 @@ final class AuthStateUnknown extends AuthState {
   int get hashCode => (AuthStateUnknown).hashCode;
 }
 
+@immutable
 final class AuthStateAuthenticated extends AuthState {
   const AuthStateAuthenticated({
     required this.session,
@@ -358,6 +361,7 @@ final class AuthStateAuthenticated extends AuthState {
   int get hashCode => Object.hash(runtimeType, session, verification);
 }
 
+@immutable
 final class AuthStateUnauthenticated extends AuthState {
   const AuthStateUnauthenticated();
 
@@ -375,6 +379,9 @@ sealed class AuthException implements Exception {
   final Object? cause;
 
   @override
+  // The subclass name is the intended text, and a literal per subclass
+  // would change it.
+  // ignore: no_runtimetype_tostring
   String toString() => '$runtimeType: $message';
 }
 
@@ -532,7 +539,7 @@ final class AuthSessionNotGrantedException extends AuthException {
 /// The operation was overtaken by a newer intent while it was in flight
 /// (#146).
 ///
-/// Thrown by [AuthRepository.signIn]/[signUp] when a sign-out lands during
+/// Thrown by [AuthRepository.signIn]/[AuthRepository.signUp] when a sign-out lands during
 /// the credential grant's persist-and-reconcile window. The newer intent
 /// won: state and storage already reflect the sign-out by the time this is
 /// thrown. Also thrown by [AuthRepository.signInWithProvider] for an attempt

@@ -1,16 +1,15 @@
 import 'package:cuid2/cuid2.dart';
-
-import '../breadcrumbs/breadcrumb.dart';
-import '../logging/bge_logger.dart';
-import 'feedback_category.dart';
-import 'feedback_constants.dart';
-import 'feedback_environment.dart';
-import 'feedback_report.dart';
-import 'feedback_service.dart';
-import 'feedback_severity.dart';
-import 'feedback_sink.dart';
-import 'feedback_target.dart';
-import 'queued_feedback_report.dart';
+import 'package:observability/src/breadcrumbs/breadcrumb.dart';
+import 'package:observability/src/feedback/feedback_category.dart';
+import 'package:observability/src/feedback/feedback_constants.dart';
+import 'package:observability/src/feedback/feedback_environment.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
+import 'package:observability/src/feedback/feedback_service.dart';
+import 'package:observability/src/feedback/feedback_severity.dart';
+import 'package:observability/src/feedback/feedback_sink.dart';
+import 'package:observability/src/feedback/feedback_target.dart';
+import 'package:observability/src/feedback/queued_feedback_report.dart';
+import 'package:observability/src/logging/bge_logger.dart';
 
 /// Device-global [FeedbackService] registered in the app-scope root
 /// container (#72, #69, #97).
@@ -18,18 +17,18 @@ import 'queued_feedback_report.dart';
 /// All collaborators are injected as providers so this stays pure Dart
 /// and unit-testable without platform machinery:
 ///
-/// - [breadcrumbSource] — the shell breadcrumb ring, snapshotted at
+/// - `breadcrumbSource` — the shell breadcrumb ring, snapshotted at
 ///   build time (wired to `ShellObservability.breadcrumbs.snapshot`).
-/// - [environmentSource] — the [FeedbackEnvironment] assembled at the
+/// - `environmentSource` — the [FeedbackEnvironment] assembled at the
 ///   composition root (BuildInfo/platform/locale live there).
-/// - [targetResolver] — yields the active server's [FeedbackTarget]
+/// - `targetResolver` — yields the active server's [FeedbackTarget]
 ///   (its `bgeServerId`, plus its transport when authenticated) or null.
 ///   Late-bound because capture is device-global and pre-auth while the
 ///   network leg is per-server and post-auth; re-read on every
 ///   [submit]/[drainPending] (#97).
-/// - [sink] — the durable store for user-approved-but-unsent reports,
+/// - `sink` — the durable store for user-approved-but-unsent reports,
 ///   as [QueuedFeedbackReport] records tagged with their server.
-/// - [clientRequestIdGenerator] — defaults to cuid2 ([cuid]), the repo's
+/// - `clientRequestIdGenerator` — defaults to cuid2 ([cuid]), the repo's
 ///   id convention.
 class FeedbackServiceImpl implements FeedbackService {
   FeedbackServiceImpl({

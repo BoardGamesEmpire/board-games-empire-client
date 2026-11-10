@@ -11,7 +11,7 @@ import 'package:logging/logging.dart';
 /// The root-logger subscription and its lifecycle are owned by the shell;
 /// a sink only answers two questions: how is a record rendered, and where
 /// does it go. `package:logging` is process-global, so exactly one sink
-/// (which may be a [CompositeLogSink]) is attached per process.
+/// (which may be a `CompositeLogSink`) is attached per process.
 abstract interface class LogSink {
   /// Renders and writes [record].
   ///

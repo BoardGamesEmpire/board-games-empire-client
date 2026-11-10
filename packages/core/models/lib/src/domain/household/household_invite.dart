@@ -1,8 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-
-import '../user/user_summary.dart';
-import 'household_invite_status.dart';
-import 'household_role.dart';
+import 'package:models/src/domain/household/household_invite_status.dart';
+import 'package:models/src/domain/household/household_role.dart';
+import 'package:models/src/domain/user/user_summary.dart';
 
 part 'household_invite.freezed.dart';
 
@@ -18,12 +17,13 @@ part 'household_invite.freezed.dart';
 /// their rows come from many households.
 @freezed
 abstract class HouseholdInvite with _$HouseholdInvite {
-  const HouseholdInvite._();
-
   const factory HouseholdInvite({
     required String id,
     required HouseholdInviteStatus status,
     required UserSummary inviter,
+
+    required DateTime expiresAt,
+    required DateTime createdAt,
 
     /// The role accepting would grant. Null when the server sends none.
     HouseholdRole? role,
@@ -42,9 +42,8 @@ abstract class HouseholdInvite with _$HouseholdInvite {
 
     /// Set only on inbox and sent rows.
     String? householdName,
-    required DateTime expiresAt,
-    required DateTime createdAt,
   }) = _HouseholdInvite;
+  const HouseholdInvite._();
 
   /// Who the invite is for, as far as the row says. Null for an invite by
   /// user id that the inviter gave no name.

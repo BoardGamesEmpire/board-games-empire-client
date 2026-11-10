@@ -26,7 +26,6 @@ void main() {
     name: 'BGG',
     description: 'The BGG bridge',
     connectionUrl: 'bgg.internal',
-    connectionPort: 50051,
   );
 
   setUp(() {
@@ -192,27 +191,23 @@ void main() {
           home: const Scaffold(body: Text('home')),
         ),
       );
-      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
-      unawaited(
-        navigator.push(
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator))
+        ..push(
           MaterialPageRoute<void>(
             builder: (_) => const Scaffold(body: Text('list')),
           ),
-        ),
-      );
+        );
       await tester.pumpAndSettle();
-      unawaited(
-        navigator.push(
-          MaterialPageRoute<void>(
-            builder: (_) => DataGatewayFormScreen(
-              remote: remote,
-              access: access,
-              // As the shell's does: leaving is a pop.
-              onDone: (context) {
-                doneCount++;
-                Navigator.of(context).pop();
-              },
-            ),
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => DataGatewayFormScreen(
+            remote: remote,
+            access: access,
+            // As the shell's does: leaving is a pop.
+            onDone: (context) {
+              doneCount++;
+              Navigator.of(context).pop();
+            },
           ),
         ),
       );
@@ -249,9 +244,8 @@ void main() {
           home: const Scaffold(body: Text('list')),
         ),
       );
-      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
-      unawaited(
-        navigator.push(
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator))
+        ..push(
           MaterialPageRoute<void>(
             builder: (_) => DataGatewayFormScreen(
               remote: remote,
@@ -263,19 +257,16 @@ void main() {
               },
             ),
           ),
-        ),
-      );
+        );
       await tester.pumpAndSettle();
       await fillValid(tester);
       await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
       await tester.tap(find.byKey(DataGatewayForm.submitKey));
       await tester.pump();
 
-      unawaited(
-        navigator.push(
-          MaterialPageRoute<void>(
-            builder: (_) => const Scaffold(body: Text('cover')),
-          ),
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('cover')),
         ),
       );
       await tester.pumpAndSettle();
@@ -300,11 +291,12 @@ void main() {
   group('editing', () {
     testWidgets('opens on the row and saves only what changed', (tester) async {
       DataGatewayChanges? sent;
-      remote.onFetchOne = (_) async => bgg;
-      remote.onUpdate = (_, changes) async {
-        sent = changes;
-        return changed(bgg.copyWith(connectionPort: 50060));
-      };
+      remote
+        ..onFetchOne = ((_) async => bgg)
+        ..onUpdate = (_, changes) async {
+          sent = changes;
+          return changed(bgg.copyWith(connectionPort: 50060));
+        };
       await pumpForm(tester, editingId: 'dg_1');
 
       expect(find.text('bgg.internal'), findsOneWidget);
@@ -369,11 +361,12 @@ void main() {
         tester,
       ) async {
         DataGatewayChanges? sent;
-        remote.onFetchOne = (_) async => padded;
-        remote.onUpdate = (_, changes) async {
-          sent = changes;
-          return changed(padded.copyWith(connectionPort: 50060));
-        };
+        remote
+          ..onFetchOne = ((_) async => padded)
+          ..onUpdate = (_, changes) async {
+            sent = changes;
+            return changed(padded.copyWith(connectionPort: 50060));
+          };
         await pumpForm(tester, editingId: 'dg_1');
 
         await enter(tester, DataGatewayForm.portFieldKey, '50060');
@@ -395,8 +388,9 @@ void main() {
     testWidgets('rebuilt for another row, opens on that row and saves to it, '
         'as when a router reuses the page', (tester) async {
       final other = gateway('dg_2', name: 'Other', connectionUrl: 'other.host');
-      remote.onFetchOne = (id) async => id == 'dg_1' ? bgg : other;
-      remote.onUpdate = (_, _) async => changed(other);
+      remote
+        ..onFetchOne = ((id) async => id == 'dg_1' ? bgg : other)
+        ..onUpdate = (_, _) async => changed(other);
       await pumpForm(tester, editingId: 'dg_1');
 
       await pumpForm(tester, editingId: 'dg_2');
@@ -539,8 +533,9 @@ void main() {
 
     testWidgets('a refused save says why and asks access again, and the save '
         'goes once access says no', (tester) async {
-      remote.onFetchOne = (_) async => bgg;
-      remote.onUpdate = (_, _) async => throw forbidden();
+      remote
+        ..onFetchOne = ((_) async => bgg)
+        ..onUpdate = (_, _) async => throw forbidden();
       await pumpForm(tester, editingId: 'dg_1');
 
       await enter(tester, DataGatewayForm.portFieldKey, '50060');
@@ -813,11 +808,12 @@ void main() {
     ) async {
       final handle = tester.ensureSemantics();
       DataGatewayChanges? sent;
-      remote.onFetchOne = (_) async => bgg;
-      remote.onUpdate = (_, changes) async {
-        sent = changes;
-        return changed(bgg.copyWith(connectionPort: 50060));
-      };
+      remote
+        ..onFetchOne = ((_) async => bgg)
+        ..onUpdate = (_, changes) async {
+          sent = changes;
+          return changed(bgg.copyWith(connectionPort: 50060));
+        };
       await pumpForm(tester, editingId: 'dg_1', offline: offline);
       await enter(tester, DataGatewayForm.portFieldKey, '50060');
 

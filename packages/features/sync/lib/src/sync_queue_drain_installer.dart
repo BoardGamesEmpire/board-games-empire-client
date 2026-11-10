@@ -6,11 +6,11 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import 'sync_queue_drain.dart';
+import 'package:sync_queue/src/sync_queue_drain.dart';
 
 /// Starts the sync queue drain when a user session activates (#121).
 ///
-/// Both platforms compose it, after [SyncSenderInstaller], whose sender it
+/// Both platforms compose it, after `SyncSenderInstaller`, whose sender it
 /// runs. Native runs it with no lock. Web registers a [CrossTabLock] over a
 /// Web Lock, and each pass then runs under one named for the server and the
 /// user, so one tab at a time drains each server database and user (#447).

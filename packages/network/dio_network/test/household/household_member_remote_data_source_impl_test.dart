@@ -203,8 +203,7 @@ void main() {
     String transferAnswer({Map<String, dynamic>? previousOwner}) => jsonEncode({
       'message': 'translated',
       'owner': _member(id: 'm2', roleName: 'HouseholdOwner'),
-      'previousOwner':
-          previousOwner ?? _member(id: 'm1', roleName: 'HouseholdAdmin'),
+      'previousOwner': previousOwner ?? _member(roleName: 'HouseholdAdmin'),
     });
 
     test('posts to the member and parses both sides', () async {

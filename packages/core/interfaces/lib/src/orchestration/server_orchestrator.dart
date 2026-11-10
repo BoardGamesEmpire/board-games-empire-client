@@ -1,6 +1,5 @@
+import 'package:interfaces/src/orchestration/server_context.dart';
 import 'package:models/domain.dart';
-
-import 'server_context.dart';
 
 /// Coordinates lifecycle and atomic state transitions across all server
 /// contexts, enforcing capacity constraints and maintaining exactly one
@@ -8,7 +7,7 @@ import 'server_context.dart';
 ///
 /// The orchestrator is the single authority over [ServerContext] creation
 /// and destruction. Blocs and UI components interact with it indirectly
-/// through streams and the active context's [DependencyContainer].
+/// through streams and the active context's `DependencyContainer`.
 abstract class ServerOrchestrator {
   /// User-configured maximum number of simultaneously connected servers
   /// (active + backgrounding + monitoring). Sourced from [DevicePreferences].
@@ -68,7 +67,7 @@ abstract class ServerOrchestrator {
   ///
   /// Returns the persisted [ServerConfig]'s local id.
   ///
-  /// Throws [DuplicateServerException] if [serverUrl] or [bgeServerId]
+  /// Throws `DuplicateServerException` if [serverUrl] or [bgeServerId]
   /// is already registered.
   /// Throws [ServerCapacityExceededException] if at capacity.
   Future<String> addAndActivateServer({
@@ -81,11 +80,11 @@ abstract class ServerOrchestrator {
   /// Creates a context for a disconnected server and connects it.
   ///
   /// If [makeActive] is true or no server is currently active, the server
-  /// becomes [ServerContextState.active]. Otherwise it enters
-  /// [ServerContextState.monitoring].
+  /// becomes `ServerContextState.active`. Otherwise it enters
+  /// `ServerContextState.monitoring`.
   ///
   /// Throws [ServerCapacityExceededException] if at capacity.
-  /// Throws [ServerNotFoundException] if [serverId] is not in the repository.
+  /// Throws `ServerNotFoundException` if [serverId] is not in the repository.
   /// Throws [StateError] if server is already connected.
   Future<void> connectServer(String serverId, {bool makeActive = false});
 
@@ -100,16 +99,18 @@ abstract class ServerOrchestrator {
   /// [activeServerId] becomes null rather than pointing at a context that
   /// is not actually active.
   ///
-  /// Throws [ServerNotFoundException] if [serverId] is not in the repository.
+  /// Throws `ServerNotFoundException` if [serverId] is not in the repository.
   /// Throws [StateError] if server is already disconnected.
   Future<void> disconnectServer(String serverId);
 
   /// Backgrounds the current active server and activates [targetServerId].
   ///
-  /// - Transitions the current active context to [ServerContextState.backgrounding]
-  ///   and starts the backgrounding timer for it.
+  /// - Transitions the current active context to
+  ///   `ServerContextState.backgrounding` and starts the backgrounding timer
+  ///   for it.
   /// - Transitions [targetServerId] from monitoring or backgrounding to
-  ///   [ServerContextState.active], cancelling its backgrounding timer if present.
+  ///   `ServerContextState.active`, cancelling its backgrounding timer if
+  ///   present.
   ///
   /// Returns without effect if [targetServerId] is already the active
   /// server — the call is idempotent, so a switcher UI can hand it the
@@ -117,7 +118,7 @@ abstract class ServerOrchestrator {
   ///
   /// Throws [StateError] if [targetServerId] is not currently connected,
   /// which covers a disconnected server and an unregistered id alike.
-  /// Not [ServerNotFoundException]: this method never consults the
+  /// Not `ServerNotFoundException`: this method never consults the
   /// repository, so the target may well be registered there — what it is
   /// not is connected, and switching is only meaningful between connected
   /// servers.

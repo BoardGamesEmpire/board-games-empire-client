@@ -60,7 +60,9 @@ Widget _grid(
 Finder _tile(String name) => find.byKey(ValueKey(name));
 
 /// The keyed grids the cover grid is drawn with.
-final _grids = find.byWidgetPredicate((widget) => widget is BgeKeyedSliverGrid);
+final Finder _grids = find.byWidgetPredicate(
+  (widget) => widget is BgeKeyedSliverGrid,
+);
 
 void main() {
   const six = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -216,10 +218,11 @@ void main() {
             keyOf: (item) => ValueKey(item.$1),
             idOf: (item) => item.$2,
             hasStrip: (item) => item.$3,
-            itemBuilder: (context, item, unfolded, toggle) => TextButton(
-              onPressed: toggle,
-              child: Text('${item.$1}${unfolded ? ' open' : ''}'),
-            ),
+            itemBuilder: (context, item, toggle, {required unfolded}) =>
+                TextButton(
+                  onPressed: toggle,
+                  child: Text('${item.$1}${unfolded ? ' open' : ''}'),
+                ),
             stripBuilder: (context, item) => SizedBox(
               key: _stripKey,
               height: _stripHeight,

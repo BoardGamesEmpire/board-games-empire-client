@@ -1,7 +1,6 @@
+import 'package:app_shell/src/settings/settings_entry.dart';
+import 'package:app_shell/src/settings/settings_scope.dart';
 import 'package:flutter/widgets.dart';
-
-import 'settings_entry.dart';
-import 'settings_scope.dart';
 
 /// A titled group of [SettingsEntry]s in a given [SettingsScope] (#120).
 ///

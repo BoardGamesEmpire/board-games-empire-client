@@ -340,7 +340,8 @@ void main() {
       // The distinction that keeps `unknown` meaningful: a custom role name
       // degrades, a broken payload fails loudly.
       final row = _householdRow(members: [_memberRow()]);
-      (row['members']! as List).first['role'] = 'HouseholdOwner';
+      ((row['members']! as List).first as Map<String, dynamic>)['role'] =
+          'HouseholdOwner';
       stubGet(_resp(_envelope([row])));
 
       expect(
@@ -377,7 +378,9 @@ void main() {
 
     test('a member missing showAllGames is permanent, not permissive', () {
       final row = _householdRow(members: [_memberRow()]);
-      (row['members']! as List).first.remove('showAllGames');
+      ((row['members']! as List).first as Map<String, dynamic>).remove(
+        'showAllGames',
+      );
       stubGet(_resp(_envelope([row])));
 
       expect(
@@ -540,7 +543,7 @@ void main() {
     test('a page past the depth ceiling throws', () {
       // (page - 1) * limit must not exceed 100_000.
       expect(
-        () => remote.fetchHouseholds(page: 1002, limit: 100),
+        () => remote.fetchHouseholds(page: 1002),
         throwsA(isA<ArgumentError>()),
       );
     });
@@ -551,7 +554,7 @@ void main() {
     // is 0, so this page cannot be written: the test is the VM's.
     test('a page whose depth would overflow an int still throws', () {
       expect(
-        () => remote.fetchHouseholds(page: (1 << 62) + 1, limit: 100),
+        () => remote.fetchHouseholds(page: (1 << 62) + 1),
         throwsA(isA<ArgumentError>()),
       );
       verifyNever(
@@ -566,7 +569,7 @@ void main() {
     test('the last page inside the ceiling is allowed', () async {
       stubGet(_resp(_envelope(const [])));
 
-      await remote.fetchHouseholds(page: 1001, limit: 100);
+      await remote.fetchHouseholds(page: 1001);
 
       verify(
         () => mockDio.get<String>(
@@ -822,7 +825,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemotePermanentException>().having(
             (e) => e.statusCode,
@@ -839,7 +842,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemotePermanentException>().having(
             (e) => e.statusCode,
@@ -860,7 +863,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemoteTransientException>().having(
             (e) => e.statusCode,
@@ -881,7 +884,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemoteTransientException>().having(
             (e) => e.statusCode,

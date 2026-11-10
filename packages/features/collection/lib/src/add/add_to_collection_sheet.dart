@@ -2,23 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_collection/src/add/add_to_collection_bloc.dart';
+import 'package:game_collection/src/add/add_to_collection_event.dart';
+import 'package:game_collection/src/add/add_to_collection_state.dart';
+import 'package:game_collection/src/add/starting_medium.dart';
+import 'package:game_collection/src/form/collection_quantity_field.dart';
+import 'package:game_collection/src/form/collection_rating_field.dart';
+import 'package:game_collection/src/medium_label.dart';
+import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
-
-import '../form/collection_quantity_field.dart';
-import '../form/collection_rating_field.dart';
-import '../medium_label.dart';
-import '../sync/collection_sync.dart';
-import 'add_to_collection_bloc.dart';
-import 'add_to_collection_event.dart';
-import 'add_to_collection_state.dart';
-import 'starting_medium.dart';
 
 /// Opens the add sheet over [context] for [game] (#45), offering the
 /// platforms in [options] and, on each, only the mediums still free (#708).

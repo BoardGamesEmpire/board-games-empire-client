@@ -1,10 +1,9 @@
 import 'dart:async';
 
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'event_labels.dart';
 
 /// A start or an end: the date and time picked, read back as the
 /// event's rows say it, or its label alone while it is empty. It serves the

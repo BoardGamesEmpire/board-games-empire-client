@@ -291,18 +291,21 @@ void main() {
     // The queued update is handled during close's own awaits, after the
     // timer was cancelled. A timer it set would fire into the closed bloc.
     final end = DateTime.now().add(const Duration(milliseconds: 50));
-    final bloc = build(now: DateTime.now);
-
-    bloc.add(
-      EventOverviewCacheUpdated([
-        item(
-          'e-1',
-          occurrences: [
-            confirmed('o-1', end.subtract(const Duration(hours: 1)), end: end),
-          ],
-        ),
-      ]),
-    );
+    final bloc = build(now: DateTime.now)
+      ..add(
+        EventOverviewCacheUpdated([
+          item(
+            'e-1',
+            occurrences: [
+              confirmed(
+                'o-1',
+                end.subtract(const Duration(hours: 1)),
+                end: end,
+              ),
+            ],
+          ),
+        ]),
+      );
     await bloc.close();
 
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -848,10 +851,17 @@ void main() {
     test('states compare by value', () {
       // A bloc drops an emit equal to its current state, so re-deriving
       // the state the screen already shows does not rebuild it.
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewLoading(), EventOverviewLoading());
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewError(), EventOverviewError());
-      expect(EventOverviewError(), isNot(EventOverviewError(retrying: true)));
-      expect(EventOverviewLoading(), isNot(EventOverviewError()));
+      expect(
+        const EventOverviewError(),
+        isNot(const EventOverviewError(retrying: true)),
+      );
+      expect(const EventOverviewLoading(), isNot(const EventOverviewError()));
       expect(
         EventOverviewReady(groups: groupEvents([upcoming('e-1')], now: kNow)),
         EventOverviewReady(groups: groupEvents([upcoming('e-1')], now: kNow)),
@@ -869,11 +879,22 @@ void main() {
         EventOverviewHouseholdsUpdated(households),
       );
       expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         EventOverviewHydrationUpdated(reading),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
         EventOverviewHydrationUpdated(reading),
       );
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewCacheFailed(), EventOverviewCacheFailed());
-      expect(EventOverviewCacheFailed(), isNot(EventOverviewCacheEnded()));
+      expect(
+        const EventOverviewCacheFailed(),
+        isNot(const EventOverviewCacheEnded()),
+      );
+      // Built at run time so == is tested by value, not by identity.
+      // ignore: prefer_const_constructors
       expect(EventOverviewClockTicked(), EventOverviewClockTicked());
     });
   });

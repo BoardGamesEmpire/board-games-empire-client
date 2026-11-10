@@ -22,7 +22,7 @@ class _PurgeFails implements EventRepository {
   final EventRepository cache;
 
   /// Whether the pass got as far as the purge.
-  var purgeAsked = false;
+  bool purgeAsked = false;
 
   @override
   Future<Map<String, int>> purgeableAttendance() => cache.purgeableAttendance();
@@ -227,7 +227,7 @@ void main() {
       expect(await attending(), ['e-2', 'e-1']);
     });
 
-    test('several pages: caches every page and purges only within page 1\'s '
+    test("several pages: caches every page and purges only within page 1's "
         'range', () async {
       // Page 1 ends on e-5, created at minute 50.
       await attend(_row('e-stale-newer', 55));
@@ -533,7 +533,7 @@ void main() {
       expect(await attending(), ['e-4', 'e-3']);
     });
 
-    test('a failure after page 1\'s purge still fails the pass', () async {
+    test("a failure after page 1's purge still fails the pass", () async {
       // Page 1's purge runs before page 2 is requested, so what it removed
       // stays removed when a later page fails.
       await attend(_row('e-stale', 35));

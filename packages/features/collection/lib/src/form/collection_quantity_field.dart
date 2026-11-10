@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_collection/l10n/game_collection_localizations.dart';
 
 /// The copies field between a minus and a plus button (#45, #46).
 ///

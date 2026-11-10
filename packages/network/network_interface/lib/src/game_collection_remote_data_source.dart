@@ -1,12 +1,12 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// One collection entry from a read, with the platform game summary it embeds
 /// (#259).
 ///
 /// The two travel together because the server sends them together, and they
-/// stay **separate values** for the reason [HouseholdWithMembers] gives: they
+/// stay **separate values** for the reason `HouseholdWithMembers` gives: they
 /// are cached through separate writers into separate tables
 /// (`GameRepository.cachePlatformGameSummaries` for the summary,
 /// `GameCollectionRepository` for the entry). The summary is written first,
@@ -29,7 +29,7 @@ typedef GameCollectionWithSummary = ({
 /// Implementations run over a **per-server** authenticated transport — the
 /// injected client carries the base URL (path-prefix deployments included) and
 /// attaches the session the endpoints require; this interface adds no auth
-/// handling of its own. Same shape as [HouseholdRemoteDataSource].
+/// handling of its own. Same shape as `HouseholdRemoteDataSource`.
 ///
 /// ## Wire contract
 ///
@@ -72,12 +72,12 @@ typedef GameCollectionWithSummary = ({
 ///
 /// ## What the request bodies deliberately cannot carry
 ///
-/// `playCount` and `lastPlayed` are **server-managed** (backend: "server-managed
-/// via play tracking"), and the API runs `whitelist: true,
-/// forbidNonWhitelisted: true` — a body containing either is a **400**. They are
-/// therefore absent from [updateEntry]'s parameters rather than accepted and
-/// silently discarded: the transport cannot construct a request the server is
-/// guaranteed to reject. The repository's update surface and
+/// `playCount` and `lastPlayed` are **server-managed** (backend:
+/// "server-managed via play tracking"), and the API runs `whitelist: true,
+/// forbidNonWhitelisted: true` — a body containing either is a **400**. They
+/// are therefore absent from [updateEntry]'s parameters rather than accepted
+/// and silently discarded: the transport cannot construct a request the
+/// server is guaranteed to reject. The repository's update surface and
 /// `UpdateCollectionOperation` do not carry them either (#258).
 ///
 /// Likewise absent: `platformGameId` and `medium` on [updateEntry] — they are
@@ -87,20 +87,20 @@ typedef GameCollectionWithSummary = ({
 /// ## Null means "leave unchanged", never "clear" (#253 D4)
 ///
 /// The backend PATCH follows standard REST semantics: an omitted field is
-/// preserved, an explicit `null` **clears** it. The client's own contract is the
-/// opposite — `null` means leave-unchanged (see `TODO(clear-fields)` on
-/// [GameCollectionRepository.updateCollectionEntry]).
+/// preserved, an explicit `null` **clears** it. The client's own contract is
+/// the opposite — `null` means leave-unchanged (see `TODO(clear-fields)` on
+/// `GameCollectionRepository.updateCollectionEntry`).
 ///
-/// Implementations MUST therefore **omit** null parameters from the request body
-/// rather than serialize them. No method on this interface can express a
-/// deliberate clear; that needs the `clearFields` operation the repository's
-/// TODO describes.
+/// Implementations MUST therefore **omit** null parameters from the request
+/// body rather than serialize them. No method on this interface can express a
+/// deliberate clear; that needs the `clearFields` operation the
+/// repository's TODO describes.
 ///
 /// ## Failure classification
 ///
 /// Every **transport** failure is wrapped as a [GameCollectionRemoteException]
 /// — callers never see a raw `DioException`. Four variants, mirroring
-/// [HouseholdRemoteException]'s transient/permanent split plus the 404 contexts
+/// `HouseholdRemoteException`'s transient/permanent split plus the 404 contexts
 /// this API has (#253 D6):
 ///
 /// - [GameCollectionRemoteTransientException] (**retryable**): connection
@@ -398,6 +398,8 @@ sealed class GameCollectionRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

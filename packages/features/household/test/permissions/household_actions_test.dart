@@ -15,8 +15,8 @@ Household _household({bool isLocalOnly = false, MemberInvitePolicy? policy}) =>
           : HouseholdSettings(memberInvitePolicy: policy),
       isDirty: isLocalOnly,
       isLocalOnly: isLocalOnly,
-      createdAt: DateTime.utc(2026, 10, 1),
-      updatedAt: DateTime.utc(2026, 10, 1),
+      createdAt: DateTime.utc(2026, 10),
+      updatedAt: DateTime.utc(2026, 10),
     );
 
 HouseholdMember _target(HouseholdRole? role) => HouseholdMember(
@@ -24,8 +24,8 @@ HouseholdMember _target(HouseholdRole? role) => HouseholdMember(
   userId: 'u_target',
   householdId: 'hh_1',
   role: role,
-  createdAt: DateTime.utc(2026, 10, 1),
-  updatedAt: DateTime.utc(2026, 10, 1),
+  createdAt: DateTime.utc(2026, 10),
+  updatedAt: DateTime.utc(2026, 10),
 );
 
 HouseholdInvite _invite({
@@ -258,7 +258,7 @@ void main() {
   });
 
   group('householdActionsFor', () {
-    test('answers the role\'s row under the household\'s own policy', () {
+    test("answers the role's row under the household's own policy", () {
       for (final role in roles) {
         for (final policy in policies) {
           expect(
@@ -433,7 +433,7 @@ void main() {
       }
     });
 
-    test('the viewer\'s own outstanding invite offers withdraw, whatever '
+    test("the viewer's own outstanding invite offers withdraw, whatever "
         'their role', () {
       for (final role in [owner, admin, member, guest, null]) {
         expect(_rowActions(role, _invite(inviterId: _me)), {
@@ -472,7 +472,7 @@ void main() {
       }
     });
 
-    test('an owner may revoke someone else\'s pending invite', () {
+    test("an owner may revoke someone else's pending invite", () {
       expect(_rowActions(owner, _invite()), {HouseholdInviteRowAction.revoke});
     });
 
@@ -502,7 +502,7 @@ void main() {
       );
     });
 
-    test('an admin may do nothing with someone else\'s invite offering '
+    test("an admin may do nothing with someone else's invite offering "
         'Admin', () {
       expect(_rowActions(admin, _invite(role: admin)), isEmpty);
       expect(
@@ -514,7 +514,7 @@ void main() {
       );
     });
 
-    test('a member or guest may do nothing with someone else\'s invite', () {
+    test("a member or guest may do nothing with someone else's invite", () {
       for (final role in [member, guest, null]) {
         expect(_rowActions(role, _invite()), isEmpty, reason: '$role');
       }
@@ -730,8 +730,8 @@ void main() {
       userId: userId,
       householdId: 'hh_1',
       role: role,
-      createdAt: DateTime.utc(2026, 10, 1),
-      updatedAt: DateTime.utc(2026, 10, 1),
+      createdAt: DateTime.utc(2026, 10),
+      updatedAt: DateTime.utc(2026, 10),
     );
 
     HouseholdLeaveBlock? block(HouseholdRole? role, List<HouseholdMember> m) =>

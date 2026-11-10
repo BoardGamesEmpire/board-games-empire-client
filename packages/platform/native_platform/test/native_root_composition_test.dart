@@ -25,7 +25,7 @@ import 'package:sync_queue/sync_queue.dart';
 import 'support/native_root_harness.dart';
 
 void main() {
-  group('the native root\'s composition (#435)', () {
+  group("the native root's composition (#435)", () {
     late NativeRootHarness harness;
 
     Future<void> signedIn() async {

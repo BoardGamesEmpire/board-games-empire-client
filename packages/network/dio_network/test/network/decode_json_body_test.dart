@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
-
 import 'package:dio_network/src/network/decode_json_body.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 /// Comfortably over the 50 KB threshold that sends decoding to another isolate.
 String _large(String suffix) => '{"pad": "${'x' * (60 * 1024)}"$suffix';
@@ -66,16 +65,18 @@ void main() {
       final source = jsonEncode({'v': value});
       expect(source.codeUnits.length, greaterThan(50 * 1024));
 
-      final decoded = await decodeJsonBody(source) as Map<String, dynamic>;
+      final decoded = (await decodeJsonBody(source))! as Map<String, dynamic>;
 
       expect(decoded['v'], value);
     });
 
     test('a non-ASCII body under the threshold decodes inline', () async {
-      final value = '\u6f22\u5b57\u{1f600}';
-      final decoded = await decodeJsonBody(
-        jsonEncode({'v': value}),
-      ) as Map<String, dynamic>;
+      const value = '\u6f22\u5b57\u{1f600}';
+      final decoded =
+          (await decodeJsonBody(
+                jsonEncode({'v': value}),
+              ))!
+              as Map<String, dynamic>;
 
       expect(decoded['v'], value);
     });
@@ -102,7 +103,7 @@ void main() {
         final source = jsonEncode(envelope);
         expect(source.codeUnits.length, greaterThan(50 * 1024));
 
-        final decoded = await decodeJsonBody(source) as Map<String, dynamic>;
+        final decoded = (await decodeJsonBody(source))! as Map<String, dynamic>;
 
         expect(decoded['households'], hasLength(100));
         expect(decoded['pagination'], isA<Map<String, dynamic>>());

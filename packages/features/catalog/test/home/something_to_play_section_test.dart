@@ -201,10 +201,8 @@ void main() {
     await show(tester);
     expect(pool.reads, hasLength(1));
 
-    unawaited(
-      navigatorKey.currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-      ),
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
     navigatorKey.currentState!.pop();
@@ -217,10 +215,8 @@ void main() {
   group('uncovering with nothing up', () {
     /// Covers the home page with another screen, and uncovers it.
     Future<void> coverAndUncover(WidgetTester tester) async {
-      unawaited(
-        navigatorKey.currentState!.push(
-          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-        ),
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
       );
       await tester.pumpAndSettle();
       navigatorKey.currentState!.pop();

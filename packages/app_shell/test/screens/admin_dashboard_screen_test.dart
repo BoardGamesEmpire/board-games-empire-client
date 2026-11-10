@@ -534,12 +534,10 @@ void main() {
               title: section.title,
               summary: section.summary,
               resourceType: section.resourceType,
-              onOpen: (context) => unawaited(
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(title: Text('${section.title} section')),
-                    ),
+              onOpen: (context) => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(title: Text('${section.title} section')),
                   ),
                 ),
               ),

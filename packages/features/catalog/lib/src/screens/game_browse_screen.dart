@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_catalog/src/bloc/game_browse_bloc.dart';
+import 'package:game_catalog/src/bloc/game_browse_event.dart';
+import 'package:game_catalog/src/bloc/game_browse_state.dart';
+import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
+import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_catalog/src/widgets/catalog_game_row.dart';
+import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-
-import '../bloc/game_browse_bloc.dart';
-import '../bloc/game_browse_event.dart';
-import '../bloc/game_browse_state.dart';
-import '../quick_look/game_quick_look_seed.dart';
-import '../widgets/catalog_facts.dart';
-import '../widgets/catalog_game_row.dart';
-import '../widgets/catalog_slivers.dart';
 
 /// The server's games, a page at a time (#42).
 ///
@@ -161,10 +159,12 @@ class GameBrowseScreen extends StatelessWidget {
             : () => layouts.readThumbnails(ListLayoutScreen.games),
         write: layouts == null
             ? null
-            : (thumbnails) =>
-                  layouts.writeThumbnails(ListLayoutScreen.games, thumbnails),
+            : ({required thumbnails}) => layouts.writeThumbnails(
+                ListLayoutScreen.games,
+                thumbnails: thumbnails,
+              ),
         onError: _layoutFailed,
-        builder: (context, thumbnails, onChanged) =>
+        builder: (context, onChanged, {required thumbnails}) =>
             BlocListener<GameBrowseBloc, GameBrowseState>(
               listenWhen: (previous, current) => _landedNothingShown(
                 previous,
@@ -225,7 +225,9 @@ class _GameBrowsePage extends StatelessWidget {
         // Placed once per build, for the count and for the covers or the
         // rows drawn (#711). Not while the choice is read, when neither is.
         final placed = switch (state) {
-          GameBrowseReady ready when thumbnails != null => _placeBrowse(ready),
+          final GameBrowseReady ready when thumbnails != null => _placeBrowse(
+            ready,
+          ),
           _ => null,
         };
         final rows = placed == null || thumbnails == true
@@ -427,9 +429,9 @@ int _shownCount(GameBrowseReady state, {required bool thumbnails}) {
 /// of its base games is still to load. Once they are loaded, or the list
 /// ends (`hasMore` false), it is placed: at top level, marked, if none of
 /// them is shown, and at top level, unmarked, if those shown are all nested
-/// (`placeExpansions` says why). Offline, `hasMore` is true until the cache's last page is
-/// read, so the same rule holds. A page that shows nothing new reads the
-/// next one ([_landedNothingShown]).
+/// (`placeExpansions` says why). Offline, `hasMore` is true until the cache's
+/// last page is read, so the same rule holds. A page that shows nothing new
+/// reads the next one ([_landedNothingShown]).
 List<PlacedGame<Game>> _placeBrowse(GameBrowseReady state) => placeExpansions(
   state.games,
   gameIdOf: (game) => game.id,
@@ -554,7 +556,7 @@ class _BrowseCovers extends StatelessWidget {
       keyOf: (placed) => GameBrowseScreen.tileKey(placed.item.id),
       idOf: (placed) => placed.item.id,
       hasStrip: (placed) => placed.expansions.isNotEmpty,
-      itemBuilder: (context, placed, unfolded, toggle) {
+      itemBuilder: (context, placed, toggle, {required unfolded}) {
         final game = placed.item;
         return BgeFocusHandoff(
           identity: game.id,

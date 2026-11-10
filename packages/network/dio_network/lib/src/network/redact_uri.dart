@@ -7,7 +7,7 @@
 /// network diagnostics share, while still surfacing an empty or malformed
 /// baseUrl (a missing scheme/host means the baseUrl never resolved).
 ///
-/// Shared by [NetworkLogInterceptor] and [AuthRepositoryImpl] so the two
+/// Shared by `NetworkLogInterceptor` and `AuthRepositoryImpl` so the two
 /// redact identically. Permanent as of #100 (it outlived the temporary #101
 /// diagnostics it was introduced alongside).
 String redactUri(Uri uri) => Uri(

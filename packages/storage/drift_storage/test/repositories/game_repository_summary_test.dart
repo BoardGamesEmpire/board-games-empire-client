@@ -1,10 +1,9 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 /// The summary every collection response embeds, as the data source maps it.
 PlatformGameSummary _summary({

@@ -1,12 +1,11 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
+import 'package:interfaces/src/orchestration/server_context_state.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
-import 'server_context_state.dart';
 
 /// Encapsulates the isolated dependency injection scope, storage, networking,
 /// and lifecycle state for a single BGE server instance.
 ///
-/// State is owned and mutated exclusively by [ServerOrchestrator]. External
+/// State is owned and mutated exclusively by `ServerOrchestrator`. External
 /// consumers observe via [watchState] and retrieve services via [container].
 abstract class ServerContext {
   /// Local server id matching the [ServerConfig.id] this context represents.
@@ -20,7 +19,7 @@ abstract class ServerContext {
   /// live active context (`getActiveContext().config`) — so its snapshot
   /// cannot drift from the context it came from (#37).
   ///
-  /// ([ServerOrchestrator.activeConfig] is a separate getter backed by its
+  /// (`ServerOrchestrator.activeConfig` is a separate getter backed by its
   /// own snapshot map; the implementation keeps that map in lockstep with
   /// the contexts.) Sufficient while no rename-server flow exists; a stale
   /// [ServerConfig.connectionState] here is not read off this path.
@@ -36,8 +35,9 @@ abstract class ServerContext {
   /// Transitions to [ServerContextState.active].
   ///
   /// Opens the per-server DB and WebSocket connection.
-  /// Throws [StateError] if current state is not [ServerContextState.monitoring],
-  /// [ServerContextState.backgrounding], or [ServerContextState.initializing].
+  /// Throws [StateError] if current state is not
+  /// [ServerContextState.monitoring], [ServerContextState.backgrounding], or
+  /// [ServerContextState.initializing].
   Future<void> activate();
 
   /// Transitions to [ServerContextState.backgrounding].
@@ -52,7 +52,8 @@ abstract class ServerContext {
   ///
   /// Closes the WebSocket and per-server DB. Only the root DB summary path
   /// remains live for incoming OS push notifications (post-MVP stub).
-  /// Throws [StateError] if current state is not [ServerContextState.backgrounding].
+  /// Throws [StateError] if current state is not
+  /// [ServerContextState.backgrounding].
   Future<void> suspend();
 
   /// Disposes all resources and transitions to [ServerContextState.disposed].

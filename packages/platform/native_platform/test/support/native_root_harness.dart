@@ -47,10 +47,10 @@ import 'package:sync_queue/sync_queue.dart';
 /// in it, the remotes, the interceptors, the token storage and its session
 /// tombstones, and `AuthRepositoryImpl`.
 ///
-/// No other platform channel needed faking. `initialize()` never builds the root
-/// container, the deep-link source or the hydrated-storage directory, which
-/// are what reach `package_info_plus`, `app_links` and `path_provider`. The
-/// provider sign-in browser is built, but opens only on a provider sign-in.
+/// No other platform channel needed faking. `initialize()` never builds the
+/// root container, the deep-link source or the hydrated-storage directory,
+/// which are what reach `package_info_plus`, `app_links` and `path_provider`.
+/// The provider sign-in browser is built, but opens only on a provider sign-in.
 class NativeRootHarness {
   NativeRootHarness._({
     required Directory directory,
@@ -369,7 +369,7 @@ class NativeRootHarness {
     StackTrace? shutdownStack;
     try {
       await shutdown();
-    } catch (error, stack) {
+    } on Object catch (error, stack) {
       shutdownError = error;
       shutdownStack = stack;
     } finally {
@@ -441,7 +441,7 @@ Map<String, dynamic> _sessionJson() => {
 };
 
 // `platform/web/test/web_household_hydrate_seam_test.dart`.
-const _emptyHouseholdPage = {
+const Map<String, Object> _emptyHouseholdPage = {
   'households': <Object?>[],
   'pagination': {
     'page': 1,
@@ -453,7 +453,7 @@ const _emptyHouseholdPage = {
 };
 
 // `dio_network/test/game_collection/game_collection_remote_data_source_impl_test.dart`.
-const _emptyCollectionPage = {
+const Map<String, Object> _emptyCollectionPage = {
   'collections': <Object?>[],
   'pagination': {
     'page': 1,
@@ -467,7 +467,7 @@ const _emptyCollectionPage = {
 // `dio_network/test/event/event_remote_data_source_impl_test.dart`. An empty
 // list counts no pages: the hydrate treats a first page that counts one for
 // no events as contradicting itself, and the pass fails.
-const _emptyEventPage = {
+const Map<String, Object> _emptyEventPage = {
   'events': <Object?>[],
   'pagination': {
     'page': 1,

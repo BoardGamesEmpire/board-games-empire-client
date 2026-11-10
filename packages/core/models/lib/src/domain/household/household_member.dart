@@ -1,7 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-
-import '../user/person_name.dart';
-import 'household_role.dart';
+import 'package:models/src/domain/household/household_role.dart';
+import 'package:models/src/domain/user/person_name.dart';
 
 part 'household_member.freezed.dart';
 part 'household_member.g.dart';
@@ -18,12 +17,13 @@ part 'household_member.g.dart';
 /// none until the server's own row replaces it.
 @freezed
 abstract class HouseholdMember with _$HouseholdMember {
-  const HouseholdMember._();
-
   const factory HouseholdMember({
     required String id,
     required String userId,
     required String householdId,
+
+    required DateTime createdAt,
+    required DateTime updatedAt,
 
     /// When true, household game pool includes all member games.
     @Default(true) bool showAllGames,
@@ -39,10 +39,8 @@ abstract class HouseholdMember with _$HouseholdMember {
     String? username,
     String? displayName,
     String? avatarUrl,
-
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _HouseholdMember;
+  const HouseholdMember._();
 
   factory HouseholdMember.fromJson(Map<String, dynamic> json) =>
       _$HouseholdMemberFromJson(json);

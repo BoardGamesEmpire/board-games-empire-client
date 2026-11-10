@@ -151,7 +151,6 @@ final _catan = Game(
   bayesRating: 6.9,
   ratingsCount: 120000,
   ownedByCount: 3,
-  reach: Reach.public,
   createdById: 'user_service',
   createdAt: DateTime.utc(2026, 9, 1, 10),
   updatedAt: DateTime.utc(2026, 10, 1, 12, 30),
@@ -252,7 +251,7 @@ String _envelope(int status, String error) => jsonEncode({
 });
 
 /// The envelope a deadlock that outlived the server's retry is rendered as.
-final _retryable409 = jsonEncode({
+final String _retryable409 = jsonEncode({
   'statusCode': 409,
   'message': 'm',
   'error': 'Conflict',
@@ -408,10 +407,10 @@ void main() {
       });
     });
 
-    test('title sends no sort, as the server\'s default', () async {
+    test("title sends no sort, as the server's default", () async {
       final remote = answering(_catalogBody([]));
 
-      await remote.fetchPage(limit: 10, sort: GameSort.title);
+      await remote.fetchPage(limit: 10);
 
       expect(adapter.sent.single.query, {'page': 1, 'limit': 10});
       expect(adapter.sent.single.query, isNot(contains('sort')));
@@ -425,7 +424,7 @@ void main() {
       expect(game.complexity, 3.0);
     });
 
-    test('reads each row\'s base games, with isStandalone per link', () async {
+    test("reads each row's base games, with isStandalone per link", () async {
       final remote = answering(
         _catalogBody([
           {
@@ -496,7 +495,7 @@ void main() {
       expect(() => remote.fetchPage(limit: 0), throwsArgumentError);
       expect(() => remote.fetchPage(limit: 101), throwsArgumentError);
       expect(
-        () => remote.fetchPage(page: 1002, limit: 100),
+        () => remote.fetchPage(page: 1002),
         throwsArgumentError,
       );
       expect(adapter.sent, isEmpty);
@@ -627,7 +626,7 @@ void main() {
       expect(adapter.sent.single.path, '/api/games/g_catan');
     });
 
-    test('reads the detail\'s base games from its linked-game rows', () async {
+    test("reads the detail's base games from its linked-game rows", () async {
       final remote = answering(
         jsonEncode({
           'game': {
@@ -709,7 +708,7 @@ void main() {
       ]);
     });
 
-    test('reads each platform game\'s type', () async {
+    test("reads each platform game's type", () async {
       Map<String, dynamic> withPlatform(String id, Map<String, dynamic> p) => {
         ..._platformGameRow(id: id),
         'platform': {'id': 'plat_$id', 'name': 'P', ...p},
@@ -744,7 +743,7 @@ void main() {
         jsonEncode({
           'game': _detailRow(
             platformGames: [
-              {..._platformGameRow(id: 'pg_1')}..remove('createdAt'),
+              {..._platformGameRow()}..remove('createdAt'),
               _platformGameRow(id: 'pg_2'),
               {..._platformGameRow(id: 'pg_3'), 'platform': null},
               {..._platformGameRow(id: 'pg_4'), 'updatedAt': 'yesterday'},
@@ -949,7 +948,10 @@ void main() {
 
     test('reads a search with no local results and nothing missing', () async {
       final remote = answering(
-        jsonEncode({'correlationId': 'c-2', 'resultsBySource': {}}),
+        jsonEncode({
+          'correlationId': 'c-2',
+          'resultsBySource': <String, dynamic>{},
+        }),
       );
 
       final results = await remote.search('zzz');
@@ -1101,7 +1103,7 @@ void main() {
       expect((await none.search('catan')).unfilterableDataGateways, isEmpty);
     });
 
-    test('waits longer than the server\'s 15-second cutoff', () async {
+    test("waits longer than the server's 15-second cutoff", () async {
       final remote = answering(searchBody());
 
       await remote.search('catan');

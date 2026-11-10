@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('ServerAuthStrategy', () {
@@ -42,7 +42,7 @@ void main() {
 
       group('OidcStrategy', () {
         test('parses the discovery shape the backend e2e test pins', () {
-          final s = OidcStrategy.fromJson({
+          final s = OidcStrategy.fromJson(const {
             'type': 'oidc',
             'provider_id': 'authentik',
             'display_name': 'Authentik',
@@ -345,7 +345,7 @@ void main() {
 
     group('switch exhaustiveness', () {
       test('sealed variants are exhaustively matchable', () {
-        final List<ServerAuthStrategy> strategies = [
+        final strategies = <ServerAuthStrategy>[
           const EmailAndPasswordStrategy(
             signUpDisabled: false,
             signInEndpoint: '/api/auth/sign-in/email',

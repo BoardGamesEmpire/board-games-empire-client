@@ -26,7 +26,7 @@ import 'package:flutter/widgets.dart';
 /// false falls through to the router.
 ///
 /// Mount it only while interception should be active (the crash overlay
-/// mounts it only while a draft is pending); [dispose] detaches cleanly and
+/// mounts it only while a draft is pending); `dispose` detaches cleanly and
 /// the router resumes normal back handling.
 ///
 /// Predictive back caveat: back currently arrives on the legacy `popRoute`

@@ -39,14 +39,12 @@ const _kServerId = 'server-uuid-1';
 const _kAuthBase = '/api/auth';
 
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository(this._state);
+  _FakeAuthRepository(this.authState);
 
-  AuthState _state;
-
-  set authState(AuthState next) => _state = next;
+  AuthState authState;
 
   @override
-  AuthState get currentAuthState => _state;
+  AuthState get currentAuthState => authState;
 
   @override
   Future<AuthResponse?> getSession() => throw UnimplementedError();
@@ -106,7 +104,7 @@ AuthResponse _session(String userId) => AuthResponse(
 AuthState _authenticated(String userId) =>
     AuthStateAuthenticated(session: _session(userId));
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: _kServerId,
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -118,7 +116,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -149,14 +147,15 @@ class _BaseFixtureInstaller implements ServerScopeInstaller {
     DependencyContainer container,
     ServerConfig config,
   ) async {
-    container.registerSingleton<ServerDatabase>(
-      inMemoryServerDatabase(),
-      dispose: (db) => db.close(),
-    );
-    container.registerSingleton<ClockService>(
-      FixedClockService(DateTime.utc(2024, 1, 15, 10, 30)),
-    );
-    container.registerSingleton<AuthRepository>(_auth);
+    container
+      ..registerSingleton<ServerDatabase>(
+        inMemoryServerDatabase(),
+        dispose: (db) => db.close(),
+      )
+      ..registerSingleton<ClockService>(
+        FixedClockService(DateTime.utc(2024, 1, 15, 10, 30)),
+      )
+      ..registerSingleton<AuthRepository>(_auth);
   }
 }
 
@@ -189,7 +188,7 @@ void main() {
   }
 
   test('a live watchHouseholds subscription closes on sign-out and the '
-      'rebuilt scope serves only the new user\'s data', () async {
+      "rebuilt scope serves only the new user's data", () async {
     await signIn(_kUserA);
     final repoA = context.container.get<HouseholdRepository>();
     await repoA.create(name: 'Alpha Household');
@@ -284,7 +283,7 @@ void main() {
   });
 
   test('a live watchCollection subscription closes on sign-out and the '
-      'rebuilt scope serves only the new user\'s collection (#150)', () async {
+      "rebuilt scope serves only the new user's collection (#150)", () async {
     await signIn(_kUserA);
     await seedPlatformGame(context.container.get<ServerDatabase>());
     final collectionsA = context.container.get<GameCollectionRepository>();
@@ -348,7 +347,7 @@ void main() {
   });
 
   test('a direct user change with no intervening sign-out still disposes the '
-      'departing user\'s collection repository — a missed pop cannot serve '
+      "departing user's collection repository — a missed pop cannot serve "
       'cross-user data (#150)', () async {
     await signIn(_kUserA);
     await seedPlatformGame(context.container.get<ServerDatabase>());
@@ -373,7 +372,7 @@ void main() {
     await expectLater(
       context.container.get<GameCollectionRepository>().getCollection(),
       completion(isEmpty),
-      reason: "user B resolves a fresh instance scoped to B",
+      reason: 'user B resolves a fresh instance scoped to B',
     );
   });
 }

@@ -79,7 +79,7 @@ mixin WatchDisposal implements Disposable {
     final controllers = List.of(_watchControllers);
     _watchControllers.clear();
     for (final controller in controllers) {
-      controller.close();
+      unawaited(controller.close());
     }
   }
 
@@ -119,7 +119,7 @@ mixin WatchDisposal implements Disposable {
   Stream<T> untilDisposed<T>(Stream<T> Function() source) {
     return Stream<T>.multi((controller) {
       if (_disposed) {
-        controller.close();
+        unawaited(controller.close());
         return;
       }
       late final StreamSubscription<T> sub;
@@ -129,7 +129,7 @@ mixin WatchDisposal implements Disposable {
         onDone: () {
           _watchSubscriptions.remove(sub);
           _watchControllers.remove(controller);
-          controller.close();
+          unawaited(controller.close());
         },
       );
       _watchSubscriptions.add(sub);

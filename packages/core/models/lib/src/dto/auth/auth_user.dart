@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../../domain/user/user_base.dart';
+import 'package:models/src/domain/user/user_base.dart';
 
 part 'auth_user.freezed.dart';
 part 'auth_user.g.dart';
@@ -29,6 +29,8 @@ abstract class AuthUser with _$AuthUser implements UserBase {
 
     required String email,
     required bool emailVerified,
+    required DateTime createdAt,
+    required DateTime updatedAt,
     String? image,
     String? firstName,
     String? lastName,
@@ -37,8 +39,6 @@ abstract class AuthUser with _$AuthUser implements UserBase {
     DateTime? banExpires,
     bool? isAnonymous,
     bool? twoFactorEnabled,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _AuthUser;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) =>

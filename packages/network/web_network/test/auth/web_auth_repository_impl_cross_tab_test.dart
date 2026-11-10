@@ -18,7 +18,7 @@ const _kSession = '$_kAuthBase/get-session';
 const _kSignOut = '$_kAuthBase/sign-out';
 const _kSignIn = '$_kAuthBase/sign-in/email';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -49,7 +49,7 @@ Response<String> _grantFor(String userId, {bool carriesSession = true}) =>
         },
       }),
       statusCode: 200,
-      requestOptions: RequestOptions(path: ''),
+      requestOptions: RequestOptions(),
     );
 
 Response<String> _sessionFor(String userId) => Response(
@@ -70,18 +70,18 @@ Response<String> _sessionFor(String userId) => Response(
     },
   }),
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// BetterAuth's answer for no session: 200 with a null body.
 Response<String> _noSession() => Response(
   data: 'null',
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 Response<String> _ok() =>
-    Response(statusCode: 200, requestOptions: RequestOptions(path: ''));
+    Response(statusCode: 200, requestOptions: RequestOptions());
 
 /// The two entry points another tab's broadcast drives (#432).
 ///
@@ -148,9 +148,9 @@ void main() {
         'adopts the new user', () async {
       stubSession('user-a');
       await repo.getSession();
-      repo.signedOutInAnotherTab();
-
-      repo.signedInInAnotherTab();
+      repo
+        ..signedOutInAnotherTab()
+        ..signedInInAnotherTab();
       stubSession('user-b');
 
       final session = await repo.getSession();
@@ -173,7 +173,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 500,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -186,7 +186,7 @@ void main() {
     });
 
     test('a revocation of this tab that fails after the other tab signed in '
-        'reads that sign-in\'s cookie, which was refused while it was '
+        "reads that sign-in's cookie, which was refused while it was "
         'out', () async {
       stubSession('user-a');
       await repo.getSession();
@@ -203,7 +203,7 @@ void main() {
       revocation.complete(
         Response<String>(
           statusCode: 500,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
       await signingOut;
@@ -237,7 +237,7 @@ void main() {
       revocation.complete(
         Response<String>(
           statusCode: 500,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
       await signingOut;
@@ -246,7 +246,7 @@ void main() {
       verifyNever(() => dio.get<String>(any(), options: any(named: 'options')));
     });
 
-    test('a sign-in here whose reconcile lands after the other tab\'s newer '
+    test("a sign-in here whose reconcile lands after the other tab's newer "
         'cookie was read does not put this tab back on its own', () async {
       when(() => dio.get<String>(_kSession, options: any(named: 'options')))
           .thenAnswer((_) async => _noSession());
@@ -302,7 +302,7 @@ void main() {
           .thenThrow(
             DioException(
               type: DioExceptionType.connectionError,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
       reconcile.complete(_sessionFor('user-a'));
@@ -312,7 +312,7 @@ void main() {
     });
 
     test('a sign-in here whose reconcile cannot be answered after the other '
-        'tab\'s cookie was read returns that tab\'s session rather than '
+        "tab's cookie was read returns that tab's session rather than "
         'failing over it', () async {
       when(() => dio.get<String>(_kSession, options: any(named: 'options')))
           .thenAnswer((_) async => _noSession());
@@ -335,7 +335,7 @@ void main() {
           .thenThrow(
             DioException(
               type: DioExceptionType.connectionError,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
       reconcile.complete(_sessionFor('user-a'));
@@ -410,7 +410,7 @@ void main() {
       reconcile.completeError(
         DioException(
           type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
+          requestOptions: RequestOptions(),
         ),
       );
 
@@ -511,7 +511,7 @@ void main() {
             (_) => Future.delayed(const Duration(milliseconds: 50), () {
               return Response<String>(
                 statusCode: 200,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               );
             }),
           );
@@ -546,7 +546,7 @@ void main() {
             (_) async => Response<String>(
               data: 'null',
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -561,7 +561,7 @@ void main() {
 
     // #346 across tabs: the revocation's `Set-Cookie: Max-Age=0` deletes by
     // name, so it took the other tab's newer cookie with it.
-    test('a late revocation that deleted another tab\'s newer cookie is '
+    test("a late revocation that deleted another tab's newer cookie is "
         'announced again, so that tab hears its cookie is gone', () async {
       stubSession('user-a');
       await repo.getSession();
@@ -713,7 +713,7 @@ void main() {
     });
 
     // The cookie is the other tab's now, and that tab announced it.
-    test('another tab\'s sign-in before the first read is not announced '
+    test("another tab's sign-in before the first read is not announced "
         'back', () async {
       final returned = returnedTo(const WebProviderSignInReturn());
       final announced = announcedBy(returned);

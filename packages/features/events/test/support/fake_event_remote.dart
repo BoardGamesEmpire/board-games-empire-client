@@ -88,6 +88,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.statusWritten = _noStatusWrite,
     this.rsvp = _noRsvp,
   }) : respond = ((request) {
+         // The fake throws what a test hands it: an Exception or an Error.
+         // ignore: only_throw_errors
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
        }),
@@ -254,6 +256,8 @@ class FakeEventRemote implements EventRemoteDataSource {
   }) async {
     householdRequests.add((householdId: householdId, page: page, limit: limit));
     final error = householdError;
+    // The fake throws what a test hands it: an Exception or an Error.
+    // ignore: only_throw_errors
     if (error != null) throw error;
     final pages = householdPages[householdId];
     if (pages == null || page < 1 || page > pages.length) {

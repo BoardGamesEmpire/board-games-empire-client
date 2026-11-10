@@ -1,11 +1,10 @@
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 import '../support/system_clock.dart';
@@ -142,7 +141,7 @@ void main() {
       );
 
       test('excludes failed entries that exceeded max retries', () async {
-        var entry = await repo.enqueue(_kOperation);
+        final entry = await repo.enqueue(_kOperation);
 
         for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
           await repo.markFailed(entry.id, error: 'error $i');
@@ -831,7 +830,7 @@ void main() {
       });
     });
 
-    // ── remapCollectionId ─────────────────────────────────────────────────────────────
+    // ── remapCollectionId ────────────────────────────────────────────────────
 
     group('remapCollectionId()', () {
       test(
@@ -1162,7 +1161,7 @@ void main() {
       });
     });
 
-    // ── getOutstandingOpsFor ────────────────────────────────────────────────────
+    // ── getOutstandingOpsFor ─────────────────────────────────────────────────
 
     group('getOutstandingEntries() (#121)', () {
       test('returns every entry not completed, in queue order, whatever its '

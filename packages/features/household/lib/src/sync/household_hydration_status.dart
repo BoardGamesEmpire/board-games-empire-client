@@ -1,6 +1,5 @@
+import 'package:household/src/sync/household_hydrator.dart';
 import 'package:hydration/hydration.dart';
-
-import 'household_hydrator.dart';
 
 /// The household hydrate's status: what a list screen reads to tell a cache
 /// that is *filling* from one that is *empty* (#269).

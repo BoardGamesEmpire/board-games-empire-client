@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'platform_game_table.dart';
+import 'package:drift_storage/src/tables/platform_game_table.dart';
 
 /// Indexed on [platformGameId] as well as [userId]: SQLite checks
 /// `platform_games`' foreign key from the parent side on every full
@@ -22,7 +22,7 @@ class GameCollectionsTable extends Table {
   TextColumn get platformGameId => text().references(PlatformGamesTable, #id)();
   TextColumn get medium => text()();
 
-  /// Optional link to a specific [GameRelease] (printing/edition).
+  /// Optional link to a specific `GameRelease` (printing/edition).
   TextColumn get releaseId => text().nullable()();
 
   IntColumn get quantity => integer().withDefault(const Constant(1))();

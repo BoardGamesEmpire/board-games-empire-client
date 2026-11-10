@@ -29,7 +29,6 @@ void main() {
     packageName: packageName,
     version: version,
     buildNumber: buildNumber,
-    buildSignature: '',
   );
 
   group('PackageInfoBuildInfoReader (web)', () {

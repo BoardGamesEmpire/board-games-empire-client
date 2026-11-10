@@ -6,7 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 /// `package_info_plus` — Android manifest / macOS bundle values, both
 /// derived from the app pubspec `version:` (#35).
 ///
-/// [packageInfoReader] is the injectable source seam for tests (the same
+/// `packageInfoReader` is the injectable source seam for tests (the same
 /// constructor-injection shape `SecureStorageEncryptionKeyService` uses
 /// for its storage); production uses [PackageInfo.fromPlatform].
 ///

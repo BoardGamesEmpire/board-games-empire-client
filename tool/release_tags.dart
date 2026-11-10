@@ -31,7 +31,7 @@ const _commitFlag = '--commit';
 const _selfTestFlag = '--self-test';
 
 const _usage =
-    'Usage: git ls-remote --tags <repo-url> \'refs/tags/v*\' '
+    "Usage: git ls-remote --tags <repo-url> 'refs/tags/v*' "
     '| dart run tool/release_tags.dart $_commitFlag <sha> | $_selfTestFlag';
 
 Future<void> main(List<String> args) async {
@@ -42,8 +42,9 @@ Future<void> main(List<String> args) async {
     final a = args[i];
     if (a == _commitFlag) {
       if (i + 1 >= args.length) {
-        stderr.writeln('$_commitFlag needs a value.');
-        stderr.writeln(_usage);
+        stderr
+          ..writeln('$_commitFlag needs a value.')
+          ..writeln(_usage);
         exit(64); // EX_USAGE
       }
       commit = args[++i];
@@ -51,8 +52,9 @@ Future<void> main(List<String> args) async {
       // next flag. Either would match no tag and print `tag=` with exit 0, a
       // green "not a release" for a commit nobody named.
       if (commit.isEmpty || commit.startsWith('-')) {
-        stderr.writeln('$_commitFlag needs a commit SHA, got "$commit".');
-        stderr.writeln(_usage);
+        stderr
+          ..writeln('$_commitFlag needs a commit SHA, got "$commit".')
+          ..writeln(_usage);
         exit(64); // EX_USAGE
       }
     } else if (a == _selfTestFlag) {
@@ -62,13 +64,15 @@ Future<void> main(List<String> args) async {
     }
   }
   if (unknown.isNotEmpty) {
-    stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln(_usage);
+    stderr
+      ..writeln('Unknown argument(s): ${unknown.join(', ')}')
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
   if (selfTest == (commit != null)) {
-    stderr.writeln('Give either $_commitFlag <sha> or $_selfTestFlag.');
-    stderr.writeln(_usage);
+    stderr
+      ..writeln('Give either $_commitFlag <sha> or $_selfTestFlag.')
+      ..writeln(_usage);
     exit(64); // EX_USAGE
   }
 
@@ -97,8 +101,9 @@ Future<void> main(List<String> args) async {
     stderr.writeln(e.message);
     exit(1);
   }
-  stdout.writeln('tag=${release.tag ?? ''}');
-  stdout.writeln('previous=${release.previous ?? ''}');
+  stdout
+    ..writeln('tag=${release.tag ?? ''}')
+    ..writeln('previous=${release.previous ?? ''}');
 }
 
 /// A tag the release flow counts: `v` and a major.minor.patch. `vnext` and
@@ -264,9 +269,10 @@ void _selfTest() {
       stdout.writeln('  ok   $name');
     } else {
       failures++;
-      stdout.writeln('  FAIL $name');
-      stdout.writeln('       expected: ${jsonEncode(expected)}');
-      stdout.writeln('       actual:   ${jsonEncode(actual)}');
+      stdout
+        ..writeln('  FAIL $name')
+        ..writeln('       expected: ${jsonEncode(expected)}')
+        ..writeln('       actual:   ${jsonEncode(actual)}');
     }
   }
 
@@ -288,9 +294,10 @@ void _selfTest() {
         stdout.writeln('  ok   $name');
       } else {
         failures++;
-        stdout.writeln('  FAIL $name');
-        stdout.writeln('       message lacks: ${jsonEncode(missing)}');
-        stdout.writeln('       message:       ${jsonEncode(e.message)}');
+        stdout
+          ..writeln('  FAIL $name')
+          ..writeln('       message lacks: ${jsonEncode(missing)}')
+          ..writeln('       message:       ${jsonEncode(e.message)}');
       }
     }
   }
@@ -325,7 +332,7 @@ void _selfTest() {
     ],
   );
   expect(
-    'parse: skips lines that are not <sha>\\trefs/tags/<name>',
+    r'parse: skips lines that are not <sha>\trefs/tags/<name>',
     parseTagCommits(
       '\nwarning: noise\na1\trefs/heads/main\na1 refs/tags/v0.1.0\n',
     ),

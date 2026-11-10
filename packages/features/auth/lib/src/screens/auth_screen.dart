@@ -1,4 +1,12 @@
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/widgets/login_form.dart';
+import 'package:auth/src/widgets/oidc_strategy_button.dart';
+import 'package:auth/src/widgets/register_form.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart'
     show
         ProviderSignInAddressMismatch,
@@ -6,18 +14,9 @@ import 'package:interfaces/repositories.dart'
         ProviderSignInAvailable,
         ProviderSignInFailureReason,
         ProviderSignInUnsupportedDevice;
+import 'package:models/domain.dart' hide ConnectionState;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:models/domain.dart' hide ConnectionState;
-
-import '../../l10n/auth_localizations.dart';
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
-import '../bloc/auth_bloc_state.dart';
-import '../widgets/login_form.dart';
-import '../widgets/register_form.dart';
-import '../widgets/oidc_strategy_button.dart';
 
 /// Top-level authentication screen.
 ///
@@ -46,16 +45,16 @@ import '../widgets/oidc_strategy_button.dart';
 ///
 /// i18n (#37): all copy comes from [AuthLocalizations]; the bloc emits
 /// semantic failure kinds ([AuthOperationFailure]) which
-/// [_localizedFailure] maps to localized messages here — never in the
+/// `_localizedFailure` maps to localized messages here — never in the
 /// bloc.
 ///
 /// Callers are responsible for navigating away when the bloc emits
 /// [AuthAuthenticated] — typically via a [BlocListener] in the router.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
-    super.key,
     required this.identity,
     required this.serverDisplayName,
+    super.key,
     this.unsentChangesCount,
     this.splash,
   });
@@ -91,7 +90,7 @@ class AuthScreen extends StatefulWidget {
   /// notice arrives with the forms rather than pushing them down after they
   /// have painted (#142). Blank where none is given.
   ///
-  /// [AuthGate] passes its own splash, so a cold start reads as one
+  /// `AuthGate` passes its own splash, so a cold start reads as one
   /// continuous splash. The caller bounds the read; this screen waits for
   /// it.
   final Widget? splash;

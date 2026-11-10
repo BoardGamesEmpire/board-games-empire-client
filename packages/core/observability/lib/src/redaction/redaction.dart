@@ -100,7 +100,7 @@ abstract final class Redaction {
   /// with no `Causing statement` and no `, parameters: `, and the values
   /// follow `with`:
   ///
-  /// ```
+  /// ```text
   /// Tried to send Request (id = 3): StatementMethod.insert: INSERT INTO t
   /// (a, b) VALUES (?, ?) with [user-42, Kitchen Table] over isolate channel,
   /// but the connection was closed!

@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'push_platform.dart';
+import 'package:models/src/domain/push/push_platform.dart';
 
 part 'push_registration.freezed.dart';
 part 'push_registration.g.dart';

@@ -4,17 +4,17 @@
 /// feedback-report domain mirroring the backend's FeedbackReport contract.
 library;
 
-export 'src/breadcrumbs/breadcrumb_buffer.dart';
 export 'src/breadcrumbs/breadcrumb.dart';
+export 'src/breadcrumbs/breadcrumb_buffer.dart';
 export 'src/feedback/feedback_category.dart';
 export 'src/feedback/feedback_constants.dart';
 export 'src/feedback/feedback_context.dart';
 export 'src/feedback/feedback_environment.dart';
+export 'src/feedback/feedback_report.dart';
 export 'src/feedback/feedback_report_preview.dart';
 export 'src/feedback/feedback_report_user_comment.dart';
-export 'src/feedback/feedback_report.dart';
-export 'src/feedback/feedback_service_impl.dart';
 export 'src/feedback/feedback_service.dart';
+export 'src/feedback/feedback_service_impl.dart';
 export 'src/feedback/feedback_severity.dart';
 export 'src/feedback/feedback_sink.dart';
 export 'src/feedback/feedback_target.dart';

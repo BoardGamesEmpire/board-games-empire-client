@@ -3,14 +3,13 @@ import 'dart:convert';
 
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-import 'package:models/dto.dart';
-
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
+import 'package:models/dto.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -25,7 +24,7 @@ const _kStoredToken = 'session-tok-abc';
 /// the server may have renewed since sign-in.
 const _kServerVendedToken = 'session-tok-renewed';
 
-ServerIdentity _identity() => ServerIdentity(
+ServerIdentity _identity() => const ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
   wellKnownSchemaVersion: 1,
@@ -37,7 +36,7 @@ ServerIdentity _identity() => ServerIdentity(
   passkeySupported: false,
   twoFactorSupported: false,
   anonymousAuthSupported: false,
-  strategies: const [
+  strategies: [
     EmailAndPasswordStrategy(
       signUpDisabled: false,
       signInEndpoint: '$_kAuthBase/sign-in/email',
@@ -73,7 +72,7 @@ Map<String, dynamic> _sessionJson() => {
 Response<String> _response(int code, [Map<String, dynamic>? data]) => Response(
   data: data == null ? null : jsonEncode(data),
   statusCode: code,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// #98: optimistic offline session restore.
@@ -96,7 +95,7 @@ void main() {
   // "Now" for the whole suite: inside the confirmed session window and after
   // the material was persisted.
   final now = DateTime.utc(2026, 1, 2);
-  final persistedAt = DateTime.utc(2026, 1, 1);
+  final persistedAt = DateTime.utc(2026);
   final confirmedExpiry = DateTime.utc(2026, 1, 8);
   final user = AuthUser.fromJson(_wireUser());
 
@@ -196,7 +195,7 @@ void main() {
     });
 
     test('returns null when the confirmed expiry has passed', () async {
-      final late = build(clockNow: DateTime.utc(2026, 2, 1));
+      final late = build(clockNow: DateTime.utc(2026, 2));
       addTearDown(late.onDispose);
       stubRetrieve(restorable());
 
@@ -205,7 +204,7 @@ void main() {
 
     test('returns null when the local clock precedes the write — a clock '
         'this wrong cannot adjudicate expiry either way', () async {
-      final backwards = build(clockNow: DateTime.utc(2025, 12, 1));
+      final backwards = build(clockNow: DateTime.utc(2025, 12));
       addTearDown(backwards.onDispose);
       stubRetrieve(restorable());
 
@@ -241,7 +240,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -279,8 +278,8 @@ void main() {
           serverUrl: 'https://api.example.com',
           tokenStorage: mockStorage,
           dio: mockDio,
-          clock: LocalClockService(() => DateTime.utc(2026, 2, 1)),
-          deviceNowUtc: () => DateTime.utc(2026, 2, 1),
+          clock: LocalClockService(() => DateTime.utc(2026, 2)),
+          deviceNowUtc: () => DateTime.utc(2026, 2),
         );
         addTearDown(expired.onDispose);
         await expired.getSession();
@@ -422,7 +421,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -493,7 +492,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
       when(
@@ -633,7 +632,7 @@ void main() {
           .thenThrow(
             DioException(
               type: DioExceptionType.connectionError,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
 
@@ -661,7 +660,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
       stubRetrieve(
@@ -698,7 +697,7 @@ void main() {
           .thenAnswer(
             (_) async => Response<String>(
               statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
       stubRetrieve(

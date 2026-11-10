@@ -1,10 +1,10 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'event.dart';
-import 'event_attendance.dart';
-import 'event_attendee.dart';
-import 'event_occurrence.dart';
-import 'event_policy.dart';
+import 'package:models/src/domain/event/event.dart';
+import 'package:models/src/domain/event/event_attendance.dart';
+import 'package:models/src/domain/event/event_attendee.dart';
+import 'package:models/src/domain/event/event_occurrence.dart';
+import 'package:models/src/domain/event/event_policy.dart';
 
 part 'event_snapshot.freezed.dart';
 

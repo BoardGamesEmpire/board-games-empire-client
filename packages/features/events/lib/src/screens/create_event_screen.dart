@@ -1,3 +1,9 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/create_event_bloc.dart';
+import 'package:events/src/bloc/create_event_event.dart';
+import 'package:events/src/bloc/create_event_state.dart';
+import 'package:events/src/create/create_event_form.dart';
+import 'package:events/src/create/event_create_households.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -5,16 +11,7 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/user_search.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/create_event_bloc.dart';
-import '../bloc/create_event_event.dart';
-import '../bloc/create_event_state.dart';
-import '../create/create_event_form.dart';
-import '../create/event_create_households.dart';
 
 /// The screen for creating an event (#499): what it is, when it happens,
 /// who it invites and its rules, written on this device and sent straight
@@ -175,7 +172,6 @@ class _CreateEventView extends StatelessWidget {
       },
       builder: (context, state) => BgePage(
         title: Text(l10n.eventCreateTitle),
-        width: BgePageWidth.form,
         child: CreateEventForm(
           state: state,
           households: households,

@@ -3,7 +3,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('GameSort', () {
-    test('names the orders the server\'s GET /games takes', () {
+    test("names the orders the server's GET /games takes", () {
       expect(GameSort.values.map((s) => s.wire), ['title', 'newest']);
     });
 

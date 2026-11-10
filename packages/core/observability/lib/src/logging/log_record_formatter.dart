@@ -1,10 +1,9 @@
 import 'dart:convert';
 
 import 'package:logging/logging.dart';
-
-import '../redaction/redaction.dart';
-import 'bge_log_level.dart';
-import 'context_log_message.dart';
+import 'package:observability/src/logging/bge_log_level.dart';
+import 'package:observability/src/logging/context_log_message.dart';
+import 'package:observability/src/redaction/redaction.dart';
 
 /// Renders a [LogRecord] into a single flat line for text sinks — the
 /// rotating file sink and the web `print` console (issue #100).
@@ -78,7 +77,7 @@ class LogRecordFormatter {
   /// Pulls the structured context map off a record's payload, or null when
   /// the record carried none.
   ///
-  /// [BgeLogger] wraps `(message, context)` pairs in [ContextLogMessage];
+  /// `BgeLogger` wraps `(message, context)` pairs in [ContextLogMessage];
   /// a raw `Map` logged directly is also honoured. Any other payload
   /// (including a plain `String`, where `record.object` is null) yields
   /// null.

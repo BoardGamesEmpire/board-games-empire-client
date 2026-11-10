@@ -24,7 +24,7 @@ class _MockBgeLogger extends Mock implements BgeLogger {}
 /// a test can see what the bloc had emitted by then.
 class _LandingCache extends EventRepositoryImpl {
   _LandingCache(
-    super.db, {
+    super._db, {
     required super.userId,
     required super.syncQueue,
     required super.clock,
@@ -774,7 +774,7 @@ void main() {
     }
 
     for (final (name, error, result, rereads)
-        in <(String, Object, EventActionResult, bool)>[
+        in <(String, EventRemoteException, EventActionResult, bool)>[
           (
             'a 400 is changed and writes nothing',
             _conflict,
@@ -904,7 +904,7 @@ void main() {
         expect(await cachedDates(), [confirmedDate]);
       });
 
-      for (final (error, result) in <(Object, EventActionResult)>[
+      for (final (error, result) in <(EventRemoteException, EventActionResult)>[
         (_gone, EventActionResult.gone),
         (_refused, EventActionResult.refused),
         (_offline, EventActionResult.failed),
@@ -931,7 +931,11 @@ void main() {
         });
       }
 
-      for (final error in <Object>[_offline, _refused, _conflict]) {
+      for (final error in <EventRemoteException>[
+        _offline,
+        _refused,
+        _conflict,
+      ]) {
         test('cancel then remove whose remove fails is partlyDone '
             '(${error.runtimeType})', () async {
           final remote = dating(
@@ -1107,7 +1111,7 @@ void main() {
         expect(outcome.rereads, isTrue);
       });
 
-      for (final (error, result) in <(Object, EventActionResult)>[
+      for (final (error, result) in <(EventRemoteException, EventActionResult)>[
         (_conflict, EventActionResult.changed),
         (_gone, EventActionResult.gone),
         (_refused, EventActionResult.refused),
@@ -1156,7 +1160,7 @@ void main() {
         expect(await cachedDates(), [proposedDate, second, third]);
       });
 
-      for (final (error, code) in <(Object, int)>[
+      for (final (error, code) in <(EventRemoteException, int)>[
         (_conflict, 400),
         (_gone, 404),
       ]) {
@@ -1190,7 +1194,11 @@ void main() {
         });
       }
 
-      for (final error in <Object>[_refused, _offline, _rejected]) {
+      for (final error in <EventRemoteException>[
+        _refused,
+        _offline,
+        _rejected,
+      ]) {
         test('a decline that fails ends partlyDone, after trying the rest '
             '(${error.runtimeType})', () async {
           final remote = confirming(
@@ -1852,7 +1860,7 @@ void main() {
       verifyNever(() => repository.cacheAttendee(any()));
     });
 
-    final failures = <(String, Object, EventActionResult, bool)>[
+    final failures = <(String, EventRemoteException, EventActionResult, bool)>[
       ('404 ends gone', _gone, EventActionResult.gone, true),
       ('403 ends refused', _refused, EventActionResult.refused, true),
       (

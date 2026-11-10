@@ -1,13 +1,12 @@
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/widgets/register_form.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-
-import 'package:auth/l10n/auth_localizations.dart';
-import 'package:auth/src/bloc/auth_bloc.dart';
-import 'package:auth/src/bloc/auth_event.dart';
-import 'package:auth/src/bloc/auth_bloc_state.dart';
-import 'package:auth/src/widgets/register_form.dart';
 
 import '../support/auth_test_fixtures.dart';
 
@@ -23,7 +22,7 @@ Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
 );
 
 /// Every live region on screen. Needs semantics on.
-final _liveRegions = find.semantics.byPredicate(
+final SemanticsFinder _liveRegions = find.semantics.byPredicate(
   (node) => node.flagsCollection.isLiveRegion,
 );
 

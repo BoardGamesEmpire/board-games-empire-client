@@ -1,15 +1,15 @@
-import 'feedback_category.dart';
-import 'feedback_report.dart';
-import 'feedback_severity.dart';
+import 'package:observability/src/feedback/feedback_category.dart';
+import 'package:observability/src/feedback/feedback_report.dart';
+import 'package:observability/src/feedback/feedback_severity.dart';
 
 /// Assembles and submits [FeedbackReport]s (issue #8; "BugReportService"
 /// in the original issue text, renamed alongside the model to match the
 /// backend's generalised feedback domain).
 ///
 /// The device-global service registered in the app-scope root container
-/// (#72); the concrete [FeedbackServiceImpl] holds a late-bound transport
+/// (#72); the concrete `FeedbackServiceImpl` holds a late-bound transport
 /// resolver (the network leg is per-server and post-auth) plus a durable
-/// [FeedbackSink].
+/// `FeedbackSink`.
 abstract class FeedbackService {
   /// Composes a submittable [FeedbackReport] from the pieces a caller
   /// has at hand when something goes wrong.
@@ -20,7 +20,7 @@ abstract class FeedbackService {
   ///   [errorMessage] then [userComment] (error text leads, comment
   ///   follows); the **stack trace is NOT woven into the message** — it
   ///   goes to the dedicated [FeedbackReport.stackTrace] field (backend
-  ///   #77), tail-truncated to [FeedbackConstants.maxStackTraceLength].
+  ///   #77), tail-truncated to `FeedbackConstants.maxStackTraceLength`.
   ///   At least one of [errorMessage]/[userComment] must be non-empty
   ///   (the model requires a non-empty message).
   /// - **Environment stamping**: filling `appVersion`, `platform`,
@@ -29,7 +29,7 @@ abstract class FeedbackService {
   ///   [FeedbackReport.breadcrumbs] at build time — not at submit time,
   ///   which for an offline-queued report could be hours later with the
   ///   relevant crumbs long since evicted — trimmed oldest-first to
-  ///   [FeedbackConstants.maxBreadcrumbsBytes].
+  ///   `FeedbackConstants.maxBreadcrumbsBytes`.
   ///
   /// [severity] must be supplied when [category] is crash or bug
   /// (constructor assert on the model).
@@ -42,7 +42,7 @@ abstract class FeedbackService {
   ///
   /// A caller cannot supply its own (#381). Nothing did, and a token two
   /// reports share makes the second a repeat of the first, which the sink
-  /// answers by keeping the first ([FeedbackSink.persist]).
+  /// answers by keeping the first (`FeedbackSink.persist`).
   FeedbackReport buildReport({
     required FeedbackCategory category,
     FeedbackSeverity? severity,
@@ -106,7 +106,7 @@ enum FeedbackSubmitResult {
 }
 
 /// Failure taxonomy for feedback submission (#97), matching the
-/// [AuthException] sealed-hierarchy style.
+/// `AuthException` sealed-hierarchy style.
 ///
 /// Three modes:
 ///
@@ -149,7 +149,12 @@ sealed class FeedbackSubmissionException implements Exception {
 
   @override
   String toString() => cause == null
+      // The subclass name is the intended text, and a literal per subclass
+      // would change it.
+      // ignore: no_runtimetype_tostring
       ? '$runtimeType: $message'
+      // The same text as above, with the cause.
+      // ignore: no_runtimetype_tostring
       : '$runtimeType: $message (cause: $cause)';
 }
 

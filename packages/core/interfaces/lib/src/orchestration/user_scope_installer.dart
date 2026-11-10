@@ -1,6 +1,5 @@
+import 'package:interfaces/src/orchestration/dependency_container.dart';
 import 'package:models/domain.dart';
-
-import 'dependency_container.dart';
 
 /// Installs one slice of per-user services into a server's **user-session
 /// scope** during `UserSessionScope.activate()` (#135).
@@ -15,10 +14,10 @@ import 'dependency_container.dart';
 /// serving the previous user's data.
 ///
 /// User identity is per-server: the same person signed into two servers has
-/// two independent user-session scopes with distinct [userId]s. Nothing
+/// two independent user-session scopes with distinct `userId`s. Nothing
 /// registered here is shared across server scopes.
 ///
-/// This mirrors [ServerScopeInstaller]'s seam role: implementations live
+/// This mirrors `ServerScopeInstaller`'s seam role: implementations live
 /// beside the concretes they wire (e.g. `UserSessionScopeInstaller` in
 /// `drift_storage`), and the platform app composes the list it hands to
 /// its composition root — `ServerContextImpl` on native,
@@ -34,7 +33,7 @@ import 'dependency_container.dart';
 /// both for diagnostics — so it now asks for a [ScopedServer], which native
 /// builds from its `ServerConfig` and web from the `ServerIdentity` it
 /// fetched at bootstrap. Installers needing more than that should resolve it
-/// from [container], which is where per-server resources already live.
+/// from `container`, which is where per-server resources already live.
 ///
 /// ## Contract
 ///

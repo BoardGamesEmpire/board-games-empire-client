@@ -129,7 +129,7 @@ void main() {
     testWidgets('shows rows the cache already has', (tester) async {
       await tester.pumpWidget(harness());
       status.started();
-      items.add([listItem('e-1', title: 'Catan')]);
+      items.add([listItem('e-1')]);
       await tester.pump();
 
       expect(find.byKey(GameCollectionListScreen.loadingKey), findsNothing);
@@ -309,7 +309,7 @@ void main() {
     testWidgets('shows the title alone when there is no subtitle', (
       tester,
     ) async {
-      await show(tester, [listItem('e-1', title: 'Catan')]);
+      await show(tester, [listItem('e-1')]);
 
       expect(find.text('Catan'), findsOneWidget);
     });
@@ -318,7 +318,7 @@ void main() {
       // Rows sort by title alone, so the subtitle is what tells two
       // editions of one game apart.
       await show(tester, [
-        listItem('e-1', title: 'Catan', subtitle: 'Seafarers'),
+        listItem('e-1', subtitle: 'Seafarers'),
       ]);
 
       expect(find.text('Catan: Seafarers'), findsOneWidget);
@@ -329,7 +329,7 @@ void main() {
       // these are what tell them apart.
       await show(tester, [
         listItem('e-1', platformName: 'PC', medium: GameMedium.digital),
-        listItem('e-2', platformName: 'Board game'),
+        listItem('e-2'),
       ]);
 
       expect(find.textContaining('PC · Digital'), findsOneWidget);
@@ -388,8 +388,6 @@ void main() {
       await show(tester, [
         listItem(
           'e-1',
-          title: 'Catan',
-          platformName: 'Board game',
           quantity: 2,
           favorite: true,
         ),
@@ -585,7 +583,6 @@ void main() {
       await show(tester, [
         listItem(
           'e-1',
-          title: 'Catan',
           thumbnail: 'https://images.example.com/catan.jpg',
         ),
       ]);
@@ -611,7 +608,6 @@ void main() {
             'e-1',
             title: 'Twilight Imperium',
             subtitle: 'Fourth Edition',
-            platformName: 'Board game',
             quantity: 2,
             rating: 9,
             favorite: true,
@@ -778,7 +774,6 @@ void main() {
       await show(tester, [
         listItem(
           'e-1',
-          title: 'Catan',
           subtitle: 'Seafarers',
           medium: GameMedium.digital,
           quantity: 2,
@@ -1038,7 +1033,7 @@ void main() {
       ),
     );
     status.finished(CollectionHydrateOutcome.complete);
-    items.add([listItem('e-1', title: 'Catan')]);
+    items.add([listItem('e-1')]);
     await tester.pump();
 
     expect(find.text('Catan'), findsOneWidget);
@@ -1144,8 +1139,7 @@ void main() {
             matching: find.byIcon(Icons.view_list_outlined),
           ),
         ),
-      );
-      segment.requestFocus();
+      )..requestFocus();
       await tester.pump();
 
       status
@@ -1979,7 +1973,7 @@ void main() {
     });
 
     testWidgets('a standalone game is not marked', (tester) async {
-      await show(tester, [listItem('e-1', title: 'Catan')]);
+      await show(tester, [listItem('e-1')]);
 
       expect(
         find.textContaining('Base game not in your collection'),
@@ -1993,7 +1987,6 @@ void main() {
       final catan = listItem(
         'c-1',
         gameId: 'g-catan',
-        title: 'Catan',
         subtitle: 'Seafarers Edition',
       );
       final nested = listItem(
@@ -2115,7 +2108,6 @@ void main() {
       GameCollectionListItem copy(String id, String platform) => listItem(
         id,
         gameId: 'g-catan',
-        title: 'Catan',
         platformName: platform,
       );
       await showThumbnails(tester, [
@@ -2457,7 +2449,7 @@ void main() {
 
   group('focus across forms (#769)', () {
     final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
-    final catan = listItem('e-0', title: 'Catan');
+    final catan = listItem('e-0');
     GameCollectionListItem wingspan(String id, String platformName) => listItem(
       id,
       gameId: 'g-wingspan',
@@ -2521,7 +2513,7 @@ void main() {
       final stack = find.byKey(stackKey('g-wingspan'));
       final what = view == 'the list' ? 'row' : 'tile';
 
-      testWidgets("a focused stack reduced to one entry leaves focus on the "
+      testWidgets('a focused stack reduced to one entry leaves focus on the '
           "entry's $what, in $view", (tester) async {
         await show(tester, twice, layouts: layouts, onOpen: (_, _) {});
         await focus(tester, stack);
@@ -2551,12 +2543,10 @@ void main() {
           tester,
           twice,
           layouts: layouts,
-          onOpen: (context, id) => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    Scaffold(appBar: AppBar(), body: Text('entry $id')),
-              ),
+          onOpen: (context, id) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  Scaffold(appBar: AppBar(), body: Text('entry $id')),
             ),
           ),
         );
@@ -2670,7 +2660,7 @@ void main() {
     );
     final once = [copy('e-1', 'Tabletop')];
     final twice = [...once, copy('e-2', 'Steam')];
-    final base = listItem('base-1', gameId: 'g-base', title: 'Catan');
+    final base = listItem('base-1', gameId: 'g-base');
     GameCollectionListItem expansion(String id, String platform) => listItem(
       id,
       gameId: 'g-exp',
@@ -2717,14 +2707,16 @@ void main() {
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: away);
       addTearDown(mouse.removePointer);
-      return (at) async {
+      Future<void> click(Offset at) async {
         await mouse.moveTo(at);
         await mouse.down(at);
         await tester.pump(const Duration(milliseconds: 50));
         await mouse.up();
         await mouse.moveTo(away);
         await tester.pumpAndSettle();
-      };
+      }
+
+      return click;
     }
 
     /// Clicks [stack], then closes its picker with a click on the barrier.

@@ -70,12 +70,12 @@ final class StatsState extends Equatable {
 /// a game owned both boxed and digital is one game.
 ///
 /// A list with rows always counts. An empty one is 0 where there is no
-/// [collectionHydration] to wait for, or once a pass has landed rows, and
+/// `collectionHydration` to wait for, or once a pass has landed rows, and
 /// unknown before that: a failure confirms nothing, so a cache that only a
-/// failed pass has seen is not yet known to be empty ([Hydration.everRefreshed]).
-/// An unknown number draws no line. A stream that fails is unknown until its
-/// next rows, and one that closes before answering never is: the repository
-/// closes its streams when it is disposed.
+/// failed pass has seen is not yet known to be empty
+/// ([Hydration.everRefreshed]). An unknown number draws no line. A stream that
+/// fails is unknown until its next rows, and one that closes before answering
+/// never is: the repository closes its streams when it is disposed.
 ///
 /// ## The households half
 ///
@@ -83,18 +83,18 @@ final class StatsState extends Equatable {
 /// /households/game-pool/random?size=1`, for the `gameCount` of the whole pool
 /// the user's households share. Nothing is written to any cache.
 ///
-/// It depends on what [households], the cached list, says:
+/// It depends on what `households`, the cached list, says:
 ///
 /// - **Unknown**: no stream, or none that has answered, or one that failed.
 ///   [HouseholdStatHidden], and nothing is asked.
 /// - **Empty**: the user is in no household. [HouseholdStatPrompt], and nothing
 ///   is asked, but only once the cache is known to be empty: with no
-///   [householdHydration] to wait for, or when a pass has landed and the last
+///   `householdHydration` to wait for, or when a pass has landed and the last
 ///   one to finish did not fail. Before that the cache may only not have
 ///   filled yet, and the prompt would flash for someone who has households.
 ///   Connectivity is not asked: that the list is empty is a fact about the
 ///   list, not a number that goes stale.
-/// - **Filled**: the count, if there is one to show. Without a [pool] there is
+/// - **Filled**: the count, if there is one to show. Without a `pool` there is
 ///   none.
 ///
 /// ## When the count can't be shown
@@ -246,7 +246,8 @@ class StatsCubit extends Cubit<StatsState> {
   void _onConnectivity(ConnectivityState next) {
     final previous = _lastConnectivity;
     _lastConnectivity = next;
-    // Unknown says nothing new: what's up stays up, and the next change decides.
+    // Unknown says nothing new: what's up stays up, and the next change
+    // decides.
     if (next == previous || next == ConnectivityState.unknown) return;
     _read();
   }

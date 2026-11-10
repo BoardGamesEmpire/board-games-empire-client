@@ -15,7 +15,7 @@
 /// the same shape `UserDataExportRegistry` uses (#11). A hydrating
 /// installer resolves this and registers itself; nothing in platform code
 /// enumerates feature names. The composition root cannot discover
-/// hydrates on its own: [DependencyContainer] exposes `get`/`isRegistered`
+/// hydrates on its own: `DependencyContainer` exposes `get`/`isRegistered`
 /// and no listing API.
 ///
 /// ## Scoped to the session, deliberately

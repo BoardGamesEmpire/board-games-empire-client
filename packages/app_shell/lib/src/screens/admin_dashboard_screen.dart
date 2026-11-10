@@ -1,13 +1,12 @@
 import 'dart:async';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:app_shell/src/admin/admin_section.dart';
 import 'package:flutter/material.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import '../../l10n/shell_localizations.dart';
-import '../admin/admin_section.dart';
 
 /// The admin dashboard at `/admin` (#684): the sections the caller's access
 /// shows, each opening its own screens beneath it.

@@ -101,5 +101,6 @@ class _DatabaseError {
   String toString() =>
       'SqliteException(2067): while executing statement, UNIQUE constraint '
       'failed for john.doe@email.com\n'
-      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
+      '  Causing statement: INSERT INTO t (a) VALUES (?), '
+      'parameters: user-42, Kitchen Table';
 }

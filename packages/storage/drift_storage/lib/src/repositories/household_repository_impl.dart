@@ -1,15 +1,14 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
+import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/repositories/watch_disposal.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
-import '../databases/server_database.dart';
-import 'watch_disposal.dart';
-
 /// Read cache + cache-writer implementation of [HouseholdRepository].
 ///
-/// Scoped to a current user via [currentUserId] — a provider resolved
+/// Scoped to a current user via `currentUserId` — a provider resolved
 /// **lazily at call time** (#128), never at construction. The scope
 /// installer registers this repository at boot-time server-scope
 /// activation, which runs *before* sign-in; the user id is unknown then
@@ -465,7 +464,7 @@ class HouseholdRepositoryImpl
     };
   }
 
-  // ── Mutations (P4, #39) ──────────────────────────────────────────────────────────
+  // ── Mutations (P4, #39) ────────────────────────────────────────────────────
 
   @override
   Future<
@@ -734,7 +733,7 @@ class HouseholdRepositoryImpl
     });
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   /// Joined selectable behind [getHouseholds] / [watchHouseholds]: the
   /// live (non-tombstoned) households that [userId] is a member of. The
@@ -763,7 +762,7 @@ class HouseholdRepositoryImpl
   ///
   /// Lower-casing rather than `COLLATE NOCASE` is the same ASCII-only fold
   /// either way; this one is visible in the query drift builds.
-  JoinedSelectStatement _householdsQuery(String userId) {
+  JoinedSelectStatement<HasResultSet, dynamic> _householdsQuery(String userId) {
     return _db.select(_db.householdsTable).join([
         innerJoin(
           _db.householdMembersTable,
@@ -781,6 +780,9 @@ class HouseholdRepositoryImpl
       ]);
   }
 
+  // TODO(visibility): when [Household.visibility] lands, public /
+  // restricted tiers can bypass the `me` self-join so non-members
+  // can browse a friend's household roster. See class doc.
   /// Common selectable for [getMembers] and [watchMembers]: returns
   /// the members of [householdId] iff (a) the household exists and
   /// is not tombstoned, AND (b) the current user is one of its
@@ -789,10 +791,10 @@ class HouseholdRepositoryImpl
   /// Implementation uses two inner joins on the same
   /// `household_members` row:
   ///
-  /// - One to [householdsTable] filtered by `deletedAt IS NULL`,
+  /// - One to `householdsTable` filtered by `deletedAt IS NULL`,
   ///   which fails the row if the household itself has been
   ///   tombstoned.
-  /// - One to an alias `me` of [householdMembersTable] filtered by
+  /// - One to an alias `me` of `householdMembersTable` filtered by
   ///   the current user id, which fails the row if the current user
   ///   isn't a member. The
   ///   `household_members_household_user_unique_idx` unique index on
@@ -802,11 +804,10 @@ class HouseholdRepositoryImpl
   /// Both joins must match for any rows to come back, so the empty
   /// result correctly covers all three negative cases: deleted
   /// household, non-member, or genuinely empty household.
-  ///
-  /// TODO(visibility): when [Household.visibility] lands, public /
-  /// restricted tiers can bypass the `me` self-join so non-members
-  /// can browse a friend's household roster. See class doc.
-  JoinedSelectStatement _membersQuery(String householdId, String userId) {
+  JoinedSelectStatement<HasResultSet, dynamic> _membersQuery(
+    String householdId,
+    String userId,
+  ) {
     final me = _db.alias(_db.householdMembersTable, 'me');
     return _db.select(_db.householdMembersTable).join([
       innerJoin(
@@ -824,7 +825,7 @@ class HouseholdRepositoryImpl
     ])..where(_db.householdMembersTable.householdId.equals(householdId));
   }
 
-  // ── Mappers ──────────────────────────────────────────────────────────────────────
+  // ── Mappers ────────────────────────────────────────────────────────────────
 
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,

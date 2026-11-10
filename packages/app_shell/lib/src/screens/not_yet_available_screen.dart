@@ -1,7 +1,6 @@
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Resolution target for reserved deep-link paths that have no feature UI
 /// behind them yet (#10 declares the URL scheme from day one), and the

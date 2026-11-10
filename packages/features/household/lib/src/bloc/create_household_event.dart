@@ -22,7 +22,7 @@ final class CreateHouseholdSubmitted extends CreateHouseholdEvent {
   List<Object?> get props => [name, description];
 }
 
-/// Retires a [CreateHouseholdFailure] once the user edits the form it
+/// Retires a `CreateHouseholdFailure` once the user edits the form it
 /// complains about.
 ///
 /// The failure surface is an inline banner bound to bloc state (#191), so

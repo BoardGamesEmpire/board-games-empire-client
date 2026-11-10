@@ -1,6 +1,5 @@
+import 'package:events/src/widgets/destructive_button_style.dart';
 import 'package:flutter/material.dart';
-
-import 'destructive_button_style.dart';
 
 /// Asks whether to go ahead, and answers whether the user did: one dialog
 /// for the date writes that ask first and for Reopen (#502), so they lay out

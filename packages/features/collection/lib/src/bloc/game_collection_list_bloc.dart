@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/src/bloc/game_collection_list_event.dart';
+import 'package:game_collection/src/bloc/game_collection_list_state.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import 'game_collection_list_event.dart';
-import 'game_collection_list_state.dart';
 
 /// Drives the collection list (#44): the cached rows, plus what the hydrate
 /// is doing to them.
@@ -30,7 +29,7 @@ import 'game_collection_list_state.dart';
 /// query, so the next table update delivers rows on the same subscription.
 /// Only rows clear it; a hydrate result is an annotation, not data.
 ///
-/// A null [hydration] stream means there is no hydrate to wait for, which
+/// A null `hydration` stream means there is no hydrate to wait for, which
 /// reads as settled rather than as loading forever.
 ///
 /// ## A re-check is not a first fill
@@ -57,7 +56,7 @@ import 'game_collection_list_state.dart';
 ///
 /// ## The retry
 ///
-/// The bloc calls [onRetry] rather than the button, because starting a pass
+/// The bloc calls `onRetry` rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it.
 class GameCollectionListBloc

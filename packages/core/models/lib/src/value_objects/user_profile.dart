@@ -1,23 +1,21 @@
 import 'package:equatable/equatable.dart';
-
-import '../domain/user/user.dart';
-import '../domain/user/user_preferences.dart';
-import '../domain/achievement/user_achievement.dart';
-import '../domain/social/friendship.dart';
-import '../domain/social/friendship_status.dart';
+import 'package:models/src/domain/achievement/user_achievement.dart';
+import 'package:models/src/domain/social/friendship.dart';
+import 'package:models/src/domain/social/friendship_status.dart';
+import 'package:models/src/domain/user/user.dart';
+import 'package:models/src/domain/user/user_preferences.dart';
 
 class UserProfile extends Equatable {
-  final User user;
-  final UserPreferences? preferences;
-  final List<UserAchievement> achievements;
-  final List<Friendship> friendships;
-
   const UserProfile({
     required this.user,
     this.preferences,
     this.achievements = const [],
     this.friendships = const [],
   });
+  final User user;
+  final UserPreferences? preferences;
+  final List<UserAchievement> achievements;
+  final List<Friendship> friendships;
 
   /// Stands in for [initials] when no name field yields a single character
   /// (#183).
@@ -35,7 +33,8 @@ class UserProfile extends Equatable {
   /// renderable. Empty and whitespace-only strings count as absent (#183):
   /// the backend accepts them, and treating `''` as a present name is what
   /// made this return an empty string.
-  // TODO: make configurable: allow user to choose which name to display (username, first+last, first only, last only, etc.)
+  // TODO(display-name-choice): make configurable: allow user to choose which
+  // name to display (username, first+last, first only, last only, etc.).
   String get displayName {
     final parts = [_firstName, _lastName].where((part) => part.isNotEmpty);
     if (parts.isNotEmpty) return parts.join(' ');

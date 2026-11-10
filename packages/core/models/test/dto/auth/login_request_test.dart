@@ -1,10 +1,10 @@
-import 'package:test/test.dart';
 import 'package:models/dto.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('LoginRequest', () {
     test('serializes with device info', () {
-      final request = LoginRequest(
+      const request = LoginRequest(
         email: 'john@example.com',
         password: 'secure_password',
         deviceIdentifier: 'device123',
@@ -15,7 +15,7 @@ void main() {
 
       expect(json['email'], 'john@example.com');
       expect(json['deviceIdentifier'], 'device123');
-      expect(json['deviceInfo']['platform'], 'iOS');
+      expect((json['deviceInfo'] as Map<String, dynamic>)['platform'], 'iOS');
     });
   });
 }

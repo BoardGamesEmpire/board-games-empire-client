@@ -131,8 +131,8 @@ void main() {
       // display name null.
       expect(page.items, const [
         UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
-        UserSummary(id: 'u_3', username: 'anna', displayName: null),
-        UserSummary(id: 'u_4', username: 'anya', displayName: null),
+        UserSummary(id: 'u_3', username: 'anna'),
+        UserSummary(id: 'u_4', username: 'anya'),
       ]);
     });
 
@@ -193,7 +193,7 @@ void main() {
       expect(adapter.sent.single.query, {'resourceTypes': 'DataGateway'});
     });
 
-    test('maps each action\'s extent', () async {
+    test("maps each action's extent", () async {
       final remote = answering(access({'DataGateway': wire}));
 
       final result = await remote.fetchAccess(gateway);

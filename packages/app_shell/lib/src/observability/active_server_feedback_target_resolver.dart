@@ -20,7 +20,7 @@ import 'package:observability/observability.dart';
 ///   (the feedback endpoint requires a session). Otherwise the target
 ///   has a null transport and the service queues, correctly tagged.
 ///
-/// [scopeSource] is a function, not a scope instance, on purpose: the
+/// `scopeSource` is a function, not a scope instance, on purpose: the
 /// scope is owned by `AppBootstrapCubit` and is **replaced** on every
 /// bootstrap retry, so anything holding a scope captured at composition
 /// time would go stale. Reading through the cubit at resolve time keeps

@@ -25,14 +25,14 @@ import 'package:interfaces/orchestration.dart';
 /// app — no orchestrator, no server switching, nothing to suspend — so there
 /// is no swappable inner container and no state machine to gate on.
 ///
-/// The [host] must be the same one the scope's `UserSessionScope` drives;
+/// The `host` must be the same one the scope's `UserSessionScope` drives;
 /// `bootstrapWebServerScope` is the only place that builds either, so they
 /// cannot drift apart.
 class WebServerScopeContainer implements DependencyContainer {
-  /// Wraps [base], the origin scope, resolving through [host] first.
+  /// Wraps `base`, the origin scope, resolving through `host` first.
   ///
-  /// [closeSession] is the session holder's own teardown, when the scope has
-  /// one. [dispose] prefers it over closing [host] directly so the teardown
+  /// `closeSession` is the session holder's own teardown, when the scope has
+  /// one. [dispose] prefers it over closing `host` directly so the teardown
   /// lands on the holder's serialization chain instead of racing it — see
   /// [dispose]. Null means there is no holder, and the host is closed
   /// directly because nothing else can be mutating it.
@@ -96,13 +96,13 @@ class WebServerScopeContainer implements DependencyContainer {
     StackTrace? firstStackTrace;
     try {
       await (_closeSession ?? _host.close)();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       firstError = e;
       firstStackTrace = s;
     }
     try {
       await _base.dispose();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       firstError ??= e;
       firstStackTrace ??= s;
     }

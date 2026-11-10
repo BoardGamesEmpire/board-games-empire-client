@@ -14,21 +14,19 @@ part 'device_preferences.g.dart';
 /// that feature is implemented.
 @freezed
 abstract class DevicePreferences with _$DevicePreferences {
-  const DevicePreferences._();
-
   const factory DevicePreferences({
-    /// Maximum number of servers that may be in [ConnectionState.active],
-    /// [ConnectionState.backgrounding], or [ConnectionState.monitoring] at
-    /// once. User-configurable. Enforced by [ServerOrchestrator].
+    /// Maximum number of servers that may be in `ConnectionState.active`,
+    /// `ConnectionState.backgrounding`, or `ConnectionState.monitoring` at
+    /// once. User-configurable. Enforced by `ServerOrchestrator`.
     @Default(5) int maxMonitoredServers,
 
-    /// How long (seconds) a server stays in [ConnectionState.backgrounding]
-    /// on desktop before transitioning to [ConnectionState.monitoring].
+    /// How long (seconds) a server stays in `ConnectionState.backgrounding`
+    /// on desktop before transitioning to `ConnectionState.monitoring`.
     /// Desktop default: 15 minutes.
     @Default(900) int backgroundingTimeoutDesktopSeconds,
 
-    /// How long (seconds) a server stays in [ConnectionState.backgrounding]
-    /// on mobile before transitioning to [ConnectionState.monitoring].
+    /// How long (seconds) a server stays in `ConnectionState.backgrounding`
+    /// on mobile before transitioning to `ConnectionState.monitoring`.
     /// Mobile default: 5 minutes.
     @Default(300) int backgroundingTimeoutMobileSeconds,
 
@@ -36,6 +34,7 @@ abstract class DevicePreferences with _$DevicePreferences {
     /// Disabled by default — battery awareness is post-MVP.
     @Default(false) bool batteryAwareTransitions,
   }) = _DevicePreferences;
+  const DevicePreferences._();
 
   factory DevicePreferences.fromJson(Map<String, dynamic> json) =>
       _$DevicePreferencesFromJson(json);

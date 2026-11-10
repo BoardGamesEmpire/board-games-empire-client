@@ -52,6 +52,8 @@ void main() {
     final receiver = BroadcastSessionChannel(name);
     final raw = web.BroadcastChannel(name);
     addTearDown(receiver.close);
+    // A tear-off of an external interop member does not compile on web.
+    // ignore: unnecessary_lambdas
     addTearDown(() => raw.close());
     final heard = <SessionChange>[];
     final errors = <Object>[];

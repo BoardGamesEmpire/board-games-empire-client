@@ -107,7 +107,7 @@ class FakeGamesRemote implements GamesRemoteDataSource {
       handler ?? (throw StateError('$name was not scripted'));
 }
 
-final _seeded = DateTime.utc(2026, 10, 1);
+final _seeded = DateTime.utc(2026, 10);
 
 /// A full game record.
 Game game(

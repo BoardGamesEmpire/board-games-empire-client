@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 /// `BuildInfo` is an immutable, JSON-serializable value (not a service):
 /// it's read once at startup and consumed synchronously by version

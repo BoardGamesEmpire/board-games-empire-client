@@ -3,12 +3,11 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart' show AuthResponse;
-
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
@@ -77,13 +76,13 @@ Map<String, dynamic> _grantJson() => {
 Response<String> _ok(Map<String, dynamic> data) => Response(
   data: jsonEncode(data),
   statusCode: 200,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
   data: data == null ? null : jsonEncode(data),
   statusCode: code,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 /// A response whose body is passed through as given, for bodies that are
@@ -91,7 +90,7 @@ Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
 Response<String> _raw(int code, String? body) => Response(
   data: body,
   statusCode: code,
-  requestOptions: RequestOptions(path: ''),
+  requestOptions: RequestOptions(),
 );
 
 void main() {
@@ -256,7 +255,7 @@ void main() {
         ).thenThrow(
           DioException(
             type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 
@@ -562,7 +561,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -627,7 +626,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -659,7 +658,7 @@ void main() {
         ).thenAnswer(
           (_) async => Response<String>(
             statusCode: 200,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 
@@ -822,7 +821,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -841,10 +840,10 @@ void main() {
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenThrow(
               DioException(
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
                 response: Response(
                   statusCode: 401,
-                  requestOptions: RequestOptions(path: ''),
+                  requestOptions: RequestOptions(),
                 ),
               ),
             );
@@ -1118,10 +1117,10 @@ void main() {
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenThrow(
               DioException(
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
                 response: Response(
                   statusCode: 401,
-                  requestOptions: RequestOptions(path: ''),
+                  requestOptions: RequestOptions(),
                 ),
               ),
             );
@@ -1169,7 +1168,7 @@ void main() {
       );
 
       test('serves the in-memory session once there is one, still without a '
-          'network call — the contract\'s in-memory clause', () async {
+          "network call — the contract's in-memory clause", () async {
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _ok(_sessionJson()));
         final live = await repo.getSession();
@@ -1189,7 +1188,7 @@ void main() {
             .thenAnswer(
               (_) async => Response(
                 statusCode: 200,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
         await repo.getSession();
@@ -1223,7 +1222,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -1244,7 +1243,7 @@ void main() {
             .thenAnswer(
               (_) async => Response(
                 statusCode: 200,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
 
@@ -1302,7 +1301,7 @@ void main() {
         expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
 
         signOutGate.complete(
-          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+          Response(statusCode: 200, requestOptions: RequestOptions()),
         );
         await signOut;
       });
@@ -1331,7 +1330,7 @@ void main() {
         expect(seen.whereType<AuthStateAuthenticated>(), isEmpty);
 
         signOutGate.complete(
-          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+          Response(statusCode: 200, requestOptions: RequestOptions()),
         );
         await signOut;
       });
@@ -1378,7 +1377,7 @@ void main() {
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
 
         signOutGate.complete(
-          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+          Response(statusCode: 200, requestOptions: RequestOptions()),
         );
         await signOut;
 
@@ -1415,7 +1414,7 @@ void main() {
         await pumpEventQueue();
 
         first.complete(
-          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+          Response(statusCode: 200, requestOptions: RequestOptions()),
         );
         await signOutA;
 
@@ -1426,7 +1425,7 @@ void main() {
         );
 
         second.complete(
-          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+          Response(statusCode: 200, requestOptions: RequestOptions()),
         );
         await signOutB;
 
@@ -1440,7 +1439,7 @@ void main() {
             .thenAnswer(
               (_) async => Response(
                 statusCode: 200,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
@@ -1470,7 +1469,7 @@ void main() {
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               ),
             );
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
@@ -1805,7 +1804,7 @@ void main() {
         revocation.completeError(
           DioException(
             type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
         await signOut;
@@ -1842,7 +1841,7 @@ void main() {
               if (sessionReads == 1) return _ok(_sessionJson());
               throw DioException(
                 type: DioExceptionType.connectionError,
-                requestOptions: RequestOptions(path: ''),
+                requestOptions: RequestOptions(),
               );
             });
 
@@ -1909,7 +1908,7 @@ void main() {
           revocation.completeError(
             DioException(
               type: DioExceptionType.connectionError,
-              requestOptions: RequestOptions(path: ''),
+              requestOptions: RequestOptions(),
             ),
           );
           await signOut;
@@ -1927,7 +1926,7 @@ void main() {
       );
 
       test('a revocation that completes mid-reconcile is not adopted over — '
-          'its Set-Cookie deleted the grant\'s cookie (#346)', () async {
+          "its Set-Cookie deleted the grant's cookie (#346)", () async {
         final revocation = Completer<Response<String>>();
         final firstRead = Completer<Response<String>>();
         when(
@@ -2014,7 +2013,7 @@ void main() {
         firstRead.completeError(
           DioException(
             type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+            requestOptions: RequestOptions(),
           ),
         );
 

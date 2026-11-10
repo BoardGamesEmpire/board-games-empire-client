@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:models/domain.dart';
-
-import '../detail/event_actions.dart';
 
 /// What the event detail screen is showing (#498).
 ///

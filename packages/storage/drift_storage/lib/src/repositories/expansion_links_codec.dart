@@ -18,7 +18,7 @@ List<ExpansionLink> decodeExpansionLinks(String json) {
       for (final item in jsonDecode(json) as List)
         ExpansionLink.fromJson(item as Map<String, dynamic>),
     ];
-  } catch (_) {
+  } on Object catch (_) {
     return [];
   }
 }

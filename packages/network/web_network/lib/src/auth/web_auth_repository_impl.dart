@@ -7,20 +7,19 @@ import 'package:dio/dio.dart';
 // #278).
 import 'package:dio_network/dio_network.dart'
     show
+        SessionReadStatus,
         decodeJsonBody,
         probeJsonBody,
         rateLimitedFrom,
-        readSessionStatus,
-        SessionReadStatus;
+        readSessionStatus;
+import 'package:http_status/http_status.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
-import 'package:http_status/http_status.dart';
-
-import 'provider_sign_in_bindings.dart';
-import 'session_channel.dart';
+import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
+import 'package:web_network/src/auth/session_channel.dart';
 
 /// Web implementation of [AuthRepository].
 ///
@@ -29,7 +28,7 @@ import 'session_channel.dart';
 /// flag (configured on the injected [Dio] by `WebDioFactory`) ensures cookies
 /// are sent automatically on every cross-origin request.
 ///
-/// Differences from the mobile/desktop [AuthRepositoryImpl]:
+/// Differences from the mobile/desktop `AuthRepositoryImpl`:
 /// - No `TokenStorageService` — the browser keychain is the cookie jar
 /// - No Authorization header interceptor
 /// - [getCachedSession] serves the in-memory session only: httpOnly cookies
@@ -299,11 +298,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// user's intent is already true here, and other tabs should stop
   /// presenting the session as soon as this one does. It is announced again
   /// if its revocation succeeds after a newer sign-in, here or in another
-  /// tab: the revocation deleted that sign-in's cookie by name (#346). A sign-in is announced
-  /// when the server's grant came back carrying a session, the moment the
-  /// cookie was replaced. A grant that carried none set no cookie and is not
-  /// announced — a receiver would release its latch over the old one (see
-  /// [_unrevokedSignOut]).
+  /// tab: the revocation deleted that sign-in's cookie by name (#346). A
+  /// sign-in is announced when the server's grant came back carrying a session,
+  /// the moment the cookie was replaced. A grant that carried none set no
+  /// cookie and is not announced — a receiver would release its latch over the
+  /// old one (see [_unrevokedSignOut]).
   ///
   /// What another tab did is never announced back.
   Stream<SessionChange> get localChanges => _localChanges.stream;
@@ -994,8 +993,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// A page that leaves never sees this call complete. One that is still
   /// here [defaultPageLeaveGrace] later was stopped from leaving (Esc, or the
   /// browser's Stop), and the call completes with [ProviderSignInCancelled]
-  /// so the screen comes back to rest. The marker stays: a navigation that was only
-  /// slow still lands as a return.
+  /// so the screen comes back to rest. The marker stays: a navigation that was
+  /// only slow still lands as a return.
   @override
   Future<ProviderSignInOutcome> signInWithProvider(
     OidcStrategy strategy,

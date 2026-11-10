@@ -1,13 +1,11 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/create/event_create_controls.dart';
+import 'package:events/src/widgets/destructive_button_style.dart';
 import 'package:flutter/material.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../create/event_create_controls.dart';
-import 'destructive_button_style.dart';
 
 /// Asks whether to cancel, with an optional reason: one dialog for a date's
 /// cancel and an event's (#502), so the field and its check are the same in

@@ -1,16 +1,14 @@
+import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/bloc/event_poll_state.dart';
+import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_poll.dart';
+import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:events/l10n/events_localizations.dart';
-
-import '../bloc/event_poll_state.dart';
-import '../detail/event_actions.dart';
-import '../detail/event_date_actions.dart';
-import '../detail/event_poll.dart';
-import '../screens/event_detail_screen.dart';
-import 'event_labels.dart';
 
 /// The availability poll on an event's dates (#507), as the dates section
 /// shows it: worked out by [datesPollView] from the poll's state, the cached

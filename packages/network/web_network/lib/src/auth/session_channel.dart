@@ -51,7 +51,7 @@ final class WebSessionBindings {
     required this.attention,
   });
 
-  /// Opens the channel the monitor posts and listens on, under [name].
+  /// Opens the channel the monitor posts and listens on, under `name`.
   final SessionChannel Function(String name) openChannel;
 
   /// A stream that fires when the page regains the user's attention: the

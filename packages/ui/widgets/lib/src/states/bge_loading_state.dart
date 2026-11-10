@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 /// ```
 ///
 /// Spinner only, no skeletons. Content, not a page: the caller supplies the
-/// page, or a [BgeStateSliver] on a sliver one. Pairs with `BgeErrorState` and
+/// page, or a `BgeStateSliver` on a sliver one. Pairs with `BgeErrorState` and
 /// `BgeEmptyState`.
 ///
 /// ## Accessibility

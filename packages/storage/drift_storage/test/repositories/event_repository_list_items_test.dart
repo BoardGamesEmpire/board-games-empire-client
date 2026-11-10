@@ -1,12 +1,11 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -20,8 +19,8 @@ import '../support/fixed_clock.dart';
 const _kUserId = 'user-me';
 const _kOtherUserId = 'user-other';
 
-final _me = testAttendee('att-me', userId: _kUserId);
-final _other = testAttendee('att-other', userId: _kOtherUserId);
+final EventAttendee _me = testAttendee('att-me', userId: _kUserId);
+final EventAttendee _other = testAttendee('att-other', userId: _kOtherUserId);
 
 final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
 
@@ -140,7 +139,7 @@ void main() {
     expect(item.attendance, isNull);
   });
 
-  test('attendance is this user\'s row once a roster names them', () async {
+  test("attendance is this user's row once a roster names them", () async {
     await repo.cacheEvent(
       testSnapshot(
         'e-1',
@@ -196,7 +195,7 @@ void main() {
     expect(items.map((i) => i.event.id), ['e-mine']);
   });
 
-  test('another user\'s event is left out', () async {
+  test("another user's event is left out", () async {
     final otherRepo = repoFor(_kOtherUserId);
     await otherRepo.cacheEvent(
       testSnapshot('e-theirs'),
@@ -352,7 +351,7 @@ void main() {
       expect((await itemOf()).attendance, EventAttendance.fromAttendee(said));
     });
 
-    test('a detail read with no answer clears the list\'s, and the item '
+    test("a detail read with no answer clears the list's, and the item "
         'falls back to the roster it read', () async {
       await listRow('e-1', _answer(EventParticipationStatus.maybe));
 

@@ -10,6 +10,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/auth_repository_impl.dart';
+import 'package:dio_network/src/auth/provider_sign_in/pkce.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ProviderSignInBrowser;
@@ -18,11 +22,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:observability/observability.dart' show LogRecordFormatter;
-
-import 'package:dio_network/src/auth/auth_repository_impl.dart';
-import 'package:dio_network/src/auth/provider_sign_in/pkce.dart';
-import 'package:dio_network/src/auth/token_storage_service.dart';
-import 'package:dio_network/src/network/decode_json_body.dart';
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
@@ -225,8 +224,7 @@ void main() {
     when(() => storage.retrieve()).thenAnswer(
       (_) async => StoredSession(
         token: 'session-tok-granted',
-        expiresAt: null,
-        persistedAt: DateTime.utc(2026, 1, 1),
+        persistedAt: DateTime.utc(2026),
         user: AuthUser.fromJson(_wireUser()),
       ),
     );

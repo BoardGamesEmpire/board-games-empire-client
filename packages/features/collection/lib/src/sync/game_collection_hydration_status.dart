@@ -1,6 +1,5 @@
+import 'package:game_collection/src/sync/game_collection_hydrator.dart';
 import 'package:hydration/hydration.dart';
-
-import 'game_collection_hydrator.dart';
 
 /// The collection hydrate's status: what the list reads to tell a cache that
 /// is *filling* from one that is *empty* (#44).

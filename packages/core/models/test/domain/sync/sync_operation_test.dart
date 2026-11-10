@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('CreateHouseholdOperation', () {
@@ -249,7 +249,7 @@ void main() {
       }
     });
 
-    test('localIdOf reads the id out of a create this build can\'t '
+    test("localIdOf reads the id out of a create this build can't "
         'decode', () {
       final newer = jsonEncode({...full.toJson(), 'event_type': 'Picnic'});
       expect(() => SyncOperation.deserialize(newer), throwsFormatException);

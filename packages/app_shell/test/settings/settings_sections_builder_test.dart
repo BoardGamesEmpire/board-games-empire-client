@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,8 +32,8 @@ void main() {
     });
 
     tearDown(() {
-      themeModeCubit.close();
-      localeCubit.close();
+      unawaited(themeModeCubit.close());
+      unawaited(localeCubit.close());
     });
 
     List<SettingsSection> build({required List<Locale> supportedLocales}) =>

@@ -8,61 +8,57 @@ environment:
 resolution: workspace
 
 dependencies:
+  # droppable() for the invite send (#455) and the household edit (#476): a
+  # submit while one is on its way is dropped, so a double tap sends once.
+  bloc_concurrency: ^0.3.0
+  equatable: ^2.1.0
   flutter:
     sdk: flutter
+  flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
-
   hydration:
     path: ../../core/hydration
   interfaces:
     path: ../../core/interfaces
+  intl: ^0.20.2
   models:
     path: ../../core/models
   network_interface:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-  # The shared user search the invite form searches with (#499): the one
-  # feature package another may depend on.
-  user_search:
-    path: ../user_search
-
-  flutter_bloc: ^9.1.1
-  # droppable() for the invite send (#455) and the household edit (#476): a
-  # submit while one is on its way is dropped, so a double tap sends once.
-  bloc_concurrency: ^0.3.0
-  equatable: ^2.1.0
   reactive_forms: ^18.1.1
-  intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale — both declared directly because this package imports from both.
   ui:
     path: ../../ui/widgets
   ui_tokens:
     path: ../../ui/tokens
+  # The shared user search the invite form searches with (#499): the one
+  # feature package another may depend on.
+  user_search:
+    path: ../user_search
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
+  # Shared test helpers (#354, #213, #257): canned Dio transports and/or
+  # widget-test viewport, semantics and scroll-geometry helpers.
+  bge_test_support:
+    path: ../../testing/support
   bloc_test: ^10.0.0
-  # The staff households search's pause, timed without waiting it out (#685).
-  fake_async: ^1.3.3
   # A real container for the hydrate installer's tests (#125). Dev-only:
   # nothing under `lib/` names `di` — the installer takes the
   # `DependencyContainer` abstraction from `interfaces`. Same shape as
   # `web_storage`'s dev dependency on it.
   di:
     path: ../../core/di
-  mocktail: ^1.0.5
-  very_good_analysis: ^10.2.0
-  flutter_lints: ^6.0.0
+  # The staff households search's pause, timed without waiting it out (#685).
+  fake_async: ^1.3.3
+  flutter_test:
+    sdk: flutter
   l10n_test_support:
     path: ../../testing/l10n
-  # Shared test helpers (#354, #213, #257): canned Dio transports and/or
-  # widget-test viewport, semantics and scroll-geometry helpers.
-  bge_test_support:
-    path: ../../testing/support
+  mocktail: ^1.0.5
 
 flutter:
   generate: true

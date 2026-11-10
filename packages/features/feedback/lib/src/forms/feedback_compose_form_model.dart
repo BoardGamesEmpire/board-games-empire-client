@@ -1,7 +1,6 @@
+import 'package:feedback/src/models/feedback_compose_result.dart';
 import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-
-import '../models/feedback_compose_result.dart';
 
 /// The compose form's state model (#107): a host-owned wrapper around the
 /// `reactive_forms` [FormGroup].
@@ -10,7 +9,7 @@ import '../models/feedback_compose_result.dart';
 /// alive across the compose → review → back-to-compose round trip, so the
 /// user's typed input and selections survive backing out of review (the
 /// same reason the crash review's redaction state lives above the widget
-/// in #76). The widget ([FeedbackComposeForm]) is presentation over this
+/// in #76). The widget (`FeedbackComposeForm`) is presentation over this
 /// model and holds no form state of its own.
 ///
 /// ## Conditional severity

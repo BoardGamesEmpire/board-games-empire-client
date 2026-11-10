@@ -86,7 +86,7 @@ void main() {
       expect(reporter.records, hasLength(1));
     });
 
-    test('the console never sees a database error\'s bound values', () {
+    test("the console never sees a database error's bound values", () {
       final printed = <String>[];
       final previousPrint = debugPrint;
       debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
@@ -341,7 +341,7 @@ void main() {
       installGlobalErrorHooks(presentError: (_) {});
 
       PlatformDispatcher.instance.onError!(
-        FormatException('bad payload'),
+        const FormatException('bad payload'),
         StackTrace.current,
       );
 

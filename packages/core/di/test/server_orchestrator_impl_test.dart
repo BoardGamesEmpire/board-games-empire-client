@@ -1,10 +1,10 @@
+import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:logging/logging.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:logging/logging.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
@@ -134,7 +134,7 @@ void main() {
 
           expect(orchestrator.activeServerId, 'server-a');
           final ctx = mockContexts['server-b']!;
-          verify(() => ctx.suspend()).called(1);
+          verify(ctx.suspend).called(1);
         },
       );
 
@@ -270,7 +270,7 @@ void main() {
           preferencesRepository: mockPrefsRepo,
           contextFactory: (config) {
             final ctx = mockServerContext(config.id);
-            when(() => ctx.activate()).thenThrow(StateError('boom'));
+            when(ctx.activate).thenThrow(StateError('boom'));
             mockContexts[config.id] = ctx;
             return ctx;
           },
@@ -333,7 +333,7 @@ void main() {
       });
 
       test(
-        'a failing rollback goes to the logger, and a database error\'s '
+        "a failing rollback goes to the logger, and a database error's "
         'bound values reach neither the console nor a formatted line',
         () async {
           when(() => mockPrefsRepo.get()).thenAnswer(

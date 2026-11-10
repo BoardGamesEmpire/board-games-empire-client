@@ -115,7 +115,7 @@ final class NewestGamesReady extends NewestGamesState {
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read, is
-/// taken down when [gone] says so, wherever it was found. It stays down for
+/// taken down when `gone` says so, wherever it was found. It stays down for
 /// as long as this row exists: a read that repeats it neither shows it nor
 /// counts it as an answer. Losing the last game reads again, showing
 /// [NewestGamesLoading] meanwhile rather than a claim that there are none.
@@ -222,7 +222,6 @@ class NewestGamesCubit extends Cubit<NewestGamesState> {
     final List<Game> answer;
     try {
       final page = await _remote.fetchPage(
-        page: 1,
         limit: shelfSize,
         sort: GameSort.newest,
       );
@@ -313,7 +312,8 @@ class NewestGamesCubit extends Cubit<NewestGamesState> {
   void _onConnectivity(ConnectivityState next) {
     final previous = _lastConnectivity;
     _lastConnectivity = next;
-    // Unknown says nothing new: what's up stays up, and the next change decides.
+    // Unknown says nothing new: what's up stays up, and the next change
+    // decides.
     if (next == previous || next == ConnectivityState.unknown) return;
     load();
   }

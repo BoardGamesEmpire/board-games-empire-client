@@ -1,8 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:household/src/bloc/household_invite_list_state.dart';
+import 'package:household/src/invites/invite_refusal_message.dart';
 import 'package:models/domain.dart';
-
-import '../invites/invite_refusal_message.dart';
-import 'household_invite_list_state.dart';
 
 /// What the invite inbox is showing (#455).
 sealed class InviteInboxState extends Equatable {

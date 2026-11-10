@@ -2,11 +2,10 @@ import 'dart:async';
 
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/src/bloc/send_household_invite_event.dart';
+import 'package:household/src/bloc/send_household_invite_state.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'send_household_invite_event.dart';
-import 'send_household_invite_state.dart';
 
 /// Sends one invite to a household (#455).
 ///

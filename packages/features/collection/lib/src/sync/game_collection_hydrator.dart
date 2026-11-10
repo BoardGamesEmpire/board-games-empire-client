@@ -292,8 +292,8 @@ class GameCollectionHydrator {
   /// failure.
   Future<({int pages, DateTime? newestOnPageOne, DateTime? newest})?> _drain({
     required String query,
-    DateTime? updatedSince,
     required int removalsSince,
+    DateTime? updatedSince,
   }) async {
     DateTime? newestOnPageOne;
     DateTime? newest;

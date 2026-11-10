@@ -1,11 +1,11 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'game_medium.dart';
+import 'package:models/src/domain/game/game_medium.dart';
 
 part 'game_collection.freezed.dart';
 part 'game_collection.g.dart';
 
-/// A user's ownership record for a specific [PlatformGame].
+/// A user's ownership record for a specific `PlatformGame`.
 ///
 /// The primary offline-capable entity. Create/update/delete operations
 /// are written locally immediately and enqueued for server sync.
@@ -15,15 +15,16 @@ part 'game_collection.g.dart';
 /// being purged. UI consumers should treat tombstoned rows as removed.
 @freezed
 abstract class GameCollection with _$GameCollection {
-  const GameCollection._();
-
   const factory GameCollection({
     required String id,
     required String userId,
     required String platformGameId,
     required GameMedium medium,
 
-    /// Optional link to a specific [GameRelease] (printing/edition).
+    required DateTime createdAt,
+    required DateTime updatedAt,
+
+    /// Optional link to a specific `GameRelease` (printing/edition).
     String? releaseId,
 
     @Default(1) int quantity,
@@ -38,15 +39,14 @@ abstract class GameCollection with _$GameCollection {
     /// True when this entry has local changes not yet synced to the server.
     @Default(false) bool isDirty,
 
-    /// True when this entry was created offline and not yet confirmed by server.
+    /// True when this entry was created offline and not yet confirmed by
+    /// server.
     @Default(false) bool isLocalOnly,
 
     /// Soft-delete timestamp. Non-null means tombstoned awaiting purge.
     DateTime? deletedAt,
-
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) = _GameCollection;
+  const GameCollection._();
 
   factory GameCollection.fromJson(Map<String, dynamic> json) =>
       _$GameCollectionFromJson(json);

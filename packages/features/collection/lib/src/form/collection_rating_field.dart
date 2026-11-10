@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
-
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:ui/ui.dart';
 
 /// The rating dropdown of a collection entry's sheets (#45, #46): 1 to 10,
 /// and "No rating" as a choice of its own when [offerNone].

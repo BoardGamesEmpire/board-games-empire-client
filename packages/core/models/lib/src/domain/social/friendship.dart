@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'friendship_status.dart';
+import 'package:models/src/domain/social/friendship_status.dart';
 
 part 'friendship.freezed.dart';
 part 'friendship.g.dart';

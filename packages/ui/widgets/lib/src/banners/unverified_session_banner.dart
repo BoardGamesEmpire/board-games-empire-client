@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/src/banners/banner_focus_ring.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'banner_focus_ring.dart';
 
 /// Passive notice that the current session was restored from local material
 /// without server confirmation (#98).

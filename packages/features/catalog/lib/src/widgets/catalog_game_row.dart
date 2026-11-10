@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'catalog_facts.dart';
 
 /// One game in a list (#42): the thumbnail, the title line and the facts
 /// line, as one semantics node.

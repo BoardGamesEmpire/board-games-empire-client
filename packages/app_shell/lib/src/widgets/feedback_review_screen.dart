@@ -1,12 +1,11 @@
 import 'dart:convert';
 
+import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-import 'package:observability/observability.dart';
-
-import '../../l10n/shell_localizations.dart';
 
 /// Full feedback-report review & redaction surface (#76).
 ///
@@ -33,7 +32,7 @@ import '../../l10n/shell_localizations.dart';
 ///
 /// ## Presentation-only and host-agnostic
 ///
-/// Dumb by design, like [CrashReportPrompt]: it takes a preview and
+/// Dumb by design, like `CrashReportPrompt`: it takes a preview and
 /// callbacks and knows nothing about routing or the crash-draft slots.
 /// The crash path presents it inside the crash overlay; the
 /// user-initiated flow will push it as a route. Both provide an
@@ -363,7 +362,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     // section and order; any *unknown* redactable field is still surfaced
     // (appended to the environment section) so it can never be silently
     // dropped from review.
-    final redactable = FeedbackReportPreview.redactableTopLevelFields;
+    const redactable = FeedbackReportPreview.redactableTopLevelFields;
     const reportFields = <String>['message', 'title'];
     const envFields = <String>['appVersion', 'platform', 'locale'];
     final knownFields = <String>{...reportFields, ...envFields};
@@ -605,7 +604,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   );
 
   /// Terminal outcome: an announced status line plus a dismiss affordance,
-  /// mirroring [CrashReportPrompt]'s outcome states.
+  /// mirroring `CrashReportPrompt`'s outcome states.
   List<Widget> _outcome(
     ShellLocalizations i18n, {
     required Key key,

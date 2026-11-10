@@ -1,7 +1,6 @@
+import 'package:di/src/session/session_rehydrator_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
-
-import 'session_rehydrator_impl.dart';
 
 /// Installs the session's [SessionRehydrator] (#302 D2).
 ///

@@ -1,5 +1,3 @@
-library;
-
 export 'src/recovery/stuck_sync_op.dart';
 export 'src/recovery/stuck_sync_ops_bloc.dart';
 export 'src/recovery/stuck_sync_ops_event.dart';

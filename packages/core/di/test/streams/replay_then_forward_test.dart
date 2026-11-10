@@ -140,6 +140,7 @@ void main() {
         current: () => 0,
         updates: () => updates.stream,
       ).listen(seen.add, onDone: () => done = true);
+      addTearDown(sub.cancel);
       await pumpEventQueue();
 
       sub.pause();

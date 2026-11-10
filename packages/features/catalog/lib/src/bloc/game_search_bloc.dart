@@ -1,14 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/src/bloc/debounce_restartable.dart';
+import 'package:game_catalog/src/bloc/game_search_event.dart';
+import 'package:game_catalog/src/bloc/game_search_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import 'debounce_restartable.dart';
-import 'game_search_event.dart';
-import 'game_search_state.dart';
 
 /// Drives the search screen (#42): one page of `GET /games/search`, shown in
 /// two sections.
@@ -30,7 +29,7 @@ import 'game_search_state.dart';
 /// first section already lists: the server reports a game it imported both
 /// as its own and again under the DataGateway it came from (backend#662).
 ///
-/// A DataGateway is named only where [sourceNames] can name it. The shell
+/// A DataGateway is named only where `sourceNames` can name it. The shell
 /// passes one only when the user may read DataGateways, which ordinary users
 /// may not (#42). Without it, a result carries no source name, and the note
 /// on DataGateways that did not answer counts them instead of naming them.
@@ -58,7 +57,7 @@ import 'game_search_state.dart';
 /// ## A game found gone
 ///
 /// A game that the server no longer has, or this user may no longer read,
-/// is taken down from both sections when [gone] says so, and stays down
+/// is taken down from both sections when `gone` says so, and stays down
 /// while this screen is open.
 ///
 /// ## When the server refuses
@@ -148,7 +147,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       // Unnamed results still read correctly; the note counts the
       // DataGateways that did not answer rather than naming them.
       _logger.info(
-        'Could not read the DataGateways\' names',
+        "Could not read the DataGateways' names",
         error: error,
         stackTrace: stackTrace,
       );
@@ -300,6 +299,9 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     try {
       final games = await cache.searchGames(
         query,
+        // The cache returns as many as an online page: the argument follows
+        // that constant, not the repository default.
+        // ignore: avoid_redundant_argument_values
         limit: GamesRemoteDataSource.searchPageSize,
         filter: filter,
       );

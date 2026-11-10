@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'data_gateway_auth_type.dart';
-import 'data_gateway_interview.dart';
+import 'package:models/src/domain/data_gateway/data_gateway_auth_type.dart';
+import 'package:models/src/domain/data_gateway/data_gateway_interview.dart';
 
 part 'data_gateway.freezed.dart';
 
@@ -41,7 +41,6 @@ abstract class DataGateway with _$DataGateway {
 
     /// Unique across the server's live DataGateways.
     required String name,
-    String? description,
 
     /// The host the server dials. Not validated as a URL by the backend.
     required String connectionUrl,
@@ -50,6 +49,7 @@ abstract class DataGateway with _$DataGateway {
     required int connectionPort,
     required bool enabled,
     required DataGatewayAuthType authType,
+    String? description,
 
     /// Whether the server uses this DataGateway yet, and how its interviews
     /// went.

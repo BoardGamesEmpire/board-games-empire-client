@@ -2,17 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:household/l10n/household_localizations.dart';
+import 'package:household/src/admin/bloc/admin_household_list_bloc.dart';
+import 'package:household/src/admin/bloc/admin_household_list_event.dart';
+import 'package:household/src/admin/bloc/admin_household_list_state.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-import 'package:household/l10n/household_localizations.dart';
-
-import '../bloc/admin_household_list_bloc.dart';
-import '../bloc/admin_household_list_event.dart';
-import '../bloc/admin_household_list_state.dart';
 
 /// The staff households section's name (#684, #685): this screen's title,
 /// and its entry's on the admin dashboard.

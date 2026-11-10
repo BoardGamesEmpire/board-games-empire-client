@@ -5,4 +5,5 @@ library;
 
 export 'src/memory_storage_base.dart';
 
-// TODO: Export any libraries intended for clients of this package.
+// TODO(memory-storage-exports): Export any libraries intended for clients of
+// this package.

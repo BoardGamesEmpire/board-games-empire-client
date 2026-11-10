@@ -1,14 +1,13 @@
 import 'dart:async';
 
+import 'package:events/src/bloc/event_detail_event.dart';
+import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/detail/event_actions.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
-
-import '../detail/event_actions.dart';
-import 'event_detail_event.dart';
-import 'event_detail_state.dart';
 
 /// Drives the event detail screen (#498): one cached event, read from the
 /// server once per open and written back, plus its household's name and
@@ -19,24 +18,30 @@ import 'event_detail_state.dart';
 /// The read never reaches the screen itself. It writes to the cache, and the
 /// watch delivers what it wrote.
 ///
-/// The first row that matches decides:
+/// The first case below that matches decides:
 ///
-/// | cache | the read | state |
-/// |---|---|---|
-/// | any | 404, and nothing written since | not found, for the bloc's life or until a follow |
-/// | a detail | any other | ready: a populated cache is never hidden |
-/// | null | 404, its forget running | not found |
-/// | null or an error | succeeded, and no answer since its write | loading |
-/// | null or an error | the user's, running | error, `refreshing` |
-/// | null or an error | the open's, running | loading |
-/// | an error | any other | error, `refreshing` while a retry reads it again |
-/// | nothing yet | not started | loading |
-/// | null | failed | error |
-/// | null | succeeded, overtaken, or never run | not found |
-/// | ended | any | error where the rows above say loading, else theirs |
+/// - cache: any; the read: 404, and nothing written since; state: not
+///   found, for the bloc's life or until a follow.
+/// - cache: a detail; the read: any other; state: ready: a populated
+///   cache is never hidden.
+/// - cache: null; the read: 404, its forget running; state: not found.
+/// - cache: null or an error; the read: succeeded, and no answer since
+///   its write; state: loading.
+/// - cache: null or an error; the read: the user's, running; state:
+///   error, `refreshing`.
+/// - cache: null or an error; the read: the open's, running; state:
+///   loading.
+/// - cache: an error; the read: any other; state: error, `refreshing`
+///   while a retry reads it again.
+/// - cache: nothing yet; the read: not started; state: loading.
+/// - cache: null; the read: failed; state: error.
+/// - cache: null; the read: succeeded, overtaken, or never run; state:
+///   not found.
+/// - cache: ended; the read: any; state: error where the cases above say
+///   loading, else theirs.
 ///
 /// "The cache" is its latest answer. A cache error, logged, leaves the
-/// detail it last delivered on screen, and is a row of its own only where
+/// detail it last delivered on screen, and is a case of its own only where
 /// there is none and no read is running. Drift keeps a stream open after a
 /// failed query, so the next write delivers on the same subscription, and
 /// a running read settles the screen as it would have without the error:
@@ -60,7 +65,7 @@ import 'event_detail_state.dart';
 /// for it lets the bloc see first whether the event is local-only, created
 /// offline under an id the server has never heard of. Such an event is never
 /// read, by the open or by a retry, since the server would answer 404 and
-/// the 404 would forget it. A null [remote] means there is no server to ask,
+/// the 404 would forget it. A null `remote` means there is no server to ask,
 /// so the read counts as never run.
 ///
 /// A read that succeeds while the cache holds nothing stays loading until the
@@ -142,10 +147,10 @@ import 'event_detail_state.dart';
 /// On web every tab shares one session cookie, and a sign-in in another tab
 /// moves it to another user under this screen (#432). A read sent then is
 /// answered for that user: its event would be cached as this user's, and its
-/// 404 would forget this user's. So [confirmSession] is asked before the
+/// 404 would forget this user's. So `confirmSession` is asked before the
 /// request goes out and again before its answer is written or forgotten, as
 /// the hydrate asks before a pass and before each page. A no, or a throw, is
-/// a failed read. A null [confirmSession], as on native, is always yes.
+/// a failed read. A null `confirmSession`, as on native, is always yes.
 ///
 /// ## The retry
 ///
@@ -153,7 +158,7 @@ import 'event_detail_state.dart';
 /// while it runs: `refreshing` on the detail, or on the error it was pressed
 /// on, which stays up rather than giving way to a spinner. It does nothing
 /// while a read is running, in not found, for a local-only event, without a
-/// [remote], or once the cache has ended, since its repository is gone.
+/// `remote`, or once the cache has ended, since its repository is gone.
 /// The ready and error states' `canRetry` says when it would, for the screen
 /// to draw its button. It leaves out the running read, which shows as one in
 /// progress, and not found, which draws no retry.
@@ -172,9 +177,9 @@ import 'event_detail_state.dart';
 ///
 /// ## The annotations
 ///
-/// The household name comes from the latest [households] emission, and the
-/// viewer's household role from [householdRole]. The role is asked for when
-/// a household is first seen, and again on each [households] emission for
+/// The household name comes from the latest `households` emission, and the
+/// viewer's household role from `householdRole`. The role is asked for when
+/// a household is first seen, and again on each `households` emission for
 /// the event's own: right after sign-in the event can be cached before the
 /// viewer's membership is, and a membership or role change reaches that
 /// stream. The answer asked for last wins. Neither is waited on, so the
@@ -546,7 +551,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     );
   }
 
-  /// Whether the session is still this cache's user's: [confirmSession]
+  /// Whether the session is still this cache's user's: `confirmSession`
   /// said yes, or there is none to ask. A no is logged.
   Future<bool> _confirmed() async {
     final confirm = _confirmSession;
@@ -567,7 +572,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (!confirmed) {
       _logger.info(
         'Event detail read stopped: the session could not be confirmed as '
-        'this user\'s',
+        "this user's",
       );
     }
     return confirmed;

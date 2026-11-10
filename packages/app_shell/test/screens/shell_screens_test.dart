@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -85,11 +83,9 @@ void main() {
           Builder(
             builder: (context) => Scaffold(
               body: TextButton(
-                onPressed: () => unawaited(
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const NotYetAvailableScreen(),
-                    ),
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const NotYetAvailableScreen(),
                   ),
                 ),
                 child: const Text('open'),
@@ -116,15 +112,13 @@ void main() {
         'ready, pushed over another screen',
         build: (theme) => _wrap(const SizedBox.shrink(), theme: theme),
         arrange: (tester) async {
-          unawaited(
-            tester
-                .state<NavigatorState>(find.byType(Navigator))
-                .push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => const NotYetAvailableScreen(),
-                  ),
+          tester
+              .state<NavigatorState>(find.byType(Navigator))
+              .push<void>(
+                MaterialPageRoute(
+                  builder: (_) => const NotYetAvailableScreen(),
                 ),
-          );
+              );
         },
       );
     });

@@ -1,5 +1,5 @@
-import 'package:test/test.dart';
 import 'package:models/domain.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('personName', () {
@@ -16,12 +16,12 @@ void main() {
     });
 
     test('names are trimmed', () {
-      expect(personName(displayName: ' Alex ', username: null), 'Alex');
-      expect(personName(displayName: null, username: ' alexd '), 'alexd');
+      expect(personName(displayName: ' Alex '), 'Alex');
+      expect(personName(username: ' alexd '), 'alexd');
     });
 
     test('nothing usable is null', () {
-      expect(personName(displayName: null, username: ' '), isNull);
+      expect(personName(username: ' '), isNull);
       expect(personName(), isNull);
     });
   });

@@ -46,6 +46,11 @@ environment:
 resolution: workspace
 ''';
 
+/// The root `analysis_options.yaml` the fixture writes: the invariant only
+/// checks that the root's file exists.
+const validRootAnalysisOptions =
+    'include: package:very_good_analysis/analysis_options.yaml\n';
+
 /// Writes a workspace into a new temp directory and returns it.
 ///
 /// [members] maps a directory, relative to the root, to its pubspec text.
@@ -56,11 +61,18 @@ resolution: workspace
 /// [flutterDigest] is the content of `tool/flutter_sdk.sha256`, a valid
 /// line for Flutter 3.47.1 by default; `''` writes no file at all.
 ///
+/// [analysisOptions] maps a member directory to its `analysis_options.yaml`
+/// text. By default every member with a pubspec gets one that includes the
+/// root file; an entry replaces that text and a `null` entry writes no file.
+/// [rootAnalysisOptions] false leaves out the root's own file.
+///
 /// Registers no teardown: the caller deletes the directory.
 Future<Directory> createFixtureWorkspace({
   Map<String, String?> members = const {},
   String rootPubspecExtra = '',
   String flutterDigest = validFlutterDigest,
+  Map<String, String?> analysisOptions = const {},
+  bool rootAnalysisOptions = true,
 }) async {
   final root = await Directory.systemTemp.createTemp('check_sdk_fixture_');
   final all = <String, String?>{
@@ -95,6 +107,25 @@ workspace:
     final file = File('${root.path}/$dir/pubspec.yaml');
     await file.parent.create(recursive: true);
     await file.writeAsString(pubspec);
+
+    // Counted on the directory as pub reads it, without a leading `./` or
+    // a trailing slash, so a member listed either way still includes the
+    // root file.
+    final segments = dir.replaceAll(RegExp(r'^(\./+)+|/+$'), '').split('/');
+    final options = analysisOptions.containsKey(dir)
+        ? analysisOptions[dir]
+        : 'include: ${'../' * segments.length}analysis_options.yaml\n';
+    if (options != null) {
+      await File('${file.parent.path}/analysis_options.yaml').writeAsString(
+        options,
+      );
+    }
+  }
+
+  if (rootAnalysisOptions) {
+    await File(
+      '${root.path}/analysis_options.yaml',
+    ).writeAsString(validRootAnalysisOptions);
   }
 
   if (flutterDigest.isNotEmpty) {

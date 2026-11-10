@@ -1,10 +1,9 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:models/domain.dart';
-
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -104,7 +103,7 @@ void main() {
 
     group('cacheGame() / getGame()', () {
       test('persists a game and reads it back', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+        await repo.cacheGame(_makeGame(title: 'Catan'));
 
         final found = await repo.getGame('g-1');
         expect(found, isNotNull);
@@ -210,7 +209,7 @@ void main() {
     group('getGames()', () {
       test('returns the games whose ids are present', () async {
         await repo.cacheGames([
-          _makeGame(id: 'g-1'),
+          _makeGame(),
           _makeGame(id: 'g-2'),
           _makeGame(id: 'g-3'),
         ]);
@@ -220,7 +219,7 @@ void main() {
       });
 
       test('silently ignores unknown ids', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1'));
+        await repo.cacheGame(_makeGame());
 
         final result = await repo.getGames(['g-1', 'nonexistent']);
         expect(result.map((g) => g.id), equals(['g-1']));
@@ -264,7 +263,7 @@ void main() {
 
       test('persists multiple games in one batch', () async {
         await repo.cacheGames([
-          _makeGame(id: 'g-1', title: 'One'),
+          _makeGame(title: 'One'),
           _makeGame(id: 'g-2', title: 'Two'),
           _makeGame(id: 'g-3', title: 'Three'),
         ]);
@@ -274,10 +273,10 @@ void main() {
       });
 
       test('upserts mixed new + existing rows on conflict', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Original'));
+        await repo.cacheGame(_makeGame(title: 'Original'));
 
         await repo.cacheGames([
-          _makeGame(id: 'g-1', title: 'Updated'),
+          _makeGame(title: 'Updated'),
           _makeGame(id: 'g-2', title: 'New'),
         ]);
 
@@ -295,7 +294,7 @@ void main() {
       });
 
       test('matches case-insensitively on title', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Wingspan'));
+        await repo.cacheGame(_makeGame(title: 'Wingspan'));
         await repo.cacheGame(_makeGame(id: 'g-2', title: 'Ticket to Ride'));
 
         final result = await repo.searchGames('WING');
@@ -304,7 +303,7 @@ void main() {
 
       test('matches against subtitle', () async {
         await repo.cacheGame(
-          _makeGame(id: 'g-1', title: 'Catan', subtitle: 'Seafarers'),
+          _makeGame(title: 'Catan', subtitle: 'Seafarers'),
         );
 
         final result = await repo.searchGames('seafarers');
@@ -391,13 +390,13 @@ void main() {
       });
 
       test('returns empty when limit is zero', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+        await repo.cacheGame(_makeGame(title: 'Catan'));
 
         expect(await repo.searchGames('cat', limit: 0), isEmpty);
       });
 
       test('returns empty when limit is negative', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+        await repo.cacheGame(_makeGame(title: 'Catan'));
 
         expect(await repo.searchGames('cat', limit: -1), isEmpty);
         expect(await repo.searchGames('cat', limit: -100), isEmpty);
@@ -406,7 +405,7 @@ void main() {
       test(
         'strips LIKE wildcards (% and _) so they cannot match unintended rows',
         () async {
-          await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+          await repo.cacheGame(_makeGame(title: 'Catan'));
           await repo.cacheGame(_makeGame(id: 'g-2', title: 'Wingspan'));
           await repo.cacheGame(_makeGame(id: 'g-3', title: 'Ticket to Ride'));
 
@@ -423,7 +422,7 @@ void main() {
       );
     });
 
-    group('searchGames() narrows by the filter\'s ranges (#565, #580)', () {
+    group("searchGames() narrows by the filter's ranges (#565, #580)", () {
       /// The titles of the games matching "game" that [filter] keeps, in the
       /// search's order.
       Future<List<String>> titles(GameSearchFilter filter) async => [
@@ -434,7 +433,7 @@ void main() {
       test('a publish-year range keeps the years inside it, and undated '
           'games only when asked', () async {
         await repo.cacheGames([
-          _makeGame(id: 'g-1', title: 'Game -2200', publishYear: -2200),
+          _makeGame(title: 'Game -2200', publishYear: -2200),
           _makeGame(id: 'g-2', title: 'Game 1995', publishYear: 1995),
           _makeGame(id: 'g-3', title: 'Game 2010', publishYear: 2010),
           _makeGame(id: 'g-4', title: 'Game undated'),
@@ -464,7 +463,7 @@ void main() {
 
       test('a single player-count bound is one count', () async {
         await repo.cacheGames([
-          _makeGame(id: 'g-1', title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
+          _makeGame(title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
           _makeGame(id: 'g-2', title: 'Game 2-4', minPlayers: 2, maxPlayers: 4),
           _makeGame(id: 'g-3', title: 'Game ?-6', maxPlayers: 6),
         ]);
@@ -493,7 +492,7 @@ void main() {
 
       test('a player-count range needs every count in it', () async {
         await repo.cacheGames([
-          _makeGame(id: 'g-1', title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
+          _makeGame(title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
           _makeGame(id: 'g-2', title: 'Game 2-4', minPlayers: 2, maxPlayers: 4),
         ]);
 
@@ -510,7 +509,6 @@ void main() {
       test('a play time fits when the whole time does', () async {
         await repo.cacheGames([
           _makeGame(
-            id: 'g-1',
             title: 'Game 30-60',
             minPlayTime: 30,
             maxPlayTime: 60,
@@ -555,7 +553,7 @@ void main() {
 
       test('a game with one play time uses it for both ends', () async {
         await repo.cacheGame(
-          _makeGame(id: 'g-1', title: 'Game 120', minPlayTime: 120),
+          _makeGame(title: 'Game 120', minPlayTime: 120),
         );
 
         expect(
@@ -573,7 +571,7 @@ void main() {
       });
 
       test('a platform-type filter finds nothing', () async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Game one'));
+        await repo.cacheGame(_makeGame(title: 'Game one'));
         expect(await titles(const GameSearchFilter()), ['Game one']);
 
         expect(
@@ -650,7 +648,7 @@ void main() {
       });
 
       test('emits all cached games', () async {
-        await repo.cacheGames([_makeGame(id: 'g-1'), _makeGame(id: 'g-2')]);
+        await repo.cacheGames([_makeGame(), _makeGame(id: 'g-2')]);
 
         await expectLater(repo.watchGames().take(1), emits(hasLength(2)));
       });
@@ -676,14 +674,12 @@ void main() {
 
     group('PlatformGame', () {
       setUp(() async {
-        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Parent'));
+        await repo.cacheGame(_makeGame(title: 'Parent'));
       });
 
       test('cachePlatformGame + getPlatformGame round-trip', () async {
         await repo.cachePlatformGame(
           _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
             platformName: 'Steam',
             supportsOnline: true,
             hasAsyncPlay: true,
@@ -705,16 +701,10 @@ void main() {
 
       test('cachePlatformGame upserts on conflicting id', () async {
         await repo.cachePlatformGame(
-          _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
-            platformName: 'Tabletop',
-          ),
+          _makePlatformGame(),
         );
         await repo.cachePlatformGame(
           _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
             platformName: 'Tabletop Simulator',
           ),
         );
@@ -729,8 +719,8 @@ void main() {
           await repo.cacheGame(_makeGame(id: 'g-2', title: 'Other'));
 
           await repo.cachePlatformGames([
-            _makePlatformGame(id: 'pg-1a', gameId: 'g-1', platformName: 'A'),
-            _makePlatformGame(id: 'pg-1b', gameId: 'g-1', platformName: 'B'),
+            _makePlatformGame(id: 'pg-1a', platformName: 'A'),
+            _makePlatformGame(id: 'pg-1b', platformName: 'B'),
             _makePlatformGame(id: 'pg-2a', gameId: 'g-2', platformName: 'A'),
           ]);
 
@@ -750,19 +740,17 @@ void main() {
         },
       );
 
-      test('a platform game\'s type survives the cache', () async {
+      test("a platform game's type survives the cache", () async {
         await repo.cachePlatformGames([
           _makePlatformGame(
             id: 'pg-t',
-            gameId: 'g-1',
             platformType: PlatformType.tabletop,
           ),
           _makePlatformGame(
             id: 'pg-u',
-            gameId: 'g-1',
             platformType: PlatformType.unknown,
           ),
-          _makePlatformGame(id: 'pg-n', gameId: 'g-1'),
+          _makePlatformGame(id: 'pg-n'),
         ]);
 
         final byId = {
@@ -779,8 +767,6 @@ void main() {
       test('a summary write leaves a stored type alone', () async {
         await repo.cachePlatformGames([
           _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
             platformType: PlatformType.tabletop,
           ),
         ]);
@@ -803,15 +789,13 @@ void main() {
       test('cachePlatformGames upserts in batch', () async {
         await repo.cachePlatformGames([
           _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
             platformName: 'Original',
           ),
         ]);
 
         await repo.cachePlatformGames([
-          _makePlatformGame(id: 'pg-1', gameId: 'g-1', platformName: 'Updated'),
-          _makePlatformGame(id: 'pg-new', gameId: 'g-1', platformName: 'New'),
+          _makePlatformGame(platformName: 'Updated'),
+          _makePlatformGame(id: 'pg-new', platformName: 'New'),
         ]);
 
         expect(
@@ -839,7 +823,7 @@ void main() {
 
     test('a record outlives the session: a fresh repository for the same '
         'user still reads what the disposed one cached (#469)', () async {
-      await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+      await repo.cacheGame(_makeGame(title: 'Catan'));
 
       await repo.onDispose();
 

@@ -32,21 +32,24 @@ void main() {
   /// half of the isolation.
   String freshName() {
     final name =
-        'bge_feedback_test_${DateTime.now().microsecondsSinceEpoch}_${counter++}';
+        'bge_feedback_test_${DateTime.now().microsecondsSinceEpoch}_'
+        '${counter++}';
     addTearDown(() async {
       final request = web.window.indexedDB.deleteDatabase(name);
       final deleted = Completer<void>();
-      request.onsuccess = ((web.Event _) {
-        if (!deleted.isCompleted) deleted.complete();
-      }).toJS;
-      request.onerror = ((web.Event _) {
-        if (!deleted.isCompleted) deleted.complete();
-      }).toJS;
-      // A deletion blocked by a connection this test failed to close should
-      // not hang the suite; the name is unique, so leaking one is survivable.
-      request.onblocked = ((web.Event _) {
-        if (!deleted.isCompleted) deleted.complete();
-      }).toJS;
+      request
+        ..onsuccess = ((web.Event _) {
+          if (!deleted.isCompleted) deleted.complete();
+        }).toJS
+        ..onerror = ((web.Event _) {
+          if (!deleted.isCompleted) deleted.complete();
+        }).toJS
+        // A deletion blocked by a connection this test failed to close should
+        // not hang the suite; the name is unique, so leaking one is
+        // survivable.
+        ..onblocked = ((web.Event _) {
+          if (!deleted.isCompleted) deleted.complete();
+        }).toJS;
       await deleted.future.timeout(
         const Duration(seconds: 2),
         onTimeout: () {},
@@ -105,8 +108,9 @@ void main() {
     final db = await openExisting(databaseName);
     final tx = db.transaction('records'.toJS, 'readwrite');
     final done = Completer<void>();
-    tx.oncomplete = ((web.Event _) => done.complete()).toJS;
-    tx.onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
+    tx
+      ..oncomplete = ((web.Event _) => done.complete()).toJS
+      ..onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
     tx.objectStore('records').put(value, key);
     await done.future;
     db.close();
@@ -215,8 +219,9 @@ void main() {
     final db = await openRawConnection(name, 1);
     final tx = db.transaction('records'.toJS, 'readwrite');
     final done = Completer<void>();
-    tx.oncomplete = ((web.Event _) => done.complete()).toJS;
-    tx.onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
+    tx
+      ..oncomplete = ((web.Event _) => done.complete()).toJS
+      ..onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
     final store = tx.objectStore('records');
     for (final MapEntry(:key, :value) in values.entries) {
       store.put(value.toJS, key.toJS);
@@ -356,7 +361,8 @@ void main() {
     );
   });
 
-  group('the reap: a record it will not emit is deleted, not skipped (#161)', () {
+  group('the reap: a record it will not emit is deleted, '
+      'not skipped (#161)', () {
     test('a value that will not decode is reaped', () async {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
@@ -693,7 +699,7 @@ void main() {
           paddedKey(i),
       ];
       for (final key in keys) {
-        await sink.persist(record(key, queuedAt: DateTime.utc(2026, 1, 1)));
+        await sink.persist(record(key, queuedAt: DateTime.utc(2026)));
       }
       final stored = (await sink.rawKeys()).toSet();
 
@@ -929,7 +935,7 @@ void main() {
         // Queued oldest, but attempted most recently: it has waited least.
         await sink.persist(
           QueuedFeedbackReport(
-            report: FeedbackReport(
+            report: const FeedbackReport(
               category: FeedbackCategory.bug,
               severity: FeedbackSeverity.low,
               message: 'tried recently',
@@ -982,6 +988,8 @@ void main() {
       // wait — IndexedDB fires `blocked` and stays pending rather than
       // failing.
       final holder = await openRawConnection(name, 1);
+      // A tear-off of an external interop member does not compile on web.
+      // ignore: unnecessary_lambdas
       addTearDown(() => holder.close());
 
       await expectLater(
@@ -1089,7 +1097,8 @@ void main() {
 
   group('keys this sink cannot address are reaped, not trusted', () {
     test('a non-text key whose record also carries no clientRequestId is '
-        'reaped — two nulls must not compare equal and pass as drainable', () async {
+        'reaped — two nulls must not compare equal and pass as '
+        'drainable', () async {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
@@ -1187,7 +1196,7 @@ void main() {
         final first = record(
           'v1-a',
           message: 'first',
-          queuedAt: DateTime.utc(2026, 6, 1),
+          queuedAt: DateTime.utc(2026, 6),
         );
         final second = record(
           'v1-b',
@@ -1330,6 +1339,8 @@ void main() {
         queuedAt: DateTime.utc(2026, 6),
       );
       final holder = await openVersion1(name, {'waiting': jsonText(queued)});
+      // A tear-off of an external interop member does not compile on web.
+      // ignore: unnecessary_lambdas
       addTearDown(() => holder.close());
       // What the version-1 build's sink does on versionchange. The test never
       // closes the holder itself, so this handler is the only thing that can
@@ -1365,6 +1376,8 @@ void main() {
       Map<String, JSObject> values,
     ) async {
       final database = await openRawConnection(freshName(), 1, ageIndex: true);
+      // A tear-off of an external interop member does not compile on web.
+      // ignore: unnecessary_lambdas
       addTearDown(() => database.close());
       final store = database
           .transaction('records'.toJS, 'readwrite')
@@ -1426,33 +1439,37 @@ void main() {
     });
 
     test('a canceled request error needs stopPropagation as well as '
-        'preventDefault: preventDefault alone still fires transaction.onerror', () async {
+        'preventDefault: preventDefault alone still fires '
+        'transaction.onerror', () async {
       final outcomes = <String, bool>{};
       for (final stopPropagation in [false, true]) {
         final database = await openRawConnection(freshName(), 1);
+        // A tear-off of an external interop member does not compile on web.
+        // ignore: unnecessary_lambdas
         addTearDown(() => database.close());
         final transaction = database.transaction('records'.toJS, 'readwrite');
         final store = transaction.objectStore('records');
         var transactionErrored = false;
         final settled = Completer<String>();
-        transaction.oncomplete = ((web.Event _) {
-          if (!settled.isCompleted) settled.complete('committed');
-        }).toJS;
-        transaction.onabort = ((web.Event _) {
-          if (!settled.isCompleted) settled.complete('aborted');
-        }).toJS;
-        transaction.onerror = ((web.Event _) => transactionErrored = true).toJS;
+        transaction
+          ..oncomplete = ((web.Event _) {
+            if (!settled.isCompleted) settled.complete('committed');
+          }).toJS
+          ..onabort = ((web.Event _) {
+            if (!settled.isCompleted) settled.complete('aborted');
+          }).toJS
+          ..onerror = ((web.Event _) => transactionErrored = true).toJS;
 
         final seeded = Completer<void>();
-        final put = store.put('one'.toJS, 'k1'.toJS);
-        put.onsuccess = ((web.Event _) => seeded.complete()).toJS;
+        store.put('one'.toJS, 'k1'.toJS).onsuccess = ((
+          web.Event _,
+        ) => seeded.complete()).toJS;
         await seeded.future;
 
         // add() on an existing key is a ConstraintError: a real request error,
         // without needing the store to misbehave.
         final failed = Completer<void>();
-        final duplicate = store.add('two'.toJS, 'k1'.toJS);
-        duplicate.onerror = ((web.Event event) {
+        store.add('two'.toJS, 'k1'.toJS).onerror = ((web.Event event) {
           event.preventDefault();
           if (stopPropagation) event.stopPropagation();
           failed.complete();
@@ -1478,17 +1495,19 @@ void main() {
     test('a transaction survives an await on its own request and dies across '
         'any other', () async {
       final database = await openRawConnection(freshName(), 1);
+      // A tear-off of an external interop member does not compile on web.
+      // ignore: unnecessary_lambdas
       addTearDown(() => database.close());
       final transaction = database.transaction('records'.toJS, 'readwrite');
       final store = transaction.objectStore('records');
 
       Future<void> put(String key) {
         final done = Completer<void>();
-        final request = store.put('v'.toJS, key.toJS);
-        request.onsuccess = ((web.Event _) => done.complete()).toJS;
-        request.onerror = ((web.Event _) => done.completeError(
-          StateError('inactive'),
-        )).toJS;
+        store.put('v'.toJS, key.toJS)
+          ..onsuccess = ((web.Event _) => done.complete()).toJS
+          ..onerror = ((web.Event _) => done.completeError(
+            StateError('inactive'),
+          )).toJS;
         return done.future;
       }
 

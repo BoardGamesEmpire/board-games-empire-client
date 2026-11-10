@@ -3,12 +3,11 @@ import 'dart:typed_data';
 
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
+import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:dio_network/src/network/token_interceptor.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-
-import 'package:dio_network/src/auth/token_storage_service.dart';
-import 'package:dio_network/src/network/token_interceptor.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 

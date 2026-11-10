@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:di/src/debug_report_swallowed.dart';
 import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
-
-import '../debug_report_swallowed.dart';
 
 /// One registered hydrate: how to ask whether it needs re-running, and how
 /// to run it.

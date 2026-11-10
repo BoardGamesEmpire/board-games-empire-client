@@ -35,8 +35,8 @@ class _RecordingCache extends FakeGamesCache {
 
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) {
     pageReads.add((offset: offset, limit: limit, sort: sort));
@@ -48,8 +48,8 @@ class _RecordingCache extends FakeGamesCache {
 class _BrokenCache extends _RecordingCache {
   @override
   Future<List<Game>> getGamesPage({
-    int offset = 0,
     required int limit,
+    int offset = 0,
     GameSort sort = GameSort.title,
   }) => throw StateError('the session ended');
 }
@@ -152,9 +152,7 @@ void main() {
   test('an empty answer is Empty, whatever the cache holds', () async {
     cache = _RecordingCache(_newest(3));
     remote.onFetchPage = (_, _) async => pageOf([]);
-    final cubit = build();
-
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     expect(cubit.state, const NewestGamesEmpty());
@@ -165,9 +163,7 @@ void main() {
     cache = _RecordingCache(_newest(3));
     remote.onFetchPage = (_, _) async =>
         throw const GamesForbiddenException('no');
-    final cubit = build();
-
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     expect(cubit.state, const NewestGamesDenied());
@@ -178,9 +174,7 @@ void main() {
   test('a failed read shows the cache, newest first', () async {
     cache = _RecordingCache(_newest(12));
     remote.onFetchPage = (_, _) async => throw unreachable();
-    final cubit = build();
-
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     expect(cubit.state, NewestGamesReady(games: _newest(10), fromCache: true));
@@ -212,9 +206,7 @@ void main() {
   test('offline: no request, the cache instead', () async {
     connectivity.current = ConnectivityState.offline;
     cache = _RecordingCache(_newest(12));
-    final cubit = build();
-
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     expect(remote.calls, isEmpty);
@@ -237,8 +229,7 @@ void main() {
   test('a failed reload keeps the rows up', () async {
     cache = _RecordingCache(_newest(5));
     remote.onFetchPage = (_, _) async => pageOf(_newest(3));
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
     final states = record(cubit);
 
@@ -255,8 +246,7 @@ void main() {
   test('a failed reload keeps Empty', () async {
     cache = _RecordingCache(_newest(5));
     remote.onFetchPage = (_, _) async => pageOf([]);
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
     expect(cubit.state, const NewestGamesEmpty());
     final states = record(cubit);
@@ -284,8 +274,7 @@ void main() {
   test('an offline reload keeps Empty', () async {
     cache = _RecordingCache(_newest(5));
     remote.onFetchPage = (_, _) async => pageOf([]);
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
     final states = record(cubit);
 
@@ -308,8 +297,7 @@ void main() {
 
   test('a reload leaves the state alone until its answer lands', () async {
     remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
     final states = record(cubit);
 
@@ -329,8 +317,7 @@ void main() {
     cache = _RecordingCache(_newest(3));
     remote.onFetchPage = (_, _) async =>
         throw const GamesForbiddenException('no');
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     remote.onFetchPage = (_, _) async => throw unreachable();
@@ -344,8 +331,7 @@ void main() {
   test('going offline keeps the rows from the server', () async {
     cache = _RecordingCache(_newest(5));
     remote.onFetchPage = (_, _) async => pageOf(_newest(3));
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     connectivity.change(ConnectivityState.offline);
@@ -360,8 +346,7 @@ void main() {
     cache = _RecordingCache(_newest(2));
     final answer = Completer<PaginatedResult<Game>>();
     remote.onFetchPage = (_, _) => answer.future;
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     connectivity.change(ConnectivityState.offline);
@@ -376,8 +361,7 @@ void main() {
     connectivity.current = ConnectivityState.offline;
     cache = _RecordingCache(_newest(2));
     remote.onFetchPage = (_, _) async => pageOf(_newest(4));
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
     expect(remote.calls, isEmpty);
     expect(cubit.state, NewestGamesReady(games: _newest(2), fromCache: true));
@@ -391,9 +375,7 @@ void main() {
 
   test('a replayed connectivity state is not a change', () async {
     remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-    final cubit = build();
-
-    cubit.load();
+    build().load();
     // Time for the service's replay of its current state to arrive.
     await _settle();
     await _settle();
@@ -412,8 +394,7 @@ void main() {
     test('comes down, and stays down after a reload that repeats it', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(3));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
 
       gone.add('g-1');
@@ -430,8 +411,7 @@ void main() {
       final gone = goneStream();
       final answer = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (_, _) => answer.future;
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
 
       gone.add('g-1');
@@ -446,8 +426,7 @@ void main() {
       final gone = goneStream();
       cache = _RecordingCache(_newest(3));
       remote.onFetchPage = (_, _) async => throw unreachable();
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
 
       gone.add('g-0');
@@ -462,8 +441,7 @@ void main() {
     test('one the shelf does not show changes nothing', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(2));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
       final states = record(cubit);
 
@@ -476,8 +454,7 @@ void main() {
     test('the last row gone reads again rather than saying Empty', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
       final states = record(cubit);
 
@@ -499,8 +476,7 @@ void main() {
     test('the last row gone, then an empty answer, is Empty', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
 
       remote.onFetchPage = (_, _) async => pageOf([]);
@@ -513,8 +489,7 @@ void main() {
     test('the last row gone, with the same one answered, is Failed', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
       final states = record(cubit);
 
@@ -534,8 +509,9 @@ void main() {
     cubit.load();
     await _settle();
 
-    gone.add('g-0');
-    gone.add('g-1');
+    gone
+      ..add('g-0')
+      ..add('g-1');
     await _settle();
     answer.complete(pageOf(_newest(2)));
     await _settle();
@@ -578,8 +554,7 @@ void main() {
   test('a late failure after a newer load is discarded', () async {
     final first = Completer<PaginatedResult<Game>>();
     remote.onFetchPage = (_, _) => first.future;
-    final cubit = build();
-    cubit.load();
+    final cubit = build()..load();
     await _settle();
 
     remote.onFetchPage = (_, _) async => pageOf(_newest(2));
@@ -623,8 +598,7 @@ void main() {
       Stream<String>? gone,
     }) async {
       remote.onFetchPage = (_, _) async => throw unreachable();
-      final cubit = buildFake(gone: gone);
-      cubit.load();
+      final cubit = buildFake(gone: gone)..load();
       await tester.pump();
       expect(cubit.state, const NewestGamesFailed());
       return cubit;
@@ -657,8 +631,7 @@ void main() {
       // Offline with nothing saved: the read answers without waiting on
       // anything, in the turn it begins.
       connectivity.current = ConnectivityState.offline;
-      final cubit = buildFake();
-      cubit.load();
+      final cubit = buildFake()..load();
       await tester.pump();
       expect(cubit.state, const NewestGamesFailed());
       final states = recordFake(cubit);
@@ -892,8 +865,7 @@ void main() {
     test('an answer emits nothing and throws nothing', () async {
       final answer = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (_, _) => answer.future;
-      final cubit = build();
-      cubit.load();
+      final cubit = build()..load();
       await _settle();
 
       await cubit.close();
@@ -907,8 +879,7 @@ void main() {
     test('a failure emits nothing and throws nothing', () async {
       final answer = Completer<PaginatedResult<Game>>();
       remote.onFetchPage = (_, _) => answer.future;
-      final cubit = build();
-      cubit.load();
+      final cubit = build()..load();
       await _settle();
 
       await cubit.close();
@@ -921,14 +892,14 @@ void main() {
     test('the streams are no longer heard', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(2));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
 
       await cubit.close();
       gone.add('g-0');
-      connectivity.change(ConnectivityState.offline);
-      connectivity.change(ConnectivityState.online);
+      connectivity
+        ..change(ConnectivityState.offline)
+        ..change(ConnectivityState.online);
       await _settle();
 
       expect(remote.calls, hasLength(1));
@@ -938,8 +909,7 @@ void main() {
     test('a game found gone as it closes asks for nothing', () async {
       final gone = goneStream();
       remote.onFetchPage = (_, _) async => pageOf(_newest(1));
-      final cubit = build(gone: gone.stream);
-      cubit.load();
+      final cubit = build(gone: gone.stream)..load();
       await _settle();
       final states = record(cubit);
 

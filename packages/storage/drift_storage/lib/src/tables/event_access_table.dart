@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'event_table.dart';
+import 'package:drift_storage/src/tables/event_table.dart';
 
 /// Which users each cached event was sent to (#496): one row per user, event
 /// and [source], shaped like `GameAccessTable` (#434).

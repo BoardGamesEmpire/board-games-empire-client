@@ -94,7 +94,8 @@ class _DatabaseError {
 
   @override
   String toString() =>
-      'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
+      'SqliteException(2067): while executing statement, UNIQUE constraint '
+      'failed\n'
       '  Causing statement: INSERT INTO t (a) VALUES (?)'
       '${bound ? ', parameters: user-42, Kitchen Table' : ''}';
 }

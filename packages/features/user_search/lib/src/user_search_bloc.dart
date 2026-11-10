@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import 'user_search_event.dart';
-import 'user_search_state.dart';
+import 'package:user_search/src/user_search_event.dart';
+import 'package:user_search/src/user_search_state.dart';
 
 /// Finds users by name or username, as the person types (#455, #499).
 ///

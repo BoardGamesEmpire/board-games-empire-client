@@ -1,14 +1,14 @@
 import 'package:models/domain.dart';
 
-import 'paginated_result.dart';
+import 'package:network_interface/src/paginated_result.dart';
 
 /// One game read by id, with the platform games the server sent beside it
 /// (#42).
 ///
-/// Separate values for the reason [GameCollectionWithSummary] gives: they
+/// Separate values for the reason `GameCollectionWithSummary` gives: they
 /// are different records, and the game alone is what the games cache holds.
 ///
-/// [platformGames] are full [PlatformGame] records, in the order the server
+/// `platformGames` are full [PlatformGame] records, in the order the server
 /// sent them. The shape is backend#791's, and settled: each row is the
 /// platform game's own columns and its platform, whose name is kept as
 /// [PlatformGame.platformName]. A full record is what the cache holds, so the
@@ -235,6 +235,8 @@ sealed class GamesRemoteException implements Exception {
 
   @override
   String toString() =>
+      // toString names the concrete subclass, so it needs the runtime type.
+      // ignore: no_runtimetype_tostring
       '$runtimeType(message: $message, statusCode: $statusCode)';
 }
 

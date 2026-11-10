@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show immutable;
 import 'package:reactive_forms/reactive_forms.dart';
 
 /// Normalization and validation for the user-entered server URL (#36).
@@ -20,6 +21,7 @@ sealed class ServerUrlResult {
 }
 
 /// The input normalized to a usable base URL.
+@immutable
 final class ServerUrlValid extends ServerUrlResult {
   const ServerUrlValid(this.normalized);
 
@@ -50,6 +52,7 @@ enum ServerUrlError {
   insecureHttp,
 }
 
+@immutable
 final class ServerUrlInvalid extends ServerUrlResult {
   const ServerUrlInvalid(this.error);
 
@@ -109,7 +112,7 @@ ServerUrlResult normalizeServerUrl(String input) {
   // Prepend https:// only when no scheme is present at all. A lone
   // "scheme-relative" (//host) or partial scheme still parses; the
   // scheme check below handles the rest.
-  final hasScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(candidate);
+  final hasScheme = RegExp('^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(candidate);
   if (!hasScheme) candidate = 'https://$candidate';
 
   final Uri uri;
@@ -139,7 +142,6 @@ ServerUrlResult normalizeServerUrl(String input) {
       if (!_isLoopbackOrPrivateHost(uri.host)) {
         return const ServerUrlInvalid(ServerUrlError.insecureHttp);
       }
-      break;
     default:
       return const ServerUrlInvalid(ServerUrlError.unsupportedScheme);
   }

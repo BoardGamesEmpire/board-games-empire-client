@@ -1,13 +1,12 @@
+import 'package:auth/l10n/auth_localizations.dart';
+import 'package:auth/src/bloc/auth_bloc.dart';
+import 'package:auth/src/bloc/auth_bloc_state.dart';
+import 'package:auth/src/bloc/auth_event.dart';
+import 'package:auth/src/screens/auth_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:ui/ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
-
-import '../../l10n/auth_localizations.dart';
-import '../bloc/auth_bloc.dart';
-import '../bloc/auth_event.dart';
-import '../bloc/auth_bloc_state.dart';
-import 'auth_screen.dart';
+import 'package:ui/ui.dart';
 
 /// The `/auth` route's state machine (#37): a pure function of
 /// [AuthBloc] state with no widget-local memory.
@@ -33,10 +32,10 @@ import 'auth_screen.dart';
 /// which depends on this feature — never the reverse.
 class AuthGate extends StatelessWidget {
   const AuthGate({
-    super.key,
     required this.identity,
     required this.serverDisplayName,
     required this.splash,
+    super.key,
     this.unsentChangesCount,
   });
 
@@ -99,10 +98,10 @@ class AuthGate extends StatelessWidget {
 /// error screen (#102).
 class SessionCheckFailedView extends StatelessWidget {
   const SessionCheckFailedView({
-    super.key,
     required this.kind,
     required this.serverDisplayName,
     required this.onRetry,
+    super.key,
   });
 
   final SessionCheckFailureKind kind;

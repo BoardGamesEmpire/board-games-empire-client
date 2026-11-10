@@ -23,8 +23,8 @@ enum StuckSyncOpKind {
 final class StuckSyncOp extends Equatable {
   const StuckSyncOp({required this.entryId, required this.kind, this.subject});
 
-  /// The queue entry, which [SyncRecovery.retry] and
-  /// [SyncRecovery.discard] take.
+  /// The queue entry, which `SyncRecovery.retry` and
+  /// `SyncRecovery.discard` take.
   final String entryId;
 
   final StuckSyncOpKind kind;
