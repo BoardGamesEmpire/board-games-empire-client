@@ -425,21 +425,19 @@ first, and then the hand-off moves it as expected:
 
 The hand-offs:
 
-- Take back, its row gone once the game is off the pool: the next of your
-  rows' Take back, else the one before it, else Offer games, else the
-  search field. Nothing moves if focus went elsewhere while it was out, or
-  if the take-back was refused and the row stays, or if the read after it
-  failed and a later read takes the row away. If the games become hidden,
-  nothing of the tab is left to take it, and it stays on the page. On the
-  web, with the stale-data banner already showing (the pool's last read
-  failed), a Take back pressed by the reader's double-tap or a mouse
-  usually hands nothing on when its row goes: focus stays on the page.
-  That is the known limit of the session check, not a bug. Pressed by
-  keyboard, it is handed on as above.
+- Take back, its row gone as the server answers that the game is off the
+  pool, whether or not the read after it works: the next of your rows'
+  Take back, else the one before it, else Offer games, else the search
+  field. Nothing moves if focus went elsewhere while it was out, or if the
+  take-back was refused and the row stays. If the games become hidden,
+  nothing of the tab is left to take it, and it stays on the page.
 - A person's chip under the search, removed: the chip that takes its
   place, else the one before it, else People. A chip removed by pointer
   while focus is on another chip moves no focus.
-- Clear filters, in "No games match": the emptied search field.
+- Clear filters, in "No games match", however it is pressed: People, never
+  the emptied search field, so no on-screen keyboard opens. Pressed by a
+  pointer while keyboard focus sits on another control, it moves no
+  focus.
 - *Whose games*, closed: People.
 - The Offer games page, closed by its Offer button or by Back: Offer games,
   which keeps it, read as "Offering…", through the run it sent.

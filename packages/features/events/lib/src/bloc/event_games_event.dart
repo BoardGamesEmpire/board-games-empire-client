@@ -18,7 +18,9 @@ sealed class EventGamesEvent extends Equatable {
 
 /// Read the games the attendees [attendeeIds] of the event [eventId] have
 /// offered: when the tab opens, and after each detail read. The bloc reads it
-/// again itself once a write ends, and a retry is [EventGamesRetryRequested].
+/// again itself once an offer run ends, and once a take-back ends unless it
+/// failed; a dropped write reads nothing. A retry is
+/// [EventGamesRetryRequested].
 final class EventGamesRequested extends EventGamesEvent {
   const EventGamesRequested(this.eventId, this.attendeeIds);
 

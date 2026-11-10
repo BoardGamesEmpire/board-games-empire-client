@@ -16,7 +16,9 @@ enum EventGamesLoad {
   loaded,
 
   /// The last read failed, or the session check stopped it (#432). Games
-  /// read before it are kept.
+  /// read before it are kept. A read that started in [gone] and answers a
+  /// 404 again is failed too, with no games: the event's read didn't settle
+  /// it.
   failed,
 
   /// The server won't show this viewer the pool: a 403 on any attendee's
@@ -25,7 +27,7 @@ enum EventGamesLoad {
 
   /// The server has no such event, or everyone named has left it: a 404. A
   /// screen that shows the event reads it again, which finds out for the
-  /// whole screen.
+  /// whole screen, and then reads the pool again.
   gone,
 }
 
@@ -117,7 +119,7 @@ final class EventGamesState extends Equatable {
   final EventGamesLoad load;
 
   /// The pool as last read, kept through a later failed read, and cleared by
-  /// a hidden or a gone.
+  /// a hidden or a gone. A game taken back leaves it as the take-back ends.
   final List<OfferedGame> games;
 
   /// While an offer run is out: how many of its `total` picks have been

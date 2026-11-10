@@ -107,6 +107,46 @@ void main() {
       },
     );
 
+    test("the query matches by terms, each in the title, as Collection's "
+        'search does', () {
+      final seafarers = offered('o-5', 'att-bo', 'Catan: Seafarers');
+      final games = [...pool, seafarers];
+
+      for (final query in ['catan sea', 'Catan: Seafarers', 'seafarers cat']) {
+        expect(
+          filterPool(games, PoolFilter(query: query)),
+          [seafarers],
+          reason: query,
+        );
+      }
+      expect(filterPool(games, const PoolFilter(query: 'catan root')), isEmpty);
+    });
+
+    test('a query of punctuation alone narrows nothing', () {
+      const filter = PoolFilter(query: ' : - ');
+
+      expect(filterPool(pool, filter), pool);
+      expect(filter.narrows, isFalse);
+    });
+
+    test('copyWith changes only the fields given', () {
+      const filter = PoolFilter(query: 'a', attendeeIds: {'x'}, leaveOut: true);
+
+      expect(filter.copyWith(), filter);
+      expect(
+        filter.copyWith(query: 'b'),
+        const PoolFilter(query: 'b', attendeeIds: {'x'}, leaveOut: true),
+      );
+      expect(
+        filter.copyWith(attendeeIds: const {}),
+        const PoolFilter(query: 'a', leaveOut: true),
+      );
+      expect(
+        filter.copyWith(leaveOut: false),
+        const PoolFilter(query: 'a', attendeeIds: {'x'}),
+      );
+    });
+
     test('filters are equal by value', () {
       expect(
         const PoolFilter(query: 'a', attendeeIds: {'x'}, leaveOut: true),

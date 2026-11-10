@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
+import 'package:events/src/bloc/event_detail_event.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
@@ -17,7 +17,8 @@ import 'package:events/src/widgets/event_pool_people_sheet.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:game_filters/game_filters.dart' show GameFilterChipLabel;
+import 'package:game_filters/game_filters.dart'
+    show GameFilterChipLabel, InUseChips;
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -31,16 +32,22 @@ typedef OpenOfferGames = Future<List<OfferPick>?> Function(
 
 /// What the Games tab shows under its header, if it has one.
 enum _Body {
-  /// The games aren't shown to this viewer, or there is nobody to read them
+  /// The games aren't shown to this viewer, or the roster was read and
+  /// withheld with no row of theirs on it, so there is nobody to read them
   /// for. No header.
   hidden,
 
-  /// Waiting for the first answer, or for the event's own read after the
-  /// pool's found it gone. No header.
+  /// Waiting for the first answer, for the event's own read after the
+  /// pool's found it gone, or for the event's read to bring a roster that
+  /// hasn't been read. No header.
   loading,
 
   /// The read failed, with no games read before.
   failed,
+
+  /// No roster has been read, and the event's read failed: as [failed], but
+  /// Try again reads the event, since the pool has nobody to be read for.
+  rosterFailed,
 
   /// Nobody has offered a game.
   empty,
@@ -60,7 +67,20 @@ enum _Body {
   EventGamesTabController controller,
 ) {
   final load = controller.drawnLoad(games);
-  if (poolAttendeeIds(detail.detail).isEmpty || load == EventGamesLoad.hidden) {
+  if (poolAttendeeIds(detail.detail).isEmpty) {
+    // A roster read and withheld ([]) leaves this viewer nobody to read for.
+    // One not read (null), as an event cached from the list has, says
+    // nothing about the games: the event's read brings it. A read that
+    // succeeded has ended a beat before the roster it wrote reaches the
+    // screen, so only one that failed draws the failure.
+    final body = detail.detail.snapshot.attendees != null
+        ? _Body.hidden
+        : detail.refreshFailed && !detail.reading
+        ? _Body.rosterFailed
+        : _Body.loading;
+    return (body: body, rows: const []);
+  }
+  if (load == EventGamesLoad.hidden) {
     return (body: _Body.hidden, rows: const []);
   }
   if (games.games.isEmpty) {
@@ -90,11 +110,16 @@ enum _Body {
 /// Its slivers, as one group under the tab bar: the header, then the rows
 /// ([BgeKeyedSliverList], keyed by the offered game's id) or one state in a
 /// [BgeStateSliver]. The header stays above every state but the wait for
-/// a first answer (or for the event's read after the pool found it gone)
-/// and the games being hidden. The page's `semanticChildCount` is
-/// [rowCount]. How far a run of offers has got, how the pool's last write
-/// went, and the stale-data banner after a failed read of games still
-/// shown, are [EventGamesFooter]'s, in the page's footer.
+/// a first answer (or for the event's read after the pool found it gone,
+/// or to bring a roster not read) and the games being hidden. A roster not
+/// read, as an event cached from the list has, is not hidden: it waits for
+/// the event's read to bring it, and if that read fails, the tab says it
+/// couldn't load the games, with Try again reading the event. The page's
+/// `semanticChildCount` is
+/// [rowCount]. How far a run of offers has got and how the pool's last
+/// write went are [EventGamesFooter]'s, in the page's footer on either tab;
+/// so is the stale-data banner after a failed read of games still shown,
+/// while this tab is selected.
 ///
 /// ## Writes
 ///
@@ -125,10 +150,11 @@ enum _Body {
 ///
 /// It narrows as it is changed: the search on every edit, and the people in
 /// *Whose games* as each is chosen. Each person chosen shows a chip under
-/// the field, which removes them; a chip's own press hands focus to the
-/// chip in its place, else the one before it, else People, while focus is
-/// free. While the filter narrows a pool that has games, the count of what
-/// it keeps is a live region.
+/// the field, which removes them ([InUseChips], the chips of Collection's
+/// filters in use); a chip's own press hands focus to the chip in its
+/// place, else the one before it, else People, while focus is free. While
+/// the filter narrows a pool that has games, the count of what it keeps is
+/// a live region.
 class EventGamesTab extends StatelessWidget {
   const EventGamesTab({
     required this.detail,
@@ -221,6 +247,21 @@ class EventGamesTab extends StatelessWidget {
               onRetry: () => retryEventGamesPool(context),
             ),
           ),
+          _Body.rosterFailed => BgeStateSliver(
+            child: BgeErrorState(
+              icon: Icons.cloud_off_outlined,
+              title: l10n.eventsGamesFailedTitle,
+              body: l10n.eventsGamesFailedBody,
+              retryLabel: l10n.eventsRefreshRetry,
+              retryProgressLabel: l10n.eventsRefreshInProgress,
+              retryKey: EventDetailScreen.poolRetryKey,
+              retrying: detail.refreshing,
+              // The event's read brings the roster, whose end reads the pool.
+              onRetry: () => context.read<EventDetailBloc>().add(
+                const EventDetailRetryRequested(),
+              ),
+            ),
+          ),
           _Body.empty => BgeStateSliver(
             child: BgeEmptyState(
               icon: Icons.casino_outlined,
@@ -234,7 +275,8 @@ class EventGamesTab extends StatelessWidget {
               title: l10n.eventsGamesNoMatchesTitle,
               action: OutlinedButton(
                 key: EventDetailScreen.poolClearFiltersKey,
-                onPressed: controller.clearFilters,
+                focusNode: controller.clearFiltersFocus,
+                onPressed: () => controller.clearFilters(context),
                 child: Text(l10n.eventsGamesClearFilters),
               ),
             ),
@@ -458,22 +500,32 @@ class _PoolHeader extends StatelessWidget {
               ),
           ],
         ),
-        _PeopleInUse(
-          filter: filter,
-          people: [
-            for (final person in people)
-              if (filter.attendeeIds.contains(person.id))
-                (
-                  id: person.id,
-                  label: !filter.leaveOut
-                      ? person.label
-                      : person.id == viewerId
-                      ? l10n.eventsGamesPersonYouLeftOut
-                      : l10n.eventsGamesPersonLeftOut(person.label),
-                ),
-          ],
-          onRemove: (id) => controller.choose(id, chosen: false),
-          onEmptied: controller.peopleFocus.requestFocus,
+        // A chip per person chosen, which lets them go. Always in the tree,
+        // drawing nothing without a chip, so that it is there to hand focus
+        // to People after its last chip goes. Spaced from above only while
+        // it shows chips.
+        Padding(
+          padding: EdgeInsets.only(
+            top: filter.attendeeIds.isEmpty ? 0 : tokens.spaceSm,
+          ),
+          child: InUseChips<PoolFilter>(
+            value: filter,
+            chips: [
+              for (final person in people)
+                if (filter.attendeeIds.contains(person.id))
+                  if (_chosenLabel(l10n, person, filter) case final label)
+                    (
+                      id: person.id,
+                      key: EventDetailScreen.poolInUseKey(person.id),
+                      label: label,
+                      semanticsLabel: null,
+                      removeLabel: l10n.eventsGamesPersonRemove(label),
+                      without: filter.withoutPerson(person.id),
+                    ),
+            ],
+            onRemove: (chip) => controller.choose(chip.id, chosen: false),
+            onEmptied: controller.peopleFocus.requestFocus,
+          ),
         ),
         // With nothing offered there is nothing to count.
         if (filter.narrows && games.games.isNotEmpty) ...[
@@ -493,6 +545,21 @@ class _PoolHeader extends StatelessWidget {
       ],
     );
   }
+
+  /// How the chip of [person], chosen in [filter], names them: as *Whose
+  /// games* does, or, while the people chosen are left out, with "Not".
+  String _chosenLabel(
+    EventsLocalizations l10n,
+    PoolPerson person,
+    PoolFilter filter,
+  ) => !filter.leaveOut
+      ? person.label
+      : person.id == viewerId
+      ? l10n.eventsGamesPersonYouLeftOut
+      // Mid-phrase, so the unnamed form for there.
+      : l10n.eventsGamesPersonLeftOut(
+          names[person.id] ?? l10n.eventsAttendeeSomeone,
+        );
 
   /// Opens the Offer games page with the collection entries the viewer's
   /// own rows hold, so it can show them as already offered and pick none of
@@ -672,154 +739,6 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
           ),
         ],
       ],
-    );
-  }
-}
-
-/// A chip per person chosen, under the search field (#516). Tapping one, or
-/// its remove button, lets them go.
-///
-/// A chip's own press arms a hand-off, however the press came: a key, a
-/// pointer, or a screen reader's activation, which moves no input focus.
-/// Once the header is built without it, focus goes to the chip that took
-/// its place, else the one before it, else [onEmptied], but only while
-/// focus is free: on nothing, on the page, or still on the chip that left.
-/// So a chip removed by pointer while keyboard focus is on another moves
-/// nothing, and neither does a hand-off once something else has taken
-/// focus meanwhile.
-///
-/// It stays in the tree while it shows no chip, so a hand-off to
-/// [onEmptied] has a widget to run from.
-class _PeopleInUse extends StatefulWidget {
-  const _PeopleInUse({
-    required this.filter,
-    required this.people,
-    required this.onRemove,
-    required this.onEmptied,
-  });
-
-  final PoolFilter filter;
-
-  /// The people chosen, in order, each named as their chip says it.
-  final List<PoolPerson> people;
-  final ValueChanged<String> onRemove;
-  final VoidCallback onEmptied;
-
-  @override
-  State<_PeopleInUse> createState() => _PeopleInUseState();
-}
-
-/// One chip's focus: `area` holds the whole chip, its remove button too, and
-/// `chip` is the chip's own, which a hand-off focuses.
-typedef _ChipFocus = ({FocusNode area, FocusNode chip});
-
-class _PeopleInUseState extends State<_PeopleInUse> {
-  final _focus = <String, _ChipFocus>{};
-
-  /// A chip's removal, waiting for the filter without it: where the chip
-  /// was, whom it named, and the node that held focus if the chip held it.
-  ({int index, String id, FocusNode? node})? _pending;
-
-  @override
-  void didUpdateWidget(_PeopleInUse oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final pending = _pending;
-    if (pending == null || widget.filter == oldWidget.filter) return;
-    _pending = null;
-    if (widget.filter.attendeeIds.contains(pending.id)) return;
-    // After the frame that builds the chips without it.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !focusIsFree(context, untouched: pending.node)) return;
-      final ids = [for (final (:id, label: _) in widget.people) id];
-      if (ids.isEmpty) {
-        widget.onEmptied();
-        return;
-      }
-      _focus[ids[math.min(pending.index, ids.length - 1)]]?.chip.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    for (final (:area, :chip) in _focus.values) {
-      area.dispose();
-      chip.dispose();
-    }
-    super.dispose();
-  }
-
-  void _remove(String id, int index) {
-    // Armed by the press. Focus still on the chip that left counts as free.
-    final focused = _focus[id]?.area.hasFocus ?? false;
-    _pending = (
-      index: index,
-      id: id,
-      node: focused ? FocusManager.instance.primaryFocus : null,
-    );
-    widget.onRemove(id);
-  }
-
-  /// The focus nodes of the chips [ids] names, made for a chip as it comes
-  /// and let go after the frame it leaves in.
-  void _keepFocusOf(Set<String> ids) {
-    for (final id in ids) {
-      _focus.putIfAbsent(
-        id,
-        () => (
-          area: FocusNode(
-            debugLabel: 'Person chosen $id',
-            canRequestFocus: false,
-            skipTraversal: true,
-          ),
-          chip: FocusNode(debugLabel: 'Person chosen $id chip'),
-        ),
-      );
-    }
-    final gone = [
-      for (final MapEntry(:key, :value) in _focus.entries)
-        if (!ids.contains(key)) (key, value),
-    ];
-    if (gone.isEmpty) return;
-    for (final (id, _) in gone) {
-      _focus.remove(id);
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      for (final (_, (:area, :chip)) in gone) {
-        area.dispose();
-        chip.dispose();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final tokens = BgeTokens.of(context);
-    final people = widget.people;
-    _keepFocusOf({for (final (:id, label: _) in people) id});
-    if (people.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: EdgeInsets.only(top: tokens.spaceSm),
-      child: Wrap(
-        spacing: tokens.spaceSm,
-        runSpacing: tokens.spaceSm,
-        children: [
-          for (final (index, (:id, :label)) in people.indexed)
-            Focus(
-              focusNode: _focus[id]!.area,
-              includeSemantics: false,
-              child: InputChip(
-                key: EventDetailScreen.poolInUseKey(id),
-                focusNode: _focus[id]!.chip,
-                label: GameFilterChipLabel(label),
-                onPressed: () => _remove(id, index),
-                onDeleted: () => _remove(id, index),
-                deleteButtonTooltipMessage: l10n.eventsGamesPersonRemove(label),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

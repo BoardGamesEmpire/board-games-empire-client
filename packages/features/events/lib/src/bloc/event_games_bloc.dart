@@ -30,13 +30,14 @@ enum _Sent {
 /// Offers and take-backs go straight to the server, never through the sync
 /// queue, and nothing is re-sent. The pool is never cached: it lives in
 /// [EventGamesState.games]. The screen asks for a read the first time the
-/// Games tab shows, after each detail read from then on, and when the user
-/// retries a failed read. The bloc reads again as a run of offers ends,
-/// however it ended, and as a take-back ends, unless the take-back failed,
-/// which changed nothing the screen can know of. A write the screen's
-/// re-check dropped reads nothing. The event's id and the roster's attendee
-/// ids travel with each request rather than with the bloc, since a reconcile
-/// can move the id while the screen is open (#499).
+/// Games tab shows, after each detail read from then on, whenever the
+/// roster's ids it would read for change from those it last asked for, and
+/// when the user retries a failed read. The bloc reads again as a run of
+/// offers ends, however it ended, and as a take-back ends, unless the
+/// take-back failed, which changed nothing the screen can know of. A write
+/// the screen's re-check dropped reads nothing. The event's id and the
+/// roster's attendee ids travel with each request rather than with the
+/// bloc, since a reconcile can move the id while the screen is open (#499).
 ///
 /// Reads and writes are independent: a read asked for while a write is out
 /// goes ahead under the rules below, and doesn't wait for it.
@@ -50,6 +51,11 @@ enum _Sent {
 ///   games: cleared.
 /// - A 404: the event is gone, or everyone named left it; load: gone: the
 ///   screen reads the event, which settles it; games: cleared.
+/// - A 404 again, on a read that started in gone: the event's read since
+///   didn't settle it, as on a server without these routes; load: failed;
+///   games: none. So the screen can offer a retry, and the bloc never
+///   reads by itself on a gone: a retry from there is a read that answers
+///   gone and, after the event's read, one that answers failed.
 /// - Anything else; load: failed; games: the last ones, kept.
 /// - None: the session said no, or threw (below); load: failed; games: the
 ///   last ones, kept.
@@ -117,9 +123,12 @@ enum _Sent {
 /// - Anything else, or the session said no or threw (below), when nothing is
 ///   sent; failed.
 ///
-/// The outcome carries the game's title as the event carried it. Then the
-/// pool is read again, unless the take-back failed, when the pool is as it
-/// was.
+/// The outcome carries the game's title as the event carried it. A done
+/// take-back's state also drops the game from [EventGamesState.games], since
+/// the answer already says it is off the pool, and a read that was out as
+/// it ended leaves the game out of its answer, which can predate the
+/// take-back. Then the pool is read again, unless the take-back failed, when
+/// the pool is as it was.
 ///
 /// ## A dropped write
 ///
@@ -187,6 +196,10 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   /// Whether a retry joined the reads running now, which
   /// [EventGamesState.refreshing] says until they end.
   bool _retrying = false;
+
+  /// The offered games taken back, done, since the read that is out started.
+  /// Its answer can still hold them, so they are left out of it.
+  final Set<String> _takenBackSinceRead = {};
 
   Future<void> _onRequested(
     EventGamesRequested event,
@@ -313,9 +326,14 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     final result = await _takeBack(event);
     if (_closing) return;
 
+    final done = result == EventGamesResult.done;
+    if (done) _takenBackSinceRead.add(game.id);
     emit(
       state.copyWith(
         takingBack: () => null,
+        games: done
+            ? List.unmodifiable(state.games.where((each) => each.id != game.id))
+            : null,
         outcome: () => EventGamesOutcome(
           write: EventGamesWrite.takeBack,
           result: result,
@@ -408,6 +426,10 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   /// Reads the pool [read] names once the session says yes, and fails it
   /// when the session says no. Never throws.
   Future<void> _readOnce(_PoolRead read, Emitter<EventGamesState> emit) async {
+    _takenBackSinceRead.clear();
+    // Only reads change the load, and one is out at a time, so this is the
+    // load the read started in.
+    final startedGone = state.load == EventGamesLoad.gone;
     if (!await _confirmed('Pool not read')) {
       _readEnded(EventGamesLoad.failed, state.games, emit);
       return;
@@ -436,7 +458,12 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
       return;
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Pool read found the event gone', error: error);
-      await _readRefused(EventGamesLoad.gone, emit);
+      // The event's read since then didn't settle it, so this is a pool
+      // the server won't serve, not an event that went.
+      await _readRefused(
+        startedGone ? EventGamesLoad.failed : EventGamesLoad.gone,
+        emit,
+      );
       return;
     } on Object catch (error, stackTrace) {
       _logger.warn('Pool read failed', error: error, stackTrace: stackTrace);
@@ -452,7 +479,9 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     emit(
       state.copyWith(
         load: EventGamesLoad.loaded,
-        games: List.unmodifiable(games),
+        games: List.unmodifiable(
+          games.where((game) => !_takenBackSinceRead.contains(game.id)),
+        ),
         refreshFailed: false,
         refreshing: _stillRefreshing,
       ),

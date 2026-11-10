@@ -434,6 +434,176 @@ void main() {
       expect(remote.poolRequests, hasLength(3));
     });
 
+    testWidgets('opened while the opening read is out, the pool is read once, '
+        'after it', (tester) async {
+      heldRead = Completer<EventSnapshot>();
+      await show(tester);
+      expect(
+        (blocOf<EventDetailBloc>(tester).state as EventDetailReady).reading,
+        isTrue,
+      );
+
+      await chooseGames(tester);
+
+      // Waiting for the read, whose roster it reads.
+      expect(remote.poolRequests, isEmpty);
+      expect(find.byType(BgeLoadingState), findsOneWidget);
+
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+
+      expect(poolReads(), hasLength(1));
+      expect(poolReads().single.$1, 'e-1');
+      expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+      expect(row(azul.id), findsOneWidget);
+    });
+
+    // A read of the event settles before the cache delivers what it wrote,
+    // so the roster can arrive a beat after the read has ended.
+    group('the roster arriving after its read has ended', () {
+      testWidgets('a roster not cached, arriving after the opening read, is '
+          'read for once, with no failure drawn meanwhile', (tester) async {
+        heldRead = Completer<EventSnapshot>();
+        await show(
+          tester,
+          detail: EventDetail(snapshot: detailOf(rosterGiven: false).snapshot),
+        );
+        await chooseGames(tester);
+
+        heldRead!.complete(detailOf().snapshot);
+        heldRead = null;
+        await animate(tester);
+
+        expect(remote.poolRequests, isEmpty);
+        expect(find.byType(BgeLoadingState), findsOneWidget);
+        expect(find.text("Couldn't load the games"), findsNothing);
+
+        cache.add(detailOf());
+        await animate(tester);
+        await animate(tester);
+
+        expect(poolReads(), hasLength(1));
+        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(row(azul.id), findsOneWidget);
+      });
+
+      testWidgets('a roster with someone new, arriving after a later read, is '
+          'read for again', (tester) async {
+        await showGames(tester);
+        expect(remote.poolRequests, hasLength(1));
+
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await animate(tester);
+        expect(remote.poolRequests, hasLength(2));
+
+        final cy = _row('att-cy', name: 'Cy');
+        cache.add(detailOf(roster: [me, ada, bo, cy]));
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(3));
+        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo', 'att-cy']);
+      });
+
+      testWidgets('the same roster, arriving after a read, is not read for '
+          'twice', (tester) async {
+        await showGames(tester);
+
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await animate(tester);
+        cache.add(detailOf());
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(2));
+      });
+
+      // Through the screen's own detail bloc: the read answers a roster
+      // withheld from this viewer, and the cache, which keeps no rows for
+      // an empty roster, answers none before and after it.
+      testWidgets('a roster the read withholds, with none cached, says the '
+          "games aren't shown, with no spinner left and no pool read", (
+        tester,
+      ) async {
+        final uncached = EventDetail(
+          snapshot: detailOf(rosterGiven: false).snapshot,
+        );
+        heldRead = Completer<EventSnapshot>();
+        await show(tester, detail: uncached);
+        await chooseGames(tester);
+
+        heldRead!.complete(uncached.snapshot.copyWith(attendees: const []));
+        heldRead = null;
+        await animate(tester);
+        await animate(tester);
+
+        expect(find.text("The games aren't shown to you"), findsOneWidget);
+        expect(find.byType(BgeLoadingState), findsNothing);
+        expect(remote.poolRequests, isEmpty);
+      });
+
+      testWidgets('a roster taken away reads nothing', (tester) async {
+        await showGames(tester);
+
+        cache.add(
+          EventDetail(snapshot: detailOf().snapshot.copyWith(attendees: [])),
+        );
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(1));
+        expect(find.text("The games aren't shown to you"), findsOneWidget);
+      });
+
+      // The games it showed before are as old as the roster's absence.
+      testWidgets('a roster taken away and given back unchanged is read for '
+          'again', (tester) async {
+        await showGames(tester);
+
+        cache.add(
+          EventDetail(snapshot: detailOf().snapshot.copyWith(attendees: [])),
+        );
+        await animate(tester);
+        cache.add(detailOf());
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(2));
+        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(row(azul.id), findsOneWidget);
+      });
+    });
+
+    // What a read again draws is the last read's end, whichever tab was
+    // showing as it ended.
+    testWidgets('a read again draws the last answer, though that one landed '
+        'while Details was showing', (tester) async {
+      poolAnswer = (_) => throw _offline;
+      await showGames(tester);
+      expect(find.text("Couldn't load the games"), findsOneWidget);
+
+      await tester.tap(tab(EventDetailTab.details));
+      await animate(tester);
+      poolAnswer = (_) => const [];
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await animate(tester);
+      await animate(tester);
+      expect(blocOf<EventGamesBloc>(tester).state.load, EventGamesLoad.loaded);
+
+      final held = Completer<List<OfferedGame>>();
+      poolAnswer = (_) => held.future;
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await animate(tester);
+      await animate(tester);
+      expect(blocOf<EventGamesBloc>(tester).state.load, EventGamesLoad.loading);
+
+      await chooseGames(tester);
+
+      expect(find.text("Couldn't load the games"), findsNothing);
+      expect(find.text('No games offered yet'), findsOneWidget);
+
+      held.complete(const []);
+      await animate(tester);
+    });
+
     testWidgets('a refresh before the tab was opened reads nothing', (
       tester,
     ) async {
@@ -454,6 +624,73 @@ void main() {
 
       expect(poolReads(), hasLength(1));
       expect(poolReads().single.$2, ['att-me']);
+    });
+
+    group('a roster not read, as an event cached from the list has', () {
+      // No roster and no row of the viewer's: nothing to read the pool for
+      // until the event's read brings the roster.
+      final unread = EventDetail(
+        snapshot: detailOf(rosterGiven: false).snapshot,
+      );
+
+      testWidgets("is loading while the event's read runs, not hidden, and "
+          'reads the pool once that brings the roster', (tester) async {
+        heldRead = Completer<EventSnapshot>();
+        await show(tester, detail: unread);
+
+        await chooseGames(tester);
+
+        expect(find.text("The games aren't shown to you"), findsNothing);
+        expect(find.byType(BgeLoadingState), findsOneWidget);
+        expect(remote.poolRequests, isEmpty);
+
+        // The read writes the roster to the cache, then ends.
+        cache.add(detailOf());
+        await settle(tester);
+        heldRead!.complete(detailOf().snapshot);
+        heldRead = null;
+        await animate(tester);
+        await animate(tester);
+
+        expect(poolReads(), hasLength(1));
+        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(row(azul.id), findsOneWidget);
+      });
+
+      testWidgets("once the event's read has failed, says it couldn't load "
+          'the games, and Try again reads the event', (tester) async {
+        heldRead = Completer<EventSnapshot>();
+        await show(tester, detail: unread);
+        heldRead!.completeError(_offline);
+        heldRead = null;
+        await settle(tester);
+        final reads = remote.detailRequests.length;
+
+        await chooseGames(tester);
+
+        expect(find.text("The games aren't shown to you"), findsNothing);
+        expect(find.text("Couldn't load the games"), findsOneWidget);
+        expect(remote.poolRequests, isEmpty);
+
+        heldRead = Completer<EventSnapshot>();
+        await tester.tap(find.byKey(EventDetailScreen.poolRetryKey));
+        await settle(tester);
+
+        // The event, not the pool, which has no one to read for.
+        expect(remote.detailRequests, hasLength(reads + 1));
+        expect(remote.poolRequests, isEmpty);
+        expect(find.byType(BgeLoadingState), findsOneWidget);
+
+        cache.add(detailOf());
+        await settle(tester);
+        heldRead!.complete(detailOf().snapshot);
+        heldRead = null;
+        await animate(tester);
+        await animate(tester);
+
+        expect(poolReads(), hasLength(1));
+        expect(row(azul.id), findsOneWidget);
+      });
     });
 
     testWidgets(
@@ -527,9 +764,8 @@ void main() {
     });
 
     testWidgets('a filter that leaves nothing says so, and Clear filters '
-        'clears the search and the people and focuses the search', (
-      tester,
-    ) async {
+        'clears the search and the people and hands focus to People, with '
+        'no keyboard left open', (tester) async {
       await showGames(tester);
       await tester.tap(notMine());
       await tester.pump();
@@ -549,7 +785,68 @@ void main() {
         tester.widget<FilterChip>(notMine()).selected,
         isFalse,
       );
-      expect(searchFocus(tester).hasPrimaryFocus, isTrue);
+      expect(searchFocus(tester).hasFocus, isFalse);
+      expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    group('Clear filters hands focus to People', () {
+      final clearFilters = find.byKey(EventDetailScreen.poolClearFiltersKey);
+
+      /// "Not mine" on, and a search for a game only the viewer brings:
+      /// nothing matches.
+      Future<void> noneMatch(WidgetTester tester) async {
+        await showGames(tester);
+        await tester.tap(notMine());
+        await tester.pump();
+        await tester.enterText(search(), 'wingspan');
+        await animate(tester);
+        expect(clearFilters, findsOneWidget);
+      }
+
+      testWidgets('from the keyboard', (tester) async {
+        await noneMatch(tester);
+
+        await activateByKeyboard(tester, clearFilters);
+        await animate(tester);
+
+        expect(clearFilters, findsNothing);
+        expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets("from a screen reader's activation, with focus on nothing", (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await noneMatch(tester);
+        await focusNothing(tester);
+
+        screenReaderTap(tester, 'Clear filters');
+        await animate(tester);
+
+        expect(clearFilters, findsNothing);
+        expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('a pointer press while focus sits on another control '
+          'moves nothing', (tester) async {
+        await noneMatch(tester);
+        final notMineFocus = Focus.of(
+          tester.element(
+            find.descendant(of: notMine(), matching: find.text('Not mine')),
+          ),
+        )..requestFocus();
+        await tester.pump();
+        expect(notMineFocus.hasPrimaryFocus, isTrue);
+
+        await tester.tap(clearFilters);
+        await animate(tester);
+
+        expect(clearFilters, findsNothing);
+        expect(notMineFocus.hasPrimaryFocus, isTrue);
+        expect(peopleFocus(tester).hasFocus, isFalse);
+      });
     });
 
     testWidgets('failed, with nothing to show, offers Try again, which reads '
@@ -587,8 +884,11 @@ void main() {
 
     testWidgets('gone reads the event again, as the poll does, and claims '
         'nothing meanwhile', (tester) async {
-      poolAnswer = (_) =>
-          throw const EventRemoteNotFoundException('gone', statusCode: 404);
+      final again = Completer<List<OfferedGame>>();
+      var answered = 0;
+      poolAnswer = (_) => answered++ == 0
+          ? throw const EventRemoteNotFoundException('gone', statusCode: 404)
+          : again.future;
       await show(tester);
       final reads = remote.detailRequests.length;
 
@@ -603,6 +903,40 @@ void main() {
       expect(find.textContaining('No games'), findsNothing);
       expect(search(), findsNothing);
       expect(scrollView(tester).semanticChildCount, 0);
+      again.complete(served);
+      await animate(tester);
+    });
+
+    testWidgets('a pool still not found once the event reads fine says it '
+        "couldn't load the games, and Try again reads twice and stops", (
+      tester,
+    ) async {
+      // As a server without the pool's routes answers.
+      poolAnswer = (_) =>
+          throw const EventRemoteNotFoundException('gone', statusCode: 404);
+      await show(tester);
+      final reads = remote.detailRequests.length;
+
+      await chooseGames(tester);
+      await animate(tester);
+
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(remote.poolRequests, hasLength(2));
+      expect(find.byType(BgeLoadingState), findsNothing);
+      expect(find.text("Couldn't load the games"), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.poolRetryKey), findsOneWidget);
+      // The header is back above it.
+      expect(search(), findsOneWidget);
+      expect(scrollView(tester).semanticChildCount, 0);
+
+      await tester.tap(find.byKey(EventDetailScreen.poolRetryKey));
+      await animate(tester);
+      await animate(tester);
+
+      // Gone, the event read again, then failed: and no more.
+      expect(remote.poolRequests, hasLength(4));
+      expect(remote.detailRequests, hasLength(reads + 2));
+      expect(find.text("Couldn't load the games"), findsOneWidget);
     });
 
     testWidgets("gone, then the read after the event's own finds games, "
@@ -810,6 +1144,43 @@ void main() {
       expect(rowsShown(tester), ['o-1', 'o-4']);
       expect(
         find.descendant(of: inUse('att-ada'), matching: find.text('Not Ada')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("leaving out someone the roster doesn't name says \"Not this "
+        'person", mid-phrase', (tester) async {
+      served = [catanMine, _game('o-9', 'att-nn', 'Azul')];
+      await showGames(tester, detail: detailOf(roster: [me, _row('att-nn')]));
+      await tester.tap(people());
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.poolPersonKey('att-nn')));
+      await tester.pump();
+      await tester.tap(find.byKey(EventDetailScreen.poolLeaveOutKey));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: inUse('att-nn'),
+          matching: find.text('Not this person'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Not This person'), findsNothing);
+      // Chosen and kept, the chip names them as a list does.
+      await tester.tap(people());
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.poolLeaveOutKey));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      expect(
+        find.descendant(
+          of: inUse('att-nn'),
+          matching: find.text('This person'),
+        ),
         findsOneWidget,
       );
     });
@@ -1129,8 +1500,9 @@ void main() {
       await animate(tester);
 
       expect(remote.takeBacks, hasLength(1));
-      // The read after it failed: Catan's row is still shown.
-      expect(row(catanMine.id), findsOneWidget);
+      // Catan's row leaves with the outcome, though the read after it
+      // failed.
+      expect(row(catanMine.id), findsNothing);
       expect(
         find.descendant(
           of: outcome(),
@@ -1266,8 +1638,11 @@ void main() {
         tester,
       ) async {
         await showGames(tester);
-        final read = Completer<List<OfferedGame>>();
-        poolAnswer = (_) => read.future;
+        // Held, so the user moves focus while it is out: the row leaves as
+        // it ends.
+        final answer = Completer<void>();
+        takeBackAnswer = (_) => answer.future;
+        served = [azul, catanAdas, root];
         takeBackFocus(tester, catanMine.id).requestFocus();
         await tester.pump();
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -1275,9 +1650,10 @@ void main() {
 
         searchFocus(tester).requestFocus();
         await tester.pump();
-        read.complete([azul, catanAdas, root]);
+        answer.complete();
         await animate(tester);
 
+        expect(row(catanMine.id), findsNothing);
         expect(searchFocus(tester).hasPrimaryFocus, isTrue);
       });
 
@@ -1363,15 +1739,18 @@ void main() {
         );
       });
 
-      testWidgets('nowhere, when the take-back is done but its read fails, '
-          'and a later Try again takes the row away', (tester) async {
+      // The row leaves with the take-back's done outcome, so what the read
+      // after it does can't keep the hand-off from running.
+      testWidgets("to the next row's, by pointer with focus on nothing, when "
+          'the take-back is done and the read after it fails', (tester) async {
         served = [catanMine, azul, wingspanMine];
         await showGames(tester);
         poolAnswer = (_) => throw _offline;
         await focusNothing(tester);
         await tester.tap(takeBack(catanMine.id));
         await animate(tester);
-        // Done, and the read after it failed: the row is still shown.
+        await animate(tester);
+
         expect(
           find.descendant(
             of: outcome(),
@@ -1379,26 +1758,14 @@ void main() {
           ),
           findsOneWidget,
         );
-        expect(row(catanMine.id), findsOneWidget);
-
-        // Minutes later, Try again reads the pool without it.
-        served = [azul, wingspanMine];
-        poolAnswer = (_) => served;
-        await focusNothing(tester);
-        await tester.tap(find.byKey(EventDetailScreen.poolRetryKey));
-        await animate(tester);
-        await animate(tester);
-
+        expect(stale(), findsOneWidget);
         expect(row(catanMine.id), findsNothing);
-        expect(
-          FocusManager.instance.primaryFocus,
-          anyOf(isNull, isA<FocusScopeNode>()),
-        );
+        expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
       });
 
-      testWidgets('nowhere, when the take-back is done over a failed read, '
-          'the session stops the read after it, and a later Try again takes '
-          'the row away', (tester) async {
+      testWidgets("to the next row's, by pointer with focus on nothing, when "
+          'the take-back is done over a failed read and the session stops '
+          'the read after it', (tester) async {
         served = [catanMine, azul, wingspanMine];
         await showGames(tester, guarded: true);
         // A read that fails: the rows stay, under the stale banner.
@@ -1411,29 +1778,16 @@ void main() {
         await focusNothing(tester);
 
         // The take-back goes, and the read after it is stopped by the
-        // session check: it ends as the pool already stood, and the state
-        // doesn't change.
+        // session check.
         sessionAnswers.addAll([true, false]);
         await tester.tap(takeBack(catanMine.id));
         await animate(tester);
         await animate(tester);
+
         expect(remote.takeBacks, hasLength(1));
-        expect(row(catanMine.id), findsOneWidget);
         expect(sessionAnswers, isEmpty);
-
-        // Later, Try again reads the pool without it.
-        served = [azul, wingspanMine];
-        poolAnswer = (_) => served;
-        await focusNothing(tester);
-        await tester.tap(find.byKey(EventDetailScreen.poolRetryKey));
-        await animate(tester);
-        await animate(tester);
-
         expect(row(catanMine.id), findsNothing);
-        expect(
-          FocusManager.instance.primaryFocus,
-          anyOf(isNull, isA<FocusScopeNode>()),
-        );
+        expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
       });
 
       testWidgets("to the next row's, by a screen reader's activation, when "
@@ -1840,6 +2194,56 @@ void main() {
       // The outcome takes its place.
       expect(progress(), findsNothing);
       expectOutcome('2 games offered.');
+    });
+
+    testWidgets('the progress line and the outcome stay in the footer on '
+        'Details; the stale-data banner does not', (tester) async {
+      final answers = [Completer<void>(), Completer<void>()];
+      var sent = 0;
+      offerAnswer = (request) async {
+        await answers[sent++].future;
+        return _game('o-new', request.attendeeId, 'x');
+      };
+      pageAnswer = (_) async => picks;
+      await showGames(tester);
+      await offer(tester);
+
+      // A run of forty can outlast the stay on Games.
+      Future<void> choose(EventDetailTab which) async {
+        await tester.ensureVisible(
+          find.byKey(EventDetailScreen.tabKey(which), skipOffstage: false),
+        );
+        await tester.pump();
+        await tester.tap(tab(which));
+        await animate(tester);
+      }
+
+      await choose(EventDetailTab.details);
+      expectInFooter(tester, progress());
+
+      answers[0].complete();
+      await settle(tester);
+      expect(
+        find.descendant(
+          of: progress(),
+          matching: find.text('Offering 1 of 2…'),
+        ),
+        findsOneWidget,
+      );
+
+      // The read after the run fails, over the games shown.
+      poolAnswer = (_) => throw _offline;
+      answers[1].complete();
+      await animate(tester);
+
+      expect(progress(), findsNothing);
+      expectInFooter(tester, outcome());
+      expectOutcome('2 games offered.');
+      expect(stale(), findsNothing);
+
+      await choose(EventDetailTab.games);
+      expectInFooter(tester, outcome());
+      expectInFooter(tester, stale());
     });
 
     testWidgets('the progress line is one live region, which says a step at '

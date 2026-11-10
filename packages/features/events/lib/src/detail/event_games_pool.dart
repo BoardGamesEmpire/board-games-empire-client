@@ -14,7 +14,9 @@ final class PoolFilter extends Equatable {
     this.leaveOut = false,
   });
 
-  /// Matched against each game's title, trimmed, ignoring case.
+  /// Words to find in each game's title, by [matchesSearchTerms], the rule
+  /// Collection's search uses (#715): every term, ignoring case and the
+  /// punctuation around each word.
   final String query;
 
   /// The roster rows chosen. Empty, the people don't narrow.
@@ -24,8 +26,28 @@ final class PoolFilter extends Equatable {
   /// the ones kept. It narrows nothing while nobody is chosen.
   final bool leaveOut;
 
-  /// Whether this leaves any game out that an empty filter would keep.
-  bool get narrows => query.trim().isNotEmpty || attendeeIds.isNotEmpty;
+  /// Whether this leaves any game out that an empty filter would keep: a
+  /// query with a term in it, or someone chosen.
+  bool get narrows =>
+      !matchesSearchTerms(query, const []) || attendeeIds.isNotEmpty;
+
+  /// This filter with the person [id] let go. Letting the last go turns
+  /// leave-out off, so a choice made later never starts out left out.
+  PoolFilter withoutPerson(String id) {
+    final ids = {...attendeeIds}..remove(id);
+    return copyWith(attendeeIds: ids, leaveOut: ids.isNotEmpty && leaveOut);
+  }
+
+  /// This filter with the fields given changed.
+  PoolFilter copyWith({
+    String? query,
+    Set<String>? attendeeIds,
+    bool? leaveOut,
+  }) => PoolFilter(
+    query: query ?? this.query,
+    attendeeIds: attendeeIds ?? this.attendeeIds,
+    leaveOut: leaveOut ?? this.leaveOut,
+  );
 
   @override
   List<Object?> get props => [query, attendeeIds, leaveOut];
@@ -33,17 +55,18 @@ final class PoolFilter extends Equatable {
 
 /// The games of [games] that [filter] keeps, in their order (#516).
 ///
-/// A game is kept when its title holds the query and, while someone is
-/// chosen, when its attendee is one of them, or with
-/// [PoolFilter.leaveOut], when it isn't. Each offered copy is a game of its
+/// A game is kept when every term of the query is in its title
+/// ([matchesSearchTerms], as Collection's search matches, #715) and, while
+/// someone is chosen, when its attendee is one of them, or with
+/// [PoolFilter.leaveOut], when it isn't. A query with no terms, blank or
+/// punctuation alone, keeps every game. Each offered copy is a game of its
 /// own, so two people bringing the same title are two, and leaving one of
 /// them out keeps the other's.
 List<OfferedGame> filterPool(List<OfferedGame> games, PoolFilter filter) {
-  final query = filter.query.trim().toLowerCase();
   final people = filter.attendeeIds;
   return [
     for (final game in games)
-      if ((query.isEmpty || game.title.toLowerCase().contains(query)) &&
+      if (matchesSearchTerms(filter.query, [game.title]) &&
           (people.isEmpty ||
               people.contains(game.attendeeId) != filter.leaveOut))
         game,
@@ -56,8 +79,9 @@ List<OfferedGame> filterPool(List<OfferedGame> games, PoolFilter filter) {
 /// A roster that is a non-empty list gives every row's id, in its order.
 /// A roster that is null, or withheld (an empty list), gives the viewer's
 /// own row alone, where they have one: their own games are theirs to see.
-/// With neither there is nothing to read, and the tab says the games aren't
-/// shown.
+/// With neither there is nothing to read. The tab tells the two apart: a
+/// withheld roster means the games aren't shown, and one not read (null)
+/// waits for the event's read to bring it.
 List<String> poolAttendeeIds(EventDetail detail) {
   final roster = detail.snapshot.attendees;
   if (roster != null && roster.isNotEmpty) {

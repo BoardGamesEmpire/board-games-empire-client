@@ -342,11 +342,11 @@
   },
   "eventsAttendeeSomeone": "this person",
   "@eventsAttendeeSomeone": {
-    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
+    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows, and on the Games tab in eventsGamesPersonLeftOut. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs and eventsGamesPersonLeftOut, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -624,7 +624,7 @@
   },
   "eventsGamesPersonLeftOut": "Not {name}",
   "@eventsGamesPersonLeftOut": {
-    "description": "A chip under the Games tab's search field naming someone whose games are left out (eventsGamesPeopleLeaveOut is on). {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none; the user's own chip says eventsGamesPersonYouLeftOut instead.",
+    "description": "A chip under the Games tab's search field naming someone whose games are left out (eventsGamesPeopleLeaveOut is on). {name} is the person's name, or eventsAttendeeSomeone for someone with none, as the name falls mid-phrase; the user's own chip says eventsGamesPersonYouLeftOut instead.",
     "placeholders": {
       "name": {
         "type": "String",

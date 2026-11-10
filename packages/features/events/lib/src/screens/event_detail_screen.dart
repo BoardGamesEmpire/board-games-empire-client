@@ -35,6 +35,7 @@ import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -95,23 +96,31 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
 /// what was read last.
 ///
-/// It is read the first time the tab shows on a ready event, and again each
-/// time a read of the event ends once the tab has shown, for the event and
-/// the roster the detail shows then ([poolAttendeeIds]); never before the tab
-/// is opened. The viewer's own writes read it as they end: a run of offers,
-/// however it ended, and a take-back unless it failed, which changed nothing.
-/// A write the screen's re-check dropped reads nothing, and Try again, on the
-/// failed state and on the stale-data banner, reads it as the user asks. With
-/// nobody to read it for, nothing is read and the tab says the games aren't
-/// shown. A read that finds the event gone reads the event again, as the
-/// poll's does.
+/// It is read the first time the tab shows on a ready event, or, where a read
+/// of the event is running then, once that read ends, and so once; and again
+/// each time a read of the event ends once the tab has shown, for the event
+/// and the roster the detail shows then ([poolAttendeeIds]); and, once the
+/// tab has shown, whenever those ids come to differ from the ids it was last
+/// read for, as when the roster a read wrote reaches the screen after the
+/// read has ended. Never before the tab is opened, and never for ids that
+/// are the same or for none. The viewer's own writes read it as they end: a
+/// run of offers, however it ended, and a take-back unless it failed, which
+/// changed nothing. A write the screen's re-check dropped reads nothing, and
+/// Try again, on the failed state and on the stale-data banner, reads it as
+/// the user asks. With nobody to read it for, nothing is read: where the roster
+/// was read and withheld, the tab says the games aren't shown; where it
+/// hasn't been read, as for an event cached from the list, the tab waits for
+/// the event's read to bring it, and says it couldn't load the games if that
+/// read fails, with Try again reading the event. A read that finds the
+/// event gone reads the event again, as the poll's does.
 ///
-/// While Games is selected, the page's footer holds what answers the list:
-/// how far a run of offers has got while it is out, or how the pool's last
-/// write went, a run of offers or a take-back, then the stale-data banner
-/// while the games shown may be out of date. On Details the footer is empty.
-/// There each is on screen and heard however far down the list the user is;
-/// what answers the whole screen stays in the header.
+/// The page's footer holds what answers the list: how far a run of offers
+/// has got while it is out, or how the pool's last write went, a run of
+/// offers or a take-back, on either tab, since a run can outlast the stay on
+/// Games; then, while Games is selected, the stale-data banner while the
+/// games shown may be out of date. There each is on screen and heard however
+/// far down the list the user is; what answers the whole screen stays in the
+/// header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -781,9 +790,14 @@ class _EventDetailView extends StatelessWidget {
           listenWhen: _detailReadEnded,
           listener: _readPoolAgain,
         ),
+        const BlocListener<EventDetailBloc, EventDetailState>(
+          listenWhen: _poolIdsMayHaveChanged,
+          listener: _readPoolForNewIds,
+        ),
         BlocListener<EventGamesBloc, EventGamesState>(
-          // As the poll's: the pool stays gone through its later reads, so
-          // this can't start a loop of reads.
+          // On the way into gone only. The read after the event's re-read
+          // ends gone again as failed, never into gone, so this can't start
+          // a loop of reads.
           listenWhen: (previous, current) =>
               previous.load != EventGamesLoad.gone &&
               current.load == EventGamesLoad.gone,
@@ -910,32 +924,82 @@ bool _detailReadEnded(EventDetailState previous, EventDetailState current) =>
 /// Reads the games pool again after the detail read [state] ended with,
 /// where the Games tab has shown at least once (#516).
 void _readPoolAgain(BuildContext context, EventDetailState state) {
-  if (state is! EventDetailReady || !EventGamesTabScope.of(context).shown) {
-    return;
-  }
-  _readPool(context, state);
+  final scope = EventGamesTabScope.of(context);
+  if (state is! EventDetailReady || !scope.shown) return;
+  _readPool(context, state, scope);
 }
 
 /// Reads the games pool for the Games tab's first showing (#516), and
 /// answers whether it showed on a ready detail of an event the server
 /// knows. Only that counts as having shown.
-bool _gamesFirstShown(BuildContext context) {
+///
+/// While a detail read is running, as the one every open starts may be,
+/// the pool is not read here: that read's end reads it ([_readPoolAgain]),
+/// as the tab has shown by then, and a roster that arrives after it reads
+/// it for that ([_readPoolForNewIds]).
+bool _gamesFirstShown(
+  BuildContext context,
+  EventGamesTabController controller,
+) {
   final state = context.read<EventDetailBloc>().state;
   if (state is! EventDetailReady || state.detail.snapshot.event.isLocalOnly) {
     return false;
   }
-  _readPool(context, state);
+  if (!state.reading) _readPool(context, state, controller);
   return true;
 }
 
-/// Reads the games pool of the event [state] shows, for the roster it shows
-/// then, by the ids it shows then, which a reconcile can move (#499). Not
-/// at all with nobody to read it for, or for an event the server doesn't
-/// know.
-void _readPool(BuildContext context, EventDetailReady state) {
-  final event = state.detail.snapshot.event;
+/// Whether [current] is a ready detail with no read running that isn't
+/// the end of one (#516): where the ids to read the pool for can have
+/// changed with nothing else reading it. A read's end reads it already.
+bool _poolIdsMayHaveChanged(
+  EventDetailState previous,
+  EventDetailState current,
+) =>
+    current is EventDetailReady &&
+    !current.reading &&
+    !_detailReadEnded(previous, current);
+
+/// Reads the games pool where the Games tab has shown and the ids to read
+/// it for differ, by value and order, from the ids it was last asked for
+/// (#516): as when a read of the event has ended and the roster it wrote
+/// reaches the screen after it. Ids that are the same read nothing, and so
+/// do none, which forgets the ids last asked for ([_readPool]).
+///
+/// A read of the pool changes no detail, and each request is for ids that
+/// differ from the last asked, so this sends one request per change of the
+/// ids and can't loop. A read already out for the old ids is followed by
+/// one for these, as the bloc runs one more read for the latest request.
+void _readPoolForNewIds(BuildContext context, EventDetailState state) {
+  if (state is! EventDetailReady) return;
+  final scope = EventGamesTabScope.of(context);
+  if (!scope.shown) return;
   final ids = poolAttendeeIds(state.detail);
-  if (event.isLocalOnly || ids.isEmpty) return;
+  if (ids.isNotEmpty && listEquals(ids, scope.requestedIds)) return;
+  _readPool(context, state, scope);
+}
+
+/// Reads the games pool of the event [state] shows, for the roster it shows
+/// then, by the ids it shows then, which a reconcile can move (#499), and
+/// notes those ids on [controller]. Not at all with nobody to read it
+/// for, or for an event the server doesn't know.
+///
+/// Nobody to read it for forgets the ids last asked for. The tab shows no
+/// games then, so a roster that comes back, the same one included, is read
+/// for again, and the games shown are never as old as its absence.
+void _readPool(
+  BuildContext context,
+  EventDetailReady state,
+  EventGamesTabController controller,
+) {
+  final event = state.detail.snapshot.event;
+  if (event.isLocalOnly) return;
+  final ids = poolAttendeeIds(state.detail);
+  if (ids.isEmpty) {
+    controller.requestedIds = null;
+    return;
+  }
+  controller.requestedIds = ids;
   context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
 }
 
@@ -1073,16 +1137,19 @@ class _ReadyPage extends StatelessWidget {
           EventGamesTab.rowCount(context, state, games),
         _ => null,
       },
-      // On the Games tab (#516), how far a run of offers has got or how the
-      // pool's last write went, then the stale-data banner: answers on a
-      // long list, so on screen and heard wherever the list is scrolled.
-      // Passed on every build where there is a games bloc, empty on
-      // Details, so the page keeps one shape as the tabs swap.
+      // How far a run of offers has got or how the pool's last write went
+      // (#516), on either tab, then, on the Games tab, the stale-data
+      // banner: answers on a long list, so on screen and heard wherever the
+      // list is scrolled. A run can outlast the stay on Games, and a footer
+      // left out on Details would silence its live region. Passed on every
+      // build where there is a games bloc, so the page keeps one shape as
+      // the tabs swap.
       footer: gamesState == null
           ? null
-          : tab == EventDetailTab.games
-          ? EventGamesFooter(state: gamesState)
-          : const SizedBox.shrink(),
+          : EventGamesFooter(
+              state: gamesState,
+              showStale: tab == EventDetailTab.games,
+            ),
       // Above the tabs, and in the semantics tree however far down the page
       // is, so a banner that lands while the user is far down is heard as it
       // arrives. Passed on every build, an empty column with nothing to say,

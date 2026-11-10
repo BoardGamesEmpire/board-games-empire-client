@@ -288,13 +288,53 @@ void main() {
       expect: () => [loaded(one)],
     );
 
+    // The event's own read settles a gone. A pool still not found once that
+    // has read the event fine, as on a server without these routes, is a
+    // failure the user can retry, not a wait for good.
     blocTest<EventGamesBloc, EventGamesState>(
-      'a read after a gone that is gone again emits nothing',
+      'a read after a gone that is gone again fails, with no games',
       build: () => build(serving(pool: (_) => throw _gone)),
       seed: () => const EventGamesState(load: EventGamesLoad.gone),
       act: (bloc) => bloc.add(const EventGamesRequested('e-1', _ids)),
-      expect: () => <EventGamesState>[],
+      expect: () => [failed()],
     );
+
+    blocTest<EventGamesBloc, EventGamesState>(
+      'a read after a gone that is forbidden is hidden',
+      build: () => build(serving(pool: (_) => throw _forbidden)),
+      seed: () => const EventGamesState(load: EventGamesLoad.gone),
+      act: (bloc) => bloc.add(const EventGamesRequested('e-1', _ids)),
+      expect: () => [const EventGamesState(load: EventGamesLoad.hidden)],
+    );
+
+    test('a pool that keeps answering 404 reads twice from a retry, and '
+        'stops', () async {
+      final remote = serving(pool: (_) => throw _gone);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      expect(bloc.state.load, EventGamesLoad.gone);
+
+      // The screen reads the event, which reads fine, and asks again.
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      expect(bloc.state, failed());
+
+      // A retry from there: gone, then, after the event's read, failed.
+      bloc.add(const EventGamesRetryRequested('e-1', _ids));
+      await pumpEventQueue();
+      expect(bloc.state.load, EventGamesLoad.gone);
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      expect(bloc.state, failed());
+
+      // The bloc never reads again by itself.
+      expect(remote.poolRequests, hasLength(4));
+      expect(states.last, failed());
+    });
 
     test('a second request while one is out reads once more, with the later '
         'ids', () async {
@@ -834,6 +874,42 @@ void main() {
       expect(remote.poolRequests, hasLength(2));
     });
 
+    test('a run that ends while a read is out has its closing read run '
+        "after that one, for the run's event and ids", () async {
+      final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+      final remote = serving(pool: reads.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      bloc.add(
+        EventGamesOffered('e-2', 'a-1', _picks(1), attendeeIds: _laterIds),
+      );
+      await pumpEventQueue();
+
+      // The run has ended, and its read waits for the one that is out.
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventGamesResult.done, offered: 1, notOffered: 0),
+      );
+      expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
+
+      reads.answer(0, one);
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, [
+        _poolRead('e-1', _ids),
+        _poolRead('e-2', _laterIds),
+      ]);
+
+      reads.answer(1, two);
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, hasLength(2));
+      expect(bloc.state.games, two);
+    });
+
     test('a new write clears the last outcome when it starts', () async {
       final bloc = build(serving(offered: (_) => throw _refused));
       addTearDown(bloc.close);
@@ -905,6 +981,107 @@ void main() {
         verifyNoWarnings();
       });
     }
+
+    /// A bloc whose pool has read [games], with reads held by [reads] from
+    /// the second on, and take-backs by [takeBacks].
+    Future<EventGamesBloc> holding(
+      List<OfferedGame> games, {
+      required _Held<GamesPoolRequest, List<OfferedGame>> reads,
+      FutureOr<void> Function(TakeBackGameRequest request)? takenBack,
+    }) async {
+      final bloc = build(serving(pool: reads.call, takenBack: takenBack));
+      addTearDown(bloc.close);
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      reads.answer(0, games);
+      await pumpEventQueue();
+      expect(bloc.state, loaded(games));
+      return bloc;
+    }
+
+    for (final (name, EventRemoteException? error) in [
+      ('2xx', null),
+      ('404', _gone),
+    ]) {
+      test('done by a $name drops the game in the state that carries the '
+          'outcome, and the read after it still goes', () async {
+        final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+        final bloc = await holding(
+          two,
+          reads: reads,
+          takenBack: (_) {
+            if (error != null) throw error;
+          },
+        );
+        final states = record(bloc);
+
+        bloc.add(_takeBack(_game(2)));
+        await pumpEventQueue();
+
+        final ended = _takeBackEnded(EventGamesResult.done, 'Game 2');
+        expect(states.take(2), [
+          loaded(two).copyWith(takingBack: () => 'g-2'),
+          loaded(one, outcome: ended),
+        ]);
+        expect(reads.requests, hasLength(2));
+
+        reads.answer(1, one);
+        await pumpEventQueue();
+
+        expect(bloc.state, loaded(one, outcome: ended));
+      });
+    }
+
+    for (final (name, error) in [
+      ('stillSupplies', _stillSupplies),
+      ('refused', _refused),
+      ('failed', _offline),
+    ]) {
+      test('$name keeps the game', () async {
+        final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+        final bloc = await holding(
+          two,
+          reads: reads,
+          takenBack: (_) => throw error,
+        );
+
+        bloc.add(_takeBack(_game(2)));
+        await pumpEventQueue();
+
+        expect(bloc.state.outcome?.result, isNot(EventGamesResult.done));
+        expect(bloc.state.games, two);
+      });
+    }
+
+    test('a read out as a take-back ends done leaves the game out of its '
+        'answer, and the read after it does not', () async {
+      final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+      final takeBacks = _Held<TakeBackGameRequest, void>();
+      final bloc = await holding(two, reads: reads, takenBack: takeBacks.call);
+
+      // A read goes out, then the take-back, which ends before the read
+      // answers.
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      bloc.add(_takeBack(_game(2)));
+      await pumpEventQueue();
+      takeBacks.answer(0, null);
+      await pumpEventQueue();
+      expect(bloc.state.games, one);
+
+      // That read went out before the take-back ended, so its answer can
+      // still hold the game.
+      reads.answer(1, two);
+      await pumpEventQueue();
+      expect(bloc.state.games, one);
+      expect(bloc.state.load, EventGamesLoad.loading);
+
+      // The take-back's own read follows it, and is the server's word.
+      expect(reads.requests, hasLength(3));
+      reads.answer(2, two);
+      await pumpEventQueue();
+      expect(bloc.state.games, two);
+    });
 
     test('failed does not read the pool', () async {
       final remote = serving(takenBack: (_) => throw _offline);
