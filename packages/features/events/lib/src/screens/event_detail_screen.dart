@@ -1636,6 +1636,7 @@ class _Dates extends StatelessWidget {
       case EventAction.approveGame:
       case EventAction.rejectGame:
       case EventAction.resolveNomination:
+      case EventAction.offerGame:
         return null;
     }
   }

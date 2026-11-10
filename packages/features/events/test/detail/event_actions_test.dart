@@ -12,8 +12,12 @@ void main() {
   const rsvp = {EventAction.rsvp};
 
   // A participant or guest answers for themselves, on the invitation and on
-  // the proposed dates (#507).
-  const participant = {EventAction.rsvp, EventAction.voteAvailability};
+  // the proposed dates (#507), and manages their own offered games (#516).
+  const participant = {
+    EventAction.rsvp,
+    EventAction.voteAvailability,
+    EventAction.offerGame,
+  };
 
   const organizer = {
     EventAction.edit,
@@ -22,6 +26,7 @@ void main() {
     EventAction.voteAvailability,
     EventAction.rsvp,
     EventAction.manageAttendees,
+    EventAction.offerGame,
   };
 
   const moderator = {
@@ -31,6 +36,7 @@ void main() {
     EventAction.rsvp,
     EventAction.manageAttendees,
     EventAction.resolveNomination,
+    EventAction.offerGame,
   };
 
   const household = {
@@ -43,6 +49,7 @@ void main() {
     EventAction.cancelDate,
     EventAction.manageAttendees,
     EventAction.resolveNomination,
+    EventAction.offerGame,
   };
 
   /// The host holds every action, so a new [EventAction] fails the host and
@@ -67,6 +74,7 @@ void main() {
     EventAction.approveGame,
     EventAction.rejectGame,
     EventAction.resolveNomination,
+    EventAction.offerGame,
   };
 
   /// Every event role's set. A role missing from here fails the test below,
@@ -182,6 +190,29 @@ void main() {
         EventRole.guest,
       ]);
     });
+
+    test(
+      "offerGame is every attending role's but the spectator's (#516)",
+      () {
+        final who = [
+          for (final role in EventRole.values)
+            if (eventActionsFor(
+              plain,
+              eventRole: role,
+            ).contains(EventAction.offerGame))
+              role,
+        ];
+
+        expect(who, [
+          EventRole.host,
+          EventRole.coHost,
+          EventRole.organizer,
+          EventRole.moderator,
+          EventRole.participant,
+          EventRole.guest,
+        ]);
+      },
+    );
 
     test('a moderator, spectator or household owner may not vote', () {
       expect(

@@ -1446,6 +1446,7 @@ void main() {
       expect(actionsOf(bloc.state), {
         EventAction.rsvp,
         EventAction.voteAvailability,
+        EventAction.offerGame,
       });
       verify(
         () => logger.warn(

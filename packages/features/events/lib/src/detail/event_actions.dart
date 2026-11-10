@@ -74,6 +74,15 @@ enum EventAction {
 
   /// Settle a nomination by its votes (#518).
   resolveNomination,
+
+  /// Offer a game from your collection to the event, and take it back (#516).
+  /// One action for both, because every role that may add to an offered-games
+  /// list may remove from it. A host, co-host, organizer, participant or guest
+  /// manages their own list, a moderator any list, and a household owner or
+  /// admin any list on a household event. A spectator may not. An owner or
+  /// admin still needs their own row on the roster to have a list to add to,
+  /// which `offerGamesGate` asks for.
+  offerGame,
 }
 
 /// The actions [event] offers a viewer holding [eventRole] on it and, on a
@@ -280,6 +289,8 @@ const _host = <EventAction>{
   EventAction.rejectGame,
   // `update:event_game_nomination:resolve`
   EventAction.resolveNomination,
+  // `create:attendee_game_list` and `delete:attendee_game_list`
+  EventAction.offerGame,
 };
 
 /// `EventCoHost`: every action except `delete`, which the catalog gives the
@@ -300,6 +311,8 @@ const _coHost = <EventAction>{
   EventAction.approveGame,
   EventAction.rejectGame,
   EventAction.resolveNomination,
+  // `create:attendee_game_list` and `delete:attendee_game_list`
+  EventAction.offerGame,
 };
 
 /// `EventOrganizer`.
@@ -315,6 +328,8 @@ const _organizer = <EventAction>{
   EventAction.voteAvailability,
   // `update:event_attendee:status`
   EventAction.rsvp,
+  // `create:attendee_game_list` and `delete:attendee_game_list`
+  EventAction.offerGame,
 };
 
 /// `EventModerator`.
@@ -329,15 +344,19 @@ const _moderator = <EventAction>{
   EventAction.rsvp,
   // `update:event_game_nomination:resolve`
   EventAction.resolveNomination,
+  // `manage:attendee_game_list`
+  EventAction.offerGame,
 };
 
 /// `EventParticipant` and `EventGuest`: they answer for themselves, to the
-/// invitation and on the proposed dates, and nothing else.
+/// invitation and on the proposed dates, and offer games to the event.
 const _participantOrGuest = <EventAction>{
   // `update:event_attendee:status:self`
   EventAction.rsvp,
   // `create:event_availability_vote`
   EventAction.voteAvailability,
+  // `create:attendee_game_list` and `delete:attendee_game_list`
+  EventAction.offerGame,
 };
 
 /// `EventSpectator`: answers for themselves, but has no vote on a date.
@@ -375,4 +394,6 @@ const _householdOwnerOrAdmin = <EventAction>{
   // `update:event_game_nomination:resolve:household`. Approving and rejecting
   // a nomination have no household variant.
   EventAction.resolveNomination,
+  // `manage:attendee_game_list:household`
+  EventAction.offerGame,
 };
