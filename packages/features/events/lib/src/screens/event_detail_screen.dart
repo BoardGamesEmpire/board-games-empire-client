@@ -12,6 +12,7 @@ import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
 import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_date_actions.dart';
+import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_poll.dart';
 import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/widgets/cancel_reason_dialog.dart';
@@ -572,7 +573,7 @@ bool _covered(BuildContext context) =>
 Future<void> _rereadForPoll(BuildContext context) async {
   final actions = context.read<EventActionsBloc>();
   final detail = context.read<EventDetailBloc>();
-  await _readEnded(detail);
+  await readEnded(detail);
   final ended = actions.state.busy
       ? await actions.stream.firstWhere(
           (state) => !state.busy,
@@ -968,24 +969,25 @@ class _ActionsMenu extends StatelessWidget {
   }
 
   Future<void> _delete(BuildContext context) async {
-    // Read before the dialog opens: the page under it can rebuild without
-    // this menu, and take the context it was asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final choice = await _confirmDelete(context);
-    if (choice == _DeleteChoice.cancelInstead && context.mounted) {
-      // The delete's dialog has closed, and Cancel's opens in its place
-      // (#502), to be sent as Cancel from the menu is.
-      return _writeStatus(context, EventStatusWrite.cancel);
-    }
-    if (choice != _DeleteChoice.delete || actions.isClosed) return;
-
-    // A read can have started while the dialog was open, and Delete waits
-    // for it to end (#501). The id is the detail's then, not the one the
-    // screen was opened on, which a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-    actions.add(EventDeleteRequested(state.detail.snapshot.event.id));
+    // Cancel instead runs inside ask: only Delete's dialog chooses it, and
+    // that dialog opens inside ask, so the blocs are read before it opens.
+    await sendDetailWrite<_DeleteChoice>(
+      context,
+      ask: () async {
+        final choice = await _confirmDelete(context);
+        if (choice == _DeleteChoice.cancelInstead && context.mounted) {
+          // The delete's dialog has closed, and Cancel's opens in its place
+          // (#502), to be sent as Cancel from the menu is.
+          await _writeStatus(context, EventStatusWrite.cancel);
+        }
+        return choice == _DeleteChoice.delete ? choice : null;
+      },
+      // A read can have started while the dialog was open, and Delete waits
+      // for it to end (#501). The id is the detail's then, not the one the
+      // screen was opened on, which a reconcile can have moved (#499).
+      check: (state, _) =>
+          SendWrite(EventDeleteRequested(state.detail.snapshot.event.id)),
+    );
   }
 
   /// Delete's dialog. Where the menu offers Cancel, it offers *Cancel event
@@ -1039,37 +1041,37 @@ class _ActionsMenu extends StatelessWidget {
     BuildContext context,
     EventStatusWrite write,
   ) async {
-    // Read before a dialog opens: the page under it can rebuild without
-    // this menu, and take the context it was asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final request = await switch (write) {
-      EventStatusWrite.cancel => _askCancel(context),
-      EventStatusWrite.reopen => _askReopen(context),
-      // No dialog: they tell nobody, and one tap undoes the other.
-      EventStatusWrite.archive => Future.value(EventArchiveRequested.new),
-      EventStatusWrite.unarchive => Future.value(EventUnarchiveRequested.new),
-    };
-    if (request == null || actions.isClosed) return;
-
-    // A read can have started while a dialog was open, and the write waits
-    // for it to end, as Delete does (#501). The event is the detail's as it
-    // is then, whose id a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-
-    // A sync can have changed the status or the viewer's role meanwhile,
-    // or a date can have ended and moved the status on. The page already
-    // shows the menu as it is then, and nothing is sent that it no longer
-    // offers. Its banner says so, or a screen reader would hear nothing
-    // happen, and a typed reason would go without a word.
-    final shown = state.detail.snapshot;
-    final status = eventStatusAt(shown.event, shown.occurrences, now: now());
-    if (!_statusWritesFor(status, state.actions).contains(write)) {
-      actions.add(EventWriteDropped.status(write));
-      return;
-    }
-    actions.add(request(shown.event.id));
+    await sendDetailWrite<_StatusRequest>(
+      context,
+      ask: () => switch (write) {
+        EventStatusWrite.cancel => _askCancel(context),
+        EventStatusWrite.reopen => _askReopen(context),
+        // No dialog: they tell nobody, and one tap undoes the other.
+        EventStatusWrite.archive => Future.value(EventArchiveRequested.new),
+        EventStatusWrite.unarchive => Future.value(EventUnarchiveRequested.new),
+      },
+      // A read can have started while a dialog was open, and the write waits
+      // for it to end, as Delete does (#501). The event is the detail's as
+      // it is then, whose id a reconcile can have moved (#499).
+      check: (state, request) {
+        // A sync can have changed the status or the viewer's role
+        // meanwhile, or a date can have ended and moved the status on. The
+        // page already shows the menu as it is then, and nothing is sent
+        // that it no longer offers. Its banner says so, or a screen reader
+        // would hear nothing happen, and a typed reason would go without a
+        // word.
+        final shown = state.detail.snapshot;
+        final status = eventStatusAt(
+          shown.event,
+          shown.occurrences,
+          now: now(),
+        );
+        if (!_statusWritesFor(status, state.actions).contains(write)) {
+          return DropWrite(EventWriteDropped.status(write));
+        }
+        return SendWrite(request(shown.event.id));
+      },
+    );
   }
 
   /// Cancel's dialog, with its optional reason: null when the event is
@@ -1259,53 +1261,48 @@ class _Dates extends StatelessWidget {
     Future<_DateRequest?> Function() ask, {
     String? occurrenceId,
   }) async {
-    // Read before the dialog opens: the page under it can rebuild without
-    // these dates, and take the context they were asked from with it.
-    final actions = context.read<EventActionsBloc>();
-    final detail = context.read<EventDetailBloc>();
-    final request = await ask();
-    if (request == null || actions.isClosed) return;
+    await sendDetailWrite<_DateRequest>(
+      context,
+      ask: ask,
+      // A read can have started while the dialog was open, and the write
+      // waits for it to end (#589). The event is the detail's as it is then,
+      // whose id a reconcile can have moved (#499).
+      check: (state, request) {
+        // A sync can have cancelled the event while the dialog was open, and
+        // the server still takes an edit or a removal on a cancelled event
+        // (backend#956). Or taken the action from the viewer, and the server
+        // still takes a confirm, decline or cancel from an organizer
+        // (backend#979). The page already shows either, without the
+        // control, and its banner says the write was dropped, or a screen
+        // reader would hear nothing happen (#655).
+        final shown = state.detail.snapshot;
+        if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
+          return DropWrite(EventWriteDropped(action));
+        }
 
-    // A read can have started while the dialog was open, and the write
-    // waits for it to end (#589). The event is the detail's as it is then,
-    // whose id a reconcile can have moved (#499).
-    final state = await _readEnded(detail);
-    if (state is! EventDetailReady || actions.isClosed) return;
-
-    // A sync can have cancelled the event while the dialog was open, and
-    // the server still takes an edit or a removal on a cancelled event
-    // (backend#956). Or taken the action from the viewer, and the server
-    // still takes a confirm, decline or cancel from an organizer
-    // (backend#979). The page already shows either, without the control,
-    // and its banner says the write was dropped, or a screen reader would
-    // hear nothing happen (#655).
-    final shown = state.detail.snapshot;
-    if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
-      actions.add(EventWriteDropped(action));
-      return;
-    }
-
-    // Or the date can have passed while the dialog was open, and the server
-    // still takes a confirm on a passed date (backend#1005), so the clock is
-    // read again (#655). The page moved on as it passed, without the
-    // control. A date that changed meanwhile is checked the same way, and
-    // one gone meanwhile goes on to the server, whose answer says so.
-    final occurrence = occurrenceId == null
-        ? null
-        : shown.occurrences.where((o) => o.id == occurrenceId).firstOrNull;
-    if (occurrence != null) {
-      final offered = dateActionsFor(
-        shown.event,
-        occurrence,
-        state.actions,
-        now: now(),
-      );
-      if (!offered.contains(action)) {
-        actions.add(EventWriteDropped(action));
-        return;
-      }
-    }
-    actions.add(request(shown));
+        // Or the date can have passed while the dialog was open, and the
+        // server still takes a confirm on a passed date (backend#1005), so
+        // the clock is read again (#655). The page moved on as it passed,
+        // without the control. A date that changed meanwhile is checked the
+        // same way, and one gone meanwhile goes on to the server, whose
+        // answer says so.
+        final occurrence = occurrenceId == null
+            ? null
+            : shown.occurrences.where((o) => o.id == occurrenceId).firstOrNull;
+        if (occurrence != null) {
+          final offered = dateActionsFor(
+            shown.event,
+            occurrence,
+            state.actions,
+            now: now(),
+          );
+          if (!offered.contains(action)) {
+            return DropWrite(EventWriteDropped(action));
+          }
+        }
+        return SendWrite(request(shown));
+      },
+    );
   }
 
   Future<_DateRequest?> _askAdd(BuildContext context) async {
@@ -1425,17 +1422,6 @@ List<String> _otherProposed(List<EventOccurrence> occurrences, String id) => [
       occurrence.id,
 ];
 
-/// [detail]'s state once no read is running: now, or when the running one
-/// ends. Its last state if it closes first. A write asked for through a
-/// dialog waits on it, Delete's, the status changes' and the dates' alike.
-Future<EventDetailState> _readEnded(EventDetailBloc detail) {
-  bool ended(EventDetailState state) =>
-      state is! EventDetailReady || !state.reading;
-
-  if (ended(detail.state)) return Future.value(detail.state);
-  return detail.stream.firstWhere(ended, orElse: () => detail.state);
-}
-
 /// A date's request, built from the event as the detail shows it once the
 /// dialog closes.
 typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
@@ -1451,85 +1437,84 @@ Future<bool> _sendRsvp(
   BuildContext context,
   EventParticipationStatus? status, {
   bool editNote = false,
-}) async {
-  // Read before a dialog opens: the page under it can rebuild without the
-  // controls, and take the context they were asked from with it.
-  final actions = context.read<EventActionsBloc>();
-  final detail = context.read<EventDetailBloc>();
-  final l10n = EventsLocalizations.of(context);
-
-  String? notes;
-  String? shownNote;
-  if (editNote) {
-    final shown = detail.state;
-    shownNote = shown is EventDetailReady
-        ? shown.detail.attendance?.notes
-        : null;
-    notes = await showRsvpNoteDialog(context, note: shownNote);
-    if (notes == null) return false;
-  } else if (status == EventParticipationStatus.notAttending) {
-    // It pauses the viewer's nominations and takes the games they offered
-    // off the dates ahead. Coming back brings the nominations back, but not
-    // the games they offered.
-    final confirmed = await showConfirmDialog(
-      context,
-      title: l10n.eventsRsvpNotGoingTitle,
-      body: l10n.eventsRsvpNotGoingBody,
-      keepLabel: l10n.eventsRsvpNotGoingKeep,
-      confirmLabel: l10n.eventsRsvpNotGoingConfirm,
-      destructive: true,
-      confirmKey: EventDetailScreen.rsvpNotGoingConfirmKey,
-    );
-    if (!confirmed) return false;
-  }
-  if (actions.isClosed) return false;
-
-  // A read can have started while a dialog was open, and the write waits for
-  // it to end, as a date's does (#589). The event and the viewer's row are
-  // the detail's as they are then, whose ids a reconcile can have moved
-  // (#499).
-  final state = await _readEnded(detail);
-  if (state is! EventDetailReady || actions.isClosed) return false;
-
-  // A sync can have cancelled or archived the event while a dialog was open,
-  // taken the viewer off it, or left their row with a role or an answer this
-  // client doesn't know, which a note would go out with. The page already
-  // shows that, without the controls or without the note, and the banner
-  // says the write was dropped, or a screen reader would hear nothing
-  // happen.
-  final event = state.detail.snapshot.event;
-  final attendance = state.detail.attendance;
-  // A note saved as the dialog showed it, or as it stands now, sends
-  // nothing, and so does the answer the viewer already gave. The server
-  // takes every send as a new answer: it notifies the host that the viewer
-  // answered, and an answer of Going or Not going takes a new date. Saving
-  // the note the dialog opened on would also put it back over one another
-  // device saved while the dialog was open.
-  if (notes != null &&
-      (notes == (shownNote ?? '').trim() ||
-          (attendance != null && notes == (attendance.notes ?? '').trim()))) {
-    return false;
-  }
-  if (status != null && status == attendance?.status) return false;
-  final answer = status ?? attendance?.status;
-  if (attendance == null ||
-      answer == null ||
-      answer == EventParticipationStatus.unknown ||
-      !takesDateWrites(event) ||
-      !state.actions.contains(EventAction.rsvp)) {
-    actions.add(const EventWriteDropped(EventAction.rsvp));
-    return false;
-  }
-  // One request at a time, and the bloc drops one sent while another is
-  // out. A press before a frame showed another control's request out, such
-  // as a date's, gets here, and has to hear that it sent nothing, or the
-  // controls would hold it.
-  if (actions.state.busy) return false;
-  actions.add(
-    EventRsvpRequested(event.id, attendance.id, answer, notes: notes),
+}) {
+  return sendDetailWrite<_RsvpAsked>(
+    context,
+    ask: () async {
+      if (editNote) {
+        final shown = context.read<EventDetailBloc>().state;
+        final shownNote = shown is EventDetailReady
+            ? shown.detail.attendance?.notes
+            : null;
+        final notes = await showRsvpNoteDialog(context, note: shownNote);
+        if (notes == null) return null;
+        return (notes: notes, shownNote: shownNote);
+      }
+      if (status == EventParticipationStatus.notAttending) {
+        // It pauses the viewer's nominations and takes the games they
+        // offered off the dates ahead. Coming back brings the nominations
+        // back, but not the games they offered.
+        final l10n = EventsLocalizations.of(context);
+        final confirmed = await showConfirmDialog(
+          context,
+          title: l10n.eventsRsvpNotGoingTitle,
+          body: l10n.eventsRsvpNotGoingBody,
+          keepLabel: l10n.eventsRsvpNotGoingKeep,
+          confirmLabel: l10n.eventsRsvpNotGoingConfirm,
+          destructive: true,
+          confirmKey: EventDetailScreen.rsvpNotGoingConfirmKey,
+        );
+        if (!confirmed) return null;
+      }
+      return (notes: null, shownNote: null);
+    },
+    // A read can have started while a dialog was open, and the write waits
+    // for it to end, as a date's does (#589). The event and the viewer's row
+    // are the detail's as they are then, whose ids a reconcile can have
+    // moved (#499).
+    check: (state, asked) {
+      final (:notes, :shownNote) = asked;
+      // A sync can have cancelled or archived the event while a dialog was
+      // open, taken the viewer off it, or left their row with a role or an
+      // answer this client doesn't know, which a note would go out with.
+      // The page already shows that, without the controls or without the
+      // note, and the banner says the write was dropped, or a screen reader
+      // would hear nothing happen.
+      final event = state.detail.snapshot.event;
+      final attendance = state.detail.attendance;
+      // A note saved as the dialog showed it, or as it stands now, sends
+      // nothing, and so does the answer the viewer already gave. The server
+      // takes every send as a new answer: it notifies the host that the
+      // viewer answered, and an answer of Going or Not going takes a new
+      // date. Saving the note the dialog opened on would also put it back
+      // over one another device saved while the dialog was open.
+      if (notes != null &&
+          (notes == (shownNote ?? '').trim() ||
+              (attendance != null &&
+                  notes == (attendance.notes ?? '').trim()))) {
+        return const SkipWrite();
+      }
+      if (status != null && status == attendance?.status) {
+        return const SkipWrite();
+      }
+      final answer = status ?? attendance?.status;
+      if (attendance == null ||
+          answer == null ||
+          answer == EventParticipationStatus.unknown ||
+          !takesDateWrites(event) ||
+          !state.actions.contains(EventAction.rsvp)) {
+        return const DropWrite(EventWriteDropped(EventAction.rsvp));
+      }
+      return SendWrite(
+        EventRsvpRequested(event.id, attendance.id, answer, notes: notes),
+      );
+    },
   );
-  return true;
 }
+
+/// What an answer's dialog asked (#508): the note typed, and the note the
+/// dialog opened on, for a note's edit; neither for an answer.
+typedef _RsvpAsked = ({String? notes, String? shownNote});
 
 /// How the last action went (#501, #502, #506, #508), or the last vote (#507),
 /// over the event until dismissed or replaced. A live region, as every
