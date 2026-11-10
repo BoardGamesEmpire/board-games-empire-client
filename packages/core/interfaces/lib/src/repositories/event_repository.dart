@@ -416,6 +416,24 @@ abstract class EventRepository {
   /// generation, and [watchEvent] emits. Last-write-wins (#589).
   Future<bool> cacheAttendee(EventAttendee attendee);
 
+  /// Adds [attendee], whom an add answered, to its event's cached roster, or
+  /// replaces the row with its id (#510).
+  ///
+  /// Returns false, writing nothing, when the event isn't cached, is
+  /// `isDirty` or `isLocalOnly`, or has no roster cached: one row alone would
+  /// read as a roster of one. Stamps the generation, and [watchEvent] emits.
+  /// Last-write-wins (#589).
+  Future<bool> addCachedAttendee(EventAttendee attendee);
+
+  /// Removes the cached roster row [attendeeId] of [eventId], whom the server
+  /// removed (#510). Returns false, changing nothing, when it wasn't cached
+  /// or the event is `isDirty` or `isLocalOnly`. Stamps the generation, and
+  /// [watchEvent] emits. Last-write-wins (#589).
+  Future<bool> removeCachedAttendee({
+    required String eventId,
+    required String attendeeId,
+  });
+
   /// Writes [event], the row a status write returned (cancel, reopen,
   /// archive or unarchive), over the cached one with its id (#502).
   ///
