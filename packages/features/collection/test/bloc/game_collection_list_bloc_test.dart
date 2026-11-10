@@ -755,6 +755,25 @@ void main() {
       ]);
     });
 
+    test('the filter and the sort it holds are read from it before the list '
+        'is ready', () async {
+      // The screen's search, Filters and sort are built in every state, and
+      // open the sheet on the filter held, not on one no state carries.
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      expect(bloc.filter, const CollectionFilter());
+      expect(bloc.sort, CollectionSort.title);
+
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      expect(bloc.state, isA<GameCollectionListLoading>());
+      expect(bloc.filter, byQuery);
+      expect(bloc.sort, CollectionSort.rating);
+    });
+
     test('a change while the read has failed emits nothing, and the next '
         'Ready applies it', () async {
       final bloc = build(withHydration: false);

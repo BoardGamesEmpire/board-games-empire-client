@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -37,8 +38,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: BgeTheme.light(),
-          localizationsDelegates:
-              GameCollectionLocalizations.localizationsDelegates,
+          localizationsDelegates: const [
+            ...GameCollectionLocalizations.localizationsDelegates,
+            GameFiltersLocalizations.delegate,
+          ],
           supportedLocales: GameCollectionLocalizations.supportedLocales,
           home: const Scaffold(body: Text('home')),
         ),

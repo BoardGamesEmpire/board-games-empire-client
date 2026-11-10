@@ -6,9 +6,12 @@ list's search field that name the filters in use and clear them. The labels
 they name games' facts with live here too, and the catalog labels its own
 facts with them, so a filter reads as the fact it matches.
 
-Today the game search (`game_catalog`'s `GameSearchScreen`) is its one caller.
-The sheet moved here from that screen unchanged so that the collection's
-filters (#715), and later an event's game picker (#516), can build from it
+Two screens call it. The game search (`game_catalog`'s `GameSearchScreen`)
+uses the default options. The collection list (`game_collection`'s
+`GameCollectionListScreen`, #715) turns on `medium`, `missingBaseGame` and
+`exclusion`, and passes the same options to the sheet, the chips and the
+count. The sheet moved here from the game search unchanged so that the
+collection's filters, and later an event's game picker (#516), build from it
 rather than copy it.
 
 ## Why a shared feature package

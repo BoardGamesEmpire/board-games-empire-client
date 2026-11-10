@@ -8,6 +8,7 @@ import 'package:game_collection/src/bloc/game_collection_list_event.dart';
 import 'package:game_collection/src/bloc/game_collection_list_state.dart';
 import 'package:game_collection/src/medium_label.dart';
 import 'package:game_collection/src/picker/collection_entry_picker.dart';
+import 'package:game_collection/src/screens/collection_list_controls.dart';
 import 'package:game_collection/src/screens/collection_rows.dart';
 import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
@@ -30,9 +31,21 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## The page is thin (#44)
 ///
 /// The list itself is [GameCollectionListSliver], and this screen is a
-/// `BgePage` around it, with the layout toggle at its head, plus the bloc it
-/// reads. #46's two-pane form can host the sliver beside the detail screen
-/// without this page's app bar or toggle.
+/// `BgePage` around it, with a header at its head, plus the bloc it reads.
+/// #46's two-pane form can host the sliver beside the detail screen without
+/// this page's app bar or header.
+///
+/// ## Search, filters and sort (#715)
+///
+/// The header is a search field, the Filters button with the sheet it
+/// opens, the sort button with its menu, the layout toggle, a chip for each
+/// filter in use, and, while anything narrows the list, how many games it
+/// shows of how many are owned, read out as it changes. The filter and the
+/// sort are the bloc's, so they last as long as the screen.
+///
+/// A filter that leaves nothing shows "No games match" with Clear filters,
+/// which resets the search and the filters but not the sort. An empty
+/// collection keeps its own state, with Browse, whatever is typed.
 ///
 /// ## Rows are content until there is somewhere to go (#44)
 ///
@@ -41,11 +54,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## List or thumbnails (#710)
 ///
-/// A toggle at the head of the content shows the entries as rows or as a grid
-/// of covers, and [layouts] remembers the choice for the user. A cover opens
-/// its entry as a row does, and like a row it is inert without [onOpen]. The
-/// toggle isn't in the app bar: beside the back button, it cut the title
-/// short on a 320dp phone.
+/// A toggle in the header shows the entries as rows or as a grid of covers,
+/// and [layouts] remembers the choice for the user. A cover opens its entry
+/// as a row does, and like a row it is inert without [onOpen]. The toggle
+/// isn't in the app bar: beside the back button, it cut the title short on a
+/// 320dp phone.
 ///
 /// ## A game owned more than once is one stack (#709)
 ///
@@ -105,6 +118,25 @@ class GameCollectionListScreen extends StatelessWidget {
 
   /// Key on the list or thumbnails toggle.
   static const Key layoutToggleKey = Key('collection_list.layout_toggle');
+
+  /// Key on the search field's text field (#715).
+  static const Key searchKey = Key('collection_list.search');
+
+  /// Key on the button that opens the sort menu (#715).
+  static const Key sortButtonKey = Key('collection_list.sort');
+
+  /// Per-order key on the sort menu's items: `collection_list.sort_<name>`.
+  static Key sortKey(CollectionSort sort) =>
+      Key('collection_list.sort_${sort.name}');
+
+  /// Key on the count of games shown while a filter narrows them (#715).
+  static const Key resultCountKey = Key('collection_list.result_count');
+
+  /// Key on the state shown when nothing fits the search and filters.
+  static const Key noMatchesKey = Key('collection_list.no_matches');
+
+  /// Key on that state's Clear filters button.
+  static const Key clearFiltersKey = Key('collection_list.clear_filters');
 
   static final BgeLogger _log = BgeLogger('bge.collection.list.layout');
 
@@ -254,7 +286,7 @@ class GameCollectionListScreen extends StatelessWidget {
   }
 }
 
-class _GameCollectionListPage extends StatelessWidget {
+class _GameCollectionListPage extends StatefulWidget {
   const _GameCollectionListPage({
     required this.thumbnails,
     required this.onLayoutChanged,
@@ -269,19 +301,33 @@ class _GameCollectionListPage extends StatelessWidget {
   final void Function(BuildContext context)? onBrowse;
 
   @override
+  State<_GameCollectionListPage> createState() =>
+      _GameCollectionListPageState();
+}
+
+class _GameCollectionListPageState extends State<_GameCollectionListPage> {
+  /// The header, told when Clear filters, below it, resets the filters, so
+  /// its search field empties and its Filters button takes focus (#715).
+  final _controls = GlobalKey<CollectionListControlsState>();
+
+  @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
+    final thumbnails = widget.thumbnails;
     // The row count, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210). A row or a cover per game, as a game owned
     // more than once is one stack (#709). The list draws a row for each
     // nested expansion too (#711), so it counts the rows; the grid draws the
     // top-level covers, as a strip's are a row of their own, so it counts
-    // those.
+    // those. Under a filter, the rows it shows (#715).
     final list = thumbnails == false;
     final rowCount = context.select<GameCollectionListBloc, int?>(
       (bloc) => switch (bloc.state) {
-        GameCollectionListReady(:final items) when items.isNotEmpty =>
-          list ? collectionRows(items).length : placeCollection(items).length,
+        GameCollectionListReady(:final items, :final all)
+            when items.isNotEmpty =>
+          list
+              ? collectionRows(items, all: all).length
+              : placeCollection(items, all: all).length,
         _ => null,
       },
     );
@@ -295,27 +341,22 @@ class _GameCollectionListPage extends StatelessWidget {
       slivers: [
         // In every state, and first, above the refresh banner, so that it
         // keeps its place and its focus as the list below it changes (#607).
-        // Never disabled: while the choice is read it shows the list, which
-        // is what a missing choice means.
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-            child: Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: BgeLayoutToggle(
-                key: GameCollectionListScreen.layoutToggleKey,
-                thumbnails: thumbnails ?? false,
-                onChanged: onLayoutChanged,
-                listLabel: l10n.collectionLayoutList,
-                thumbnailsLabel: l10n.collectionLayoutThumbnails,
-              ),
+            child: CollectionListControls(
+              key: _controls,
+              thumbnails: thumbnails ?? false,
+              onLayoutChanged: widget.onLayoutChanged,
             ),
           ),
         ),
         GameCollectionListSliver(
           thumbnails: thumbnails,
-          onOpen: onOpen,
-          onBrowse: onBrowse,
+          onOpen: widget.onOpen,
+          onBrowse: widget.onBrowse,
+          onFiltersCleared: (held) =>
+              _controls.currentState?.filtersCleared(held: held),
         ),
       ],
     );
@@ -333,6 +374,7 @@ class GameCollectionListSliver extends StatelessWidget {
     this.thumbnails = false,
     this.onOpen,
     this.onBrowse,
+    this.onFiltersCleared,
     super.key,
   });
 
@@ -352,6 +394,13 @@ class GameCollectionListSliver extends StatelessWidget {
 
   /// See [GameCollectionListScreen.onBrowse].
   final void Function(BuildContext context)? onBrowse;
+
+  /// Called once Clear filters, in the state shown when nothing fits the
+  /// search and the filters, has reset them (#715): for a host whose search
+  /// field shows the query, to empty it and hand focus on, as Clear filters
+  /// leaves the list. It is given Clear filters' focus node when that held
+  /// focus at the press, else null.
+  final ValueChanged<FocusNode?>? onFiltersCleared;
 
   @override
   Widget build(BuildContext context) {
@@ -399,66 +448,77 @@ class GameCollectionListSliver extends StatelessWidget {
             GameCollectionListError() => _ErrorSliver(
               message: l10n.collectionListError,
             ),
-            GameCollectionListReady(:final items) when items.isEmpty =>
+            // Kept apart (#715): no games at all, and games of which nothing
+            // fits the search and the filters. Either is the same in both
+            // layouts, so it shows before the choice is read.
+            GameCollectionListReady(:final all) when all.isEmpty =>
               _EmptySliver(onBrowse: onBrowse),
+            GameCollectionListReady(:final items) when items.isEmpty =>
+              _NoMatchesSliver(onCleared: onFiltersCleared),
             _ when thumbnails == null => loading,
             // One scope for the list and the grid, so a game's focus follows
             // it as its item changes form: one entry or a stack, top level or
             // under its base game (#769, #711).
-            GameCollectionListReady(:final items) => BgeFocusHandoffScope(
-              child: SliverMainAxisGroup(
-                slivers: [
-                  if (thumbnails)
-                    _CollectionCovers(
-                      placed: placeCollection(items),
-                      onOpen: onOpen,
-                    )
-                  else
-                    BgeKeyedSliverList<CollectionRow>(
-                      items: collectionRows(
-                        items,
-                        titleOf: (item) => _title(l10n, item),
-                      ),
-                      keyOf: (row) => switch ((row.group, row.parentGameId)) {
-                        ([final item], null) => GameCollectionListScreen.rowKey(
-                          item.entry.id,
+            // What the filter left, placed against the whole collection,
+            // which decides which expansions are missing their base game
+            // (#715).
+            GameCollectionListReady(:final items, :final all) =>
+              BgeFocusHandoffScope(
+                child: SliverMainAxisGroup(
+                  slivers: [
+                    if (thumbnails)
+                      _CollectionCovers(
+                        placed: placeCollection(items, all: all),
+                        onOpen: onOpen,
+                      )
+                    else
+                      BgeKeyedSliverList<CollectionRow>(
+                        items: collectionRows(
+                          items,
+                          all: all,
+                          titleOf: (item) => _title(l10n, item),
                         ),
-                        (_, null) => GameCollectionListScreen.stackKey(
-                          row.group.first.gameId,
-                        ),
-                        ([final item], final parent?) =>
-                          GameCollectionListScreen.nestedRowKey(
-                            parent,
-                            item.entry.id,
-                          ),
-                        (_, final parent?) =>
-                          GameCollectionListScreen.nestedStackKey(
-                            parent,
+                        keyOf: (row) => switch ((row.group, row.parentGameId)) {
+                          ([final item], null) =>
+                            GameCollectionListScreen.rowKey(
+                              item.entry.id,
+                            ),
+                          (_, null) => GameCollectionListScreen.stackKey(
                             row.group.first.gameId,
                           ),
-                      },
-                      itemBuilder: (context, row) => BgeFocusHandoff(
-                        identity: row.group.first.gameId,
-                        place: row.parentGameId,
-                        child: switch (row.group) {
-                          [final item] => _CollectionRow(
-                            item: item,
-                            onOpen: onOpen,
-                            expansionOf: row.parentTitle,
-                            missingBase: row.missingBase,
-                          ),
-                          final group => _StackRow(
-                            items: group,
-                            onOpen: onOpen,
-                            expansionOf: row.parentTitle,
-                            missingBase: row.missingBase,
-                          ),
+                          ([final item], final parent?) =>
+                            GameCollectionListScreen.nestedRowKey(
+                              parent,
+                              item.entry.id,
+                            ),
+                          (_, final parent?) =>
+                            GameCollectionListScreen.nestedStackKey(
+                              parent,
+                              row.group.first.gameId,
+                            ),
                         },
+                        itemBuilder: (context, row) => BgeFocusHandoff(
+                          identity: row.group.first.gameId,
+                          place: row.parentGameId,
+                          child: switch (row.group) {
+                            [final item] => _CollectionRow(
+                              item: item,
+                              onOpen: onOpen,
+                              expansionOf: row.parentTitle,
+                              missingBase: row.missingBase,
+                            ),
+                            final group => _StackRow(
+                              items: group,
+                              onOpen: onOpen,
+                              expansionOf: row.parentTitle,
+                              missingBase: row.missingBase,
+                            ),
+                          },
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
           },
         ],
       ),
@@ -1062,6 +1122,52 @@ class _EmptySliver extends StatelessWidget {
                 onPressed: () => browse(context),
                 child: Text(l10n.collectionListBrowse),
               ),
+      ),
+    );
+  }
+}
+
+/// Games, of which nothing fits the search and the filters (#715). Clear
+/// filters resets both, but not the sort, and calls [onCleared] with its
+/// own focus node if it held focus at the press.
+class _NoMatchesSliver extends StatefulWidget {
+  const _NoMatchesSliver({this.onCleared});
+
+  final ValueChanged<FocusNode?>? onCleared;
+
+  @override
+  State<_NoMatchesSliver> createState() => _NoMatchesSliverState();
+}
+
+class _NoMatchesSliverState extends State<_NoMatchesSliver> {
+  final _clearFocus = FocusNode(debugLabel: 'Collection clear filters');
+
+  @override
+  void dispose() {
+    _clearFocus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    return BgeStateSliver(
+      child: BgeEmptyState(
+        key: GameCollectionListScreen.noMatchesKey,
+        title: l10n.collectionNoMatchesTitle,
+        body: l10n.collectionNoMatchesBody,
+        action: FilledButton.tonal(
+          key: GameCollectionListScreen.clearFiltersKey,
+          focusNode: _clearFocus,
+          onPressed: () {
+            final held = _clearFocus.hasFocus ? _clearFocus : null;
+            context.read<GameCollectionListBloc>().add(
+              const GameCollectionListFilterChanged(CollectionFilter()),
+            );
+            widget.onCleared?.call(held);
+          },
+          child: Text(l10n.collectionClearFilters),
+        ),
       ),
     );
   }

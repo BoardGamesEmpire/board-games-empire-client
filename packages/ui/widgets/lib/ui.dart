@@ -49,9 +49,9 @@
 /// here with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
 /// same way. That picker, the collection entry picker, is now its second.
-/// `BgeSearchField` came here with #715, ahead of a second call site, because
-/// #715's Collection list and #516's two lists, an event's games tab and its
-/// game picker, were designed together to filter the same way as the user
+/// `BgeSearchField` came here with #715, whose Collection list uses it, ahead
+/// of a second call site, because #516's two lists, an event's games tab and
+/// its game picker, were designed with it to filter the same way as the user
 /// types.
 library;
 

@@ -611,6 +611,74 @@
       }
     }
   },
+  "collectionSearchLabel": "Search your collection",
+  "@collectionSearchLabel": {
+    "description": "Visible label of the text field at the top of the collection list that narrows the list to the games whose title or subtitle holds what the user types. Also the field's spoken name."
+  },
+  "collectionSearchClear": "Clear search",
+  "@collectionSearchClear": {
+    "description": "Tooltip and spoken name of the button inside the collection's search field that empties it. Shown only while the field holds text."
+  },
+  "collectionSortButton": "Sort: {sort}",
+  "@collectionSortButton": {
+    "description": "Label of the button at the top of the collection list that opens the menu of orders the list can be shown in. {sort} is the order the list is in: collectionSortTitle, collectionSortRecentlyAdded, collectionSortPlayTime, collectionSortMinPlayers, collectionSortMaxPlayers or collectionSortRating.",
+    "placeholders": {
+      "sort": {
+        "type": "String",
+        "example": "Recently added"
+      }
+    }
+  },
+  "collectionSortTitle": "Title",
+  "@collectionSortTitle": {
+    "description": "An order the collection list can be shown in: alphabetical by the game's title. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionSortRecentlyAdded": "Recently added",
+  "@collectionSortRecentlyAdded": {
+    "description": "An order the collection list can be shown in: the games the user added to their collection most recently first. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionSortPlayTime": "Shortest first",
+  "@collectionSortPlayTime": {
+    "description": "An order the collection list can be shown in: by how long a game takes to play, the quickest first. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionSortMinPlayers": "Fewest players",
+  "@collectionSortMinPlayers": {
+    "description": "An order the collection list can be shown in: by the smallest number of players a game can be played with, the games playable by the fewest first. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionSortMaxPlayers": "Most players",
+  "@collectionSortMaxPlayers": {
+    "description": "An order the collection list can be shown in: by the largest number of players a game can be played with, the games playable by the most first. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionSortRating": "Your rating",
+  "@collectionSortRating": {
+    "description": "An order the collection list can be shown in: by the rating the user gave each game, the highest first. A choice in the sort menu, and the {sort} of collectionSortButton while chosen."
+  },
+  "collectionResultCount": "{count, plural, =1{1 game} other{{count} games}} of {total}",
+  "@collectionResultCount": {
+    "description": "Shown under the collection's search field and filters while they narrow the list, and read out by screen readers as it changes: how many games are shown, of how many the user owns, for example '3 games of 42'. A game owned more than once counts once.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      },
+      "total": {
+        "type": "int",
+        "example": "42"
+      }
+    }
+  },
+  "collectionNoMatchesTitle": "No games match",
+  "@collectionNoMatchesTitle": {
+    "description": "Title of what the collection list shows in place of its games when the user's collection has games but none fits the search and the filters chosen."
+  },
+  "collectionNoMatchesBody": "Nothing in your collection fits this search and these filters.",
+  "@collectionNoMatchesBody": {
+    "description": "Shown under collectionNoMatchesTitle, saying why the collection list shows no games."
+  },
+  "collectionClearFilters": "Clear filters",
+  "@collectionClearFilters": {
+    "description": "Button under collectionNoMatchesBody that empties the collection's search field and removes every filter, so the whole collection shows again. The order chosen in the sort menu stays."
+  },
   "collectionPickerEntryWithMediumSpoken": "{platform} {medium}",
   "@collectionPickerEntryWithMediumSpoken": {
     "description": "What a screen reader says for one copy in the pop-up listing a game's copies, in place of collectionPickerEntryWithMedium, whose dot would be read out, for example 'Tabletop Physical'. It is the name of the button that opens that copy. Keep a comma out of it: a list of copies, such as the collection's name for a game owned twice, 'Wingspan, 2 copies: Tabletop Physical, Tabletop Digital', joins these with collectionListDetailSpokenSeparator, and a comma inside each would make two copies sound like four.",

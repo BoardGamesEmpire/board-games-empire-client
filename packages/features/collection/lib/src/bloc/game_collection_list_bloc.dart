@@ -139,6 +139,14 @@ class GameCollectionListBloc
   CollectionFilter _filter = const CollectionFilter();
   CollectionSort _sort = CollectionSort.title;
 
+  /// The filter the list is narrowed by, readable in every state, as only a
+  /// ready state carries it (#715): the screen's header, built while the
+  /// list loads too, starts from it.
+  CollectionFilter get filter => _filter;
+
+  /// The order the list is shown in, held as [filter] is.
+  CollectionSort get sort => _sort;
+
   /// [_items] filtered by [_filter] and sorted by [_sort], kept until any of
   /// those three changes, which sets it back to null.
   List<GameCollectionListItem>? _shown;
