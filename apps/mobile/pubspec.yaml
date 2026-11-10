@@ -13,15 +13,13 @@ resolution: workspace
 # (which owns the concrete storage/network dependencies) and the shared
 # shell. Do not add feature or infrastructure dependencies here.
 dependencies:
-  flutter:
-    sdk: flutter
-
   app_shell:
     path: ../../packages/app_shell
+  cupertino_icons: ^1.0.9
+  flutter:
+    sdk: flutter
   mobile_platform:
     path: ../../packages/platform/mobile
-
-  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:
