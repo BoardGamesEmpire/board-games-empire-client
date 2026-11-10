@@ -8,6 +8,7 @@ import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -520,14 +521,13 @@ String _sortLabel(GameCatalogLocalizations l10n, GameSort sort) =>
     };
 
 /// The facts a game's row shows under its title.
-List<CatalogFact> _gameFacts(GameCatalogLocalizations l10n, Game game) =>
-    rowFacts(
-      l10n,
-      year: game.publishYear,
-      minPlayers: game.minPlayers,
-      maxPlayers: game.maxPlayers,
-      contentType: game.contentType,
-    );
+List<GameFact> _gameFacts(GameFiltersLocalizations l10n, Game game) => rowFacts(
+  l10n,
+  year: game.publishYear,
+  minPlayers: game.minPlayers,
+  maxPlayers: game.maxPlayers,
+  contentType: game.contentType,
+);
 
 /// The games as a grid of covers (#710): the top-level games alone, with a
 /// badge on a base game's cover that opens a strip of its expansions' covers
@@ -674,7 +674,10 @@ class _BrowseTile extends StatelessWidget {
             gameTitle(l10n, parent.title, parent.subtitle),
           ),
         if (missingBase) _missingBaseNote(context, game),
-        ..._gameFacts(l10n, game).map((fact) => fact.spoken),
+        ..._gameFacts(
+          GameFiltersLocalizations.of(context),
+          game,
+        ).map((fact) => fact.spoken),
       ].join(l10n.catalogDetailSpokenSeparator),
       imageUrl: game.thumbnail,
       marked: missingBase,
@@ -719,7 +722,7 @@ class _BrowseRow extends StatelessWidget {
             ),
       note: item.missingBase ? _missingBaseNote(context, game) : null,
       thumbnailUrl: game.thumbnail,
-      facts: _gameFacts(l10n, game),
+      facts: _gameFacts(GameFiltersLocalizations.of(context), game),
       onTap: open == null ? null : () => open(context, game.id),
     );
   }

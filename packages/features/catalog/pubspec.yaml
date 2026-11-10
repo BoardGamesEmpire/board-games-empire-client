@@ -24,6 +24,11 @@ dependencies:
   # Flutter: it never renders raw HTML, and every link tap reaches one
   # callback.
   flutter_markdown_plus: ^1.0.12
+  # The search's filter sheet, its chips, and the labels the catalog's facts
+  # share with them (#715): one of the two feature packages another may
+  # depend on.
+  game_filters:
+    path: ../game_filters
   interfaces:
     path: ../../core/interfaces
   intl: ^0.20.2

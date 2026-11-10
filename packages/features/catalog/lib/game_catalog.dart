@@ -1,3 +1,7 @@
+// The play-time bands are `game_filters`', with the filter sheet that offers
+// them (#715); a caller of the game search finds them here too.
+export 'package:game_filters/game_filters.dart' show GameLengthBand;
+
 export 'src/bloc/game_browse_bloc.dart';
 export 'src/bloc/game_browse_event.dart';
 export 'src/bloc/game_browse_state.dart';
@@ -22,5 +26,4 @@ export 'src/screens/game_detail_collection.dart';
 export 'src/screens/game_detail_screen.dart';
 export 'src/screens/game_import_dialog.dart';
 export 'src/screens/game_search_screen.dart';
-export 'src/search/game_length_band.dart';
 export 'src/widgets/game_description.dart' show GameDescription;

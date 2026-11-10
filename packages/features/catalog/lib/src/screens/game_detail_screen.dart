@@ -10,6 +10,7 @@ import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:game_catalog/src/widgets/cover_beside_title.dart';
 import 'package:game_catalog/src/widgets/game_description.dart';
 import 'package:game_catalog/src/widgets/game_detail_platforms.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -226,7 +227,7 @@ class _GameDetailBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final theme = Theme.of(context);
-    final facts = _facts(l10n);
+    final facts = _facts(l10n, GameFiltersLocalizations.of(context));
     final subtitle = game.subtitle;
     final description = game.description;
 
@@ -287,14 +288,17 @@ class _GameDetailBody extends StatelessWidget {
     );
   }
 
-  List<CatalogFact> _facts(GameCatalogLocalizations l10n) {
+  List<GameFact> _facts(
+    GameCatalogLocalizations l10n,
+    GameFiltersLocalizations filterL10n,
+  ) {
     final year = game.publishYear;
-    final type = contentTypeLabel(l10n, game.contentType);
+    final type = contentTypeLabel(filterL10n, game.contentType);
     return [
       if (type != null) sameFact(type),
       if (year != null)
-        sameFact(l10n.catalogDetailPublished(yearText(l10n, year))),
-      ...playFacts(l10n, game),
+        sameFact(l10n.catalogDetailPublished(yearText(filterL10n, year))),
+      ...playFacts(l10n, filterL10n, game),
     ];
   }
 }

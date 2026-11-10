@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:game_catalog/src/search/game_length_band.dart';
+import 'package:game_filters/src/game_length_band.dart';
 import 'package:models/domain.dart';
 
 void main() {

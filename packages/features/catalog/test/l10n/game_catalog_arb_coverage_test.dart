@@ -13,44 +13,6 @@ void main() {
       report = analyzeArbDirectory('lib/l10n', templateFileName: 'intl_en.arb');
     });
 
-    test('the template names every content type but unknown (#42)', () {
-      // The label switch is exhaustive over ContentType, and these are the
-      // other half of that pairing.
-      expect(
-        report.templateKeys,
-        containsAll(<String>[
-          'catalogContentTypeBaseGame',
-          'catalogContentTypeExpansion',
-          'catalogContentTypeStandaloneExpansion',
-          'catalogContentTypeExpandedEdition',
-          'catalogContentTypeAccessory',
-          'catalogContentTypeBundle',
-          'catalogContentTypeDlc',
-          'catalogContentTypeMod',
-          'catalogContentTypePort',
-          'catalogContentTypeRemake',
-          'catalogContentTypeRemaster',
-        ]),
-      );
-    });
-
-    test('the template names every platform type but unknown (#474)', () {
-      // platformTypeLabel is exhaustive over PlatformType, and these are the
-      // other half of that pairing.
-      expect(
-        report.templateKeys,
-        containsAll(<String>[
-          'catalogPlatformTypeTabletop',
-          'catalogPlatformTypeConsole',
-          'catalogPlatformTypePortable',
-          'catalogPlatformTypePc',
-          'catalogPlatformTypeMobile',
-          'catalogPlatformTypeArcade',
-          'catalogPlatformTypeOther',
-        ]),
-      );
-    });
-
     test('every template key carries a translator description', () {
       expect(report.keysMissingDescription, isEmpty, reason: report.describe());
     });

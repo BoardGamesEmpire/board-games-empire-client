@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
-import 'package:game_catalog/src/screens/search_range_field.dart';
+import 'package:game_filters/l10n/game_filters_localizations.dart';
+import 'package:game_filters/src/search_range_field.dart';
 import 'package:models/domain.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -17,8 +17,8 @@ const _tooLow = 'Must be at least 1';
 
 Widget _app() => MaterialApp(
   theme: BgeTheme.light(),
-  localizationsDelegates: GameCatalogLocalizations.localizationsDelegates,
-  supportedLocales: GameCatalogLocalizations.supportedLocales,
+  localizationsDelegates: GameFiltersLocalizations.localizationsDelegates,
+  supportedLocales: GameFiltersLocalizations.supportedLocales,
   home: Scaffold(
     body: SearchRangeField(
       fromKey: _fromKey,

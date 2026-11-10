@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:game_catalog/l10n/game_catalog_localizations.dart';
+import 'package:game_filters/l10n/game_filters_localizations.dart';
+import 'package:game_filters/src/game_filter_options.dart';
 import 'package:models/domain.dart';
-import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// A filter range's From and To fields, shared by the search's publish-year,
-/// player-count and play-time sections (#565, #580).
+/// A filter range's From and To fields, shared by the filter sheet's
+/// publish-year, player-count and play-time sections (#565, #580).
 ///
 /// ## When it commits
 ///
@@ -34,7 +34,7 @@ class SearchRangeField extends StatefulWidget {
     required this.onCommit,
     required this.lowest,
     required this.name,
-    this.highest = GamesRemoteDataSource.maxRangeBound,
+    this.highest = GameFilterOptions.defaultMaxRangeBound,
     this.allowNegative = false,
     this.helper,
     this.fromKey,
@@ -51,10 +51,11 @@ class SearchRangeField extends StatefulWidget {
   /// name, so a screen reader says which range a From or To belongs to (#50).
   final String name;
 
-  /// The lowest bound the server accepts.
+  /// The lowest bound the field accepts.
   final int lowest;
 
-  /// The highest bound the server accepts.
+  /// The highest bound the field accepts: by default the highest the server
+  /// does, [GameFilterOptions.defaultMaxRangeBound].
   final int highest;
 
   /// Whether a bound may be typed with a leading minus, as a year before the
@@ -109,7 +110,7 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
 
   /// Read while mounted: a field closing with the sheet says why it can't
   /// commit, and may look nothing up by then.
-  late GameCatalogLocalizations _l10n;
+  late GameFiltersLocalizations _l10n;
 
   @override
   void initState() {
@@ -124,7 +125,7 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _l10n = GameCatalogLocalizations.of(context);
+    _l10n = GameFiltersLocalizations.of(context);
   }
 
   @override
@@ -219,9 +220,9 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
 
   String? _message(_Problem? problem) => switch (problem) {
     null => null,
-    _Problem.tooLow => _l10n.catalogSearchRangeTooLow(widget.lowest),
-    _Problem.tooHigh => _l10n.catalogSearchRangeTooHigh,
-    _Problem.reversed => _l10n.catalogSearchRangeReversed,
+    _Problem.tooLow => _l10n.gameFiltersRangeTooLow(widget.lowest),
+    _Problem.tooHigh => _l10n.gameFiltersRangeTooHigh,
+    _Problem.reversed => _l10n.gameFiltersRangeReversed,
   };
 
   /// Once a problem has been shown, follows the typing, so it goes as soon
@@ -237,7 +238,7 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = GameCatalogLocalizations.of(context);
+    final l10n = GameFiltersLocalizations.of(context);
     final tokens = BgeTokens.of(context);
     final theme = Theme.of(context);
 
@@ -291,8 +292,8 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
       key: widget.fromKey,
       controller: _from,
       focusNode: _fromFocus,
-      label: l10n.catalogSearchRangeFrom,
-      semanticLabel: l10n.catalogSearchRangeFromNamed(widget.name),
+      label: l10n.gameFiltersRangeFrom,
+      semanticLabel: l10n.gameFiltersRangeFromNamed(widget.name),
       problem: _fromProblem,
       action: TextInputAction.next,
     );
@@ -300,8 +301,8 @@ class _SearchRangeFieldState extends State<SearchRangeField> {
       key: widget.toKey,
       controller: _to,
       focusNode: _toFocus,
-      label: l10n.catalogSearchRangeTo,
-      semanticLabel: l10n.catalogSearchRangeToNamed(widget.name),
+      label: l10n.gameFiltersRangeTo,
+      semanticLabel: l10n.gameFiltersRangeToNamed(widget.name),
       problem: _toProblem,
       action: TextInputAction.done,
     );

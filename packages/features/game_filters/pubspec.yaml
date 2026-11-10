@@ -1,0 +1,33 @@
+name: game_filters
+description: "Game filters: the sheet, range fields and in-use chips a list of games is narrowed with, shared by the feature packages that list games (#474, #715)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+# A feature package other features may depend on, so it depends on no
+# feature, no bloc and no data layer (#715): the caller holds the filter and
+# applies it.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  models:
+    path: ../../core/models
+  # The design system's scale (#165): spacing and the theme extension.
+  ui_tokens:
+    path: ../../ui/tokens
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  l10n_test_support:
+    path: ../../testing/l10n
+
+flutter:
+  generate: true
+  uses-material-design: true

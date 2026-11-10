@@ -6,8 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/screens/game_detail_collection.dart';
 import 'package:game_catalog/src/screens/game_detail_screen.dart';
-import 'package:game_catalog/src/widgets/catalog_chip_label.dart';
 import 'package:game_catalog/src/widgets/platform_ownership.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
@@ -249,7 +249,7 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
                     key: GameDetailScreen.platformKey(platformGame.id),
                     chip: Chip(
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      label: CatalogChipLabel(platformGame.platformName),
+                      label: GameFilterChipLabel(platformGame.platformName),
                     ),
                   )
                 else
@@ -326,7 +326,7 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
         focusNode: _chipFocusOf(platformGame.id),
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         avatar: Icon(Icons.check, size: _checkSize, color: scheme.onPrimary),
-        label: CatalogChipLabel(
+        label: GameFilterChipLabel(
           name,
           semanticsLabel: l10n.catalogDetailPlatformOwnedSpoken(name),
         ),
@@ -353,7 +353,7 @@ class _GameDetailPlatformsState extends State<GameDetailPlatforms> {
     return ActionChip(
       focusNode: _chipFocusOf(platformGame.id),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      label: CatalogChipLabel(
+      label: GameFilterChipLabel(
         name,
         semanticsLabel: l10n.catalogDetailPlatformNotOwnedSpoken(name),
       ),
