@@ -26,12 +26,15 @@ PlatformGameSummary _summary({
   String? gameImage,
   List<ExpansionLink>? baseGames,
   ContentType? contentType,
+  GameSummaryFacts? gameFacts,
+  PlatformGameSummaryFacts? platformFacts,
 }) => PlatformGameSummary(
   id: id,
   platformId: 'plat-1',
   platformName: platformName,
   thumbnail: platformThumbnail,
   image: platformImage,
+  facts: platformFacts,
   game: GameSummary(
     id: gameId,
     title: title,
@@ -40,6 +43,7 @@ PlatformGameSummary _summary({
     image: gameImage,
     baseGames: baseGames,
     contentType: contentType,
+    facts: gameFacts,
   ),
 );
 
@@ -153,6 +157,161 @@ void main() {
         expect(item.contentType, ContentType.dlc);
       },
     );
+
+    group('the filter facts (#715)', () {
+      test('a row whose platform game sets one of its players resolves the '
+          'pair from the platform game', () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameFacts: const GameSummaryFacts(minPlayers: 1, maxPlayers: 5),
+            platformFacts: const PlatformGameSummaryFacts(minPlayers: 2),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.minPlayers, 2);
+        expect(item.maxPlayers, isNull);
+      });
+
+      test('a platform game with no players resolves to the game '
+          'pair', () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameFacts: const GameSummaryFacts(minPlayers: 1, maxPlayers: 5),
+            platformFacts: const PlatformGameSummaryFacts(),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.minPlayers, 1);
+        expect(item.maxPlayers, 5);
+      });
+
+      test('play time resolves as a pair, from the platform game when '
+          'either of its two is set', () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameFacts: const GameSummaryFacts(minPlayTime: 60, maxPlayTime: 90),
+            platformFacts: const PlatformGameSummaryFacts(maxPlayTime: 45),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+        await hydrate(
+          _summary(
+            id: 'pg-2',
+            gameId: 'g-2',
+            title: 'Catan',
+            gameFacts: const GameSummaryFacts(minPlayTime: 60, maxPlayTime: 90),
+            platformFacts: const PlatformGameSummaryFacts(),
+          ),
+          _entry(id: 'gc-2', platformGameId: 'pg-2'),
+        );
+
+        final items = await collection.watchCollectionListItems().first;
+        final brass = items.firstWhere((i) => i.entry.id == 'gc-1');
+        final catan = items.firstWhere((i) => i.entry.id == 'gc-2');
+
+        expect(brass.minPlayTime, isNull);
+        expect(brass.maxPlayTime, 45);
+        expect(catan.minPlayTime, 60);
+        expect(catan.maxPlayTime, 90);
+      });
+
+      test("carries the game's publish year and the platform type", () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameFacts: const GameSummaryFacts(publishYear: 2018),
+            platformFacts: const PlatformGameSummaryFacts(
+              platformType: PlatformType.console,
+            ),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.publishYear, 2018);
+        expect(item.platformType, PlatformType.console);
+      });
+
+      test('a row written by a summary without facts has no value for '
+          'any of the six', () async {
+        await hydrate(
+          _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.platformType, isNull);
+        expect(item.publishYear, isNull);
+        expect(item.minPlayers, isNull);
+        expect(item.maxPlayers, isNull);
+        expect(item.minPlayTime, isNull);
+        expect(item.maxPlayTime, isNull);
+      });
+
+      test('an unknown platform type reads back as no platform '
+          'type', () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            platformFacts: const PlatformGameSummaryFacts(
+              platformType: PlatformType.unknown,
+            ),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = (await collection.watchCollectionListItems().first).single;
+
+        expect(item.platformType, isNull);
+      });
+
+      test('watchCollectionListItem carries them too', () async {
+        await hydrate(
+          _summary(
+            id: 'pg-1',
+            gameId: 'g-1',
+            title: 'Brass',
+            gameFacts: const GameSummaryFacts(
+              publishYear: 2018,
+              minPlayers: 2,
+              maxPlayers: 4,
+            ),
+            platformFacts: const PlatformGameSummaryFacts(
+              platformType: PlatformType.tabletop,
+            ),
+          ),
+          _entry(id: 'gc-1', platformGameId: 'pg-1'),
+        );
+
+        final item = await collection.watchCollectionListItem('gc-1').first;
+
+        expect(item?.publishYear, 2018);
+        expect(item?.minPlayers, 2);
+        expect(item?.maxPlayers, 4);
+        expect(item?.platformType, PlatformType.tabletop);
+      });
+    });
 
     test('two platform games of one game carry the same game id', () async {
       await hydrate(

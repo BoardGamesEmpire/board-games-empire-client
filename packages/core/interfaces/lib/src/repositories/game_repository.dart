@@ -43,10 +43,13 @@ import 'package:models/domain.dart';
 /// ## Summary-only rows (#259, #406)
 ///
 /// [cachePlatformGameSummaries] can insert a game the cache never held
-/// with only its title, subtitle and images. Every other column keeps its
-/// default until a full record is cached: null player counts, play time
-/// and the rest, and a `reach` of public, which the summary never
-/// stated.
+/// with only what a summary carries: its title, subtitle and images, its
+/// content type and base games, and the filter facts (#715) when the
+/// response carried them. Every other column keeps its default until a
+/// full record is cached: null descriptions, categories and the rest, and a
+/// `reach` of public, which the summary never stated. A summary with no
+/// facts leaves the player counts, play time, publish year and platform
+/// type null on a new row.
 ///
 /// So every read treats such a row as not cached, the way it treats a
 /// tombstone, until [cacheGame] / [cacheGames] (or [cachePlatformGame] /
@@ -122,11 +125,18 @@ abstract class GameRepository {
   /// A row that is absent is inserted with every other column at its
   /// default, and reads as not cached; see "Summary-only rows" in the class
   /// doc. A row that exists has just these columns updated: the game's
-  /// `title`, `subtitle`, `image` and `thumbnail`, and the platform game's
+  /// `title`, `subtitle`, `image` and `thumbnail`, its content type and base
+  /// games when the summary carries them (#711), and the platform game's
   /// `gameId`, `platformId`, `platformName`, `image` and `thumbnail`. So a
   /// fuller record cached through [cacheGame] / [cachePlatformGame] keeps
-  /// its player counts, play time and the rest, and stays readable; those
+  /// its description, categories and the rest, and stays readable; those
   /// two are full replaces and would null them.
+  ///
+  /// The filter facts (#715) follow the same rule: the game's publish year,
+  /// players and play time, and the platform game's type, players and play
+  /// time, are written only when the summary's `facts` is non-null, and then
+  /// each field as it is, null included (the server says there is no value).
+  /// A summary whose `facts` is null leaves those columns as they are.
   ///
   /// Both the game and the platform game are recorded for this user, so a
   /// full record cached later, by any user, is readable to this one.

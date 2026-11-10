@@ -1573,20 +1573,38 @@ class GameCollectionRepositoryImpl
     GameCollectionsTableData entry,
     PlatformGamesTableData platformGame,
     GamesTableData game,
-  ) => GameCollectionListItem(
-    entry: _mapRow(entry),
-    gameId: game.id,
-    title: game.title,
-    subtitle: game.subtitle,
-    platformName: platformGame.platformName,
-    thumbnail:
-        platformGame.thumbnail ??
-        platformGame.image ??
-        game.thumbnail ??
-        game.image,
-    baseGames: decodeExpansionLinks(game.baseGamesJson),
-    contentType: ContentType.fromWire(game.contentType),
-  );
+  ) {
+    // The platform game's own players and play time win as a pair when
+    // either of its two is set; otherwise the game's pair stands (#715).
+    final ownPlayers =
+        platformGame.minPlayers != null || platformGame.maxPlayers != null;
+    final ownPlayTime =
+        platformGame.minPlayTime != null || platformGame.maxPlayTime != null;
+    final platformType = platformGame.platformType;
+
+    return GameCollectionListItem(
+      entry: _mapRow(entry),
+      gameId: game.id,
+      title: game.title,
+      subtitle: game.subtitle,
+      platformName: platformGame.platformName,
+      thumbnail:
+          platformGame.thumbnail ??
+          platformGame.image ??
+          game.thumbnail ??
+          game.image,
+      baseGames: decodeExpansionLinks(game.baseGamesJson),
+      contentType: ContentType.fromWire(game.contentType),
+      platformType: platformType == null
+          ? null
+          : PlatformType.fromWire(platformType),
+      publishYear: game.publishYear,
+      minPlayers: ownPlayers ? platformGame.minPlayers : game.minPlayers,
+      maxPlayers: ownPlayers ? platformGame.maxPlayers : game.maxPlayers,
+      minPlayTime: ownPlayTime ? platformGame.minPlayTime : game.minPlayTime,
+      maxPlayTime: ownPlayTime ? platformGame.maxPlayTime : game.maxPlayTime,
+    );
+  }
 
   GameCollectionsTableCompanion _modelToCompanion(GameCollection m) =>
       GameCollectionsTableCompanion.insert(
