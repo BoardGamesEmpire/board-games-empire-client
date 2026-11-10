@@ -26,7 +26,7 @@ publish_to: none
 # but not from the others, Windows holds each part in a 16-bit field,
 # Android's versionCode starts at 1, and 0.0.0 is what an app reports
 # when it cannot read its own version.
-version: 0.2.0+1
+version: 0.3.0+1
 
 # ── Toolchain pin (#153) ───────────────────────────────────────────
 # `flutter:` below is an EXACT version, not a floor. It is the single
