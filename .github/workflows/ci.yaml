@@ -711,10 +711,11 @@ jobs:
 
   # ── Android release (#51) ────────────────────────────────────────
   # Signs master's APK with the release key and uploads it with its
-  # checksum, as the 7-day `android-apk` artifact, not a release (#785
-  # owns releases). Only a push to master in this repository runs it, so
-  # a fork's master builds in `build-android` and uploads nothing. It
-  # numbers its build the same way.
+  # checksum, as the 7-day `android-apk` artifact. On a release commit,
+  # `attach-android` below attaches that artifact to the Release (#785).
+  # Only a push to master in this repository runs it, so a fork's master
+  # builds in `build-android` and uploads nothing. It numbers its build the
+  # same way.
   #
   # The key's four secrets live in the `android-release` environment,
   # which only master may deploy to. GitHub hands a job an environment's
@@ -1277,3 +1278,60 @@ jobs:
             args+=(--notes-start-tag "$PREVIOUS")
           fi
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" "${args[@]}"
+
+  # ── Android attach (#785) ────────────────────────────────────────
+  # Attaches the release commit's APK and its checksum to the Release
+  # `github-release` created. The files are `release-android`'s
+  # `android-apk` artifact from this same run, so the APK a tester
+  # downloads is the one that passed every gate, not a rebuild, and the
+  # artifact's 7 days never matter.
+  #
+  # A separate job, so a signing outage cannot hold back the Release and its
+  # notes, and so the job that holds the keystore gets no write access to
+  # the repository. This one reads no secret and names no environment.
+  #
+  # Its `if:` takes the tag from `publish-web`, as `github-release` does,
+  # and must never gain `always()` or `!cancelled()`: a skipped or failed
+  # `release-android` or `github-release` (a fork, a non-release commit, a
+  # signing failure) skips this job too. A Release then stands with no APK
+  # until "Re-run failed jobs" runs the jobs that failed and this one after
+  # them. Re-running this job alone, more than 7 days after the run, finds
+  # the artifact gone; re-run `release-android` with it, which rebuilds the
+  # release commit.
+  #
+  # Before uploading, the job requires exactly the APK and checksum for the
+  # tag's version, and that `sha256sum -c` passes: the manifest (#827)
+  # quotes these digests, so a mismatched pair must not ship. The APK goes
+  # first, so a checksum never stands without its file, and `--clobber`
+  # lets a re-run replace what a failed attempt left.
+  attach-android:
+    name: Attach Android release
+    needs: [release-android, publish-web, github-release]
+    if: needs.publish-web.outputs.release != ''
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-apk
+          path: ${{ runner.temp }}/android
+      - name: Attach the APK and its checksum to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish-web.outputs.release }}
+        working-directory: ${{ runner.temp }}/android
+        run: |
+          set -euo pipefail
+          apk="bge-${TAG#v}-android-universal.apk"
+          expected=$(printf '%s\n' "$apk" "$apk.sha256" | LC_ALL=C sort)
+          found=$(find . -type f | sed 's|^\./||' | LC_ALL=C sort)
+          if [ "$found" != "$expected" ]; then
+            echo "::error::android-apk should hold exactly $apk and $apk.sha256 for $TAG, but holds:"
+            echo "$found"
+            exit 1
+          fi
+          sha256sum -c "$apk.sha256"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$apk"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$apk.sha256"
