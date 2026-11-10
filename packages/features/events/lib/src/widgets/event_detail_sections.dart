@@ -523,11 +523,25 @@ class _OccurrenceEntry extends StatelessWidget {
 ///
 /// The viewer's own answer, where they may give one, sits under the heading
 /// above whichever of the three shows (#508): it needs only their own row,
-/// not a roster they may read.
+/// not a roster they may read. The caller's [addButton] sits under it, over
+/// the roster.
+///
+/// Each row the viewer may act on (#510) gets a menu beside it, as each date
+/// does: the answers [reach] lets them set for that person, through
+/// [onAnswer], then *Remove from event* where it lets them remove them,
+/// through [onRemove]. A row with nothing to offer has no menu, not an empty
+/// one, and the viewer's own row ([viewerAttendeeId]) never has one: their
+/// chips answer for them, and leaving is #512's.
 class EventAttendeesSection extends StatelessWidget {
   const EventAttendeesSection({
     required this.attendees,
     this.controls,
+    this.reach = AttendeeReach.none,
+    this.viewerAttendeeId,
+    this.enabled = false,
+    this.onAnswer,
+    this.onRemove,
+    this.addButton,
     super.key,
   });
 
@@ -538,16 +552,43 @@ class EventAttendeesSection extends StatelessWidget {
   /// The viewer's answer to the invitation, or null where none is offered.
   final Widget? controls;
 
+  /// How far the viewer reaches over other people's rows, which decides
+  /// which rows have a menu and what each offers. None shows no menus.
+  final AttendeeReach reach;
+
+  /// The viewer's own row's id, or null where they have none.
+  final String? viewerAttendeeId;
+
+  /// Whether the menus' items may be pressed now. While they may not, they
+  /// stay in the menus, disabled, as a date's do.
+  final bool enabled;
+
+  /// Sets a row's answer, as picked from its menu. Null offers no answers.
+  final void Function(EventAttendee row, EventParticipationStatus answer)?
+  onAnswer;
+
+  /// Removes a row, as picked from its menu. Null offers no Remove.
+  final void Function(EventAttendee row)? onRemove;
+
+  /// A control under the heading and the viewer's answer, held to its own
+  /// width, an inter-control step above the roster. Null shows none.
+  final Widget? addButton;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final controls = this.controls;
+    final addButton = this.addButton;
 
     return _Section(
       key: EventDetailScreen.attendeesKey,
       title: l10n.eventsDetailAttendees,
       children: [
         if (controls != null) ...[controls, const BgeGap.md()],
+        if (addButton != null) ...[
+          Align(alignment: AlignmentDirectional.centerStart, child: addButton),
+          const BgeGap.md(),
+        ],
         ...switch (attendees) {
           null => [_Note(l10n.eventsDetailAttendeesNotLoaded)],
           [] => [_Note(l10n.eventsDetailAttendeesHidden)],
@@ -562,12 +603,40 @@ class EventAttendeesSection extends StatelessWidget {
                   l10n,
                   attendees,
                 ).entries)
-                  _AttendeeGroup(status: status, attendees: group),
+                  // By answer, so a group keeps its rows, and the focus on
+                  // one, when a group above it empties and goes (#549).
+                  _AttendeeGroup(
+                    key: EventDetailScreen.attendeeGroupKey(status),
+                    status: status,
+                    attendees: group,
+                    menuFor: _menuFor,
+                  ),
               ],
             ),
           ],
         },
       ],
+    );
+  }
+
+  /// [row]'s menu, or null where [reach] lets the viewer neither set its
+  /// answer nor remove it.
+  Widget? _menuFor(EventAttendee row) {
+    final onAnswer = this.onAnswer;
+    final onRemove = this.onRemove;
+    final answers =
+        onAnswer != null &&
+        canSetAnswerFor(reach, row, viewerAttendeeId: viewerAttendeeId);
+    final removes =
+        onRemove != null &&
+        canRemoveAttendee(reach, row, viewerAttendeeId: viewerAttendeeId);
+    if (!answers && !removes) return null;
+
+    return _AttendeeMenu(
+      attendee: row,
+      enabled: enabled,
+      onAnswer: answers ? (answer) => onAnswer(row, answer) : null,
+      onRemove: removes ? () => onRemove(row) : null,
     );
   }
 }
@@ -623,12 +692,20 @@ String? _noteOf(EventAttendee attendee) {
 }
 
 /// The people who gave one answer: a heading with their count, over their
-/// rows in the roster's order.
+/// rows in the roster's order, each with its menu from [menuFor].
 class _AttendeeGroup extends StatelessWidget {
-  const _AttendeeGroup({required this.status, required this.attendees});
+  const _AttendeeGroup({
+    required this.status,
+    required this.attendees,
+    required this.menuFor,
+    super.key,
+  });
 
   final EventParticipationStatus status;
   final List<EventAttendee> attendees;
+
+  /// A row's menu, or null for none.
+  final Widget? Function(EventAttendee row) menuFor;
 
   @override
   Widget build(BuildContext context) {
@@ -647,15 +724,138 @@ class _AttendeeGroup extends StatelessWidget {
     };
 
     return Column(
-      key: EventDetailScreen.attendeeGroupKey(status),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Semantics(
           header: true,
           child: Text(heading, style: Theme.of(context).textTheme.titleSmall),
         ),
-        for (final attendee in attendees) _AttendeeEntry(attendee: attendee),
+        for (final attendee in attendees)
+          // By id, so a row keeps its menu, and the focus on it, when a row
+          // above it in its group leaves. Keyed groups keep it when a group
+          // above goes. A row whose answer moves it to another group is
+          // built anew there (#549).
+          _AttendeeEntry(
+            key: ValueKey(attendee.id),
+            attendee: attendee,
+            menu: menuFor(attendee),
+          ),
       ],
+    );
+  }
+}
+
+/// A roster row's menu (#510): Going, Maybe and Not going where [onAnswer]
+/// offers them, then *Remove from event* where [onRemove] does. Never
+/// empty: a row with nothing to offer has no menu.
+///
+/// The row's current answer stays in the menu, checked and disabled, so the
+/// menu says what it is and offers only a change. Invited is never offered:
+/// nobody is put back to not having answered (#508).
+class _AttendeeMenu extends StatelessWidget {
+  const _AttendeeMenu({
+    required this.attendee,
+    required this.enabled,
+    this.onAnswer,
+    this.onRemove,
+  });
+
+  final EventAttendee attendee;
+
+  /// Whether an item may be pressed now. When it may not, it stays in the
+  /// menu, disabled, as a date's do.
+  final bool enabled;
+
+  final void Function(EventParticipationStatus answer)? onAnswer;
+  final VoidCallback? onRemove;
+
+  /// The answers the menu offers, in its order, with their items' names.
+  static const List<(EventParticipationStatus, String)> _answers = [
+    (EventParticipationStatus.attending, 'going'),
+    (EventParticipationStatus.maybe, 'maybe'),
+    (EventParticipationStatus.notAttending, 'notGoing'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    // Each is a direct write, so it waits for a connection (#49). The
+    // button stays enabled, so the menu can be opened to read why.
+    final pressable = enabled && !BgeConnectivityScope.offlineOf(context);
+    final id = attendee.id;
+    final onAnswer = this.onAnswer;
+    final onRemove = this.onRemove;
+
+    return BgeOnlineOnlyMenu(
+      builder: (context, menu) => MenuAnchor(
+        controller: menu,
+        // Left unconstrained, the panel sits in a hard-clipped box as wide as
+        // its widest entry, which at 2.0 text runs past a phone's edge. Held
+        // to the screen, the entries wrap instead.
+        crossAxisUnconstrained: false,
+        menuChildren: [
+          if (onAnswer != null)
+            for (final (answer, item) in _answers)
+              _answerItem(
+                l10n,
+                answer,
+                item,
+                onPressed: pressable ? () => onAnswer(answer) : null,
+              ),
+          if (onRemove != null)
+            MenuItemButton(
+              key: EventDetailScreen.attendeeActionKey(id, 'remove'),
+              // An empty icon, in line with the answers' labels.
+              leadingIcon: const Icon(null),
+              overflowAxis: Axis.vertical,
+              onPressed: pressable ? onRemove : null,
+              child: BgeOnlineOnlyLabel(l10n.eventsAttendeeRemove),
+            ),
+        ],
+        builder: (context, controller, _) => MergeSemantics(
+          child: Semantics(
+            expanded: controller.isOpen,
+            child: IconButton(
+              key: EventDetailScreen.attendeeMenuKey(id),
+              icon: const Icon(Icons.more_vert),
+              // Every row the viewer may act on has one, so the name says
+              // whose it is to a screen reader moving from button to button.
+              tooltip: l10n.eventsAttendeeActions(
+                attendee.name ?? l10n.eventsAttendeeSomeone,
+              ),
+              onPressed: controller.isOpen ? controller.close : controller.open,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// [answer]'s item, keyed [item]. The row's current answer is checked and
+  /// disabled.
+  Widget _answerItem(
+    EventsLocalizations l10n,
+    EventParticipationStatus answer,
+    String item, {
+    required VoidCallback? onPressed,
+  }) {
+    final current = attendee.status == answer;
+
+    return MenuItemButton(
+      key: EventDetailScreen.attendeeActionKey(attendee.id, item),
+      // An empty icon on the others keeps their labels in line.
+      leadingIcon: Icon(current ? Icons.check : null),
+      overflowAxis: Axis.vertical,
+      onPressed: current ? null : onPressed,
+      // The check is only drawn, so the label says it is the answer given.
+      // Inside the item, where it merges into the item's own node; around
+      // it, it would stand as a node of its own.
+      child: Semantics(
+        selected: current,
+        // The RSVP chips' words, so the viewer's answers and others' read
+        // alike.
+        child: BgeOnlineOnlyLabel(eventRsvpLabel(l10n, answer)!),
+      ),
     );
   }
 }
@@ -663,10 +863,17 @@ class _AttendeeGroup extends StatelessWidget {
 /// One person on the roster, with their role and their answer and, under
 /// them, the note they left, as one semantics node. Never one of whom it
 /// would show nothing: [_grouped] leaves them out.
+///
+/// Their menu, where they have one (#510), sits beside that node and outside
+/// it, as a date's does, so a screen reader reaches it as a control of its
+/// own rather than as part of the person's label.
 class _AttendeeEntry extends StatelessWidget {
-  const _AttendeeEntry({required this.attendee});
+  const _AttendeeEntry({required this.attendee, this.menu, super.key});
 
   final EventAttendee attendee;
+
+  /// The row's menu, or null for none.
+  final Widget? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -675,8 +882,9 @@ class _AttendeeEntry extends StatelessWidget {
     final name = attendee.name;
     final note = _noteOf(attendee);
     final details = _attendeeDetails(l10n, attendee);
+    final menu = this.menu;
 
-    return _Entry(
+    final entry = _Entry(
       children: [
         if (name != null) Text(name, style: theme.textTheme.bodyLarge),
         if (details.isNotEmpty)
@@ -686,6 +894,15 @@ class _AttendeeEntry extends StatelessWidget {
             style: _quiet(theme),
           ),
         if (note != null) Text(note, style: _quiet(theme)),
+      ],
+    );
+
+    if (menu == null) return entry;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: entry),
+        menu,
       ],
     );
   }
