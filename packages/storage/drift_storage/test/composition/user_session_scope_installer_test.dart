@@ -23,17 +23,15 @@ const _kAuthBase = '/api/auth';
 /// that getter is exercised by the lazy user-id provider (#128), so every
 /// other member is intentionally unimplemented.
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository(this._state);
+  _FakeAuthRepository(this.authState);
 
-  AuthState _state;
-
-  /// Flips the scripted auth state so a test can exercise a transition
+  /// The scripted auth state; a test flips it to exercise a transition
   /// (e.g. session expiry) under one repository instance — proving the id
   /// is resolved per call, not captured at construction.
-  set authState(AuthState next) => _state = next;
+  AuthState authState;
 
   @override
-  AuthState get currentAuthState => _state;
+  AuthState get currentAuthState => authState;
 
   @override
   Future<AuthResponse?> getSession() => throw UnimplementedError();

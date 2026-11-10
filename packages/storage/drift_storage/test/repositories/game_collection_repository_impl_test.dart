@@ -46,7 +46,7 @@ void _stubMockSyncDefaults(MockSyncQueue mockSync) {
   ).thenAnswer((_) async => const []);
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
   setUpAll(() {
@@ -149,7 +149,8 @@ void main() {
     });
 
     group('addToCollection() — duplicate triplet', () {
-      test('resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)', () async {
+      test('resurrects a tombstoned row (clears '
+          'deletedAt, keeps id, overwrites fields)', () async {
         final first = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
@@ -226,7 +227,8 @@ void main() {
         },
       );
 
-      test('resurrects the MOST RECENT tombstone when multiple coexist for the triplet', () async {
+      test('resurrects the MOST RECENT tombstone '
+          'when multiple coexist for the triplet', () async {
         final now = DateTime.now().toUtc();
         final older = now.subtract(const Duration(hours: 1));
 
@@ -628,7 +630,8 @@ void main() {
         },
       );
 
-      test('does NOT enqueue a sync op when the entry is not found (transaction rolled back)', () async {
+      test('does NOT enqueue a sync op when the entry '
+          'is not found (transaction rolled back)', () async {
         await expectLater(
           () => repo.updateCollectionEntry(id: 'nonexistent', rating: 1),
           throwsStateError,
@@ -847,7 +850,8 @@ void main() {
         },
       );
 
-      test('updateCollectionEntry accepts null quantity (leave-unchanged semantic)', () async {
+      test('updateCollectionEntry accepts null '
+          'quantity (leave-unchanged semantic)', () async {
         // Sanity: the validation only fires on non-null negatives.
         // null means "don't touch this field" by API contract, which
         // is the path callers use to update other fields without

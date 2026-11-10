@@ -224,7 +224,7 @@ void main() {
       addTearDown(() async {
         try {
           await failing.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
       await expectLater(
         failing.customSelect('SELECT 1').get(),
@@ -346,8 +346,9 @@ void main() {
         'across a retry', () async {
       await makeInstaller().install(container, config);
       await container.dispose();
-      keys.loseServerKey(config.bgeServerId);
-      keys.cannotCreate = true;
+      keys
+        ..loseServerKey(config.bgeServerId)
+        ..cannotCreate = true;
 
       final events = <DatabaseRecoveryEvent>[];
       await expectLater(

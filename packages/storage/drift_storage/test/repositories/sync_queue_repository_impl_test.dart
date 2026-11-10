@@ -830,7 +830,7 @@ void main() {
       });
     });
 
-    // ── remapCollectionId ─────────────────────────────────────────────────────────────
+    // ── remapCollectionId ────────────────────────────────────────────────────
 
     group('remapCollectionId()', () {
       test(
@@ -1161,7 +1161,7 @@ void main() {
       });
     });
 
-    // ── getOutstandingOpsFor ────────────────────────────────────────────────────
+    // ── getOutstandingOpsFor ─────────────────────────────────────────────────
 
     group('getOutstandingEntries() (#121)', () {
       test('returns every entry not completed, in queue order, whatever its '

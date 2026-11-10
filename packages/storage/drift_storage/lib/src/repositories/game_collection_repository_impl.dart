@@ -15,7 +15,7 @@ import 'package:models/domain.dart';
 ///
 /// ## ID generation
 ///
-/// Fresh local rows get a [cuid2] id. This matches the backend's id
+/// Fresh local rows get a `cuid2` id. This matches the backend's id
 /// format — the backend uses cuid2 explicitly — so a row's id would be
 /// the same string from local creation through to the server cache *if
 /// the backend honoured a client-supplied id*. It doesn't: the create DTO
@@ -239,8 +239,8 @@ class GameCollectionRepositoryImpl
   Set<String>? _released;
 
   /// Server-corrected time source (#12). Every consensus-relevant
-  /// timestamp this repository produces — tombstone [deletedAt],
-  /// [updatedAt] (including resurrection), fresh-insert [createdAt] —
+  /// timestamp this repository produces — tombstone `deletedAt`,
+  /// `updatedAt` (including resurrection), fresh-insert `createdAt` —
   /// comes from [ClockService.nowUtc], never `DateTime.now()`, so a
   /// device with a skewed wall clock cannot win (or lose) cross-device
   /// tombstone tiebreaks by virtue of the skew. UI-display timestamps
@@ -278,7 +278,7 @@ class GameCollectionRepositoryImpl
   @override
   String get disposedRepositoryName => 'GameCollectionRepository';
 
-  // ── Reads ──────────────────────────────────────────────────────────────────────
+  // ── Reads ──────────────────────────────────────────────────────────────────
 
   @override
   Future<List<GameCollection>> getCollection() async {
@@ -318,7 +318,7 @@ class GameCollectionRepositoryImpl
     return {for (final row in rows) row.id};
   }
 
-  // ── Mutations ─────────────────────────────────────────────────────────────────
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
   @override
   Future<
@@ -676,8 +676,8 @@ class GameCollectionRepositoryImpl
   /// id would otherwise be sent to the server with an id the server
   /// doesn't know, and drop out of this entry's later acknowledgements.
   /// This method calls [SyncQueueRepository.remapCollectionId] to rewrite
-  /// those payloads BEFORE dropping the stale local row. If the backend ever honours
-  /// client ids, this branch becomes a no-op (local.id ==
+  /// those payloads BEFORE dropping the stale local row. If the backend ever
+  /// honours client ids, this branch becomes a no-op (local.id ==
   /// serverEntry.id always) without any client-side change.
   ///
   /// ## Tombstone confirmation (surgical purge)
@@ -1387,7 +1387,7 @@ class GameCollectionRepositoryImpl
     await _access.releaseCollection(userId: _userId, platformGameIds: purged);
   }
 
-  // ── Streams ──────────────────────────────────────────────────────────────────
+  // ── Streams ────────────────────────────────────────────────────────────────
 
   @override
   Stream<List<GameCollection>> watchCollection() => untilDisposed(
@@ -1495,7 +1495,7 @@ class GameCollectionRepositoryImpl
             .map((row) => row == null ? null : _mapRow(row)),
   );
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   /// Look up the canonical row for a `(_userId, platformGameId,
   /// medium)` triplet. See the class doc for the ordering rationale.
@@ -1546,7 +1546,7 @@ class GameCollectionRepositoryImpl
         .getSingleOrNull();
   }
 
-  // ── Mappers ───────────────────────────────────────────────────────────────────
+  // ── Mappers ────────────────────────────────────────────────────────────────
 
   GameCollection _mapRow(GameCollectionsTableData row) => GameCollection(
     id: row.id,

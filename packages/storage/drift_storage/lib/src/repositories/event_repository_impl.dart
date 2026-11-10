@@ -145,28 +145,29 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// the deleted one's.
   void _stampGeneration(Batch b, Iterable<String> eventIds) {
     final counter = _db.eventGenerationTable;
-    b.insert(
-      counter,
-      const EventGenerationTableCompanion(
-        id: Value(0),
-        lastGeneration: Value(1),
-      ),
-      onConflict: DoUpdate(
-        ($EventGenerationTableTable old) =>
-            EventGenerationTableCompanion.custom(
-              lastGeneration: old.lastGeneration + const Constant(1),
-            ),
-      ),
-    );
-    b.update(
-      _db.eventsTable,
-      EventsTableCompanion.custom(
-        generation: subqueryExpression<int>(
-          _db.selectOnly(counter)..addColumns([counter.lastGeneration]),
+    b
+      ..insert(
+        counter,
+        const EventGenerationTableCompanion(
+          id: Value(0),
+          lastGeneration: Value(1),
         ),
-      ),
-      where: (t) => t.id.isIn(eventIds),
-    );
+        onConflict:
+            DoUpdate<$EventGenerationTableTable, EventGenerationTableData>(
+              (old) => EventGenerationTableCompanion.custom(
+                lastGeneration: old.lastGeneration + const Constant(1),
+              ),
+            ),
+      )
+      ..update(
+        _db.eventsTable,
+        EventsTableCompanion.custom(
+          generation: subqueryExpression<int>(
+            _db.selectOnly(counter)..addColumns([counter.lastGeneration]),
+          ),
+        ),
+        where: (t) => t.id.isIn(eventIds),
+      );
   }
 
   /// Which of [eventIds] are cached with local changes the server has not
@@ -218,31 +219,32 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // A snapshot without a policy says nothing about the cached one: a
       // read serves none to a caller its own check refuses, and the server
       // has no policy delete.
-      b.insertAllOnConflictUpdate(_db.eventPoliciesTable, [
-        for (final s in written)
-          if (s.policy case final policy?) _policyToCompanion(policy),
-      ]);
-
-      // Every read, list, detail or household, carries all of an event's
-      // occurrences, and the server hard-deletes one, so an empty list
-      // clears them.
-      b.deleteWhere(
-        _db.eventOccurrencesTable,
-        (t) => t.eventId.isIn(byId.keys),
-      );
-      b.insertAll(_db.eventOccurrencesTable, [
-        for (final s in written) ...s.occurrences.map(_occurrenceToCompanion),
-      ]);
+      b
+        ..insertAllOnConflictUpdate(_db.eventPoliciesTable, [
+          for (final s in written)
+            if (s.policy case final policy?) _policyToCompanion(policy),
+        ])
+        // Every read, list, detail or household, carries all of an event's
+        // occurrences, and the server hard-deletes one, so an empty list
+        // clears them.
+        ..deleteWhere(
+          _db.eventOccurrencesTable,
+          (t) => t.eventId.isIn(byId.keys),
+        )
+        ..insertAll(_db.eventOccurrencesTable, [
+          for (final s in written) ...s.occurrences.map(_occurrenceToCompanion),
+        ]);
 
       if (rosters.isNotEmpty) {
-        b.deleteWhere(
-          _db.eventAttendeesTable,
-          (t) => t.eventId.isIn(rosters.keys),
-        );
-        b.insertAll(_db.eventAttendeesTable, [
-          for (final roster in rosters.values)
-            ...roster.map(_attendeeToCompanion),
-        ]);
+        b
+          ..deleteWhere(
+            _db.eventAttendeesTable,
+            (t) => t.eventId.isIn(rosters.keys),
+          )
+          ..insertAll(_db.eventAttendeesTable, [
+            for (final roster in rosters.values)
+              ...roster.map(_attendeeToCompanion),
+          ]);
         // The roster is shared by every user on this device, so it replaces
         // other users' rows too, and is the newer news for their answers. Each
         // goes on that user's `attending` and `household` rows, where they
@@ -307,15 +309,18 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                   source: const Value(eventAccessSourceAttending),
                 ),
             ],
-            onConflict: DoUpdate.withExcluded(
-              (_, $EventAccessTableTable excluded) =>
-                  EventAccessTableCompanion.custom(
+            onConflict:
+                DoUpdate<
+                  $EventAccessTableTable,
+                  EventAccessTableData
+                >.withExcluded(
+                  (_, excluded) => EventAccessTableCompanion.custom(
                     attendeeId: excluded.attendeeId,
                     attendanceStatus: excluded.attendanceStatus,
                     attendanceRole: excluded.attendanceRole,
                     rsvpDate: excluded.rsvpDate,
                   ),
-            ),
+                ),
           );
           // And onto the user's `household` row, where there is one, so the
           // household's list doesn't show an answer this list replaced.
@@ -423,69 +428,70 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       await _db.batch((b) {
         // The type and reach the server defaults to where the draft leaves
         // them out.
-        b.insert(
-          _db.eventsTable,
-          EventsTableCompanion.insert(
-            id: localId,
-            title: title,
-            createdById: _userId,
-            householdId: Value(householdId),
-            description: Value(draft.description),
-            location: Value(draft.location),
-            url: Value(draft.url),
-            type: (draft.type ?? EventType.casualGathering).toWire(),
-            reach: (draft.reach ?? Reach.friends).toWire(),
-            status: (poll ? EventStatus.planning : EventStatus.scheduled)
-                .toWire(),
-            schedulingMode: draft.schedulingMode.toWire(),
-            isDirty: const Value(true),
-            isLocalOnly: const Value(true),
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
-        b.insertAll(_db.eventOccurrencesTable, [
-          for (final (index, occurrence) in draft.occurrences.indexed)
-            EventOccurrencesTableCompanion.insert(
-              id: cuid(),
-              eventId: localId,
-              label: Value(occurrence.label),
-              startDate: Value(occurrence.startDate?.toUtc()),
-              endDate: Value(occurrence.endDate?.toUtc()),
-              location: Value(occurrence.location),
-              status:
-                  (poll
-                          ? OccurrenceStatus.proposed
-                          : OccurrenceStatus.confirmed)
-                      .toWire(),
-              sortOrder: index,
-              confirmedAt: Value(poll ? null : now),
+        b
+          ..insert(
+            _db.eventsTable,
+            EventsTableCompanion.insert(
+              id: localId,
+              title: title,
+              createdById: _userId,
+              householdId: Value(householdId),
+              description: Value(draft.description),
+              location: Value(draft.location),
+              url: Value(draft.url),
+              type: (draft.type ?? EventType.casualGathering).toWire(),
+              reach: (draft.reach ?? Reach.friends).toWire(),
+              status: (poll ? EventStatus.planning : EventStatus.scheduled)
+                  .toWire(),
+              schedulingMode: draft.schedulingMode.toWire(),
+              isDirty: const Value(true),
+              isLocalOnly: const Value(true),
               createdAt: now,
               updatedAt: now,
             ),
-        ]);
-        // The server makes the creator its host, and this row makes the
-        // event read as theirs at once, on the overview and in its detail.
-        b.insert(
-          _db.eventAttendeesTable,
-          EventAttendeesTableCompanion.insert(
-            id: cuid(),
-            eventId: localId,
-            userId: Value(_userId),
-            status: EventParticipationStatus.attending.toWire(),
-            roleName: Value(EventRole.host.toWire()),
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
-        b.insert(
-          _db.eventAccessTable,
-          EventAccessTableCompanion.insert(
-            userId: _userId,
-            eventId: localId,
-            source: eventAccessSourceAttending,
-          ),
-        );
+          )
+          ..insertAll(_db.eventOccurrencesTable, [
+            for (final (index, occurrence) in draft.occurrences.indexed)
+              EventOccurrencesTableCompanion.insert(
+                id: cuid(),
+                eventId: localId,
+                label: Value(occurrence.label),
+                startDate: Value(occurrence.startDate?.toUtc()),
+                endDate: Value(occurrence.endDate?.toUtc()),
+                location: Value(occurrence.location),
+                status:
+                    (poll
+                            ? OccurrenceStatus.proposed
+                            : OccurrenceStatus.confirmed)
+                        .toWire(),
+                sortOrder: index,
+                confirmedAt: Value(poll ? null : now),
+                createdAt: now,
+                updatedAt: now,
+              ),
+          ])
+          // The server makes the creator its host, and this row makes the
+          // event read as theirs at once, on the overview and in its detail.
+          ..insert(
+            _db.eventAttendeesTable,
+            EventAttendeesTableCompanion.insert(
+              id: cuid(),
+              eventId: localId,
+              userId: Value(_userId),
+              status: EventParticipationStatus.attending.toWire(),
+              roleName: Value(EventRole.host.toWire()),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          )
+          ..insert(
+            _db.eventAccessTable,
+            EventAccessTableCompanion.insert(
+              userId: _userId,
+              eventId: localId,
+              source: eventAccessSourceAttending,
+            ),
+          );
         _stampGeneration(b, [localId]);
       });
 

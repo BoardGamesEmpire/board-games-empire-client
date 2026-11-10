@@ -374,6 +374,9 @@ void main() {
       String? sent;
       try {
         sent = (await creating).operation.draft.householdId;
+        // The test pins the ArgumentError the unconfirmed-household refusal
+        // raises; it is an Error by design.
+        // ignore: avoid_catching_errors
       } on ArgumentError {
         sent = null;
       }

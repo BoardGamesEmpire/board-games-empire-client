@@ -143,7 +143,7 @@ void main() {
         // close() on a never-opened lazy db is a no-op safeguard.
         try {
           await second.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
 
       await expectLater(
@@ -169,7 +169,7 @@ void main() {
       addTearDown(() async {
         try {
           await second.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
 
       await expectLater(
@@ -196,7 +196,7 @@ void main() {
       addTearDown(() async {
         try {
           await second.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
 
       await expectLater(
@@ -225,15 +225,16 @@ void main() {
         final key = await keys.getOrCreateServerKey('srv_1');
         final locker = sqlite3.open(serverDbFile('srv_1').path);
         addTearDown(locker.close);
-        locker.execute("PRAGMA key = '$key';");
-        locker.execute('PRAGMA locking_mode = EXCLUSIVE;');
-        locker.execute('BEGIN EXCLUSIVE;');
+        locker
+          ..execute("PRAGMA key = '$key';")
+          ..execute('PRAGMA locking_mode = EXCLUSIVE;')
+          ..execute('BEGIN EXCLUSIVE;');
 
         final blocked = ServerDatabase(factory.serverExecutor('srv_1'));
         addTearDown(() async {
           try {
             await blocked.close();
-          } catch (_) {}
+          } on Object catch (_) {}
         });
 
         await expectLater(
@@ -262,7 +263,7 @@ void main() {
       addTearDown(() async {
         try {
           await aReopen.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
 
       await expectLater(
@@ -311,7 +312,7 @@ void main() {
       addTearDown(() async {
         try {
           await second.close();
-        } catch (_) {}
+        } on Object catch (_) {}
       });
 
       await expectLater(

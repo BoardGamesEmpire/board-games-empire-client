@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../support/platform_game_fixture.dart';
 
-// ── Matchers ────────────────────────────────────────────────────────────────────
+// ── Matchers ─────────────────────────────────────────────────────────────────
 
 // Match against the underlying SqliteException's message text rather
 // than its type so we don't need to import package:sqlite3 (which is a
@@ -30,7 +30,7 @@ final Matcher _isUniqueViolation = throwsA(
   ),
 );
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-1';
 

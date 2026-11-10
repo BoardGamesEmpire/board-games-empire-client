@@ -22,7 +22,7 @@ const GameMedium _kMedium = GameMedium.physical;
 /// The repository is registered in the **user-session scope** (#135), which
 /// pops on every authentication transition, while its Drift streams are
 /// tied to the per-server database that outlives that scope. Without the
-/// shared [WatchDisposal] contract a subscription taken under user A keeps
+/// shared `WatchDisposal` contract a subscription taken under user A keeps
 /// emitting A's frozen rows after B signs in — the #138 leak.
 void main() {
   setUpAll(() {

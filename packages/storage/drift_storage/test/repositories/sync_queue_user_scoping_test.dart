@@ -16,7 +16,7 @@ import '../support/fixed_clock.dart';
 /// observe nor mutate another user's rows. These tests run two repository
 /// instances over ONE in-memory database — the shared-device shape the
 /// defect was filed against — and pin each method's scoping plus the
-/// #138 close-on-dispose contract for [watchPendingCount].
+/// #138 close-on-dispose contract for `watchPendingCount`.
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
 

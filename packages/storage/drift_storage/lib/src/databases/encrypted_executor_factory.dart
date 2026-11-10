@@ -157,7 +157,7 @@ class EncryptedExecutorFactory {
   /// Centralizes the `baseDir + p.join` resolution so the recovery flow and
   /// the executor share one implementation. It resolves the base directory
   /// on each call, so the returned path matches the executor's exactly as
-  /// long as [baseDirectoryProvider] is stable across calls (the production
+  /// long as `baseDirectoryProvider` is stable across calls (the production
   /// provider, `getApplicationSupportDirectory`, is).
   ///
   /// [relativePath] must be a genuinely relative path that stays within the
@@ -216,11 +216,14 @@ class EncryptedExecutorFactory {
             'UNENCRYPTED. This must never happen outside development.',
           );
           return true;
-        }());
+        }(), 'the debug notice closure always returns true');
         return NativeDatabase.createInBackground(file);
       }
 
       final String key;
+      // The async probe keeps the file check off the isolate's event loop;
+      // the sync variant the lint prefers would block it.
+      // ignore: avoid_slow_async_io
       if (await file.exists()) {
         // An existing file needs the key it was written with. A key made
         // now could only fail to open it, and recovery would then delete

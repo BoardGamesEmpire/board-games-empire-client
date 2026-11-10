@@ -25,17 +25,17 @@ part 'server_database.g.dart';
 ///
 /// One instance per connected BGE server. The DB file lives at
 /// `<AppSupport>/app_secure_storage/<serverId>/game_empire.db`
-/// (relative path produced by [ServerConfig.databasePath]).
+/// (relative path produced by `ServerConfig.databasePath`).
 ///
 /// ## Intended lifecycle (Phase 2)
 ///
-/// Opened lazily when the [ServerContext] activates, closed when it
-/// transitions to [ServerContextState.monitoring]. The activate /
-/// suspend hooks in [ServerContextImpl] currently carry
+/// Opened lazily when the `ServerContext` activates, closed when it
+/// transitions to `ServerContextState.monitoring`. The activate /
+/// suspend hooks in `ServerContextImpl` currently carry
 /// `TODO(phase2)` markers for the actual open/close wiring; today
 /// the DB is constructed directly by whoever holds the reference
 /// and stays open for the lifetime of that reference. Phase 2 will
-/// move the construction and disposal under [ServerContext] so the
+/// move the construction and disposal under `ServerContext` so the
 /// DB file is opened/closed in lockstep with the context's state
 /// machine.
 ///
@@ -204,14 +204,14 @@ part 'server_database.g.dart';
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
-  /// Creates the database over a caller-supplied [executor].
+  /// Creates the database over a caller-supplied executor [e].
   ///
   /// [enableWriteAheadLog] must be `false` for a drift/wasm executor
   /// (#288): sqlite3-wasm does not support WAL journalling. It defaults
   /// to `true` for the native SQLCipher executor, which does. See
   /// `BgeMigrationDefaults.applyStandardPragmas` for why this is the
   /// caller's decision and not a runtime probe.
-  ServerDatabase(super.executor, {this.enableWriteAheadLog = true});
+  ServerDatabase(super.e, {this.enableWriteAheadLog = true});
 
   /// Whether `beforeOpen` asks for WAL journalling; see the constructor.
   final bool enableWriteAheadLog;
@@ -229,7 +229,7 @@ class ServerDatabase extends _$ServerDatabase {
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
     enableWriteAheadLog: enableWriteAheadLog,
-    steps: (Migrator m, int from, int to) async {
+    steps: (m, from, to) async {
       // Every block is bounded on BOTH ends: `from < N` (the classic
       // guard) AND `to >= N`. In production `to` is always
       // [schemaVersion], making the upper bound a no-op — but the schema

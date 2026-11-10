@@ -39,14 +39,12 @@ const _kServerId = 'server-uuid-1';
 const _kAuthBase = '/api/auth';
 
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository(this._state);
+  _FakeAuthRepository(this.authState);
 
-  AuthState _state;
-
-  set authState(AuthState next) => _state = next;
+  AuthState authState;
 
   @override
-  AuthState get currentAuthState => _state;
+  AuthState get currentAuthState => authState;
 
   @override
   Future<AuthResponse?> getSession() => throw UnimplementedError();
@@ -149,14 +147,15 @@ class _BaseFixtureInstaller implements ServerScopeInstaller {
     DependencyContainer container,
     ServerConfig config,
   ) async {
-    container.registerSingleton<ServerDatabase>(
-      inMemoryServerDatabase(),
-      dispose: (db) => db.close(),
-    );
-    container.registerSingleton<ClockService>(
-      FixedClockService(DateTime.utc(2024, 1, 15, 10, 30)),
-    );
-    container.registerSingleton<AuthRepository>(_auth);
+    container
+      ..registerSingleton<ServerDatabase>(
+        inMemoryServerDatabase(),
+        dispose: (db) => db.close(),
+      )
+      ..registerSingleton<ClockService>(
+        FixedClockService(DateTime.utc(2024, 1, 15, 10, 30)),
+      )
+      ..registerSingleton<AuthRepository>(_auth);
   }
 }
 

@@ -187,17 +187,17 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     // Close-on-teardown (#138): its watch stream is tied to the per-server
     // database, which outlives this scope. The container closes it because
     // the repository is Disposable (WatchDisposal).
-    container.registerSingleton<EventRepository>(events);
-
-    // Data-scoped like the game cache (#710): `list_layouts` keeps a row per
-    // user and screen, and this instance reads and writes only this user's.
-    // Fixed-id rather than a lazy provider for the same reason as the
-    // others: a choice written just before the scope pops belongs to the
-    // user who made it. It is Disposable (WatchDisposal), so the container
-    // closes it without a callback.
-    container.registerSingleton<ListLayoutRepository>(
-      ListLayoutRepositoryImpl(db, userId: userId),
-    );
+    container
+      ..registerSingleton<EventRepository>(events)
+      // Data-scoped like the game cache (#710): `list_layouts` keeps a row per
+      // user and screen, and this instance reads and writes only this user's.
+      // Fixed-id rather than a lazy provider for the same reason as the
+      // others: a choice written just before the scope pops belongs to the
+      // user who made it. It is Disposable (WatchDisposal), so the container
+      // closes it without a callback.
+      ..registerSingleton<ListLayoutRepository>(
+        ListLayoutRepositoryImpl(db, userId: userId),
+      );
   }
 
   /// Reads the authenticated user id from [authRepository] at call time

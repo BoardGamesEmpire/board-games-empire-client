@@ -181,12 +181,13 @@ void main() {
       createNew: v2.DatabaseAtV2.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insertAll(oldDb.games, oldGamesData);
-        batch.insertAll(oldDb.platformGames, oldPlatformGamesData);
-        batch.insertAll(oldDb.gameCollections, oldGameCollectionsData);
-        batch.insertAll(oldDb.households, oldHouseholdsData);
-        batch.insertAll(oldDb.householdMembers, oldHouseholdMembersData);
-        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+        batch
+          ..insertAll(oldDb.games, oldGamesData)
+          ..insertAll(oldDb.platformGames, oldPlatformGamesData)
+          ..insertAll(oldDb.gameCollections, oldGameCollectionsData)
+          ..insertAll(oldDb.households, oldHouseholdsData)
+          ..insertAll(oldDb.householdMembers, oldHouseholdMembersData)
+          ..insertAll(oldDb.syncQueue, oldSyncQueueData);
       },
       validateItems: (newDb) async {
         expect(expectedNewGamesData, await newDb.select(newDb.games).get());
@@ -312,9 +313,10 @@ void main() {
       createNew: v3.DatabaseAtV3.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insertAll(oldDb.households, oldHouseholdsData);
-        batch.insertAll(oldDb.householdMembers, oldHouseholdMembersData);
-        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+        batch
+          ..insertAll(oldDb.households, oldHouseholdsData)
+          ..insertAll(oldDb.householdMembers, oldHouseholdMembersData)
+          ..insertAll(oldDb.syncQueue, oldSyncQueueData);
       },
       validateItems: (newDb) async {
         expect(
@@ -416,9 +418,10 @@ void main() {
       createNew: v4.DatabaseAtV4.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insertAll(oldDb.households, oldHouseholdsData);
-        batch.insertAll(oldDb.householdMembers, oldHouseholdMembersData);
-        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+        batch
+          ..insertAll(oldDb.households, oldHouseholdsData)
+          ..insertAll(oldDb.householdMembers, oldHouseholdMembersData)
+          ..insertAll(oldDb.syncQueue, oldSyncQueueData);
       },
       validateItems: (newDb) async {
         expect(
@@ -485,8 +488,9 @@ void main() {
       createNew: v5.DatabaseAtV5.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
-        batch.insertAll(oldDb.householdMoves, oldHouseholdMovesData);
+        batch
+          ..insertAll(oldDb.syncQueue, oldSyncQueueData)
+          ..insertAll(oldDb.householdMoves, oldHouseholdMovesData);
       },
       validateItems: (newDb) async {
         expect(
@@ -635,13 +639,14 @@ void main() {
       createNew: v6.DatabaseAtV6.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insertAll(oldDb.games, [oldGame('g-1'), oldGame('g-2')]);
-        batch.insertAll(oldDb.platformGames, [
-          oldPlatformGame('pg-1', 'g-1'),
-          oldPlatformGame('pg-2', 'g-1'),
-          oldPlatformGame('pg-3', 'g-2'),
-        ]);
-        batch.insertAll(oldDb.gameCollections, oldEntries);
+        batch
+          ..insertAll(oldDb.games, [oldGame('g-1'), oldGame('g-2')])
+          ..insertAll(oldDb.platformGames, [
+            oldPlatformGame('pg-1', 'g-1'),
+            oldPlatformGame('pg-2', 'g-1'),
+            oldPlatformGame('pg-3', 'g-2'),
+          ])
+          ..insertAll(oldDb.gameCollections, oldEntries);
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.games).get(), [
@@ -716,36 +721,37 @@ void main() {
       createNew: v7.DatabaseAtV7.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.households,
-          const v6.HouseholdsData(
-            id: 'hh_v6_1',
-            name: 'Game Night HQ',
-            description: 'Where we play',
-            isDirty: 0,
-            isLocalOnly: 0,
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
-        batch.insert(
-          oldDb.games,
-          const v6.GamesData(
-            id: 'g-1',
-            title: 'Game g-1',
-            contentType: 'BaseGame',
-            totalPlayCount: 0,
-            ownedByCount: 0,
-            categoriesJson: '[]',
-            mechanicsJson: '[]',
-            designersJson: '[]',
-            publishersJson: '[]',
-            tagsJson: '[]',
-            visibility: 'Public',
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
+        batch
+          ..insert(
+            oldDb.households,
+            const v6.HouseholdsData(
+              id: 'hh_v6_1',
+              name: 'Game Night HQ',
+              description: 'Where we play',
+              isDirty: 0,
+              isLocalOnly: 0,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insert(
+            oldDb.games,
+            const v6.GamesData(
+              id: 'g-1',
+              title: 'Game g-1',
+              contentType: 'BaseGame',
+              totalPlayCount: 0,
+              ownedByCount: 0,
+              categoriesJson: '[]',
+              mechanicsJson: '[]',
+              designersJson: '[]',
+              publishersJson: '[]',
+              tagsJson: '[]',
+              visibility: 'Public',
+              createdAt: at,
+              updatedAt: at,
+            ),
+          );
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.households).get(), const [
@@ -841,30 +847,31 @@ void main() {
       createNew: v9.DatabaseAtV9.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.households,
-          const v8.HouseholdsData(
-            id: 'hh_v8_1',
-            name: 'Game Night HQ',
-            isDirty: 0,
-            isLocalOnly: 0,
-            memberInvitePolicy: 'AdminsOnly',
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
-        batch.insert(
-          oldDb.householdMembers,
-          const v8.HouseholdMembersData(
-            id: 'hm_v8_1',
-            userId: 'user_1',
-            householdId: 'hh_v8_1',
-            showAllGames: 0,
-            roleName: 'HouseholdOwner',
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
+        batch
+          ..insert(
+            oldDb.households,
+            const v8.HouseholdsData(
+              id: 'hh_v8_1',
+              name: 'Game Night HQ',
+              isDirty: 0,
+              isLocalOnly: 0,
+              memberInvitePolicy: 'AdminsOnly',
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insert(
+            oldDb.householdMembers,
+            const v8.HouseholdMembersData(
+              id: 'hm_v8_1',
+              userId: 'user_1',
+              householdId: 'hh_v8_1',
+              showAllGames: 0,
+              roleName: 'HouseholdOwner',
+              createdAt: at,
+              updatedAt: at,
+            ),
+          );
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.householdMembers).get(), const [
@@ -977,74 +984,75 @@ void main() {
       createNew: v11.DatabaseAtV11.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.games,
-          const v10.GamesData(
-            id: 'g_1',
-            title: 'Brass',
-            subtitle: 'Birmingham',
-            publishYear: 2018,
-            minPlayers: 2,
-            maxPlayers: 4,
-            playingTime: 90,
-            minPlayTime: 60,
-            minPlayTimeMeasure: 'Minutes',
-            maxPlayTime: 120,
-            maxPlayTimeMeasure: 'Minutes',
-            minAge: 14,
-            complexity: 3.9,
-            contentType: 'BaseGame',
-            totalPlayCount: 7,
-            ownedByCount: 3,
-            categoriesJson: '["Economic"]',
-            mechanicsJson: '[]',
-            designersJson: '["Martin Wallace"]',
-            publishersJson: '[]',
-            tagsJson: '[]',
-            visibility: 'Household',
-            createdById: 'user_1',
-            createdAt: at,
-            updatedAt: at,
-            fullRecordCachedAt: cachedAt,
-          ),
-        );
-        batch.insert(
-          oldDb.platformGames,
-          const v10.PlatformGamesData(
-            id: 'pg_1',
-            gameId: 'g_1',
-            platformId: 'plat_tabletop',
-            platformName: 'Tabletop',
-            minPlayTime: 45,
-            minPlayTimeMeasure: 'Minutes',
-            maxPlayTime: 90,
-            maxPlayTimeMeasure: 'Minutes',
-            supportsSolo: 1,
-            supportsLocal: 1,
-            supportsOnline: 0,
-            hasAsyncPlay: 0,
-            hasRealtime: 0,
-            hasTutorial: 0,
-            createdAt: at,
-            updatedAt: at,
-            fullRecordCachedAt: cachedAt,
-          ),
-        );
-        batch.insert(
-          oldDb.gameCollections,
-          const v10.GameCollectionsData(
-            id: 'gc_1',
-            userId: 'user_1',
-            platformGameId: 'pg_1',
-            medium: 'Physical',
-            quantity: 1,
-            rating: 8,
-            isDirty: 0,
-            isLocalOnly: 0,
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
+        batch
+          ..insert(
+            oldDb.games,
+            const v10.GamesData(
+              id: 'g_1',
+              title: 'Brass',
+              subtitle: 'Birmingham',
+              publishYear: 2018,
+              minPlayers: 2,
+              maxPlayers: 4,
+              playingTime: 90,
+              minPlayTime: 60,
+              minPlayTimeMeasure: 'Minutes',
+              maxPlayTime: 120,
+              maxPlayTimeMeasure: 'Minutes',
+              minAge: 14,
+              complexity: 3.9,
+              contentType: 'BaseGame',
+              totalPlayCount: 7,
+              ownedByCount: 3,
+              categoriesJson: '["Economic"]',
+              mechanicsJson: '[]',
+              designersJson: '["Martin Wallace"]',
+              publishersJson: '[]',
+              tagsJson: '[]',
+              visibility: 'Household',
+              createdById: 'user_1',
+              createdAt: at,
+              updatedAt: at,
+              fullRecordCachedAt: cachedAt,
+            ),
+          )
+          ..insert(
+            oldDb.platformGames,
+            const v10.PlatformGamesData(
+              id: 'pg_1',
+              gameId: 'g_1',
+              platformId: 'plat_tabletop',
+              platformName: 'Tabletop',
+              minPlayTime: 45,
+              minPlayTimeMeasure: 'Minutes',
+              maxPlayTime: 90,
+              maxPlayTimeMeasure: 'Minutes',
+              supportsSolo: 1,
+              supportsLocal: 1,
+              supportsOnline: 0,
+              hasAsyncPlay: 0,
+              hasRealtime: 0,
+              hasTutorial: 0,
+              createdAt: at,
+              updatedAt: at,
+              fullRecordCachedAt: cachedAt,
+            ),
+          )
+          ..insert(
+            oldDb.gameCollections,
+            const v10.GameCollectionsData(
+              id: 'gc_1',
+              userId: 'user_1',
+              platformGameId: 'pg_1',
+              medium: 'Physical',
+              quantity: 1,
+              rating: 8,
+              isDirty: 0,
+              isLocalOnly: 0,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          );
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.games).get(), const [
@@ -1131,42 +1139,43 @@ void main() {
       createNew: v12.DatabaseAtV12.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.events,
-          const v11.EventsData(
-            id: 'e_v11_1',
-            title: 'Game night',
-            createdById: 'user_v11_1',
-            householdId: 'hh_v11_1',
-            description: 'Bring snacks.',
-            location: 'Kitchen table',
-            type: 'StrategyNight',
-            reach: 'FriendsOfFriends',
-            status: 'Ongoing',
-            schedulingMode: 'Fixed',
-            isDirty: 0,
-            isLocalOnly: 0,
-            generation: 4,
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
-        batch.insert(
-          oldDb.eventOccurrences,
-          const v11.EventOccurrencesData(
-            id: 'o_v11_1',
-            eventId: 'e_v11_1',
-            label: 'Day 1',
-            startDate: at,
-            endDate: at,
-            location: 'Back room',
-            status: 'Cancelled',
-            sortOrder: 0,
-            cancelledAt: at,
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
+        batch
+          ..insert(
+            oldDb.events,
+            const v11.EventsData(
+              id: 'e_v11_1',
+              title: 'Game night',
+              createdById: 'user_v11_1',
+              householdId: 'hh_v11_1',
+              description: 'Bring snacks.',
+              location: 'Kitchen table',
+              type: 'StrategyNight',
+              reach: 'FriendsOfFriends',
+              status: 'Ongoing',
+              schedulingMode: 'Fixed',
+              isDirty: 0,
+              isLocalOnly: 0,
+              generation: 4,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insert(
+            oldDb.eventOccurrences,
+            const v11.EventOccurrencesData(
+              id: 'o_v11_1',
+              eventId: 'e_v11_1',
+              label: 'Day 1',
+              startDate: at,
+              endDate: at,
+              location: 'Back room',
+              status: 'Cancelled',
+              sortOrder: 0,
+              cancelledAt: at,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          );
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.eventOccurrences).get(), const [
@@ -1305,40 +1314,41 @@ void main() {
       createNew: v15.DatabaseAtV15.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.events,
-          const v14.EventsData(
-            id: 'e_v14_1',
-            title: 'Game night',
-            createdById: 'user_v14_1',
-            householdId: 'hh_v14_1',
-            description: 'Bring snacks.',
-            location: 'Kitchen table',
-            type: 'StrategyNight',
-            reach: 'FriendsOfFriends',
-            status: 'Cancelled',
-            cancelReason: 'Snowed in',
-            cancelledAt: at,
-            schedulingMode: 'Fixed',
-            isDirty: 0,
-            isLocalOnly: 0,
-            generation: 4,
-            createdAt: at,
-            updatedAt: at,
-          ),
-        );
-        batch.insertAll(oldDb.eventAccess, const [
-          v14.EventAccessData(
-            userId: 'user_v14_1',
-            eventId: 'e_v14_1',
-            source: 'attending',
-          ),
-          v14.EventAccessData(
-            userId: 'user_v14_1',
-            eventId: 'e_v14_1',
-            source: 'read',
-          ),
-        ]);
+        batch
+          ..insert(
+            oldDb.events,
+            const v14.EventsData(
+              id: 'e_v14_1',
+              title: 'Game night',
+              createdById: 'user_v14_1',
+              householdId: 'hh_v14_1',
+              description: 'Bring snacks.',
+              location: 'Kitchen table',
+              type: 'StrategyNight',
+              reach: 'FriendsOfFriends',
+              status: 'Cancelled',
+              cancelReason: 'Snowed in',
+              cancelledAt: at,
+              schedulingMode: 'Fixed',
+              isDirty: 0,
+              isLocalOnly: 0,
+              generation: 4,
+              createdAt: at,
+              updatedAt: at,
+            ),
+          )
+          ..insertAll(oldDb.eventAccess, const [
+            v14.EventAccessData(
+              userId: 'user_v14_1',
+              eventId: 'e_v14_1',
+              source: 'attending',
+            ),
+            v14.EventAccessData(
+              userId: 'user_v14_1',
+              eventId: 'e_v14_1',
+              source: 'read',
+            ),
+          ]);
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.events).get(), const [
@@ -1465,40 +1475,41 @@ void main() {
       createNew: v17.DatabaseAtV17.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
-        batch.insert(
-          oldDb.events,
-          const v16.EventsData(
-            id: 'e_v16_1',
-            title: 'Game night',
-            createdById: 'user_v16_1',
-            householdId: 'hh_v16_1',
-            type: 'StrategyNight',
-            reach: 'FriendsOfFriends',
-            status: 'Ongoing',
-            schedulingMode: 'Fixed',
-            isDirty: 0,
-            isLocalOnly: 0,
-            generation: 4,
-            createdAt: '2024-01-15T10:30:00.000Z',
-            updatedAt: '2024-01-15T10:30:00.000Z',
-          ),
-        );
-        batch.insertAll(oldDb.eventAccess, const [
-          v16.EventAccessData(
-            userId: 'user_v16_1',
-            eventId: 'e_v16_1',
-            source: 'attending',
-            attendeeId: 'att_v16_1',
-            attendanceStatus: 'Attending',
-            attendanceRole: 'Participant',
-            rsvpDate: '2024-01-16T10:30:00.000Z',
-          ),
-          v16.EventAccessData(
-            userId: 'user_v16_1',
-            eventId: 'e_v16_1',
-            source: 'read',
-          ),
-        ]);
+        batch
+          ..insert(
+            oldDb.events,
+            const v16.EventsData(
+              id: 'e_v16_1',
+              title: 'Game night',
+              createdById: 'user_v16_1',
+              householdId: 'hh_v16_1',
+              type: 'StrategyNight',
+              reach: 'FriendsOfFriends',
+              status: 'Ongoing',
+              schedulingMode: 'Fixed',
+              isDirty: 0,
+              isLocalOnly: 0,
+              generation: 4,
+              createdAt: '2024-01-15T10:30:00.000Z',
+              updatedAt: '2024-01-15T10:30:00.000Z',
+            ),
+          )
+          ..insertAll(oldDb.eventAccess, const [
+            v16.EventAccessData(
+              userId: 'user_v16_1',
+              eventId: 'e_v16_1',
+              source: 'attending',
+              attendeeId: 'att_v16_1',
+              attendanceStatus: 'Attending',
+              attendanceRole: 'Participant',
+              rsvpDate: '2024-01-16T10:30:00.000Z',
+            ),
+            v16.EventAccessData(
+              userId: 'user_v16_1',
+              eventId: 'e_v16_1',
+              source: 'read',
+            ),
+          ]);
       },
       validateItems: (newDb) async {
         expect(

@@ -113,8 +113,8 @@ void main() {
     test('cacheHousehold writes a server row clean, whatever flags the payload '
         'carries', () async {
       // A server write cannot create local sync state: a row it marked
-      // dirty or local-only would be one no later server write could refresh and no
-      // acknowledgement would ever clear.
+      // dirty or local-only would be one no later server write could refresh
+      // and no acknowledgement would ever clear.
       final now = DateTime.now().toUtc();
       await repo.cacheHousehold(
         Household(
@@ -147,9 +147,9 @@ void main() {
     );
 
     // A dirty or local-only row belongs to the sync queue until the server
-    // acknowledges it (#298). A server write that lands first — a hydrate — must leave
-    // both its flags and its values alone, or the list's pending badge
-    // disappears and the displayed values revert before the queued
+    // acknowledges it (#298). A server write that lands first — a hydrate —
+    // must leave both its flags and its values alone, or the list's pending
+    // badge disappears and the displayed values revert before the queued
     // operation is even sent.
     test('cacheHousehold leaves a local-only row untouched', () async {
       final created = await repo.create(name: 'Optimistic');

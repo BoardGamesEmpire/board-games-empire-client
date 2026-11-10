@@ -14,7 +14,7 @@ import 'package:models/domain.dart';
 /// ## User scoping
 ///
 /// The table is server-wide, but this repository is constructed per user
-/// session with the session's [userId] (its installer,
+/// session with the session's `userId` (its installer,
 /// `UserSessionScopeInstaller`, is a `UserScopeInstaller` and receives the
 /// id at install time). [enqueue] stamps every row with that id, and
 /// **every** other method — reads, status transitions, maintenance, and
@@ -40,7 +40,7 @@ import 'package:models/domain.dart';
 class SyncQueueRepositoryImpl
     with WatchDisposal
     implements SyncQueueRepository {
-  /// [localNowUtc] injects the device clock for tests; production uses
+  /// `localNowUtc` injects the device clock for tests; production uses
   /// `DateTime.now().toUtc()`.
   SyncQueueRepositoryImpl(
     this._db,
@@ -448,7 +448,7 @@ class SyncQueueRepositoryImpl
     final SyncOperation op;
     try {
       op = SyncOperation.deserialize(payload);
-    } catch (_) {
+    } on Object catch (_) {
       return null;
     }
     return switch (op) {

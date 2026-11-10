@@ -106,26 +106,27 @@ void main() {
   Future<void> seedMany(int count) async {
     final now = DateTime.now().toUtc();
     await db.batch((b) {
-      b.insertAll(db.gamesTable, [
-        for (var i = 0; i < count; i++)
-          GamesTableCompanion.insert(
-            id: 'g-$i',
-            title: 'Game $i',
-            createdAt: now,
-            updatedAt: now,
-          ),
-      ]);
-      b.insertAll(db.platformGamesTable, [
-        for (var i = 0; i < count; i++)
-          PlatformGamesTableCompanion.insert(
-            id: 'pg-$i',
-            gameId: 'g-$i',
-            platformId: 'plat-1',
-            platformName: 'Tabletop',
-            createdAt: now,
-            updatedAt: now,
-          ),
-      ]);
+      b
+        ..insertAll(db.gamesTable, [
+          for (var i = 0; i < count; i++)
+            GamesTableCompanion.insert(
+              id: 'g-$i',
+              title: 'Game $i',
+              createdAt: now,
+              updatedAt: now,
+            ),
+        ])
+        ..insertAll(db.platformGamesTable, [
+          for (var i = 0; i < count; i++)
+            PlatformGamesTableCompanion.insert(
+              id: 'pg-$i',
+              gameId: 'g-$i',
+              platformId: 'plat-1',
+              platformName: 'Tabletop',
+              createdAt: now,
+              updatedAt: now,
+            ),
+        ]);
     });
   }
 
@@ -369,22 +370,23 @@ void main() {
       const count = 1203;
       await seedMany(count);
       await db.batch((b) {
-        b.insertAll(db.gameAccessTable, [
-          for (var i = 0; i < count; i++)
-            GameAccessTableCompanion.insert(
-              userId: _kUserA,
-              gameId: 'g-$i',
-              source: cacheAccessSourceCollection,
-            ),
-        ]);
-        b.insertAll(db.platformGameAccessTable, [
-          for (var i = 0; i < count; i++)
-            PlatformGameAccessTableCompanion.insert(
-              userId: _kUserA,
-              platformGameId: 'pg-$i',
-              source: cacheAccessSourceCollection,
-            ),
-        ]);
+        b
+          ..insertAll(db.gameAccessTable, [
+            for (var i = 0; i < count; i++)
+              GameAccessTableCompanion.insert(
+                userId: _kUserA,
+                gameId: 'g-$i',
+                source: cacheAccessSourceCollection,
+              ),
+          ])
+          ..insertAll(db.platformGameAccessTable, [
+            for (var i = 0; i < count; i++)
+              PlatformGameAccessTableCompanion.insert(
+                userId: _kUserA,
+                platformGameId: 'pg-$i',
+                source: cacheAccessSourceCollection,
+              ),
+          ]);
       });
       await collectionRow(_kUserA, 'pg-600');
 

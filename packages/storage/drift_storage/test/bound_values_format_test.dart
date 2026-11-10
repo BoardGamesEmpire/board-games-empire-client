@@ -111,6 +111,8 @@ void main() {
     try {
       await db.customStatement('DELETE FROM t');
       fail('a statement on a closed database should have thrown');
+      // The test pins the exact Error a closed database raises.
+      // ignore: avoid_catching_errors
     } on StateError catch (caught) {
       error = caught;
     }

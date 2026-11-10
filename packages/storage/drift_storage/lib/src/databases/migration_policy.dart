@@ -76,10 +76,10 @@ extension BgeMigrationDefaults on GeneratedDatabase {
     bool enableWriteAheadLog = true,
   }) {
     return MigrationStrategy(
-      onCreate: (Migrator m) async {
+      onCreate: (m) async {
         await m.createAll();
       },
-      onUpgrade: (Migrator m, int from, int to) async {
+      onUpgrade: (m, from, to) async {
         guardAgainstDowngrade(from, to);
         if (steps != null) {
           await steps(m, from, to);

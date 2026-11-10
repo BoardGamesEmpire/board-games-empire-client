@@ -22,7 +22,7 @@ class GameCollectionsTable extends Table {
   TextColumn get platformGameId => text().references(PlatformGamesTable, #id)();
   TextColumn get medium => text()();
 
-  /// Optional link to a specific [GameRelease] (printing/edition).
+  /// Optional link to a specific `GameRelease` (printing/edition).
   TextColumn get releaseId => text().nullable()();
 
   IntColumn get quantity => integer().withDefault(const Constant(1))();

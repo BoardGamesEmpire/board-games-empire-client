@@ -9,7 +9,7 @@ import 'package:models/domain.dart';
 
 import '../support/fixed_clock.dart';
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kOtherUserId = 'user-other';
@@ -235,7 +235,8 @@ void main() {
     });
 
     group('getMembers()', () {
-      test('returns all members when the current user is a member of the household', () async {
+      test('returns all members when the current '
+          'user is a member of the household', () async {
         await _seedHousehold(db, id: 'h-1');
         await _seedMember(
           db,
@@ -288,7 +289,8 @@ void main() {
         expect(await repo.getMembers('nonexistent'), isEmpty);
       });
 
-      test('returns empty for a tombstoned household even when the current user is a member', () async {
+      test('returns empty for a tombstoned household '
+          'even when the current user is a member', () async {
         final now = DateTime.now().toUtc();
         await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
         await _seedMember(
@@ -1170,7 +1172,8 @@ void main() {
         },
       );
 
-      test('emits an empty list for a tombstoned household even when the current user is a member', () async {
+      test('emits an empty list for a tombstoned household '
+          'even when the current user is a member', () async {
         final now = DateTime.now().toUtc();
         await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
         await _seedMember(
