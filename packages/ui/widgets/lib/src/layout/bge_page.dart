@@ -93,7 +93,8 @@ class BgePage extends StatelessWidget {
     this.scrollController,
     super.key,
   }) : slivers = null,
-       semanticChildCount = null;
+       semanticChildCount = null,
+       header = null;
 
   /// Creates a page whose content is slivers rather than a single box.
   ///
@@ -118,6 +119,7 @@ class BgePage extends StatelessWidget {
   const BgePage.slivers({
     required List<Widget> this.slivers,
     this.semanticChildCount,
+    this.header,
     this.title,
     this.actions,
     this.leading,
@@ -143,6 +145,58 @@ class BgePage extends StatelessWidget {
 
   /// The page's content, for [BgePage.slivers]. Null otherwise.
   final List<Widget>? slivers;
+
+  /// A box above the [slivers] that scrolls with them and stays in the
+  /// semantics tree however far the page is scrolled, for [BgePage.slivers].
+  /// Null otherwise.
+  ///
+  /// For a banner that answers the whole screen, on a page whose content is a
+  /// list under tabs (#516): it stays above the tabs, and it stays in the
+  /// semantics tree when the page is scrolled far below it, where a sliver
+  /// among [slivers] leaves the tree once it is past the viewport's cache
+  /// extent. iOS announces such a sliver's banner when its reveal brings it
+  /// back into the tree.
+  ///
+  /// What is heard follows from one rule of each platform. iOS announces a
+  /// live region when its label changes, whether or not its node is marked
+  /// hidden. Android announces one only when its label changes while its
+  /// node is not marked hidden. The header is the viewport's first sliver,
+  /// under a [SliverEnsureSemantics], and where the header is when a banner
+  /// arrives or its text changes decides the rest:
+  ///
+  /// - **On screen:** its node is not hidden, and the banner is heard on
+  ///   both platforms.
+  /// - **Out of view, within the cache extent above the view** (250dp by
+  ///   default, one viewport on a page with a [footer]): the viewport clips
+  ///   it as any sliver, so its node is in the tree and marked hidden. iOS
+  ///   announces the banner. Android does not, neither as it arrives nor
+  ///   when a reveal later brings it on screen, because by then its label is
+  ///   unchanged. The reveal puts it on screen, where it can be read.
+  /// - **Further away than that:** the viewport gives the ensured sliver no
+  ///   clip, so its node is in the tree and not hidden, and the banner is
+  ///   heard on both. This is what the slot adds over a banner among the
+  ///   [slivers], which has left the tree there, and over the box
+  ///   constructor, whose off-screen content is always marked hidden.
+  ///
+  /// A node that is in the tree and far off screen has two consequences for
+  /// a screen reader's focus, while the header has something in it. Focus can
+  /// land on the header without the page scrolling to it: VoiceOver scrolls
+  /// the page to a focused node only when the node is marked hidden or is a
+  /// heading. And on Android, which leaves the hidden rows above the view out
+  /// of its tree, swiping back from the first row in view reaches the header
+  /// directly.
+  ///
+  /// The outcome of an action on an ordinary long list still belongs in
+  /// [footer], where it is on screen as well as heard.
+  ///
+  /// The viewport lifts its semantics clip only for a sliver directly under
+  /// it, which is why the header is a slot of its own and not one of the
+  /// [slivers]. It takes the page's top padding and its measure, and the
+  /// [slivers] take the rest, so the page's insets are the same with it as
+  /// without. It may be passed on every build, as an empty box when there is
+  /// nothing to say, which adds no semantics node and no height, or it may
+  /// come and go: either way the content below keeps its state and its focus.
+  final Widget? header;
 
   /// How many items the slivers hold, for [BgePage.slivers].
   ///
@@ -233,12 +287,11 @@ class BgePage extends StatelessWidget {
   /// ## When to pin (#211)
   ///
   /// On a **flow step**, a **long review surface**, or for **the outcome of an
-  /// action on a long list or page**, and nowhere else. Today that means
-  /// feedback compose and review, and the banners that answer actions on a
-  /// DataGateway's page: on the DataGateway itself, and on its language
-  /// worklist, stacked in its one footer (#457). Short forms and vertically
-  /// centred pages keep their action inline, at the end of the form:
-  /// server-add, sign-in, register and create-household.
+  /// action on a long list or page**, and nowhere else. The pages that pin
+  /// are listed in the style guide's "Where the primary action goes"
+  /// (docs/design/STYLE_GUIDE.md). Short forms and vertically centred pages
+  /// keep their action inline, at the end of the form: server-add, sign-in,
+  /// register and create-household.
   ///
   /// - **A flow step pins because the next step does.** Compose hands over
   ///   to review, which pins its send button, and an action that scrolls on
@@ -467,6 +520,8 @@ class BgePage extends StatelessWidget {
           final resolved = contentPadding.resolve(Directionality.of(context));
           final available = constraints.maxWidth - resolved.horizontal;
           final gutter = math.max<double>(0, (available - maxWidth) / 2);
+          final padding = resolved + EdgeInsets.symmetric(horizontal: gutter);
+          final header = this.header;
           return CustomScrollView(
             controller: scrollController,
             semanticChildCount: semanticChildCount,
@@ -475,14 +530,34 @@ class BgePage extends StatelessWidget {
                 ? null
                 : const ScrollCacheExtent.viewport(_footerCacheViewports),
             slivers: [
+              // Directly under the viewport, or it would clip it out of the
+              // semantics tree all the same: see [header].
+              if (header != null)
+                SliverEnsureSemantics(
+                  sliver: SliverPadding(
+                    padding: _edges(padding, bottom: false),
+                    sliver: SliverToBoxAdapter(child: header),
+                  ),
+                ),
               SliverPadding(
-                padding: resolved.add(EdgeInsets.symmetric(horizontal: gutter)),
+                padding: header == null ? padding : _edges(padding, top: false),
                 sliver: SliverMainAxisGroup(slivers: slivers!),
               ),
             ],
           );
         },
       );
+
+  /// [padding] without its top or its bottom edge, which the [header] and the
+  /// content below it share between them.
+  static EdgeInsets _edges(
+    EdgeInsets padding, {
+    bool top = true,
+    bool bottom = true,
+  }) => padding.copyWith(
+    top: top ? padding.top : 0,
+    bottom: bottom ? padding.bottom : 0,
+  );
 
   Widget _scrollingContent(Widget content, EdgeInsetsGeometry contentPadding) =>
       LayoutBuilder(
