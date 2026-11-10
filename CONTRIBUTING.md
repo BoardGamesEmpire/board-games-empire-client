@@ -327,9 +327,10 @@ the image is published, and does nothing on a commit that carries no tag.
 same run, built by `release-android`, so a release's APK is the tested
 commit's, not a rebuild. If `release-android` or `github-release` fails, the
 Release stands without the APK: use "Re-run failed jobs", which runs the failed
-jobs and `attach-android` after them. Re-running `attach-android` alone more
-than 7 days after the run finds the artifact expired; re-run `release-android`
-with it, which rebuilds the release commit.
+jobs and `attach-android` after them. `release-android` restores the run's
+`generated-sources`, which are kept one day, so after a day use "Re-run all
+jobs", which generates and builds again. Re-running `attach-android` alone works
+while `android-apk` is kept, 7 days; after that it needs "Re-run all jobs" too.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline
 so a broken melos script cannot take the build down with it. If you change a

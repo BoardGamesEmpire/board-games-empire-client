@@ -158,7 +158,9 @@ On a release commit, `attach-android` then attaches that APK and its
 `.sha256` to the Release (#785). It reads no secret: `release-android` is the
 only job that holds the key. If the build failed, fix the secret and use "Re-run
 failed jobs" on the run, which runs `release-android` and `attach-android`
-after it.
+after it. That works for a day after the run: `release-android` restores the
+run's `generated-sources`, which are kept one day. After that, use "Re-run all
+jobs", which generates and builds again.
 
 ## Signing a local build
 

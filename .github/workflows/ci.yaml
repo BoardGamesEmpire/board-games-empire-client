@@ -1295,9 +1295,11 @@ jobs:
   # `release-android` or `github-release` (a fork, a non-release commit, a
   # signing failure) skips this job too. A Release then stands with no APK
   # until "Re-run failed jobs" runs the jobs that failed and this one after
-  # them. Re-running this job alone, more than 7 days after the run, finds
-  # the artifact gone; re-run `release-android` with it, which rebuilds the
-  # release commit.
+  # them. That works for a day after the run: `release-android` restores
+  # `generate`'s `generated-sources`, which are kept one day. After that,
+  # "Re-run all jobs" generates and builds them again. Re-running this job
+  # alone works while `android-apk` is kept, 7 days; after that it needs
+  # "Re-run all jobs" too.
   #
   # Before uploading, the job requires exactly the APK and checksum for the
   # tag's version, and that `sha256sum -c` passes: the manifest (#827)
