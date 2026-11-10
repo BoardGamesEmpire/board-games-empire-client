@@ -15,7 +15,7 @@ import 'package:interfaces/services.dart';
 /// kernel build string on Linux — and on Android it is a build ID rather than
 /// a version, so Android files it under `operatingSystemBuild` instead.
 ///
-/// [platform] and [osVersion] are injectable for tests.
+/// `platform` and `osVersion` are injectable for tests.
 class NativeDeviceInfoReader implements DeviceInfoReader {
   NativeDeviceInfoReader({
     TargetPlatform? platform,

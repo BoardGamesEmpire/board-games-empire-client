@@ -15,7 +15,7 @@ import 'package:path_provider/path_provider.dart';
 /// On-disk shape is the [QueuedFeedbackReport] envelope (#97): the report
 /// plus the `bgeServerId` it was approved for.
 ///
-/// [directoryProvider] resolves **lazily at first use**, never at
+/// `directoryProvider` resolves **lazily at first use**, never at
 /// construction — the sink is registered in the root module on the boot
 /// hot path, and the production default is a `path_provider` call (a
 /// plugin) that must not run there. A read of a directory that was never
@@ -193,6 +193,9 @@ class FileFeedbackSink implements FeedbackSink {
       source: 'record.report.clientRequestId',
     );
     final dir = await _directory;
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (!await dir.exists()) await dir.create(recursive: true);
 
     final name = _fileNameFor(key);
@@ -215,6 +218,9 @@ class FileFeedbackSink implements FeedbackSink {
     // per-instance, so another process sharing the directory can still
     // change the file in between; [_holdsRecordFor] covers the one such
     // change that would otherwise leave nothing stored.
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (await file.exists()) {
       if (await _holdsRecordFor(file, key)) return;
       await _writeAtomically(dir, name, record);
@@ -298,6 +304,9 @@ class FileFeedbackSink implements FeedbackSink {
     // here is — see the lock's scope in this class's doc — so a delete from
     // outside between these two lines is recreated by the rename. Single
     // writer is the assumption the whole sink already rests on.
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (!await File('${dir.path}/$name').exists()) return;
     await _writeAtomically(dir, name, record);
     // Deliberately no _enforceCap: an update replaced a file that was
@@ -338,6 +347,9 @@ class FileFeedbackSink implements FeedbackSink {
       // age-based reclaim in pending(): this temp is known-dead now, and
       // the threshold there is deliberately an hour.
       try {
+        // The async call keeps file IO off the isolate; the sync variant the
+        // lint prefers would block it.
+        // ignore: avoid_slow_async_io
         if (await temp.exists()) await temp.delete();
       } on FileSystemException {
         // Swallowed: the original failure is the informative one, and
@@ -499,6 +511,9 @@ class FileFeedbackSink implements FeedbackSink {
 
   Future<List<QueuedFeedbackReport>> _pending() async {
     final dir = await _directory;
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (!await dir.exists()) return const [];
 
     // Async list + async reads so draining pending reports never blocks
@@ -523,6 +538,9 @@ class FileFeedbackSink implements FeedbackSink {
         // Under the lock no persist of *this* sink can be mid-write, so a
         // temp seen here is either abandoned or owned by another process.
         // Age is what separates those.
+        // The async call keeps file IO off the isolate; the sync variant the
+        // lint prefers would block it.
+        // ignore: avoid_slow_async_io
         final modified = (await entry.stat()).modified;
         if (DateTime.now().difference(modified) > _staleTempAge) {
           await _reap(entry);
@@ -545,13 +563,16 @@ class FileFeedbackSink implements FeedbackSink {
     // which no write rewrites — and what it orders by is "waited longest
     // since its last attempt", so a run-level fault that stopped the loop
     // partway leaves the records it never reached at the front.
-    final stamped = <(File, DateTime)>[
-      for (final file in files) (file, (await file.stat()).modified),
-    ];
-    stamped.sort((a, b) {
-      final byTime = a.$2.compareTo(b.$2);
-      return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
-    });
+    final stamped =
+        <(File, DateTime)>[
+          // The async call keeps file IO off the isolate; the sync variant the
+          // lint prefers would block it.
+          // ignore: avoid_slow_async_io
+          for (final file in files) (file, (await file.stat()).modified),
+        ]..sort((a, b) {
+          final byTime = a.$2.compareTo(b.$2);
+          return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
+        });
 
     final kept = <(File, QueuedFeedbackReport)>[];
     for (final (file, _) in stamped) {
@@ -651,6 +672,9 @@ class FileFeedbackSink implements FeedbackSink {
     final name = _fileNameFor(key);
     final file = File('${dir.path}/$name');
     _queuedAtCache.remove(name);
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (await file.exists()) await file.delete();
   }
 

@@ -94,9 +94,9 @@ void main() {
   /// throwing.
   String legacyEnvelopeJson(String key, {String? serverId}) {
     final envelope = record(key, serverId: serverId).toJson();
-    final reportJson = envelope['report']! as Map<String, dynamic>;
-    reportJson.remove('clientRequestId');
-    reportJson['correlationKey'] = key;
+    (envelope['report']! as Map<String, dynamic>)
+      ..remove('clientRequestId')
+      ..['correlationKey'] = key;
     return jsonEncode(envelope);
   }
 
@@ -331,8 +331,8 @@ void main() {
       expect(byKey['key-b']!.serverId, isNull);
     });
 
-    test('pending drains oldest-first by write time, not by cuid2-'
-        'lexical filename — a throttle-stopped drain sends the oldest '
+    test('pending drains oldest-first by write time, not by '
+        'cuid2-lexical filename — a throttle-stopped drain sends the oldest '
         'records', () async {
       final sink = buildSink();
       // Keys chosen so lexical order ('aaa' first) contradicts write

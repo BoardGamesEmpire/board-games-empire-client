@@ -18,7 +18,7 @@ import 'package:observability/observability.dart';
 /// binding, which is not up when the sink is constructed at the very top
 /// of bootstrap, so the first [emit] triggers the async open and records
 /// arriving before it lands are held in a bounded in-memory buffer
-/// ([preOpenBufferLimit], oldest dropped past the cap). Writes are
+/// (`preOpenBufferLimit`, oldest dropped past the cap). Writes are
 /// serialised through a single future chain so rotation and appends never
 /// interleave. Every drain flushes, because production has no guaranteed
 /// [close] (hot restart does not fire dispose).
@@ -135,6 +135,9 @@ class RotatingFileLogSink implements LogSink {
     final dir = await _directoryProvider();
     final file = File('${dir.path}${Platform.pathSeparator}$baseName.log');
     _file = file;
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     _currentBytes = await file.exists() ? await file.length() : 0;
     _sink = file.openWrite(mode: FileMode.append);
   }
@@ -170,12 +173,21 @@ class RotatingFileLogSink implements LogSink {
     // serialised drain), so the sync *Sync variants would block frames on
     // slow or networked home directories.
     final oldest = File('$base.$maxFiles.log');
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (await oldest.exists()) await oldest.delete();
     for (var i = maxFiles - 1; i >= 1; i--) {
       final from = File('$base.$i.log');
+      // The async call keeps file IO off the isolate; the sync variant the
+      // lint prefers would block it.
+      // ignore: avoid_slow_async_io
       if (await from.exists()) await from.rename('$base.${i + 1}.log');
     }
     final current = _file ?? File('$base.log');
+    // The async call keeps file IO off the isolate; the sync variant the
+    // lint prefers would block it.
+    // ignore: avoid_slow_async_io
     if (await current.exists()) await current.rename('$base.1.log');
 
     final fresh = File('$base.log');

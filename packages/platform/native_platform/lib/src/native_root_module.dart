@@ -43,7 +43,7 @@ import 'package:observability/observability.dart';
 /// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free —
 /// per-platform implementations replace this registration in #111/#112),
 /// and the #36 server-onboarding pair:
-/// [WellKnownClient] (lazy; its dedicated unauthenticated [Dio] is not
+/// [WellKnownClient] (lazy; its dedicated unauthenticated `Dio` is not
 /// built until a boot with no server needs server-add) and
 /// [VersionNegotiator]
 /// (stateless, const). Both are **root**-scope by necessity: server-add

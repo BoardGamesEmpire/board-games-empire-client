@@ -320,7 +320,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
 
   /// Whether this platform also persists logs to a rotating file, on top
   /// of the `developer.log` console/Logcat sink (issue #100). Base is
-  /// `false` — mobile keeps Logcat only. [DesktopPlatformBootstrap]
+  /// `false` — mobile keeps Logcat only. `DesktopPlatformBootstrap`
   /// overrides this to `true`.
   bool get enableFileLog => false;
 
@@ -414,7 +414,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         ),
         recoveredServers: recoveredServers,
       );
-    } catch (_) {
+    } on Object catch (_) {
       // Roll back without masking the original error: secondary disposal
       // failures are logged as breadcrumbs for feedback reports, never
       // thrown — the bootstrap failure being rethrown is the one the
@@ -506,6 +506,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       // and swallow FileSystemException — a genuinely undeletable file is
       // breadcrumbed rather than aborting the reset the user asked for.
       try {
+        // The async call keeps file IO off the isolate; the sync variant the
+        // lint prefers would block it.
+        // ignore: avoid_slow_async_io
         if (await file.exists()) {
           await file.delete();
         }

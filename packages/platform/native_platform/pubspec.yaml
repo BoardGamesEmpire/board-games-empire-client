@@ -9,53 +9,51 @@ environment:
 resolution: workspace
 
 dependencies:
-  flutter:
-    sdk: flutter
-
+  access:
+    path: ../../core/access
+  app_links: ^7.2.1
   app_shell:
     path: ../../app_shell
-  household:
-    path: ../../features/household
+  connectivity_platform:
+    path: ../connectivity_platform
   data_gateway:
     path: ../../features/data_gateway
-  game_collection:
-    path: ../../features/collection
+  di:
+    path: ../../core/di
+  dio_network:
+    path: ../../network/dio_network
+  drift: ^2.34.3
+  drift_storage:
+    path: ../../storage/drift_storage
   events:
     path: ../../features/events
+  flutter:
+    sdk: flutter
+  flutter_web_auth_2: ^5.1.0
+  game_collection:
+    path: ../../features/collection
+  household:
+    path: ../../features/household
+  hydrated_bloc: ^11.0.0
+  interfaces:
+    path: ../../core/interfaces
+  key_storage:
+    path: ../../storage/key_storage
+  logging: ^1.3.0
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+  package_info_plus: ^10.2.1
+  path_provider: ^2.1.3
+  storage_interface:
+    path: ../../storage/storage_interface
   # The sync queue's sender and drain (#121). Both platforms compose both;
   # web runs each drain pass under a Web Lock (#447), native under none.
   sync_queue:
     path: ../../features/sync
-  access:
-    path: ../../core/access
-  interfaces:
-    path: ../../core/interfaces
-  models:
-    path: ../../core/models
-  observability:
-    path: ../../core/observability
-  di:
-    path: ../../core/di
-  storage_interface:
-    path: ../../storage/storage_interface
-  drift_storage:
-    path: ../../storage/drift_storage
-  key_storage:
-    path: ../../storage/key_storage
-  network_interface:
-    path: ../../network/network_interface
-  dio_network:
-    path: ../../network/dio_network
-  connectivity_platform:
-    path: ../connectivity_platform
-
-  app_links: ^7.2.1
-  flutter_web_auth_2: ^5.1.0
-  drift: ^2.34.3
-  hydrated_bloc: ^11.0.0
-  package_info_plus: ^10.2.1
-  path_provider: ^2.1.3
-  logging: ^1.3.0
 
 dev_dependencies:
   # `ScriptedServer`, the transport the root harness answers through (#435).
