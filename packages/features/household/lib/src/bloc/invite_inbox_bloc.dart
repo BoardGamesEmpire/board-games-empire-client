@@ -18,7 +18,7 @@ import 'package:observability/observability.dart';
 /// on screen when it ends, as the household invite list's actions do (see
 /// `HouseholdInviteListBloc`).
 ///
-/// After an accept, [onJoined] brings the household onto the device. It is
+/// After an accept, `onJoined` brings the household onto the device. It is
 /// not awaited: the inbox has its answer, and the hydrate pass reports
 /// through its own status.
 class InviteInboxBloc extends Bloc<InviteInboxEvent, InviteInboxState> {

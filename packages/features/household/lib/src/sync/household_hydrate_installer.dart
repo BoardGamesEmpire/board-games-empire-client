@@ -194,9 +194,7 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       logger: _log,
       guard: guard,
       context: {'serverId': server.serverId},
-    );
-
-    pass.registerRehydrate(container, 'household', staleAfter: staleAfter);
+    )..registerRehydrate(container, 'household', staleAfter: staleAfter);
 
     // The same pass, reachable by the screens (#300). Registered rather
     // than routed through the [SessionRehydrator]: that seam skips an

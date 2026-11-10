@@ -1427,11 +1427,9 @@ void main() {
     await pumpScreen(tester);
     expect(remote.calls, hasLength(1));
 
-    unawaited(
-      Navigator.of(tester.element(find.text("Ada's table"))).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const Scaffold(body: Text('detail')),
-        ),
+    Navigator.of(tester.element(find.text("Ada's table"))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('detail')),
       ),
     );
     await tester.pumpAndSettle();

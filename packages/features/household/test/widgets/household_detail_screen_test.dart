@@ -686,14 +686,12 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
-                onPressed: () => unawaited(
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => HouseholdDetailScreen(
-                        householdId: _id,
-                        repository: repository,
-                        hydration: status.watch(),
-                      ),
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => HouseholdDetailScreen(
+                      householdId: _id,
+                      repository: repository,
+                      hydration: status.watch(),
                     ),
                   ),
                 ),
@@ -1060,11 +1058,9 @@ void main() {
       // Pushes a real page, so leaving it uncovers this screen.
       onOpenInvites: (context, householdId) {
         opened.add(householdId);
-        unawaited(
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const Scaffold(body: Text('the invites')),
-            ),
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('the invites')),
           ),
         );
       },

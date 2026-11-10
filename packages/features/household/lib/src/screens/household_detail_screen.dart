@@ -805,9 +805,14 @@ class _InvitesEntry extends StatelessWidget {
     );
 
     return BlocProvider<AwaitingApprovalCountCubit>(
-      create: (_) =>
-          AwaitingApprovalCountCubit(householdId: householdId, remote: invites)
-            ..load(),
+      create: (_) {
+        final cubit = AwaitingApprovalCountCubit(
+          householdId: householdId,
+          remote: invites,
+        );
+        unawaited(cubit.load());
+        return cubit;
+      },
       child: !hasMemberActionsBloc
           ? entry
           // Removing a member revokes the invites they sent, those awaiting

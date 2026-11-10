@@ -414,7 +414,7 @@ void main() {
   group('after a save that may have landed', () {
     // The first save is answered with a 2xx this device could not read, so
     // the server most likely holds it; the second is answered.
-    void failThenAnswer(Object error) {
+    void failThenAnswer(HouseholdRemoteException error) {
       var calls = 0;
       when(() => remote.updateHousehold(any(), any())).thenAnswer((_) async {
         if (calls++ == 0) throw error;
@@ -509,7 +509,10 @@ void main() {
       ),
     );
 
-    void expectSentBack(String description, {required Object error}) {
+    void expectSentBack(
+      String description, {
+      required HouseholdRemoteException error,
+    }) {
       blocTest<EditHouseholdBloc, EditHouseholdState>(
         description,
         setUp: () => failThenAnswer(error),
@@ -525,7 +528,7 @@ void main() {
 
     void expectNothingSentBack(
       String description, {
-      required Object error,
+      required HouseholdRemoteException error,
       required EditHouseholdFailure reason,
     }) {
       blocTest<EditHouseholdBloc, EditHouseholdState>(

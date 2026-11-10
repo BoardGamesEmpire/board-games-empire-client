@@ -89,8 +89,9 @@ void main() {
     container = DependencyContainerImpl();
     repo = _MockHouseholdRepository();
     remote = _MockHouseholdRemoteDataSource();
-    container.registerSingleton<HouseholdRepository>(repo);
-    container.registerSingleton<HouseholdRemoteDataSource>(remote);
+    container
+      ..registerSingleton<HouseholdRepository>(repo)
+      ..registerSingleton<HouseholdRemoteDataSource>(remote);
     // Every single-page pass purges against what it read (#268), empty
     // pages included.
     when(() => repo.purgeableMemberships())

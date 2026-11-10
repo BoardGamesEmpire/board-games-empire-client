@@ -32,11 +32,11 @@
 /// `HouseholdHydrateInstaller` for which those are), which the screens read as
 /// "no retry to offer" rather than offering a button that does nothing.
 class HouseholdRefresher {
-  /// Wraps [pass] — the same pass the installer hands the
+  /// Wraps `pass` — the same pass the installer hands the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one cannot
   /// report differently.
   ///
-  /// [afterChange] backs [refreshAfterChange]; without it, that is
+  /// `afterChange` backs [refreshAfterChange]; without it, that is
   /// [refresh].
   const HouseholdRefresher(this._pass, {this._afterChange});
 

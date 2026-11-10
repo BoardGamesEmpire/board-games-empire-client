@@ -13,7 +13,7 @@ class MockHouseholdRemoteDataSource extends Mock
 
 class MockBgeLogger extends Mock implements BgeLogger {}
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ────────────────────────────────────────────────────────────
 
 Household _household(String id) => Household(
   id: id,

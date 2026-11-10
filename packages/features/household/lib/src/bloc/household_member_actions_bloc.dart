@@ -26,11 +26,13 @@ import 'package:observability/observability.dart';
 ///
 /// | Answer | Cache | Outcome | Refresh |
 /// |---|---|---|---|
-/// | 200 | the answer written (both sides still cached, for a transfer), or the row deleted | done | started |
+/// | 200 | answer written, or row deleted | done | started |
 /// | An enveloped 404 | untouched | gone | started |
 /// | An enveloped 400, 403 or 409 | untouched | refused | started |
 /// | Transient | untouched | failed | none |
 /// | Anything else | untouched | failed | started |
+///
+/// On a 200 for a transfer, both sides stay cached with the answer written.
 ///
 /// A 404 deletes nothing. It says the member is gone or the household is,
 /// and a server without the route answers the same, so the refresh, not

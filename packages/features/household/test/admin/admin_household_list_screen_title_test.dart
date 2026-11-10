@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -37,11 +35,9 @@ void main() {
           home: const Scaffold(body: Text('dashboard')),
         ),
       );
-      unawaited(
-        Navigator.of(tester.element(find.text('dashboard'))).push(
-          MaterialPageRoute<void>(
-            builder: (_) => AdminHouseholdListScreen(remote: remote),
-          ),
+      Navigator.of(tester.element(find.text('dashboard'))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdminHouseholdListScreen(remote: remote),
         ),
       );
       await tester.pumpAndSettle();

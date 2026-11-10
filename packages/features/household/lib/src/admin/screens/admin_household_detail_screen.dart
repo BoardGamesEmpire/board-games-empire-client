@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -65,9 +67,15 @@ class AdminHouseholdDetailScreen extends StatelessWidget {
     // A go to another household's detail keeps the router's page, and builds
     // this screen again with the new id: a new cubit reads that household.
     key: ValueKey(id),
-    create: (_) =>
-        AdminHouseholdDetailCubit(remote: remote, access: access, id: id)
-          ..load(),
+    create: (_) {
+      final cubit = AdminHouseholdDetailCubit(
+        remote: remote,
+        access: access,
+        id: id,
+      );
+      unawaited(cubit.load());
+      return cubit;
+    },
     child: const _AdminHouseholdDetailView(),
   );
 }
@@ -97,7 +105,7 @@ class _AdminHouseholdDetailViewState extends State<_AdminHouseholdDetailView> {
   void _retry(AdminHouseholdDetailCubit cubit) {
     // Retry goes as the read starts, and would take focus with it.
     _heading.requestFocus();
-    cubit.load();
+    unawaited(cubit.load());
   }
 
   @override

@@ -984,11 +984,9 @@ void main() {
       when(() => remote.leave(any())).thenAnswer((_) => reply.future);
       await tester.pumpWidget(
         pushedOver(
-          onNewEvent: (context, _) => unawaited(
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => const Scaffold(body: Text(form)),
-              ),
+          onNewEvent: (context, _) => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => const Scaffold(body: Text(form)),
             ),
           ),
         ),

@@ -14,7 +14,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The household list (#269): every household the signed-in user belongs
 /// to, read reactively from the local cache.
 ///
-/// Decoupled from DI like [CreateHouseholdScreen]: the caller resolves the
+/// Decoupled from DI like `CreateHouseholdScreen`: the caller resolves the
 /// user-session [HouseholdRepository] and the optional
 /// [HouseholdHydrationStatus] stream and passes them in; the screen owns
 /// its bloc.

@@ -41,7 +41,7 @@ class CreateHouseholdForm extends StatefulWidget {
     super.key,
   });
 
-  /// Invoked with validated values. [description] is `null` when blank.
+  /// Invoked with validated values. `description` is `null` when blank.
   final void Function({required String name, String? description}) onSubmit;
 
   /// When true, the fields are read-only and the submit button is disabled
@@ -92,7 +92,7 @@ class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
 
   @override
   void dispose() {
-    _editSubscription?.cancel();
+    unawaited(_editSubscription?.cancel());
     _form.dispose();
     super.dispose();
   }

@@ -111,14 +111,12 @@ void main() {
     home: Builder(
       builder: (context) => Scaffold(
         body: TextButton(
-          onPressed: () => unawaited(
-            Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => CreateHouseholdScreen(
-                  repository: repo,
-                  sender: sender,
-                  onCreated: (_, householdId) => onCreated(householdId),
-                ),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => CreateHouseholdScreen(
+                repository: repo,
+                sender: sender,
+                onCreated: (_, householdId) => onCreated(householdId),
               ),
             ),
           ),

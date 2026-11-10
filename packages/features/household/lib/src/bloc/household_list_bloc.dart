@@ -26,12 +26,16 @@ import 'package:observability/observability.dart';
 /// | cache | hydrate | state |
 /// |---|---|---|
 /// | nothing yet | any | loading |
-/// | empty | running, and no pass has ever completed | loading — unknown, not empty |
+/// | empty | running, no pass ever completed | loading, not empty |
 /// | empty | anything else | ready, no rows |
-/// | rows | any | ready — a populated cache is never hidden |
+/// | rows | any | ready, never hidden |
 /// | error | any | error, until the cache speaks again |
-/// | ended, nothing read | any, now or later | error — nothing answered, and nothing will |
+/// | ended, nothing read | any, now or later | error |
 /// | ended, rows read | any | those rows, frozen |
+///
+/// Loading there means unknown, not empty. A populated cache is never
+/// hidden. A cache that ended with nothing read answered nothing and
+/// never will.
 ///
 /// ## Two ways the cache stops
 ///
@@ -56,14 +60,14 @@ import 'package:observability/observability.dart';
 /// clear the error state: a hydrate result is an annotation, not data, and
 /// letting it lift the error would show a list nobody could read.
 ///
-/// A **null** [hydration] stream means no hydrate exists to wait for
+/// A **null** `hydration` stream means no hydrate exists to wait for
 /// (a container with no household client, #125). That reads as settled,
 /// not as perpetually loading.
 ///
 /// ## The retry, and why the bloc runs it (#300 D5)
 ///
-/// A null [onRetry] is a composition that cannot re-run the drain — the
-/// same #125 case that leaves [hydration] null — and the screen offers no
+/// A null `onRetry` is a composition that cannot re-run the drain — the
+/// same #125 case that leaves `hydration` null — and the screen offers no
 /// retry there rather than a button that does nothing.
 ///
 /// The callback is invoked from here rather than straight from the button

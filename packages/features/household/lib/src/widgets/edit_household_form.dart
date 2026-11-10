@@ -37,8 +37,8 @@ class EditHouseholdForm extends StatefulWidget {
   /// The household the form opens with. Read once.
   final Household initial;
 
-  /// Invoked with validated values. [description] is null when blank, and
-  /// [memberInvitePolicy] is null when no option is chosen.
+  /// Invoked with validated values. `description` is null when blank, and
+  /// `memberInvitePolicy` is null when no option is chosen.
   final void Function({
     required String name,
     String? description,

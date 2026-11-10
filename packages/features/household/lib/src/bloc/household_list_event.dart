@@ -26,7 +26,7 @@ final class HouseholdListCacheUpdated extends HouseholdListEvent {
   List<Object?> get props => [households];
 }
 
-/// The cache stream failed — see [HouseholdListError].
+/// The cache stream failed — see `HouseholdListError`.
 final class HouseholdListCacheFailed extends HouseholdListEvent {
   const HouseholdListCacheFailed();
 }
