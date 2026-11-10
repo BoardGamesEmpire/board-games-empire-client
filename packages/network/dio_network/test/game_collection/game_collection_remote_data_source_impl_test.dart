@@ -425,6 +425,129 @@ void main() {
       expect(summary.game.thumbnail, isNull);
     });
 
+    // The facts a collection filter and sort read (#715). A response that
+    // lacks the keys is an older server: facts stay null so a cache write
+    // leaves the cached values alone. A response that has them with null
+    // values says there is no value, and that is written.
+    group('the facts a filter reads (#715)', () {
+      /// The entry with [game] and [platformGame] / [platform] keys merged
+      /// onto the embedded summary.
+      Map<String, dynamic> withFacts({
+        Map<String, dynamic> game = const {},
+        Map<String, dynamic> platformGame = const {},
+        Map<String, dynamic> platform = const {},
+      }) {
+        final json = _entryJson();
+        final pg = json['platformGame'] as Map<String, dynamic>;
+        json['platformGame'] = <String, dynamic>{
+          ...pg,
+          ...platformGame,
+          'platform': <String, dynamic>{
+            ...pg['platform'] as Map<String, dynamic>,
+            ...platform,
+          },
+          'game': <String, dynamic>{
+            ...pg['game'] as Map<String, dynamic>,
+            ...game,
+          },
+        };
+        return json;
+      }
+
+      test('are read from the game and the platform game', () async {
+        stubGet(
+          _resp({
+            'collection': withFacts(
+              game: {
+                'publishYear': 2019,
+                'minPlayers': 1,
+                'maxPlayers': 5,
+                'minPlayTime': 40,
+                'maxPlayTime': 70,
+              },
+              platformGame: {
+                'minPlayers': 2,
+                'maxPlayers': null,
+                'minPlayTime': null,
+                'maxPlayTime': null,
+              },
+              platform: {'platformType': 'Tabletop'},
+            ),
+          }),
+        );
+
+        final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+        expect(
+          summary.game.facts,
+          const GameSummaryFacts(
+            publishYear: 2019,
+            minPlayers: 1,
+            maxPlayers: 5,
+            minPlayTime: 40,
+            maxPlayTime: 70,
+          ),
+        );
+        expect(
+          summary.facts,
+          const PlatformGameSummaryFacts(
+            platformType: PlatformType.tabletop,
+            minPlayers: 2,
+          ),
+        );
+      });
+
+      test('present with null values are facts holding nothing, not '
+          'absent', () async {
+        stubGet(
+          _resp({
+            'collection': withFacts(
+              game: {
+                'publishYear': null,
+                'minPlayers': null,
+                'maxPlayers': null,
+                'minPlayTime': null,
+                'maxPlayTime': null,
+              },
+              platformGame: {
+                'minPlayers': null,
+                'maxPlayers': null,
+                'minPlayTime': null,
+                'maxPlayTime': null,
+              },
+              platform: {'platformType': null},
+            ),
+          }),
+        );
+
+        final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+        expect(summary.game.facts, const GameSummaryFacts());
+        expect(summary.facts, const PlatformGameSummaryFacts());
+      });
+
+      test('absent from the row leave both facts null', () async {
+        stubGet(_resp({'collection': _entryJson()}));
+
+        final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+        expect(summary.game.facts, isNull);
+        expect(summary.facts, isNull);
+      });
+
+      test('a platform type this client does not know is unknown', () async {
+        stubGet(
+          _resp({
+            'collection': withFacts(platform: {'platformType': 'Hologram'}),
+          }),
+        );
+
+        final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+        expect(summary.facts?.platformType, PlatformType.unknown);
+      });
+    });
+
     // Without these the entry cannot be stored, so a page lacking them is a
     // 2xx this source cannot map, like any other malformed row.
     for (final (label, strip)

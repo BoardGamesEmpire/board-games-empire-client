@@ -309,6 +309,20 @@ class GameCollectionRemoteDataSourceImpl
       platformName: platform['name'] as String,
       image: _nonEmpty(platformGame['image']),
       thumbnail: _nonEmpty(platformGame['thumbnail']),
+      // Present exactly when the platform carries `platformType`: an older
+      // server sends none of the facts, and null tells the cache to leave
+      // its values alone (#715).
+      facts: platform.containsKey('platformType')
+          ? PlatformGameSummaryFacts(
+              platformType: platform['platformType'] is String
+                  ? PlatformType.fromWire(platform['platformType'] as String)
+                  : null,
+              minPlayers: platformGame['minPlayers'] as int?,
+              maxPlayers: platformGame['maxPlayers'] as int?,
+              minPlayTime: platformGame['minPlayTime'] as int?,
+              maxPlayTime: platformGame['maxPlayTime'] as int?,
+            )
+          : null,
       game: GameSummary(
         id: game['id'] as String,
         title: game['title'] as String,
@@ -319,6 +333,16 @@ class GameCollectionRemoteDataSourceImpl
             ? ContentType.fromWire(game['contentType'] as String)
             : null,
         baseGames: mapExpansionLinks(game['baseGames']),
+        // Present exactly when the game carries `publishYear` (#715).
+        facts: game.containsKey('publishYear')
+            ? GameSummaryFacts(
+                publishYear: game['publishYear'] as int?,
+                minPlayers: game['minPlayers'] as int?,
+                maxPlayers: game['maxPlayers'] as int?,
+                minPlayTime: game['minPlayTime'] as int?,
+                maxPlayTime: game['maxPlayTime'] as int?,
+              )
+            : null,
       ),
     );
   }
