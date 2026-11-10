@@ -565,7 +565,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// A UUID of any version, which is what the import routes accept for a
   /// correlation id (`@IsUUID`) and a batch id (`ParseUUIDPipe`).
   static final RegExp _uuid = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+    r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
 
   void _checkUuid(String value, String name) {

@@ -17,7 +17,7 @@ import 'package:observability/observability.dart';
 /// Levels follow the #100 buckets. Note the per-server Dio sets
 /// `validateStatus: (_) => true`, so a 4xx/5xx comes back as a normal
 /// [Response] (it never throws) — the levels are split accordingly:
-/// - request/response at **debug**, gated by [traceRequests] (default:
+/// - request/response at **debug**, gated by `traceRequests` (default:
 ///   non-release builds), so a product build's console and breadcrumb ring
 ///   are not flooded with a line per request;
 /// - a **5xx** response at **warn**, always (ungated) — a genuine server

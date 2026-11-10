@@ -728,7 +728,8 @@ void main() {
       });
     });
 
-    test('a 2xx whose body is not a JSON object is permanent, not transient', () {
+    test('a 2xx whose body is not a JSON object is permanent, '
+        'not transient', () {
       // Dio would cast the body to Map itself if we asked it for a typed
       // Response, and the TypeError would surface as a status-less transient
       // failure that retries forever. A captive-portal HTML page served with a

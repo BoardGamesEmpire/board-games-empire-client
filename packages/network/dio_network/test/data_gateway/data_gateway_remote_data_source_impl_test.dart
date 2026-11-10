@@ -1069,12 +1069,12 @@ void main() {
           status: 409,
         );
         final routes = <String, Future<Object?> Function()>{
-          'fetchPage': () => remote.fetchPage(),
+          'fetchPage': remote.fetchPage,
           'fetchOne': () => remote.fetchOne('dg_1'),
           'delete': () => remote.delete('dg_1'),
           'connect': () => remote.connect('dg_1'),
           'disconnect': () => remote.disconnect('dg_1'),
-          'fetchLanguageTags': () => remote.fetchLanguageTags(),
+          'fetchLanguageTags': remote.fetchLanguageTags,
         };
 
         for (final MapEntry(key: route, value: call) in routes.entries) {

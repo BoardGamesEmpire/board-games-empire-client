@@ -9,7 +9,7 @@ import 'package:network_interface/network_interface.dart';
 ///
 /// The body is asked for as a `String` with the response type pinned on
 /// every request, and `sendForJson` decodes it after the status is read and
-/// classifies a failure through [_UserFailures]. It does not build or own
+/// classifies a failure through [_failures]. It does not build or own
 /// its Dio; the network installer constructs it from the per-server
 /// container.
 ///

@@ -209,8 +209,8 @@ void main() {
     });
   });
 
-  // Every request asks for `Response<String>`, which takes the body out from under
-  // Dio's transformer — including the 50 KB isolate offload it applies.
+  // Every request asks for `Response<String>`, which takes the body out from
+  // under Dio's transformer — including the 50 KB isolate offload it applies.
   group('a large body still decodes off-isolate', () {
     test('a page over the 50 KB threshold parses correctly', () async {
       // A full page and no more: the server never returns more than `limit`.
@@ -237,8 +237,8 @@ void main() {
   group('responseType is pinned per request', () {
     for (final type in [ResponseType.bytes, ResponseType.stream]) {
       test(
-        'an injected Dio set to responseType.${type.name} cannot reintroduce the '
-        'status-losing cast',
+        'an injected Dio set to responseType.${type.name} cannot reintroduce '
+        'the status-losing cast',
         () async {
           final dio = cannedDio(body: _kHtml, statusCode: 400)
             ..options.responseType = type;

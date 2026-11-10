@@ -103,7 +103,9 @@ void main() {
     });
 
     test('asks for the default sample size', () async {
-      final remote = answering(jsonEncode({'games': [], 'gameCount': 0}));
+      final remote = answering(
+        jsonEncode({'games': <Object?>[], 'gameCount': 0}),
+      );
 
       await remote.fetchGamePoolSample();
 
@@ -131,7 +133,9 @@ void main() {
     test('no household answer is no games and a count of 0', () async {
       // The server answers 200 with this for a caller in no household, so it
       // is a sample like any other.
-      final remote = answering(jsonEncode({'games': [], 'gameCount': 0}));
+      final remote = answering(
+        jsonEncode({'games': <Object?>[], 'gameCount': 0}),
+      );
 
       final sample = await remote.fetchGamePoolSample();
 
@@ -173,7 +177,9 @@ void main() {
     });
 
     test('refuses size 0 and 51, before sending it', () {
-      final remote = answering(jsonEncode({'games': [], 'gameCount': 0}));
+      final remote = answering(
+        jsonEncode({'games': <Object?>[], 'gameCount': 0}),
+      );
 
       expect(() => remote.fetchGamePoolSample(size: 0), throwsArgumentError);
       expect(() => remote.fetchGamePoolSample(size: 51), throwsArgumentError);

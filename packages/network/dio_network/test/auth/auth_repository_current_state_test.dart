@@ -30,7 +30,7 @@ ServerIdentity _identity() => const ServerIdentity(
 );
 
 /// #97: [AuthRepositoryImpl.currentAuthState] is the synchronous mirror
-/// of the in-memory state [watchAuthState] replays on subscribe — the
+/// of the in-memory state `watchAuthState` replays on subscribe — the
 /// seam the feedback target resolver reads per submit/drain.
 void main() {
   group('AuthRepositoryImpl.currentAuthState', () {

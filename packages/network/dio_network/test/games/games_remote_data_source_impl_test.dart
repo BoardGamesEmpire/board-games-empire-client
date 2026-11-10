@@ -948,7 +948,10 @@ void main() {
 
     test('reads a search with no local results and nothing missing', () async {
       final remote = answering(
-        jsonEncode({'correlationId': 'c-2', 'resultsBySource': {}}),
+        jsonEncode({
+          'correlationId': 'c-2',
+          'resultsBySource': <String, dynamic>{},
+        }),
       );
 
       final results = await remote.search('zzz');

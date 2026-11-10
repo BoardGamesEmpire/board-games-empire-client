@@ -582,13 +582,15 @@ void main() {
     test('a retried marker read does not delete a session stored since the '
         'read failed', () async {
       tombstones.revoked.add(serverId);
-      tombstones.failReads = true;
-      tombstones.failWrites = true;
+      tombstones
+        ..failReads = true
+        ..failWrites = true;
 
       await storeToken(storage, 'tok-new');
 
-      tombstones.failReads = false;
-      tombstones.failWrites = false;
+      tombstones
+        ..failReads = false
+        ..failWrites = false;
 
       expect((await storage.retrieve())?.token, 'tok-new');
       expect(keychain, contains(key));
@@ -635,8 +637,9 @@ void main() {
       /// one whose write throws, leaving a marker neither can remove.
       Future<void> overlapping({required String failing}) async {
         tombstones.revoked.add(serverId);
-        tombstones.failReads = true;
-        tombstones.failWrites = true;
+        tombstones
+          ..failReads = true
+          ..failWrites = true;
         final releases = <String, Completer<void>>{
           'first': Completer<void>(),
           'second': Completer<void>(),
@@ -662,8 +665,9 @@ void main() {
         releases[other]!.complete();
         await stores;
 
-        tombstones.failReads = false;
-        tombstones.failWrites = false;
+        tombstones
+          ..failReads = false
+          ..failWrites = false;
 
         expect(await storage.retrieve(), isNotNull);
         expect(keychain, contains(key));
@@ -682,8 +686,9 @@ void main() {
       test('does not let a retried read delete what an earlier store wrote, '
           'when a later one fails', () async {
         tombstones.revoked.add(serverId);
-        tombstones.failReads = true;
-        tombstones.failWrites = true;
+        tombstones
+          ..failReads = true
+          ..failWrites = true;
         final releaseSecond = Completer<void>();
         var writes = 0;
         beforeWrite = () async {
@@ -700,8 +705,9 @@ void main() {
         releaseSecond.complete();
         await expectLater(second, throwsA(isA<StateError>()));
 
-        tombstones.failReads = false;
-        tombstones.failWrites = false;
+        tombstones
+          ..failReads = false
+          ..failWrites = false;
 
         expect((await storage.retrieve())?.token, 'tok-first');
         expect(keychain, contains(key));
@@ -709,8 +715,9 @@ void main() {
 
       test('a store that succeeds afterwards keeps its session', () async {
         tombstones.revoked.add(serverId);
-        tombstones.failReads = true;
-        tombstones.failWrites = true;
+        tombstones
+          ..failReads = true
+          ..failWrites = true;
         beforeWrite = failWrites;
         await expectLater(
           storeToken(storage, 'tok-failed'),
@@ -719,8 +726,9 @@ void main() {
 
         beforeWrite = null;
         await storeToken(storage, 'tok-new');
-        tombstones.failReads = false;
-        tombstones.failWrites = false;
+        tombstones
+          ..failReads = false
+          ..failWrites = false;
 
         expect((await storage.retrieve())?.token, 'tok-new');
         expect(keychain, contains(key));

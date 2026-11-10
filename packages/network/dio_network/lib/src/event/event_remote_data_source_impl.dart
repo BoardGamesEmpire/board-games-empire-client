@@ -715,7 +715,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     final role = raw['role'];
     if (role != null && role is! String) {
       throw FormatException(
-        'attendance "role" is ${role.runtimeType}, expected a role name or null',
+        'attendance "role" is ${role.runtimeType}, '
+        'expected a role name or null',
       );
     }
     return EventAttendance(

@@ -13,7 +13,7 @@ import 'package:network_interface/network_interface.dart';
 /// (TokenInterceptor) on native, and by the browser, as its session cookie,
 /// on web. This class adds no auth handling of its own; it is constructed
 /// from the per-server container by the network installer (#39 wiring), so
-/// unlike [WellKnownClientImpl] it does **not** build or own its Dio, and it
+/// unlike `WellKnownClientImpl` it does **not** build or own its Dio, and it
 /// is intentionally **not** an injectable global singleton (the per-server
 /// Dio is outside the global graph).
 ///

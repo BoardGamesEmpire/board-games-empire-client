@@ -33,7 +33,7 @@ enum _NotFoundMeaning { missingRow, alreadyRemoved, unreachableEndpoint }
 /// (TokenInterceptor) on native, and by the browser, as its session cookie,
 /// on web. This class adds no auth handling of its own; it is constructed
 /// from the per-server container by the network installer, so like
-/// [HouseholdRemoteDataSourceImpl] it does **not** build or own its Dio and is
+/// `HouseholdRemoteDataSourceImpl` it does **not** build or own its Dio and is
 /// intentionally not an injectable global singleton.
 ///
 /// Reading of the answer and its failures is shared; see the library doc in

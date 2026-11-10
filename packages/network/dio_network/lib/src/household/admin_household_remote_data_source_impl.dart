@@ -6,7 +6,7 @@ import 'package:network_interface/network_interface.dart';
 
 /// [AdminHouseholdRemoteDataSource] over a **per-server** Dio instance (#685).
 ///
-/// Built like [DataGatewayRemoteDataSourceImpl]: the body is asked for as a
+/// Built like `DataGatewayRemoteDataSourceImpl`: the body is asked for as a
 /// `String`, `sendForJson` decodes it after the status is read, and a failure
 /// is classified through [_AdminHouseholdFailures]. It does not build or own
 /// its Dio. The roster of a household's detail is read with

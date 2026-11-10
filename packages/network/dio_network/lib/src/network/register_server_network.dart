@@ -120,93 +120,85 @@ void registerServerNetwork({
     providerBrowser: providerBrowser,
   );
   // Disposable, so the container closes it with the scope.
-  container.registerSingleton<AuthRepository>(authRepository);
-
-  // #97: the per-server feedback transport. Registered here — not in its
-  // own installer — per the registration convention: services sharing a
-  // per-server resource register in that resource's installer, and this
-  // shares the per-server Dio (which carries the base URL and the
-  // BetterAuth session the feedback endpoint requires). Const and
-  // stateless; nothing to dispose (the container owns the Dio).
-  container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
-
-  // #39: the per-server household remote. Same convention as the feedback
-  // transport above — it shares the per-server Dio (base URL + BetterAuth
-  // session the `/api/households` endpoints require) and adds no auth of its
-  // own. Const and stateless; the container owns the Dio.
-  container.registerSingleton<HouseholdRemoteDataSource>(
-    HouseholdRemoteDataSourceImpl(dio),
-  );
-
-  // #455: the per-server household invite remote, for the invite screens.
-  // Same convention and placement as the household remote above: it shares
-  // the per-server Dio and adds no auth of its own. Const and stateless; the
-  // container owns the Dio.
-  container.registerSingleton<HouseholdInviteRemoteDataSource>(
-    HouseholdInviteRemoteDataSourceImpl(dio),
-  );
-
-  // #480: the per-server household member remote, for changing a member's
-  // role and removing a member. Same convention and placement as the
-  // remotes above: it shares the per-server Dio and adds no auth of its own.
-  // Const and stateless; the container owns the Dio.
-  container.registerSingleton<HouseholdMemberRemoteDataSource>(
-    HouseholdMemberRemoteDataSourceImpl(dio),
-  );
-
-  // #499: the per-server user remote, for the screens that pick people by
-  // searching. Same convention and placement as the invite remote above: it
-  // shares the per-server Dio (base URL + the BetterAuth session
-  // `/api/users/search` requires) and adds no auth of its own. Const and
-  // stateless; the container owns the Dio.
-  container.registerSingleton<UserRemoteDataSource>(
-    UserRemoteDataSourceImpl(dio),
-  );
-
-  // #253: the per-server collection remote — the network seam the collection
-  // slice had none of. Same convention and the same placement as the household
-  // remote above: it shares the per-server Dio (base URL + the BetterAuth
-  // session `/api/game-collections` requires) and adds no auth of its own.
-  // Const and stateless; the container owns the Dio.
-  //
-  // The read side feeds the collection hydrate (#259), and the write side is
-  // what the sync queue's sender pushes queued collection operations through
-  // (#121).
-  container.registerSingleton<GameCollectionRemoteDataSource>(
-    GameCollectionRemoteDataSourceImpl(dio),
-  );
-
-  // #41: the per-server DataGateway remote, for the admin screen and the read
-  // that decides whether the drawer offers it. Same convention and placement
-  // as the two remotes above: the per-server Dio carries the base URL and the
-  // session `/api/data-gateways` requires. Const and stateless; the container
-  // owns the Dio.
-  container.registerSingleton<DataGatewayRemoteDataSource>(
-    DataGatewayRemoteDataSourceImpl(dio),
-  );
-
-  // #684: the per-server staff households remote, for the admin households
-  // section. Same convention and placement as the DataGateway remote: the
-  // per-server Dio carries the base URL and the session `/api/admin/households`
-  // requires. Const and stateless; the container owns the Dio.
-  container.registerSingleton<AdminHouseholdRemoteDataSource>(
-    AdminHouseholdRemoteDataSourceImpl(dio),
-  );
-
-  // #42: the per-server games remote, for browse, search and the game
-  // detail. Same convention and placement as the remotes above: the
-  // per-server Dio carries the base URL and the session `/api/games`
-  // requires. Const and stateless; the container owns the Dio. Its search
-  // asks for a longer receive timeout per request than this Dio's default.
-  container.registerSingleton<GamesRemoteDataSource>(
-    GamesRemoteDataSourceImpl(dio),
-  );
-
-  // #496: the per-server event remote, for the event hydrate. Same convention
-  // and placement as the remotes above: the per-server Dio carries the base
-  // URL and the session `/api/events` requires. Const and stateless; the
-  // container owns the Dio.
-  container.registerSingleton<EventRemoteDataSource>(
-    EventRemoteDataSourceImpl(dio),
-  );
+  container
+    ..registerSingleton<AuthRepository>(authRepository)
+    // #97: the per-server feedback transport. Registered here — not in its
+    // own installer — per the registration convention: services sharing a
+    // per-server resource register in that resource's installer, and this
+    // shares the per-server Dio (which carries the base URL and the
+    // BetterAuth session the feedback endpoint requires). Const and
+    // stateless; nothing to dispose (the container owns the Dio).
+    ..registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio))
+    // #39: the per-server household remote. Same convention as the feedback
+    // transport above — it shares the per-server Dio (base URL + BetterAuth
+    // session the `/api/households` endpoints require) and adds no auth of its
+    // own. Const and stateless; the container owns the Dio.
+    ..registerSingleton<HouseholdRemoteDataSource>(
+      HouseholdRemoteDataSourceImpl(dio),
+    )
+    // #455: the per-server household invite remote, for the invite screens.
+    // Same convention and placement as the household remote above: it shares
+    // the per-server Dio and adds no auth of its own. Const and stateless; the
+    // container owns the Dio.
+    ..registerSingleton<HouseholdInviteRemoteDataSource>(
+      HouseholdInviteRemoteDataSourceImpl(dio),
+    )
+    // #480: the per-server household member remote, for changing a member's
+    // role and removing a member. Same convention and placement as the
+    // remotes above: it shares the per-server Dio and adds no auth of its own.
+    // Const and stateless; the container owns the Dio.
+    ..registerSingleton<HouseholdMemberRemoteDataSource>(
+      HouseholdMemberRemoteDataSourceImpl(dio),
+    )
+    // #499: the per-server user remote, for the screens that pick people by
+    // searching. Same convention and placement as the invite remote above: it
+    // shares the per-server Dio (base URL + the BetterAuth session
+    // `/api/users/search` requires) and adds no auth of its own. Const and
+    // stateless; the container owns the Dio.
+    ..registerSingleton<UserRemoteDataSource>(
+      UserRemoteDataSourceImpl(dio),
+    )
+    // #253: the per-server collection remote — the network seam the collection
+    // slice had none of. Same convention and the same placement as the
+    // household remote above: it shares the per-server Dio (base URL + the
+    // BetterAuth session `/api/game-collections` requires) and adds no auth of
+    // its own. Const and stateless; the container owns the Dio.
+    //
+    // The read side feeds the collection hydrate (#259), and the write side is
+    // what the sync queue's sender pushes queued collection operations through
+    // (#121).
+    ..registerSingleton<GameCollectionRemoteDataSource>(
+      GameCollectionRemoteDataSourceImpl(dio),
+    )
+    // #41: the per-server DataGateway remote, for the admin screen and the read
+    // that decides whether the drawer offers it. Same convention and placement
+    // as the two remotes above: the per-server Dio carries the base URL and the
+    // session `/api/data-gateways` requires. Const and stateless; the container
+    // owns the Dio.
+    ..registerSingleton<DataGatewayRemoteDataSource>(
+      DataGatewayRemoteDataSourceImpl(dio),
+    )
+    // #684: the per-server staff households remote, for the admin households
+    // section. Same convention and placement as the DataGateway remote: the
+    // per-server Dio carries the base URL and the session
+    // `/api/admin/households` requires. Const and stateless; the container
+    // owns the Dio.
+    ..registerSingleton<AdminHouseholdRemoteDataSource>(
+      AdminHouseholdRemoteDataSourceImpl(dio),
+    )
+    // #42: the per-server games remote, for browse, search and the game
+    // detail. Same convention and placement as the remotes above: the
+    // per-server Dio carries the base URL and the session `/api/games`
+    // requires. Const and stateless; the container owns the Dio. Its search
+    // asks for a longer receive timeout per request than this Dio's default.
+    ..registerSingleton<GamesRemoteDataSource>(
+      GamesRemoteDataSourceImpl(dio),
+    )
+    // #496: the per-server event remote, for the event hydrate. Same convention
+    // and placement as the remotes above: the per-server Dio carries the base
+    // URL and the session `/api/events` requires. Const and stateless; the
+    // container owns the Dio.
+    ..registerSingleton<EventRemoteDataSource>(
+      EventRemoteDataSourceImpl(dio),
+    );
 }

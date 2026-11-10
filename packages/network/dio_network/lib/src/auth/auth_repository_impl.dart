@@ -28,7 +28,7 @@ import 'package:observability/observability.dart';
 /// [DependencyContainer] after the [ServerIdentity] has been fetched.
 /// Never shared across server contexts.
 ///
-/// The [Dio] instance is built and owned by the per-server [DioFactory] and
+/// The [Dio] instance is built and owned by the per-server `DioFactory` and
 /// injected here. Token attachment is handled by a [TokenInterceptor] in the
 /// factory's interceptor stack, not by this repository — so every repository
 /// sharing the same [Dio] inherits authentication regardless of construction

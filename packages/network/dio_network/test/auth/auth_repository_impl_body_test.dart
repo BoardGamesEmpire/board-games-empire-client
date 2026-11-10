@@ -78,8 +78,8 @@ Map<String, dynamic> _sessionJson() => {
 };
 
 const _kHtml =
-    '<!doctype html><html><head><title>Sign in</title></head>'
-    '<body><h1>Corporate proxy</h1></body></html>';
+    '<!doctype html><html><head><title>Sign '
+    'in</title></head><body><h1>Corporate proxy</h1></body></html>';
 
 /// A genuine JSON session body cut off mid-document, the shape a dropped
 /// connection produces.

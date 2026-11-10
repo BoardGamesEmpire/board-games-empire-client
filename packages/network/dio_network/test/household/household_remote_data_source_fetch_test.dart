@@ -340,7 +340,8 @@ void main() {
       // The distinction that keeps `unknown` meaningful: a custom role name
       // degrades, a broken payload fails loudly.
       final row = _householdRow(members: [_memberRow()]);
-      (row['members']! as List).first['role'] = 'HouseholdOwner';
+      ((row['members']! as List).first as Map<String, dynamic>)['role'] =
+          'HouseholdOwner';
       stubGet(_resp(_envelope([row])));
 
       expect(
@@ -377,7 +378,9 @@ void main() {
 
     test('a member missing showAllGames is permanent, not permissive', () {
       final row = _householdRow(members: [_memberRow()]);
-      (row['members']! as List).first.remove('showAllGames');
+      ((row['members']! as List).first as Map<String, dynamic>).remove(
+        'showAllGames',
+      );
       stubGet(_resp(_envelope([row])));
 
       expect(
@@ -822,7 +825,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemotePermanentException>().having(
             (e) => e.statusCode,
@@ -839,7 +842,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemotePermanentException>().having(
             (e) => e.statusCode,
@@ -860,7 +863,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemoteTransientException>().having(
             (e) => e.statusCode,
@@ -881,7 +884,7 @@ void main() {
       );
 
       await expectLater(
-        () => r.fetchHouseholds(),
+        r.fetchHouseholds,
         throwsA(
           isA<HouseholdRemoteTransientException>().having(
             (e) => e.statusCode,
