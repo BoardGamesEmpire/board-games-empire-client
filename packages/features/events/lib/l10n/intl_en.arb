@@ -580,9 +580,13 @@
   "@eventsRoleDescriptionModerator": {
     "description": "On the Add people page, the line under the Moderator role (eventsRoleLabelModerator) saying what the person added may do: change the event's details and its dates, decide on the games put forward for it, and add people to it or take them off, but only participants, guests and spectators."
   },
+  "eventsDetailTabDetails": "Details",
+  "@eventsDetailTabDetails": {
+    "description": "Label of the first tab on an event's screen, beside the Games tab (eventsDetailGames). The tab holds the event itself: its details, its dates and who's coming. Keep it short: two tabs share the width of a phone."
+  },
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {
-    "description": "Heading of the section of an event's screen that will list the games planned for it."
+    "description": "Label of the second tab on an event's screen, beside the Details tab (eventsDetailTabDetails). The tab holds the games the people coming to the event offer to bring. Keep it short: two tabs share the width of a phone."
   },
   "eventsDetailAttendeesNotLoaded": "Not loaded yet.",
   "@eventsDetailAttendeesNotLoaded": {
@@ -591,10 +595,6 @@
   "eventsDetailAttendeesHidden": "You can't see who's coming to this event.",
   "@eventsDetailAttendeesHidden": {
     "description": "In the who's-coming section of an event's screen, when the server said the user may not see the list of people. It does NOT mean nobody is coming."
-  },
-  "eventsDetailGamesNotYet": "This event's games will show here.",
-  "@eventsDetailGamesNotYet": {
-    "description": "In the games section of an event's screen, which this version of the app does not fill yet. Says where the games will appear, without promising when."
   },
   "eventsDetailRefreshFailed": "This may be out of date: we couldn't refresh it.",
   "@eventsDetailRefreshFailed": {

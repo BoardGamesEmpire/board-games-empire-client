@@ -7,6 +7,7 @@ import 'package:events/src/bloc/event_actions_state.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_event.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_poll_bloc.dart';
 import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
@@ -22,6 +23,7 @@ import 'package:events/src/widgets/destructive_button_style.dart';
 import 'package:events/src/widgets/event_date_dialogs.dart';
 import 'package:events/src/widgets/event_date_poll.dart';
 import 'package:events/src/widgets/event_detail_sections.dart';
+import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
@@ -33,16 +35,37 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// One event (#498): its header, its dates, who's coming and its games, read
-/// reactively from the local cache and from the server once per open.
+/// One event (#498): its header, its dates and who's coming, read reactively
+/// from the local cache and from the server once per open, and a tab for its
+/// games (#516).
 ///
 /// The household detail's shape: the caller resolves the repository, the
 /// optional server and streams and the callbacks, and the screen owns its
 /// blocs: the detail's ([EventDetailBloc], whose class doc has the state
 /// table) and, where Delete can be offered, the actions'
-/// ([EventActionsBloc]). Loading, not found and error are short centred
-/// pages. Ready is one scrolling page, with the couldn't-refresh banner over
-/// the cached event where the last read failed.
+/// ([EventActionsBloc]), the poll's ([EventPollBloc]) and the games pool's
+/// ([EventGamesBloc]). Loading, not found and error are short centred pages.
+/// Ready is one scroll view of slivers ([BgePage.slivers]).
+///
+/// ## The page and its tabs
+///
+/// What answers the whole screen comes first, in the page's header: the
+/// couldn't-refresh banner where the last read failed, then how the last
+/// action and the last vote went. The header stays in the semantics tree
+/// however far down the page is scrolled, so a banner that lands while the
+/// user is far down the roster is heard as it arrives ([BgePage.header] says
+/// how, per platform), and it reveals itself.
+///
+/// Under it, where the screen has its actions' blocs and the event is one the
+/// server knows, a bar of two tabs (#516): Details, with the event's header,
+/// its dates and who's coming, and Games, for the games the people coming
+/// offer to bring. An event made offline has nothing on the server to offer
+/// games to, and a screen with no server or no way back has no games bloc,
+/// so both show Details alone, with no bar. Choosing a tab swaps what is
+/// under the bar and keeps the bar, so focus stays on the tab chosen. The
+/// selected tab is held above the detail's builder, so no read, write or
+/// clock tick sets it back. It isn't in the route: the screen opens on
+/// Details.
 ///
 /// ## What it doesn't show yet
 ///
@@ -52,8 +75,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// who's coming the viewer's own answer to the invitation (#508), and
 /// adding people, someone else's answer and removal (#510), to a viewer the
 /// role table gives them. The other actions' issues (#500, #503–#518) add
-/// theirs. The games section says the event's games will show there, until
-/// #519 has something to show.
+/// theirs. The Games tab is empty: nothing reads the pool yet.
 ///
 /// ## Delete
 ///
@@ -306,8 +328,14 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on who's coming's *Add people* button (#510).
   static const Key addAttendeeKey = Key('event_detail.add_attendee');
 
-  /// Key on the games section.
-  static const Key gamesKey = Key('event_detail.games');
+  /// Key on the tab bar (#516), Details and Games, where the screen shows it.
+  static const Key tabBarKey = Key('event_detail.tab_bar');
+
+  /// Key on one tab of the bar (#516).
+  static Key tabKey(EventDetailTab tab) => Key('event_detail.tab_${tab.name}');
+
+  /// Key on what the Games tab shows under the bar (#516).
+  static const Key gamesBodyKey = Key('event_detail.games_body');
 
   /// Key on the viewer's role line.
   static const Key roleKey = Key('event_detail.role');
@@ -465,7 +493,7 @@ class EventDetailScreen extends StatelessWidget {
           ),
         ),
         // None without a server or a way back, and then nothing offers
-        // Delete, a date's actions or the poll.
+        // Delete, a date's actions, the poll or the Games tab.
         if (hasActions) ...[
           BlocProvider<EventActionsBloc>(
             create: (_) => EventActionsBloc(
@@ -477,6 +505,10 @@ class EventDetailScreen extends StatelessWidget {
           BlocProvider<EventPollBloc>(
             create: (_) =>
                 EventPollBloc(remote: remote, confirmSession: confirmSession),
+          ),
+          BlocProvider<EventGamesBloc>(
+            create: (_) =>
+                EventGamesBloc(remote: remote, confirmSession: confirmSession),
           ),
         ],
       ],
@@ -553,6 +585,24 @@ class _EventDetailView extends StatelessWidget {
     );
     if (!hasActions) return page;
 
+    // The selected tab (#516), held above the detail's builder so that no
+    // read, write or clock tick under it sets it back to Details. Not in the
+    // route: the screen opens on Details. Under reduced motion the bar's
+    // indicator moves at once; the controller keeps its tab when that
+    // setting changes.
+    return DefaultTabController(
+      length: EventDetailTab.values.length,
+      animationDuration: BgeMotion.durationOf(
+        context,
+        BgeTokens.of(context).motionMedium,
+      ),
+      child: _listeners(page),
+    );
+  }
+
+  /// [page] under the listeners that answer the actions' and the poll's
+  /// ends, and read the poll as the detail calls for it.
+  Widget _listeners(Widget page) {
     return MultiBlocListener(
       listeners: [
         BlocListener<EventActionsBloc, EventActionsState>(
@@ -692,7 +742,15 @@ void _readPoll(BuildContext context, EventDetailState state) {
   );
 }
 
-/// The event itself.
+/// The event itself: one scroll view of slivers (#516). What answers the
+/// whole screen, the refresh banner and the outcome banners, comes first, in
+/// the page's header, then the tab bar where the screen shows one, then the
+/// selected tab.
+///
+/// The bar shows where the screen has its actions' blocs and the event is
+/// one the server knows: an event made offline has nothing on the server to
+/// offer games to. Without the bar the page is Details alone, whatever the
+/// controller holds.
 class _ReadyPage extends StatelessWidget {
   const _ReadyPage({
     required this.state,
@@ -702,11 +760,21 @@ class _ReadyPage extends StatelessWidget {
     this.onAddAttendee,
   });
 
+  /// Key on the sliver that holds the tab bar.
+  static const _tabBarSliverKey = ValueKey<String>(
+    'event_detail.tab_bar_sliver',
+  );
+
+  /// Key on the sliver that holds Details, so it keeps its state where the
+  /// bar comes in above it, as when an event made offline reaches the
+  /// server.
+  static const _detailsKey = ValueKey<String>('event_detail.details');
+
   final EventDetailReady state;
   final DateTime Function() now;
 
-  /// Whether an [EventActionsBloc] and an [EventPollBloc] are provided
-  /// above.
+  /// Whether an [EventActionsBloc], an [EventPollBloc], an [EventGamesBloc]
+  /// and the tabs' [TabController] are provided above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
@@ -720,31 +788,36 @@ class _ReadyPage extends StatelessWidget {
       occurrences: snapshot.occurrences,
       now: now,
       builder: (context) {
-        if (!hasActions) return _build(context, null, null);
+        if (!hasActions) return _build(context, null, null, null);
 
+        final tabs = DefaultTabController.of(context);
         return BlocBuilder<EventActionsBloc, EventActionsState>(
           builder: (context, actionsState) =>
               BlocBuilder<EventPollBloc, EventPollState>(
-                builder: (context, pollState) =>
-                    _build(context, actionsState, pollState),
+                builder: (context, pollState) => ListenableBuilder(
+                  // Built again as the selected tab changes.
+                  listenable: tabs,
+                  builder: (context, _) =>
+                      _build(context, actionsState, pollState, tabs),
+                ),
               ),
         );
       },
     );
   }
 
-  /// [actionsState] and [pollState] are null where there are no such blocs,
-  /// and then the app bar offers no menu, and no poll shows.
+  /// [actionsState], [pollState] and [tabs] are null where there are no such
+  /// blocs, and then the app bar offers no menu, no poll shows and there are
+  /// no tabs.
   Widget _build(
     BuildContext context,
     EventActionsState? actionsState,
     EventPollState? pollState,
+    TabController? tabs,
   ) {
     final l10n = EventsLocalizations.of(context);
     final snapshot = state.detail.snapshot;
     final event = snapshot.event;
-    final outcome = actionsState?.outcome;
-    final pollOutcome = pollState?.outcome;
     // A request on its way, or a delete done and the screen leaving.
     final acting =
         actionsState != null && (actionsState.busy || _deleted(actionsState));
@@ -754,8 +827,13 @@ class _ReadyPage extends StatelessWidget {
       state.actions,
     );
     final deletes = state.actions.contains(EventAction.delete);
+    // The bar shows only where there is a server that knows the event.
+    final shownTabs = event.isLocalOnly ? null : tabs;
+    final tab = shownTabs == null
+        ? EventDetailTab.details
+        : EventDetailTab.values[shownTabs.index];
 
-    return BgePage(
+    return BgePage.slivers(
       // The section name, not the event's: the title is the page's heading
       // below, where a long one wraps rather than being cut short.
       title: Text(l10n.eventsTitle),
@@ -777,92 +855,168 @@ class _ReadyPage extends StatelessWidget {
           ),
       ],
       width: BgePageWidth.pane,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (state.refreshFailed || state.refreshing) ...[
-            BgeRefreshBanner(
-              key: EventDetailScreen.refreshBannerKey,
-              retryKey: EventDetailScreen.refreshRetryKey,
-              failedMessage: l10n.eventsDetailRefreshFailed,
-              inProgressLabel: l10n.eventsRefreshInProgress,
-              retryLabel: l10n.eventsRefreshRetry,
-              refreshing: state.refreshing,
-              // No read while the delete is out or done: its answer could land
-              // after the removal and cache the event again (#501).
-              onRetry: state.canRetry && !acting ? () => _retry(context) : null,
+      // Details holds no list. The Games tab holds no rows until its pool is
+      // read (#516).
+      semanticChildCount: switch (tab) {
+        EventDetailTab.details => null,
+        EventDetailTab.games => 0,
+      },
+      // Above the tabs, and in the semantics tree however far down the page
+      // is, so a banner that lands while the user is far down is heard as it
+      // arrives. Passed on every build, an empty column with nothing to say,
+      // so the call site keeps one shape, as the style guide's Tabs section
+      // asks; an empty header adds no node and no height.
+      header: _banners(context, actionsState, pollState, acting: acting),
+      slivers: [
+        if (shownTabs != null)
+          SliverToBoxAdapter(
+            key: _tabBarSliverKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EventDetailTabBar(
+                  key: EventDetailScreen.tabBarKey,
+                  controller: shownTabs,
+                ),
+                const BgeGap.lg(),
+              ],
             ),
-            const BgeGap.lg(),
-          ],
-          // A delete's done has no banner: the screen leaves with a snackbar.
-          if (actionsState != null &&
-              outcome != null &&
-              !_deleted(actionsState)) ...[
-            _ActionOutcomeBanner(
-              bannerKey: EventDetailScreen.actionOutcomeKey,
-              outcome: outcome,
-              onDismiss: () => context.read<EventActionsBloc>().add(
-                const EventActionOutcomeDismissed(),
+          ),
+        ...switch (tab) {
+          EventDetailTab.details => [
+            SliverToBoxAdapter(
+              key: _detailsKey,
+              child: _details(
+                context,
+                actionsState,
+                pollState,
+                acting: acting,
               ),
             ),
-            const BgeGap.lg(),
           ],
-          // A vote's, beside the actions': nothing holds a date write back
-          // for a vote that is out, so both can end (#507).
-          if (pollOutcome != null) ...[
-            _ActionOutcomeBanner(
-              bannerKey: EventDetailScreen.pollOutcomeKey,
-              outcome: pollOutcome,
-              onDismiss: () => context.read<EventPollBloc>().add(
-                const EventPollOutcomeDismissed(),
-              ),
-            ),
-            const BgeGap.lg(),
+          // Holds no rows until the pool is read (#516).
+          EventDetailTab.games => const [
+            SliverToBoxAdapter(key: EventDetailScreen.gamesBodyKey),
           ],
-          EventDetailHeader(
-            event: event,
-            occurrences: snapshot.occurrences,
-            now: now,
-            householdName: state.householdName,
-            role: state.detail.attendance?.role,
-          ),
-          const BgeGap.xl(),
-          _Dates(
-            state: state,
-            now: now,
-            hasActions: actionsState != null,
-            poll: pollState,
-            onWhoAnswered: onWhoAnswered,
-            acting: acting,
-            // Not while a read runs, whose answer landing after the write
-            // would put the date back as it was (#589). Nor while a request
-            // is out or once the delete is done.
-            enabled: !state.reading && !acting,
+        },
+      ],
+    );
+  }
+
+  /// What answers the whole screen, over every tab: the couldn't-refresh
+  /// banner, then how the last action and the last vote went. An empty
+  /// column where none shows. [acting] is [_build]'s.
+  Widget _banners(
+    BuildContext context,
+    EventActionsState? actionsState,
+    EventPollState? pollState, {
+    required bool acting,
+  }) {
+    final l10n = EventsLocalizations.of(context);
+    final outcome = actionsState?.outcome;
+    final pollOutcome = pollState?.outcome;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (state.refreshFailed || state.refreshing) ...[
+          BgeRefreshBanner(
+            key: EventDetailScreen.refreshBannerKey,
+            retryKey: EventDetailScreen.refreshRetryKey,
+            failedMessage: l10n.eventsDetailRefreshFailed,
+            inProgressLabel: l10n.eventsRefreshInProgress,
+            retryLabel: l10n.eventsRefreshRetry,
+            refreshing: state.refreshing,
+            // No read while the delete is out or done: its answer could land
+            // after the removal and cache the event again (#501).
+            onRetry: state.canRetry && !acting ? () => _retry(context) : null,
           ),
           const BgeGap.lg(),
-          EventAttendeesSection(
-            attendees: snapshot.attendees,
-            controls: _rsvpControls(context, actionsState, acting: acting),
-            reach: actionsState == null
-                ? AttendeeReach.none
-                : _rosterReach(state),
-            viewerAttendeeId: state.detail.attendance?.id,
-            // As the dates' controls are: not while a read runs, whose answer
-            // landing after the write would put the row back as it was
-            // (#589), nor while a request is out or once the delete is done.
-            enabled: !state.reading && !acting,
-            onAnswer: actionsState == null
-                ? null
-                : (row, answer) => unawaited(_answerFor(context, row, answer)),
-            onRemove: actionsState == null
-                ? null
-                : (row) => unawaited(_removeAttendee(context, row)),
-            addButton: _addButton(context, actionsState, acting: acting),
-          ),
-          const BgeGap.lg(),
-          const EventGamesSection(),
         ],
-      ),
+        // A delete's done has no banner: the screen leaves with a snackbar.
+        if (actionsState != null &&
+            outcome != null &&
+            !_deleted(actionsState)) ...[
+          _ActionOutcomeBanner(
+            bannerKey: EventDetailScreen.actionOutcomeKey,
+            outcome: outcome,
+            onDismiss: () => context.read<EventActionsBloc>().add(
+              const EventActionOutcomeDismissed(),
+            ),
+          ),
+          const BgeGap.lg(),
+        ],
+        // A vote's, beside the actions': nothing holds a date write back
+        // for a vote that is out, so both can end (#507).
+        if (pollOutcome != null) ...[
+          _ActionOutcomeBanner(
+            bannerKey: EventDetailScreen.pollOutcomeKey,
+            outcome: pollOutcome,
+            onDismiss: () => context.read<EventPollBloc>().add(
+              const EventPollOutcomeDismissed(),
+            ),
+          ),
+          const BgeGap.lg(),
+        ],
+      ],
+    );
+  }
+
+  /// The Details tab, and the whole page where there are no tabs: the
+  /// event's header, its dates and who's coming. [acting] is [_build]'s.
+  Widget _details(
+    BuildContext context,
+    EventActionsState? actionsState,
+    EventPollState? pollState, {
+    required bool acting,
+  }) {
+    final snapshot = state.detail.snapshot;
+    final event = snapshot.event;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EventDetailHeader(
+          event: event,
+          occurrences: snapshot.occurrences,
+          now: now,
+          householdName: state.householdName,
+          role: state.detail.attendance?.role,
+        ),
+        const BgeGap.xl(),
+        _Dates(
+          state: state,
+          now: now,
+          hasActions: actionsState != null,
+          poll: pollState,
+          onWhoAnswered: onWhoAnswered,
+          acting: acting,
+          // Not while a read runs, whose answer landing after the write
+          // would put the date back as it was (#589). Nor while a request
+          // is out or once the delete is done.
+          enabled: !state.reading && !acting,
+        ),
+        const BgeGap.lg(),
+        EventAttendeesSection(
+          attendees: snapshot.attendees,
+          controls: _rsvpControls(context, actionsState, acting: acting),
+          reach: actionsState == null
+              ? AttendeeReach.none
+              : _rosterReach(state),
+          viewerAttendeeId: state.detail.attendance?.id,
+          // As the dates' controls are: not while a read runs, whose answer
+          // landing after the write would put the row back as it was
+          // (#589), nor while a request is out or once the delete is done.
+          enabled: !state.reading && !acting,
+          onAnswer: actionsState == null
+              ? null
+              : (row, answer) => unawaited(_answerFor(context, row, answer)),
+          onRemove: actionsState == null
+              ? null
+              : (row) => unawaited(_removeAttendee(context, row)),
+          addButton: _addButton(context, actionsState, acting: acting),
+        ),
+      ],
     );
   }
 

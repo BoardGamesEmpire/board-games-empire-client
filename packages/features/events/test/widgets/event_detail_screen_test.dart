@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
@@ -206,11 +207,12 @@ EventOccurrence _ahead() =>
     confirmed('o-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1');
 
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
-/// header, the dates, who's coming and the games, and the refresh banner it
-/// shares with the overview. Then Delete (#501), from the menu to the screen
-/// leaving, the event's status writes (#502), the dates' menus and dialogs
-/// (#506), the poll on the dates (#507), the viewer's own answer (#508), and
-/// the page moving on with the clock (#502, #655).
+/// header, the dates and who's coming, the Details and Games tabs (#516), and
+/// the refresh banner it shares with the overview. Then Delete (#501), from
+/// the menu to the screen leaving, the event's status writes (#502), the
+/// dates' menus and dialogs (#506), the poll on the dates (#507), the
+/// viewer's own answer (#508), and the page moving on with the clock (#502,
+/// #655).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -374,10 +376,27 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
-  Finder outcome() => find.byKey(EventDetailScreen.actionOutcomeKey);
+  // The banners sit in the page's header (#516), which is built and in the
+  // semantics tree wherever the page is scrolled, but which `find` counts as
+  // offstage until the banner's reveal has scrolled it into view. So the
+  // banners' finders look past that, and a test that needs the banner heard
+  // before then says so with [liveRegionSaying].
+  Finder outcome() =>
+      find.byKey(EventDetailScreen.actionOutcomeKey, skipOffstage: false);
 
-  Finder inOutcome(String text) =>
-      find.descendant(of: outcome(), matching: find.text(text));
+  Finder inOutcome(String text) => find.descendant(
+    of: outcome(),
+    matching: find.text(text, skipOffstage: false),
+    skipOffstage: false,
+  );
+
+  /// The live region saying [text], found in the semantics tree: what a
+  /// screen reader hears, whether or not the banner is on screen yet.
+  SemanticsFinder liveRegionSaying(String text) =>
+      find.semantics.byPredicate((node) {
+        final data = node.getSemanticsData();
+        return data.flagsCollection.isLiveRegion && data.label.contains(text);
+      }, describeMatch: (_) => 'a live region saying "$text"');
 
   BgeBannerTone toneOf(WidgetTester tester) =>
       tester.widget<BgeInlineBanner>(outcome()).tone;
@@ -790,22 +809,10 @@ void main() {
     });
   });
 
-  testWidgets('the games section says not yet', (tester) async {
-    await show(tester, _detail());
-
-    expect(
-      inSection(
-        EventDetailScreen.gamesKey,
-        "This event's games will show here.",
-      ),
-      findsOneWidget,
-    );
-  });
-
   testWidgets('section headings are headings', (tester) async {
     await show(tester, _detail());
 
-    for (final heading in ['Dates', "Who's coming", 'Games']) {
+    for (final heading in ['Dates', "Who's coming"]) {
       expect(
         tester.getSemantics(find.text(heading)),
         isSemantics(isHeader: true),
@@ -818,11 +825,422 @@ void main() {
     await show(tester, _detail());
 
     final tops = [
-      for (final text in ['Catan night', 'Dates', "Who's coming", 'Games'])
+      for (final text in ['Catan night', 'Dates', "Who's coming"])
         tester.getTopLeft(find.text(text)).dy,
     ];
     expect(tops, orderedEquals([...tops]..sort()));
-    expect(tops.toSet(), hasLength(4));
+    expect(tops.toSet(), hasLength(3));
+  });
+
+  group('tabs (#516)', () {
+    const details = EventDetailTab.details;
+    const games = EventDetailTab.games;
+    const notYetCopy = "This event's games will show here.";
+
+    Finder bar() => find.byKey(EventDetailScreen.tabBarKey);
+    Finder tab(EventDetailTab which) =>
+        find.byKey(EventDetailScreen.tabKey(which));
+    // Empty for now (#516), so it has no extent, and a finder that skips
+    // what isn't on screen would pass it over.
+    Finder gamesBody() =>
+        find.byKey(EventDetailScreen.gamesBodyKey, skipOffstage: false);
+    Finder dates() => find.byKey(EventDetailScreen.datesKey);
+    Finder roster() => find.byKey(EventDetailScreen.attendeesKey);
+
+    /// The page's one scroll view, whose count a screen reader reads.
+    CustomScrollView scrollView(WidgetTester tester) =>
+        tester.widget<CustomScrollView>(find.byType(CustomScrollView));
+
+    /// The host's view of `e-1`, with a date ahead and someone on the
+    /// roster.
+    EventDetail hosted() => _detail(
+      occurrences: [_ahead()],
+      attendees: [
+        _attending(EventRole.host),
+        _member('att-2', displayName: 'Ada'),
+      ],
+      attendance: _attending(EventRole.host),
+    );
+
+    /// A server whose reads serve [detail], and whose deletes answer from
+    /// [deleted].
+    FakeEventRemote serving(
+      EventDetail detail, {
+      FutureOr<void> Function(String id)? deleted,
+    }) => FakeEventRemote.detail(
+      (_) => detail.snapshot,
+      deleted: deleted ?? (_) {},
+    );
+
+    /// Shows [detail] with a server and a way back, as the app opens it, and
+    /// lets the read it starts end.
+    Future<void> showTabbed(
+      WidgetTester tester,
+      EventDetail detail, {
+      EventRemoteDataSource? remote,
+      DateTime Function()? clock,
+    }) async {
+      await show(
+        tester,
+        detail,
+        remote: remote ?? serving(detail),
+        onBack: (_) {},
+        clock: clock,
+      );
+      await settle(tester);
+    }
+
+    Future<void> choose(WidgetTester tester, EventDetailTab which) async {
+      await tester.tap(tab(which));
+      await animate(tester);
+    }
+
+    void expectDetails() {
+      expect(find.text('Catan night'), findsOneWidget);
+      expect(dates(), findsOneWidget);
+      expect(roster(), findsOneWidget);
+      expect(gamesBody(), findsNothing);
+    }
+
+    void expectGames() {
+      expect(gamesBody(), findsOneWidget);
+      expect(dates(), findsNothing);
+      expect(roster(), findsNothing);
+    }
+
+    /// [banner] is on screen, and wholly above the bar.
+    void expectAboveBar(WidgetTester tester, Finder banner) {
+      expect(banner, findsOneWidget);
+      expect(
+        tester.getRect(banner).bottom,
+        lessThanOrEqualTo(tester.getRect(bar()).top),
+      );
+    }
+
+    testWidgets('the screen opens on Details, with a Games tab beside it', (
+      tester,
+    ) async {
+      await showTabbed(tester, hosted());
+
+      expect(bar(), findsOneWidget);
+      expect(
+        find.descendant(of: tab(details), matching: find.text('Details')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: tab(games), matching: find.text('Games')),
+        findsOneWidget,
+      );
+      // One row: Details first, Games after it.
+      expect(
+        tester.getCenter(tab(games)).dy,
+        tester.getCenter(tab(details)).dy,
+      );
+      expect(
+        tester.getCenter(tab(games)).dx,
+        greaterThan(tester.getCenter(tab(details)).dx),
+      );
+      expectDetails();
+      // The bar heads the event, title included.
+      expect(
+        tester.getRect(bar()).bottom,
+        lessThanOrEqualTo(tester.getTopLeft(find.text('Catan night')).dy),
+      );
+      expect(scrollView(tester).semanticChildCount, isNull);
+    });
+
+    testWidgets('with no remote there is no tab bar', (tester) async {
+      await show(tester, hosted(), onBack: (_) {});
+
+      expect(bar(), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
+      expect(find.text('Details'), findsNothing);
+      expect(find.text('Games'), findsNothing);
+      expectDetails();
+    });
+
+    testWidgets('an event made offline has no tab bar', (tester) async {
+      final detail = hosted();
+      await showTabbed(
+        tester,
+        _detail(
+          event: _event().copyWith(isLocalOnly: true),
+          occurrences: detail.snapshot.occurrences,
+          attendees: detail.snapshot.attendees,
+          attendance: detail.attendance,
+        ),
+      );
+
+      expect(bar(), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
+      expect(find.text('Details'), findsNothing);
+      expect(find.text('Games'), findsNothing);
+      expectDetails();
+    });
+
+    testWidgets(
+      'choosing Games shows the games tab and hides the dates and the roster',
+      (tester) async {
+        await showTabbed(tester, hosted());
+
+        await choose(tester, games);
+
+        expectGames();
+        expect(bar(), findsOneWidget);
+        // An empty pool holds no rows yet (#516).
+        expect(scrollView(tester).semanticChildCount, 0);
+      },
+    );
+
+    testWidgets('choosing Details again shows the dates and the roster', (
+      tester,
+    ) async {
+      await showTabbed(tester, hosted());
+      await choose(tester, games);
+
+      await choose(tester, details);
+
+      expectDetails();
+      expect(scrollView(tester).semanticChildCount, isNull);
+    });
+
+    testWidgets('a failed refresh shows above the tabs on both', (
+      tester,
+    ) async {
+      final reads = <Completer<EventSnapshot>>[];
+      await show(tester, hosted(), remote: scripted(reads), onBack: (_) {});
+      reads.single.completeError(_offline);
+      await settle(tester);
+
+      final banner = find.byKey(EventDetailScreen.refreshBannerKey);
+      expectAboveBar(tester, banner);
+      expectDetails();
+
+      await choose(tester, games);
+
+      expectAboveBar(tester, banner);
+      expectGames();
+    });
+
+    testWidgets('an outcome banner shows above the tabs on both', (
+      tester,
+    ) async {
+      final detail = hosted();
+      await showTabbed(
+        tester,
+        detail,
+        remote: serving(
+          detail,
+          deleted: (_) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+        ),
+      );
+
+      tester
+          .element(bar())
+          .read<EventActionsBloc>()
+          .add(const EventDeleteRequested('e-1'));
+      await animate(tester);
+
+      expect(inOutcome(_refusedCopy), findsOneWidget);
+      expectAboveBar(tester, outcome());
+      expectDetails();
+
+      await choose(tester, games);
+
+      expect(inOutcome(_refusedCopy), findsOneWidget);
+      expectAboveBar(tester, outcome());
+      expectGames();
+    });
+
+    testWidgets('under reduced motion the tabs switch at once, and turning it '
+        'on keeps the chosen tab', (tester) async {
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await showTabbed(tester, hosted());
+      TabController tabs() => DefaultTabController.of(tester.element(bar()));
+      expect(tabs().animationDuration, isNot(Duration.zero));
+      await choose(tester, games);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pump();
+
+      expectGames();
+      expect(tabs().index, games.index);
+      expect(tabs().animationDuration, Duration.zero);
+
+      // One frame, with no time passing: the indicator is already there.
+      await tester.tap(tab(details));
+      await tester.pump();
+      expectDetails();
+      expect(tabs().indexIsChanging, isFalse);
+      expect(tabs().animation!.value, details.index);
+    });
+
+    testWidgets('an outcome is heard as it lands, however far down the page '
+        'is', (tester) async {
+      // A long roster at 320dp, scrolled to its end: the banners are many
+      // viewports above, past what a scroll view keeps built for a screen
+      // reader. They sit in the page's header, which it keeps all the same.
+      useViewSize(tester, const Size(320, 480));
+      final long = _detail(
+        occurrences: [_ahead()],
+        attendees: [
+          _attending(EventRole.host),
+          for (var i = 0; i < 30; i++)
+            _member('att-x$i', displayName: 'Person $i'),
+        ],
+        attendance: _attending(EventRole.host),
+      );
+      await showTabbed(
+        tester,
+        long,
+        remote: serving(
+          long,
+          deleted: (_) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+        ),
+      );
+      final page = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      page.jumpTo(page.maxScrollExtent);
+      await tester.pump();
+      expect(page.pixels, greaterThan(2000));
+
+      // From the scaffold: the bar is scrolled out of view.
+      tester
+          .element(find.byType(Scaffold).first)
+          .read<EventActionsBloc>()
+          .add(const EventDeleteRequested('e-1'));
+      // The answer, and frames, but no time for the reveal to move the page.
+      await settle(tester);
+      await settle(tester);
+
+      expect(page.pixels, greaterThan(2000));
+      expect(liveRegionSaying(_refusedCopy), findsOne);
+
+      // And it still comes into view.
+      await tester.pumpAndSettle();
+      expect(find.byKey(EventDetailScreen.actionOutcomeKey), findsOneWidget);
+    });
+
+    testWidgets('the chosen tab survives a refresh and a write', (
+      tester,
+    ) async {
+      final detail = hosted();
+      await showTabbed(
+        tester,
+        detail,
+        remote: serving(
+          detail,
+          deleted: (_) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+        ),
+      );
+      await choose(tester, games);
+
+      // A read the user asks for, and the cache's answer to it.
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      cache.add(hosted());
+      await settle(tester);
+      expectGames();
+
+      // A write, its outcome, and the read that outcome starts.
+      tester
+          .element(bar())
+          .read<EventActionsBloc>()
+          .add(const EventDeleteRequested('e-1'));
+      await animate(tester);
+      expect(inOutcome(_refusedCopy), findsOneWidget);
+      expectGames();
+    });
+
+    testWidgets('the chosen tab survives the clock moving the page on', (
+      tester,
+    ) async {
+      // The date starts a minute after the clock, which builds the page
+      // again then (#502).
+      var clock = now;
+      final starting = _detail(
+        occurrences: [
+          confirmed(
+            'o-1',
+            now.add(const Duration(minutes: 1)),
+          ).copyWith(eventId: 'e-1'),
+        ],
+        attendance: _attending(EventRole.host),
+      );
+      await showTabbed(tester, starting, clock: () => clock);
+      await choose(tester, games);
+
+      clock = clock.add(const Duration(minutes: 2));
+      await tester.pump(const Duration(minutes: 2));
+      await tester.pump();
+
+      expectGames();
+    });
+
+    testWidgets('the tabs say their role, which is selected, and their place', (
+      tester,
+    ) async {
+      // Disposed in the body: the framework checks for live handles before
+      // teardowns run.
+      final handle = tester.ensureSemantics();
+      await showTabbed(tester, hosted());
+
+      final tabs = find.semantics.byPredicate(
+        (node) => node.role == SemanticsRole.tab,
+      );
+      expect(tabs, findsNWidgets(2));
+      expect(
+        tabs.evaluate().where(
+          (node) =>
+              node.getSemanticsData().flagsCollection.isSelected ==
+              Tristate.isTrue,
+        ),
+        hasLength(1),
+      );
+
+      SemanticsData dataOf(EventDetailTab which) =>
+          tester.getSemantics(tab(which)).getSemanticsData();
+
+      expect(dataOf(details).role, SemanticsRole.tab);
+      expect(dataOf(details).label, contains('Details'));
+      expect(dataOf(details).label, contains('Tab 1 of 2'));
+      expect(dataOf(games).role, SemanticsRole.tab);
+      expect(dataOf(games).label, contains('Games'));
+      expect(dataOf(games).label, contains('Tab 2 of 2'));
+      expect(tester.getSemantics(tab(details)), isSemantics(isSelected: true));
+      expect(tester.getSemantics(tab(games)), isSemantics(isSelected: false));
+
+      await choose(tester, games);
+
+      expect(tester.getSemantics(tab(details)), isSemantics(isSelected: false));
+      expect(tester.getSemantics(tab(games)), isSemantics(isSelected: true));
+      handle.dispose();
+    });
+
+    testWidgets('Details no longer says games will show here', (tester) async {
+      await showTabbed(tester, hosted());
+
+      expect(find.text(notYetCopy), findsNothing);
+      // The tab is the only Games on the page.
+      expect(find.text('Games'), findsOneWidget);
+      expect(
+        find.descendant(of: bar(), matching: find.text('Games')),
+        findsOneWidget,
+      );
+
+      // Nor where there are no tabs.
+      await tester.pumpWidget(const SizedBox());
+      await show(tester, hosted());
+      expect(find.text(notYetCopy), findsNothing);
+      expect(find.text('Games'), findsNothing);
+    });
   });
 
   group('not found', () {
@@ -2530,6 +2948,9 @@ void main() {
         .onPressed;
 
     Future<void> toggleMenu(WidgetTester tester, String id) async {
+      // The tab bar above the event (#516) can leave the last date's menu
+      // below the test's view.
+      await tester.ensureVisible(menuOf(id));
       await tester.tap(menuOf(id));
       await animate(tester);
     }
@@ -3438,10 +3859,15 @@ void main() {
       return leader.evaluate().isEmpty ? null : textOf(tester, leader);
     }
 
-    Finder pollOutcome() => find.byKey(EventDetailScreen.pollOutcomeKey);
+    // Past offstage, as the actions' banner's finders are: see [outcome].
+    Finder pollOutcome() =>
+        find.byKey(EventDetailScreen.pollOutcomeKey, skipOffstage: false);
 
-    Finder inPollOutcome(String text) =>
-        find.descendant(of: pollOutcome(), matching: find.text(text));
+    Finder inPollOutcome(String text) => find.descendant(
+      of: pollOutcome(),
+      matching: find.text(text, skipOffstage: false),
+      skipOffstage: false,
+    );
 
     BgeBannerTone pollToneOf(WidgetTester tester) =>
         tester.widget<BgeInlineBanner>(pollOutcome()).tone;
@@ -3771,6 +4197,8 @@ void main() {
       await settle(tester);
 
       expect(inPollOutcome(_pollChangedCopy), findsOneWidget);
+      // Heard as it lands, before its reveal has brought it on screen.
+      expect(liveRegionSaying(_pollChangedCopy), findsOne);
       expect(pollToneOf(tester), BgeBannerTone.warning);
       // The vote's banner, not the actions'.
       expect(outcome(), findsNothing);
@@ -3781,7 +4209,8 @@ void main() {
 
       final dismiss = find.descendant(
         of: pollOutcome(),
-        matching: find.text('Dismiss'),
+        matching: find.text('Dismiss', skipOffstage: false),
+        skipOffstage: false,
       );
       await reveal(tester, dismiss);
       await tester.tap(dismiss);
@@ -3891,6 +4320,7 @@ void main() {
           );
           await settle(tester);
           expect(inPollOutcome(_pollChangedCopy), findsOneWidget);
+          expect(liveRegionSaying(_pollChangedCopy), findsOne);
           expect(remote.detailRequests, ['e-1']);
 
           if (confirmFails) {
@@ -6299,6 +6729,7 @@ void main() {
         ),
       ).called(1);
       expect(inOutcome("Saved Bo's answer."), findsOneWidget);
+      expect(liveRegionSaying("Saved Bo's answer."), findsOne);
       expect(toneOf(tester), BgeBannerTone.success);
       expect(inGroup(going, 'Bo'), findsOneWidget);
       expect(remote.detailRequests, hasLength(reads + 1));
@@ -6518,6 +6949,7 @@ void main() {
           // nothing happened. The page already shows the event as cached,
           // so nothing is read again.
           expect(inOutcome(_rosterChangedCopy), findsOneWidget, reason: name);
+          expect(liveRegionSaying(_rosterChangedCopy), findsOne, reason: name);
           expect(toneOf(tester), BgeBannerTone.warning, reason: name);
           expect(remote.detailRequests, hasLength(reads), reason: name);
           await leave(tester);
@@ -6919,6 +7351,7 @@ void main() {
           expect(remote.removes, hasLength(end.remove ? 1 : 0));
           expect(remote.rsvps, hasLength(end.remove ? 0 : 1));
           expect(inOutcome(end.copy), findsOneWidget);
+          expect(liveRegionSaying(end.copy), findsOne);
           expect(toneOf(tester), end.tone);
           // Each went out, so the roster is read again to show what the
           // server holds.

@@ -908,23 +908,6 @@ class _AttendeeEntry extends StatelessWidget {
   }
 }
 
-/// The games, which #519 fills once the server gives an event-level read.
-/// Until then it says they will show here, so the page keeps its shape.
-class EventGamesSection extends StatelessWidget {
-  const EventGamesSection({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-
-    return _Section(
-      key: EventDetailScreen.gamesKey,
-      title: l10n.eventsDetailGames,
-      children: [_Note(l10n.eventsDetailGamesNotYet)],
-    );
-  }
-}
-
 /// A section: its heading, announced as one, over its content.
 class _Section extends StatelessWidget {
   const _Section({required this.title, required this.children, super.key});
