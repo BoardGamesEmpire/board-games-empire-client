@@ -317,11 +317,20 @@ covers its tags and contents. `release` runs semantic-release from the
 `release` environment: when the commits since the last tag include a `feat`
 or `fix`, it commits the new version and tags it (see [Releasing](#releasing)).
 
-Three more jobs concern a release. `release-tag` runs on every push to
+Four more jobs concern a release. `release-tag` runs on every push to
 `master` and looks up the `vX.Y.Z` tag that names the commit; it finds one only
 on a release commit. `publish-web` gives the image that version's tag only when
 `release-tag` found one. `github-release` creates that tag's pre-release once
 the image is published, and does nothing on a commit that carries no tag.
+`attach-android` then attaches `bge-X.Y.Z-android-universal.apk` and its
+`.sha256` to that Release (#785). They are the `android-apk` artifact of the
+same run, built by `release-android`, so a release's APK is the tested
+commit's, not a rebuild. If `release-android` or `github-release` fails, the
+Release stands without the APK: use "Re-run failed jobs", which runs the failed
+jobs and `attach-android` after them. `release-android` restores the run's
+`generated-sources`, which are kept one day, so after a day use "Re-run all
+jobs", which generates and builds again. Re-running `attach-android` alone works
+while `android-apk` is kept, 7 days; after that it needs "Re-run all jobs" too.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline
 so a broken melos script cannot take the build down with it. If you change a

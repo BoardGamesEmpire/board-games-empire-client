@@ -152,7 +152,15 @@ by contrast, reaches every run in the repository, a pull request's included.
 builds with `--require-release-signing`, uploads the APK, and deletes the
 keystore. A missing keystore secret fails the job with an error naming it, and
 a missing password or alias fails the build. Either fails only that job: the
-web image still publishes.
+web image still publishes, and so does the GitHub Release, without an APK.
+
+On a release commit, `attach-android` then attaches that APK and its
+`.sha256` to the Release (#785). It reads no secret: `release-android` is the
+only job that holds the key. If the build failed, fix the secret and use "Re-run
+failed jobs" on the run, which runs `release-android` and `attach-android`
+after it. That works for a day after the run: `release-android` restores the
+run's `generated-sources`, which are kept one day. After that, use "Re-run all
+jobs", which generates and builds again.
 
 ## Signing a local build
 
