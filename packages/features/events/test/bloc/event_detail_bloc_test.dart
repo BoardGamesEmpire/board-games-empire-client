@@ -1281,6 +1281,27 @@ void main() {
   });
 
   group('the actions', () {
+    test("a ready state carries the viewer's attendee reach", () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      cache.add(_detail(attendance: _attending(EventRole.organizer)));
+      await settle();
+
+      expect(
+        (bloc.state as EventDetailReady).attendeeReach,
+        AttendeeReach.attendingRoles,
+      );
+
+      cache.add(_detail());
+      await settle();
+
+      expect(
+        (bloc.state as EventDetailReady).attendeeReach,
+        AttendeeReach.none,
+      );
+    });
+
     test('the actions follow the attendance', () async {
       final bloc = build();
       addTearDown(bloc.close);

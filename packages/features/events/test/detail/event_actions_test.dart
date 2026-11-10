@@ -315,4 +315,229 @@ void main() {
       );
     });
   });
+
+  group('attendee reach (#510)', () {
+    EventAttendee row(String id, EventRole? role) => EventAttendee(
+      id: id,
+      eventId: 'e-plain',
+      status: EventParticipationStatus.attending,
+      role: role,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    group('attendeeReachFor', () {
+      test('the host and a co-host reach every role', () {
+        for (final role in [EventRole.host, EventRole.coHost]) {
+          expect(
+            attendeeReachFor(plain, eventRole: role),
+            AttendeeReach.allRoles,
+          );
+        }
+      });
+
+      test('an organizer and a moderator reach the attending roles', () {
+        for (final role in [EventRole.organizer, EventRole.moderator]) {
+          expect(
+            attendeeReachFor(plain, eventRole: role),
+            AttendeeReach.attendingRoles,
+          );
+        }
+      });
+
+      test('a participant, guest, spectator, unknown and null reach none', () {
+        for (final role in [
+          EventRole.participant,
+          EventRole.guest,
+          EventRole.spectator,
+          EventRole.unknown,
+          null,
+        ]) {
+          expect(attendeeReachFor(plain, eventRole: role), AttendeeReach.none);
+        }
+      });
+
+      test('a household owner or admin reaches every role on a household '
+          'event', () {
+        for (final role in [
+          HouseholdRole.householdOwner,
+          HouseholdRole.householdAdmin,
+        ]) {
+          expect(
+            attendeeReachFor(inHousehold, householdRole: role),
+            AttendeeReach.allRoles,
+          );
+          expect(
+            attendeeReachFor(plain, householdRole: role),
+            AttendeeReach.none,
+          );
+        }
+      });
+
+      test('an organizer who is also a household admin reaches every role', () {
+        expect(
+          attendeeReachFor(
+            inHousehold,
+            eventRole: EventRole.organizer,
+            householdRole: HouseholdRole.householdAdmin,
+          ),
+          AttendeeReach.allRoles,
+        );
+      });
+
+      test('a local-only event reaches none', () {
+        final local = inHousehold.copyWith(isLocalOnly: true);
+
+        expect(
+          attendeeReachFor(
+            local,
+            eventRole: EventRole.host,
+            householdRole: HouseholdRole.householdOwner,
+          ),
+          AttendeeReach.none,
+        );
+      });
+    });
+
+    group('assignableEventRoles', () {
+      test('none gives nothing', () {
+        expect(assignableEventRoles(AttendeeReach.none), isEmpty);
+      });
+
+      test('attendingRoles gives participant, guest and spectator', () {
+        expect(assignableEventRoles(AttendeeReach.attendingRoles), [
+          EventRole.participant,
+          EventRole.guest,
+          EventRole.spectator,
+        ]);
+      });
+
+      test('allRoles adds co-host, organizer and moderator, never host', () {
+        expect(assignableEventRoles(AttendeeReach.allRoles), [
+          EventRole.participant,
+          EventRole.guest,
+          EventRole.spectator,
+          EventRole.coHost,
+          EventRole.organizer,
+          EventRole.moderator,
+        ]);
+      });
+
+      test('answers a list nothing can change', () {
+        expect(
+          assignableEventRoles(AttendeeReach.allRoles).clear,
+          throwsUnsupportedError,
+        );
+      });
+    });
+
+    group('canRemoveAttendee', () {
+      test('allRoles removes a co-host but not the host', () {
+        expect(
+          canRemoveAttendee(
+            AttendeeReach.allRoles,
+            row('a', EventRole.coHost),
+            viewerAttendeeId: 'me',
+          ),
+          isTrue,
+        );
+        expect(
+          canRemoveAttendee(
+            AttendeeReach.allRoles,
+            row('a', EventRole.host),
+            viewerAttendeeId: 'me',
+          ),
+          isFalse,
+        );
+      });
+
+      test('attendingRoles removes a guest but not the host, a co-host, an '
+          'organizer or an unknown role', () {
+        bool can(EventRole? role) => canRemoveAttendee(
+          AttendeeReach.attendingRoles,
+          row('a', role),
+          viewerAttendeeId: 'me',
+        );
+
+        expect(can(EventRole.guest), isTrue);
+        expect(can(EventRole.host), isFalse);
+        expect(can(EventRole.coHost), isFalse);
+        expect(can(EventRole.organizer), isFalse);
+        expect(can(EventRole.unknown), isFalse);
+        expect(can(null), isFalse);
+      });
+
+      test('allRoles does not remove a null or unknown role', () {
+        for (final role in [null, EventRole.unknown]) {
+          expect(
+            canRemoveAttendee(
+              AttendeeReach.allRoles,
+              row('a', role),
+              viewerAttendeeId: 'me',
+            ),
+            isFalse,
+          );
+        }
+      });
+
+      test('none removes nothing', () {
+        expect(
+          canRemoveAttendee(
+            AttendeeReach.none,
+            row('a', EventRole.guest),
+            viewerAttendeeId: 'me',
+          ),
+          isFalse,
+        );
+      });
+
+      test("no reach removes the viewer's own row", () {
+        for (final reach in AttendeeReach.values) {
+          expect(
+            canRemoveAttendee(
+              reach,
+              row('me', EventRole.guest),
+              viewerAttendeeId: 'me',
+            ),
+            isFalse,
+          );
+        }
+      });
+    });
+
+    group('canSetAnswerFor', () {
+      test("the host's row under attendingRoles is answerable", () {
+        expect(
+          canSetAnswerFor(
+            AttendeeReach.attendingRoles,
+            row('a', EventRole.host),
+            viewerAttendeeId: 'me',
+          ),
+          isTrue,
+        );
+      });
+
+      test("the viewer's own row is not", () {
+        expect(
+          canSetAnswerFor(
+            AttendeeReach.allRoles,
+            row('me', EventRole.host),
+            viewerAttendeeId: 'me',
+          ),
+          isFalse,
+        );
+      });
+
+      test('no row is under none', () {
+        expect(
+          canSetAnswerFor(
+            AttendeeReach.none,
+            row('a', EventRole.guest),
+            viewerAttendeeId: 'me',
+          ),
+          isFalse,
+        );
+      });
+    });
+  });
 }
