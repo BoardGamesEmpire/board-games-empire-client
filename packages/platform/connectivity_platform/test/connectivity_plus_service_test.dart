@@ -8,8 +8,8 @@ import 'package:interfaces/services.dart';
 
 /// Contract spec for [ConnectivityPlusService] (#9).
 ///
-/// Drives the impl through the injectable seams ([connectivityChanges],
-/// [connectivityCheck]) with synthetic events — `connectivity_plus`
+/// Drives the impl through the injectable seams (`connectivityChanges`,
+/// `connectivityCheck`) with synthetic events — `connectivity_plus`
 /// itself is never mocked.
 void main() {
   late StreamController<List<ConnectivityResult>> changes;

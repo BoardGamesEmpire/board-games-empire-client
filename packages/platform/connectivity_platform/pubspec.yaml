@@ -9,13 +9,11 @@ environment:
 resolution: workspace
 
 dependencies:
+  connectivity_plus: ^7.3.1
   flutter:
     sdk: flutter
-
   interfaces:
     path: ../../core/interfaces
-
-  connectivity_plus: ^7.3.1
   rxdart: ^0.28.0
 
 dev_dependencies:
