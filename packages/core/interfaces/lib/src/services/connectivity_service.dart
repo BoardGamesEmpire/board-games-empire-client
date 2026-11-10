@@ -2,7 +2,7 @@ import 'package:interfaces/src/services/connectivity_state.dart';
 
 /// Device connectivity awareness (#9, Tier 1).
 ///
-/// Consumers ([ServerOrchestrator] transitions, sync-queue drain
+/// Consumers (`ServerOrchestrator` transitions, sync-queue drain
 /// gating, auth-flow fast-fail — all later issues) depend only on this
 /// read/watch surface. Per ISP, lifecycle (`dispose`) is deliberately
 /// **not** part of this interface: it lives on the concrete

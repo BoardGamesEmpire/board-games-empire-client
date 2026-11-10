@@ -30,6 +30,8 @@ extension ListLayoutThumbnails on ListLayoutRepository {
 
   /// Stores thumbnails as [screen]'s choice when [thumbnails] is true, and
   /// the list when it is false.
-  Future<void> writeThumbnails(ListLayoutScreen screen, bool thumbnails) =>
-      write(screen, thumbnails ? ListLayout.thumbnails : ListLayout.list);
+  Future<void> writeThumbnails(
+    ListLayoutScreen screen, {
+    required bool thumbnails,
+  }) => write(screen, thumbnails ? ListLayout.thumbnails : ListLayout.list);
 }

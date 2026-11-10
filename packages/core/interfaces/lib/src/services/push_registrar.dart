@@ -10,7 +10,7 @@ import 'package:models/domain.dart';
 /// same user on the same device with three servers has three registrars
 /// and three independent [PushRegistration] records.
 ///
-/// Counterpart to the app-level [PushNotificationService], which owns
+/// Counterpart to the app-level `PushNotificationService`, which owns
 /// the device-global machinery (platform token, permission, incoming
 /// stream). The split keeps this type free of platform plumbing and
 /// that type free of per-server networking.
@@ -27,7 +27,7 @@ abstract interface class PushRegistrar {
   /// locally, and returns it.
   ///
   /// Requires granted permission and a supported platform
-  /// ([PushNotificationService.isPlatformSupported]); requires network —
+  /// (`PushNotificationService.isPlatformSupported`); requires network —
   /// registration is not queued offline.
   Future<PushRegistration> register();
 

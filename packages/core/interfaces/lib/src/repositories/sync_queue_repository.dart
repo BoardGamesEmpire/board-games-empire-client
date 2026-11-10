@@ -23,7 +23,7 @@ abstract class SyncQueueRepository {
   /// Enqueues a new operation. Returns the created entry.
   Future<SyncQueueEntry> enqueue(SyncOperation operation);
 
-  /// Returns every entry [claim] may take now, in [createdAt] order with
+  /// Returns every entry [claim] may take now, in `createdAt` order with
   /// rowid as a stable tiebreaker.
   ///
   /// That is every entry under [SyncQueueEntry.maxRetries] that is
@@ -164,7 +164,7 @@ abstract class SyncQueueRepository {
   /// collection id matches [oldCollectionId], replacing it with
   /// [newCollectionId].
   ///
-  /// Used by [GameCollectionRepository.reconcileFromServer] when the
+  /// Used by `GameCollectionRepository.reconcileFromServer` when the
   /// server returns a canonical id different from the one the local
   /// row was created with: pending [UpdateCollectionOperation] /
   /// [RemoveFromCollectionOperation] entries queued against the
@@ -204,7 +204,7 @@ abstract class SyncQueueRepository {
   /// "Not completed" is deliberate: pending, failed, claimed **and
   /// exhausted** entries are all returned. An exhausted entry is a change
   /// that never landed, and a claimed one may not land either, so
-  /// [GameCollectionRepository.reconcileFromServer] uses this to keep a
+  /// `GameCollectionRepository.reconcileFromServer` uses this to keep a
   /// collection entry dirty, and to replay its later changes, while any
   /// remain.
   ///
@@ -231,7 +231,7 @@ abstract class SyncQueueRepository {
   ///
   /// A completed entry's last attempt is the claim that delivered it, so
   /// the latest is the last delivery, with the later in queue order
-  /// winning a tie. [GameCollectionRepository.mergeFromServer] places the
+  /// winning a tie. `GameCollectionRepository.mergeFromServer` places the
   /// ops it replays against it, as the acknowledgement of that delivery
   /// placed them. [purgeCompleted] deletes completed entries, so one
   /// delivered before the last purge isn't found. The target is matched as

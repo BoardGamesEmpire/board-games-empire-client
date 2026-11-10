@@ -159,8 +159,10 @@ class GameBrowseScreen extends StatelessWidget {
             : () => layouts.readThumbnails(ListLayoutScreen.games),
         write: layouts == null
             ? null
-            : (thumbnails) =>
-                  layouts.writeThumbnails(ListLayoutScreen.games, thumbnails),
+            : (thumbnails) => layouts.writeThumbnails(
+                ListLayoutScreen.games,
+                thumbnails: thumbnails,
+              ),
         onError: _layoutFailed,
         builder: (context, thumbnails, onChanged) =>
             BlocListener<GameBrowseBloc, GameBrowseState>(

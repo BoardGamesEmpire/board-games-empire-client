@@ -1,5 +1,5 @@
 /// Coarse-grained device connectivity, as consumed by the
-/// [ServerOrchestrator] lifecycle and sync/auth flows (#9).
+/// `ServerOrchestrator` lifecycle and sync/auth flows (#9).
 ///
 /// Deliberately binary-plus-reserve. Finer transport detail
 /// (wifi/cellular/ethernet/vpn) is intentionally not modelled; if

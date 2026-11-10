@@ -6,8 +6,9 @@ import 'package:models/domain.dart';
 /// is created for each mutation. A caller that queues a change sends it at
 /// once (#45): see `SendQueuedOpNow` in `package:interfaces/sync.dart`.
 ///
-/// [isDirty] on a [GameCollection] signals a pending local change.
-/// [isLocalOnly] signals an entry not yet confirmed by the server.
+/// [GameCollection.isDirty] on a [GameCollection] signals a pending local
+/// change.
+/// `isLocalOnly` signals an entry not yet confirmed by the server.
 ///
 /// ## Current-user boundary
 ///
@@ -243,7 +244,7 @@ abstract class GameCollectionRepository {
   /// the stale local row. Otherwise queued Update/Remove ops would
   /// later be sent to the server with an id the server doesn't
   /// know. The Drift implementation does this via
-  /// [SyncQueueRepository.remapCollectionId].
+  /// `SyncQueueRepository.remapCollectionId`.
   ///
   /// ### Tombstone confirmation (surgical physical purge)
   ///
@@ -365,7 +366,7 @@ abstract class GameCollectionRepository {
   ///
   /// Only for an op that is stuck: the server refused it, or its retries ran
   /// out. The queue entry is deleted through
-  /// [SyncQueueRepository.discardStuck] in the same transaction as the undo,
+  /// `SyncQueueRepository.discardStuck` in the same transaction as the undo,
   /// so either both land or neither does, and an op that isn't stuck by
   /// then, such as one another tab retried, changes nothing.
   ///
@@ -588,8 +589,8 @@ abstract class GameCollectionRepository {
   /// (#708).
   ///
   /// Emits the matching entries, none of them marked for removal and none
-  /// another user's, in entry id order, as [watchCollectionListItems] orders one
-  /// game's entries. An empty [platformGameIds] emits one empty list.
+  /// another user's, in entry id order, as [watchCollectionListItems] orders
+  /// one game's entries. An empty [platformGameIds] emits one empty list.
   ///
   /// Re-emits only when an entry on one of those platform games changes,
   /// is added or is removed. Watching [watchCollection] and filtering

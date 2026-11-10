@@ -18,7 +18,7 @@
 /// Per ISP, lifecycle (`dispose`) is deliberately **not** part of this
 /// interface: it lives on the concrete implementation and is owned by
 /// the composition root that constructs it (matching
-/// [ConnectivityService]). Sample ingestion is likewise split out into
+/// `ConnectivityService`). Sample ingestion is likewise split out into
 /// [ClockSkewRecorder] so transport code depends only on the feed
 /// surface (matching the `ActiveLocaleReader` / `ActiveLocaleController`
 /// split).

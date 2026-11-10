@@ -32,7 +32,8 @@ void main() {
       }
     });
 
-    test('maps everything else, including wire codes outside the table, to generic', () {
+    test('maps everything else, including wire codes outside the table, '
+        'to generic', () {
       for (final code in [
         'issuer_mismatch',
         'RATE_LIMITED',

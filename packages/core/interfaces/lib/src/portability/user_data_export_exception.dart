@@ -19,6 +19,9 @@ sealed class UserDataExportException implements Exception {
   final Object? cause;
 
   @override
+  // The subclass name is the intended text, and a literal per subclass
+  // would change it.
+  // ignore: no_runtimetype_tostring
   String toString() => '$runtimeType: $message';
 }
 

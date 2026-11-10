@@ -11,19 +11,19 @@ import 'package:models/domain.dart';
 /// ## How a failed request is judged
 ///
 /// - **Refused as it stands**: a permanent or not-found answer that isn't a
-///   success. The entry is parked ([SyncQueueRepository.park]), not
+///   success. The entry is parked (`SyncQueueRepository.park`), not
 ///   cancelled: kept with its error and its rows still dirty, and sent by no
 ///   pass until someone retries or discards it by hand (#190). See
 ///   [SyncParked].
 /// - **Processed and failed**, or the client faulted: counted with
-///   [SyncQueueRepository.markFailed]. See [SyncFailure] for which answers
+///   `SyncQueueRepository.markFailed`. See [SyncFailure] for which answers
 ///   those are.
 /// - **Never processed**, or refused for the session: handed back uncounted
-///   with [SyncQueueRepository.release].
+///   with `SyncQueueRepository.release`.
 ///
 /// A removal the server reports as already done is a delivery: the entry's
 /// tombstone is purged and the op completed together
-/// ([GameCollectionRepository.confirmRemoved]).
+/// (`GameCollectionRepository.confirmRemoved`).
 abstract interface class SyncOperationSender {
   /// Claims [entryId], sends [operation], and records the outcome on the
   /// queue entry.
@@ -41,7 +41,7 @@ abstract interface class SyncOperationSender {
   /// it back while that op's claim is live: the server can apply two of an
   /// entry's ops in flight together in one order and answer them in the
   /// other (#677). The claim checks that in the same transaction that takes
-  /// it ([SyncQueueRepository.claim]), so it binds every sender. A held op
+  /// it (`SyncQueueRepository.claim`), so it binds every sender. A held op
   /// is neither claimed nor counted and comes back [SyncNotClaimed]: it
   /// stays queued, and the drain sends the entry's ops in order. This is the
   /// path for a write's immediate send; the drain sends through
@@ -59,7 +59,7 @@ abstract interface class SyncOperationSender {
   ///
   /// For a sender working from its own read of the queue. The entry is
   /// claimed only while it still holds the payload [entry] was read with
-  /// ([SyncQueueRepository.claim]): an op rewritten since, as an add's
+  /// (`SyncQueueRepository.claim`): an op rewritten since, as an add's
   /// acknowledgement rewrites the ops queued behind it (#429), comes back
   /// [SyncNotClaimed], for a sender that reads it again to send. So does a
   /// collection op while another op of its entry holds a live claim (#677):

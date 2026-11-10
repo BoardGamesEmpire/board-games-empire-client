@@ -37,12 +37,15 @@ void main() {
 
     test('writes true as thumbnails and false as the list, for that screen '
         'alone', () async {
-      await layouts.writeThumbnails(ListLayoutScreen.games, true);
+      await layouts.writeThumbnails(ListLayoutScreen.games, thumbnails: true);
 
       expect(layouts.stored, {ListLayoutScreen.games: ListLayout.thumbnails});
 
-      await layouts.writeThumbnails(ListLayoutScreen.games, false);
-      await layouts.writeThumbnails(ListLayoutScreen.collection, true);
+      await layouts.writeThumbnails(ListLayoutScreen.games, thumbnails: false);
+      await layouts.writeThumbnails(
+        ListLayoutScreen.collection,
+        thumbnails: true,
+      );
 
       expect(layouts.stored, {
         ListLayoutScreen.games: ListLayout.list,

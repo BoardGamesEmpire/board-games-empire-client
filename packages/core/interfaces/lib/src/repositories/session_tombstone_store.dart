@@ -29,7 +29,7 @@ abstract class SessionTombstoneStore {
   /// restored. A server with no row reads as not revoked.
   Future<bool> isRevoked(String bgeServerId);
 
-  /// Throws [ServerNotFoundException] when no row matches: the marker was
+  /// Throws `ServerNotFoundException` when no row matches: the marker was
   /// not written, and an UPDATE matching nothing does not throw by itself.
   Future<void> markRevoked(String bgeServerId);
 

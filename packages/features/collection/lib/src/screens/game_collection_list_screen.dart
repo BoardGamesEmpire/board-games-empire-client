@@ -239,7 +239,7 @@ class GameCollectionListScreen extends StatelessWidget {
             ? null
             : (thumbnails) => layouts.writeThumbnails(
                 ListLayoutScreen.collection,
-                thumbnails,
+                thumbnails: thumbnails,
               ),
         onError: _layoutFailed,
         builder: (context, thumbnails, onChanged) => _GameCollectionListPage(

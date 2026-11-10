@@ -36,13 +36,13 @@
 ///
 /// ## Scoping semantics
 ///
-/// User identity is per-server. [userId] is the id the *current server*
+/// User identity is per-server. `userId` is the id the *current server*
 /// assigned; the same person on two servers holds two independent session
 /// scopes with distinct ids, and nothing in one is visible to the other.
 ///
 /// ## Contract
 ///
-/// - [activate] with the [userId] already active is a no-op. [activate]
+/// - [activate] with the `userId` already active is a no-op. [activate]
 ///   with a *different* user id first deactivates the existing session
 ///   scope, then builds the new one — a missed deactivation can't leak the
 ///   prior user's services.

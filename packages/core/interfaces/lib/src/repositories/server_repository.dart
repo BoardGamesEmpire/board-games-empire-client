@@ -3,7 +3,7 @@ import 'package:models/domain.dart';
 /// Repository for BGE server configurations stored in the root DB.
 ///
 /// Capacity enforcement (max monitored servers) is NOT the responsibility of
-/// this repository — it belongs in [ServerOrchestrator], which has access to
+/// this repository — it belongs in `ServerOrchestrator`, which has access to
 /// [DevicePreferences]. This repository stores and retrieves state faithfully.
 ///
 /// Any method that maps a stored row into a [ServerConfig] can throw
