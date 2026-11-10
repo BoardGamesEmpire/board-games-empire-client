@@ -6630,6 +6630,50 @@ void main() {
         expect(addPeople(), findsNothing);
       });
 
+      testWidgets('a press on an event a sync has cancelled opens nothing', (
+        tester,
+      ) async {
+        // Nor archived: the host keeps the grant, and the event takes no
+        // such write.
+        for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+          final opened = <AddAttendeeArgs>[];
+          final remote = adding();
+          cached = viewed();
+          await showRoster(
+            tester,
+            viewed(),
+            remote,
+            onAddAttendee: (_, args) async {
+              opened.add(args);
+              return null;
+            },
+          );
+          await tester.ensureVisible(addPeople());
+          await tester.pump();
+
+          // The detail has it, but no frame has shown it yet: the button is
+          // still there to press, and the role table still gives roles.
+          cached = viewed(status: status);
+          cache.add(cached);
+          for (var i = 0; i < 10; i++) {
+            await Future<void>.value();
+          }
+          final shown = blocOf(tester).state as EventDetailReady;
+          expect(shown.detail.snapshot.event.status, status);
+          expect(shown.attendeeReach, isNot(AttendeeReach.none));
+          expect(addPeople(), findsOneWidget, reason: '$status');
+
+          await tester.tap(addPeople());
+          await animate(tester);
+
+          expect(opened, isEmpty, reason: '$status');
+          expect(remote.adds, isEmpty, reason: '$status');
+          expect(outcome(), findsNothing, reason: '$status');
+          expect(addPeople(), findsNothing, reason: '$status');
+          await leave(tester);
+        }
+      });
+
       testWidgets("the add's 409 says they're already on", (tester) async {
         final remote = adding(
           added: (_) =>

@@ -1864,9 +1864,10 @@ Future<bool> _addAttendee(BuildContext context, _OpenAddAttendee open) =>
         final shown = context.read<EventDetailBloc>().state;
         if (shown is! EventDetailReady) return null;
         // The detail can be a step ahead of the frame the button was built
-        // from: a sync can have left the viewer no role to give, and the
-        // button is going with the next frame. The page needs one to offer.
-        final roles = assignableEventRoles(shown.attendeeReach);
+        // from: a sync can have left the viewer no role to give, or cancelled
+        // or archived the event, and the button is going with the next frame.
+        // The page needs a role to offer.
+        final roles = assignableEventRoles(_rosterReach(shown));
         if (roles.isEmpty) return null;
         return open(
           context,

@@ -286,6 +286,42 @@ void main() {
       );
     });
 
+    test('addCachedAttendee puts an event the user added themselves to on '
+        'their attending list', () async {
+      // The server lists every event the user is on, so it does from the
+      // add, and the list needn't wait for the next hydrate to show it.
+      await repo.cacheEvent(
+        testSnapshot('e1', attendees: [theirs]),
+        source: EventAccessSource.household,
+      );
+      expect(await repo.watchAttendingEventListItems().first, isEmpty);
+      final joined = mine.copyWith(status: EventParticipationStatus.invited);
+
+      expect(await repo.addCachedAttendee(joined), isTrue);
+
+      final item = (await repo.watchAttendingEventListItems().first).single;
+      expect(item.event.id, 'e1');
+      expect(item.attendance, EventAttendance.fromAttendee(joined));
+    });
+
+    test(
+      "adding someone else leaves the user's attending list alone",
+      () async {
+        await repo.cacheEvent(
+          testSnapshot('e1', attendees: [theirs]),
+          source: EventAccessSource.household,
+        );
+
+        expect(await repo.addCachedAttendee(added), isTrue);
+
+        expect(await repo.watchAttendingEventListItems().first, isEmpty);
+        final attending = await (db.select(
+          db.eventAccessTable,
+        )..where((t) => t.source.equals(eventAccessSourceAttending))).get();
+        expect(attending, isEmpty);
+      },
+    );
+
     test('removeCachedAttendee removes the row', () async {
       await cacheWithRoster();
       final before = await repo.lastWrite('e1');

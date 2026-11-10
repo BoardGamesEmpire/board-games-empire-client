@@ -1020,7 +1020,21 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           .insertOnConflictUpdate(_attendeeToCompanion(attendee));
 
       // A household owner or admin who isn't on the roster can add
-      // themselves (#510), and the answer their lists show follows.
+      // themselves (#510). The server lists every event the user is on, so
+      // the event joins their attending list now rather than at the next
+      // hydrate, and the answer their lists show follows.
+      if (attendee.userId == _userId) {
+        await _db
+            .into(_db.eventAccessTable)
+            .insert(
+              EventAccessTableCompanion.insert(
+                userId: _userId,
+                eventId: eventId,
+                source: eventAccessSourceAttending,
+              ),
+              mode: InsertMode.insertOrIgnore,
+            );
+      }
       await _writeOwnAnswer(attendee);
 
       await _db.batch((b) => _stampGeneration(b, [eventId]));

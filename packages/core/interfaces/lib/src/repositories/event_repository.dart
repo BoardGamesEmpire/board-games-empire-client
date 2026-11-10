@@ -417,7 +417,9 @@ abstract class EventRepository {
   Future<bool> cacheAttendee(EventAttendee attendee);
 
   /// Adds [attendee], whom an add answered, to its event's cached roster, or
-  /// replaces the row with its id (#510).
+  /// replaces the row with its id (#510). When [attendee] is the user, the
+  /// event joins their attending list, as the server's does, and their answer
+  /// goes on their `attending` and `household` rows.
   ///
   /// Returns false, writing nothing, when the event isn't cached, is
   /// `isDirty` or `isLocalOnly`, or has no roster cached: one row alone would
