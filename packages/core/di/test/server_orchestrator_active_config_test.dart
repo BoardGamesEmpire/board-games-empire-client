@@ -103,7 +103,7 @@ void main() {
         preferencesRepository: prefsRepo,
         contextFactory: (config) {
           final ctx = mockServerContext(config.id);
-          when(() => ctx.activate()).thenThrow(StateError('boom'));
+          when(ctx.activate).thenThrow(StateError('boom'));
           return ctx;
         },
         isDesktopOverride: true,

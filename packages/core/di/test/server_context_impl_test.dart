@@ -457,7 +457,7 @@ void main() {
         addTearDown(() async {
           try {
             await masked.dispose();
-          } catch (_) {}
+          } on Object catch (_) {}
         });
 
         await expectLater(

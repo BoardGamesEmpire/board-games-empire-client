@@ -11,5 +11,5 @@ void debugReportSwallowed(String what, Object error) {
   assert(() {
     debugPrint('$what: ${Redaction.stripBoundValues(error.toString())}');
     return true;
-  }());
+  }(), 'debugReportSwallowed only runs in debug builds');
 }

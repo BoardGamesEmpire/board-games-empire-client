@@ -18,7 +18,7 @@ import 'package:interfaces/services.dart';
 /// pass-through has no correction event that could introduce a
 /// regression of its own.
 class LocalClockService implements ClockService {
-  /// Creates the service. [localNowUtc] injects the clock for tests;
+  /// Creates the service. `localNowUtc` injects the clock for tests;
   /// production uses `DateTime.now().toUtc()`.
   const LocalClockService([this._localNowUtc = _systemNowUtc]);
 

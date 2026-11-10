@@ -246,10 +246,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     // config behind (#36).
     try {
       await connectServer(config.id, makeActive: true);
-    } catch (_) {
+    } on Object catch (_) {
       try {
         await _serverRepository.removeServer(config.id);
-      } catch (e, st) {
+      } on Object catch (e, st) {
         // Rollback is best-effort: the original failure is the one the
         // caller needs to see.
         _logError(
@@ -323,7 +323,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
                 newState: ConnectionState.backgrounding,
               );
               _startBackgroundingTimer(previousId);
-            } catch (e, st) {
+            } on Object catch (e, st) {
               // Undo the newcomer's activation and drop it — the switch
               // half-failed and must not leave two active contexts.
               _logError('demoting $previousId on connect failed', e, st);
@@ -334,7 +334,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
               if (previous.state == ServerContextState.backgrounding) {
                 try {
                   await previous.activate();
-                } catch (e2, st2) {
+                } on Object catch (e2, st2) {
                   _logError('restoring previous $previousId failed', e2, st2);
                 }
               }
@@ -388,7 +388,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           try {
             await _ensureActive(nextContext);
             promotedId = nextId;
-          } catch (e, st) {
+          } on Object catch (e, st) {
             _logError('promotion of server $nextId failed', e, st);
             // Restore the timer we cancelled so a still-backgrounding
             // context isn't stranded (never suspends → leaks resources).
@@ -469,7 +469,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
               newState: ConnectionState.backgrounding,
             );
             _startBackgroundingTimer(previousId);
-          } catch (e, st) {
+          } on Object catch (e, st) {
             _logError('backgrounding of server $previousId failed', e, st);
             // Restore `previous` to active if we already backgrounded it —
             // it must remain the sole active server per the invariant.
@@ -477,7 +477,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
             if (previous.state == ServerContextState.backgrounding) {
               try {
                 await previous.activate();
-              } catch (e3, st3) {
+              } on Object catch (e3, st3) {
                 _logError('restoring previous $previousId failed', e3, st3);
               }
             }
@@ -495,7 +495,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
                   await targetContext.suspend();
                 }
               }
-            } catch (e2, st2) {
+            } on Object catch (e2, st2) {
               _logError('rolling back target $targetServerId failed', e2, st2);
             }
             rethrow;
@@ -533,7 +533,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     if (inFlight != null) {
       try {
         await inFlight;
-      } catch (_) {
+      } on Object catch (_) {
         // The operation's own caller receives this error.
       }
     }
@@ -681,7 +681,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         serverId,
         DateTime.now().toUtc(),
       );
-    } catch (e, st) {
+    } on Object catch (e, st) {
       _logError('persisting lastActive for $serverId failed', e, st);
     }
 
@@ -693,7 +693,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   Future<void> _disposeQuietly(ServerContext context) async {
     try {
       await context.dispose();
-    } catch (e, st) {
+    } on Object catch (e, st) {
       _logError('disposal of context ${context.serverId} failed', e, st);
     }
   }
@@ -709,7 +709,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         serverId: serverId,
         newState: state,
       );
-    } catch (e, st) {
+    } on Object catch (e, st) {
       _logError('persisting $state for $serverId failed', e, st);
     }
   }
@@ -724,7 +724,8 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     _cancelBackgroundingTimer(serverId);
 
     final prefs = _cachedPreferences;
-    const configOverride = null; // TODO: read per-server override from repo
+    // TODO(server-config-override): read per-server override from repo
+    const int? configOverride = null;
     final timeoutSeconds =
         configOverride ??
         (prefs?.backgroundingTimeoutSeconds(isDesktop: _isDesktop) ??
@@ -749,18 +750,20 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     }
 
     // Fire-and-forget — errors are logged, not propagated.
-    Future(() async {
-      try {
-        await context.suspend();
-        await _serverRepository.updateConnectionState(
-          serverId: serverId,
-          newState: ConnectionState.monitoring,
-        );
-        _emitContextsChange();
-      } catch (e, st) {
-        _logError('suspending $serverId on timer failed', e, st);
-      }
-    });
+    unawaited(
+      Future(() async {
+        try {
+          await context.suspend();
+          await _serverRepository.updateConnectionState(
+            serverId: serverId,
+            newState: ConnectionState.monitoring,
+          );
+          _emitContextsChange();
+        } on Object catch (e, st) {
+          _logError('suspending $serverId on timer failed', e, st);
+        }
+      }),
+    );
   }
 
   Future<void> _withLock(Future<void> Function() body) async {
@@ -820,7 +823,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   static bool _detectDesktop() {
     try {
       return Platform.isMacOS || Platform.isLinux || Platform.isWindows;
-    } catch (_) {
+    } on Object catch (_) {
       return false;
     }
   }

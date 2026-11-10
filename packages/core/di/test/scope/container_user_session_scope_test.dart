@@ -35,7 +35,7 @@ class RecordingInstaller implements UserScopeInstaller {
 
 class ThrowingInstaller implements UserScopeInstaller {
   ThrowingInstaller(this.error);
-  final Object error;
+  final Error error;
 
   @override
   Future<void> install(
@@ -321,11 +321,11 @@ void main() {
     test('wired as a container dispose hook, it ends the session', () async {
       // The composition contract: the server scope's teardown closes the
       // holder permanently, which is where its terminal state comes from.
-      final container = DependencyContainerImpl();
-      container.registerSingleton<UserSessionScope>(
-        scope,
-        dispose: (s) => (s as ContainerUserSessionScope).dispose(),
-      );
+      final container = DependencyContainerImpl()
+        ..registerSingleton<UserSessionScope>(
+          scope,
+          dispose: (s) => (s as ContainerUserSessionScope).dispose(),
+        );
       await scope.activate('user-a');
       final probe = host.maybeGet<Probe>()!;
 

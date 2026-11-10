@@ -46,16 +46,16 @@ import 'package:models/domain.dart';
 /// );
 /// ```
 class ContainerUserSessionScope implements UserSessionScope {
-  /// Creates a holder over [host].
+  /// Creates a holder over `host`.
   ///
-  /// [host] is shared with the owner's container facade rather than created
+  /// `host` is shared with the owner's container facade rather than created
   /// here: the facade resolves child-first through the same host
   /// ([UserScopeHost.maybeGet]), and two hosts over one parent would mean two
   /// scopes that each believe they are the session.
   ///
   /// [installers] run in list order on every [activate], against a view whose
   /// registrations land in the user scope while resolution falls through to
-  /// the parent. [server] is what they are told about the server; [label]
+  /// the parent. `server` is what they are told about the server; `label`
   /// prefixes the diagnostics this holder emits.
   ContainerUserSessionScope({
     required this._host,
@@ -142,7 +142,7 @@ class ContainerUserSessionScope implements UserSessionScope {
     if (!_host.isActive) return;
     try {
       await _host.close();
-    } catch (error) {
+    } on Object catch (error) {
       debugReportSwallowed(
         '$_label: user-scope disposal threw during session deactivation '
         '(suppressed; the session still ended)',

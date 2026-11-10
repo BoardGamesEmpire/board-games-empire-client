@@ -42,8 +42,8 @@ class DependencyContainerImpl implements DependencyContainer {
         getIt,
         'getIt',
         'DependencyContainerImpl.fromGetIt must wrap a GetIt.asNewInstance(); '
-            'the global GetIt.instance leaks registrations into global state and '
-            'breaks scope isolation.',
+            'the global GetIt.instance leaks registrations into global state '
+            'and breaks scope isolation.',
       );
     }
   }

@@ -23,7 +23,7 @@ class _CountedInstaller implements ServerScopeInstaller {
   final Set<int> failOnCalls;
 
   /// Thrown on a failing call; a `StateError` when null.
-  final Object? error;
+  final Exception? error;
   int calls = 0;
 
   @override
@@ -33,7 +33,9 @@ class _CountedInstaller implements ServerScopeInstaller {
   ) async {
     calls++;
     if (failOnCalls.contains(calls)) {
-      throw error ?? StateError('installer boom #$calls');
+      final error = this.error;
+      if (error != null) throw error;
+      throw StateError('installer boom #$calls');
     }
   }
 }

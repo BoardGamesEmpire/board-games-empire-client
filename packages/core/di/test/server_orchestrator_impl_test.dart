@@ -134,7 +134,7 @@ void main() {
 
           expect(orchestrator.activeServerId, 'server-a');
           final ctx = mockContexts['server-b']!;
-          verify(() => ctx.suspend()).called(1);
+          verify(ctx.suspend).called(1);
         },
       );
 
@@ -270,7 +270,7 @@ void main() {
           preferencesRepository: mockPrefsRepo,
           contextFactory: (config) {
             final ctx = mockServerContext(config.id);
-            when(() => ctx.activate()).thenThrow(StateError('boom'));
+            when(ctx.activate).thenThrow(StateError('boom'));
             mockContexts[config.id] = ctx;
             return ctx;
           },
