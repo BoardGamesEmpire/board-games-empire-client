@@ -369,6 +369,27 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
                   t.source.isIn(_answerSources),
             );
           }
+          // `GET /events/:id` reads the caller's own row apart from the
+          // roster, so a null `attendance` is the server saying this user
+          // isn't attending, whatever the roster says: a roster is read under
+          // the reader's ceiling and can't say it. The event leaves their
+          // attending list, as the next hydrate's purge would take it; the
+          // `read` and `household` rows stay (#752).
+          if (source == EventAccessSource.read) {
+            final notAttending = [
+              for (final s in written)
+                if (s.attendance == null) s.event.id,
+            ];
+            if (notAttending.isNotEmpty) {
+              b.deleteWhere(
+                _db.eventAccessTable,
+                (t) =>
+                    t.userId.equals(_userId) &
+                    t.source.equals(eventAccessSourceAttending) &
+                    t.eventId.isIn(notAttending),
+              );
+            }
+          }
           // Whether the server showed this user the roster is a fact about
           // their detail read alone. A household's list row carries
           // `attendees: null`, which says nothing either way, so it leaves

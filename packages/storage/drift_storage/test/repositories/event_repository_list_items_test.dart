@@ -351,31 +351,76 @@ void main() {
       expect((await itemOf()).attendance, EventAttendance.fromAttendee(said));
     });
 
-    test("a detail read with no answer clears the list's, and the item "
-        'falls back to the roster it read', () async {
-      await listRow('e-1', _answer(EventParticipationStatus.maybe));
+    test(
+      'a refused detail read takes the event off the attending list',
+      () async {
+        await listRow('e-1', _answer(EventParticipationStatus.attending));
 
-      // A roster that names the user, read with no answer for them.
+        await repo.cacheEvent(
+          testSnapshot('e-1', attendees: const []),
+          source: EventAccessSource.read,
+        );
+
+        expect(await repo.watchAttendingEventListItems().first, isEmpty);
+      },
+    );
+
+    test(
+      'a detail read whose roster leaves the user off takes it off too',
+      () async {
+        await listRow('e-1', _answer(EventParticipationStatus.attending));
+
+        await repo.cacheEvent(
+          testSnapshot('e-1', attendees: [_other]),
+          source: EventAccessSource.read,
+        );
+
+        expect(await repo.watchAttendingEventListItems().first, isEmpty);
+      },
+    );
+
+    test("a household member's event stays on the household's list", () async {
+      Future<List<EventListItem>> householdItems() =>
+          repo.watchHouseholdEventListItems('household-1').first;
       await repo.cacheEvent(
-        testSnapshot('e-1', attendees: [_me, _other]),
-        source: EventAccessSource.read,
+        testSnapshot('e-1'),
+        source: EventAccessSource.household,
       );
-
-      expect((await itemOf()).attendance, EventAttendance.fromAttendee(_me));
-    });
-
-    test('a detail read after the user was removed shows no answer', () async {
-      // The server sends no answer for a user who isn't on the event, and a
-      // roster without them. Their attending row stays until the next
-      // hydrate's purge, but with no answer on it.
       await listRow('e-1', _answer(EventParticipationStatus.attending));
+      // The list row copied its answer onto the household's access.
+      expect(
+        (await householdItems()).single.attendance,
+        _answer(EventParticipationStatus.attending),
+      );
 
       await repo.cacheEvent(
         testSnapshot('e-1', attendees: [_other]),
         source: EventAccessSource.read,
       );
 
-      expect((await itemOf()).attendance, isNull);
+      expect(await repo.watchAttendingEventListItems().first, isEmpty);
+      final household = await householdItems();
+      expect(household.map((i) => i.event.id), ['e-1']);
+      // The read's null answer cleared the household access's answer too.
+      expect(household.single.attendance, isNull);
+    });
+
+    test('a detail read that names the user keeps it', () async {
+      await listRow('e-1', _answer(EventParticipationStatus.attending));
+
+      await repo.cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [_me, _other],
+          attendance: _answer(EventParticipationStatus.attending),
+        ),
+        source: EventAccessSource.read,
+      );
+
+      expect(
+        (await itemOf()).attendance,
+        _answer(EventParticipationStatus.attending),
+      );
     });
 
     test("another user's detail read updates this user's answer from the "
@@ -466,8 +511,13 @@ void main() {
     test("falls back to the roster row where the list hasn't written "
         'one', () async {
       await listRow('e-1', null);
-      await repo.cacheEvent(
-        testSnapshot('e-1', attendees: [_me, _other]),
+      // Another user's read: this user's own would say they don't attend.
+      await repoFor(_kOtherUserId).cacheEvent(
+        testSnapshot(
+          'e-1',
+          attendees: [_me, _other],
+          attendance: EventAttendance.fromAttendee(_other),
+        ),
         source: EventAccessSource.read,
       );
 
@@ -591,7 +641,11 @@ void main() {
 
       // A detail read caches the roster, with this user on it.
       await repo.cacheEvent(
-        testSnapshot('e-1', attendees: [_me, _other]),
+        testSnapshot(
+          'e-1',
+          attendees: [_me, _other],
+          attendance: EventAttendance.fromAttendee(_me),
+        ),
         source: EventAccessSource.read,
       );
       await pumpEventQueue();
@@ -637,7 +691,10 @@ void main() {
         source: EventAccessSource.attending,
       );
       await repo.cacheEvent(
-        testSnapshot('e-1'),
+        testSnapshot(
+          'e-1',
+          attendance: _answer(EventParticipationStatus.attending),
+        ),
         source: EventAccessSource.read,
       );
       final emitted = await watch();

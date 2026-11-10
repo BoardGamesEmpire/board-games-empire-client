@@ -147,8 +147,11 @@ abstract class EventRepository {
   ///   onto the other list's access where they already have it. A detail read
   ///   copies its answer, a null one included, onto either list's access they
   ///   already have. Neither adds an `attending` access, and a household row
-  ///   leaves the user off the attending list. A non-null answer also updates
-  ///   their own row on a cached roster in place, adding none.
+  ///   leaves the user off the attending list. A detail read whose answer is
+  ///   null also removes the user's `attending` access, as the server saying
+  ///   they don't attend; their `read` and `household` access stays (#752).
+  ///   A non-null answer also updates their own row on a cached roster in
+  ///   place, adding none.
   ///
   /// For one read, such as the detail read #498 makes. The hydrate writes a
   /// page at a time, through [cacheEvents].
