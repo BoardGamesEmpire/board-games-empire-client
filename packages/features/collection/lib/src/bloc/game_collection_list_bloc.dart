@@ -59,6 +59,23 @@ import 'package:observability/observability.dart';
 /// The bloc calls `onRetry` rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it.
+///
+/// ## A filter and a sort
+///
+/// The list is narrowed and ordered on the device (#715). The bloc holds a
+/// [CollectionFilter] and a [CollectionSort] beside the cached rows, and a
+/// ready state carries both lists: what is shown, filtered from the whole
+/// collection and then sorted, and the whole collection. Filtering always
+/// starts from the whole collection, never from a list already narrowed:
+/// whether an expansion is missing its base game is a fact of the
+/// collection.
+///
+/// The shown list is derived again only when the rows, the filter or the
+/// sort change, and the same list is handed on until then: the screen places
+/// a list once per instance, so a state that differs only in `refreshing` or
+/// `refreshFailed` must not hand it a new one. A change that arrives before
+/// the list is ready emits nothing; the first ready state applies it. A
+/// change to what is already set emits nothing at all.
 class GameCollectionListBloc
     extends Bloc<GameCollectionListEvent, GameCollectionListState> {
   GameCollectionListBloc({
@@ -73,6 +90,8 @@ class GameCollectionListBloc
     on<GameCollectionListCacheEnded>(_onCacheEnded);
     on<GameCollectionListHydrationUpdated>(_onHydrationUpdated);
     on<GameCollectionListRetryRequested>(_onRetryRequested);
+    on<GameCollectionListFilterChanged>(_onFilterChanged);
+    on<GameCollectionListSortChanged>(_onSortChanged);
 
     _cache = repository.watchCollectionListItems().listen(
       (items) => add(GameCollectionListCacheUpdated(items)),
@@ -113,8 +132,16 @@ class GameCollectionListBloc
   StreamSubscription<Hydration>? _hydrationUpdates;
 
   /// Null until the cache has answered at all, which is not the same as
-  /// having answered with nothing.
+  /// having answered with nothing. The whole collection, whatever
+  /// [_filter] keeps.
   List<GameCollectionListItem>? _items;
+
+  CollectionFilter _filter = const CollectionFilter();
+  CollectionSort _sort = CollectionSort.title;
+
+  /// [_items] filtered by [_filter] and sorted by [_sort], kept until any of
+  /// those three changes, which sets it back to null.
+  List<GameCollectionListItem>? _shown;
 
   /// Set by a failed read, cleared by the next rows.
   bool _readFailed = false;
@@ -132,6 +159,7 @@ class GameCollectionListBloc
   ) {
     _readFailed = false;
     _items = event.items;
+    _shown = null;
     _emitDerived(emit);
   }
 
@@ -192,6 +220,32 @@ class GameCollectionListBloc
     if (!isClosed) _emitDerived(emit);
   }
 
+  void _onFilterChanged(
+    GameCollectionListFilterChanged event,
+    Emitter<GameCollectionListState> emit,
+  ) {
+    if (event.filter == _filter) return;
+    _filter = event.filter;
+    _reshow(emit);
+  }
+
+  void _onSortChanged(
+    GameCollectionListSortChanged event,
+    Emitter<GameCollectionListState> emit,
+  ) {
+    if (event.sort == _sort) return;
+    _sort = event.sort;
+    _reshow(emit);
+  }
+
+  /// Drops the shown list for the next state to derive afresh, and emits
+  /// that state now if the list is up. Otherwise the change waits: a
+  /// loading or error state has no list for it to change.
+  void _reshow(Emitter<GameCollectionListState> emit) {
+    _shown = null;
+    if (state is GameCollectionListReady) _emitDerived(emit);
+  }
+
   void _emitDerived(Emitter<GameCollectionListState> emit) {
     // Holds the error against everything except fresh rows.
     if (_readFailed) return emit(const GameCollectionListError());
@@ -209,7 +263,13 @@ class GameCollectionListBloc
 
     emit(
       GameCollectionListReady(
-        items: items,
+        items: _shown ??= sortCollection(
+          filterCollection(items, _filter),
+          _sort,
+        ),
+        all: items,
+        filter: _filter,
+        sort: _sort,
         refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
       ),
