@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show immutable;
 import 'package:reactive_forms/reactive_forms.dart';
 
 /// Normalization and validation for the user-entered server URL (#36).
@@ -20,6 +21,7 @@ sealed class ServerUrlResult {
 }
 
 /// The input normalized to a usable base URL.
+@immutable
 final class ServerUrlValid extends ServerUrlResult {
   const ServerUrlValid(this.normalized);
 
@@ -50,6 +52,7 @@ enum ServerUrlError {
   insecureHttp,
 }
 
+@immutable
 final class ServerUrlInvalid extends ServerUrlResult {
   const ServerUrlInvalid(this.error);
 

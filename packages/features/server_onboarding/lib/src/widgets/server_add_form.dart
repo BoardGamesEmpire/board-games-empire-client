@@ -217,7 +217,7 @@ class _RetireFailureOnEditState extends State<_RetireFailureOnEdit> {
   void didUpdateWidget(_RetireFailureOnEdit oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.control, widget.control)) {
-      _sub?.cancel();
+      unawaited(_sub?.cancel());
       _sub = widget.control.valueChanges.listen(_onChanged);
     }
   }
@@ -234,7 +234,7 @@ class _RetireFailureOnEditState extends State<_RetireFailureOnEdit> {
 
   @override
   void dispose() {
-    _sub?.cancel();
+    unawaited(_sub?.cancel());
     super.dispose();
   }
 

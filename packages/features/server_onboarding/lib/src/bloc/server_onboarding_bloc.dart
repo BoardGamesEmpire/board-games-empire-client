@@ -152,7 +152,7 @@ class ServerOnboardingBloc
       emit(const ServerOnboardingDuplicate());
     } on ServerCapacityExceededException {
       emit(const ServerOnboardingCapacityExceeded());
-    } catch (e, st) {
+    } on Object catch (e, st) {
       _logger.error(
         'Server onboarding failed after negotiation',
         error: e,
