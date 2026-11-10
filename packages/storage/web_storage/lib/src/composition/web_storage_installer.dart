@@ -55,7 +55,7 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 class WebStorageInstaller {
   /// Creates the installer.
   ///
-  /// [factory] opens the wasm database; [onReport] is the app layer's
+  /// `factory` opens the wasm database; `onReport` is the app layer's
   /// notification hook and may be null.
   const WebStorageInstaller({
     this._factory = const WebWasmExecutorFactory(),
@@ -104,16 +104,17 @@ class WebStorageInstaller {
     // compensating `container.dispose()` in `bootstrapWebServerScope` fires
     // the dispose hooks the container *has*, and this one never landed.
     try {
-      container.registerSingleton<ServerDatabase>(
-        db,
-        dispose: (database) => database.close(),
-      );
-      // Beside the database it reads, and inside this guard for the same
-      // reason: a throw here must still close the database. It holds nothing
-      // but the database, so it needs no dispose hook of its own (#142).
-      container.registerSingleton<UnsentChangesNoticeRepository>(
-        UnsentChangesNoticeRepositoryImpl(db),
-      );
+      container
+        ..registerSingleton<ServerDatabase>(
+          db,
+          dispose: (database) => database.close(),
+        )
+        // Beside the database it reads, and inside this guard for the same
+        // reason: a throw here must still close the database. It holds nothing
+        // but the database, so it needs no dispose hook of its own (#142).
+        ..registerSingleton<UnsentChangesNoticeRepository>(
+          UnsentChangesNoticeRepositoryImpl(db),
+        );
     } catch (_) {
       await _safeClose(db);
       rethrow;
@@ -138,7 +139,7 @@ class WebStorageInstaller {
   Future<void> _safeClose(ServerDatabase db) async {
     try {
       await db.close();
-    } catch (_) {
+    } on Object catch (_) {
       // Best-effort: the executor never opened successfully.
     }
   }

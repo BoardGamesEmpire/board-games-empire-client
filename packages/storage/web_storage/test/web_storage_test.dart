@@ -361,9 +361,9 @@ void main() {
           factory: WebWasmExecutorFactory(
             open:
                 ({
-                  required String databaseName,
-                  required Uri sqlite3Uri,
-                  required Uri driftWorkerUri,
+                  required databaseName,
+                  required sqlite3Uri,
+                  required driftWorkerUri,
                 }) async => WasmDatabaseResult(
                   real.resolvedExecutor,
                   implementation,
@@ -403,9 +403,9 @@ void main() {
         WebStorageInstaller(
           factory: WebWasmExecutorFactory(
             open: ({
-              required String databaseName,
-              required Uri sqlite3Uri,
-              required Uri driftWorkerUri,
+              required databaseName,
+              required sqlite3Uri,
+              required driftWorkerUri,
             }) async => throw StateError('no storage for you'),
           ),
         ).install(container, _identity(_uniqueServerId())),
@@ -442,9 +442,9 @@ void main() {
           factory: WebWasmExecutorFactory(
             open:
                 ({
-                  required String databaseName,
-                  required Uri sqlite3Uri,
-                  required Uri driftWorkerUri,
+                  required databaseName,
+                  required sqlite3Uri,
+                  required driftWorkerUri,
                 }) async => WasmDatabaseResult(
                   real.resolvedExecutor,
                   WasmStorageImplementation.sharedIndexedDb,

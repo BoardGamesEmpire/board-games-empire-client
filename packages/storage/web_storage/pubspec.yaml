@@ -9,25 +9,23 @@ environment:
 resolution: workspace
 
 dependencies:
-  flutter:
-    sdk: flutter
-
+  # Bumped with the workspace to the analyzer-13 tier: 2.34.2 is the first
+  # release whose assets include sqlite3.wasm, which is what lets
+  # `tool/fetch_web_assets.dart` derive the release from the resolved
+  # version instead of pinning one.
+  drift: ^2.34.3
   # The platform-neutral half of the drift layer (#287): the databases as
   # executor-agnostic classes plus every repository. This package supplies
   # the executor those take, and nothing else — deliberately NOT
   # `drift_storage_native.dart`, which carries the dart:io surface.
   drift_storage:
     path: ../drift_storage
+  flutter:
+    sdk: flutter
   interfaces:
     path: ../../core/interfaces
   models:
     path: ../../core/models
-
-  # Bumped with the workspace to the analyzer-13 tier: 2.34.2 is the first
-  # release whose assets include sqlite3.wasm, which is what lets
-  # `tool/fetch_web_assets.dart` derive the release from the resolved
-  # version instead of pinning one.
-  drift: ^2.34.3
 
 dev_dependencies:
   # Browser suites install into a real container, the same implementation the

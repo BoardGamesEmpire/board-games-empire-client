@@ -15,7 +15,7 @@
 /// source closure and fails on a library that is not web-safe.
 ///
 /// No at-rest encryption, deliberately (#63) — see
-/// [WebWasmExecutorFactory], which carries the full reasoning at the point
+/// `WebWasmExecutorFactory`, which carries the full reasoning at the point
 /// the executor is built.
 library;
 
