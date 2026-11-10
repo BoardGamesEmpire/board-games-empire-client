@@ -346,7 +346,7 @@
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs and eventsGamesPersonLeftOut, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -587,6 +587,236 @@
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {
     "description": "Label of the second tab on an event's screen, beside the Details tab (eventsDetailTabDetails). The tab holds the games the people coming to the event offer to bring. Keep it short: two tabs share the width of a phone."
+  },
+  "eventsGamesSearchLabel": "Search the games",
+  "@eventsGamesSearchLabel": {
+    "description": "Label of the search field on the Games tab of an event's screen, which narrows the games people offer to bring by their title as the user types."
+  },
+  "eventsGamesSearchClear": "Clear search",
+  "@eventsGamesSearchClear": {
+    "description": "Accessible name and tooltip of the button inside the Games tab's search field (eventsGamesSearchLabel) that empties it."
+  },
+  "eventsGamesPeople": "{count, plural, =0{People} =1{People: 1} other{People: {count}}}",
+  "@eventsGamesPeople": {
+    "description": "Button on the Games tab of an event's screen that opens a list of the people offering games, to show only some people's games or leave some out. The number is how many people are chosen there; with none chosen it is the word alone.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsGamesNotMine": "Not mine",
+  "@eventsGamesNotMine": {
+    "description": "Filter chip on the Games tab of an event's screen that, turned on, leaves out the games the user offers to bring, so only other people's show."
+  },
+  "eventsGamesPeopleTitle": "Whose games",
+  "@eventsGamesPeopleTitle": {
+    "description": "Heading of the list that eventsGamesPeople opens, and its name to a screen reader: one chip per person offering a game to the event, to show only the games of the people chosen."
+  },
+  "eventsGamesPeopleLeaveOut": "Leave these people out instead",
+  "@eventsGamesPeopleLeaveOut": {
+    "description": "Switch under the people in the Whose games list (eventsGamesPeopleTitle). On, the games of the people chosen are left out, rather than the only ones shown. It can be turned only once someone is chosen."
+  },
+  "eventsGamesPersonYou": "You",
+  "@eventsGamesPersonYou": {
+    "description": "Names the user among the people offering games to an event: their chip in the Whose games list (eventsGamesPeopleTitle), and the chip under the Games tab's search field while their games are chosen."
+  },
+  "eventsGamesPersonLeftOut": "Not {name}",
+  "@eventsGamesPersonLeftOut": {
+    "description": "A chip under the Games tab's search field naming someone whose games are left out (eventsGamesPeopleLeaveOut is on). {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none; the user's own chip says eventsGamesPersonYouLeftOut instead.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsGamesPersonYouLeftOut": "Not you",
+  "@eventsGamesPersonYouLeftOut": {
+    "description": "The chip under the Games tab's search field while the user's own games are left out, as with the Not mine chip (eventsGamesNotMine): eventsGamesPersonLeftOut for the user."
+  },
+  "eventsGamesPersonRemove": "Remove {filter}",
+  "@eventsGamesPersonRemove": {
+    "description": "Accessible name and tooltip of the remove button on a chip under the Games tab's search field, which stops narrowing the games by that person. {filter} is the chip's own words, such as 'Ada', 'You' or 'Not Ada'.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsGamesCount": "{count, plural, =1{1 game} other{{count} games}} of {total}",
+  "@eventsGamesCount": {
+    "description": "Under the Games tab's search field while a search or a person narrows the games: how many games are shown, of all the games offered to the event.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "9"
+      }
+    }
+  },
+  "eventsGamesYours": "You're bringing this",
+  "@eventsGamesYours": {
+    "description": "Last line of a game on the Games tab of an event's screen that the user offered to bring."
+  },
+  "eventsGamesTheirs": "{name} is bringing this",
+  "@eventsGamesTheirs": {
+    "description": "Last line of a game on the Games tab of an event's screen that someone else offered to bring. {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsGamesWhere": "{platform} · {medium}",
+  "@eventsGamesWhere": {
+    "description": "Second line of a game on the Games tab of an event's screen: the platform the owner has it on, then whether their copy is physical or digital (eventsGamesMediumPhysical, eventsGamesMediumDigital), for example 'Tabletop · Physical'. A game whose copy is neither shows the platform alone. Screen readers hear eventsGamesWhereSpoken instead.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
+  },
+  "eventsGamesWhereSpoken": "{platform}, {medium}",
+  "@eventsGamesWhereSpoken": {
+    "description": "eventsGamesWhere as a screen reader reads it, without the symbol between the two, which would be read out. It should sound like a short pause between them.",
+    "placeholders": {
+      "platform": {
+        "type": "String",
+        "example": "Tabletop"
+      },
+      "medium": {
+        "type": "String",
+        "example": "Physical"
+      }
+    }
+  },
+  "eventsGamesMediumPhysical": "Physical",
+  "@eventsGamesMediumPhysical": {
+    "description": "In eventsGamesWhere: the owner's copy of the game is a physical one, such as a boxed board game or a cartridge."
+  },
+  "eventsGamesMediumDigital": "Digital",
+  "@eventsGamesMediumDigital": {
+    "description": "In eventsGamesWhere: the owner's copy of the game is a digital one, such as a download or an online game."
+  },
+  "eventsGamesTakeBack": "Take back",
+  "@eventsGamesTakeBack": {
+    "description": "Button under a game the user offered to bring, on the Games tab of an event's screen: it takes the game off the games they're bringing. Screen readers hear eventsGamesTakeBackNamed instead."
+  },
+  "eventsGamesTakeBackNamed": "Take back {title}",
+  "@eventsGamesTakeBackNamed": {
+    "description": "eventsGamesTakeBack as a screen reader reads it, naming the game, so each game's button says whose it is.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesOffer": "Offer games",
+  "@eventsGamesOffer": {
+    "description": "Button at the top of the Games tab of an event's screen that opens a page of the user's collection, to pick games to offer to bring to the event."
+  },
+  "eventsGamesOfferNotGoing": "You've said you're not going, so a game you offer couldn't be picked. Change your answer to offer games.",
+  "@eventsGamesOfferNotGoing": {
+    "description": "Shown under the Offer games button (eventsGamesOffer), which can't be pressed, when the user has answered Not going to the event: games offered by someone not going can't be put forward or added to the event."
+  },
+  "eventsGamesEmptyTitle": "No games offered yet",
+  "@eventsGamesEmptyTitle": {
+    "description": "On the Games tab of an event's screen when nobody has offered to bring a game."
+  },
+  "eventsGamesEmptyBody": "Games people offer to bring will show here.",
+  "@eventsGamesEmptyBody": {
+    "description": "Under eventsGamesEmptyTitle on the Games tab of an event's screen."
+  },
+  "eventsGamesNoMatchesTitle": "No games match",
+  "@eventsGamesNoMatchesTitle": {
+    "description": "On the Games tab of an event's screen when games are offered but the search or the people chosen leave none of them."
+  },
+  "eventsGamesClearFilters": "Clear filters",
+  "@eventsGamesClearFilters": {
+    "description": "Button under eventsGamesNoMatchesTitle that empties the search and stops narrowing by people, so every game offered shows again."
+  },
+  "eventsGamesHiddenTitle": "The games aren't shown to you",
+  "@eventsGamesHiddenTitle": {
+    "description": "On the Games tab of an event's screen when the server won't show the user the games people offer to bring."
+  },
+  "eventsGamesLoading": "Loading the games",
+  "@eventsGamesLoading": {
+    "description": "Read by a screen reader, never drawn, while the Games tab of an event's screen waits for the games people offer to bring."
+  },
+  "eventsGamesFailedTitle": "Couldn't load the games",
+  "@eventsGamesFailedTitle": {
+    "description": "On the Games tab of an event's screen when the games people offer to bring couldn't be read and none were read before."
+  },
+  "eventsGamesFailedBody": "Check your connection and try again.",
+  "@eventsGamesFailedBody": {
+    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry)."
+  },
+  "eventsGamesRefreshFailed": "Couldn't update the games. These may be out of date.",
+  "@eventsGamesRefreshFailed": {
+    "description": "Banner on the Games tab of an event's screen, above the games read before, when reading them again failed."
+  },
+  "eventsGamesTakenBack": "{title} is off your games.",
+  "@eventsGamesTakenBack": {
+    "description": "Banner at the foot of an event's screen once a game the user took back (eventsGamesTakeBack) is off the games they're bringing.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off your games yet.",
+  "@eventsGamesStillSupplies": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesTakeBackRefused": "You can't take {title} back.",
+  "@eventsGamesTakeBackRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user take a game back.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesTakeBackFailed": "Couldn't take {title} back. Try again.",
+  "@eventsGamesTakeBackFailed": {
+    "description": "Banner at the foot of an event's screen when taking a game back failed for any other reason, such as no connection.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesTakeBackDropped": "{title} wasn't taken back: the event changed first.",
+  "@eventsGamesTakeBackDropped": {
+    "description": "Banner at the foot of an event's screen when a take-back was not sent, because the event changed between the press and the moment it would have gone: the game was already off the list, or the user may no longer take games back.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
   },
   "eventsDetailAttendeesNotLoaded": "Not loaded yet.",
   "@eventsDetailAttendeesNotLoaded": {

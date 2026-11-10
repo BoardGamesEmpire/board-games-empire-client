@@ -110,7 +110,12 @@ void main() {
     home: EventDetailScreen(
       eventId: 'e-1',
       repository: repository,
-      remote: FakeEventRemote.detail((_) => hosted.snapshot),
+      // Nobody has offered a game: the Games tab is the empty state, under
+      // its header. Its rows are audited with the tab's own suite.
+      remote: FakeEventRemote.detail(
+        (_) => hosted.snapshot,
+        pool: (_) => const [],
+      ),
       onBack: (_) {},
       now: () => now,
     ),
@@ -129,8 +134,8 @@ void main() {
   Finder tab(EventDetailTab which) =>
       find.byKey(EventDetailScreen.tabKey(which));
 
-  /// The Games tab's body. It is empty for now (#516), so it has no extent,
-  /// and a finder that skips what isn't on screen would pass it over.
+  /// The Games tab's body (#516). A sliver group, which a finder that skips
+  /// what isn't on screen would pass over.
   Finder gamesBody() =>
       find.byKey(EventDetailScreen.gamesBodyKey, skipOffstage: false);
 
@@ -247,8 +252,8 @@ void main() {
           );
         }
 
-        // On Games, the bar is what the page holds, so the guideline
-        // measures the tabs and the app bar alone.
+        // On Games, with the tab's header and its empty state under the
+        // bar.
         await tester.tap(tab(EventDetailTab.games));
         await tester.pumpAndSettle();
         expect(gamesBody(), findsOneWidget);
@@ -280,8 +285,8 @@ void main() {
     });
 
     // Details with the bar is audited with the rest of the event, in the
-    // screen's own suite. This is the Games tab, which holds nothing yet
-    // (#516).
+    // screen's own suite. This is the Games tab with nobody's games on it
+    // (#516); with a pool it is audited in the tab's own suite.
     auditScreen(
       'ready, on the Games tab',
       build: harness,

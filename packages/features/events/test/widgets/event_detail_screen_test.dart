@@ -349,15 +349,19 @@ void main() {
 
   /// Answers each read from the completer it adds to [reads], so a test
   /// decides when, and how, each one ends. Deletes answer from [deleted],
-  /// and succeed without one.
+  /// and succeed without one. The games pool is empty (#516).
   FakeEventRemote scripted(
     List<Completer<EventSnapshot>> reads, {
     FutureOr<void> Function(String id)? deleted,
-  }) => FakeEventRemote.detail((_) {
-    final read = Completer<EventSnapshot>();
-    reads.add(read);
-    return read.future;
-  }, deleted: deleted ?? (_) {});
+  }) => FakeEventRemote.detail(
+    (_) {
+      final read = Completer<EventSnapshot>();
+      reads.add(read);
+      return read.future;
+    },
+    deleted: deleted ?? (_) {},
+    pool: (_) => const [],
+  );
 
   /// The text [finder] shows, for a `Text` with a key.
   String? textOf(WidgetTester tester, Finder finder) =>
@@ -840,8 +844,8 @@ void main() {
     Finder bar() => find.byKey(EventDetailScreen.tabBarKey);
     Finder tab(EventDetailTab which) =>
         find.byKey(EventDetailScreen.tabKey(which));
-    // Empty for now (#516), so it has no extent, and a finder that skips
-    // what isn't on screen would pass it over.
+    // A sliver group (#516), which a finder that skips what isn't on screen
+    // would pass over.
     Finder gamesBody() =>
         find.byKey(EventDetailScreen.gamesBodyKey, skipOffstage: false);
     Finder dates() => find.byKey(EventDetailScreen.datesKey);
@@ -862,14 +866,16 @@ void main() {
       attendance: _attending(EventRole.host),
     );
 
-    /// A server whose reads serve [detail], and whose deletes answer from
-    /// [deleted].
+    /// A server whose reads serve [detail], whose deletes answer from
+    /// [deleted], and whose games pool is empty: the Games tab's own suite
+    /// covers what it shows.
     FakeEventRemote serving(
       EventDetail detail, {
       FutureOr<void> Function(String id)? deleted,
     }) => FakeEventRemote.detail(
       (_) => detail.snapshot,
       deleted: deleted ?? (_) {},
+      pool: (_) => const [],
     );
 
     /// Shows [detail] with a server and a way back, as the app opens it, and
@@ -987,7 +993,7 @@ void main() {
 
         expectGames();
         expect(bar(), findsOneWidget);
-        // An empty pool holds no rows yet (#516).
+        // An empty pool holds no rows (#516).
         expect(scrollView(tester).semanticChildCount, 0);
       },
     );
