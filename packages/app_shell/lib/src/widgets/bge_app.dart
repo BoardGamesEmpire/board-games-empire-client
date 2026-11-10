@@ -41,6 +41,7 @@ import 'package:game_catalog/game_catalog.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_filters/l10n/game_filters_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -2958,6 +2959,7 @@ class _BgeAppState extends State<BgeApp> {
         HouseholdLocalizations.delegate,
         GameCollectionLocalizations.delegate,
         GameCatalogLocalizations.delegate,
+        GameFiltersLocalizations.delegate,
         EventsLocalizations.delegate,
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,

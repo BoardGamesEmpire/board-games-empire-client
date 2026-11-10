@@ -17,6 +17,12 @@ GameCollectionListItem listItem(
   DateTime? lastPlayed,
   List<ExpansionLink> baseGames = const [],
   ContentType contentType = ContentType.baseGame,
+  PlatformType? platformType,
+  int? publishYear,
+  int? minPlayers,
+  int? maxPlayers,
+  int? minPlayTime,
+  int? maxPlayTime,
 }) => GameCollectionListItem(
   entry: GameCollection(
     id: id,
@@ -37,4 +43,10 @@ GameCollectionListItem listItem(
   thumbnail: thumbnail,
   baseGames: baseGames,
   contentType: contentType,
+  platformType: platformType,
+  publishYear: publishYear,
+  minPlayers: minPlayers,
+  maxPlayers: maxPlayers,
+  minPlayTime: minPlayTime,
+  maxPlayTime: maxPlayTime,
 );

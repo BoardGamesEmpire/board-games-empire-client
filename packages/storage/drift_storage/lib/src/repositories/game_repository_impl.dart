@@ -420,6 +420,12 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   /// Drift writes just the columns a companion marks present, which is what
   /// keeps a fuller record's other fields intact, its `fullRecordCachedAt`
   /// among them (#406).
+  ///
+  /// The filter facts (#715) follow the same rule as the links and content
+  /// type: a summary whose `facts` is null leaves every fact column out, so
+  /// the cache keeps what it has; a summary with facts writes each field as
+  /// it is, nulls included, because the server is then saying there is no
+  /// value.
   Future<void> _writeSummary(PlatformGameSummary summary, DateTime now) async {
     final game = summary.game;
     // A response that didn't carry the links or the content type leaves the
@@ -432,6 +438,17 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     final contentTypeWire = contentType == null
         ? const Value<String>.absent()
         : Value(contentType.toWire());
+    final gameFacts = game.facts;
+    final platformFacts = summary.facts;
+    // `PlatformType.unknown` has no wire name: it is stored as no type.
+    final platformTypeWire = switch (platformFacts) {
+      null => const Value<String?>.absent(),
+      PlatformGameSummaryFacts(:final platformType) => Value(
+        platformType == null || platformType == PlatformType.unknown
+            ? null
+            : platformType.toWire(),
+      ),
+    };
 
     await _db
         .into(_db.gamesTable)
@@ -444,6 +461,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
             thumbnail: Value(game.thumbnail),
             baseGamesJson: baseGamesJson,
             contentType: contentTypeWire,
+            publishYear: _factValue(gameFacts, (f) => f.publishYear),
+            minPlayers: _factValue(gameFacts, (f) => f.minPlayers),
+            maxPlayers: _factValue(gameFacts, (f) => f.maxPlayers),
+            minPlayTime: _factValue(gameFacts, (f) => f.minPlayTime),
+            maxPlayTime: _factValue(gameFacts, (f) => f.maxPlayTime),
             createdAt: now,
             updatedAt: now,
           ),
@@ -455,6 +477,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
               thumbnail: Value(game.thumbnail),
               baseGamesJson: baseGamesJson,
               contentType: contentTypeWire,
+              publishYear: _factValue(gameFacts, (f) => f.publishYear),
+              minPlayers: _factValue(gameFacts, (f) => f.minPlayers),
+              maxPlayers: _factValue(gameFacts, (f) => f.maxPlayers),
+              minPlayTime: _factValue(gameFacts, (f) => f.minPlayTime),
+              maxPlayTime: _factValue(gameFacts, (f) => f.maxPlayTime),
             ),
           ),
         );
@@ -469,6 +496,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
             platformName: summary.platformName,
             image: Value(summary.image),
             thumbnail: Value(summary.thumbnail),
+            platformType: platformTypeWire,
+            minPlayers: _factValue(platformFacts, (f) => f.minPlayers),
+            maxPlayers: _factValue(platformFacts, (f) => f.maxPlayers),
+            minPlayTime: _factValue(platformFacts, (f) => f.minPlayTime),
+            maxPlayTime: _factValue(platformFacts, (f) => f.maxPlayTime),
             createdAt: now,
             updatedAt: now,
           ),
@@ -479,6 +511,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
               platformName: Value(summary.platformName),
               image: Value(summary.image),
               thumbnail: Value(summary.thumbnail),
+              platformType: platformTypeWire,
+              minPlayers: _factValue(platformFacts, (f) => f.minPlayers),
+              maxPlayers: _factValue(platformFacts, (f) => f.maxPlayers),
+              minPlayTime: _factValue(platformFacts, (f) => f.minPlayTime),
+              maxPlayTime: _factValue(platformFacts, (f) => f.maxPlayTime),
             ),
           ),
         );
@@ -496,6 +533,12 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
           mode: InsertMode.insertOrIgnore,
         );
   }
+
+  /// One fact column of a summary write (#715): absent when the response
+  /// carried no [facts] (the cache keeps what it has), else the field as it
+  /// is, null included.
+  Value<int?> _factValue<F>(F? facts, int? Function(F facts) field) =>
+      facts == null ? const Value<int?>.absent() : Value(field(facts));
 
   // ── Access ─────────────────────────────────────────────────────────────────
 

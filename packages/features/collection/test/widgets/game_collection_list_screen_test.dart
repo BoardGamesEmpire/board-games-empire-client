@@ -11,6 +11,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -62,8 +63,10 @@ void main() {
   Widget app(Widget home, {TextScaler? textScaler, ThemeData? theme}) =>
       MaterialApp(
         theme: theme ?? BgeTheme.light(),
-        localizationsDelegates:
-            GameCollectionLocalizations.localizationsDelegates,
+        localizationsDelegates: const [
+          ...GameCollectionLocalizations.localizationsDelegates,
+          GameFiltersLocalizations.delegate,
+        ],
         supportedLocales: GameCollectionLocalizations.supportedLocales,
         builder: textScaler == null
             ? null
@@ -1164,6 +1167,767 @@ void main() {
     });
   });
 
+  group('search, filters and sort (#715)', () {
+    final search = find.byKey(GameCollectionListScreen.searchKey);
+    final sortButton = find.byKey(GameCollectionListScreen.sortButtonKey);
+    final count = find.byKey(GameCollectionListScreen.resultCountKey);
+    final noMatches = find.byKey(GameCollectionListScreen.noMatchesKey);
+    final clearFilters = find.byKey(GameCollectionListScreen.clearFiltersKey);
+    Finder row(String id) => find.byKey(GameCollectionListScreen.rowKey(id));
+
+    /// Three games: two on a tabletop, one on a PC, each rated.
+    List<GameCollectionListItem> three() => [
+      listItem(
+        'e-1',
+        title: 'Azul',
+        platformType: PlatformType.tabletop,
+        rating: 5,
+      ),
+      listItem(
+        'e-2',
+        title: 'Brass',
+        platformType: PlatformType.pc,
+        rating: 9,
+      ),
+      // Catan, the default title.
+      listItem(
+        'e-3',
+        platformType: PlatformType.tabletop,
+        rating: 7,
+      ),
+    ];
+
+    GameCollectionListBloc listBloc(WidgetTester tester) =>
+        BlocProvider.of<GameCollectionListBloc>(
+          tester.element(find.byType(GameCollectionListSliver)),
+        );
+
+    String? countText(WidgetTester tester) => tester.widget<Text>(count).data;
+
+    /// The search field's own focus node, which [BgeSearchField] gives its
+    /// text field.
+    FocusNode searchFocus(WidgetTester tester) =>
+        tester.widget<TextField>(search).focusNode!;
+
+    String searchText(WidgetTester tester) =>
+        tester.widget<TextField>(search).controller!.text;
+
+    Future<void> openFilters(WidgetTester tester) async {
+      await tester.tap(find.byKey(GameFilterKeys.button));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> tapInSheet(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    /// Closes the filter sheet by tapping the barrier above it.
+    Future<void> closeFilters(WidgetTester tester) async {
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+    }
+
+    /// The titles of the rows shown, top to bottom.
+    List<String> shownTitles(WidgetTester tester, List<String> titles) {
+      final shown = [
+        for (final title in titles)
+          if (find.text(title).evaluate().isNotEmpty) title,
+      ];
+      return shown..sort(
+        (a, b) => tester
+            .getTopLeft(find.text(a))
+            .dy
+            .compareTo(tester.getTopLeft(find.text(b)).dy),
+      );
+    }
+
+    testWidgets('typing in the search narrows the list and the count says '
+        'so', (tester) async {
+      await show(tester, three());
+      expect(count, findsNothing);
+
+      await tester.enterText(search, 'bra');
+      await tester.pumpAndSettle();
+
+      expect(row('e-2'), findsOneWidget);
+      expect(row('e-1'), findsNothing);
+      expect(row('e-3'), findsNothing);
+      expect(countText(tester), '1 game of 3');
+      expect(listBloc(tester).state, isA<GameCollectionListReady>());
+    });
+
+    testWidgets('the count counts games, not entries', (tester) async {
+      // Wingspan owned twice is one game, as its stack is one row.
+      await show(tester, [
+        listItem('w-1', gameId: 'g-wingspan', title: 'Wingspan'),
+        listItem(
+          'w-2',
+          gameId: 'g-wingspan',
+          title: 'Wingspan',
+          medium: GameMedium.digital,
+        ),
+        listItem('e-1', title: 'Azul'),
+        listItem('e-2', title: 'Brass'),
+      ]);
+
+      await tester.enterText(search, 'wing');
+      await tester.pumpAndSettle();
+
+      expect(countText(tester), '1 game of 3');
+    });
+
+    testWidgets('the count is a live region', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester, three());
+
+      await tester.enterText(search, 'a');
+      await tester.pumpAndSettle();
+
+      expect(countText(tester), '3 games of 3');
+      expect(
+        tester.getSemantics(count),
+        isSemantics(label: '3 games of 3', isLiveRegion: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('typing never builds the field afresh, so it keeps its '
+        'focus', (tester) async {
+      await show(tester, three());
+      await tester.tap(search);
+      await tester.pump();
+      final field = tester.state(find.byType(BgeSearchField));
+      final focus = searchFocus(tester);
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      for (final text in ['c', 'ca', 'cat', 'zzz', '']) {
+        await tester.enterText(search, text);
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(BgeSearchField)), same(field));
+        expect(focus.hasPrimaryFocus, isTrue, reason: 'after "$text"');
+      }
+    });
+
+    testWidgets('the sheet offers the medium, the missing base game and '
+        'the flips', (tester) async {
+      await show(tester, three());
+      await openFilters(tester);
+
+      expect(
+        find.byKey(GameFilterKeys.medium(GameMedium.digital)),
+        findsOneWidget,
+      );
+      expect(find.byKey(GameFilterKeys.missingBaseGame), findsOneWidget);
+      expect(
+        find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a platform filter from the sheet narrows the list, and its '
+        'chip removes it', (tester) async {
+      await show(tester, three());
+      await openFilters(tester);
+      await tapInSheet(
+        tester,
+        find.byKey(GameFilterKeys.platformType(PlatformType.pc)),
+      );
+      await closeFilters(tester);
+
+      expect(row('e-2'), findsOneWidget);
+      expect(row('e-1'), findsNothing);
+      expect(countText(tester), '1 game of 3');
+      expect(find.text('Filters (1)'), findsOneWidget);
+      final chip = find.byKey(GameFilterKeys.inUse('platform_pc'));
+      expect(chip, findsOneWidget);
+
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
+
+      expect(chip, findsNothing);
+      expect(row('e-1'), findsOneWidget);
+      expect(row('e-2'), findsOneWidget);
+      expect(row('e-3'), findsOneWidget);
+      expect(count, findsNothing);
+      expect(listBloc(tester).filter, const CollectionFilter());
+    });
+
+    // A range field commits what it holds as the sheet closes, from its
+    // dispose when it doesn't hold focus, while the tree is locked.
+    for (final focused in [true, false]) {
+      testWidgets('a bound typed in the sheet narrows the list once the '
+          'sheet closes unsubmitted, the field '
+          '${focused ? 'focused' : 'filled with no focus'}', (tester) async {
+        await show(tester, [
+          listItem('e-1', title: 'Azul', publishYear: 2017),
+          listItem('e-2', title: 'Brass', publishYear: 2007),
+          listItem('e-3', publishYear: 1995),
+        ]);
+        await openFilters(tester);
+        final from = find.byKey(
+          GameFilterKeys.rangeField(CollectionFacet.publishYear, from: true),
+        );
+        await tester.ensureVisible(from);
+        await tester.pumpAndSettle();
+        if (focused) {
+          await tester.enterText(from, '2000');
+        } else {
+          // As an assistive tool's set-text does, with no focus on it.
+          tester.widget<TextField>(from).controller!.text = '2000';
+        }
+        await tester.pump();
+
+        await closeFilters(tester);
+
+        expect(tester.takeException(), isNull);
+        expect(row('e-1'), findsOneWidget);
+        expect(row('e-2'), findsOneWidget);
+        expect(row('e-3'), findsNothing);
+        expect(countText(tester), '2 games of 3');
+        expect(find.text('Filters (1)'), findsOneWidget);
+      });
+    }
+
+    testWidgets('a flipped filter leaves its games out', (tester) async {
+      await show(tester, three());
+      await openFilters(tester);
+      await tapInSheet(
+        tester,
+        find.byKey(GameFilterKeys.platformType(PlatformType.tabletop)),
+      );
+      await tapInSheet(
+        tester,
+        find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+      );
+      await closeFilters(tester);
+
+      expect(row('e-2'), findsOneWidget);
+      expect(row('e-1'), findsNothing);
+      expect(row('e-3'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(GameFilterKeys.inUse('platform_tabletop')),
+          matching: find.text('Not Tabletop'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a stack whose one entry matched is a single row', (
+      tester,
+    ) async {
+      await show(tester, [
+        listItem('w-1', gameId: 'g-wingspan', title: 'Wingspan'),
+        listItem(
+          'w-2',
+          gameId: 'g-wingspan',
+          title: 'Wingspan',
+          medium: GameMedium.digital,
+        ),
+        listItem('e-1', title: 'Azul'),
+      ]);
+      expect(
+        find.byKey(GameCollectionListScreen.stackKey('g-wingspan')),
+        findsOneWidget,
+      );
+
+      await openFilters(tester);
+      await tapInSheet(
+        tester,
+        find.byKey(GameFilterKeys.medium(GameMedium.digital)),
+      );
+      await closeFilters(tester);
+
+      expect(
+        find.byKey(GameCollectionListScreen.stackKey('g-wingspan')),
+        findsNothing,
+      );
+      expect(row('w-2'), findsOneWidget);
+      expect(row('w-1'), findsNothing);
+      expect(row('e-1'), findsNothing);
+    });
+
+    group('while the list is loading or failed', () {
+      // No state is emitted for a change then, so the header draws what it
+      // sent.
+      final states = <String, Future<void> Function(WidgetTester)>{
+        'loading': (tester) async {
+          await tester.pumpWidget(harness());
+          status.started();
+          items.add(const []);
+          await tester.pump();
+          expect(
+            listBloc(tester).state,
+            isA<GameCollectionListLoading>(),
+          );
+        },
+        'failed': (tester) async {
+          await tester.pumpWidget(harness());
+          items.addError(StateError('no authenticated user'));
+          await tester.pump();
+          expect(listBloc(tester).state, isA<GameCollectionListError>());
+        },
+      };
+      for (final MapEntry(key: name, value: reach) in states.entries) {
+        testWidgets('$name, a filter and a sort show as soon as they are '
+            'chosen', (tester) async {
+          await reach(tester);
+          // The loading spinner never settles, so each step waits out its
+          // transition instead.
+          Future<void> settle() async {
+            await tester.pump();
+            await tester.pump(const Duration(seconds: 1));
+          }
+
+          await tester.tap(find.byKey(GameFilterKeys.button));
+          await settle();
+          final pc = find.byKey(GameFilterKeys.platformType(PlatformType.pc));
+          await tester.ensureVisible(pc);
+          await settle();
+          await tester.tap(pc);
+          await settle();
+          await tester.tapAt(const Offset(10, 10));
+          await settle();
+
+          expect(find.text('Filters (1)'), findsOneWidget);
+          expect(
+            find.byKey(GameFilterKeys.inUse('platform_pc')),
+            findsOneWidget,
+          );
+
+          await tester.tap(sortButton);
+          await settle();
+          await tester.tap(
+            find.byKey(GameCollectionListScreen.sortKey(CollectionSort.rating)),
+          );
+          await settle();
+
+          expect(find.text('Sort: Your rating'), findsOneWidget);
+          expect(listBloc(tester).sort, CollectionSort.rating);
+          expect(
+            listBloc(tester).filter.game.platformTypes,
+            {PlatformType.pc},
+          );
+        });
+      }
+    });
+
+    group('the sort menu', () {
+      MenuItemButton item(WidgetTester tester, CollectionSort sort) =>
+          tester.widget<MenuItemButton>(
+            find.byKey(GameCollectionListScreen.sortKey(sort)),
+          );
+
+      testWidgets('choosing a sort reorders the rows and focus returns to '
+          'the sort button', (tester) async {
+        await show(tester, three());
+        expect(shownTitles(tester, ['Azul', 'Brass', 'Catan']), [
+          'Azul',
+          'Brass',
+          'Catan',
+        ]);
+        expect(find.text('Sort: Title'), findsOneWidget);
+
+        await tester.tap(sortButton);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(GameCollectionListScreen.sortKey(CollectionSort.rating)),
+        );
+        await tester.pump();
+        await tester.pumpAndSettle();
+
+        expect(shownTitles(tester, ['Azul', 'Brass', 'Catan']), [
+          'Brass',
+          'Catan',
+          'Azul',
+        ]);
+        expect(find.text('Sort: Your rating'), findsOneWidget);
+        expect(
+          Focus.of(tester.element(find.text('Sort: Your rating'))),
+          isA<FocusNode>().having((n) => n.hasPrimaryFocus, 'focused', true),
+        );
+      });
+
+      testWidgets('by keyboard, a pick or Escape returns focus to the sort '
+          'button', (
+        tester,
+      ) async {
+        await show(tester, three());
+        await activateByKeyboard(tester, sortButton);
+        expect(
+          find.byKey(GameCollectionListScreen.sortKey(CollectionSort.title)),
+          findsOneWidget,
+        );
+
+        FocusNode itemFocus(CollectionSort sort) => Focus.of(
+          tester.element(
+            find.descendant(
+              of: find.byKey(GameCollectionListScreen.sortKey(sort)),
+              matching: find.byType(Text),
+            ),
+          ),
+        );
+        // Down to Title, the first, then on to Recently added.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(itemFocus(CollectionSort.title).hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(
+          itemFocus(CollectionSort.recentlyAdded).hasPrimaryFocus,
+          isTrue,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        await tester.pumpAndSettle();
+
+        expect(listBloc(tester).sort, CollectionSort.recentlyAdded);
+        final button = Focus.of(
+          tester.element(find.text('Sort: Recently added')),
+        );
+        expect(button.hasPrimaryFocus, isTrue);
+
+        // Open again, into the menu, and leave it with Escape.
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(itemFocus(CollectionSort.title).hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(GameCollectionListScreen.sortKey(CollectionSort.title)),
+          findsNothing,
+        );
+        expect(listBloc(tester).sort, CollectionSort.recentlyAdded);
+        expect(button.hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('offers six orders, the current one checked and selected', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await show(tester, three());
+        expect(
+          tester.getSemantics(sortButton),
+          isSemantics(
+            label: 'Sort: Title',
+            isButton: true,
+            hasExpandedState: true,
+            isExpanded: false,
+          ),
+        );
+
+        await tester.tap(sortButton);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.getSemantics(sortButton),
+          isSemantics(hasExpandedState: true, isExpanded: true),
+        );
+        for (final (sort, label) in [
+          (CollectionSort.title, 'Title'),
+          (CollectionSort.recentlyAdded, 'Recently added'),
+          (CollectionSort.playTime, 'Shortest first'),
+          (CollectionSort.minPlayers, 'Fewest players'),
+          (CollectionSort.maxPlayers, 'Most players'),
+          (CollectionSort.rating, 'Your rating'),
+        ]) {
+          final current = sort == CollectionSort.title;
+          expect(
+            tester.getSemantics(
+              find.byKey(GameCollectionListScreen.sortKey(sort)),
+            ),
+            isSemantics(
+              label: label,
+              hasSelectedState: true,
+              isSelected: current,
+            ),
+            reason: label,
+          );
+          final leading = item(tester, sort).leadingIcon;
+          expect(
+            leading is Icon ? leading.icon : null,
+            current ? Icons.check : null,
+            reason: label,
+          );
+          // The others keep the check's room, so the labels line up.
+          expect(
+            tester.getTopLeft(find.text(label).last).dx,
+            moreOrLessEquals(
+              tester.getTopLeft(find.text('Recently added')).dx,
+              epsilon: 0.5,
+            ),
+            reason: label,
+          );
+        }
+        handle.dispose();
+      });
+    });
+
+    group('no games match', () {
+      testWidgets('a filter that leaves nothing shows No games match, and '
+          'Clear filters brings the list back', (tester) async {
+        await show(tester, three());
+        listBloc(
+          tester,
+        ).add(const GameCollectionListSortChanged(CollectionSort.rating));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(search, 'zzz');
+        await tester.pumpAndSettle();
+
+        expect(noMatches, findsOneWidget);
+        expect(find.text('No games match'), findsOneWidget);
+        expect(
+          find.text(
+            'Nothing in your collection fits this search and these filters.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byKey(GameCollectionListScreen.emptyKey), findsNothing);
+        expect(countText(tester), '0 games of 3');
+        // The header stays above it.
+        expect(
+          tester.getBottomLeft(search).dy,
+          lessThan(tester.getTopLeft(noMatches).dy),
+        );
+
+        await tester.tap(clearFilters);
+        await tester.pumpAndSettle();
+
+        expect(noMatches, findsNothing);
+        expect(row('e-1'), findsOneWidget);
+        expect(row('e-2'), findsOneWidget);
+        expect(row('e-3'), findsOneWidget);
+        expect(searchText(tester), isEmpty);
+        expect(count, findsNothing);
+        expect(listBloc(tester).filter, const CollectionFilter());
+        // The sort stays.
+        expect(listBloc(tester).sort, CollectionSort.rating);
+        expect(find.text('Sort: Your rating'), findsOneWidget);
+      });
+
+      testWidgets('Clear filters clears the filters from the sheet too', (
+        tester,
+      ) async {
+        await show(tester, three());
+        listBloc(tester).add(
+          const GameCollectionListFilterChanged(
+            CollectionFilter(
+              query: 'brass',
+              game: GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(noMatches, findsOneWidget);
+
+        await tester.tap(clearFilters);
+        await tester.pumpAndSettle();
+
+        expect(listBloc(tester).filter, const CollectionFilter());
+        expect(
+          find.byKey(GameFilterKeys.inUse('platform_tabletop')),
+          findsNothing,
+        );
+        expect(find.text('Filters'), findsOneWidget);
+      });
+
+      // Clear filters hands focus to the Filters button, never to the
+      // search field, which would open the on-screen keyboard over the list
+      // the user asked to see.
+      group('Clear filters hands focus to Filters', () {
+        FocusNode filtersFocus(WidgetTester tester) =>
+            Focus.of(tester.element(find.text('Filters')));
+
+        /// A filter that leaves nothing, sent as the sheet would, with no
+        /// focus moved.
+        Future<void> noneMatch(WidgetTester tester) async {
+          await show(tester, three());
+          listBloc(tester).add(
+            const GameCollectionListFilterChanged(
+              CollectionFilter(
+                game: GameSearchFilter(platformTypes: {PlatformType.mobile}),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(clearFilters, findsOneWidget);
+        }
+
+        /// Leaves input focus on no control, as a screen reader's user's is.
+        Future<void> focusNothing(WidgetTester tester) async {
+          FocusManager.instance.primaryFocus?.unfocus();
+          await tester.pump();
+          final focused = FocusManager.instance.primaryFocus;
+          expect(focused == null || focused is FocusScopeNode, isTrue);
+        }
+
+        testWidgets('from a pointer, with focus on nothing', (tester) async {
+          await noneMatch(tester);
+          await focusNothing(tester);
+
+          await tester.tap(clearFilters);
+          await tester.pumpAndSettle();
+
+          expect(clearFilters, findsNothing);
+          expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+        });
+
+        testWidgets('from a pointer, emptying the search field that held '
+            'focus, with no keyboard left open', (tester) async {
+          await show(tester, three());
+          await tester.enterText(search, 'zzz');
+          await tester.pumpAndSettle();
+          expect(tester.testTextInput.isVisible, isTrue);
+
+          await tester.tap(clearFilters);
+          await tester.pumpAndSettle();
+
+          expect(searchText(tester), isEmpty);
+          expect(searchFocus(tester).hasFocus, isFalse);
+          expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+          expect(tester.testTextInput.isVisible, isFalse);
+        });
+
+        testWidgets('from the keyboard', (tester) async {
+          await show(tester, three());
+          await tester.enterText(search, 'zzz');
+          await tester.pumpAndSettle();
+
+          await activateByKeyboard(tester, clearFilters);
+
+          expect(clearFilters, findsNothing);
+          expect(searchText(tester), isEmpty);
+          expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+        });
+
+        testWidgets("from a screen reader's activation, which moves no "
+            'input focus', (tester) async {
+          final handle = tester.ensureSemantics();
+          await noneMatch(tester);
+          await focusNothing(tester);
+
+          tester.semantics.tap(
+            find.semantics.byPredicate(
+              (node) =>
+                  node.label == 'Clear filters' &&
+                  node.getSemanticsData().hasAction(SemanticsAction.tap),
+              describeMatch: (_) => 'Clear filters',
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(clearFilters, findsNothing);
+          expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+          handle.dispose();
+        });
+
+        testWidgets('a pointer press while focus sits on another control '
+            'moves nothing', (tester) async {
+          await noneMatch(tester);
+          final sort = Focus.of(tester.element(find.text('Sort: Title')))
+            ..requestFocus();
+          await tester.pump();
+          expect(sort.hasPrimaryFocus, isTrue);
+
+          await tester.tap(clearFilters);
+          await tester.pumpAndSettle();
+
+          expect(clearFilters, findsNothing);
+          expect(sort.hasPrimaryFocus, isTrue);
+          expect(filtersFocus(tester).hasFocus, isFalse);
+        });
+      });
+
+      testWidgets('an empty collection still shows Browse, not No games '
+          'match', (tester) async {
+        await show(tester, const [], onBrowse: (_) {});
+
+        expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
+        expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
+        expect(noMatches, findsNothing);
+        // The header stays above it.
+        expect(search, findsOneWidget);
+        expect(sortButton, findsOneWidget);
+
+        await tester.enterText(search, 'zzz');
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
+        expect(noMatches, findsNothing);
+      });
+    });
+
+    // The hand-off is the chips' own (game_filters); this is the screen's
+    // wiring of it, the last chip landing on Filters.
+    group('a focused chip removed', () {
+      FocusNode chipFocus(WidgetTester tester, String id) => Focus.of(
+        tester.element(
+          find
+              .descendant(
+                of: find.byKey(GameFilterKeys.inUse(id)),
+                matching: find.byType(Text),
+              )
+              .first,
+        ),
+      );
+
+      Future<void> twoFilters(WidgetTester tester) async {
+        await show(tester, three());
+        listBloc(tester).add(
+          const GameCollectionListFilterChanged(
+            CollectionFilter(
+              game: GameSearchFilter(
+                platformTypes: {PlatformType.tabletop, PlatformType.pc},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('hands focus to the chip after it', (tester) async {
+        await twoFilters(tester);
+        chipFocus(tester, 'platform_tabletop').requestFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(GameFilterKeys.inUse('platform_tabletop')),
+          findsNothing,
+        );
+        expect(chipFocus(tester, 'platform_pc').hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('hands focus to the Filters button once the last chip has '
+          'gone', (tester) async {
+        await twoFilters(tester);
+        chipFocus(tester, 'platform_pc').requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        // The last chip, now the only one, took focus.
+        expect(chipFocus(tester, 'platform_tabletop').hasPrimaryFocus, isTrue);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+
+        expect(
+          Focus.of(tester.element(find.text('Filters'))).hasPrimaryFocus,
+          isTrue,
+        );
+      });
+    });
+  });
+
   group('a game owned more than once (#709)', () {
     final thumbs = _FakeLayouts()..stored = ListLayout.thumbnails;
 
@@ -1633,6 +2397,8 @@ void main() {
       build: screen(open: false),
       arrange: (tester) async {
         await answer(tester, stacked());
+        // At 320dp × 2.0 the header (#715) leaves the rows below the fold.
+        await useWholePage(tester);
         expect(stack, findsOneWidget);
         expect(
           rowSemantics(tester, 'e-1'),
@@ -1745,7 +2511,6 @@ void main() {
       status.finished(CollectionHydrateOutcome.failed);
       await tester.pumpAndSettle();
       expect(find.text(_refreshFailedCopy), findsOneWidget);
-      expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
     }
 
     auditScreen(
@@ -1761,6 +2526,7 @@ void main() {
       arrange: (tester) async {
         await failedOverEmpty(tester);
         await scrollPageToEnd(tester);
+        expect(find.byKey(GameCollectionListScreen.browseKey), findsOneWidget);
       },
     );
 
@@ -1867,13 +2633,236 @@ void main() {
         items.add(rows());
         status.finished(CollectionHydrateOutcome.failed);
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(GameCollectionListScreen.refreshRetryKey));
+        // Below the header (#715), at 320dp × 2.0 below the fold. Once
+        // pressed, the busy banner is shorter, and the page goes back to its
+        // top, where the banner now is.
+        final retry = find.byKey(GameCollectionListScreen.refreshRetryKey);
+        await tester.ensureVisible(retry);
+        await tester.pumpAndSettle();
+        await tester.tap(retry);
         await tester.pump();
         status.started();
+        await tester.pump();
+        tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position
+            .jumpTo(0);
         await tester.pump();
         expect(find.text(_refreshingCopy), findsNWidgets(2));
       },
     );
+
+    GameCollectionListBloc auditBloc(WidgetTester tester) =>
+        BlocProvider.of<GameCollectionListBloc>(
+          tester.element(find.byType(GameCollectionListSliver)),
+        );
+
+    /// Two filters in use, the platform one flipped, which keep every row
+    /// but Azul, and the order with the longest name (#715).
+    const twoFilters = CollectionFilter(
+      mediums: {GameMedium.physical},
+      game: GameSearchFilter(platformTypes: {PlatformType.pc}),
+      excluded: {CollectionFacet.platformType},
+    );
+
+    /// [rows] under [twoFilters], most recently added first: the header at
+    /// its fullest, with both chips and the count.
+    Future<void> narrowed(WidgetTester tester) async {
+      await answer(tester, rows());
+      auditBloc(tester)
+        ..add(const GameCollectionListFilterChanged(twoFilters))
+        ..add(
+          const GameCollectionListSortChanged(CollectionSort.recentlyAdded),
+        );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(GameFilterKeys.inUse('platform_pc')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(GameFilterKeys.inUse('medium_physical')),
+        findsOneWidget,
+      );
+      expect(find.text('29 games of 30'), findsOneWidget);
+      expect(find.text('Sort: Recently added'), findsOneWidget);
+    }
+
+    auditScreen(
+      'ready, two filters in use and a sort',
+      build: screen(),
+      arrange: narrowed,
+    );
+
+    auditScreen(
+      'ready, two filters in use and a sort, in thumbnails',
+      build: screen(layouts: thumbnails()),
+      arrange: narrowed,
+    );
+
+    auditScreen(
+      'no games match',
+      build: screen(),
+      arrange: (tester) async {
+        await answer(tester, rows());
+        auditBloc(tester).add(
+          const GameCollectionListFilterChanged(
+            CollectionFilter(query: 'nothing has this name'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(GameCollectionListScreen.noMatchesKey),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.clearFiltersKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // The collection's sheet: Medium, the missing base game and a flip
+    // under each section, on top of the game search's.
+    auditScreen(
+      'filter sheet open',
+      build: screen(),
+      arrange: (tester) async {
+        await narrowed(tester);
+        await tester.tap(find.byKey(GameFilterKeys.button));
+        await tester.pumpAndSettle();
+        expect(find.byKey(GameFilterKeys.sheet), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'sort menu open',
+      build: screen(),
+      arrange: (tester) async {
+        await narrowed(tester);
+        await tester.tap(find.byKey(GameCollectionListScreen.sortButtonKey));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(GameCollectionListScreen.sortKey(CollectionSort.rating)),
+          findsOneWidget,
+        );
+      },
+    );
+
+    for (final (layout, store, shown) in [
+      ('the list', null, 6),
+      ('thumbnails', thumbnails(), 1),
+    ]) {
+      testWidgets('under a filter, the semantic child count is what '
+          '$layout shows', (tester) async {
+        // Wingspan's five expansions are nested rows under it in the list,
+        // and its cover's strip in thumbnails.
+        await tester.pumpWidget(screen(layouts: store)(BgeTheme.light()));
+        await answer(tester, withExpansions());
+        auditBloc(tester).add(
+          const GameCollectionListFilterChanged(
+            CollectionFilter(query: 'wingspan'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('6 games of 9'), findsOneWidget);
+        expect(
+          find.byKey(GameCollectionListScreen.rowKey('orphan-1')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(GameCollectionListScreen.tileKey('orphan-1')),
+          findsNothing,
+        );
+        expect(
+          tester
+              .widget<CustomScrollView>(find.byType(CustomScrollView))
+              .semanticChildCount,
+          shown,
+        );
+      });
+    }
+
+    testWidgets('at 320dp and twice the text, each header control and its '
+        'label are whole and on screen', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(screen()(BgeTheme.light()));
+      await narrowed(tester);
+
+      final screenRect = Offset.zero & const Size(320, 640);
+      void expectWithin(Rect inner, Rect outer, String what) => expect(
+        outer.inflate(0.5).contains(inner.topLeft) &&
+            outer.inflate(0.5).contains(inner.bottomRight),
+        isTrue,
+        reason: '$what: $inner is not inside $outer',
+      );
+
+      /// [control] on screen and at least 48dp, and each text in it on one
+      /// or more whole lines, painted inside it.
+      void expectWhole(String what, Finder control) {
+        final rect = tester.getRect(control);
+        expectWithin(rect, screenRect, what);
+        expect(rect.height, greaterThanOrEqualTo(48), reason: what);
+        expect(rect.width, greaterThanOrEqualTo(48), reason: what);
+        for (final label
+            in find
+                .descendant(of: control, matching: find.byType(RichText))
+                .evaluate()) {
+          final paragraph = label.renderObject! as RenderParagraph;
+          // The painted rect, through any scaling above the text.
+          expectWithin(
+            tester.getRect(find.byElementPredicate((e) => e == label)),
+            rect,
+            '$what label',
+          );
+          expect(paragraph.didExceedMaxLines, isFalse, reason: what);
+        }
+      }
+
+      final search = find.byKey(GameCollectionListScreen.searchKey);
+      final searchLabel = find.descendant(
+        of: search,
+        matching: find.text('Search your collection'),
+      );
+      final controls = <String, Finder>{
+        'search': search,
+        'Filters': find.byKey(GameFilterKeys.button),
+        'sort': find.byKey(GameCollectionListScreen.sortButtonKey),
+        'layout': find.byKey(GameCollectionListScreen.layoutToggleKey),
+        'PC chip': find.byKey(GameFilterKeys.inUse('platform_pc')),
+        'Physical chip': find.byKey(GameFilterKeys.inUse('medium_physical')),
+      };
+      // The search's label is among the texts checked, resting.
+      expect(searchLabel, findsOneWidget);
+      for (final MapEntry(key: what, value: control) in controls.entries) {
+        expectWhole(what, control);
+      }
+      expectWithin(
+        tester.getRect(find.byKey(GameCollectionListScreen.resultCountKey)),
+        screenRect,
+        'count',
+      );
+
+      // And floating, once there is text: whole, on one line, across the
+      // field. An outlined field floats its label onto its top border, so
+      // the label straddles the field's top edge by design; it is held to
+      // the screen there rather than to the field's box.
+      await tester.enterText(search, 'Twilight');
+      await tester.pumpAndSettle();
+      expect(searchLabel, findsOneWidget);
+      final field = tester.getRect(search);
+      final floating = tester.getRect(searchLabel);
+      expectWithin(floating, screenRect, 'floating search label');
+      expect(floating.left, greaterThanOrEqualTo(field.left - 0.5));
+      expect(floating.right, lessThanOrEqualTo(field.right + 0.5));
+      expect(
+        tester.renderObject<RenderParagraph>(searchLabel).didExceedMaxLines,
+        isFalse,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('expansions (#711)', () {

@@ -47,6 +47,12 @@ repository, the status, the retry, an entry trigger and, where there is a
 catalog, a browse action the empty state offers (#45); the screen resolves
 nothing itself.
 
+A header above the list searches it, narrows it with `game_filters`' sheet
+and chips, and sorts it (#715). The filter and the sort are the bloc's, which
+narrows and orders the cached rows on the device. Its ready state carries both
+what is shown and the whole collection, so a filter that leaves nothing, "No
+games match" with Clear filters, reads apart from an empty collection.
+
 The list body is `GameCollectionListSliver`, separate from the page, so a
 two-pane layout can host it under its own app bar.
 

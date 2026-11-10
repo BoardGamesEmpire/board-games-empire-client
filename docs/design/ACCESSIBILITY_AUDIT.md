@@ -210,7 +210,14 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    people once the page closes.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
-   its edit sheet and remove dialog.
+   its edit sheet and remove dialog. Then the header: type in the search and
+   check the count under the filters ("1 game of 3") is read as it changes;
+   open Filters, choose a medium and flip a section, and check each chip
+   reads its filter, a flipped one starting with "Not"; open the sort menu
+   and check it says it is expanded, that the current order reads as
+   selected, and that a pick returns focus to the sort button. Then search
+   for something no game has, and check "No games match" is read and Clear
+   filters brings the list back.
 10. Admin, from the drawer: the dashboard, with an entry for each section
     the account may see, then each section from its entry.
     - The DataGateway list: a row's menu, the add form, and a DataGateway's
@@ -239,8 +246,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
   "Controls", then again with "Headings".
 - Check that opening the drawer, the filter sheet and a dialog announces a
   name for it.
-- Check the focus hand-offs from #479 and #478, and from #684 and #685
-  (below).
+- Check the focus hand-offs from #479 and #478, from #684 and #685, and
+  from #715 (below).
 
 ### VoiceOver (iOS and macOS)
 
@@ -253,8 +260,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 - The drawer is named "Navigation menu" on iOS and macOS as elsewhere. The
   filter sheet and `AlertDialog` routes are unnamed there today
   (#762). Check that each is read as something.
-- Check the focus hand-offs from #479 and #478, and from #684 and #685
-  (below).
+- Check the focus hand-offs from #479 and #478, from #684 and #685, and
+  from #715 (below).
 
 ### A browser screen reader (web)
 
@@ -325,6 +332,21 @@ case: the pop asks the platform to re-focus an entry that has gone.
   when the section is refused and asks the access again.
 - Retry, on the dashboard, the staff households list and the staff
   household detail: the heading.
+
+### Focus hand-offs from #715
+
+The same check, for Collection's header and the game search's filter
+chips. Each control below leaves the screen once pressed, and input focus is
+handed on:
+
+- Clear filters, in Collection's "No games match", however it is pressed:
+  the Filters button, never the emptied search field, so no on-screen
+  keyboard opens. Pressed by a pointer while keyboard focus sits on another
+  control, it moves no focus.
+- A filter chip removed, on either screen, by the screen reader's activation
+  of its remove button as by the keyboard: the chip that takes its place,
+  else the one before it, else the Filters button. A chip removed by a
+  pointer while keyboard focus sits on another control moves no focus.
 
 ### #322's selection and copy checks
 

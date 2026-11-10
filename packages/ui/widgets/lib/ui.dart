@@ -45,10 +45,14 @@
 /// they take from `BgeTokens.contentMaxWidth`.
 ///
 /// New widgets belong here once a second call site wants them — not in
-/// anticipation of one. One exception, by decision: `showBgePopup` came here
-/// with one call site, the game quick look, because #707 placed the
+/// anticipation of one. Two exceptions, each by decision. `showBgePopup` came
+/// here with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
 /// same way. That picker, the collection entry picker, is now its second.
+/// `BgeSearchField` came here with #715, whose Collection list uses it, ahead
+/// of a second call site, because #516's two lists, an event's games tab and
+/// its game picker, were designed with it to filter the same way as the user
+/// types.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -69,6 +73,7 @@ export 'src/focus/focus_is_free.dart';
 export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
+export 'src/forms/bge_search_field.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';

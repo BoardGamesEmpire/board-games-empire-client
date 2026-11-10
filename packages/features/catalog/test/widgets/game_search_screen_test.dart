@@ -1070,6 +1070,45 @@ void main() {
       expect(find.byTooltip('Remove 4 players or no player count'), findsOne);
     });
 
+    testWidgets('the last chip, removed while focused, hands focus to the '
+        'Filters button (#715)', (tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await narrow(
+        tester,
+        const GameSearchFilter(platformTypes: {PlatformType.pc}),
+      );
+      final chip = Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(GameSearchScreen.inUseKey('platform_pc')),
+            matching: find.text('PC'),
+          ),
+        ),
+      )..requestFocus();
+      await tester.pump();
+      expect(chip.hasPrimaryFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('platform_pc')),
+        findsNothing,
+      );
+      expect(
+        Focus.of(
+          tester.element(
+            find.descendant(
+              of: find.byKey(GameSearchScreen.filtersButtonKey),
+              matching: find.text('Filters'),
+            ),
+          ),
+        ).hasPrimaryFocus,
+        isTrue,
+      );
+    });
+
     testWidgets('removing an in-use chip clears it, and the sheet agrees', (
       tester,
     ) async {

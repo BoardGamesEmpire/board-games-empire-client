@@ -5,9 +5,10 @@ server who matches what is being typed, and the rows that show the answer.
 
 It is shared by the two forms that pick people this way: `household`'s invite
 form (#455), which picks one person to invite, and `events`' create form
-(#499), which picks up to fifty invitees. This is the one feature package
-another feature may depend on: features otherwise don't depend on each other,
-and `app_shell` depends on features, never the reverse.
+(#499), which picks up to fifty invitees. It is one of the two feature
+packages another feature may depend on, with `game_filters`: features
+otherwise don't depend on each other, and `app_shell` depends on features,
+never the reverse.
 
 ## Shape
 

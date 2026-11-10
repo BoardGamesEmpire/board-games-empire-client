@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -28,7 +29,7 @@ class CatalogGameRow extends StatelessWidget {
 
   final String title;
   final String? thumbnailUrl;
-  final List<CatalogFact> facts;
+  final List<GameFact> facts;
   final VoidCallback? onTap;
 
   /// Whether a tap is a write to the server (#49), such as an import. Offline

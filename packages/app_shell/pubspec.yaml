@@ -29,6 +29,8 @@ dependencies:
     path: ../features/catalog
   game_collection:
     path: ../features/collection
+  game_filters:
+    path: ../features/game_filters
   # Navigation
   go_router: ^18.0.0
   household:

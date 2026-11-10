@@ -32,8 +32,8 @@ dependencies:
     path: ../../ui/widgets
   ui_tokens:
     path: ../../ui/tokens
-  # The shared user search the create form picks invitees with (#499): the
-  # one feature package another may depend on.
+  # The shared user search the create form picks invitees with (#499): one
+  # of the two feature packages another may depend on, with `game_filters`.
   user_search:
     path: ../user_search
 

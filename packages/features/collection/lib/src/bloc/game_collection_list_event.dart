@@ -5,8 +5,9 @@ import 'package:models/domain.dart';
 /// Events of `GameCollectionListBloc`.
 ///
 /// Mostly not user events: the list shows what two streams say, and these
-/// are how the bloc's subscriptions reach its handlers. The exception is
-/// [GameCollectionListRetryRequested].
+/// are how the bloc's subscriptions reach its handlers. The exceptions are
+/// [GameCollectionListRetryRequested], [GameCollectionListFilterChanged] and
+/// [GameCollectionListSortChanged].
 sealed class GameCollectionListEvent extends Equatable {
   const GameCollectionListEvent();
 
@@ -51,4 +52,24 @@ final class GameCollectionListHydrationUpdated extends GameCollectionListEvent {
 /// this one was asked for, which is what lets the screen narrate it.
 final class GameCollectionListRetryRequested extends GameCollectionListEvent {
   const GameCollectionListRetryRequested();
+}
+
+/// The user narrowed the list another way (#715).
+final class GameCollectionListFilterChanged extends GameCollectionListEvent {
+  const GameCollectionListFilterChanged(this.filter);
+
+  final CollectionFilter filter;
+
+  @override
+  List<Object?> get props => [filter];
+}
+
+/// The user put the list in another order (#715).
+final class GameCollectionListSortChanged extends GameCollectionListEvent {
+  const GameCollectionListSortChanged(this.sort);
+
+  final CollectionSort sort;
+
+  @override
+  List<Object?> get props => [sort];
 }

@@ -2,12 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:models/domain.dart';
 
 /// The formatters' copy, from #474's table of play times (#579) and its
 /// rule for years before the common era (#565).
 void main() {
   final l10n = lookupGameCatalogLocalizations(const Locale('en'));
+  final filterL10n = lookupGameFiltersLocalizations(const Locale('en'));
 
   Game timed({int? min, int? max}) => Game(
     id: 'g_timed',
@@ -18,80 +20,34 @@ void main() {
     updatedAt: DateTime.utc(2026),
   );
 
-  group('durationFact', () {
-    test('under an hour reads in minutes', () {
-      expect(durationFact(l10n, 45), (shown: '45 min', spoken: '45 minutes'));
-      expect(durationFact(l10n, 1).spoken, '1 minute');
-    });
-
-    test('whole hours read in hours', () {
-      expect(durationFact(l10n, 60), (shown: '1 hr', spoken: '1 hour'));
-      expect(durationFact(l10n, 300), (shown: '5 hr', spoken: '5 hours'));
-      expect(durationFact(l10n, 90000), (
-        shown: '1,500 hr',
-        spoken: '1,500 hours',
-      ));
-    });
-
-    test('hours keep their remaining minutes', () {
-      expect(durationFact(l10n, 90), (
-        shown: '1 hr 30 min',
-        spoken: '1 hour 30 minutes',
-      ));
-    });
-  });
-
-  group('durationRangeFact', () {
-    test('a range under an hour shares minutes', () {
-      expect(durationRangeFact(l10n, 30, 45), (
-        shown: '30–45 min',
-        spoken: '30 to 45 minutes',
-      ));
-    });
-
-    test('a range of whole hours shares hours', () {
-      expect(durationRangeFact(l10n, 60, 120), (
-        shown: '1–2 hr',
-        spoken: '1 to 2 hours',
-      ));
-    });
-
-    test("a range that can't share a unit formats each end", () {
-      expect(durationRangeFact(l10n, 45, 90), (
-        shown: '45 min–1 hr 30 min',
-        spoken: '45 minutes to 1 hour 30 minutes',
-      ));
-    });
-  });
-
   group('playTimeFact', () {
     test('equal ends read as one time', () {
-      expect(playTimeFact(l10n, timed(min: 90, max: 90)), (
+      expect(playTimeFact(filterL10n, timed(min: 90, max: 90)), (
         shown: '1 hr 30 min',
         spoken: '1 hour 30 minutes',
       ));
     });
 
     test('a range reads as one', () {
-      expect(playTimeFact(l10n, timed(min: 60, max: 120)), (
+      expect(playTimeFact(filterL10n, timed(min: 60, max: 120)), (
         shown: '1–2 hr',
         spoken: '1 to 2 hours',
       ));
     });
 
     test('one end reads as the bound it is', () {
-      expect(playTimeFact(l10n, timed(max: 120)), (
+      expect(playTimeFact(filterL10n, timed(max: 120)), (
         shown: 'Up to 2 hr',
         spoken: 'Up to 2 hours',
       ));
-      expect(playTimeFact(l10n, timed(min: 30)), (
+      expect(playTimeFact(filterL10n, timed(min: 30)), (
         shown: '30 min+',
         spoken: '30 minutes or more',
       ));
     });
 
     test('no time is no fact', () {
-      expect(playTimeFact(l10n, timed()), isNull);
+      expect(playTimeFact(filterL10n, timed()), isNull);
     });
   });
 
@@ -100,7 +56,7 @@ void main() {
       final base = timed(min: 30, max: 45);
       final game = base.copyWith(minPlayers: 1, maxPlayers: 5, minAge: 10);
 
-      expect(playFacts(l10n, game), [
+      expect(playFacts(l10n, filterL10n, game), [
         (shown: '1–5 players', spoken: '1 to 5 players'),
         (shown: '30–45 min', spoken: '30 to 45 minutes'),
         (shown: 'Ages 10+', spoken: 'Ages 10 and up'),
@@ -108,24 +64,16 @@ void main() {
     });
 
     test('leave out what is not known', () {
-      expect(playFacts(l10n, timed()), isEmpty);
-      expect(playFacts(l10n, timed().copyWith(minAge: 8)), [
+      expect(playFacts(l10n, filterL10n, timed()), isEmpty);
+      expect(playFacts(l10n, filterL10n, timed().copyWith(minAge: 8)), [
         (shown: 'Ages 8+', spoken: 'Ages 8 and up'),
       ]);
     });
   });
 
   group('yearText', () {
-    test('a year before the common era reads as BCE', () {
-      expect(yearText(l10n, -3000), '3000 BCE');
-    });
-
-    test('a year of the common era reads as it is', () {
-      expect(yearText(l10n, 1995), '1995');
-    });
-
     test('a row shows a year before the common era as BCE', () {
-      expect(rowFacts(l10n, year: -3000), [
+      expect(rowFacts(filterL10n, year: -3000), [
         (shown: '3000 BCE', spoken: '3000 BCE'),
       ]);
     });

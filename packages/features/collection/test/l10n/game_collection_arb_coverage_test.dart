@@ -47,6 +47,30 @@ void main() {
       );
     });
 
+    test('the template defines the search, filter and sort key surface '
+        '(#715)', () {
+      // One sort key per CollectionSort: the menu's switch is exhaustive,
+      // and these are the other half of that pairing.
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'collectionSearchLabel',
+          'collectionSearchClear',
+          'collectionSortButton',
+          'collectionSortTitle',
+          'collectionSortRecentlyAdded',
+          'collectionSortPlayTime',
+          'collectionSortMinPlayers',
+          'collectionSortMaxPlayers',
+          'collectionSortRating',
+          'collectionResultCount',
+          'collectionNoMatchesTitle',
+          'collectionNoMatchesBody',
+          'collectionClearFilters',
+        ]),
+      );
+    });
+
     test('every template key carries a translator description', () {
       expect(report.keysMissingDescription, isEmpty, reason: report.describe());
     });

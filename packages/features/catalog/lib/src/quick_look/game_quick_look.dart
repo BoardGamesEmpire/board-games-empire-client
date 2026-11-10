@@ -8,11 +8,11 @@ import 'package:game_catalog/src/bloc/game_detail_event.dart';
 import 'package:game_catalog/src/bloc/game_detail_state.dart';
 import 'package:game_catalog/src/quick_look/game_quick_look_seed.dart';
 import 'package:game_catalog/src/screens/game_detail_screen.dart';
-import 'package:game_catalog/src/widgets/catalog_chip_label.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
 import 'package:game_catalog/src/widgets/cover_beside_title.dart';
 import 'package:game_catalog/src/widgets/folded_description.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -297,7 +297,9 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
       _ => ready?.game ?? seed.game,
     };
     final platformGames = ready?.platformGames ?? const <PlatformGame>[];
-    final facts = game == null ? const <CatalogFact>[] : playFacts(l10n, game);
+    final facts = game == null
+        ? const <GameFact>[]
+        : playFacts(l10n, GameFiltersLocalizations.of(context), game);
     final description = game?.description;
     final banner = switch (answer) {
       GameDetailFailed() ||
@@ -346,7 +348,7 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
                 for (final platformGame in platformGames)
                   Chip(
                     key: ValueKey(platformGame.id),
-                    label: CatalogChipLabel(platformGame.platformName),
+                    label: GameFilterChipLabel(platformGame.platformName),
                   ),
               ],
             ),
@@ -413,7 +415,11 @@ class _QuickLookBodyState extends State<_QuickLookBody> {
           Text(subtitle, style: theme.textTheme.titleSmall),
         if (year != null) ...[
           const BgeGap.xs(),
-          Text(l10n.catalogDetailPublished(yearText(l10n, year))),
+          Text(
+            l10n.catalogDetailPublished(
+              yearText(GameFiltersLocalizations.of(context), year),
+            ),
+          ),
         ],
       ],
     );

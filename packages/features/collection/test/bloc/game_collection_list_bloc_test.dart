@@ -557,7 +557,296 @@ void main() {
     });
   });
 
+  group('a filter and a sort (#715)', () {
+    final azul = listItem('a-1', title: 'Azul', rating: 6);
+    // listItem's title is Catan.
+    final catan = listItem('c-1', rating: 7);
+    final wingspan = listItem('w-1', title: 'Wingspan', rating: 9);
+    // Catan and Wingspan, not Azul.
+    const byQuery = CollectionFilter(query: 'an');
+    const onlyCatan = CollectionFilter(query: 'cat');
+
+    GameCollectionListReady ready(GameCollectionListBloc bloc) =>
+        bloc.state as GameCollectionListReady;
+
+    Future<GameCollectionListBloc> buildReady(
+      List<GameCollectionListItem> rows,
+    ) async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      items.add(rows);
+      await settle();
+      return bloc;
+    }
+
+    test('starts with nothing narrowing, in title order', () async {
+      final bloc = await buildReady([azul, catan, wingspan]);
+
+      expect(ready(bloc).filter, const CollectionFilter());
+      expect(ready(bloc).sort, CollectionSort.title);
+    });
+
+    test('a filter change re-emits Ready with the shown items and keeps '
+        'all', () async {
+      final rows = [azul, catan, wingspan];
+      final bloc = await buildReady(rows);
+
+      bloc.add(const GameCollectionListFilterChanged(onlyCatan));
+      await settle();
+
+      expect(ready(bloc).items, [catan]);
+      expect(ready(bloc).all, same(rows));
+      expect(ready(bloc).filter, onlyCatan);
+    });
+
+    test('a filter that matches nothing is Ready with no items, and all '
+        'still holds the collection', () async {
+      final rows = [azul, catan];
+      final bloc = await buildReady(rows);
+
+      bloc.add(
+        const GameCollectionListFilterChanged(CollectionFilter(query: 'zz')),
+      );
+      await settle();
+
+      expect(ready(bloc).items, isEmpty);
+      expect(ready(bloc).all, same(rows));
+    });
+
+    test('a sort change reorders what is shown', () async {
+      final rows = [azul, catan, wingspan];
+      final bloc = await buildReady(rows);
+
+      bloc.add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      expect(ready(bloc).items, [wingspan, catan, azul]);
+      expect(ready(bloc).all, same(rows));
+      expect(ready(bloc).sort, CollectionSort.rating);
+    });
+
+    test('filters first, from the whole collection, then sorts', () async {
+      final bloc = await buildReady([azul, catan, wingspan]);
+
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      expect(ready(bloc).items, [wingspan, catan]);
+    });
+
+    test('a cache update keeps the filter and the sort', () async {
+      final bloc = await buildReady([azul, catan]);
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      final banana = listItem('b-1', title: 'Banana', rating: 8);
+      final next = [azul, banana, catan, wingspan];
+      items.add(next);
+      await settle();
+
+      expect(ready(bloc).all, same(next));
+      expect(ready(bloc).items, [wingspan, banana, catan]);
+      expect(ready(bloc).filter, byQuery);
+      expect(ready(bloc).sort, CollectionSort.rating);
+    });
+
+    test('with nothing narrowing, items is all, the same instance', () async {
+      final rows = [azul, catan, wingspan];
+      final bloc = await buildReady(rows);
+
+      expect(ready(bloc).items, same(rows));
+      expect(ready(bloc).all, same(rows));
+
+      // Back to nothing narrowing after a filter, too.
+      bloc.add(const GameCollectionListFilterChanged(byQuery));
+      await settle();
+      bloc.add(const GameCollectionListFilterChanged(CollectionFilter()));
+      await settle();
+
+      expect(ready(bloc).items, same(rows));
+    });
+
+    test('a change that leaves the list alone keeps its instance', () async {
+      // The rows are placed once per list instance, so a state that differs
+      // only in refreshFailed must not hand the screen a new list.
+      final bloc = build();
+      addTearDown(bloc.close);
+      items.add([azul, catan, wingspan]);
+      await settle();
+      bloc.add(const GameCollectionListFilterChanged(byQuery));
+      await settle();
+      final shown = ready(bloc).items;
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await settle();
+
+      expect(ready(bloc).refreshFailed, isTrue);
+      expect(ready(bloc).items, same(shown));
+    });
+
+    test('a filter and a sort survive a refresh failure and a retry', () async {
+      final pass = Completer<void>();
+      final bloc = build(onRetry: () => pass.future);
+      addTearDown(bloc.close);
+      items.add([azul, catan, wingspan]);
+      await settle();
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      TypeMatcher<GameCollectionListReady> stillNarrowed() =>
+          isA<GameCollectionListReady>()
+              .having((s) => s.items, 'items', [wingspan, catan])
+              .having((s) => s.filter, 'filter', byQuery)
+              .having((s) => s.sort, 'sort', CollectionSort.rating);
+
+      status.finished(CollectionHydrateOutcome.failed);
+      await settle();
+      expect(bloc.state, stillNarrowed());
+
+      bloc.add(const GameCollectionListRetryRequested());
+      status.started();
+      await settle();
+      expect(
+        bloc.state,
+        stillNarrowed().having((s) => s.refreshing, 'refreshing', isTrue),
+      );
+
+      status.finished(CollectionHydrateOutcome.complete);
+      pass.complete();
+      await settle();
+      expect(
+        bloc.state,
+        stillNarrowed()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+    });
+
+    test('a change before the list is ready emits nothing, and the first '
+        'Ready applies it', () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final emitted = <GameCollectionListState>[];
+      final sub = bloc.stream.listen(emitted.add);
+      addTearDown(sub.cancel);
+
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      expect(emitted, isEmpty);
+      expect(bloc.state, isA<GameCollectionListLoading>());
+
+      items.add([azul, catan, wingspan]);
+      await settle();
+
+      expect(emitted, [
+        isA<GameCollectionListReady>()
+            .having((s) => s.items, 'items', [wingspan, catan])
+            .having((s) => s.filter, 'filter', byQuery)
+            .having((s) => s.sort, 'sort', CollectionSort.rating),
+      ]);
+    });
+
+    test('the filter and the sort it holds are read from it before the list '
+        'is ready', () async {
+      // The screen's search, Filters and sort are built in every state, and
+      // open the sheet on the filter held, not on one no state carries.
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      expect(bloc.filter, const CollectionFilter());
+      expect(bloc.sort, CollectionSort.title);
+
+      bloc
+        ..add(const GameCollectionListFilterChanged(byQuery))
+        ..add(const GameCollectionListSortChanged(CollectionSort.rating));
+      await settle();
+
+      expect(bloc.state, isA<GameCollectionListLoading>());
+      expect(bloc.filter, byQuery);
+      expect(bloc.sort, CollectionSort.rating);
+    });
+
+    test('a change while the read has failed emits nothing, and the next '
+        'Ready applies it', () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      items.addError(StateError('transient read failure'));
+      await settle();
+      final emitted = <GameCollectionListState>[];
+      final sub = bloc.stream.listen(emitted.add);
+      addTearDown(sub.cancel);
+
+      bloc.add(const GameCollectionListFilterChanged(byQuery));
+      await settle();
+
+      expect(emitted, isEmpty);
+      expect(bloc.state, isA<GameCollectionListError>());
+
+      items.add([azul, catan, wingspan]);
+      await settle();
+
+      expect(ready(bloc).items, [catan, wingspan]);
+    });
+
+    test('a filter or sort equal to the current one emits nothing', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+      items.add([azul, catan, wingspan]);
+      await settle();
+      bloc.add(const GameCollectionListFilterChanged(byQuery));
+      await settle();
+      final shown = ready(bloc).items;
+      final emitted = <GameCollectionListState>[];
+      final sub = bloc.stream.listen(emitted.add);
+      addTearDown(sub.cancel);
+
+      bloc
+        // Built at run time so the filter is equal, not the same instance.
+        // ignore: prefer_const_constructors
+        ..add(GameCollectionListFilterChanged(CollectionFilter(query: 'an')))
+        ..add(const GameCollectionListSortChanged(CollectionSort.title));
+      await settle();
+
+      expect(emitted, isEmpty);
+
+      // Nor does it derive the list again for a later state to hand on.
+      status.finished(CollectionHydrateOutcome.failed);
+      await settle();
+
+      expect(ready(bloc).items, same(shown));
+    });
+  });
+
   group('values', () {
+    test('filter and sort events compare by value', () {
+      expect(
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
+        GameCollectionListFilterChanged(CollectionFilter(query: 'a')),
+        // Built at run time so == is tested by value, not by identity.
+        // ignore: prefer_const_constructors
+        GameCollectionListFilterChanged(CollectionFilter(query: 'a')),
+      );
+      expect(
+        const GameCollectionListFilterChanged(CollectionFilter(query: 'a')),
+        isNot(
+          const GameCollectionListFilterChanged(CollectionFilter(query: 'b')),
+        ),
+      );
+      expect(
+        const GameCollectionListSortChanged(CollectionSort.rating),
+        isNot(const GameCollectionListSortChanged(CollectionSort.title)),
+      );
+    });
+
     test('states compare by value', () {
       // A bloc drops an emit equal to its current state, so re-deriving
       // the state the screen already shows does not rebuild it.

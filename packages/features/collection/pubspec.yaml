@@ -17,6 +17,10 @@ dependencies:
   flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
+  # The list's filter sheet, its button and the chips naming the filters in
+  # use (#715): one of the two feature packages another feature may use.
+  game_filters:
+    path: ../game_filters
   hydration:
     path: ../../core/hydration
   interfaces:

@@ -39,6 +39,12 @@ missing source does not read as one that found nothing.
 The search can be narrowed by content type. The bloc and the data layer take
 platform types too; offering them on screen is #474.
 
+The filter sheet, its Filters button and the chips naming the filters in use
+come from `game_filters`, the feature package the catalog shares them through
+(#715), and so do the labels the catalog's facts are made of. The search
+holds its `GameSearchFilter` in its bloc and hands the sheet a
+`CollectionFilter` wrapping it.
+
 When the server's search fails, the bloc searches the games cached on this
 device instead (`GameRepository.searchGames`). The cache holds no platform
 types, so a search narrowed by one finds nothing there. A 403 is a refusal,
