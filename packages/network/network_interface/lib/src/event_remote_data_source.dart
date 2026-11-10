@@ -50,6 +50,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [removeOccurrence] | `DELETE /api/events/:id/occurrences/:oid` | `{ message, ... }`, not read |
 /// | [submitAvailability] | `POST /api/events/:id/occurrences/:oid/availability` | `{ message, vote }` |
 /// | [updateAttendeeStatus] | `PATCH /api/events/:id/attendees/:aid/status` | `{ message, attendee }` |
+/// | [addAttendee] | `POST /api/events/:id/attendees` | `{ message, attendee }` |
+/// | [removeAttendee] | `DELETE /api/events/:id/attendees/:aid` | `{ message, attendee }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -530,6 +532,27 @@ abstract class EventRemoteDataSource {
     EventParticipationStatus status, {
     String? notes,
   });
+
+  /// `POST /api/events/:eventId/attendees` with `{ userId, role }` (#510).
+  /// The server adds them as Invited. Answers the row with `user` and `role`
+  /// embedded, mapped as a roster row is. Throws [ArgumentError] for
+  /// [EventRole.host] or [EventRole.unknown], which can't be given.
+  ///
+  /// A 404 carrying the envelope is [EventRemoteNotFoundException]: the event
+  /// or the user is missing. A 403 carrying it is [EventWriteRefusedException]:
+  /// the caller lacks the right, or the invitee's block or preference
+  /// refuses. A 409 carrying it, a user already on the event, is
+  /// [EventWriteConflictException]; one marked retryable stays transient.
+  Future<EventAttendee> addAttendee(
+    String eventId, {
+    required String userId,
+    required EventRole role,
+  });
+
+  /// `DELETE /api/events/:eventId/attendees/:attendeeId` (#510). Answers the
+  /// removed row. A 404 is [EventRemoteNotFoundException] (no such attendee,
+  /// or already removed) and a 403 is [EventWriteRefusedException].
+  Future<EventAttendee> removeAttendee(String eventId, String attendeeId);
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
   /// every date of the event stands in its availability poll. Answers 200

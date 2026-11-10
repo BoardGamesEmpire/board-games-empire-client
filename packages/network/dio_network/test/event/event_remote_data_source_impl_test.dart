@@ -2941,6 +2941,134 @@ void main() {
     });
   });
 
+  group('add and remove an attendee (#510)', () {
+    String attendeeBody(String message) => jsonEncode({
+      'message': message,
+      'attendee': _attendeeRow(
+        id: 'a9',
+        status: 'Invited',
+        user: _userRow(),
+        role: _roleRow('EventParticipant'),
+      ),
+    });
+
+    Future<EventAttendee> add(EventRemoteDataSource remote) =>
+        remote.addAttendee('e1', userId: 'u1', role: EventRole.participant);
+
+    test("addAttendee posts the user and the role's wire name", () async {
+      final remote = answering(attendeeBody('Attendee added'), status: 201);
+
+      await add(remote);
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(adapter.sent.single.path, '/api/events/e1/attendees');
+      expect(adapter.sent.single.body, {
+        'userId': 'u1',
+        'role': 'EventParticipant',
+      });
+    });
+
+    test("addAttendee maps the answer's attendee", () async {
+      final remote = answering(attendeeBody('Attendee added'), status: 201);
+
+      final attendee = await add(remote);
+
+      expect(attendee.id, 'a9');
+      expect(attendee.status, EventParticipationStatus.invited);
+      expect(attendee.displayName, 'Ada');
+      expect(attendee.role, EventRole.participant);
+    });
+
+    test('an add answered 409 is a conflict', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'Already an attendee'),
+        status: 409,
+      );
+
+      await expectLater(
+        add(remote),
+        throwsA(
+          isA<EventWriteConflictException>()
+              .having((e) => e.apiMessage, 'apiMessage', 'Already an attendee')
+              .having((e) => e.statusCode, 'statusCode', 409),
+        ),
+      );
+    });
+
+    test('an add answered retryable 409 is transient', () async {
+      final remote = answering(_deadlock(), status: 409);
+
+      await expectLater(
+        add(remote),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('an add answered 403 is refused', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'Not allowed'),
+        status: 403,
+      );
+
+      await expectLater(
+        add(remote),
+        throwsA(
+          isA<EventWriteRefusedException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            'Not allowed',
+          ),
+        ),
+      );
+    });
+
+    test('an add answered 404 is not found', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'No such user'),
+        status: 404,
+      );
+
+      await expectLater(
+        add(remote),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test('addAttendee refuses the host and unknown roles', () async {
+      final remote = answering(attendeeBody('Attendee added'), status: 201);
+
+      for (final role in [EventRole.host, EventRole.unknown]) {
+        await expectLater(
+          remote.addAttendee('e1', userId: 'u1', role: role),
+          throwsArgumentError,
+        );
+      }
+      expect(adapter.sent, isEmpty);
+    });
+
+    test("removeAttendee deletes the attendee's path", () async {
+      final remote = answering(attendeeBody('Attendee removed'));
+
+      final attendee = await remote.removeAttendee('e1', 'a 9');
+
+      expect(adapter.sent.single.method, 'DELETE');
+      expect(adapter.sent.single.path, '/api/events/e1/attendees/a%209');
+      expect(attendee.id, 'a9');
+    });
+
+    test('a remove answered 404 is not found', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Attendee not found'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.removeAttendee('e1', 'a9'),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,

@@ -65,6 +65,19 @@ class FakeEventRemote implements EventRemoteDataSource {
   }) async => throw UnimplementedError('updateAttendeeStatus is not faked');
 
   @override
+  Future<EventAttendee> addAttendee(
+    String eventId, {
+    required String userId,
+    required EventRole role,
+  }) async => throw UnimplementedError('addAttendee is not faked');
+
+  @override
+  Future<EventAttendee> removeAttendee(
+    String eventId,
+    String attendeeId,
+  ) async => throw UnimplementedError('removeAttendee is not faked');
+
+  @override
   Future<CreatedEvent> createEvent(
     EventDraft draft, {
     required String clientRequestId,
