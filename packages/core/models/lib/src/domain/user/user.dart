@@ -8,7 +8,7 @@ part 'user.g.dart';
 /// The canonical BGE domain user, returned by `/api/user/*` and embedded in
 /// relations (household member → user, collection owner, etc.).
 ///
-/// Mirrors the backend `User` scalar fields. Distinct from [AuthUser] (the
+/// Mirrors the backend `User` scalar fields. Distinct from `AuthUser` (the
 /// BetterAuth `/api/auth/*` shape): this contract names the display field
 /// `username` on the wire and carries the BGE-only [role] and
 /// [isServiceAccount]. Both implement [UserBase].

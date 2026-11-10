@@ -58,7 +58,7 @@ void main() {
 
       expect(json['id'], 'server_123');
       expect(json['connectionState'], 'Monitoring');
-      expect(json['metadata']['region'], 'us-east');
+      expect((json['metadata'] as Map<String, dynamic>)['region'], 'us-east');
     });
 
     test('deserializes from JSON', () {

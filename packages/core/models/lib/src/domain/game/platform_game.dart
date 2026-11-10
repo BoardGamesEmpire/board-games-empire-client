@@ -7,7 +7,7 @@ part 'platform_game.g.dart';
 
 /// Client-side cache of a BGE server [PlatformGame] record.
 ///
-/// Nullable override fields fall back to parent [Game] values when null.
+/// Nullable override fields fall back to parent `Game` values when null.
 /// [platformName] is the denormalized platform name (e.g. "Tabletop", "Steam").
 @freezed
 abstract class PlatformGame with _$PlatformGame {

@@ -11,8 +11,8 @@ part 'event.freezed.dart';
 /// caches it for the signed-in user (#496).
 ///
 /// The event holds what is true of the whole gathering. Its dates are
-/// [EventOccurrence]s, its roster [EventAttendee]s and its rules an
-/// [EventPolicy]; an [EventSnapshot] carries the parts one read returned.
+/// `EventOccurrence`s, its roster `EventAttendee`s and its rules an
+/// `EventPolicy`; an `EventSnapshot` carries the parts one read returned.
 ///
 /// ## What is deliberately not here
 ///

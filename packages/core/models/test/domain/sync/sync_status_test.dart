@@ -33,7 +33,8 @@ void main() {
           _entry(status: entry.key).toJson()['status'],
           equals(entry.value),
           reason:
-              'SyncStatus.${entry.key.name} should serialize as "${entry.value}"',
+              'SyncStatus.${entry.key.name} '
+              'should serialize as "${entry.value}"',
         );
       }
     });

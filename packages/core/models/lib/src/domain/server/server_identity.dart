@@ -8,7 +8,7 @@ part 'server_identity.g.dart';
 /// Immutable representation of the BGE server discovery document served at
 /// /.well-known/bge-identity.
 ///
-/// Modeled directly from [BgeDiscoveryDto] on the NestJS backend. All fields
+/// Modeled directly from `BgeDiscoveryDto` on the NestJS backend. All fields
 /// use explicit [JsonKey] names to match the snake_case wire format produced
 /// by the backend's SnakeCaseInterceptor.
 ///
@@ -26,7 +26,7 @@ part 'server_identity.g.dart';
 /// (`ServerConfig.serverUrl`) by the per-server `Dio` instance built by the
 /// `DioFactory`. The client already knows the base — the user typed it to reach
 /// well-known in the first place — so the document never needs to repeat an
-/// absolute origin. [discoveryUrl] on an [OidcStrategy] is the one exception:
+/// absolute origin. `discoveryUrl` on an [OidcStrategy] is the one exception:
 /// it points at an external identity provider and remains absolute.
 @freezed
 abstract class ServerIdentity with _$ServerIdentity {
@@ -38,7 +38,7 @@ abstract class ServerIdentity with _$ServerIdentity {
     required int wellKnownSchemaVersion,
 
     /// Stable UUID identifying this BGE server instance.
-    /// Corresponds to the `bge_server_id` field in [BgeDiscoveryDto].
+    /// Corresponds to the `bge_server_id` field in `BgeDiscoveryDto`.
     @JsonKey(name: 'bge_server_id') required String serverId,
 
     /// Human-readable server display name, shown when choosing which server
@@ -88,7 +88,7 @@ abstract class ServerIdentity with _$ServerIdentity {
 
     /// Minimum semver client version this server accepts. Clients older
     /// than this refuse to proceed past server-add. Null = no minimum.
-    /// Compared against [BuildInfo.version] by the version negotiator (#13).
+    /// Compared against `BuildInfo.version` by the version negotiator (#13).
     @JsonKey(name: 'bge_min_client_version') String? minClientVersion,
 
     /// Maximum semver client version this server accepts. Clients newer

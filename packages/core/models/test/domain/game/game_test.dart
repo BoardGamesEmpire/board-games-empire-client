@@ -111,8 +111,7 @@ void main() {
     });
 
     test('JSON omitting reach defaults to Public', () {
-      final json = _make().toJson();
-      json.remove('reach');
+      final json = _make().toJson()..remove('reach');
       final round = Game.fromJson(json);
       expect(round.reach, equals(Reach.public));
     });

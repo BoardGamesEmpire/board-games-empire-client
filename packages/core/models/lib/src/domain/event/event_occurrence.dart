@@ -4,7 +4,7 @@ import 'package:models/src/domain/event/occurrence_status.dart';
 
 part 'event_occurrence.freezed.dart';
 
-/// One occurrence of an [Event]: when it happens, and where if that differs
+/// One occurrence of an `Event`: when it happens, and where if that differs
 /// from the event's own place (#496).
 ///
 /// A fixed event has one occurrence and a multi-day event has several. While an

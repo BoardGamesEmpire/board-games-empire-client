@@ -22,7 +22,7 @@ abstract class NotificationSummary with _$NotificationSummary {
     required String id,
 
     /// Local CUID of the server that generated this notification.
-    /// FK to [ServerConfig.id] in the root DB servers table.
+    /// FK to `ServerConfig.id` in the root DB servers table.
     required String localServerId,
 
     /// BGE server UUID of the originating server, denormalized for fast

@@ -22,7 +22,7 @@ const String _redactedToken = '<redacted>';
 ///
 /// [user] is an [AuthUser] (the BetterAuth `/api/auth/*` shape), not the
 /// canonical BGE `User`. Consumers needing only shared identity fields can
-/// widen to [UserBase]; the full BGE `User` (with `role`,
+/// widen to `UserBase`; the full BGE `User` (with `role`,
 /// `isServiceAccount`) is fetched from `/api/user/*` when needed.
 ///
 /// The sign-in envelope also carries a `redirect` boolean, ignored here.

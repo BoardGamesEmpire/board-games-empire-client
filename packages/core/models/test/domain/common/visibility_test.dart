@@ -25,7 +25,8 @@ void main() {
             entry.key.toWire(),
             equals(entry.value),
             reason:
-                'Visibility.${entry.key.name}.toWire() should be "${entry.value}"',
+                'Visibility.${entry.key.name}.toWire() '
+                'should be "${entry.value}"',
           );
         }
       });
@@ -49,7 +50,8 @@ void main() {
             Visibility.fromWire(entry.key),
             equals(entry.value),
             reason:
-                'Visibility.fromWire("${entry.key}") should be Visibility.${entry.value.name}',
+                'Visibility.fromWire("${entry.key}") '
+                'should be Visibility.${entry.value.name}',
           );
         }
       });

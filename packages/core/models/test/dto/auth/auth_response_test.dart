@@ -23,7 +23,7 @@ void main() {
 
       expect(json['token'], 'access_token');
       // AuthUser maps `username` to the BetterAuth wire key `name`.
-      expect(json['user']['name'], 'johndoe');
+      expect((json['user'] as Map<String, dynamic>)['name'], 'johndoe');
     });
 
     // #291: null is the shape the web path returns. The browser holds the

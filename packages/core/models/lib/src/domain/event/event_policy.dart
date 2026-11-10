@@ -12,7 +12,7 @@ part 'event_policy.freezed.dart';
 /// built (#496).
 ///
 /// One per event, read with it. A caller who may not read the policy is served
-/// none, and so is an event that has none, so an [EventSnapshot] carries it as
+/// none, and so is an event that has none, so an `EventSnapshot` carries it as
 /// nullable.
 ///
 /// ## What is deliberately not here
@@ -56,9 +56,9 @@ abstract class EventPolicy with _$EventPolicy {
     /// are permitted.
     int? fillerMaxPlayTime,
 
-    /// What [voteThresholdType] needs, for the two types that take a number: the
-    /// percentage a supermajority needs (66 for 66%), or the count a fixed-count
-    /// threshold needs. Null for the others.
+    /// What [voteThresholdType] needs, for the two types that take a number:
+    /// the percentage a supermajority needs (66 for 66%), or the count a
+    /// fixed-count threshold needs. Null for the others.
     int? voteThresholdValue,
 
     /// What [voteQuorumType] needs, for the two types that take a number: the

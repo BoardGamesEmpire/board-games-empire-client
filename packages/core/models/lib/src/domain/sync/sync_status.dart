@@ -1,4 +1,4 @@
-/// Status of a [SyncQueueEntry] in its lifecycle.
+/// Status of a `SyncQueueEntry` in its lifecycle.
 ///
 /// Client-only enum: never crosses the wire to the server.
 /// Serialization uses the default `json_serializable` behaviour

@@ -5,7 +5,7 @@ import 'package:models/src/domain/game/expansion_link.dart';
 
 part 'platform_game_summary.freezed.dart';
 
-/// The slice of a [PlatformGame] and its parent [Game] that every server
+/// The slice of a `PlatformGame` and its parent `Game` that every server
 /// collection response embeds (#259).
 ///
 /// The server joins it onto each collection row so a list can render
@@ -37,7 +37,7 @@ abstract class PlatformGameSummary with _$PlatformGameSummary {
   }) = _PlatformGameSummary;
 }
 
-/// The parent [Game]'s share of a [PlatformGameSummary].
+/// The parent `Game`'s share of a [PlatformGameSummary].
 @freezed
 abstract class GameSummary with _$GameSummary {
   const factory GameSummary({

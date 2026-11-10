@@ -12,7 +12,7 @@ import 'package:models/src/domain/event/vote_threshold_type.dart';
 ///
 /// Each variant carries exactly the data needed to reconstruct the server
 /// request without reading from any other local table. Serialised to JSON
-/// and stored in the [SyncQueueEntry.payload] column.
+/// and stored in the `SyncQueueEntry.payload` column.
 sealed class SyncOperation {
   const SyncOperation();
 
@@ -31,12 +31,12 @@ sealed class SyncOperation {
     };
   }
 
+  factory SyncOperation.deserialize(String payload) =>
+      SyncOperation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
+
   Map<String, dynamic> toJson();
 
   String get serialized => jsonEncode(toJson());
-
-  static SyncOperation deserialize(String payload) =>
-      SyncOperation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
 }
 
 // ── GameCollection operations ────────────────────────────────────────
@@ -65,7 +65,7 @@ final class AddToCollectionOperation extends SyncOperation {
 
   static const String type = 'add_to_collection';
 
-  /// The local id of the [GameCollection] row this op writes. Generated
+  /// The local id of the `GameCollection` row this op writes. Generated
   /// by `GameCollectionRepositoryImpl.addToCollection` as a cuid2 id
   /// (via `package:cuid2`) **before** the insert, so it's present on
   /// both the local row and the enqueued op.
@@ -219,7 +219,7 @@ final class CreateHouseholdOperation extends SyncOperation {
 
   static const String type = 'create_household';
 
-  /// Local cuid2 id of the optimistic [Household] row this op creates.
+  /// Local cuid2 id of the optimistic `Household` row this op creates.
   ///
   /// Also the create's idempotency key: it goes to the server as
   /// `clientRequestId`, and the server returns the household the first
@@ -324,7 +324,7 @@ final class CreateEventOperation extends SyncOperation {
   /// decoding the rest, or null when [payload] holds no event create or no
   /// readable id.
   ///
-  /// For an entry whose [SyncQueueEntry.operation] throws: one a newer build
+  /// For an entry whose `SyncQueueEntry.operation` throws: one a newer build
   /// queued with an enum name this build can't read still names the local
   /// event a discard has to delete with it.
   static String? localIdOf(String payload) {

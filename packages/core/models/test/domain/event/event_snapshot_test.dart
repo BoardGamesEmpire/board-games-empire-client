@@ -30,7 +30,8 @@ EventAttendee _attendee({String? userId, String? guestName}) => EventAttendee(
 
 void main() {
   group('EventSnapshot', () {
-    test('a snapshot without a roster is not the same as an unreadable one', () {
+    test('a snapshot without a roster is not the same as '
+        'an unreadable one', () {
       // `GET /events` carries no roster and `GET /events/:id` carries an empty
       // one when the caller cannot read it, so a snapshot that folded the two
       // together would let a list read stand for "nobody is coming".

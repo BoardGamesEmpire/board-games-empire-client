@@ -15,7 +15,7 @@ void main() {
 
       expect(json['email'], 'john@example.com');
       expect(json['deviceIdentifier'], 'device123');
-      expect(json['deviceInfo']['platform'], 'iOS');
+      expect((json['deviceInfo'] as Map<String, dynamic>)['platform'], 'iOS');
     });
   });
 }

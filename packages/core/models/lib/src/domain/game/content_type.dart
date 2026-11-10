@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-/// Describes what a [Game] record represents.
+/// Describes what a `Game` record represents.
 ///
 /// Wire format mirrors the server `ContentType` enum (PascalCase) via
 /// `@JsonValue` annotations — the sole serialization path used by

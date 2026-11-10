@@ -33,7 +33,8 @@ class UserProfile extends Equatable {
   /// renderable. Empty and whitespace-only strings count as absent (#183):
   /// the backend accepts them, and treating `''` as a present name is what
   /// made this return an empty string.
-  // TODO: make configurable: allow user to choose which name to display (username, first+last, first only, last only, etc.)
+  // TODO(display-name-choice): make configurable: allow user to choose which
+  // name to display (username, first+last, first only, last only, etc.).
   String get displayName {
     final parts = [_firstName, _lastName].where((part) => part.isNotEmpty);
     if (parts.isNotEmpty) return parts.join(' ');

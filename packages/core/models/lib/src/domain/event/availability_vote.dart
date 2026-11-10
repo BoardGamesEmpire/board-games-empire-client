@@ -8,7 +8,7 @@ part 'availability_vote.freezed.dart';
 /// (#507): who answered which date, and what they said.
 ///
 /// A vote is the bare row, so it carries no mark for whether it counts. That
-/// mark comes with the summary, on [AvailabilityVoter.eligible]. A caller who
+/// mark comes with the summary, on `AvailabilityVoter.eligible`. A caller who
 /// votes again on a date changes this row rather than adding another, so
 /// [updatedAt] moves and [id] does not.
 @freezed

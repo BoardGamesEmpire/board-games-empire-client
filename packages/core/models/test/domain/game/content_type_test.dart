@@ -48,7 +48,8 @@ void main() {
           json['contentType'],
           equals(entry.value),
           reason:
-              'ContentType.${entry.key.name} should serialize as "${entry.value}"',
+              'ContentType.${entry.key.name} '
+              'should serialize as "${entry.value}"',
         );
       }
     });

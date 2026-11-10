@@ -345,7 +345,7 @@ void main() {
 
     group('switch exhaustiveness', () {
       test('sealed variants are exhaustively matchable', () {
-        final List<ServerAuthStrategy> strategies = [
+        final strategies = <ServerAuthStrategy>[
           const EmailAndPasswordStrategy(
             signUpDisabled: false,
             signInEndpoint: '/api/auth/sign-in/email',

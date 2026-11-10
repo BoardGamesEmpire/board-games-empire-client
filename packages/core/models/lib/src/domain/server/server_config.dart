@@ -34,7 +34,7 @@ abstract class ServerConfig with _$ServerConfig {
     DateTime? lastActiveAt,
 
     /// Per-server backgrounding timeout override (seconds).
-    /// Null = use the device-level [DevicePreferences] default.
+    /// Null = use the device-level `DevicePreferences` default.
     int? backgroundingTimeoutSeconds,
 
     @Default({}) Map<String, dynamic> metadata,

@@ -9,7 +9,7 @@ part 'push_notification.g.dart';
 /// [localServerId] is **resolved by the implementation**: the platform
 /// payload carries only the originating server's own identity, which the
 /// implementation maps to the client-local id via the persisted
-/// [PushRegistration] record before emitting.
+/// `PushRegistration` record before emitting.
 ///
 /// Privacy: payloads stay minimal (title + body). Sensitive content is
 /// fetched after the app opens via the regular authenticated channels;

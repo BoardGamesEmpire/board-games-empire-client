@@ -8,7 +8,7 @@ part 'household.g.dart';
 /// A household a user belongs to.
 ///
 /// Read-cached from the server. A create is applied locally first and
-/// enqueued for server sync, mirroring [GameCollection]. An edit is not:
+/// enqueued for server sync, mirroring `GameCollection`. An edit is not:
 /// it is sent straight to the server, and the server's answer is cached
 /// (#476).
 ///

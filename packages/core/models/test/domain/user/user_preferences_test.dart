@@ -23,8 +23,14 @@ void main() {
 
       final json = preferences.toJson();
 
-      expect(json['emailNotifications']['friendRequests'], isTrue);
-      expect(json['emailNotifications']['gameInvites'], isFalse);
+      expect(
+        (json['emailNotifications'] as Map<String, dynamic>)['friendRequests'],
+        isTrue,
+      );
+      expect(
+        (json['emailNotifications'] as Map<String, dynamic>)['gameInvites'],
+        isFalse,
+      );
     });
   });
 }
