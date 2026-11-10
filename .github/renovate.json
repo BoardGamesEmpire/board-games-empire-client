@@ -1,9 +1,21 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
-    "Keeps the workflows' action pins current (#326): each action stays pinned to a commit SHA, with its release as a trailing comment.",
-    "Only the github-actions manager is enabled. Nothing else in this repository is updated by Renovate."
+    "Keeps the action pins current (#326), in the workflows and in the composite actions under .github/actions: each action stays pinned to a commit SHA, with its release as a trailing comment.",
+    "Also keeps the npm packages the `release` job installs from tool/release/package.json (#419) current, and its lockfile with them, as one group so semantic-release and its plugins move together.",
+    "That job runs these packages with a token that can push to master, so an npm update waits until its release is three days old: a hijacked release is usually caught and pulled within that window. tool/release/.npmrc holds transitive versions to the same age when the lockfile is regenerated.",
+    "Only the github-actions and npm managers are enabled, and only .github and tool/release are read. Nothing else in this repository is updated by Renovate."
   ],
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "enabledManagers": ["github-actions"]
+  "enabledManagers": ["github-actions", "npm"],
+  "includePaths": [".github/**", "tool/release/**"],
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "groupName": "semantic-release",
+      "rangeStrategy": "pin",
+      "minimumReleaseAge": "3 days",
+      "internalChecksFilter": "strict"
+    }
+  ]
 }

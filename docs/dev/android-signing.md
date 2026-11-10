@@ -1,13 +1,14 @@
 # Signing the Android APK
 
 Android installs an APK over an earlier one only when both are signed with the
-same key, and when its `versionCode`, the build number after the `+` in the
-app's `version:`, is no lower. Every APK that master's CI run uploads is signed
-with one release key, so each one installs as an update over the last and keeps
-the user's data, as long as the build number never goes down. CI doesn't
-compare build numbers between runs. This
-page is for maintainers: making that key, handing it to CI, and signing a local
-build with it.
+same key, and when its `versionCode` is no lower. Every APK that master's CI
+run uploads is signed with one release key, and CI gives each one a
+`versionCode` of the first-parent commit count of the commit it builds (#419).
+That count only grows along master, so each APK installs as an update over the
+one before and keeps the user's data. A local `melos run build-mobile-android`
+without `--build-number` takes the `+1` committed in the app's `version:`
+instead, so it won't install over a CI build. This page is for maintainers:
+making that key, handing it to CI, and signing a local build with it.
 
 `tool/build_android.dart` is the one release build, for
 `melos run build-mobile-android` and CI's `Android build` job alike. Gradle
@@ -180,7 +181,7 @@ The APK and its checksum land in `apps/mobile/build/release/`.
 APK you downloaded, use `apksigner` from the Android SDK's build-tools:
 
 ```sh
-apksigner verify --print-certs bge-1.0.0-android-universal.apk
+apksigner verify --print-certs bge-0.1.0-android-universal.apk
 ```
 
 The certificate DN is `CN=Android Debug` for a debug-signed APK. A

@@ -106,17 +106,22 @@ workspace:
   return root;
 }
 
-/// Runs the real check in [cwd], with `--fix` when [fix] is set, and
-/// returns its exit code.
+/// Runs the real check in [cwd], with `--fix` when [fix] is set and
+/// [args] after it, and returns its exit code.
 ///
 /// Output goes nowhere unless the run surprises the caller, so it is kept
 /// on [lastOutput] for a failing expectation's reason.
-Future<int> runTool(Directory cwd, {bool fix = false}) async {
+Future<int> runTool(
+  Directory cwd, {
+  bool fix = false,
+  List<String> args = const [],
+}) async {
   final result = await Process.run(Platform.resolvedExecutable, [
     'run',
     '--packages=${packageConfig.path}',
     '${repoRoot.path}/tool/check_sdk_constraints.dart',
     if (fix) '--fix',
+    ...args,
   ], workingDirectory: cwd.path);
   lastOutput = '${result.stdout}${result.stderr}';
   return result.exitCode;

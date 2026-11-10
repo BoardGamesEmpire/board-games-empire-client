@@ -602,6 +602,53 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # ── Release tag (#419) ───────────────────────────────────────────
+  # Says whether this commit is a release: `tag` is the `vX.Y.Z` it
+  # carries, or empty, and `previous` the release before it, where
+  # `github-release` starts its notes. It reads the remote's tags, since
+  # the checkout fetches none. tool/release_tags.dart peels annotated tags,
+  # and stops the job when the commit carries a `v` tag other than the root
+  # pubspec's version, or more than one.
+  #
+  # The `release` job pushes a release commit and then its tag, and the
+  # commit's push starts this run. Waiting for `generate` puts minutes
+  # between the two, so the tag has arrived by the time this reads.
+  #
+  # It is not one of the test gates `gates` lists, which `release` and
+  # `release-android` wait for, but its failure must keep `publish-web`
+  # from running: when a `v`
+  # tag disagrees with the pubspec, this job's exit 1 is what stops
+  # `publish-web` writing any image tag. So `publish-web`'s `if:` must never
+  # gain `always()` or `!cancelled()`. If a tag is pushed by
+  # hand after this job ran, re-run this job, and GitHub re-runs
+  # `publish-web` and `github-release` after it. Re-running `publish-web`
+  # alone would reuse this job's empty `tag` (CONTRIBUTING.md, Releasing).
+  release-tag:
+    name: Release tag
+    needs: generate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.find.outputs.tag }}
+      previous: ${{ steps.find.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-flutter
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Release tag self-test
+        run: dart run tool/release_tags.dart --self-test
+      # With pipefail, a failed `ls-remote` fails the step rather than
+      # reading as a remote with no tags.
+      - name: Find this commit's release tag
+        id: find
+        run: |
+          set -euo pipefail
+          git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" 'refs/tags/v*' \
+            | dart run tool/release_tags.dart --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
   # ── Android build (#51) ──────────────────────────────────────────
   # The release build `melos run build-mobile-android` runs:
   # tool/build_android.dart builds one universal APK, checks its package,
@@ -612,12 +659,26 @@ jobs:
   # Always with the debug key. This job never names the release key or
   # its environment, so nothing a PR changes here can reach them;
   # `release-android` below signs.
+  #
+  # Every Android build's `versionCode` is the first-parent commit count
+  # of the commit it builds (#419), so each master build installs over
+  # the one before and a release sits above every earlier build. The
+  # count needs every commit but none of their files, so the checkout
+  # fetches full history without trees (`filter: tree:0`) and only this
+  # commit's files. On a PR the count is the merge ref's, used only to
+  # check the flag works.
   build-android:
     name: Android build
     needs: generate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      - name: Count master's commits for the build number
+        id: build-number
+        run: echo "n=$(git rev-list --count --first-parent HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: generated-sources
@@ -631,13 +692,29 @@ jobs:
       - name: Android build self-test
         run: dart run tool/build_android.dart --self-test
       - name: Build the APK with the debug key
-        run: dart run tool/build_android.dart
+        env:
+          BUILD_NUMBER: ${{ steps.build-number.outputs.n }}
+        run: dart run tool/build_android.dart --build-number "$BUILD_NUMBER"
+
+  # ── Gates (#419) ─────────────────────────────────────────────────
+  # Every test gate, in one list. `release-android`, `release` and
+  # `publish-web` each need this job rather than copying the list, so a new
+  # gate is added here once and holds all three back. It does nothing but
+  # wait: a gate that fails or is skipped skips it, and with it the three.
+  gates:
+    name: Gates
+    needs: [constraints, palette, goldens, format, test-files, generate, analyze, test, test-web, build-web, build-android]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Every gate passed."
 
   # ── Android release (#51) ────────────────────────────────────────
   # Signs master's APK with the release key and uploads it with its
   # checksum, as the 7-day `android-apk` artifact, not a release (#785
   # owns releases). Only a push to master in this repository runs it, so
-  # a fork's master builds in `build-android` and uploads nothing.
+  # a fork's master builds in `build-android` and uploads nothing. It
+  # numbers its build the same way.
   #
   # The key's four secrets live in the `android-release` environment,
   # which only master may deploy to. GitHub hands a job an environment's
@@ -645,18 +722,24 @@ jobs:
   # ref can't read them, even one that edits this file to name the
   # environment. docs/dev/android-signing.md sets it up.
   #
-  # It waits for every gate, the list `publish-web` waits for, so an APK
+  # It waits for every gate (`gates`), as `publish-web` does, so an APK
   # testers install is from a tested commit, as the web image is. Not in
   # `publish-web`'s `needs:`: `build-android` is the gate, and a signing
   # problem shouldn't hold back the web image.
   release-android:
     name: Android release
-    needs: [constraints, palette, goldens, format, test-files, generate, analyze, test, test-web, build-web, build-android]
+    needs: gates
     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository == 'BoardGamesEmpire/board-games-empire-client'
     environment: android-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      - name: Count master's commits for the build number
+        id: build-number
+        run: echo "n=$(git rev-list --count --first-parent HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: generated-sources
@@ -686,7 +769,8 @@ jobs:
           BGE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BGE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           BGE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: dart run tool/build_android.dart --require-release-signing
+          BUILD_NUMBER: ${{ steps.build-number.outputs.n }}
+        run: dart run tool/build_android.dart --require-release-signing --build-number "$BUILD_NUMBER"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-apk
@@ -697,21 +781,133 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
 
+  # ── Release (#419) ───────────────────────────────────────────────
+  # Runs semantic-release on every master push, so a merged `feat` or
+  # `fix` is released without anyone editing a version. When the commits
+  # since the last `v*` tag call for a release, it rewrites the four
+  # pubspecs, commits `chore(release): X.Y.Z` straight to master and tags
+  # `vX.Y.Z`. CONTRIBUTING.md, Releasing, has the rules.
+  #
+  # The push uses a GitHub App token, not `GITHUB_TOKEN`: a push made with
+  # `GITHUB_TOKEN` starts no workflow, and the release commit's own run is
+  # the release build. It builds and publishes with the new version, which
+  # is why nothing else here builds a release. The App, its variable and
+  # its secret live in the `release` environment, which only master may
+  # deploy to (#826).
+  #
+  # A run behind master releases nothing: semantic-release stops when its
+  # checkout is not the branch's tip, and the newer run's analysis covers
+  # these commits as well as its own. `queue: max` lets every run take its
+  # turn, so none is cancelled for a newer one. A merge that lands while
+  # this job runs makes its push fail, as a non-fast-forward, and leaves
+  # that run red; the next run releases both merges.
+  #
+  # Until master's history has a `vX.Y.Z` tag there is nothing to count
+  # commits from, so the job does nothing; the first release is tagged by
+  # hand.
+  #
+  # It waits for every gate (`gates`): a release is cut from a tested
+  # commit. Nothing depends on this job.
+  release:
+    name: Release
+    needs: gates
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository == 'BoardGamesEmpire/board-games-empire-client'
+    environment: release
+    concurrency:
+      group: bge-client-release
+      queue: max
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      # The App token does the pushing, so the checkout keeps no
+      # credentials. Full history and tags: semantic-release reads them.
+      # The guard counts a tag the way semantic-release does: an exact
+      # `vX.Y.Z` (the pattern tool/release_tags.dart uses) in this commit's
+      # history (`--merged`). With only a `vnext`, a `v0.1.0x`, or a
+      # `v0.1.0` on a commit master never merged, semantic-release would
+      # find no release and cut its default first one, 1.0.0.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Look for a release tag
+        id: guard
+        run: |
+          set -euo pipefail
+          tags="$(git tag --merged HEAD)"
+          if ! grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags"; then
+            echo "::notice::No vX.Y.Z tag yet. The first release, v0.1.0, is tagged by hand (CONTRIBUTING.md, Releasing)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check the App credentials
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_CLIENT_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo "::error::The release environment's RELEASE_APP_CLIENT_ID variable or RELEASE_APP_PRIVATE_KEY secret is empty or unset, so this job cannot push the release commit. #826 creates the App and sets both."
+            exit 1
+          fi
+      # The prepare step runs `dart run tool/check_sdk_constraints.dart`,
+      # which needs the workspace resolved.
+      - if: steps.guard.outputs.skip != 'true'
+        uses: ./.github/actions/setup-flutter
+      - name: Resolve workspace
+        if: steps.guard.outputs.skip != 'true'
+        run: flutter pub get
+      - if: steps.guard.outputs.skip != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The install runs before the App token exists, so no package's
+      # install script can read it. `npm ci` takes every version, direct
+      # and transitive, from tool/release/package-lock.json, and
+      # `--ignore-scripts` runs no package's install script at all.
+      # Renovate keeps the lockfile current (#419).
+      - name: Install semantic-release
+        if: steps.guard.outputs.skip != 'true'
+        working-directory: tool/release
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Create the App token
+        id: app-token
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      # semantic-release runs from the repository root, as its binary in
+      # the install above. The commit's author is the App's bot user, whose
+      # id the noreply address needs.
+      - name: Release with semantic-release
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          id=$(gh api "/users/${SLUG}%5Bbot%5D" --jq .id)
+          export GIT_AUTHOR_NAME="${SLUG}[bot]"
+          export GIT_COMMITTER_NAME="${SLUG}[bot]"
+          export GIT_AUTHOR_EMAIL="${id}+${SLUG}[bot]@users.noreply.github.com"
+          export GIT_COMMITTER_EMAIL="${id}+${SLUG}[bot]@users.noreply.github.com"
+          tool/release/node_modules/.bin/semantic-release
+
   # ── Publish the web image (#418) ─────────────────────────────────
   # Pushes `build-web`'s files as ghcr.io/boardgamesempire/bge-client-web,
   # the image the backend copies its bundled client from. Only a push to
   # master publishes, after every gate above has passed, so a published
-  # commit is a tested one. `needs:` lists the gates by hand: a new gate
-  # job has to be added there, and to `release-android`'s, or it will not
-  # hold publishing back.
+  # commit is a tested one: it needs `gates`, which lists them.
   #
   # `sha-<short>` names one commit and never moves. `edge` holds the files
   # of master's newest published commit, and moves only when those files
   # change (#424), so its revision label names the commit that moved it,
-  # normally the first to build them. There are no version tags yet
-  # (#419). Three rules keep the tags honest:
-  #   - The image is pushed by digest and checked before either tag points
-  #     at it, so a failed check leaves both tags where they were.
+  # normally the first to build them. Four rules keep the tags honest:
+  #   - The image is pushed by digest and checked before any tag points at
+  #     it, so a failed check leaves every tag where it was.
   #   - `edge` only moves forward along master. Master runs do not cancel
   #     each other (top of this file), so an older commit's run can get
   #     here after a newer one's, and a re-run can get here at any time.
@@ -723,6 +919,11 @@ jobs:
   #     earlier attempt pushed and checked it, and this one checks and tags
   #     that image instead of pushing another. If it names any other
   #     commit, the job stops.
+  #   - `X.Y.Z` names one release and never moves: it is written only on
+  #     the commit its `vX.Y.Z` tag names, the release commit
+  #     semantic-release made (#419), whose `version.json` must say
+  #     `X.Y.Z`. One that already names this digest is reused, and one
+  #     naming another stops the job.
   #
   # The image is one bare manifest: no index, provenance or SBOM. A default
   # push from a public repository attaches provenance, which wraps even a
@@ -736,7 +937,7 @@ jobs:
   # again.
   publish-web:
     name: Publish web image
-    needs: [constraints, palette, goldens, format, test-files, generate, analyze, test, test-web, build-web, build-android]
+    needs: [gates, release-tag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     # One publish at a time, across every master run. The last step reads
     # the tags and then writes `edge`, which is safe only if no other run
@@ -755,6 +956,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      release: ${{ steps.tags.outputs.release }}
     env:
       IMAGE: ghcr.io/boardgamesempire/bge-client-web
     steps:
@@ -885,6 +1088,9 @@ jobs:
       #     decide this: it stays on an older commit for as long as the
       #     files do not change.
       #   - Its files differ from `edge`'s, or `edge` has no files label.
+      # On a release commit it then writes `X.Y.Z`, unless an earlier
+      # attempt did, and hands the release tag to `github-release` either
+      # way, so a re-run can still create a Release an earlier one missed.
       # A run that fails while reading writes nothing, so its commit does
       # not count as published and cannot hold back an older one.
       # `sha-<short>` goes before `edge`, in a command of its own, so `edge`
@@ -895,10 +1101,13 @@ jobs:
       # as it is. Left to default, a single source is wrapped in a new
       # index.
       - name: Tag the checked digest, and move edge if it should
+        id: tags
         env:
           DIGEST: ${{ steps.existing.outputs.digest || steps.push.outputs.digest }}
           SHORT: ${{ steps.meta.outputs.short }}
           FILES: ${{ steps.meta.outputs.files }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_TAG: ${{ needs.release-tag.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -970,8 +1179,34 @@ jobs:
               move=true reason="the files changed since \`$built_by\`."
             fi
           }
+          # Sets `release` to the commit's release tag, or empty, and
+          # `write_version` to whether `X.Y.Z` still needs writing.
+          decide_release() {
+            release='' write_version=false
+            if [ -z "$RELEASE_TAG" ]; then
+              return
+            fi
+            if [ "${RELEASE_TAG#v}" != "$VERSION" ]; then
+              echo "::error::This commit carries $RELEASE_TAG, but its version.json says $VERSION."
+              exit 1
+            fi
+            if manifest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' 2>"$RUNNER_TEMP/version.err"); then
+              got=$(jq -r .digest <<<"$manifest")
+              if [ "$got" != "$DIGEST" ]; then
+                echo "::error::$IMAGE:$VERSION names $got, not $DIGEST, and version tags never move."
+                exit 1
+              fi
+            elif grep -qF "$IMAGE:$VERSION: not found" "$RUNNER_TEMP/version.err"; then
+              write_version=true
+            else
+              echo "::error::Could not read $IMAGE:$VERSION: $(cat "$RUNNER_TEMP/version.err")"
+              exit 1
+            fi
+            release=$RELEASE_TAG
+          }
 
           decide
+          decide_release
           write_tag "sha-$SHORT"
           echo "Published \`$IMAGE:sha-$SHORT\` as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
           if [ "$move" = true ]; then
@@ -982,3 +1217,63 @@ jobs:
             echo "::notice::edge stays where it is: ${reason//\`/}"
             echo "\`edge\` stays where it is: $reason" >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -n "$release" ]; then
+            if [ "$write_version" = true ]; then
+              write_tag "$VERSION"
+              echo "Published \`$IMAGE:$VERSION\`, the release \`$release\`, as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "\`$IMAGE:$VERSION\`, the release \`$release\`, already named \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "release=$release" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── GitHub release (#419) ────────────────────────────────────────
+  # Creates a release commit's GitHub Release, once `publish-web` has
+  # tagged its image `X.Y.Z`. Every `0.x` release is a pre-release, and
+  # none is marked latest: that waits for a person to promote a stable
+  # release (#829). A Release that already exists is left as it is, so a
+  # re-run creates only one an earlier attempt missed.
+  #
+  # The notes list the PRs merged since `previous`, by title, rather than
+  # the commits: master keeps every PR's commits, so a commit list would be
+  # mostly noise (#419). The first release has no `previous` to start from,
+  # so GitHub lists every PR merged before it.
+  #
+  # No checkout: `gh` names the repository, and `--verify-tag` refuses a
+  # tag the remote doesn't have rather than create one.
+  github-release:
+    name: GitHub release
+    needs: [publish-web, release-tag]
+    if: needs.publish-web.outputs.release != ''
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release's GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish-web.outputs.release }}
+          PREVIOUS: ${{ needs.release-tag.outputs.previous }}
+        run: |
+          set -euo pipefail
+          # Only "release not found" means there is none. Any other failure,
+          # such as a network or auth error, stops the job rather than try to
+          # create a Release that may exist.
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>"$RUNNER_TEMP/view.err"; then
+            echo "::notice::$TAG already has a Release."
+            exit 0
+          fi
+          if ! grep -q 'release not found' "$RUNNER_TEMP/view.err"; then
+            cat "$RUNNER_TEMP/view.err" >&2
+            echo "::error::Could not tell whether $TAG has a Release."
+            exit 1
+          fi
+          args=(--verify-tag --title "$TAG" --latest=false --generate-notes)
+          case "$TAG" in
+            v0.*) args+=(--prerelease) ;;
+          esac
+          if [ -n "$PREVIOUS" ]; then
+            args+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" "${args[@]}"
