@@ -1,0 +1,12 @@
+{
+  "name": "bge-client-release",
+  "version": "0.0.0",
+  "private": true,
+  "description": "What the CI `release` job installs to run semantic-release (#419). Not a package: it only holds the pins and, in package-lock.json, every transitive version.",
+  "dependencies": {
+    "@semantic-release/exec": "7.1.0",
+    "@semantic-release/git": "11.0.1",
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semantic-release": "25.0.9"
+  }
+}

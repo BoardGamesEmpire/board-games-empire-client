@@ -330,7 +330,13 @@ Every action in the workflows is pinned to a full commit SHA, with its release
 as a trailing comment (`actions/checkout@<sha> # v4.4.0`), because a tag can be
 moved to new code and a SHA cannot. Pin a new action the same way.
 [.github/renovate.json](.github/renovate.json) has Renovate move each pin and
-its comment together.
+its comment together. The npm packages `release` runs are pinned in
+[tool/release/package.json](tool/release/package.json), with every transitive
+version in its lockfile. The job installs them with `npm ci --ignore-scripts`
+before the App token exists, and Renovate updates both files together, only
+once a release is three days old. [tool/release/.npmrc](tool/release/.npmrc)
+sets the same age for transitive versions and turns off install scripts, so
+regenerate the lockfile from inside that directory.
 
 ## Conventions
 
