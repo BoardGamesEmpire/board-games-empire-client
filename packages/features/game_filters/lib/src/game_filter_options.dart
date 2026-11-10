@@ -7,9 +7,10 @@ import 'package:models/domain.dart';
 /// The defaults are the game search's: every content type and platform type
 /// it can send, and the highest bound the server accepts.
 ///
-/// [medium], [missingBaseGame] and [exclusion] are for the collection's
-/// filters (#715), and are off by default: the game search's sheet has none
-/// of them.
+/// [medium], [missingBaseGame] and [exclusion] are off by default: the game
+/// search's sheet has none of them. The collection's filters (#715) turn on
+/// all three. The Offer games page (#516) turns on [medium] and [exclusion],
+/// and leaves [missingBaseGame] off.
 @immutable
 class GameFilterOptions {
   const GameFilterOptions({

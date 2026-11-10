@@ -532,7 +532,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         try {
           slots[index] = await _fetchOfferedGames(eventId, attendeeIds[index]);
         } on EventRemoteNotFoundException catch (error) {
-          // The attendee left the event since the roster was read.
+          // The attendee left the event since the roster was read, or the
+          // event is gone: the path names both, so a 404 says only that
+          // one of them is. When every read says it, the throw below tells
+          // the caller.
           notFound ??= error;
         } on Object {
           failed = true;

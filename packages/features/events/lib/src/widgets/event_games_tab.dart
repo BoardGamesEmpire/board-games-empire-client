@@ -495,9 +495,9 @@ class _PoolHeader extends StatelessWidget {
   }
 
   /// Opens the Offer games page with the collection entries the viewer's
-  /// own rows hold, so it can leave them out, and sends the games it
-  /// answers with (#516). Completes true when a run was sent, and false
-  /// when nothing was.
+  /// own rows hold, so it can show them as already offered and pick none of
+  /// them twice, and sends the games it answers with (#516). Completes true
+  /// when a run was sent, and false when nothing was.
   ///
   /// No picks, or Back, send nothing and say nothing. With picks, the send
   /// waits for any running detail read to end ([readEnded]), then goes for

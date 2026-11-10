@@ -58,11 +58,13 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## The page and its tabs
 ///
 /// What answers the whole screen comes first, in the page's header: the
-/// couldn't-refresh banner where the last read failed, then how the last
-/// action and the last vote went. The header stays in the semantics tree
-/// however far down the page is scrolled, so a banner that lands while the
-/// user is far down the roster is heard as it arrives ([BgePage.header] says
-/// how, per platform), and it reveals itself.
+/// couldn't-refresh banner, where the last read failed and while its retry
+/// runs, then how the last action and the last vote went. The header stays in
+/// the semantics tree however far down the page is scrolled, so a banner that
+/// lands while the user is far down the roster is heard as it arrives
+/// ([BgePage.header] says how, per platform). An outcome banner also scrolls
+/// itself into view as it arrives, which takes the page from wherever the
+/// user was; the refresh banner doesn't.
 ///
 /// Under it, where the screen has its actions' blocs and the event is one the
 /// server knows, a bar of two tabs (#516): Details, with the event's header,
@@ -75,39 +77,71 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// clock tick sets it back. It isn't in the route: the screen opens on
 /// Details.
 ///
-/// ## What it doesn't show
+/// ## Which actions it offers
 ///
-/// Most actions. The bloc works out what the viewer may do, and the app
-/// bar's menu offers the event's status changes (#502) and Delete (#501),
-/// the dates their own (#506), a poll's dates their answers (#507), and
-/// who's coming the viewer's own answer to the invitation (#508), and
-/// adding people, someone else's answer and removal (#510), to a viewer the
-/// role table gives them. The other actions' issues (#500, #503–#518) add
-/// theirs.
+/// The bloc works out what the viewer may do, and the screen offers it to a
+/// viewer the role table gives it: the app bar's menu has the event's status
+/// changes (#502) and Delete (#501), the dates have their own (#506), a
+/// poll's dates their answers (#507), who's coming has the viewer's own
+/// answer to the invitation (#508) and adding people, someone else's answer
+/// and removal (#510), and the Games tab has offering a game and taking it
+/// back (#516). It offers no editing of the event (#500) and nothing on a
+/// nominated game (#518), which the role table names.
 ///
 /// ## The Games tab
 ///
 /// The games the attendees offer to bring, one row per offered copy, with a
 /// title search, a filter by person, and Take back on the viewer's own rows
-/// ([EventGamesTab], #516). The pool isn't cached: it is read the first time
-/// the tab shows, and again each time a detail read ends once it has shown,
-/// for the event and the roster the detail shows then
-/// ([poolAttendeeIds]); never before. With nobody to read it for, nothing
-/// is read and the tab says the games aren't shown. A read that finds the
-/// event gone reads the event again, as the poll's does. The page's footer
-/// holds what answers the list: how far a run of offers has got while it
-/// is out, or how the pool's last write went, a run of offers or a
-/// take-back, then the stale-data banner while the games shown may be out
-/// of date. There each is on screen and heard however far down the list
-/// the user is; what answers the whole screen stays in the header.
+/// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
+/// what was read last.
 ///
-/// *Offer games* opens the page of the viewer's collection through
-/// [onOfferGames], and sends the games picked there once it closes, one at
-/// a time, as Add people sends its add: once any read has ended, for the
-/// event as the detail shows it then, and not at all if the viewer may no
-/// longer offer games, which the footer says. The button keeps its focus
-/// through the run it sent, which the page hands it back as it closes
-/// (#607).
+/// It is read the first time the tab shows on a ready event, and again each
+/// time a read of the event ends once the tab has shown, for the event and
+/// the roster the detail shows then ([poolAttendeeIds]); never before the tab
+/// is opened. The viewer's own writes read it as they end: a run of offers,
+/// however it ended, and a take-back unless it failed, which changed nothing.
+/// A write the screen's re-check dropped reads nothing, and Try again, on the
+/// failed state and on the stale-data banner, reads it as the user asks. With
+/// nobody to read it for, nothing is read and the tab says the games aren't
+/// shown. A read that finds the event gone reads the event again, as the
+/// poll's does.
+///
+/// While Games is selected, the page's footer holds what answers the list:
+/// how far a run of offers has got while it is out, or how the pool's last
+/// write went, a run of offers or a take-back, then the stale-data banner
+/// while the games shown may be out of date. On Details the footer is empty.
+/// There each is on screen and heard however far down the list the user is;
+/// what answers the whole screen stays in the header.
+///
+/// *Offer games* is built where [onOfferGames] is given, the role table gives
+/// the viewer `offerGame`, they have a row on the roster and the event takes
+/// writes (`offerGamesGate`). It sits at the head of the tab, so it is there
+/// in every state of the tab but the wait for a first answer and the games
+/// being hidden. Where the viewer has answered Not going it is disabled,
+/// saying why, and offline it is disabled, each throughout, its own run
+/// included. It is disabled too while a read of the event runs, while the
+/// screen's own request is out and while another of the pool's writes is,
+/// except through the run its own press sent (below). Take back
+/// is built wherever the gate isn't hidden, so a viewer who answered Not
+/// going still has it, and it needs no [onOfferGames].
+///
+/// Offer games opens the page of the viewer's collection through
+/// [onOfferGames], which shows the games the viewer already offers as
+/// checked and disabled, so none is picked twice, and sends the games picked
+/// there once it closes, one at a time, as Add people sends its add: once a
+/// running read of the event has ended, for the event, the viewer's row and
+/// the roster as the detail shows them then, and not at all if the viewer
+/// may no longer offer games, or has answered Not going meanwhile, which the
+/// footer says. Take back is sent once a running read of the event has
+/// ended too, and only if the viewer may still take games back and the game
+/// is still theirs and in the pool; answering Not going doesn't stop it.
+///
+/// The Offer games button keeps its focus through the run it sent, which the
+/// page hands it back as it closes (#607). While the run is out it stays
+/// enabled, ignores presses and says it is offering. Once the run ends it is
+/// available again, through the pool's read that follows it too, unless a
+/// read of the event or the screen's own request holds it back as it does any
+/// control.
 ///
 /// ## Delete
 ///
@@ -2377,8 +2411,8 @@ class _ActionOutcomeBanner extends StatelessWidget {
     // (#516). So this banner has no copy for it, and shows none.
     EventAction.offerGame => null,
     // Delete is the only other action whose outcome reaches here: a status
-    // write's and a roster write's take the arms above. #500's edit adds its
-    // own copy.
+    // write's and a roster write's take the arms above. The event's edit
+    // (#500) is offered nowhere on this screen, so none reaches here.
     _ => _deleteMessage(l10n),
   };
 

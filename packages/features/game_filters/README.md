@@ -6,13 +6,18 @@ list's search field that name the filters in use and clear them. The labels
 they name games' facts with live here too, and the catalog labels its own
 facts with them, so a filter reads as the fact it matches.
 
-Two screens call it. The game search (`game_catalog`'s `GameSearchScreen`)
+Three screens call it. The game search (`game_catalog`'s `GameSearchScreen`)
 uses the default options. The collection list (`game_collection`'s
 `GameCollectionListScreen`, #715) turns on `medium`, `missingBaseGame` and
-`exclusion`, and passes the same options to the sheet, the chips and the
-count. The sheet moved here from the game search unchanged so that the
-collection's filters, and later an event's game picker (#516), build from it
-rather than copy it.
+`exclusion`. The Offer games page (`events`' `OfferGamesScreen`, #516) turns
+on `medium` and `exclusion`, and leaves `missingBaseGame` off, since its rows
+are flat and none is marked as an expansion missing its base game. The
+collection list and the Offer games page pass their options to the sheet, the
+chips and the count alike, so each chip is one the count includes. The sheet
+is shared so that each of them builds from it rather than copying it. The
+event's Games tab, in `events`, uses only `GameFilterChipLabel`: for its "Not
+mine" chip, for the chip of each person chosen under its search field, and
+for each person's chip in the sheet that chooses them.
 
 ## Why a shared feature package
 
@@ -43,9 +48,10 @@ rest.
   game search's: `searchContentTypes`, `searchPlatformTypes`, and the
   server's highest bound, `defaultMaxRangeBound`. `medium`,
   `missingBaseGame` and `exclusion`, off by default, are for the collection
-  (#715): a Medium section, a switch keeping only the expansions missing
-  their base game, and a switch under each section that flips it to leave
-  out what it matches. A flip goes with its section's last choice.
+  (#715) and, but for `missingBaseGame`, the Offer games page (#516): a
+  Medium section, a switch keeping only the expansions missing their base
+  game, and a switch under each section that flips it to leave out what it
+  matches. A flip goes with its section's last choice.
 - `GameFiltersButton` and `gameFiltersInUseCount` — the button that opens the
   sheet, counting the filters in use, with an optional `focusNode` for a
   caller that sends focus to it. Pass the count the same `options` the

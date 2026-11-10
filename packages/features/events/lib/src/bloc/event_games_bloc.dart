@@ -29,10 +29,14 @@ enum _Sent {
 ///
 /// Offers and take-backs go straight to the server, never through the sync
 /// queue, and nothing is re-sent. The pool is never cached: it lives in
-/// [EventGamesState.games], read when the tab opens, after each detail read,
-/// once a write ends, and on a retry after a failed read. The event's id and
-/// the roster's attendee ids travel with each request rather than with the
-/// bloc, since a reconcile can move the id while the screen is open (#499).
+/// [EventGamesState.games]. The screen asks for a read the first time the
+/// Games tab shows, after each detail read from then on, and when the user
+/// retries a failed read. The bloc reads again as a run of offers ends,
+/// however it ended, and as a take-back ends, unless the take-back failed,
+/// which changed nothing the screen can know of. A write the screen's
+/// re-check dropped reads nothing. The event's id and the roster's attendee
+/// ids travel with each request rather than with the bloc, since a reconcile
+/// can move the id while the screen is open (#499).
 ///
 /// Reads and writes are independent: a read asked for while a write is out
 /// goes ahead under the rules below, and doesn't wait for it.

@@ -10,17 +10,28 @@ import 'package:network_interface/src/paginated_result.dart';
 /// deleted since returns that event with the time it was deleted (#499).
 typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 
-/// Remote data source for the events the signed-in user attends (#496), for
-/// creating one (#499) and for deleting one (#501).
+/// Remote data source for the events the signed-in user attends (#496): it
+/// reads them, creates one (#499), deletes one (#501), changes an event's
+/// status (#502) and its dates (#506), votes on its dates (#507), answers an
+/// invitation and changes who is on the roster (#508, #510), and reads,
+/// offers and takes back the games its attendees bring (#516).
 ///
 /// The event hydrate pages through [fetchEvents] to cache the user's events,
 /// and [fetchEvent] reads one event whole, roster included, which the list
 /// does not carry. [browseEvents] reads what's coming up that the user doesn't
-/// attend, which nothing caches (#613). [createEvent] sends a new event and
-/// [deleteEvent] removes one. [submitAvailability] and
-/// [fetchAvailabilitySummary] vote on the dates of an event whose host is
-/// polling for one, and read how the poll stands (#507). Votes are sent from
-/// here, and answering an invitation is #527, which also queues votes.
+/// attend, which nothing caches (#613), and [fetchHouseholdEvents] lists a
+/// household's events (#503). [createEvent] sends a new event and
+/// [deleteEvent] removes one. [cancelEvent], [reopenEvent], [archiveEvent]
+/// and [unarchiveEvent] change its status, and [addOccurrence],
+/// [updateOccurrence], [confirmOccurrence], [declineOccurrence],
+/// [cancelOccurrence] and [removeOccurrence] write its dates.
+/// [submitAvailability] and [fetchAvailabilitySummary] vote on the dates of
+/// an event whose host is polling for one, and read how the poll stands
+/// (#507). [updateAttendeeStatus] answers an invitation (#508), and
+/// [addAttendee] and [removeAttendee] change the roster (#510).
+/// [fetchGamesPool] reads the games an event's attendees have offered to
+/// bring, [offerGame] offers one from an attendee's collection and
+/// [takeBackGame] takes one back (#516).
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -571,16 +582,17 @@ abstract class EventRemoteDataSource {
   /// holds is read from it.
   ///
   /// An attendee whose read is a 404 carrying the envelope is left out: they
-  /// left the event since the roster was read. When every read is one, and
-  /// there was at least one id, it throws [EventRemoteNotFoundException]: the
-  /// event is gone, or everyone named left it. A 403 carrying the envelope on
-  /// any one read is [EventRemoteForbiddenException] for the whole pool, and
-  /// any other failure of any one read fails the whole pool with that read's
-  /// [EventRemoteException]. When two reads fail, the failure that lands
-  /// first is the one thrown, so a 403 does not outrank an earlier one. Reads
-  /// not yet started when one fails are not sent. An empty [attendeeIds]
-  /// answers `[]` with no request, and an empty id throws [ArgumentError]
-  /// before any is sent.
+  /// left the event since the roster was read, or the event is gone. When
+  /// every read is one, and there was at least one id, it throws
+  /// [EventRemoteNotFoundException]: the event is gone, or everyone named left
+  /// it. A 403 carrying the envelope on any one read is
+  /// [EventRemoteForbiddenException] for the whole pool, and any other failure
+  /// of any one read fails the whole pool with that read's
+  /// [EventRemoteException]. When two reads fail, the failure that lands first
+  /// is the one thrown, so a 403 does not outrank an earlier one. Reads not
+  /// yet started when one fails are not sent. An empty [attendeeIds] answers
+  /// `[]` with no request, and an empty id throws [ArgumentError] before any
+  /// is sent.
   Future<List<OfferedGame>> fetchGamesPool(
     String eventId, {
     required List<String> attendeeIds,

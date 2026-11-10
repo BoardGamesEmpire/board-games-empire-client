@@ -15,8 +15,10 @@
 /// confirmed dates (backend#795). `cancel` covers cancel and reopen, and
 /// `archive` covers archive and unarchive, because the server binds each pair
 /// to one grant. Which of the pair a status offers is the detail's (#502), not
-/// this table's, which knows roles and not statuses. Adding a game directly
-/// waits for #518, because the event's policy decides it.
+/// this table's, which knows roles and not statuses. `offerGame` covers
+/// offering a game from a collection and taking it back (#516), because every
+/// role that may add to an offered-games list may remove from it. Adding a
+/// game directly has no action, because the event's policy decides it (#518).
 library;
 
 import 'package:models/domain.dart';

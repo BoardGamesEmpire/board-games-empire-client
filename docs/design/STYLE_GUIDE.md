@@ -320,18 +320,20 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   a screen builds none of them itself.
 - **A tab's label scales down, never clips.** A tab is one line tall and can't
   wrap, so the label's `Text` goes in a `FittedBox(fit: BoxFit.scaleDown)`, as
-  a chip's does. Two tabs share a 320dp window at 200% text.
+  a chip's does. Check a tab bar of two tabs in a 320dp window at 200% text.
 - **What answers the whole screen stays above the bar**, on every tab: the
   refresh banner and the outcome banners. On a sliver page they go in
   `BgePage.slivers`' `header:`, which keeps them in the semantics tree
-  however far the page is scrolled. A banner there is heard as it arrives
-  on iOS at any depth, and on Android when the header is on screen or more
-  than a cache extent above the view. In between, Android stays silent, and
-  the banner's reveal puts it on screen to be read. This is the exception to
-  "an outcome on a long list sits in the footer" (Error and outcome
-  surfaces): it answers the screen, not a row of one tab's list. Pass the
-  header on every build, empty when there is nothing to say, so the call
-  site keeps one shape; an empty header adds no node and no height.
+  however far the page is scrolled. When a banner there is heard, on iOS
+  and on Android, and where its reveal stands in, is in the `BgePage` row
+  of the table above. That reveal scrolls an outcome banner into view as it
+  arrives, which takes the page from wherever the reader was; it is
+  accepted here because these banners answer the whole screen. This is the
+  exception to "an outcome on a long list sits in the
+  footer" (Error and outcome surfaces): it answers the screen, not a row of
+  one tab's list. Pass the header on every build, empty when there is nothing
+  to say, so the call site keeps one shape; an empty header adds no node and
+  no height.
 - **One scroll view, not a `TabBarView`.** A tab that holds a list makes the
   page `BgePage.slivers`, and the bar sits in it as a sliver above the
   selected tab's slivers, which the bar swaps. `semanticChildCount` follows
@@ -516,6 +518,10 @@ to a banner living inside the page's scroll view, and so to having no height
 cap (#228): the footer holds at most half the body and scrolls, so even a tall
 banner there stays reachable. A banner there reveals itself within the
 footer's own scroll view, so the page doesn't move.
+
+On a screen with tabs, a banner that answers the whole screen rather than a
+list is not this footer's: it stays above the tab bar, in the page's
+`header:` (Tabs, above).
 
 Such a footer is passed on every build, and renders nothing while there is
 nothing to report. `BgePage` builds a different tree with a footer than
