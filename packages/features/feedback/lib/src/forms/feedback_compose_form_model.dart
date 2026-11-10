@@ -9,7 +9,7 @@ import 'package:reactive_forms/reactive_forms.dart';
 /// alive across the compose → review → back-to-compose round trip, so the
 /// user's typed input and selections survive backing out of review (the
 /// same reason the crash review's redaction state lives above the widget
-/// in #76). The widget ([FeedbackComposeForm]) is presentation over this
+/// in #76). The widget (`FeedbackComposeForm`) is presentation over this
 /// model and holds no form state of its own.
 ///
 /// ## Conditional severity

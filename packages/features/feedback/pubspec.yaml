@@ -12,12 +12,10 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-
+  intl: ^0.20.2
   observability:
     path: ../../core/observability
-
   reactive_forms: ^18.1.1
-  intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale — both declared directly because this package imports from both.
   ui:
