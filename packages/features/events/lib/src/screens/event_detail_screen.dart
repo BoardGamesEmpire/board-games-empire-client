@@ -11,6 +11,7 @@ import 'package:events/src/bloc/event_poll_bloc.dart';
 import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
 import 'package:events/src/detail/event_actions.dart';
+import 'package:events/src/detail/event_attendee_addition.dart';
 import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_poll.dart';
@@ -48,11 +49,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Most actions. The bloc works out what the viewer may do, and the app
 /// bar's menu offers the event's status changes (#502) and Delete (#501),
 /// the dates their own (#506), a poll's dates their answers (#507), and
-/// who's coming the viewer's own answer to the invitation (#508) and
-/// someone else's answer and removal (#510), to a viewer the role table
-/// gives them. The other actions' issues (#500, #503–#518) add theirs. The
-/// games section says the event's games will show there, until #519 has
-/// something to show.
+/// who's coming the viewer's own answer to the invitation (#508), and
+/// adding people, someone else's answer and removal (#510), to a viewer the
+/// role table gives them. The other actions' issues (#500, #503–#518) add
+/// theirs. The games section says the event's games will show there, until
+/// #519 has something to show.
 ///
 /// ## Delete
 ///
@@ -60,11 +61,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// server, after a dialog that says it can't be undone and that nobody on the
 /// event is told. It is offered only with a [remote] and an [onBack]: the
 /// delete is never queued, and once the event is gone a screen that can't
-/// leave has nowhere to go. The status changes, the dates' actions and the
-/// viewer's answer share the bloc, so they are offered only there too. Where
-/// the menu offers Cancel, the dialog offers *Cancel event instead*, which
-/// closes it and opens Cancel's (#502): a cancel tells everyone and keeps
-/// the event.
+/// leave has nowhere to go. The status changes, the dates' actions, the
+/// viewer's answer and the roster's writes share the bloc, so they are
+/// offered only there too. Where the menu offers Cancel, the dialog offers
+/// *Cancel event instead*, which closes it and opens Cancel's (#502): a
+/// cancel tells everyone and keeps the event.
 ///
 /// Delete waits for the detail read, and the refresh banner's retry waits
 /// for the delete: a read's answer landing after the delete would cache the
@@ -193,6 +194,17 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// An answer the row already has sends nothing. Every end shows a banner,
 /// done included, and is read again as [EventActionOutcome.rereads] says.
 ///
+/// *Add people* sits under the viewer's own answer, where the menus would
+/// show and a roster is shown to add to, and where there is a way to the
+/// page ([onAddAttendee]). The page answers with one person and the role
+/// they'll have, from the roles the role table lets the viewer give, and
+/// the screen sends the add as it does the menus' writes, once any read has
+/// ended. Not at all if the event was cancelled meanwhile, the viewer may no
+/// longer give that role, or a sync put the person on the roster, which the
+/// page couldn't have offered: the banner says the roster changed. The
+/// button keeps its focus through the add it sent, which the page hands it
+/// back as it closes, and through the read the add's end starts (#607).
+///
 /// ## The clock
 ///
 /// Nothing writes to the cache as time passes, so the page is built again at
@@ -215,6 +227,7 @@ class EventDetailScreen extends StatelessWidget {
     this.householdRole,
     this.onBack,
     this.onWhoAnswered,
+    this.onAddAttendee,
     this.now,
     super.key,
   });
@@ -289,6 +302,9 @@ class EventDetailScreen extends StatelessWidget {
   static const Key attendeeNotGoingConfirmKey = Key(
     'event_detail.attendee_not_going_confirm',
   );
+
+  /// Key on who's coming's *Add people* button (#510).
+  static const Key addAttendeeKey = Key('event_detail.add_attendee');
 
   /// Key on the games section.
   static const Key gamesKey = Key('event_detail.games');
@@ -411,6 +427,16 @@ class EventDetailScreen extends StatelessWidget {
   /// visible.
   final void Function(BuildContext context)? onWhoAnswered;
 
+  /// Opens the Add people page (#510) with [AddAttendeeArgs], with this
+  /// screen's context, and completes with whom it picked and their role, or
+  /// null on back: the feature package doesn't know the route table. Null
+  /// offers no *Add people*.
+  final Future<EventAttendeeAddition?> Function(
+    BuildContext context,
+    AddAttendeeArgs args,
+  )?
+  onAddAttendee;
+
   /// The clock that decides whether a date is this year's, whether a
   /// proposed one has passed, and where the event stands as its dates pass,
   /// which picks the menu's status changes (#502, #655). Defaults to the
@@ -457,6 +483,7 @@ class EventDetailScreen extends StatelessWidget {
       child: _EventDetailView(
         onBack: onBack,
         onWhoAnswered: onWhoAnswered,
+        onAddAttendee: onAddAttendee,
         now: now ?? DateTime.now,
         hasActions: hasActions,
       ),
@@ -470,11 +497,13 @@ class _EventDetailView extends StatelessWidget {
     required this.hasActions,
     this.onBack,
     this.onWhoAnswered,
+    this.onAddAttendee,
   });
 
   final DateTime Function() now;
   final void Function(BuildContext context)? onBack;
   final void Function(BuildContext context)? onWhoAnswered;
+  final _OpenAddAttendee? onAddAttendee;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -517,6 +546,7 @@ class _EventDetailView extends StatelessWidget {
             now: now,
             hasActions: hasActions,
             onWhoAnswered: onWhoAnswered,
+            onAddAttendee: onAddAttendee,
           ),
         };
       },
@@ -669,6 +699,7 @@ class _ReadyPage extends StatelessWidget {
     required this.now,
     required this.hasActions,
     this.onWhoAnswered,
+    this.onAddAttendee,
   });
 
   final EventDetailReady state;
@@ -678,6 +709,7 @@ class _ReadyPage extends StatelessWidget {
   /// above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
+  final _OpenAddAttendee? onAddAttendee;
 
   @override
   Widget build(BuildContext context) {
@@ -811,15 +843,9 @@ class _ReadyPage extends StatelessWidget {
           EventAttendeesSection(
             attendees: snapshot.attendees,
             controls: _rsvpControls(context, actionsState, acting: acting),
-            // Only where the role table gives the viewer the roster, and
-            // the event takes the write: not once it is cancelled or
-            // archived (#510).
-            reach:
-                actionsState != null &&
-                    state.actions.contains(EventAction.manageAttendees) &&
-                    takesDateWrites(event)
-                ? state.attendeeReach
-                : AttendeeReach.none,
+            reach: actionsState == null
+                ? AttendeeReach.none
+                : _rosterReach(state),
             viewerAttendeeId: state.detail.attendance?.id,
             // As the dates' controls are: not while a read runs, whose answer
             // landing after the write would put the row back as it was
@@ -831,6 +857,7 @@ class _ReadyPage extends StatelessWidget {
             onRemove: actionsState == null
                 ? null
                 : (row) => unawaited(_removeAttendee(context, row)),
+            addButton: _addButton(context, actionsState, acting: acting),
           ),
           const BgeGap.lg(),
           const EventGamesSection(),
@@ -867,7 +894,152 @@ class _ReadyPage extends StatelessWidget {
       onEditNote: () => _sendRsvp(context, null, editNote: true),
     );
   }
+
+  /// *Add people* (#510), or null where it isn't offered: no way to the
+  /// page, no actions bloc, a role table that gives the viewer no roles to
+  /// give, an event that no longer takes the write, or no roster shown to add
+  /// to. [acting] is [_build]'s.
+  Widget? _addButton(
+    BuildContext context,
+    EventActionsState? actionsState, {
+    required bool acting,
+  }) {
+    final open = onAddAttendee;
+    final snapshot = state.detail.snapshot;
+    final roster = snapshot.attendees;
+    if (open == null ||
+        actionsState == null ||
+        assignableEventRoles(_rosterReach(state)).isEmpty ||
+        roster == null ||
+        roster.isEmpty) {
+      return null;
+    }
+
+    return _AddPeopleButton(
+      // As the roster's menus are: not while a read runs, whose answer
+      // landing after the add would leave the roster without them (#589),
+      // nor while a request is out or once the delete is done.
+      enabled: !state.reading && !acting,
+      onPressed: () => _addAttendee(context, open),
+    );
+  }
 }
+
+/// *Add people* (#510). Opens the Add people page, and is held through the
+/// add the page answers with, as the RSVP's note button is through its note
+/// ([EventRsvpControls]).
+///
+/// The page hands the focus back to it as it closes, just before the add
+/// goes out, and a disabled button can't hold focus (#607). So while it is
+/// unavailable after its own press, through the add and the read the add's
+/// end starts, it stays enabled and ignores presses, saying it is adding.
+/// While it is unavailable for another reason, a read or another request,
+/// it is disabled, and offline too (#49). The press is forgotten the first
+/// time it is built available after its add went out, and as soon as the
+/// page answers with nothing to send.
+class _AddPeopleButton extends StatefulWidget {
+  const _AddPeopleButton({required this.enabled, required this.onPressed});
+
+  /// Whether it may be pressed now: false while a read runs, a request is
+  /// out or the delete is done.
+  final bool enabled;
+
+  /// Opens the page and sends what it answers. Completes true when an add
+  /// was sent, and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<_AddPeopleButton> createState() => _AddPeopleButtonState();
+}
+
+class _AddPeopleButtonState extends State<_AddPeopleButton> {
+  /// A press is remembered: its page is open, or its add is out.
+  bool _pressed = false;
+
+  /// The remembered press's add went out.
+  bool _sent = false;
+
+  @override
+  void didUpdateWidget(_AddPeopleButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Built available after its add went out: the add and the read its
+    // outcome started have ended, or ended before a frame showed them.
+    if (_sent && widget.enabled) {
+      _pressed = false;
+      _sent = false;
+    }
+  }
+
+  Future<void> _press() async {
+    // One press at a time: the page is open, or its add is out.
+    if (_pressed) return;
+    _pressed = true;
+    var sent = false;
+    try {
+      sent = await widget.onPressed();
+    } finally {
+      if (sent) {
+        _sent = true;
+      } else if (mounted) {
+        setState(() => _pressed = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final offline = BgeConnectivityScope.offlineOf(context);
+    // Offline it is disabled, pressed or not: no press made it so (#49).
+    final inert = _pressed && !widget.enabled && !offline;
+    final label = inert
+        ? l10n.eventsAddAttendeeInProgress
+        : l10n.eventsAddAttendee;
+
+    return BgeOnlineOnly(
+      child: BgeInertButton(
+        inert: inert,
+        label: label,
+        onPressed: (widget.enabled && !offline) || inert
+            ? () => unawaited(_press())
+            : null,
+        builder: (context, focusNode, onPressed) => TextButton.icon(
+          key: EventDetailScreen.addAttendeeKey,
+          focusNode: focusNode,
+          onPressed: onPressed,
+          icon: inert
+              ? const _HeldSpinner()
+              : const Icon(Icons.person_add_alt_1_outlined),
+          label: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
+/// The held button's icon while the add its press sent runs: scaled with the
+/// label beside it, in the button's icon colour, as the RSVP note button's
+/// is.
+class _HeldSpinner extends StatelessWidget {
+  const _HeldSpinner();
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: BgeTextScale.clampedOf(context)
+        .scale(BgeTokens.of(context).spaceMd),
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: IconTheme.of(context).color,
+    ),
+  );
+}
+
+/// How the screen opens the Add people page:
+/// [EventDetailScreen.onAddAttendee].
+typedef _OpenAddAttendee = Future<EventAttendeeAddition?> Function(
+  BuildContext context,
+  AddAttendeeArgs args,
+);
 
 /// Builds the page again at its next time boundary (#502, #655): the
 /// event's start or end, or a proposed date passing ([nextDetailBoundary]).
@@ -1680,6 +1852,75 @@ Future<void> _answerFor(
   );
 }
 
+/// Opens the Add people page through [open] (#510), with the roles the
+/// viewer may give and the people the roster holds, as the detail shows
+/// them now, and adds whom it answers with. Answers whether it sent the add:
+/// not when the page answered nothing, or the add was dropped. See
+/// [EventDetailScreen].
+Future<bool> _addAttendee(BuildContext context, _OpenAddAttendee open) =>
+    sendDetailWrite<EventAttendeeAddition>(
+      context,
+      ask: () async {
+        final shown = context.read<EventDetailBloc>().state;
+        if (shown is! EventDetailReady) return null;
+        // The detail can be a step ahead of the frame the button was built
+        // from: a sync can have left the viewer no role to give, and the
+        // button is going with the next frame. The page needs one to offer.
+        final roles = assignableEventRoles(shown.attendeeReach);
+        if (roles.isEmpty) return null;
+        return open(
+          context,
+          AddAttendeeArgs(
+            roles: roles,
+            // A guest without an account has no user id, and the page finds
+            // only people with one.
+            rosterUserIds: {
+              for (final row
+                  in shown.detail.snapshot.attendees ?? const <EventAttendee>[])
+                ?row.userId,
+            },
+          ),
+        );
+      },
+      // A read can have started while the page was open, and the add waits
+      // for it to end, as the menus' writes do (#589). The event is the
+      // detail's as it is then, whose id a reconcile can have moved (#499).
+      check: (state, addition) {
+        final user = addition.user;
+        // What the banner calls them.
+        final name = personName(
+          displayName: user.displayName,
+          username: user.username,
+        );
+        final snapshot = state.detail.snapshot;
+        final roster = snapshot.attendees;
+        // A sync can have cancelled or archived the event while the page was
+        // open, taken the roster from the viewer, or narrowed the roles they
+        // may give: the page beneath shows it, without Add people or with
+        // fewer roles to give. Or a sync put the person on the roster, whom
+        // the page couldn't have offered. Either way nothing is sent, and the
+        // banner says the roster changed, or a screen reader would hear
+        // nothing happen (#655).
+        if (!assignableEventRoles(_rosterReach(state))
+                .contains(addition.role) ||
+            roster == null ||
+            roster.isEmpty ||
+            roster.any((row) => row.userId == user.id)) {
+          return DropWrite(
+            EventWriteDropped.attendee(EventAttendeeWrite.add, name: name),
+          );
+        }
+        return SendWrite(
+          EventAttendeeAddRequested(
+            snapshot.event.id,
+            user.id,
+            addition.role,
+            name: name,
+          ),
+        );
+      },
+    );
+
 /// Row [id] of the roster [state] shows, where its menu would still offer
 /// the write [allows] decides on: the event takes it, the role table still
 /// gives the viewer the roster, and [allows] still holds for the row. Null
@@ -1697,22 +1938,26 @@ EventAttendee? _actableRow(
   })
   allows,
 ) {
-  final snapshot = state.detail.snapshot;
-  if (!takesDateWrites(snapshot.event) ||
-      !state.actions.contains(EventAction.manageAttendees)) {
-    return null;
-  }
-  final row = snapshot.attendees?.where((shown) => shown.id == id).firstOrNull;
+  final reach = _rosterReach(state);
+  if (reach == AttendeeReach.none) return null;
+  final row = state.detail.snapshot.attendees
+      ?.where((shown) => shown.id == id)
+      .firstOrNull;
   if (row == null ||
-      !allows(
-        state.attendeeReach,
-        row,
-        viewerAttendeeId: state.detail.attendance?.id,
-      )) {
+      !allows(reach, row, viewerAttendeeId: state.detail.attendance?.id)) {
     return null;
   }
   return row;
 }
+
+/// How far [state]'s viewer reaches over its roster (#510): as the role
+/// table says while the event takes the write, and [AttendeeReach.none] once
+/// it is cancelled or archived. The menus, Add people and the writes'
+/// re-checks all ask this.
+AttendeeReach _rosterReach(EventDetailReady state) =>
+    takesDateWrites(state.detail.snapshot.event)
+    ? state.attendeeReach
+    : AttendeeReach.none;
 
 /// How the last action went (#501, #502, #506, #508, #510), or the last vote
 /// (#507), over the event until dismissed or replaced. A live region, as every

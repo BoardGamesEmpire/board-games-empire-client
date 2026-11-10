@@ -346,7 +346,7 @@
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn and eventsAttendeeAddRefused."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -525,6 +525,60 @@
   "eventsAttendeeWriteFailedUnexpected": "Something went wrong. Check the roster below before trying again.",
   "@eventsAttendeeWriteFailedUnexpected": {
     "description": "Banner on an event's screen when adding or removing a person, or setting their answer, failed for any reason other than the connection: the server rejected it, answered with something the app could not read, or the app sent nothing, for example because a different account signed in from another tab. It may have gone through, so the copy must not say it didn't. 'The roster' is the event's who's-coming list. The screen reads the event again after most of these, but not when nothing was sent, so the copy must not say the list below is up to date."
+  },
+  "eventsAddAttendee": "Add people",
+  "@eventsAddAttendee": {
+    "description": "Button in the who's-coming section of an event's screen, shown to someone who may add people to the event, such as its host. Opens the Add people page (eventsAddAttendeeTitle), where they find someone with an account and pick the role they'll have."
+  },
+  "eventsAddAttendeeInProgress": "Adding…",
+  "@eventsAddAttendeeInProgress": {
+    "description": "Shown in place of eventsAddAttendee on that button, beside a spinner, once the user has picked someone on the Add people page and the event's screen is sending the add. The button can't be pressed until it ends, and a banner then says how it went."
+  },
+  "eventsAddAttendeeTitle": "Add people",
+  "@eventsAddAttendeeTitle": {
+    "description": "Title of the page, opened from an event's screen, where the user finds someone with an account by searching for them, picks the role they'll have at the event, and adds them. One person at a time; they are added as invited, and answer for themselves."
+  },
+  "eventsAddAttendeeRole": "Role",
+  "@eventsAddAttendeeRole": {
+    "description": "Heading on the Add people page over the roles the user may give the person they add, one to pick, each with a line on what it lets them do. 'Role' is the part the person will have at the event: participant, guest, spectator and so on."
+  },
+  "eventsAddAttendeeAdd": "Add",
+  "@eventsAddAttendeeAdd": {
+    "description": "Last button on the Add people page. Adds the person picked from the search to the event, with the role picked under the Role heading, and goes back to the event, which says how it went. Unavailable until someone is picked, and while offline."
+  },
+  "eventsAddAttendeeAlreadyOn": "{name} is already on this event.",
+  "@eventsAddAttendeeAlreadyOn": {
+    "description": "Note under the search field on the Add people page, announced as it appears, when the user picks someone from the search who is already on the event. They aren't picked, and the user can search for someone else. {name} is that person's name, or eventsAttendeeSomeoneStart.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsRoleDescriptionParticipant": "Answers, votes on dates and games, and brings games.",
+  "@eventsRoleDescriptionParticipant": {
+    "description": "On the Add people page, the line under the Participant role (eventsRoleLabelParticipant) saying what the person added may do: answer the invitation, vote on the proposed dates and on the games, and bring games of their own."
+  },
+  "eventsRoleDescriptionGuest": "Answers and votes on dates. Can't nominate or vote on games.",
+  "@eventsRoleDescriptionGuest": {
+    "description": "On the Add people page, the line under the Guest role (eventsRoleLabelGuest) saying what the person added may do: answer the invitation and vote on the proposed dates, but not put a game forward for the event or vote on one."
+  },
+  "eventsRoleDescriptionSpectator": "Comes to watch. Answers whether they're coming, and has no vote.",
+  "@eventsRoleDescriptionSpectator": {
+    "description": "On the Add people page, the line under the Spectator role (eventsRoleLabelSpectator) saying what the person added may do: come to watch rather than play, and answer whether they're coming, with no vote on the dates or the games."
+  },
+  "eventsRoleDescriptionCoHost": "Runs the event with you: its dates, people and games. Can't delete it.",
+  "@eventsRoleDescriptionCoHost": {
+    "description": "On the Add people page, the line under the Co-host role (eventsRoleLabelCoHost) saying what the person added may do: run the event alongside the user, its dates, who's on it and its games, everything but delete it. 'You' is the user adding them."
+  },
+  "eventsRoleDescriptionOrganizer": "Edits the event, proposes dates, and adds or removes participants, guests and spectators.",
+  "@eventsRoleDescriptionOrganizer": {
+    "description": "On the Add people page, the line under the Organizer role (eventsRoleLabelOrganizer) saying what the person added may do: change the event's details, propose dates, and add people to it or take them off, but only participants, guests and spectators."
+  },
+  "eventsRoleDescriptionModerator": "Edits the event and its dates, settles nominations, and adds or removes participants, guests and spectators.",
+  "@eventsRoleDescriptionModerator": {
+    "description": "On the Add people page, the line under the Moderator role (eventsRoleLabelModerator) saying what the person added may do: change the event's details and its dates, decide on the games put forward for it, and add people to it or take them off, but only participants, guests and spectators."
   },
   "eventsDetailGames": "Games",
   "@eventsDetailGames": {

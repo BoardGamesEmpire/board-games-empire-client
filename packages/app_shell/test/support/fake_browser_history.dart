@@ -37,6 +37,9 @@ class FakeBrowserHistory {
     for (final entry in _entries.take(_current + 1)) entry.uri,
   ];
 
+  /// Every entry, the ones Forward returns to included, oldest first.
+  List<String> get allLocations => [for (final entry in _entries) entry.uri];
+
   Future<Object?> _record(MethodCall call) async {
     if (call.method != 'routeInformationUpdated') return null;
     final arguments = call.arguments as Map<Object?, Object?>;
@@ -53,8 +56,12 @@ class FakeBrowserHistory {
   }
 
   /// Browser Back: the router is handed the entry before the current one.
-  Future<void> back() async {
-    final entry = _entries[--_current];
+  Future<void> back() => _restore(_entries[--_current]);
+
+  /// Browser Forward: the router is handed the entry after the current one.
+  Future<void> forward() => _restore(_entries[++_current]);
+
+  Future<void> _restore(({String uri, Object? state}) entry) async {
     await _tester.binding.defaultBinaryMessenger.handlePlatformMessage(
       SystemChannels.navigation.name,
       SystemChannels.navigation.codec.encodeMethodCall(
