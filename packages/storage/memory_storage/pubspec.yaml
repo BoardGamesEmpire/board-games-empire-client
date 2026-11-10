@@ -8,15 +8,14 @@ environment:
 resolution: workspace
 
 dependencies:
-  storage_interface:
-    path: ../storage_interface
-  models:
-    path: ../../core/models
   di:
     path: ../../core/di
-
   get_it: ^9.2.1
   injectable: ^3.0.0
+  models:
+    path: ../../core/models
+  storage_interface:
+    path: ../storage_interface
 
 dev_dependencies:
   injectable_generator: ^3.1.3
