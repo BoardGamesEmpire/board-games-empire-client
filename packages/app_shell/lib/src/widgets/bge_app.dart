@@ -2669,6 +2669,10 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
+  /// Whether a frame has been laid out, so the region may mount. See
+  /// [_selectable] — this is not a readiness nicety, it is a crash fix.
+  bool _selectionRegionReady = false;
+
   /// The app-wide text-selection region (#322), on the platforms that get one.
   ///
   /// Wraps the router's content — so every route, dialog and SnackBar inside
@@ -2676,13 +2680,12 @@ class _BgeAppState extends State<BgeApp> {
   /// also swallow the crash overlay. That overlay keeps its own opt-in; see
   /// [FeedbackReviewScreen].
   ///
-  /// **The `Overlay.wrap` is load-bearing, and the order is too.** The reason
-  /// is the one already written out below, at the crash overlay: this slot
-  /// sits above the router's Navigator, so there is no Overlay ancestor here.
-  /// `SelectableRegion.build` asserts `debugCheckHasOverlay`, so a bare
-  /// `SelectionArea` throws on the first frame — and `SelectionArea` wrapped
-  /// *around* `Overlay.wrap` throws for the same reason, since the region
-  /// still has no Overlay above it. It has to be this way round.
+  /// The region itself is [BgeSelectionRegion], which the tests that host a
+  /// screen under it render too (#338). Its doc says why the `Overlay.wrap`
+  /// inside it is load-bearing, why that makes it the app's root overlay,
+  /// and what anything drag-interactive under it must do (a rule nothing
+  /// enforces yet; #857). What stays here is where and when the region
+  /// mounts.
   ///
   /// ## Why it waits a frame
   ///
@@ -2725,28 +2728,16 @@ class _BgeAppState extends State<BgeApp> {
   /// construction, and an embedder that hand-rolls them and gets it wrong
   /// fails loudly in debug instead of shipping an intermittent remount.
   ///
-  /// One further consequence of that `Overlay.wrap`, easy to miss because it
-  /// is invisible today: it is now the app's **root** overlay. Before this,
-  /// the router's Navigator owned the outermost one, so
-  /// `Overlay.of(context, rootOverlay: true)` resolved there and its entries
-  /// came down with a route pop. They now resolve above the Navigator and
-  /// survive it — so a `MenuAnchor(useRootOverlay: true)`, or anything else
-  /// reaching for the root overlay to host a layer, would strand its entry
-  /// over the next screen. Nothing in the app does that yet.
-  ///
-  /// Anything drag-interactive added below this — a reorderable collection
-  /// list is the likely first one — must wrap itself in
-  /// `SelectionContainer.disabled`, or its drag and the selection drag will
-  /// fight over the same gesture. Nothing enforces that rule yet; #338
-  /// tracks giving it a mechanism.
-  /// Whether a frame has been laid out, so the region may mount. See
-  /// [_selectable] — this is not a readiness nicety, it is a crash fix.
-  bool _selectionRegionReady = false;
-
+  /// The gate is checked here as well as in [BgeSelectionRegion], and before
+  /// the readiness check, so a platform without a region never changes this
+  /// slot's tree shape on frame two. A region mounted then only to decline
+  /// would still change the widget type in the slot, and so remount the
+  /// `Router` beneath it, on every touch platform.
+  /// `bge_app_selection_gate_test.dart` pins that.
   Widget _selectable(BuildContext context, Widget content) {
     if (!BgeSelection.isEnabledOn(Theme.of(context).platform)) return content;
     if (!_selectionRegionReady) return content;
-    return Overlay.wrap(child: SelectionArea(child: content));
+    return BgeSelectionRegion(child: content);
   }
 
   /// Whether every theme this app can resolve reports the same `platform`.
@@ -2860,12 +2851,13 @@ class _BgeAppState extends State<BgeApp> {
                             // slot re-summons the flow — making it
                             // undismissable.
                             //
-                            // The selection region in [_selectable] wraps
-                            // itself for the same reason, one level up. It
-                            // is a separate Overlay on purpose: this one
-                            // must unmount with the crash flow, and the
-                            // content below must stay selectable whether or
-                            // not a draft is pending.
+                            // The selection region [_selectable] mounts,
+                            // [BgeSelectionRegion], wraps itself for the
+                            // same reason, one level up. It is a separate
+                            // Overlay on purpose: this one must unmount
+                            // with the crash flow, and the content below
+                            // must stay selectable whether or not a draft
+                            // is pending.
                             //
                             // One focus scope holds whichever surface is
                             // showing (see the class docs), filling the

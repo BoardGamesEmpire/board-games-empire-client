@@ -64,7 +64,13 @@ default, which is why it is spelled out here.
 | Helper | Use |
 |---|---|
 | `useViewSize(tester, size)` | Size the render surface, teardown included |
-| `hostAtSize(tester, child, size:, textScale:)` | The above, plus a `BgeTheme` host |
+| `hostAtSize(tester, child, size:, textScale:, platform:, builder:)` | The above, plus a `BgeTheme` host; `platform:` sets the theme's platform, `builder:` goes to `MaterialApp.builder` |
+| `hostUnderSelectionRegion(tester, child, size:, textScale:)` | A screen as a desktop user meets it: `hostAtSize` on macOS, under the app's own selection region |
+| `pointerPlatformTheme(platform:)` | The `BgeTheme` on a pointer platform (macOS by default), so a suite's own `MaterialApp` gets the region |
+| `underSelectionRegion` | A `MaterialApp.builder` that puts `BgeSelectionRegion` where `BgeApp` does, above the Navigator |
+| `mouseDrag(tester, from, to, steps:)` | A mouse drag in even steps, as a desktop user selects or scrolls |
+| `captureClipboardCopies()` | The live list of every text a copy puts on the clipboard, teardown included |
+| `sendCopyShortcut(tester)` | Control+C, then a pump |
 | `scrollChildCountOnScrollingNode(tester, scrollActions:)` | The "item 3 of 9" count, off the node that really scrolls |
 | `scrollViewportOf(tester)` / `pageScrollOf(tester)` | The page's scroll viewport / its state |
 | `topInViewport(tester, target)` | A widget's top edge in the viewport's own space |
