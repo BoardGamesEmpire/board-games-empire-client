@@ -1062,6 +1062,9 @@ void main() {
         .index;
 
     testWidgets('the section sits above the pool header', (tester) async {
+      // Tall enough that the pool's first row is built, under the section's
+      // header.
+      useViewSize(tester, const Size(800, 2400));
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
 
       await showGames(tester);
@@ -1170,6 +1173,9 @@ void main() {
         nominationOf('n-1', azul),
         nominationOf('n-2', root),
       ];
+      // Tall enough that every row is built, the vote under each nomination
+      // included.
+      useViewSize(tester, const Size(800, 2400));
 
       await showGames(tester);
 

@@ -513,6 +513,32 @@ class EventDetailScreen extends StatelessWidget {
   static Key nominationRowKey(String nominationId) =>
       Key('event_detail.nomination_$nominationId');
 
+  /// Key on one choice of a nomination's vote control (#517), by the
+  /// nomination's id and the vote it casts: on the choice's label, inside
+  /// its segment.
+  static Key nominationVoteKey(String nominationId, VoteType voteType) =>
+      Key('event_detail.nomination_vote_${voteType.name}_$nominationId');
+
+  /// Key on a nomination's *Add a note* or *Edit note* button (#517), by
+  /// the nomination's id.
+  static Key nominationNoteKey(String nominationId) =>
+      Key('event_detail.nomination_note_$nominationId');
+
+  /// Key on the vote's note dialog's field (#517).
+  static const Key nominationNoteFieldKey = Key(
+    'event_detail.nomination_note_field',
+  );
+
+  /// Key on the vote's note dialog's Save note button (#517).
+  static const Key nominationNoteSaveKey = Key(
+    'event_detail.nomination_note_save',
+  );
+
+  /// Key on a nomination's *Who voted* button (#517), by the nomination's
+  /// id.
+  static Key nominationVotersKey(String nominationId) =>
+      Key('event_detail.nomination_voters_$nominationId');
+
   /// Key on the Games tab's Offer games button.
   static const Key offerGamesKey = Key('event_detail.offer_games');
 

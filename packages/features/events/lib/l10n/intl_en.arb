@@ -346,7 +346,7 @@
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept. In the who-voted list of a nominated game it goes in place of {name} in eventsVoterLine and eventsVoterLineNotCounting."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -1327,6 +1327,206 @@
         "example": "Voting"
       }
     }
+  },
+  "eventsVoteFor": "For",
+  "@eventsVoteFor": {
+    "description": "One of the three choices of the control under a nominated game in the Nominations section of an event's Games tab, with which the user votes on it: they want it played. Also names a For vote in the who-voted list (eventsVoterLine). Short: the three choices share the width of a phone's row, and a long word is drawn smaller to fit. Screen readers hear eventsVoteForNamed instead on the control."
+  },
+  "eventsVoteAgainst": "Against",
+  "@eventsVoteAgainst": {
+    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user doesn't want it played. Also names an Against vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteAgainstNamed instead on the control."
+  },
+  "eventsVoteInterested": "Interested",
+  "@eventsVoteInterested": {
+    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user is interested in the game without backing it outright. How it counts depends on the event's rules, which the row says. Also names an Interested vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteInterestedNamed instead on the control."
+  },
+  "eventsVoteUnknown": "Unknown",
+  "@eventsVoteUnknown": {
+    "description": "Names a vote in the who-voted list (eventsVoterLine) of a nominated game when the server gave a kind of vote this version of the app doesn't know."
+  },
+  "eventsVoteForNamed": "For {title}",
+  "@eventsVoteForNamed": {
+    "description": "eventsVoteFor as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteAgainstNamed": "Against {title}",
+  "@eventsVoteAgainstNamed": {
+    "description": "eventsVoteAgainst as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteInterestedNamed": "Interested in {title}",
+  "@eventsVoteInterestedNamed": {
+    "description": "eventsVoteInterested as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteInProgress": "{vote}, saving your vote…",
+  "@eventsVoteInProgress": {
+    "description": "What a screen reader says for the choice of the vote control the user just pressed, while the vote it sent is being saved. The choice still shows its word alone, with a spinner, and can't be pressed until saving ends. {vote} is eventsVoteForNamed, eventsVoteAgainstNamed or eventsVoteInterestedNamed.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For Catan"
+      }
+    }
+  },
+  "eventsVoteHintAttending": "Your vote counts once you say you're going.",
+  "@eventsVoteHintAttending": {
+    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people who said they are coming, and the user hasn't. They can still vote, but their vote isn't counted until they answer Going (eventsRsvpAttending) to the question on the same screen, \"Are you coming?\" (eventsRsvpQuestion). Use the words that question and its answer use."
+  },
+  "eventsVoteHintOffering": "Your vote counts once you offer a game.",
+  "@eventsVoteHintOffering": {
+    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people bringing a game, and the user isn't bringing any. They can still vote, but their vote isn't counted until they offer a game from their collection on the same tab."
+  },
+  "eventsVoteAddNote": "Add a note",
+  "@eventsVoteAddNote": {
+    "description": "Button under the vote control of a nominated game in the Nominations section of an event's Games tab, once the user has voted on it and left no note with the vote. Opens a dialog to write a short note that goes with the vote, such as 'Only if we have time'. Screen readers hear eventsVoteAddNoteNamed instead."
+  },
+  "eventsVoteEditNote": "Edit note",
+  "@eventsVoteEditNote": {
+    "description": "The same button as eventsVoteAddNote, when the user has already left a note with their vote. Opens the dialog to change or remove it. Screen readers hear eventsVoteEditNoteNamed instead."
+  },
+  "eventsVoteAddNoteNamed": "Add a note to your vote on {title}",
+  "@eventsVoteAddNoteNamed": {
+    "description": "eventsVoteAddNote as a screen reader reads it, naming the game, since every nominated game the user votes on has its own.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteEditNoteNamed": "Edit your note on {title}",
+  "@eventsVoteEditNoteNamed": {
+    "description": "eventsVoteEditNote as a screen reader reads it, naming the game, since every nominated game the user votes on has its own.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteNoteInProgress": "Saving your note…",
+  "@eventsVoteNoteInProgress": {
+    "description": "Shown in place of eventsVoteAddNote or eventsVoteEditNote on the note button under a nominated game, beside a spinner, while the note the user saved is being sent with their vote. The button can't be pressed until saving ends."
+  },
+  "eventsVoteNoteTitle": "Your note on {title}",
+  "@eventsVoteNoteTitle": {
+    "description": "Title of the dialog, opened from eventsVoteAddNote or eventsVoteEditNote, where the user writes, changes or removes the short note that goes with their vote on a nominated game. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteNoteBody": "Everyone on this event can read it.",
+  "@eventsVoteNoteBody": {
+    "description": "Body of the vote's note dialog (eventsVoteNoteTitle), above its field, so the user knows the note isn't private: it goes to everyone who can read the event's nominated games, including people who aren't shown who voted (eventsVotersTitle)."
+  },
+  "eventsVoteNoteLabel": "Note",
+  "@eventsVoteNoteLabel": {
+    "description": "Label of the text field in the vote's note dialog (eventsVoteNoteTitle). Left empty, saving removes the note."
+  },
+  "eventsVoteNoteKeep": "Cancel",
+  "@eventsVoteNoteKeep": {
+    "description": "Button in the vote's note dialog (eventsVoteNoteTitle) that closes it and leaves the note as it was."
+  },
+  "eventsVoteNoteSave": "Save note",
+  "@eventsVoteNoteSave": {
+    "description": "Button in the vote's note dialog (eventsVoteNoteTitle) that sends the note, with the user's vote as it stands, to the server. An empty field removes the note."
+  },
+  "eventsVotersOpen": "Who voted ({count})",
+  "@eventsVotersOpen": {
+    "description": "Button under a nominated game in the Nominations section of an event's Games tab, once anyone has voted on it. Opens a list of who voted and how (eventsVotersTitle). {count} is how many votes it has, those that don't count included. Screen readers hear eventsVotersOpenNamed instead.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsVotersOpenNamed": "{count, plural, =1{Who voted on {title}: 1 vote} other{Who voted on {title}: {count} votes}}",
+  "@eventsVotersOpenNamed": {
+    "description": "eventsVotersOpen as a screen reader reads it, naming the game, since every nominated game with votes has its own, and saying the count in words rather than in brackets.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      },
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVotersTitle": "Who voted on {title}",
+  "@eventsVotersTitle": {
+    "description": "Heading of the list, opened from eventsVotersOpen, of each vote on a nominated game: who cast it and how, with the note they left under it. Also the list's name to a screen reader as it opens. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoterLine": "{name}: {vote}",
+  "@eventsVoterLine": {
+    "description": "One vote in the who-voted list (eventsVotersTitle): who cast it and how. {name} is the voter's name, eventsVoterYou for the user, or eventsAttendeeSomeoneStart for someone with no name the app can show. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown. A vote that doesn't count is drawn crossed out (struck through), and screen readers hear eventsVoterLineNotCounting for it instead.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsVoterLineNotCounting": "{name}: {vote}. Doesn't count.",
+  "@eventsVoterLineNotCounting": {
+    "description": "eventsVoterLine as a screen reader reads it for a vote that doesn't count, which the list draws crossed out (struck through) instead. eventsVotersNotCountingNote gives the reasons a vote doesn't count.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsVoterYou": "You",
+  "@eventsVoterYou": {
+    "description": "Names the user in the who-voted list (eventsVotersTitle), as {name} in eventsVoterLine, in place of their own name."
+  },
+  "eventsVotersNotCountingNote": "Struck-through votes don't count: their voter has left, or this event doesn't count them yet.",
+  "@eventsVotersNotCountingNote": {
+    "description": "One line above the who-voted list (eventsVotersTitle), shown only when it holds a vote that doesn't count, which it draws crossed out (struck through). A vote doesn't count when the person who cast it is no longer on the event, or when the event's rules don't count it yet: for example, until they say they're coming or offer a game. Explains the crossing out to someone who sees it: a screen reader already hears eventsVoterLineNotCounting for each such vote."
+  },
+  "eventsVotersNotCountingCountsOnly": "Some votes don't count: their voter has left, or this event doesn't count them yet.",
+  "@eventsVotersNotCountingCountsOnly": {
+    "description": "eventsVotersNotCountingNote for the who-voted list (eventsVotersTitle) when it shows only how many votes are for, against and interested, because who voted isn't shown to this user (eventsVotersHidden): no vote is drawn, so none is crossed out. Shown only when a vote doesn't count, so that the count on the button that opened the list (eventsVotersOpen), which includes those votes, is explained beside a smaller total. A vote doesn't count when the person who cast it is no longer on the event, or when the event's rules don't count it yet: for example, until they say they're coming or offer a game."
+  },
+  "eventsVotersHidden": "Who voted isn't shown to you.",
+  "@eventsVotersHidden": {
+    "description": "In the who-voted list (eventsVotersTitle) in place of the votes, under how many votes are for, against and interested, when the server won't show this user who is on the event, and so who voted."
   },
   "eventsOfferTitle": "Offer games",
   "@eventsOfferTitle": {

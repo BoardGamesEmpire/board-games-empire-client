@@ -337,7 +337,14 @@ class EventGamesTab extends StatelessWidget {
             detail: detail,
             state: shown.state,
             pool: games.games,
+            // Before a read has answered, an empty pool says nothing of
+            // what the viewer offers. While one is out, the last to end
+            // stands, as the pool's own body has it.
+            poolRead:
+                games.games.isNotEmpty ||
+                controller.drawnLoad(games) == EventGamesLoad.loaded,
             names: names,
+            acting: acting,
             now: now,
           ),
         // In every state of the pool, as the section's is in every state of
