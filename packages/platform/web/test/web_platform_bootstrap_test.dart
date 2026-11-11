@@ -7,10 +7,10 @@ library;
 
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
-import 'package:models/domain.dart';
 import 'package:web_platform/web.dart';
 
 /// A stand-in [ActiveServerScope] for the [WebPlatformBootstrap.initialize]
@@ -51,27 +51,13 @@ class _FakeServerScope implements ActiveServerScope {
   ActiveServer get active => ActiveServer(
     serverId: 'server-uuid-1',
     displayName: 'Test BGE Server',
-    identity: _identity,
+    identity: testServerIdentity(),
     container: container,
   );
 
   @override
   Stream<ActiveServer?> watchActive() => Stream.value(active);
 }
-
-const _identity = ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://bge.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-);
 
 void main() {
   group('WebPlatformBootstrap', () {

@@ -79,7 +79,8 @@ dependencies:
 dev_dependencies:
   auth:
     path: ../../features/auth
-  # `ScriptedServer`, the transport the session suite answers through (#369).
+  # `ScriptedServer`, the transport the session suite answers through (#369),
+  # and the `domain.dart` model builders (#409).
   bge_test_support:
     path: ../../testing/support
   # Swaps the transport under the Dio `registerServerNetworkWeb` registers, so

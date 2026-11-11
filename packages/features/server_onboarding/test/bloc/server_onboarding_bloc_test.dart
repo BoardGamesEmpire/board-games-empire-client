@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -23,21 +24,14 @@ const _kBuildInfo = BuildInfo(
   packageName: 'com.bge.app',
 );
 
-const _kUrl = 'https://bge.example.com';
+/// The address the user enters, which the shared identity names as its issuer.
+const String _kUrl = testServerUrl;
 
-ServerIdentity _identity({String name = 'Home BGE'}) => ServerIdentity(
-  wellKnownSchemaVersion: 1,
-  serverId: '550e8400-e29b-41d4-a716-446655440000',
-  name: name,
-  issuer: _kUrl,
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+ServerIdentity _identity({String name = 'Home BGE'}) =>
+    testServerIdentity().copyWith(
+      serverId: '550e8400-e29b-41d4-a716-446655440000',
+      name: name,
+    );
 
 void main() {
   late _MockWellKnownClient wellKnown;
