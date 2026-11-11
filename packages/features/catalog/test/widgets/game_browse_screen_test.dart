@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -46,10 +47,12 @@ void main() {
     void Function(BuildContext context, GameQuickLookSeed seed)? onQuickLook,
     bool settle = true,
     ThemeData? theme,
+    TransitionBuilder? builder,
   }) async {
     await tester.pumpWidget(
       catalogApp(
         theme: theme,
+        builder: builder,
         GameBrowseScreen(
           remote: remote,
           cache: cache,
@@ -1424,6 +1427,90 @@ void main() {
             .marked,
         isTrue,
       );
+    });
+
+    group('under the selection region (#338)', () {
+      const expansionCount = 12;
+
+      Future<void> showUnderRegion(
+        WidgetTester tester, {
+        void Function(BuildContext context, GameQuickLookSeed seed)?
+        onQuickLook,
+      }) async {
+        remote.onFetchPage = (_, _) async => pageOf([
+          game('B'),
+          for (var i = 1; i <= expansionCount; i++)
+            expansion('E$i', [under('B')]),
+        ]);
+        useViewSize(tester, const Size(1280, 1600));
+        await show(
+          tester,
+          layouts: _FakeLayouts()..stored = ListLayout.thumbnails,
+          onQuickLook: onQuickLook ?? (_, _) {},
+          theme: pointerPlatformTheme(),
+          builder: underSelectionRegion,
+        );
+        await tester.tap(badgeOf('B'));
+        await tester.pumpAndSettle();
+      }
+
+      Finder row() => find.descendant(
+        of: find.byType(BgeShelf),
+        matching: find.byType(SingleChildScrollView),
+      );
+
+      ScrollPosition strip(WidgetTester tester) => tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: row(),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position;
+
+      testWidgets('the region is installed', (tester) async {
+        await showUnderRegion(tester);
+
+        expect(find.byType(SelectableRegion), findsOneWidget);
+        expect(find.byType(BgeShelf), findsOneWidget);
+      });
+
+      testWidgets('a mouse drag across the expansions strip scrolls it', (
+        tester,
+      ) async {
+        final copies = captureClipboardCopies();
+        await showUnderRegion(tester);
+
+        // The strip must overflow, or a drag has nothing to scroll and the
+        // test would pass whatever the region did.
+        expect(strip(tester).maxScrollExtent, greaterThan(0));
+        expect(strip(tester).pixels, 0);
+
+        final centre = tester.getCenter(row());
+        await mouseDrag(tester, centre, centre - const Offset(300, 0));
+        await tester.pumpAndSettle();
+
+        expect(strip(tester).pixels, greaterThan(0));
+
+        await sendCopyShortcut(tester);
+        expect(copies, isEmpty);
+      });
+
+      for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+        testWidgets('a ${kind.name} tap on a strip cover still opens the '
+            'quick look', (tester) async {
+          final calls = <GameQuickLookSeed>[];
+          await showUnderRegion(
+            tester,
+            onQuickLook: (_, seed) => calls.add(seed),
+          );
+
+          await tester.tap(stripTile('B', 'E1'), kind: kind);
+          await tester.pumpAndSettle();
+
+          expect(calls.map((seed) => seed.id), ['E1']);
+        });
+      }
     });
   });
 

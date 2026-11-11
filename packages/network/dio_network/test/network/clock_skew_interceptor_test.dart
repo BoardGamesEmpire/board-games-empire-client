@@ -64,9 +64,12 @@ void main() {
 
   late _RecordingRecorder recorder;
 
-  Dio buildDio(_StubAdapter adapter) {
+  Dio buildDio(_StubAdapter adapter, {List<DateTime>? stamps}) {
     // Clock stamps in call order: onRequest pops t0, onResponse pops t1.
-    final stamps = [t0, t1];
+    // Each Dio gets its own list because the clock consumes it.
+    final clock = [
+      ...(stamps ?? [t0, t1]),
+    ];
     return Dio(
         BaseOptions(
           baseUrl: 'https://api.example.com',
@@ -77,7 +80,7 @@ void main() {
       ..interceptors.add(
         ClockSkewInterceptor(
           recorder: recorder,
-          nowUtc: () => stamps.removeAt(0),
+          nowUtc: () => clock.removeAt(0),
         ),
       );
   }
@@ -150,6 +153,29 @@ void main() {
 
         expect(recorder.samples, isEmpty);
         expect(response.statusCode, 200);
+      },
+    );
+
+    test(
+      're-stamps the send time when the same request is sent again',
+      () async {
+        final t2 = t1.add(const Duration(seconds: 1));
+        final t3 = t2.add(const Duration(milliseconds: 200));
+        final adapter = _StubAdapter(
+          responseHeaders: {
+            HttpHeaders.dateHeader: [HttpDate.format(serverDate)],
+          },
+        );
+        final dio = buildDio(adapter, stamps: [t0, t1, t2, t3]);
+
+        final first = await dio.get<dynamic>('/anything');
+        // How a retry interceptor re-sends: the same options through the chain.
+        await dio.fetch<dynamic>(first.requestOptions);
+
+        expect(recorder.samples, hasLength(2));
+        expect(recorder.samples[1].sentAt, t2);
+        expect(recorder.samples[1].receivedAt, t3);
+        expect(adapter.captured?.extra[ClockSkewInterceptor.sentAtKey], t2);
       },
     );
   });

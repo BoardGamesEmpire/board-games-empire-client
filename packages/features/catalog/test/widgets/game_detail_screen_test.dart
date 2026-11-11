@@ -60,6 +60,7 @@ void main() {
     FakeGamesCache? cache,
     GameDetailCollection? collection,
     ThemeData? theme,
+    TransitionBuilder? builder,
     bool settle = true,
   }) async {
     await tester.pumpWidget(
@@ -72,6 +73,7 @@ void main() {
           openLink: (uri) async => opened.add(uri),
         ),
         theme: theme,
+        builder: builder,
       ),
     );
     if (settle) await tester.pumpAndSettle();
@@ -323,6 +325,84 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Trade, build, settle'), findsOneWidget);
+  });
+
+  group('under the selection region (#338)', () {
+    final prose = catan.copyWith(
+      description: 'Settle the island. [Rules](https://example.com/rules)',
+    );
+
+    Future<void> showUnderRegion(WidgetTester tester) async {
+      remote.onFetchGame = (_) async =>
+          (game: prose, platformGames: const <PlatformGame>[]);
+      useViewSize(tester, const Size(1280, 800));
+      await show(
+        tester,
+        theme: pointerPlatformTheme(),
+        builder: underSelectionRegion,
+      );
+    }
+
+    /// The description paragraph's rich text.
+    Finder paragraph() =>
+        find.textContaining('Settle the island.', findRichText: true);
+
+    testWidgets('the region is installed', (tester) async {
+      await showUnderRegion(tester);
+
+      expect(find.byType(SelectableRegion), findsOneWidget);
+    });
+
+    testWidgets('a drag over the description selects it, and copy lifts the '
+        'text', (tester) async {
+      final copies = captureClipboardCopies();
+      await showUnderRegion(tester);
+
+      final rect = tester.getRect(paragraph());
+      final plain = tester
+          .renderObject<RenderParagraph>(paragraph())
+          .text
+          .toPlainText();
+      await mouseDrag(
+        tester,
+        rect.centerLeft + const Offset(1, 0),
+        rect.centerRight - const Offset(1, 0),
+      );
+      await sendCopyShortcut(tester);
+
+      expect(copies, hasLength(1));
+      expect(copies.single, isNotEmpty);
+      expect(plain, contains(copies.single));
+      expect(
+        copies.single,
+        contains('the island'),
+        reason: 'the drag reached across the prose',
+      );
+    });
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets('a real ${kind.name} tap on a description link still opens '
+          'it', (tester) async {
+        await showUnderRegion(tester);
+
+        final range = find.textRange.ofSubstring('Rules').evaluate().single;
+        final box = range.renderObject
+            .getBoxesForSelection(
+              TextSelection(
+                baseOffset: range.textRange.start,
+                extentOffset: range.textRange.end,
+              ),
+            )
+            .first;
+        await tester.tapAt(
+          range.renderObject.localToGlobal(box.toRect().center),
+          kind: kind,
+        );
+        await tester.pump();
+
+        expect(opened, [Uri.parse('https://example.com/rules')]);
+      });
+    }
   });
 
   group('GameDescription', () {

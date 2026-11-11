@@ -8,6 +8,7 @@ library;
 export 'src/accessibility/bge_button_focus_ring.dart';
 export 'src/accessibility/bge_motion.dart';
 export 'src/accessibility/bge_selection.dart';
+export 'src/accessibility/bge_selection_region.dart';
 export 'src/accessibility/bge_text_scale.dart';
 export 'src/accessibility/oklch.dart';
 export 'src/accessibility/wcag_contrast.dart';

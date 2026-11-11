@@ -1472,6 +1472,102 @@ void main() {
     );
   });
 
+  group('under the selection region (#338)', () {
+    const tileCount = 12;
+    const tileWidth = 200.0;
+
+    Widget hosted({void Function(int index)? onTap, int count = tileCount}) =>
+        Scaffold(
+          body: _shelf(
+            children: [
+              for (var i = 0; i < count; i++)
+                SizedBox(
+                  key: _coverKey(i),
+                  width: tileWidth,
+                  height: 100,
+                  child: InkWell(
+                    onTap: () => onTap?.call(i),
+                    child: Center(child: Text('Tile $i')),
+                  ),
+                ),
+            ],
+          ),
+        );
+
+    Finder row() => find.descendant(
+      of: find.byType(BgeShelf),
+      matching: find.byType(SingleChildScrollView),
+    );
+
+    testWidgets(
+      'a mouse drag across the row scrolls it rather than selecting',
+      (
+        tester,
+      ) async {
+        final copies = captureClipboardCopies();
+        await tester.pumpWidget(hostUnderSelectionRegion(tester, hosted()));
+        await tester.pumpAndSettle();
+
+        // The row must overflow, or a drag has nothing to scroll and the test
+        // would pass whatever the region did.
+        expect(_rowOf(tester).maxScrollExtent, greaterThan(0));
+        expect(_rowOf(tester).pixels, 0);
+
+        final centre = tester.getCenter(row());
+        await mouseDrag(tester, centre, centre - const Offset(300, 0));
+        await tester.pumpAndSettle();
+
+        expect(_rowOf(tester).pixels, greaterThan(0));
+
+        await sendCopyShortcut(tester);
+        expect(copies, isEmpty);
+      },
+    );
+
+    testWidgets('a mouse drag across a row that fits selects nothing', (
+      tester,
+    ) async {
+      final copies = captureClipboardCopies();
+      await tester.pumpWidget(
+        hostUnderSelectionRegion(tester, hosted(count: 2)),
+      );
+      await tester.pumpAndSettle();
+
+      // With nothing to scroll the row has no drag recognizer, so only the
+      // shelf's own opt-out keeps the region from selecting the tile labels.
+      expect(_rowOf(tester).maxScrollExtent, 0);
+
+      await mouseDrag(
+        tester,
+        tester.getTopLeft(find.byKey(_coverKey(0))) + const Offset(4, 50),
+        tester.getTopRight(find.byKey(_coverKey(1))) + const Offset(-4, 50),
+      );
+      await tester.pumpAndSettle();
+
+      // The region still answers the copy, with an empty string: the heading
+      // is selectable, and a drag over nothing selectable selects none of it.
+      await sendCopyShortcut(tester);
+      expect(copies.join(), isEmpty);
+    });
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets('a ${kind.name} tap on a tile still reaches it', (
+        tester,
+      ) async {
+        final tapped = <int>[];
+        await tester.pumpWidget(
+          hostUnderSelectionRegion(tester, hosted(onTap: tapped.add)),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(_coverKey(1)), kind: kind);
+        await tester.pumpAndSettle();
+
+        expect(tapped, [1]);
+      });
+    }
+  });
+
   group('heading', () {
     testWidgets('the heading is a header', (tester) async {
       useViewSize(tester, _narrow);

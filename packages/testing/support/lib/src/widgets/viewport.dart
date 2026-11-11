@@ -35,16 +35,28 @@ void useViewSize(WidgetTester tester, Size size) {
 /// effective for it. The framework's own `MediaQuery.fromView` is inserted by
 /// `View`, ABOVE the widget under test — `WidgetsApp` inserts none of its own —
 /// so this wrapper sits below it and wins. Verified, not assumed.
+///
+/// [platform] sets the theme's `platform`, which is what the text-selection
+/// region is gated on (#322); left null, the theme is untouched. [builder]
+/// goes to `MaterialApp.builder`, above the Navigator, where `BgeApp`
+/// installs what wraps every route. `hostUnderSelectionRegion` sets both.
 Widget hostAtSize(
   WidgetTester tester,
   Widget child, {
   Size size = const Size(400, 800),
   double textScale = 1,
+  TargetPlatform? platform,
+  TransitionBuilder? builder,
 }) {
   useViewSize(tester, size);
+  final theme = BgeTheme.light();
 
   return MediaQuery(
     data: MediaQueryData(size: size, textScaler: TextScaler.linear(textScale)),
-    child: MaterialApp(theme: BgeTheme.light(), home: child),
+    child: MaterialApp(
+      theme: platform == null ? theme : theme.copyWith(platform: platform),
+      builder: builder,
+      home: child,
+    ),
   );
 }

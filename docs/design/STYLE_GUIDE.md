@@ -714,6 +714,10 @@ legible body text on every surface role.
       `BgeStateSliver` on a sliver page
 - [ ] Direct-write controls are gated offline through `BgeOnlineOnly`; queued
       writes are not
+- [ ] A drag-interactive surface (a scroller the mouse can drag, a reorderable
+      list, a slider, a swipe to dismiss) wraps itself in
+      `SelectionContainer.disabled`, and is checked with a mouse on a desktop
+      platform (#338)
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`

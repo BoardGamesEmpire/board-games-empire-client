@@ -22,6 +22,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// goes to the page, whether or not it has a little sideways in it, as a
 /// trackpad's do on the web. A mostly sideways one, or one with shift held,
 /// moves the row, and so does one with no page able to scroll around it.
+/// The row's text can't be selected, so a mouse drag over a row that fits
+/// selects nothing either.
 ///
 /// **By button.** Previous and next sit in the header, and show only while the
 /// row overflows. Each moves by a view of children, less [BgeTokens.spaceXxl]
@@ -292,25 +294,30 @@ class _BgeShelfState extends State<BgeShelf> {
     ],
   );
 
-  Widget _row(BuildContext context) => ScrollConfiguration(
-    // Material's behaviour leaves the mouse out.
-    behavior: ScrollConfiguration.of(context)
-        .copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-    child: NotificationListener<ScrollMetricsNotification>(
-      onNotification: (_) {
-        _sync();
-        return false;
-      },
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        controller: _controller,
-        child: Listener(
-          // Translucent: over a gap between children too.
-          behavior: HitTestBehavior.translucent,
-          onPointerSignal: _sendToPage,
-          child: widget.equalHeights
-              ? IntrinsicHeight(child: _children(CrossAxisAlignment.stretch))
-              : _children(CrossAxisAlignment.start),
+  // Out of the app's selection region (#338): a row that fits has no drag
+  // recognizer, so without this a mouse drag over it would select the
+  // children's text where a row that overflows would scroll.
+  Widget _row(BuildContext context) => SelectionContainer.disabled(
+    child: ScrollConfiguration(
+      // Material's behaviour leaves the mouse out.
+      behavior: ScrollConfiguration.of(context)
+          .copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          _sync();
+          return false;
+        },
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          controller: _controller,
+          child: Listener(
+            // Translucent: over a gap between children too.
+            behavior: HitTestBehavior.translucent,
+            onPointerSignal: _sendToPage,
+            child: widget.equalHeights
+                ? IntrinsicHeight(child: _children(CrossAxisAlignment.stretch))
+                : _children(CrossAxisAlignment.start),
+          ),
         ),
       ),
     ),
