@@ -75,14 +75,22 @@ class EventGamesFooter extends StatelessWidget {
               padding: EdgeInsets.only(top: gap),
               child: BgeInlineBanner(
                 key: EventDetailScreen.poolOutcomeKey,
-                tone: switch (outcome.result) {
-                  EventGamesResult.done => BgeBannerTone.success,
-                  EventGamesResult.partly ||
-                  EventGamesResult.none ||
-                  EventGamesResult.refused ||
-                  EventGamesResult.stillSupplies ||
-                  EventGamesResult.dropped => BgeBannerTone.warning,
-                  EventGamesResult.failed => BgeBannerTone.error,
+                tone: switch (outcome) {
+                  EventOfferOutcome(:final result) => switch (result) {
+                    EventOfferResult.done => BgeBannerTone.success,
+                    EventOfferResult.partly ||
+                    EventOfferResult.none ||
+                    EventOfferResult.refused ||
+                    EventOfferResult.dropped => BgeBannerTone.warning,
+                    EventOfferResult.failed => BgeBannerTone.error,
+                  },
+                  EventTakeBackOutcome(:final result) => switch (result) {
+                    EventTakeBackResult.done => BgeBannerTone.success,
+                    EventTakeBackResult.stillSupplies ||
+                    EventTakeBackResult.refused ||
+                    EventTakeBackResult.dropped => BgeBannerTone.warning,
+                    EventTakeBackResult.failed => BgeBannerTone.error,
+                  },
                 },
                 message: message,
                 action: TextButton(
@@ -115,9 +123,9 @@ class EventGamesFooter extends StatelessWidget {
   static String? _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
-  ) => switch (outcome.write) {
-    EventGamesWrite.offer => _offerMessage(l10n, outcome),
-    EventGamesWrite.takeBack => _takeBackMessage(l10n, outcome),
+  ) => switch (outcome) {
+    EventOfferOutcome() => _offerMessage(l10n, outcome),
+    EventTakeBackOutcome() => _takeBackMessage(l10n, outcome),
   };
 
   /// A run of offers' copy, by how it ended and what it offered. A run that
@@ -125,25 +133,22 @@ class EventGamesFooter extends StatelessWidget {
   /// stopped before offering any says why, refused, or that none went.
   static String _offerMessage(
     EventsLocalizations l10n,
-    EventGamesOutcome outcome,
+    EventOfferOutcome outcome,
   ) {
-    final EventGamesOutcome(:offered, :notOffered) = outcome;
+    final EventOfferOutcome(:offered, :notOffered) = outcome;
     return switch (outcome.result) {
-      EventGamesResult.done => l10n.eventsGamesOfferedAll(offered),
-      EventGamesResult.dropped => l10n.eventsGamesOfferDropped,
-      EventGamesResult.partly ||
-      EventGamesResult.refused ||
-      EventGamesResult.failed ||
-      EventGamesResult.stillSupplies when offered > 0 =>
-        l10n.eventsGamesOfferedPartly(offered, notOffered),
-      EventGamesResult.refused => l10n.eventsGamesOfferRefused,
-      // A run is never still supplying: that answers a take-back.
-      EventGamesResult.partly ||
-      EventGamesResult.none ||
-      EventGamesResult.failed ||
-      EventGamesResult.stillSupplies => l10n.eventsGamesOfferedNone(
+      EventOfferResult.done => l10n.eventsGamesOfferedAll(offered),
+      EventOfferResult.dropped => l10n.eventsGamesOfferDropped,
+      EventOfferResult.partly ||
+      EventOfferResult.refused ||
+      EventOfferResult.failed when offered > 0 => l10n.eventsGamesOfferedPartly(
+        offered,
         notOffered,
       ),
+      EventOfferResult.refused => l10n.eventsGamesOfferRefused,
+      EventOfferResult.partly ||
+      EventOfferResult.none ||
+      EventOfferResult.failed => l10n.eventsGamesOfferedNone(notOffered),
     };
   }
 
@@ -151,19 +156,16 @@ class EventGamesFooter extends StatelessWidget {
   /// with no title has none.
   static String? _takeBackMessage(
     EventsLocalizations l10n,
-    EventGamesOutcome outcome,
+    EventTakeBackOutcome outcome,
   ) {
     final title = outcome.title;
     if (title == null) return null;
     return switch (outcome.result) {
-      EventGamesResult.done => l10n.eventsGamesTakenBack(title),
-      EventGamesResult.stillSupplies => l10n.eventsGamesStillSupplies(title),
-      EventGamesResult.refused => l10n.eventsGamesTakeBackRefused(title),
-      EventGamesResult.dropped => l10n.eventsGamesTakeBackDropped(title),
-      // A take-back is one request: it never ends partly, or with none.
-      EventGamesResult.failed ||
-      EventGamesResult.partly ||
-      EventGamesResult.none => l10n.eventsGamesTakeBackFailed(title),
+      EventTakeBackResult.done => l10n.eventsGamesTakenBack(title),
+      EventTakeBackResult.stillSupplies => l10n.eventsGamesStillSupplies(title),
+      EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
+      EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
+      EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(title),
     };
   }
 }

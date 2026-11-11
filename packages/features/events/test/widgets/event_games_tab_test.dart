@@ -1609,7 +1609,7 @@ void main() {
       send.complete();
       await animate(tester);
       expect(remote.takeBacks, isEmpty);
-      expect(pool.state.outcome?.write, EventGamesWrite.offer);
+      expect(pool.state.outcome, isA<EventOfferOutcome>());
     });
 
     testWidgets('is disabled while a detail read runs', (tester) async {
