@@ -1567,6 +1567,51 @@ void main() {
       );
     });
 
+    testWidgets('Take back sends nothing, and says nothing, if an offer run '
+        'started while a read was running', (tester) async {
+      final send = Completer<void>();
+      offerAnswer = (request) async {
+        await send.future;
+        return _game('o-new', request.attendeeId, request.collectionId);
+      };
+      await showGames(tester);
+      final detail = blocOf<EventDetailBloc>(tester);
+      final pool = blocOf<EventGamesBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      // A read starts, and the press lands before a frame shows it.
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      expect((detail.state as EventDetailReady).reading, isTrue);
+      await tester.tap(takeBack(catanMine.id));
+
+      // Meanwhile an offer run goes out, and holds the one write.
+      pool.add(
+        const EventGamesOffered(
+          'e-1',
+          'att-me',
+          [OfferPick(collectionId: 'c-new', title: 'New')],
+          attendeeIds: ['att-me', 'att-ada', 'att-bo'],
+        ),
+      );
+      await settle(tester);
+      expect(pool.state.busy, isTrue);
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await settle(tester);
+
+      // The run's own outcome will say what happened; the press adds none.
+      expect(remote.takeBacks, isEmpty);
+      expect(pool.state.outcome, isNull);
+
+      send.complete();
+      await animate(tester);
+      expect(remote.takeBacks, isEmpty);
+      expect(pool.state.outcome?.write, EventGamesWrite.offer);
+    });
+
     testWidgets('is disabled while a detail read runs', (tester) async {
       await showGames(tester);
       heldRead = Completer<EventSnapshot>();

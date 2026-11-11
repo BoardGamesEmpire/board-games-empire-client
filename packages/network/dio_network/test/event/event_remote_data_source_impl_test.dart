@@ -3460,6 +3460,17 @@ void main() {
           throwsA(isA<EventRemotePermanentException>()),
         );
       });
+
+      test('a game whose collection is not an object is permanent', () async {
+        final remote = routed(
+          (_) => after(0, games([_offeredRow()..['collection'] = null])),
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ['att_1']),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
     });
 
     group('offerGame', () {
@@ -3491,6 +3502,18 @@ void main() {
             minPlayTime: null,
             maxPlayTime: null,
           ),
+        );
+      });
+
+      test('an offer whose entry is not an object is permanent', () async {
+        final remote = answering(
+          jsonEncode({'message': 'Game added', 'entry': 'og_1'}),
+          status: 201,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemotePermanentException>()),
         );
       });
 
