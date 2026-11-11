@@ -4,6 +4,8 @@ import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_nominations_bloc.dart';
+import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:flutter/material.dart';
@@ -12,18 +14,19 @@ import 'package:ui/ui.dart';
 
 /// What the Games tab keeps across the screen's rebuilds (#516): its filter,
 /// whether it has been shown, the ids the pool was last asked for, how the
-/// pool's last read ended, and the focus nodes a control that leaves hands
-/// focus on to.
+/// pool's last read ended and how the nominations' did (#517), and the focus
+/// nodes a control that leaves hands focus on to.
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write or clock tick under it
-/// forgets the filter, and the screen reads the pool after a detail read
-/// only once the tab has been shown.
+/// forgets the filter, and the screen reads the pool and the nominations
+/// after a detail read only once the tab has been shown.
 class EventGamesTabController extends ChangeNotifier {
   PoolFilter _filter = const PoolFilter();
   int _searchEpoch = 0;
   bool _shown = false;
   EventGamesLoad? _settled;
+  EventNominationsLoad? _nominationsSettled;
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
@@ -168,6 +171,32 @@ class EventGamesTabController extends ChangeNotifier {
     final settled => settled,
   };
 
+  /// Notes how the nominations' last read ended (#517), from [state] as the
+  /// nominations' bloc emits it, whichever tab is showing then: what
+  /// [drawnNominationsLoad] draws while the next read is out. A state with a
+  /// read out, or none made, changes nothing.
+  void nominationsEmitted(EventNominationsState state) {
+    switch (state.load) {
+      case EventNominationsLoad.idle || EventNominationsLoad.loading:
+        break;
+      case final settled:
+        _nominationsSettled = settled;
+    }
+  }
+
+  /// The load the Nominations section draws [state] as (#517): its own, or
+  /// while a read is out, the last one a read ended with
+  /// ([nominationsEmitted]), as [drawnLoad] is the pool's. So a read again
+  /// neither flashes a spinner over "nothing nominated" nor takes a failure's
+  /// Try again away while it runs. Before any read has ended it is idle. It
+  /// changes nothing, so a build may ask any number of times.
+  EventNominationsLoad drawnNominationsLoad(EventNominationsState state) =>
+      switch (state.load) {
+        EventNominationsLoad.idle || EventNominationsLoad.loading =>
+          _nominationsSettled ?? EventNominationsLoad.idle,
+        final settled => settled,
+      };
+
   /// Answers the pool going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it: Take back's hand-off (see
   /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
@@ -270,13 +299,15 @@ class EventGamesTabController extends ChangeNotifier {
 /// builder (#516), under the screen's `DefaultTabController` and its blocs.
 ///
 /// It tells [onFirstShown] the first time the Games tab is chosen, which
-/// reads the pool and answers whether the tab showed on a ready detail; only
-/// then is the tab [EventGamesTabController.shown].
+/// reads the pool and the nominations (#517) and answers whether the tab
+/// showed on a ready detail; only then is the tab
+/// [EventGamesTabController.shown].
 ///
 /// It watches the pool, and tells the controller each state as the pool
 /// emits it, before the frame that builds it and on either tab: how the last
 /// read ended ([EventGamesTabController.poolEmitted]), and a row leaving,
-/// below.
+/// below. It watches the nominations the same way, for how their last read
+/// ended ([EventGamesTabController.nominationsEmitted]).
 ///
 /// ## Take back's hand-off
 ///
@@ -306,9 +337,9 @@ class EventGamesTabScope extends StatefulWidget {
     super.key,
   });
 
-  /// Reads the pool for the tab's first showing, and answers whether it
-  /// showed on a ready detail. Given the scope's controller, which its
-  /// context, above the scope's own, can't look up.
+  /// Reads the pool and the nominations for the tab's first showing, and
+  /// answers whether it showed on a ready detail. Given the scope's
+  /// controller, which its context, above the scope's own, can't look up.
   final bool Function(
     BuildContext context,
     EventGamesTabController controller,
@@ -332,6 +363,8 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
   EventGamesBloc? _bloc;
   StreamSubscription<EventGamesState>? _pool;
   EventGamesState _last = const EventGamesState();
+  EventNominationsBloc? _nominationsBloc;
+  StreamSubscription<EventNominationsState>? _nominations;
 
   @override
   void didChangeDependencies() {
@@ -350,6 +383,13 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
       // Heard before the frame that drops a row is built, while the row's
       // Take back is still built.
       _pool = bloc.stream.listen(_poolChanged);
+    }
+    final nominations = context.read<EventNominationsBloc>();
+    if (nominations != _nominationsBloc) {
+      unawaited(_nominations?.cancel());
+      _nominationsBloc = nominations;
+      _controller.nominationsEmitted(nominations.state);
+      _nominations = nominations.stream.listen(_controller.nominationsEmitted);
     }
   }
 
@@ -382,6 +422,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
   void dispose() {
     _tabs?.removeListener(_tabChanged);
     unawaited(_pool?.cancel());
+    unawaited(_nominations?.cancel());
     _controller.dispose();
     super.dispose();
   }

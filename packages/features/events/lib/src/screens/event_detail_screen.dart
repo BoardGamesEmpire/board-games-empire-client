@@ -22,6 +22,7 @@ import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/detail/event_poll.dart';
 import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/widgets/cancel_reason_dialog.dart';
@@ -127,7 +128,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// that changes reads nothing. The viewer's own writes change their rows
 /// through the writes' answers, and the stale-data banner's Try again reads
 /// them as the user asks. A read that finds the event gone reads the event
-/// again, as the pool's does.
+/// again, as the pool's does. They show above the pool, in the tab's
+/// Nominations section, in every state of the pool: a first read that fails
+/// says so there, with Try again, and one that fails over nominations read
+/// before leaves them, for the footer's stale-data banner to say.
 ///
 /// The page's footer holds what answers the lists: how far a run of offers
 /// has got while it is out, or how the pool's last write went, a run of
@@ -323,8 +327,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Nothing writes to the cache as time passes, so the page is built again at
 /// its next time boundary: the event's start or end, or a proposed date
-/// passing (#502, #655). The status line, the menu and the dates' controls
-/// move on with the clock while the screen is open, with no read.
+/// passing (#502, #655), or an open nomination's deadline passing (#517).
+/// The status line, the menu, the dates' controls and a nomination's
+/// deadline line move on with the clock while the screen is open, with no
+/// read.
 ///
 /// ## Not found is an answer
 ///
@@ -496,9 +502,16 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.nominations_refresh_banner',
   );
 
-  /// Key on the retry of a nominations read that failed (#517): the footer's
-  /// refresh banner's, over nominations read before.
+  /// Key on the retry of a nominations read that failed (#517): the
+  /// Nominations section's failed state's, with none read before, or the
+  /// footer's refresh banner's, over nominations read before. Never both at
+  /// once.
   static const Key nominationsRetryKey = Key('event_detail.nominations_retry');
+
+  /// Key on one row of the Games tab's Nominations section (#517), by the
+  /// nomination's id.
+  static Key nominationRowKey(String nominationId) =>
+      Key('event_detail.nomination_$nominationId');
 
   /// Key on the Games tab's Offer games button.
   static const Key offerGamesKey = Key('event_detail.offer_games');
@@ -1118,46 +1131,59 @@ class _ReadyPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final snapshot = state.detail.snapshot;
 
-    return _ClockedPage(
+    Widget clocked(List<EventNomination> nominations) => _ClockedPage(
       event: snapshot.event,
       occurrences: snapshot.occurrences,
+      nominations: nominations,
       now: now,
-      builder: (context) {
-        if (!hasActions) {
-          return _build(context, null, null, null, null, null);
-        }
+      builder: _page,
+    );
 
-        final tabs = DefaultTabController.of(context);
-        final games = EventGamesTabScope.of(context);
-        return BlocBuilder<EventActionsBloc, EventActionsState>(
-          builder: (context, actionsState) =>
-              BlocBuilder<EventPollBloc, EventPollState>(
-                builder: (context, pollState) =>
-                    BlocBuilder<EventGamesBloc, EventGamesState>(
-                      builder: (context, gamesState) =>
-                          BlocBuilder<
-                            EventNominationsBloc,
-                            EventNominationsState
-                          >(
-                            builder: (context, nominationsState) =>
-                                ListenableBuilder(
-                                  // Built again as the selected tab changes,
-                                  // and as the Games tab's filter does.
-                                  listenable: Listenable.merge([tabs, games]),
-                                  builder: (context, _) => _build(
-                                    context,
-                                    actionsState,
-                                    pollState,
-                                    gamesState,
-                                    nominationsState,
-                                    tabs,
-                                  ),
-                                ),
-                          ),
-                    ),
-              ),
-        );
-      },
+    if (!hasActions) return clocked(const []);
+    // Built again as the nominations change, so the page moves on at the
+    // next deadline among them too (#517).
+    return BlocSelector<
+      EventNominationsBloc,
+      EventNominationsState,
+      List<EventNomination>
+    >(
+      selector: (state) => state.nominations,
+      builder: (context, nominations) => clocked(nominations),
+    );
+  }
+
+  /// The page as the clock and the blocs above have it now.
+  Widget _page(BuildContext context) {
+    if (!hasActions) {
+      return _build(context, null, null, null, null, null);
+    }
+
+    final tabs = DefaultTabController.of(context);
+    final games = EventGamesTabScope.of(context);
+    return BlocBuilder<EventActionsBloc, EventActionsState>(
+      builder: (context, actionsState) =>
+          BlocBuilder<EventPollBloc, EventPollState>(
+            builder: (context, pollState) =>
+                BlocBuilder<EventGamesBloc, EventGamesState>(
+                  builder: (context, gamesState) =>
+                      BlocBuilder<EventNominationsBloc, EventNominationsState>(
+                        builder: (context, nominationsState) =>
+                            ListenableBuilder(
+                              // Built again as the selected tab changes,
+                              // and as the Games tab's filter does.
+                              listenable: Listenable.merge([tabs, games]),
+                              builder: (context, _) => _build(
+                                context,
+                                actionsState,
+                                pollState,
+                                gamesState,
+                                nominationsState,
+                                tabs,
+                              ),
+                            ),
+                      ),
+                ),
+          ),
     );
   }
 
@@ -1189,6 +1215,20 @@ class _ReadyPage extends StatelessWidget {
     final tab = shownTabs == null
         ? EventDetailTab.details
         : EventDetailTab.values[shownTabs.index];
+    // Made once, so the rows the page counts are the rows the tab draws
+    // (#517). The bar shows only with a games bloc, which the tab reads.
+    final gamesTab = tab == EventDetailTab.games && gamesState != null
+        ? EventGamesTab(
+            key: EventDetailScreen.gamesBodyKey,
+            detail: state,
+            games: gamesState,
+            nominations: nominationsState,
+            controller: EventGamesTabScope.of(context),
+            acting: acting,
+            now: now(),
+            onOfferGames: onOfferGames,
+          )
+        : null;
 
     return BgePage.slivers(
       // The section name, not the event's: the title is the page's heading
@@ -1212,13 +1252,10 @@ class _ReadyPage extends StatelessWidget {
           ),
       ],
       width: BgePageWidth.pane,
-      // Details holds no list. The Games tab holds the rows it shows, and
-      // none while it shows a state (#516).
-      semanticChildCount: switch ((tab, gamesState)) {
-        (EventDetailTab.games, final EventGamesState games) =>
-          EventGamesTab.rowCount(context, state, games),
-        _ => null,
-      },
+      // Details holds no list. The Games tab holds the rows it shows, the
+      // nominations' and the pool's, and none of either while it shows a
+      // state (#516, #517).
+      semanticChildCount: gamesTab?.rowCount,
       // How far a run of offers has got or how the pool's last write went
       // (#516), then how the viewer's last nominations write went (#517), on
       // either tab, then, on the Games tab, the stale-data banners: answers
@@ -1267,17 +1304,7 @@ class _ReadyPage extends StatelessWidget {
               ),
             ),
           ],
-          // The bar shows only with a games bloc, which the tab reads.
-          EventDetailTab.games => [
-            if (gamesState != null)
-              EventGamesTab(
-                key: EventDetailScreen.gamesBodyKey,
-                detail: state,
-                games: gamesState,
-                acting: acting,
-                onOfferGames: onOfferGames,
-              ),
-          ],
+          EventDetailTab.games => [?gamesTab],
         },
       ],
     );
@@ -1553,7 +1580,9 @@ typedef _OpenAddAttendee = Future<EventAttendeeAddition?> Function(
 );
 
 /// Builds the page again at its next time boundary (#502, #655): the
-/// event's start or end, or a proposed date passing ([nextDetailBoundary]).
+/// event's start or end, or a proposed date passing ([nextDetailBoundary]),
+/// or an open nomination's deadline passing, which turns its line
+/// ([nextDeadlinePassing], #517).
 ///
 /// Nothing writes to the cache as time passes, and the page reads the clock
 /// only as it builds, so without this its status line, its menu and the
@@ -1566,12 +1595,16 @@ class _ClockedPage extends StatefulWidget {
   const _ClockedPage({
     required this.event,
     required this.occurrences,
+    required this.nominations,
     required this.now,
     required this.builder,
   });
 
   final Event event;
   final List<EventOccurrence> occurrences;
+
+  /// The event's nominations as last read, none where there are no blocs.
+  final List<EventNomination> nominations;
   final DateTime Function() now;
 
   /// The page, built again each time the timer fires.
@@ -1597,7 +1630,8 @@ class _ClockedPageState extends State<_ClockedPage> {
   @override
   void didUpdateWidget(_ClockedPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A read or a sync can have moved the dates, and the boundary with them.
+    // A read or a sync can have moved the dates, and a nominations read the
+    // deadlines, and the boundary with them.
     _arm();
   }
 
@@ -1611,8 +1645,12 @@ class _ClockedPageState extends State<_ClockedPage> {
     _timer?.cancel();
     _timer = null;
     final now = widget.now();
-    final next = nextDetailBoundary(widget.event, widget.occurrences, now: now);
-    if (next == null) return;
+    final boundaries = [
+      ?nextDetailBoundary(widget.event, widget.occurrences, now: now),
+      ?nextDeadlinePassing(widget.nominations, now: now),
+    ];
+    if (boundaries.isEmpty) return;
+    final next = boundaries.reduce((a, b) => a.isBefore(b) ? a : b);
 
     // Never negative: the boundary lies after now.
     final wait = next.difference(now);

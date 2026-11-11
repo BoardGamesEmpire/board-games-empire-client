@@ -414,4 +414,65 @@ void main() {
       );
     });
   });
+
+  group('nextDeadlinePassing', () {
+    final now = DateTime.utc(2026, 10, 1, 12);
+
+    test("is a moment past the soonest open nomination's deadline ahead", () {
+      final soon = now.add(const Duration(hours: 1));
+      final later = now.add(const Duration(hours: 2));
+
+      expect(
+        nextDeadlinePassing([
+          nom('later', deadline: later),
+          nom('none'),
+          nom('soon', deadline: soon),
+          // Not open, so no line turns.
+          nom(
+            'paused',
+            status: NominationStatus.paused,
+            deadline: now.add(const Duration(minutes: 1)),
+          ),
+          // Passed already.
+          nom('past', deadline: now.subtract(const Duration(minutes: 1))),
+        ], now: now),
+        soon.add(const Duration(milliseconds: 1)),
+      );
+    });
+
+    test('a deadline at the clock has not passed yet', () {
+      expect(
+        nextDeadlinePassing([nom('n', deadline: now)], now: now),
+        now.add(const Duration(milliseconds: 1)),
+      );
+    });
+
+    // On the web a DateTime holds milliseconds, so a microsecond past the
+    // deadline would be the deadline itself, and a timer firing on it would
+    // leave the line unturned with nothing ahead.
+    test('a moment past is a whole millisecond, which the web can hold', () {
+      final passing = nextDeadlinePassing([nom('n', deadline: now)], now: now)!;
+
+      expect(passing.difference(now), const Duration(milliseconds: 1));
+      expect(
+        nextDeadlinePassing([nom('n', deadline: now)], now: passing),
+        isNull,
+      );
+    });
+
+    test('is null with no open deadline ahead', () {
+      expect(
+        nextDeadlinePassing([
+          nom('none'),
+          nom('past', deadline: now.subtract(const Duration(seconds: 1))),
+          nom(
+            'decided',
+            status: NominationStatus.passed,
+            deadline: now.add(const Duration(hours: 1)),
+          ),
+        ], now: now),
+        isNull,
+      );
+    });
+  });
 }

@@ -7,12 +7,14 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/event_nominations_section.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +32,7 @@ typedef OpenOfferGames = Future<List<OfferPick>?> Function(
   OfferGamesArgs args,
 );
 
-/// What the Games tab shows under its header, if it has one.
+/// What the pool shows under its header, if it has one.
 enum _Body {
   /// The games aren't shown to this viewer, or the roster was read and
   /// withheld with no row of theirs on it, so there is nobody to read them
@@ -59,67 +61,174 @@ enum _Body {
   rows,
 }
 
-/// What the tab shows for [games] on [detail], and the rows when it shows
-/// rows.
-({_Body body, List<OfferedGame> rows}) _bodyOf(
-  EventDetailReady detail,
-  EventGamesState games,
-  EventGamesTabController controller,
-) {
-  final load = controller.drawnLoad(games);
-  if (poolAttendeeIds(detail.detail).isEmpty) {
-    // A roster read and withheld ([]) leaves this viewer nobody to read for.
-    // One not read (null), as an event cached from the list has, says
-    // nothing about the games: the event's read brings it. A read that
-    // succeeded has ended a beat before the roster it wrote reaches the
-    // screen, so only one that failed draws the failure.
-    final body = detail.detail.snapshot.attendees != null
-        ? _Body.hidden
-        : detail.refreshFailed && !detail.reading
-        ? _Body.rosterFailed
-        : _Body.loading;
-    return (body: body, rows: const []);
+/// What the Nominations section shows: its body, the rows when it shows
+/// rows, and the nominations' state it was worked out from.
+typedef _NominationsShown = ({
+  EventNominationsBody body,
+  List<EventNomination> rows,
+  EventNominationsState state,
+});
+
+/// What the Games tab shows, worked out once per build (#517): the
+/// Nominations section's body and rows, if it has a nominations' state, the
+/// pool's, and the roster's names that both name people from. The screen
+/// counts its rows for the page's `semanticChildCount`, and the tab draws
+/// the same value, so the two can't disagree.
+final class _GamesBody {
+  const _GamesBody({
+    required this.pool,
+    required this.poolRows,
+    required this.nominations,
+    required this.names,
+  });
+
+  /// What the tab shows for [games] and [nominations] on [detail].
+  factory _GamesBody.of(
+    EventDetailReady detail,
+    EventGamesState games,
+    EventNominationsState? nominations,
+    EventGamesTabController controller,
+  ) {
+    final (:body, :rows) = _poolOf(detail, games, controller);
+    return _GamesBody(
+      pool: body,
+      poolRows: rows,
+      nominations: nominations == null
+          ? null
+          : _nominationsOf(nominations, controller),
+      names: {
+        for (final row in detail.detail.snapshot.attendees ?? <EventAttendee>[])
+          row.id: row.name,
+      },
+    );
   }
-  if (load == EventGamesLoad.hidden) {
-    return (body: _Body.hidden, rows: const []);
+
+  /// What the pool shows under its header, if it has one.
+  final _Body pool;
+
+  /// The games the filter keeps, while [pool] is rows; none otherwise.
+  final List<OfferedGame> poolRows;
+
+  /// What the Nominations section shows, or null for no section.
+  final _NominationsShown? nominations;
+
+  /// The roster's names, by row id: none where it is withheld or not read.
+  final Map<String, String?> names;
+
+  /// How many nominations the section shows as rows: none while it shows a
+  /// state. The pool's rows are counted on from them.
+  int get nominationRowCount => switch (nominations) {
+    (body: EventNominationsBody.rows, :final rows, state: _) => rows.length,
+    _ => 0,
+  };
+
+  /// The rows the tab shows, the nominations' and the pool's: the page's
+  /// `semanticChildCount` while it shows the tab.
+  int get rowCount =>
+      nominationRowCount + (pool == _Body.rows ? poolRows.length : 0);
+
+  /// What the pool shows for [games] on [detail], and the rows when it shows
+  /// rows.
+  static ({_Body body, List<OfferedGame> rows}) _poolOf(
+    EventDetailReady detail,
+    EventGamesState games,
+    EventGamesTabController controller,
+  ) {
+    final load = controller.drawnLoad(games);
+    if (poolAttendeeIds(detail.detail).isEmpty) {
+      // A roster read and withheld ([]) leaves this viewer nobody to read
+      // for. One not read (null), as an event cached from the list has, says
+      // nothing about the games: the event's read brings it. A read that
+      // succeeded has ended a beat before the roster it wrote reaches the
+      // screen, so only one that failed draws the failure.
+      final body = detail.detail.snapshot.attendees != null
+          ? _Body.hidden
+          : detail.refreshFailed && !detail.reading
+          ? _Body.rosterFailed
+          : _Body.loading;
+      return (body: body, rows: const []);
+    }
+    if (load == EventGamesLoad.hidden) {
+      return (body: _Body.hidden, rows: const []);
+    }
+    if (games.games.isEmpty) {
+      final body = switch (load) {
+        // Gone makes no claim of its own: the screen reads the event again,
+        // and that read's end reads the pool, which settles it. A 404 can
+        // mean only that the roster read was stale, so "no games" could be
+        // false.
+        EventGamesLoad.idle ||
+        EventGamesLoad.loading ||
+        EventGamesLoad.gone => _Body.loading,
+        EventGamesLoad.failed => _Body.failed,
+        EventGamesLoad.loaded => _Body.empty,
+        EventGamesLoad.hidden => _Body.hidden,
+      };
+      return (body: body, rows: const []);
+    }
+    final rows = filterPool(games.games, controller.filter);
+    return (body: rows.isEmpty ? _Body.noMatches : _Body.rows, rows: rows);
   }
-  if (games.games.isEmpty) {
-    final body = switch (load) {
-      // Gone makes no claim of its own: the screen reads the event again,
-      // and that read's end reads the pool, which settles it. A 404 can
-      // mean only that the roster read was stale, so "no games" could be
-      // false.
-      EventGamesLoad.idle ||
-      EventGamesLoad.loading ||
-      EventGamesLoad.gone => _Body.loading,
-      EventGamesLoad.failed => _Body.failed,
-      EventGamesLoad.loaded => _Body.empty,
-      EventGamesLoad.hidden => _Body.hidden,
-    };
-    return (body: body, rows: const []);
+
+  /// What the Nominations section shows for [state] (#517): the
+  /// nominations, else the state their read is drawn in
+  /// ([EventGamesTabController.drawnNominationsLoad]). They need no roster,
+  /// so they show wherever the pool can't.
+  static _NominationsShown _nominationsOf(
+    EventNominationsState state,
+    EventGamesTabController controller,
+  ) {
+    final load = controller.drawnNominationsLoad(state);
+    final body = load == EventNominationsLoad.hidden
+        ? EventNominationsBody.hidden
+        : state.nominations.isNotEmpty
+        ? EventNominationsBody.rows
+        : switch (load) {
+            // Gone makes no claim of its own, as the pool's doesn't: the
+            // event's read again settles it.
+            EventNominationsLoad.idle ||
+            EventNominationsLoad.loading ||
+            EventNominationsLoad.gone => EventNominationsBody.loading,
+            EventNominationsLoad.failed => EventNominationsBody.failed,
+            EventNominationsLoad.loaded => EventNominationsBody.empty,
+            EventNominationsLoad.hidden => EventNominationsBody.hidden,
+          };
+    return (
+      body: body,
+      rows: body == EventNominationsBody.rows ? state.nominations : const [],
+      state: state,
+    );
   }
-  final rows = filterPool(games.games, controller.filter);
-  return (body: rows.isEmpty ? _Body.noMatches : _Body.rows, rows: rows);
 }
 
-/// The Games tab of an event's screen (#516): the games its attendees offer
-/// to bring, one row per offered copy, under a header with Offer games, a
-/// title search, a filter by person and "Not mine". The viewer's own rows
-/// end with Take back.
+/// The Games tab of an event's screen (#516): the games nominated for the
+/// lineup ([EventNominationsSection], #517), then the games its attendees
+/// offer to bring, one row per offered copy, under a header with Offer
+/// games, a title search, a filter by person and "Not mine". The viewer's
+/// own rows end with Take back.
 ///
-/// Its slivers, as one group under the tab bar: the header, then the rows
-/// ([BgeKeyedSliverList], keyed by the offered game's id) or one state in a
-/// [BgeStateSliver]. The header stays above every state but the wait for
-/// a first answer (or for the event's read after the pool found it gone,
-/// or to bring a roster not read) and the games being hidden. A roster not
-/// read, as an event cached from the list has, is not hidden: it waits for
-/// the event's read to bring it, and if that read fails, the tab says it
-/// couldn't load the games, with Try again reading the event. The page's
-/// `semanticChildCount` is
-/// [rowCount]. How far a run of offers has got and how the pool's last
-/// write went are [EventGamesFooter]'s, in the page's footer on either tab;
-/// so is the stale-data banner after a failed read of games still shown,
-/// while this tab is selected.
+/// Its slivers, as one group under the tab bar: the Nominations section,
+/// where there is a nominations' state; then the pool's heading, "Games
+/// pool", in every state, so heading navigation finds the pool as it finds
+/// the section ([EventGamesTabHeading]); then the pool's header, then its
+/// rows ([BgeKeyedSliverList], keyed by the offered game's id) or one state
+/// in a [BgeStateSliver]. The header stays above every state but the wait
+/// for a first answer (or for the event's read after the pool found it
+/// gone, or to bring a roster not read) and the games being hidden. A roster
+/// not read, as an event cached from the list has, is not hidden: it waits
+/// for the event's read to bring it, and if that read fails, the tab says
+/// it couldn't load the games, with Try again reading the event. The
+/// nominations need no roster, so the section shows in every state of the
+/// pool, hidden included.
+///
+/// What it shows is worked out once, as the tab is made, from the detail,
+/// both states and the [controller] (#517). The page's `semanticChildCount`
+/// is [rowCount], from that same value: the nominations' rows and the
+/// pool's, the pool's counted on from the nominations' so a screen reader
+/// numbers them as one list. How far a run of offers has got and how the
+/// pool's last write went are [EventGamesFooter]'s, in the page's footer on
+/// either tab; so is the stale-data banner after a failed read of games
+/// still shown, while this tab is selected, and the nominations' own.
 ///
 /// ## Writes
 ///
@@ -156,61 +265,89 @@ enum _Body {
 /// the filter narrows a pool that has games, the count of what it keeps is
 /// a live region.
 class EventGamesTab extends StatelessWidget {
-  const EventGamesTab({
+  EventGamesTab({
     required this.detail,
     required this.games,
+    required this.controller,
     required this.acting,
+    required this.now,
+    this.nominations,
     this.onOfferGames,
     super.key,
-  });
+  }) : _body = _GamesBody.of(detail, games, nominations, controller);
 
   final EventDetailReady detail;
   final EventGamesState games;
 
+  /// The nominations' state (#517). Null shows no Nominations section.
+  final EventNominationsState? nominations;
+
+  /// The tab's own state, from the screen's [EventGamesTabScope].
+  final EventGamesTabController controller;
+
   /// Whether the screen's own request is out, or the event is deleted.
   final bool acting;
 
+  /// The screen's clock, as the page reads it this build.
+  final DateTime now;
+
   /// Opens the Offer games page. Null builds no Offer games button.
   final OpenOfferGames? onOfferGames;
+
+  /// What the tab shows, worked out once as it is made.
+  final _GamesBody _body;
+
+  /// Key on the Nominations section, so the pool's header after it keeps
+  /// its place.
+  static const _nominationsKey = ValueKey<String>('event_games.nominations');
+
+  /// Key on the pool's heading, so it keeps its place as the header under
+  /// it comes and goes.
+  static const _poolHeadingKey = ValueKey<String>('event_games.pool_heading');
 
   /// Key on the header's sliver, so it keeps its state, and its chips their
   /// focus, as what is under it changes.
   static const _headerKey = ValueKey<String>('event_games.header');
 
-  /// How many rows the tab shows for [games] on [detail]: the
-  /// `semanticChildCount` of the page while it shows the tab. None while it
-  /// shows a state.
-  static int rowCount(
-    BuildContext context,
-    EventDetailReady detail,
-    EventGamesState games,
-  ) {
-    final (:body, :rows) = _bodyOf(
-      detail,
-      games,
-      EventGamesTabScope.of(context),
-    );
-    return body == _Body.rows ? rows.length : 0;
-  }
+  /// How many rows the tab shows: the nominations' and the pool's, none of
+  /// either while it shows a state. The `semanticChildCount` of the page
+  /// while it shows the tab.
+  int get rowCount => _body.rowCount;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
-    final controller = EventGamesTabScope.of(context);
-    final (:body, :rows) = _bodyOf(detail, games, controller);
+    final body = _body.pool;
+    final rows = _body.poolRows;
+    final names = _body.names;
     final gate = offerGamesGate(detail);
     final viewerId = detail.detail.attendance?.id;
     // As the roster's controls are (#589): not while a detail read runs, the
     // screen's own request is out or the event is deleted, nor while another
     // of the pool's writes is out.
     final writable = !detail.reading && !acting && !games.busy;
-    final names = <String, String?>{
-      for (final row in detail.detail.snapshot.attendees ?? <EventAttendee>[])
-        row.id: row.name,
-    };
 
     return SliverMainAxisGroup(
       slivers: [
+        if (_body.nominations case final shown?)
+          EventNominationsSection(
+            key: _nominationsKey,
+            body: shown.body,
+            rows: shown.rows,
+            detail: detail,
+            state: shown.state,
+            pool: games.games,
+            names: names,
+            now: now,
+          ),
+        // In every state of the pool, as the section's is in every state of
+        // its own, so heading navigation finds both (#517). No count: the
+        // header's says how many games the filter keeps while it narrows,
+        // and a second would say it twice.
+        SliverToBoxAdapter(
+          key: _poolHeadingKey,
+          child: EventGamesTabHeading(title: l10n.eventsGamesPoolHeading),
+        ),
         if (body != _Body.hidden && body != _Body.loading)
           SliverToBoxAdapter(
             key: _headerKey,
@@ -284,6 +421,8 @@ class EventGamesTab extends StatelessWidget {
           _Body.rows => BgeKeyedSliverList<OfferedGame>(
             items: rows,
             keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
+            // Counted on from the nominations' rows above.
+            semanticIndexOffset: _body.nominationRowCount,
             itemBuilder: (context, game) {
               final own = viewerId != null && game.attendeeId == viewerId;
               return _PoolRow(

@@ -349,7 +349,8 @@ void main() {
 
   /// Answers each read from the completer it adds to [reads], so a test
   /// decides when, and how, each one ends. Deletes answer from [deleted],
-  /// and succeed without one. The games pool is empty (#516).
+  /// and succeed without one. The games pool is empty (#516), and so are the
+  /// nominations (#517).
   FakeEventRemote scripted(
     List<Completer<EventSnapshot>> reads, {
     FutureOr<void> Function(String id)? deleted,
@@ -361,6 +362,7 @@ void main() {
     },
     deleted: deleted ?? (_) {},
     pool: (_) => const [],
+    nominations: (_) => const [],
   );
 
   /// The text [finder] shows, for a `Text` with a key.
@@ -867,8 +869,8 @@ void main() {
     );
 
     /// A server whose reads serve [detail], whose deletes answer from
-    /// [deleted], and whose games pool is empty: the Games tab's own suite
-    /// covers what it shows.
+    /// [deleted], and whose games pool and nominations are empty: the Games
+    /// tab's own suites cover what it shows.
     FakeEventRemote serving(
       EventDetail detail, {
       FutureOr<void> Function(String id)? deleted,
@@ -876,6 +878,7 @@ void main() {
       (_) => detail.snapshot,
       deleted: deleted ?? (_) {},
       pool: (_) => const [],
+      nominations: (_) => const [],
     );
 
     /// Shows [detail] with a server and a way back, as the app opens it, and
@@ -1427,6 +1430,50 @@ void main() {
       await readEvent(tester);
 
       expect(remote.nominationReads, ['e-1', 'e-1', 'e-1']);
+    });
+
+    testWidgets("an idle screen's deadline line turns as the clock passes "
+        'the deadline, with no read', (tester) async {
+      var clock = now;
+      final detail = hosted();
+      final remote = serving(
+        detail,
+        nominations: (_) => [
+          catan.copyWith(votingDeadline: now.add(const Duration(hours: 1))),
+        ],
+      );
+      await show(
+        tester,
+        detail,
+        remote: remote,
+        onBack: (_) {},
+        clock: () => clock,
+      );
+      await settle(tester);
+      await choose(tester, games);
+      final reads = remote.detailRequests.length;
+
+      Future<void> elapse(Duration by) async {
+        clock = clock.add(by);
+        await tester.pump(by);
+      }
+
+      expect(find.textContaining('Voting closes'), findsOneWidget);
+
+      await elapse(const Duration(minutes: 59));
+      expect(find.textContaining('Voting closes'), findsOneWidget);
+
+      await elapse(const Duration(minutes: 2));
+      expect(find.textContaining('Voting closes'), findsNothing);
+      expect(
+        find.textContaining(
+          'It stays open until a host closes the vote.',
+        ),
+        findsOneWidget,
+      );
+      // The clock moved the line on: nothing was read again.
+      expect(remote.detailRequests, hasLength(reads));
+      expect(remote.nominationReads, ['e-1']);
     });
 
     testWidgets('nominations are read where the roster is withheld', (

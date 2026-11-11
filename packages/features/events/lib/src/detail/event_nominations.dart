@@ -1,6 +1,7 @@
 /// The rules the nominations section draws from: the tally, the filter and
-/// sort, who is offered Nominate, which pool rows supply a live nomination,
-/// and which dates can be nominated for (#517).
+/// sort, when a deadline's line turns, who is offered Nominate, which pool
+/// rows supply a live nomination, and which dates can be nominated for
+/// (#517).
 ///
 /// Nothing here reads the network or a bloc. The widgets and the nominations
 /// bloc hold the data and ask these what it means.
@@ -224,6 +225,31 @@ List<EventNomination> sortNominations(
   }
 
   return [for (final (_, n) in indexed) n];
+}
+
+/// When the line of one of [nominations] next turns from "Voting closes" to
+/// "Was due to close" after [now] (#517): a millisecond past the soonest
+/// deadline still ahead among the open ones, since a deadline has not passed
+/// at its own instant. A millisecond, not less: on the web a `DateTime` holds
+/// no finer time, so a microsecond past a deadline is the deadline itself,
+/// and a timer that fired on it would find the line unturned and none ahead.
+/// Null when no open nomination has a deadline ahead.
+///
+/// The screen builds again then, so an idle screen's line moves on. Nothing
+/// closes there: voting carries on until a host closes the vote.
+DateTime? nextDeadlinePassing(
+  Iterable<EventNomination> nominations, {
+  required DateTime now,
+}) {
+  DateTime? earliest;
+  for (final n in nominations) {
+    final deadline = n.votingDeadline;
+    if (n.status != NominationStatus.open || deadline == null) continue;
+    final passing = deadline.add(const Duration(milliseconds: 1));
+    if (!passing.isAfter(now)) continue;
+    if (earliest == null || passing.isBefore(earliest)) earliest = passing;
+  }
+  return earliest;
 }
 
 /// What [nominateGate] decides for the screen.
