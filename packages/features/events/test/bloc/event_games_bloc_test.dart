@@ -910,6 +910,27 @@ void main() {
       expect(bloc.state.games, two);
     });
 
+    test('a run whose roster changed while it ran has its closing read for '
+        'the roster asked for since', () async {
+      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final remote = serving(offered: sends.call, pool: (_) => one);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(1));
+      await pumpEventQueue();
+      // Someone joins while the send is out, and the screen reads for them.
+      bloc.add(const EventGamesRequested('e-1', _laterIds));
+      await pumpEventQueue();
+      sends.answer(0, _offeredFor(sends.requests[0]));
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, [
+        _poolRead('e-1', _laterIds),
+        _poolRead('e-1', _laterIds),
+      ]);
+    });
+
     test('a new write clears the last outcome when it starts', () async {
       final bloc = build(serving(offered: (_) => throw _refused));
       addTearDown(bloc.close);
@@ -955,6 +976,26 @@ void main() {
         loaded(one, outcome: ended),
       ]);
       expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
+    });
+
+    test('a take-back whose roster changed while it was out reads for the '
+        'roster asked for since', () async {
+      final takeBacks = _Held<TakeBackGameRequest, void>();
+      final remote = serving(takenBack: takeBacks.call, pool: (_) => one);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_takeBack(_game(2)));
+      await pumpEventQueue();
+      bloc.add(const EventGamesRequested('e-1', _laterIds));
+      await pumpEventQueue();
+      takeBacks.answer(0, null);
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, [
+        _poolRead('e-1', _laterIds),
+        _poolRead('e-1', _laterIds),
+      ]);
     });
 
     for (final (name, error, result)

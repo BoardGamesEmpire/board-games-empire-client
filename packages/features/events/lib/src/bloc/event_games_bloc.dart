@@ -69,7 +69,9 @@ enum _Sent {
 /// One read is out at a time. A request while one is out marks one more to
 /// run after it, for the event and the attendees the latest request names,
 /// however many come in. A write's closing read is one more request like any
-/// other.
+/// other, for the event and the attendees named last: the write's own, or a
+/// request's that came in while it was out, as when someone joined then. So
+/// a write never reads over a newer roster with the one it started with.
 ///
 /// A failed read's [EventGamesState.refreshFailed] stays while the next read
 /// runs, and only a read that ends some other way clears it, as the detail's
@@ -193,6 +195,11 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   /// while it was out named.
   _PoolRead? _readAgain;
 
+  /// The event and attendees named last, by a request to read or a write
+  /// that started. A write's closing read is for these, so a roster asked
+  /// for while the write was out isn't read over by the one it started with.
+  late _PoolRead _lastNamed;
+
   /// Whether a retry joined the reads running now, which
   /// [EventGamesState.refreshing] says until they end.
   bool _retrying = false;
@@ -204,7 +211,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   Future<void> _onRequested(
     EventGamesRequested event,
     Emitter<EventGamesState> emit,
-  ) => _read((eventId: event.eventId, attendeeIds: event.attendeeIds), emit);
+  ) => _read(_named(event.eventId, event.attendeeIds), emit);
 
   Future<void> _onRetryRequested(
     EventGamesRetryRequested event,
@@ -214,11 +221,13 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     // At once, before the session is asked, so the retry shows under way
     // from the press.
     if (!_closing) emit(state.copyWith(refreshing: true));
-    return _read((
-      eventId: event.eventId,
-      attendeeIds: event.attendeeIds,
-    ), emit);
+    return _read(_named(event.eventId, event.attendeeIds), emit);
   }
+
+  /// Notes [eventId] and [attendeeIds] as the ones named last, and answers
+  /// them as a read.
+  _PoolRead _named(String eventId, List<String> attendeeIds) =>
+      _lastNamed = (eventId: eventId, attendeeIds: attendeeIds);
 
   Future<void> _onOffered(
     EventGamesOffered event,
@@ -226,6 +235,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   ) async {
     if (_closing || state.busy || event.picks.isEmpty) return;
 
+    _named(event.eventId, event.attendeeIds);
     final total = event.picks.length;
     emit(
       state.copyWith(
@@ -275,10 +285,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
       ),
     );
 
-    await _read(
-      (eventId: event.eventId, attendeeIds: event.attendeeIds),
-      emit,
-    );
+    await _read(_lastNamed, emit);
   }
 
   /// Offers [pick] for [event]'s attendee once the session says yes, and
@@ -320,6 +327,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   ) async {
     if (_closing || state.busy) return;
 
+    _named(event.eventId, event.attendeeIds);
     final game = event.game;
     emit(state.copyWith(takingBack: () => game.id, outcome: () => null));
 
@@ -344,10 +352,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
 
     // A failed take-back changed nothing the screen can know of.
     if (result == EventGamesResult.failed) return;
-    await _read(
-      (eventId: event.eventId, attendeeIds: event.attendeeIds),
-      emit,
-    );
+    await _read(_lastNamed, emit);
   }
 
   /// Takes [event]'s game back once the session says yes, and answers how it

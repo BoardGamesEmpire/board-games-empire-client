@@ -46,7 +46,8 @@ final class EventGamesRetryRequested extends EventGamesEvent {
 
 /// The viewer, the attendee [attendeeId] of the event [eventId], offers the
 /// games [picks] from their collection, sent one at a time in order. The pool
-/// is read again for [attendeeIds] once the run ends.
+/// is read again once the run ends, for [attendeeIds] or for the attendees a
+/// request named since.
 final class EventGamesOffered extends EventGamesEvent {
   const EventGamesOffered(
     this.eventId,
@@ -65,8 +66,9 @@ final class EventGamesOffered extends EventGamesEvent {
 }
 
 /// The attendee [attendeeId] of the event [eventId] takes [game] back off the
-/// pool. The pool is read again for [attendeeIds] once the server answers,
-/// unless the take-back failed.
+/// pool. The pool is read again once the server answers, unless the
+/// take-back failed, for [attendeeIds] or for the attendees a request named
+/// since.
 final class EventGameTakenBack extends EventGamesEvent {
   const EventGameTakenBack(
     this.eventId,
