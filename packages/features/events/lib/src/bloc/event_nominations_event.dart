@@ -2,7 +2,8 @@ import 'package:equatable/equatable.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:models/domain.dart';
 
-/// Input to the nominations on an event's Games tab (#517).
+/// Input to the nominations on an event's Games tab (#517), the host's
+/// decisions among it (#518).
 ///
 /// Each names the event by the id the screen shows, which a reconcile can
 /// move while it is open (#499), so the id travels with the request rather
@@ -74,6 +75,42 @@ final class NominationVoteCast extends EventNominationsEvent {
 /// The viewer withdraws their own [nomination] of the event [eventId].
 final class NominationWithdrawn extends EventNominationsEvent {
   const NominationWithdrawn(this.eventId, this.nomination);
+
+  final String eventId;
+  final EventNomination nomination;
+
+  @override
+  List<Object?> get props => [eventId, nomination];
+}
+
+/// The host approves [nomination] of the event [eventId], which awaits
+/// approval, so its game joins the lineup (#518).
+final class NominationApproved extends EventNominationsEvent {
+  const NominationApproved(this.eventId, this.nomination);
+
+  final String eventId;
+  final EventNomination nomination;
+
+  @override
+  List<Object?> get props => [eventId, nomination];
+}
+
+/// The host rejects [nomination] of the event [eventId], which awaits
+/// approval (#518).
+final class NominationRejected extends EventNominationsEvent {
+  const NominationRejected(this.eventId, this.nomination);
+
+  final String eventId;
+  final EventNomination nomination;
+
+  @override
+  List<Object?> get props => [eventId, nomination];
+}
+
+/// The host closes the vote on [nomination] of the event [eventId], which is
+/// open, for the server to count and settle (#518).
+final class NominationResolved extends EventNominationsEvent {
+  const NominationResolved(this.eventId, this.nomination);
 
   final String eventId;
   final EventNomination nomination;

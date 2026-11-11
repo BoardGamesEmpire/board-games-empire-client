@@ -105,9 +105,47 @@ NominationVoteCast _vote(
 NominationWithdrawn _withdraw(EventNomination nomination) =>
     NominationWithdrawn('e-1', nomination);
 
+/// The host's [write], an approval, a rejection or a resolve, of the event
+/// `e-1`'s [nomination] (#518).
+EventNominationsEvent _decide(
+  NominationWrite write,
+  EventNomination nomination,
+) => switch (write) {
+  NominationWrite.approve => NominationApproved('e-1', nomination),
+  NominationWrite.reject => NominationRejected('e-1', nomination),
+  NominationWrite.resolve => NominationResolved('e-1', nomination),
+  _ => throw ArgumentError.value(write, 'write', 'not a host decision'),
+};
+
+/// The host decisions, which answer a [HostDecisionOutcome] (#518).
+const _hostDecisions = <NominationWrite>[
+  NominationWrite.approve,
+  NominationWrite.reject,
+];
+
+/// The host decision [write], named for a test.
+String _decision(NominationWrite write) => switch (write) {
+  NominationWrite.approve => 'an approval',
+  NominationWrite.resolve => 'a resolve',
+  _ => 'a rejection',
+};
+
+/// A resolve's answer, as the server counted it (#518).
+const _resolution = NominationResolution(
+  status: NominationStatus.passed,
+  forCount: 5,
+  againstCount: 2,
+  interestedCount: 0,
+  totalVotes: 7,
+  quorumMet: true,
+  thresholdMet: true,
+  eligibleVoterCount: 9,
+);
+
 /// The nominations on an event's Games tab (#517). Every nomination is read,
 /// and never cached. Nominate, vote and withdraw go straight to the server,
-/// one at a time, and their answers change the rows they are about.
+/// one at a time, and their answers change the rows they are about, as do
+/// the host's approve, reject and resolve (#518).
 void main() {
   late _MockBgeLogger logger;
 
@@ -130,6 +168,12 @@ void main() {
     FutureOr<EventNomination> Function(NominateRequest request)? nominated,
     FutureOr<void> Function(CastVoteRequest request)? voteCast,
     FutureOr<EventNomination> Function(WithdrawRequest request)? withdrawn,
+    FutureOr<EventNomination> Function(NominationDecisionRequest request)?
+    approved,
+    FutureOr<EventNomination> Function(NominationDecisionRequest request)?
+    rejected,
+    FutureOr<ResolveAnswer> Function(NominationDecisionRequest request)?
+    resolved,
   }) => FakeEventRemote.detail(
     (_) => throw UnimplementedError('the nominations read no event'),
     nominations: (request) {
@@ -156,6 +200,21 @@ void main() {
       calls.add('withdraw');
       if (withdrawn == null) throw UnimplementedError('no withdrawal');
       return withdrawn(request);
+    },
+    approved: (request) {
+      calls.add('approve');
+      if (approved == null) throw UnimplementedError('no approval');
+      return approved(request);
+    },
+    rejected: (request) {
+      calls.add('reject');
+      if (rejected == null) throw UnimplementedError('no rejection');
+      return rejected(request);
+    },
+    resolved: (request) {
+      calls.add('resolve');
+      if (resolved == null) throw UnimplementedError('no resolve');
+      return resolved(request);
     },
   );
 
@@ -451,6 +510,12 @@ void main() {
         nominated: (_) => n2,
         nomination: (_) => _votedOn(n2, VoteType.forGame),
         withdrawn: (_) => n2.copyWith(status: NominationStatus.withdrawn),
+        approved: (_) => n2.copyWith(status: NominationStatus.approved),
+        rejected: (_) => n2.copyWith(status: NominationStatus.rejected),
+        resolved: (_) => (
+          nomination: n2.copyWith(status: NominationStatus.passed),
+          resolution: _resolution,
+        ),
       );
       final bloc = await readFirst(remote, confirmSession: answering([true]));
 
@@ -492,6 +557,20 @@ void main() {
         'read',
         'session',
       ]);
+
+      for (final write in [..._hostDecisions, NominationWrite.resolve]) {
+        calls.clear();
+        bloc.add(_decide(write, n2));
+        await pumpEventQueue();
+        expect(calls, [
+          'session',
+          write.name,
+          'session',
+          'session',
+          'read',
+          'session',
+        ]);
+      }
     });
 
     test('a session that says no sends nothing and fails the write', () async {
@@ -505,10 +584,14 @@ void main() {
       await pumpEventQueue();
       bloc.add(_withdraw(n2));
       await pumpEventQueue();
+      for (final write in [..._hostDecisions, NominationWrite.resolve]) {
+        bloc.add(_decide(write, n2));
+        await pumpEventQueue();
+      }
 
       // Nothing sent, nothing read after, and a nominate that never went
       // out leaves nothing to settle.
-      expect(calls, ['session', 'session', 'session']);
+      expect(calls, List.filled(6, 'session'));
       expect(bloc.state.settling, isFalse);
       expect(states, const [
         EventNominationsState(
@@ -528,6 +611,32 @@ void main() {
         ),
         EventNominationsState(
           outcome: WithdrawOutcome(WithdrawResult.failed, title: 'Game 2'),
+        ),
+        EventNominationsState(
+          writing: (write: NominationWrite.approve, id: 'n-2'),
+        ),
+        EventNominationsState(
+          outcome: HostDecisionOutcome(
+            HostDecisionResult.failed,
+            write: NominationWrite.approve,
+            title: 'Game 2',
+          ),
+        ),
+        EventNominationsState(
+          writing: (write: NominationWrite.reject, id: 'n-2'),
+        ),
+        EventNominationsState(
+          outcome: HostDecisionOutcome(
+            HostDecisionResult.failed,
+            write: NominationWrite.reject,
+            title: 'Game 2',
+          ),
+        ),
+        EventNominationsState(
+          writing: (write: NominationWrite.resolve, id: 'n-2'),
+        ),
+        EventNominationsState(
+          outcome: ResolveOutcome(ResolveResult.failed, title: 'Game 2'),
         ),
       ]);
       verifyNoWarnings();
@@ -682,6 +791,103 @@ void main() {
       verify: (_) =>
           expect(calls, ['session', 'withdraw', 'session', 'session']),
     );
+
+    for (final write in _hostDecisions) {
+      blocTest<EventNominationsBloc, EventNominationsState>(
+        '${_decision(write)} answered after the session moved is failed, its '
+        'answer unused, and the read after it fails too',
+        build: () => build(
+          serving(
+            approved: (_) => n2.copyWith(status: NominationStatus.approved),
+            rejected: (_) => n2.copyWith(status: NominationStatus.rejected),
+          ),
+          confirmSession: answering([true, false]),
+        ),
+        seed: () => loaded(two),
+        act: (bloc) => bloc.add(_decide(write, n2)),
+        skip: 1,
+        expect: () => [
+          loaded(
+            two,
+            outcome: HostDecisionOutcome(
+              HostDecisionResult.failed,
+              write: write,
+              title: 'Game 2',
+            ),
+          ),
+          failed(
+            nominations: two,
+            outcome: HostDecisionOutcome(
+              HostDecisionResult.failed,
+              write: write,
+              title: 'Game 2',
+            ),
+          ),
+        ],
+        verify: (_) =>
+            expect(calls, ['session', write.name, 'session', 'session']),
+      );
+    }
+
+    blocTest<EventNominationsBloc, EventNominationsState>(
+      'a resolve answered after the session moved is failed, its answer and '
+      'resolution unused, and the read after it fails too',
+      build: () => build(
+        serving(
+          resolved: (_) => (
+            nomination: n2.copyWith(status: NominationStatus.passed),
+            resolution: _resolution,
+          ),
+        ),
+        confirmSession: answering([true, false]),
+      ),
+      seed: () => loaded(two),
+      act: (bloc) => bloc.add(_decide(NominationWrite.resolve, n2)),
+      skip: 1,
+      expect: () => [
+        loaded(
+          two,
+          outcome: const ResolveOutcome(ResolveResult.failed, title: 'Game 2'),
+        ),
+        failed(
+          nominations: two,
+          outcome: const ResolveOutcome(ResolveResult.failed, title: 'Game 2'),
+        ),
+      ],
+      verify: (_) =>
+          expect(calls, ['session', 'resolve', 'session', 'session']),
+    );
+
+    for (final write in [..._hostDecisions, NominationWrite.resolve]) {
+      final outcome = write == NominationWrite.resolve
+          ? const ResolveOutcome(ResolveResult.failed, title: 'Game 2')
+          : HostDecisionOutcome(
+              HostDecisionResult.failed,
+              write: write,
+              title: 'Game 2',
+            );
+      blocTest<EventNominationsBloc, EventNominationsState>(
+        "${_decision(write)}'s 404 answered after the session moved is "
+        'failed, and the row kept, and the read after it fails too',
+        build: () => build(
+          serving(
+            approved: (_) => throw _gone,
+            rejected: (_) => throw _gone,
+            resolved: (_) => throw _gone,
+          ),
+          confirmSession: answering([true, false]),
+        ),
+        seed: () => loaded(two),
+        act: (bloc) => bloc.add(_decide(write, n2)),
+        skip: 1,
+        expect: () => [
+          loaded(two, outcome: outcome),
+          failed(nominations: two, outcome: outcome),
+        ],
+        verify: (_) =>
+            expect(calls, ['session', write.name, 'session', 'session']),
+      );
+    }
 
     test('a vote whose single read meets a moved session is done, and the '
         'list read after it is failed', () async {
@@ -1277,6 +1483,324 @@ void main() {
     );
   });
 
+  group('host decisions', () {
+    final awaiting = _nomination(2, status: NominationStatus.awaitingApproval);
+    final waiting = [n1, awaiting];
+
+    test('approve replaces the row with the approved nomination, and reads '
+        'the list after it', () async {
+      final approved = awaiting.copyWith(status: NominationStatus.approved);
+      var listed = waiting;
+      final remote = serving(
+        nominations: (_) => listed,
+        approved: (_) => approved,
+      );
+      final bloc = await readFirst(remote);
+      listed = [n1, approved];
+      final states = record(bloc);
+
+      bloc.add(NominationApproved('e-1', awaiting));
+      await pumpEventQueue();
+
+      expect(remote.approvals, [(eventId: 'e-1', nominationId: 'n-2')]);
+      const done = HostDecisionOutcome(
+        HostDecisionResult.done,
+        write: NominationWrite.approve,
+        title: 'Game 2',
+      );
+      expect(states, [
+        loaded(waiting, writing: (write: NominationWrite.approve, id: 'n-2')),
+        loaded([n1, approved], outcome: done),
+        loading([n1, approved], outcome: done),
+        loaded([n1, approved], outcome: done),
+      ]);
+      expect(calls, ['approve', 'read']);
+    });
+
+    test('reject replaces the row with the rejected nomination, and reads '
+        'the list after it', () async {
+      final rejected = awaiting.copyWith(status: NominationStatus.rejected);
+      var listed = waiting;
+      final remote = serving(
+        nominations: (_) => listed,
+        rejected: (_) => rejected,
+      );
+      final bloc = await readFirst(remote);
+      listed = [n1, rejected];
+      final states = record(bloc);
+
+      bloc.add(NominationRejected('e-1', awaiting));
+      await pumpEventQueue();
+
+      expect(remote.rejections, [(eventId: 'e-1', nominationId: 'n-2')]);
+      const done = HostDecisionOutcome(
+        HostDecisionResult.done,
+        write: NominationWrite.reject,
+        title: 'Game 2',
+      );
+      expect(states, [
+        loaded(waiting, writing: (write: NominationWrite.reject, id: 'n-2')),
+        loaded([n1, rejected], outcome: done),
+        loading([n1, rejected], outcome: done),
+        loaded([n1, rejected], outcome: done),
+      ]);
+      expect(calls, ['reject', 'read']);
+    });
+
+    test('resolve carries the resolution in its outcome, and reads the list '
+        'after it', () async {
+      final passed = n2.copyWith(status: NominationStatus.passed);
+      var listed = two;
+      final remote = serving(
+        nominations: (_) => listed,
+        resolved: (_) => (nomination: passed, resolution: _resolution),
+      );
+      final bloc = await readFirst(remote);
+      listed = [n1, passed];
+      final states = record(bloc);
+
+      bloc.add(NominationResolved('e-1', n2));
+      await pumpEventQueue();
+
+      expect(remote.resolutions, [(eventId: 'e-1', nominationId: 'n-2')]);
+      // The read after it shows the status alone, but the outcome keeps the
+      // resolution the answer carried.
+      const decided = ResolveOutcome(
+        ResolveResult.decided,
+        title: 'Game 2',
+        resolution: _resolution,
+      );
+      expect(states, [
+        loaded(two, writing: (write: NominationWrite.resolve, id: 'n-2')),
+        loaded([n1, passed], outcome: decided),
+        loading([n1, passed], outcome: decided),
+        loaded([n1, passed], outcome: decided),
+      ]);
+      expect(calls, ['resolve', 'read']);
+    });
+
+    test(
+      'resolve 400 reads the nomination again and says it changed, then '
+      'reads the list',
+      () async {
+        final reads = _Held<NominationRequest, EventNomination>();
+        final passed = n2.copyWith(status: NominationStatus.passed);
+        var listed = two;
+        final bloc = await readFirst(
+          serving(
+            nominations: (_) => listed,
+            resolved: (_) => throw _closed,
+            nomination: reads.call,
+          ),
+        );
+        final states = record(bloc);
+
+        bloc.add(NominationResolved('e-1', n2));
+        await pumpEventQueue();
+
+        // Still out while the row is read again.
+        expect(bloc.state.writing, (write: NominationWrite.resolve, id: 'n-2'));
+
+        listed = [n1, passed];
+        reads.answer(0, passed);
+        await pumpEventQueue();
+
+        // Someone else closed it first: no resolution of this one's to show.
+        const changed = ResolveOutcome(ResolveResult.changed, title: 'Game 2');
+        expect(states, [
+          loaded(two, writing: (write: NominationWrite.resolve, id: 'n-2')),
+          loaded([n1, passed], outcome: changed),
+          loading([n1, passed], outcome: changed),
+          loaded([n1, passed], outcome: changed),
+        ]);
+        expect(calls, ['resolve', 'readOne', 'read']);
+      },
+    );
+
+    for (final write in _hostDecisions) {
+      test('${_decision(write)} 400 reads the nomination again and says it '
+          'changed, then reads the list', () async {
+        final reads = _Held<NominationRequest, EventNomination>();
+        final withdrawn = awaiting.copyWith(
+          status: NominationStatus.withdrawn,
+        );
+        var listed = waiting;
+        final bloc = await readFirst(
+          serving(
+            nominations: (_) => listed,
+            approved: (_) => throw _closed,
+            rejected: (_) => throw _closed,
+            nomination: reads.call,
+          ),
+        );
+        final states = record(bloc);
+
+        bloc.add(_decide(write, awaiting));
+        await pumpEventQueue();
+
+        expect(bloc.state.writing, (write: write, id: 'n-2'));
+
+        listed = [n1, withdrawn];
+        reads.answer(0, withdrawn);
+        await pumpEventQueue();
+
+        final changed = HostDecisionOutcome(
+          HostDecisionResult.changed,
+          write: write,
+          title: 'Game 2',
+        );
+        expect(states, [
+          loaded(waiting, writing: (write: write, id: 'n-2')),
+          loaded([n1, withdrawn], outcome: changed),
+          loading([n1, withdrawn], outcome: changed),
+          loaded([n1, withdrawn], outcome: changed),
+        ]);
+        expect(calls, [write.name, 'readOne', 'read']);
+      });
+    }
+
+    test('a 400 whose single read fails reads the whole list', () async {
+      final bloc = await readFirst(
+        serving(
+          nominations: (_) => two,
+          resolved: (_) => throw _closed,
+          nomination: (_) => throw _offline,
+        ),
+      );
+
+      bloc.add(NominationResolved('e-1', n2));
+      await pumpEventQueue();
+
+      expect(calls, ['resolve', 'readOne', 'read']);
+      expect(
+        bloc.state,
+        loaded(
+          two,
+          outcome: const ResolveOutcome(ResolveResult.changed, title: 'Game 2'),
+        ),
+      );
+    });
+
+    for (final (name, error, decided, resolved) in [
+      (
+        'a 403 is refused',
+        _refused,
+        HostDecisionResult.refused,
+        ResolveResult.refused,
+      ),
+      (
+        'a 429 is failed',
+        _tooMany,
+        HostDecisionResult.failed,
+        ResolveResult.failed,
+      ),
+      (
+        'anything else is failed',
+        _offline,
+        HostDecisionResult.failed,
+        ResolveResult.failed,
+      ),
+    ]) {
+      for (final write in _hostDecisions) {
+        blocTest<EventNominationsBloc, EventNominationsState>(
+          '$name for ${_decision(write)}, and reads the list after it',
+          build: () => build(
+            serving(
+              approved: (_) => throw error,
+              rejected: (_) => throw error,
+              nominations: (_) => two,
+            ),
+          ),
+          seed: () => loaded(two),
+          act: (bloc) => bloc.add(_decide(write, n2)),
+          skip: 1,
+          expect: () {
+            final outcome = HostDecisionOutcome(
+              decided,
+              write: write,
+              title: 'Game 2',
+            );
+            return [
+              loaded(two, outcome: outcome),
+              loading(two, outcome: outcome),
+              loaded(two, outcome: outcome),
+            ];
+          },
+          verify: (_) => expect(calls, [write.name, 'read']),
+        );
+      }
+
+      blocTest<EventNominationsBloc, EventNominationsState>(
+        '$name for a resolve, and reads the list after it',
+        build: () => build(
+          serving(resolved: (_) => throw error, nominations: (_) => two),
+        ),
+        seed: () => loaded(two),
+        act: (bloc) => bloc.add(NominationResolved('e-1', n2)),
+        skip: 1,
+        expect: () {
+          final outcome = ResolveOutcome(resolved, title: 'Game 2');
+          return [
+            loaded(two, outcome: outcome),
+            loading(two, outcome: outcome),
+            loaded(two, outcome: outcome),
+          ];
+        },
+        verify: (_) => expect(calls, ['resolve', 'read']),
+      );
+    }
+
+    for (final write in _hostDecisions) {
+      blocTest<EventNominationsBloc, EventNominationsState>(
+        'a 404 is gone for ${_decision(write)}, drops the row, and reads the '
+        'list after it',
+        build: () => build(
+          serving(
+            approved: (_) => throw _gone,
+            rejected: (_) => throw _gone,
+            nominations: (_) => one,
+          ),
+        ),
+        seed: () => loaded(two),
+        act: (bloc) => bloc.add(_decide(write, n2)),
+        skip: 1,
+        expect: () {
+          final gone = HostDecisionOutcome(
+            HostDecisionResult.gone,
+            write: write,
+            title: 'Game 2',
+          );
+          return [
+            loaded(one, outcome: gone),
+            loading(one, outcome: gone),
+            loaded(one, outcome: gone),
+          ];
+        },
+        verify: (_) => expect(calls, [write.name, 'read']),
+      );
+    }
+
+    blocTest<EventNominationsBloc, EventNominationsState>(
+      'a 404 is gone for a resolve, drops the row, and reads the list after '
+      'it',
+      build: () => build(
+        serving(resolved: (_) => throw _gone, nominations: (_) => one),
+      ),
+      seed: () => loaded(two),
+      act: (bloc) => bloc.add(NominationResolved('e-1', n2)),
+      skip: 1,
+      expect: () {
+        const gone = ResolveOutcome(ResolveResult.gone, title: 'Game 2');
+        return [
+          loaded(one, outcome: gone),
+          loading(one, outcome: gone),
+          loaded(one, outcome: gone),
+        ];
+      },
+      verify: (_) => expect(calls, ['resolve', 'read']),
+    );
+  });
+
   group('one write at a time', () {
     test('a write while one is out is ignored', () async {
       final sends = _Held<NominateRequest, EventNomination>();
@@ -1292,6 +1816,9 @@ void main() {
         ..add(_nominate(4))
         ..add(_vote(n2))
         ..add(_withdraw(n2))
+        ..add(NominationApproved('e-1', n2))
+        ..add(NominationRejected('e-1', n2))
+        ..add(NominationResolved('e-1', n2))
         ..add(
           const NominationWriteDropped(NominationWrite.vote, title: 'Game 2'),
         );
@@ -1300,6 +1827,33 @@ void main() {
       expect(calls, ['nominate']);
       expect(states, isEmpty);
       expect(bloc.state.writing, (write: NominationWrite.nominate, id: 'g-3'));
+    });
+
+    test('a host decision while a vote is out is ignored', () async {
+      final votes = _Held<CastVoteRequest, void>();
+      final bloc = await readFirst(
+        serving(nominations: (_) => two, voteCast: votes.call),
+      );
+
+      bloc.add(_vote(n2));
+      await pumpEventQueue();
+      final states = record(bloc);
+
+      bloc
+        ..add(NominationApproved('e-1', n2))
+        ..add(NominationRejected('e-1', n2))
+        ..add(NominationResolved('e-1', n2))
+        ..add(
+          const NominationWriteDropped(
+            NominationWrite.resolve,
+            title: 'Game 2',
+          ),
+        );
+      await pumpEventQueue();
+
+      expect(calls, ['vote']);
+      expect(states, isEmpty);
+      expect(bloc.state.writing, (write: NominationWrite.vote, id: 'n-2'));
     });
 
     test("a vote's single read holds the write out", () async {
@@ -1625,6 +2179,26 @@ void main() {
         NominationWrite.withdraw,
         const WithdrawOutcome(WithdrawResult.dropped, title: 'Game 2'),
       ),
+      (
+        NominationWrite.approve,
+        const HostDecisionOutcome(
+          HostDecisionResult.dropped,
+          write: NominationWrite.approve,
+          title: 'Game 2',
+        ),
+      ),
+      (
+        NominationWrite.reject,
+        const HostDecisionOutcome(
+          HostDecisionResult.dropped,
+          write: NominationWrite.reject,
+          title: 'Game 2',
+        ),
+      ),
+      (
+        NominationWrite.resolve,
+        const ResolveOutcome(ResolveResult.dropped, title: 'Game 2'),
+      ),
     ]) {
       blocTest<EventNominationsBloc, EventNominationsState>(
         'a dropped ${write.name} sets its outcome and sends nothing',
@@ -1748,6 +2322,28 @@ void main() {
       ]);
       expect(calls, ['vote']);
     });
+
+    test(
+      'a resolve whose 400 is answered after close sends no single read',
+      () async {
+        final sends = _Held<NominationDecisionRequest, ResolveAnswer>();
+        final bloc = build(serving(resolved: sends.call));
+        final states = record(bloc);
+
+        bloc.add(NominationResolved('e-1', n2));
+        await pumpEventQueue();
+        await bloc.close();
+        sends.fail(0, _closed);
+        await pumpEventQueue();
+
+        expect(states, [
+          const EventNominationsState(
+            writing: (write: NominationWrite.resolve, id: 'n-2'),
+          ),
+        ]);
+        expect(calls, ['resolve']);
+      },
+    );
 
     test("a vote's single read answered after close emits nothing", () async {
       final reads = _Held<NominationRequest, EventNomination>();

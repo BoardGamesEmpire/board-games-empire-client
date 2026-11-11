@@ -101,6 +101,9 @@ class EventGamesFooter extends StatelessWidget {
             ),
           );
     final nominationsOutcome = nominations?.outcome;
+    final nominationsMessage = nominationsOutcome == null
+        ? null
+        : _nominationsMessage(l10n, nominationsOutcome);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -157,7 +160,7 @@ class EventGamesFooter extends StatelessWidget {
           ),
         // The nominations' own, beside the pool's: nothing holds one bloc's
         // write back for the other's, so both can end.
-        if (nominationsOutcome != null)
+        if (nominationsOutcome != null && nominationsMessage != null)
           KeyedSubtree(
             key: ObjectKey(nominationsOutcome),
             child: Padding(
@@ -165,7 +168,7 @@ class EventGamesFooter extends StatelessWidget {
               child: BgeInlineBanner(
                 key: EventDetailScreen.nominationsOutcomeKey,
                 tone: _nominationsTone(nominationsOutcome),
-                message: _nominationsMessage(l10n, nominationsOutcome),
+                message: nominationsMessage,
                 action: TextButton(
                   onPressed: () => context.read<EventNominationsBloc>().add(
                     const EventNominationsOutcomeDismissed(),
@@ -324,11 +327,14 @@ class EventGamesFooter extends StatelessWidget {
           WithdrawResult.dropped => BgeBannerTone.warning,
           WithdrawResult.failed => BgeBannerTone.error,
         },
+        // Unreached: the host decisions' copy comes with their buttons (#518).
+        HostDecisionOutcome() || ResolveOutcome() => BgeBannerTone.warning,
       };
 
-  /// A nominations write's copy (#517), naming its game. A nominate that
-  /// went through says what the server made of it.
-  static String _nominationsMessage(
+  /// A nominations write's copy (#517), naming its game, or null for one
+  /// this banner never shows. A nominate that went through says what the
+  /// server made of it.
+  static String? _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
   ) {
@@ -366,6 +372,8 @@ class EventGamesFooter extends StatelessWidget {
         WithdrawResult.failed => l10n.eventsWithdrawFailed(title),
         WithdrawResult.dropped => l10n.eventsWithdrawDropped(title),
       },
+      // Unreached: the host decisions' copy comes with their buttons (#518).
+      HostDecisionOutcome() || ResolveOutcome() => null,
     };
   }
 }
