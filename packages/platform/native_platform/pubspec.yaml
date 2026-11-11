@@ -56,7 +56,8 @@ dependencies:
     path: ../../features/sync
 
 dev_dependencies:
-  # `ScriptedServer`, the transport the root harness answers through (#435).
+  # `ScriptedServer`, the transport the root harness answers through (#435),
+  # and the `domain.dart` model builders (#409).
   bge_test_support:
     path: ../../testing/support
   # Swaps the adapter under each server scope's real Dio (#435).

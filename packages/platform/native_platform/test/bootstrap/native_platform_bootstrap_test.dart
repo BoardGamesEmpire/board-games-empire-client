@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:drift_storage/drift_storage_native.dart';
@@ -21,21 +22,11 @@ class _MockServerRepository extends Mock implements ServerRepository {}
 ServerConfig _serverConfig() => ServerConfig(
   id: 'server-local-1',
   displayName: 'Game Night Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.active,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: const ServerIdentity(
+  cachedIdentity: testServerIdentity().copyWith(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
-    issuer: 'https://api.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
   ),
   lastIdentityFetchedAt: DateTime.utc(2026, 10, 20),
 );
