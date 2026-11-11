@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -343,7 +344,7 @@ void main() {
       final target = bootstrap.lastRootContainer!
           .get<FeedbackTargetResolver>()
           .resolve();
-      expect(target?.serverId, serverIdentity().serverId);
+      expect(target?.serverId, testServerIdentity().serverId);
     });
 
     testWidgets('the service is available even on the empty fallback '

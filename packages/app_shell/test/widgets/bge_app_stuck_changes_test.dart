@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,7 +113,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           syncQueueRepository: withSession ? queue : null,
           syncQueueDrain: withSession && withDrain ? drain : null,
           gameCollectionRepository: withSession ? collection : null,

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,7 +126,7 @@ void main() {
 
   testWidgets('a session the server ends mid-session leaves the notice on '
       'the sign-in screen', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
     final cubit = buildCubit(repo, notice);
     addTearDown(cubit.close);
@@ -141,7 +142,7 @@ void main() {
   });
 
   testWidgets('a deliberate sign-out leaves no notice', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
     final cubit = buildCubit(repo, notice);
     addTearDown(cubit.close);
@@ -155,7 +156,7 @@ void main() {
 
   testWidgets('the sign-out the app runs after a failed scope activation '
       'leaves the notice — the user did not ask for it', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
     final cubit = buildCubit(
       repo,
@@ -214,7 +215,7 @@ void main() {
   testWidgets('no notice when the lost session had nothing waiting', (
     tester,
   ) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice();
     final cubit = buildCubit(repo, notice);
     addTearDown(cubit.close);
@@ -237,7 +238,7 @@ void main() {
     }
 
     testWidgets('a deliberate sign-out still leaves no notice', (tester) async {
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
       final cubit = buildCubit(repo, notice);
       addTearDown(cubit.close);
@@ -257,7 +258,7 @@ void main() {
 
     testWidgets('the recovery sign-out still leaves the notice, though the '
         "session's record hadn't landed when it ran", (tester) async {
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final record = Completer<void>();
       final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2})
         ..holdWrites = record;
@@ -281,7 +282,7 @@ void main() {
 
   testWidgets('a count that never comes back holds the sign-in screen only '
       'for its budget, then shows it without the notice', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
     final cubit = buildCubit(repo, notice);
     addTearDown(cubit.close);
@@ -312,7 +313,7 @@ void main() {
       await subscription.cancel();
       Logger.root.level = previousLevel;
     });
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2})
       ..writesFail = true;
     final cubit = buildCubit(repo, notice);

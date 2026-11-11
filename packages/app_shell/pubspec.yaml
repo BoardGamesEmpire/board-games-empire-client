@@ -59,8 +59,9 @@ dependencies:
     path: ../features/user_search
 
 dev_dependencies:
-  # Shared test helpers (#354, #213, #257): canned Dio transports and/or
-  # widget-test viewport, semantics and scroll-geometry helpers.
+  # Shared test helpers (#354, #213, #257, #409): canned Dio transports and/or
+  # widget-test viewport, semantics and scroll-geometry helpers, and the
+  # `domain.dart` model builders.
   bge_test_support:
     path: ../testing/support
   bloc_test: ^10.0.0

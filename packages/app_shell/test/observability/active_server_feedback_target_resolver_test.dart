@@ -1,4 +1,5 @@
 import 'package:app_shell/src/observability/active_server_feedback_target_resolver.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -20,28 +21,8 @@ import 'package:observability/observability.dart';
 ///   replaced scope (bootstrap retry) is picked up without
 ///   re-registration.
 void main() {
-  const authBase = '/api/auth';
-
-  ServerIdentity identity({String serverId = 'bge-uuid-1'}) => ServerIdentity(
-    serverId: serverId,
-    issuer: 'https://bge.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '$authBase/device',
-    authBasePath: authBase,
-    sessionEndpoint: '$authBase/get-session',
-    signOutEndpoint: '$authBase/sign-out',
-    passkeySupported: false,
-    twoFactorSupported: false,
-    anonymousAuthSupported: false,
-    strategies: const [
-      EmailAndPasswordStrategy(
-        signUpDisabled: false,
-        signInEndpoint: '$authBase/sign-in/email',
-        signUpEndpoint: '$authBase/sign-up/email',
-      ),
-    ],
-  );
+  ServerIdentity identity({String serverId = 'bge-uuid-1'}) =>
+      testServerIdentity().copyWith(serverId: serverId);
 
   late DependencyContainerImpl container;
 
@@ -101,7 +82,9 @@ void main() {
       final transport = _FakeTransport();
       container
         ..registerSingleton<AuthRepository>(
-          _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+          _FakeAuthRepository(
+            AuthStateAuthenticated(session: testAuthResponse()),
+          ),
         )
         ..registerSingleton<FeedbackTransport>(transport);
 
@@ -113,7 +96,9 @@ void main() {
     test('authenticated but no FeedbackTransport registered (network leg '
         'not installed) → null transport, not a StateError', () {
       container.registerSingleton<AuthRepository>(
-        _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+        _FakeAuthRepository(
+          AuthStateAuthenticated(session: testAuthResponse()),
+        ),
       );
 
       final target = resolver(_FakeScope(activeServer())).resolve();
@@ -142,18 +127,6 @@ void main() {
     });
   });
 }
-
-AuthResponse _session() => AuthResponse(
-  token: 'session-token',
-  user: AuthUser(
-    id: 'user-1',
-    username: 'tester',
-    email: 'tester@example.com',
-    emailVerified: true,
-    createdAt: DateTime.utc(2026),
-    updatedAt: DateTime.utc(2026),
-  ),
-);
 
 class _FakeScope implements ActiveServerScope {
   _FakeScope(this._active);

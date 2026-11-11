@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +10,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
@@ -23,10 +23,10 @@ class _MockConnectivityService extends Mock implements ConnectivityService {}
 final _rebuiltServer = ServerConfig(
   id: 'server-local-1',
   displayName: 'Game Night Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.active,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: serverIdentity(),
+  cachedIdentity: testServerIdentity(),
   lastIdentityFetchedAt: DateTime.utc(2026, 10, 20),
 );
 

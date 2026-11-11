@@ -1,10 +1,10 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
-import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/stub_feedback_service.dart';
 
@@ -217,10 +217,10 @@ void main() {
         ServerConfig(
           id: 'local-game-night',
           displayName: 'Game Night',
-          serverUrl: 'https://api.example.com',
+          serverUrl: testServerUrl,
           connectionState: ConnectionState.active,
           bgeServerId: 'bge-game-night',
-          cachedIdentity: serverIdentity(),
+          cachedIdentity: testServerIdentity(),
           lastIdentityFetchedAt: DateTime.utc(2026, 10, 20),
         ),
       ],

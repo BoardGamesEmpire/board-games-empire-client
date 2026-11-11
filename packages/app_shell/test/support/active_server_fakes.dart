@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:events/events.dart';
 import 'package:game_collection/game_collection.dart';
@@ -19,8 +20,6 @@ import 'package:sync_queue/sync_queue.dart' show SyncQueueDrain;
 /// `NeedsAuth`, and `onAuthenticated` — the only path to `Ready` — fires
 /// only from `NeedsAuth`), so a test that drives `Ready` without a scope is
 /// exercising a state the app can't actually be in.
-
-const _kAuthBase = '/api/auth';
 
 /// A fake per-server [AuthRepository] with scriptable session state, backing
 /// the auth bloc the shell provisions from the active-server scope.
@@ -68,7 +67,7 @@ class FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
   }) async {
-    _session = sampleSession();
+    _session = testAuthResponse();
     _setState(AuthStateAuthenticated(session: _session!));
     return _session!;
   }
@@ -81,7 +80,7 @@ class FakeAuthRepository implements AuthRepository {
     String? firstName,
     String? lastName,
   }) async {
-    _session = sampleSession();
+    _session = testAuthResponse();
     _setState(AuthStateAuthenticated(session: _session!));
     return _session!;
   }
@@ -147,42 +146,6 @@ class FakeActiveServerScope implements ActiveServerScope {
   @override
   Stream<ActiveServer?> watchActive() => Stream.value(_active);
 }
-
-/// A well-formed [ServerIdentity] fixture.
-ServerIdentity serverIdentity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
-
-/// A restored session fixture.
-AuthResponse sampleSession() => AuthResponse(
-  token: 'tok-abc',
-  user: AuthUser(
-    id: 'u1',
-    username: 'tester',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
 
 /// An [ActiveServer] whose scoped container carries [repo] (and optionally
 /// the household deps, the collection deps, the event deps and the
@@ -334,7 +297,7 @@ ActiveServer buildActiveServer(
   return ActiveServer(
     serverId: serverId,
     displayName: 'My Server',
-    identity: serverIdentity(),
+    identity: testServerIdentity(),
     container: container,
   );
 }

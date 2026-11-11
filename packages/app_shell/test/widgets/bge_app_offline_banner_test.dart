@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsNode;
@@ -97,7 +98,7 @@ void main() {
       'enters home WITH the banner — the #98 end-to-end path', (tester) async {
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -109,7 +110,7 @@ void main() {
   testWidgets('a verified session shows home WITHOUT the banner', (
     tester,
   ) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
 
     await pumpApp(tester, repo);
 
@@ -142,7 +143,7 @@ void main() {
       'but must NOT re-run session-start wiring', (tester) async {
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -155,7 +156,7 @@ void main() {
     // onAuthenticated() against an already-Ready bootstrap cubit — or a
     // second user-scope activation — would surface as an exception or a
     // remount below.
-    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
     await tester.pumpAndSettle();
 
     expect(find.text(bannerMessage), findsNothing);
@@ -167,7 +168,7 @@ void main() {
       'the auth screen returns', (tester) async {
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -192,7 +193,7 @@ void main() {
 
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -205,7 +206,7 @@ void main() {
     expect(MediaQuery.of(homeContext).padding.top, 0);
 
     // Verified: banner clears, and the content gets its inset back.
-    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
     await tester.pumpAndSettle();
     expect(find.text(bannerMessage), findsNothing);
     final clearedContext = tester.element(find.byType(HomeScreen));
@@ -219,7 +220,7 @@ void main() {
 
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -237,7 +238,7 @@ void main() {
       'screen', (tester) async {
     final repo = FakeAuthRepository(
       sessionCheckError: const AuthNetworkException(message: 'offline'),
-      restorableSession: sampleSession(),
+      restorableSession: testAuthResponse(),
     );
 
     await pumpApp(tester, repo);
@@ -262,7 +263,7 @@ void main() {
       tester,
       FakeAuthRepository(
         sessionCheckError: const AuthNetworkException(message: 'offline'),
-        restorableSession: sampleSession(),
+        restorableSession: testAuthResponse(),
       ),
       connectivity: connectivity,
     );
@@ -301,7 +302,7 @@ void main() {
 
     await pumpApp(
       tester,
-      FakeAuthRepository(initialSession: sampleSession()),
+      FakeAuthRepository(initialSession: testAuthResponse()),
       connectivity: connectivity,
     );
     (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
@@ -325,7 +326,7 @@ void main() {
       tester,
       FakeAuthRepository(
         sessionCheckError: const AuthNetworkException(message: 'offline'),
-        restorableSession: sampleSession(),
+        restorableSession: testAuthResponse(),
       ),
       connectivity: connectivity,
     );
@@ -364,7 +365,7 @@ void main() {
 
     await pumpApp(
       tester,
-      FakeAuthRepository(initialSession: sampleSession()),
+      FakeAuthRepository(initialSession: testAuthResponse()),
       connectivity: connectivity,
       feedbackReporter: reporter,
     );

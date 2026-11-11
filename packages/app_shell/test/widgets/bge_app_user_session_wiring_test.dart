@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show replayThenForward;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -364,7 +365,7 @@ void main() {
 
   testWidgets('a restored session activates the user-session scope for the '
       'session user before home renders', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _RecordingUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
     addTearDown(cubit.close);
@@ -380,7 +381,7 @@ void main() {
 
   testWidgets('an auth loss during session-scope activation keeps the gate '
       'on the auth leg instead of routing to home', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _GatedActivateUserSessionScope();
     final feedback = _CountingFeedbackService();
     final cubit = buildCubit(
@@ -424,7 +425,7 @@ void main() {
 
   testWidgets('a sign-out and sign-back-in during activation leaves the gate '
       'to the handler whose scope is actually live', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _GatedActivateUserSessionScope();
     final feedback = _CountingFeedbackService();
     final cubit = buildCubit(
@@ -447,7 +448,7 @@ void main() {
     // tell this apart from the ordinary happy path (#176).
     repo.emitAuthState(const AuthStateUnauthenticated());
     await tester.pump();
-    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
     await tester.pump();
 
     sessionScope.activateGate.complete();
@@ -470,7 +471,7 @@ void main() {
 
   testWidgets('a server switch during activation leaves the gate alone — the '
       'disposed bloc still reports the departed session', (tester) async {
-    final repoA = FakeAuthRepository(initialSession: sampleSession());
+    final repoA = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _GatedActivateUserSessionScope();
     final feedback = _CountingFeedbackService();
 
@@ -517,7 +518,9 @@ void main() {
 
   testWidgets('a fresh sign-in attempt during activation keeps the gate on '
       'the auth leg — AuthLoading queues no teardown', (tester) async {
-    final repo = _HangingSignInAuthRepository(initialSession: sampleSession());
+    final repo = _HangingSignInAuthRepository(
+      initialSession: testAuthResponse(),
+    );
     final sessionScope = _GatedActivateUserSessionScope();
     final feedback = _CountingFeedbackService();
     final cubit = buildCubit(
@@ -561,7 +564,7 @@ void main() {
   testWidgets('an activation that fails after auth already ended drives no '
       'second sign-out', (tester) async {
     final repo = _SignOutCountingAuthRepository(
-      initialSession: sampleSession(),
+      initialSession: testAuthResponse(),
     );
     final sessionScope = _GatedFailingUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
@@ -593,7 +596,7 @@ void main() {
   testWidgets('an activation that fails after the same user signed back in '
       'leaves the newer session alone', (tester) async {
     final repo = _SignOutCountingAuthRepository(
-      initialSession: sampleSession(),
+      initialSession: testAuthResponse(),
     );
     final sessionScope = _FailFirstThenSucceedUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
@@ -608,7 +611,7 @@ void main() {
     // activation is still parked. Both queue behind it on the scope chain.
     repo.emitAuthState(const AuthStateUnauthenticated());
     await tester.pump();
-    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
     await tester.pump();
 
     // Release the first activation, which now fails.
@@ -630,7 +633,7 @@ void main() {
   testWidgets('an activation that fails while a sign-in is in flight leaves '
       'the recovery to that sign-in', (tester) async {
     final repo = _HangingSignInSignOutCountingAuthRepository(
-      initialSession: sampleSession(),
+      initialSession: testAuthResponse(),
     );
     final sessionScope = _GatedFailingUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
@@ -667,7 +670,7 @@ void main() {
   testWidgets('an activation that fails after a server switch drives no '
       'sign-out into the departed bloc', (tester) async {
     final repoA = _SignOutCountingAuthRepository(
-      initialSession: sampleSession(),
+      initialSession: testAuthResponse(),
     );
     final sessionScope = _GatedFailingUserSessionScope();
     final scope = _SwitchableActiveServerScope(
@@ -707,7 +710,7 @@ void main() {
   });
 
   testWidgets('sign-out deactivates the user-session scope', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _RecordingUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
     addTearDown(cubit.close);
@@ -743,7 +746,7 @@ void main() {
 
   testWidgets('a container without a UserSessionScope keeps the auth flow '
       'working (web until #137)', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final cubit = buildCubit(repo); // seam not registered
     addTearDown(cubit.close);
 
@@ -759,7 +762,7 @@ void main() {
 
   testWidgets('a failed activation signs the user out instead of stranding '
       'an authenticated session without services', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final cubit = buildCubit(repo, sessionScope: _ThrowingUserSessionScope());
     addTearDown(cubit.close);
 
@@ -778,7 +781,7 @@ void main() {
   testWidgets('a registered UserSessionScope whose factory throws fails '
       'activation, rather than reading as a composition without one '
       '(#219)', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final active = buildActiveServer(repo);
     active.container.registerLazySingleton<UserSessionScope>(
       () => throw StateError('scope factory boom'),
@@ -804,7 +807,7 @@ void main() {
 
   testWidgets('sign-out routes away before the scope pop completes — no '
       'live home widget over disposed repositories', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final sessionScope = _GatedUserSessionScope();
     final cubit = buildCubit(repo, sessionScope: sessionScope);
     addTearDown(cubit.close);
@@ -829,7 +832,7 @@ void main() {
   group('the #302 re-hydrate trigger', () {
     testWidgets('an app resume during an active session asks the session '
         'rehydrator for a pass', (tester) async {
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final rehydrator = _SpyRehydrator();
       final cubit = AppBootstrapCubit(
         platformBootstrap: FakePlatformBootstrap(
@@ -860,7 +863,7 @@ void main() {
       // mounted inside that shell would be unmounted here, so the one
       // screen that needs the re-hydrate would never get one. It lives
       // above the router for this reason.
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final rehydrator = _SpyRehydrator();
       final households = _MockHouseholdRepository();
       when(
@@ -920,7 +923,7 @@ void main() {
         'normally', (tester) async {
       // Web registers no session scope (#137), and a resume there must not
       // fault the shell.
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final cubit = buildCubit(repo);
       addTearDown(cubit.close);
 

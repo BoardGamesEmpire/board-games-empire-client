@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,7 +21,7 @@ void main() {
 
   testWidgets('a restored session advances the gate to the home '
       'menu (splash → home, no form flash)', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final cubit = buildCubit(repo);
     addTearDown(cubit.close);
 
@@ -46,7 +47,7 @@ void main() {
   });
 
   testWidgets('sign-out from home returns to the auth screen', (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final cubit = buildCubit(repo);
     addTearDown(cubit.close);
 

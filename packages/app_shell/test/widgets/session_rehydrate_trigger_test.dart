@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -128,7 +129,7 @@ void main() {
       ActiveServer(
         serverId: 'server-uuid-1',
         displayName: 'My Server',
-        identity: serverIdentity(),
+        identity: testServerIdentity(),
         container: container,
       ),
     );

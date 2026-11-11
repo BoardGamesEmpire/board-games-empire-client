@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
@@ -96,22 +97,19 @@ OidcStrategy _provider(String id, String name) => OidcStrategy(
   providerId: id,
   displayName: name,
   discoveryUrl: 'https://sso.example.com/$id/.well-known/openid-configuration',
-  authorizationEndpoint: '/api/auth/sign-in/social',
-  appSignInEndpoint: '/api/auth/app-sign-in/start',
-  appTokenEndpoint: '/api/auth/app-sign-in/token',
+  authorizationEndpoint: '$testAuthBasePath/sign-in/social',
+  appSignInEndpoint: '$testAuthBasePath/app-sign-in/start',
+  appTokenEndpoint: '$testAuthBasePath/app-sign-in/token',
 );
 
-/// [serverIdentity] with two sign-in providers after its email strategy.
-ServerIdentity _identityWithProviders() {
-  final base = serverIdentity();
-  return base.copyWith(
-    strategies: [
-      ...base.strategies,
-      _provider('keycloak', 'Keycloak'),
-      _provider('github', 'GitHub'),
-    ],
-  );
-}
+/// [testServerIdentity] with two sign-in providers after its email strategy.
+ServerIdentity _identityWithProviders() => testServerIdentity().copyWith(
+  strategies: [
+    testEmailAndPasswordStrategy(),
+    _provider('keycloak', 'Keycloak'),
+    _provider('github', 'GitHub'),
+  ],
+);
 
 /// Keyboard flows through the real app root (#50): Tab follows the order a
 /// screen reads in, Shift+Tab walks it back, nothing traps focus, and focus
@@ -290,7 +288,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           householdRepository: repository,
           eventRepository: eventRepository,
           gameCollectionRepository: collection,
