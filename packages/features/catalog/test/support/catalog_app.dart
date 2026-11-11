@@ -16,11 +16,14 @@ const onlineOnlyCopy = "Available when you're online";
 /// With [offline], the app is under a [BgeConnectivityScope] that follows it,
 /// above the navigator as the shell hosts it, so dialogs read it too.
 ///
-/// [theme] defaults to the light theme.
+/// [theme] defaults to the light theme. [builder] wraps the navigator inside
+/// the connectivity scope, which is where `BgeApp` puts the selection region
+/// (#338): below the offline strip host that provides the scope.
 Widget catalogApp(
   Widget home, {
   ValueListenable<bool>? offline,
   ThemeData? theme,
+  TransitionBuilder? builder,
 }) => MaterialApp(
   theme: theme ?? BgeTheme.light(),
   localizationsDelegates: const [
@@ -28,18 +31,23 @@ Widget catalogApp(
     GameFiltersLocalizations.delegate,
   ],
   supportedLocales: GameCatalogLocalizations.supportedLocales,
-  builder: offline == null
+  builder: offline == null && builder == null
       ? null
-      : (context, child) => ValueListenableBuilder<bool>(
-          valueListenable: offline,
-          child: child,
-          builder: (context, isOffline, child) => BgeConnectivityScope(
-            offline: isOffline,
-            noticeShowing: isOffline,
-            onlineOnlyReason: onlineOnlyCopy,
-            child: child!,
-          ),
-        ),
+      : (context, child) {
+          final region = builder == null ? child! : builder(context, child);
+          return offline == null
+              ? region
+              : ValueListenableBuilder<bool>(
+                  valueListenable: offline,
+                  child: region,
+                  builder: (context, isOffline, child) => BgeConnectivityScope(
+                    offline: isOffline,
+                    noticeShowing: isOffline,
+                    onlineOnlyReason: onlineOnlyCopy,
+                    child: child!,
+                  ),
+                );
+        },
   home: home,
 );
 
