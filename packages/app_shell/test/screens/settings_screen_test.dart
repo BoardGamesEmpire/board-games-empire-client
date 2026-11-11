@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,10 +46,12 @@ void main() {
     required List<SettingsSection> sections,
     String? activeServerAlias,
     ThemeData? theme,
+    TransitionBuilder? builder,
   }) => MaterialApp(
     // The real theme, so a measure assertion tests the wiring rather
     // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
     theme: theme ?? BgeTheme.light(),
+    builder: builder,
     localizationsDelegates: ShellLocalizations.localizationsDelegates,
     supportedLocales: ShellLocalizations.supportedLocales,
     home: SettingsScreen(
@@ -224,6 +227,92 @@ void main() {
       await tester.pump();
 
       expect(themeModeCubit.state, ThemeMode.dark);
+    });
+  });
+
+  group('under the selection region (#338)', () {
+    /// The app-level sections under the region, in a window short enough
+    /// that the list overflows.
+    Future<void> pumpUnderRegion(WidgetTester tester) async {
+      useViewSize(tester, const Size(1280, 320));
+      await tester.pumpWidget(
+        settingsApp(
+          sections: appSections(
+            supportedLocales: const [Locale('en'), Locale('es')],
+          ),
+          theme: pointerPlatformTheme(),
+          builder: underSelectionRegion,
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    ScrollPosition listOf(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          ),
+        )
+        .position;
+
+    testWidgets('the region is installed', (tester) async {
+      await pumpUnderRegion(tester);
+
+      expect(find.byType(SelectableRegion), findsOneWidget);
+    });
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets('a ${kind.name} tap on a theme option still selects it', (
+        tester,
+      ) async {
+        await pumpUnderRegion(tester);
+
+        await tester.tap(
+          find.byKey(const Key('settings_theme_dark')),
+          kind: kind,
+        );
+        await tester.pump();
+
+        expect(themeModeCubit.state, ThemeMode.dark);
+      });
+    }
+
+    testWidgets(
+      'a vertical touch drag scrolls the list rather than selecting',
+      (tester) async {
+        final copies = captureClipboardCopies();
+        await pumpUnderRegion(tester);
+
+        // The list must overflow, or a drag has nothing to scroll and the
+        // test would pass whatever the region did.
+        expect(listOf(tester).maxScrollExtent, greaterThan(0));
+        expect(listOf(tester).pixels, 0);
+
+        await tester.drag(find.text('Theme'), const Offset(0, -200));
+        await tester.pumpAndSettle();
+
+        expect(listOf(tester).pixels, greaterThan(0));
+
+        await sendCopyShortcut(tester);
+        expect(copies, isEmpty);
+      },
+    );
+
+    testWidgets('a mouse drag over a section header selects its text', (
+      tester,
+    ) async {
+      final copies = captureClipboardCopies();
+      await pumpUnderRegion(tester);
+
+      final header = tester.getRect(find.text('General'));
+      await mouseDrag(
+        tester,
+        header.centerLeft - const Offset(2, 0),
+        header.centerRight + const Offset(2, 0),
+      );
+      await sendCopyShortcut(tester);
+
+      expect(copies, ['General']);
     });
   });
 
