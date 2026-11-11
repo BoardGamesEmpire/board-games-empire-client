@@ -4293,6 +4293,163 @@ void main() {
       });
     });
 
+    group('approveNomination and rejectNomination', () {
+      test('approveNomination maps the answer', () async {
+        final remote = answering(
+          one(_nominationRow(status: 'Approved'), message: true),
+        );
+
+        final nomination = await remote.approveNomination('e1', 'n1');
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/nominations/n1/approve',
+        );
+        expect(nomination.status, NominationStatus.approved);
+      });
+
+      test('rejectNomination posts to reject and maps the answer', () async {
+        final remote = answering(
+          one(_nominationRow(status: 'Rejected'), message: true),
+        );
+
+        final nomination = await remote.rejectNomination('e1', 'n1');
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/nominations/n1/reject',
+        );
+        expect(nomination.status, NominationStatus.rejected);
+      });
+
+      test('400 is a conflict, 403 refused, 404 not found', () async {
+        await expectLater(
+          answering(
+            _envelope(400, 'Bad Request', 'Not awaiting'),
+            status: 400,
+          ).approveNomination('e1', 'n1'),
+          throwsA(isA<EventWriteConflictException>()),
+        );
+        await expectLater(
+          answering(
+            _envelope(403, 'Forbidden', 'No'),
+            status: 403,
+          ).rejectNomination('e1', 'n1'),
+          throwsA(isA<EventWriteRefusedException>()),
+        );
+        await expectLater(
+          answering(
+            _envelope(404, 'Not Found', 'Gone'),
+            status: 404,
+          ).rejectNomination('e1', 'n1'),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+      });
+    });
+
+    group('resolveNomination', () {
+      String resolved({String status = 'Passed', Object? tally}) => jsonEncode({
+        'message': 'done',
+        'nomination': _nominationRow(status: status),
+        'resolution': {
+          'status': status,
+          'tally':
+              tally ??
+              {
+                'forCount': 5,
+                'againstCount': 2,
+                'interestedCount': 1,
+                'totalVotes': 8,
+              },
+          'quorumMet': true,
+          'thresholdMet': false,
+          'eligibleVoterCount': 9,
+        },
+      });
+
+      test('resolveNomination maps the resolution', () async {
+        final remote = answering(resolved());
+
+        final result = await remote.resolveNomination('e1', 'n1');
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/nominations/n1/resolve',
+        );
+        expect(result.nomination.status, NominationStatus.passed);
+        expect(
+          result.resolution,
+          const NominationResolution(
+            status: NominationStatus.passed,
+            forCount: 5,
+            againstCount: 2,
+            interestedCount: 1,
+            totalVotes: 8,
+            quorumMet: true,
+            thresholdMet: false,
+            eligibleVoterCount: 9,
+          ),
+        );
+      });
+
+      test('an unknown resolution status degrades to unknown', () async {
+        final remote = answering(resolved(status: 'Mystery'));
+
+        final result = await remote.resolveNomination('e1', 'n1');
+
+        expect(result.resolution.status, NominationStatus.unknown);
+      });
+
+      test('a resolution without a tally is a format failure', () async {
+        final remote = answering(
+          jsonEncode({
+            'nomination': _nominationRow(),
+            'resolution': {'status': 'Passed'},
+          }),
+        );
+
+        await expectLater(
+          remote.resolveNomination('e1', 'n1'),
+          throwsA(isA<EventRemoteException>()),
+        );
+      });
+
+      test('resolve 400 is a conflict', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Cannot resolve'),
+          status: 400,
+        );
+
+        await expectLater(
+          remote.resolveNomination('e1', 'n1'),
+          throwsA(
+            isA<EventWriteConflictException>().having(
+              (e) => e.apiMessage,
+              'apiMessage',
+              'Cannot resolve',
+            ),
+          ),
+        );
+      });
+    });
+
+    test('an empty id throws for approve, reject and resolve', () async {
+      final remote = answering('{}');
+
+      for (final call in [
+        remote.approveNomination,
+        remote.rejectNomination,
+        remote.resolveNomination,
+      ]) {
+        await expectLater(call('', 'n1'), throwsArgumentError);
+        await expectLater(call('e1', ''), throwsArgumentError);
+      }
+      expect(adapter.sent, isEmpty);
+    });
+
     test('an empty id throws ArgumentError', () async {
       final remote = answering('{}');
 

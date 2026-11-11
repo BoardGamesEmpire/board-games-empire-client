@@ -820,6 +820,79 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<EventNomination> approveNomination(
+    String eventId,
+    String nominationId,
+  ) => _decide(
+    eventId,
+    nominationId,
+    'approve',
+    'Approve nomination',
+    _decidedNomination,
+  );
+
+  @override
+  Future<EventNomination> rejectNomination(
+    String eventId,
+    String nominationId,
+  ) => _decide(
+    eventId,
+    nominationId,
+    'reject',
+    'Reject nomination',
+    _decidedNomination,
+  );
+
+  @override
+  Future<({EventNomination nomination, NominationResolution resolution})>
+  resolveNomination(String eventId, String nominationId) => _decide(
+    eventId,
+    nominationId,
+    'resolve',
+    'Resolve nomination',
+    (body) => (
+      nomination: _decidedNomination(body),
+      resolution: _mapResolution(
+        _nestedObject(body['resolution'], 'resolution'),
+      ),
+    ),
+  );
+
+  /// `POST .../nominations/:nid/<verb>` for a host's decision, its answer
+  /// read by [parse]: `{ message, nomination }`, and a resolve's
+  /// `resolution` beside them.
+  Future<T> _decide<T>(
+    String eventId,
+    String nominationId,
+    String verb,
+    String action,
+    T Function(Map<String, dynamic> body) parse,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(nominationId, name: 'nominationId');
+
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        '${_nominationPath(eventId, nominationId)}/$verb',
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => parse(result.body),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  /// The nomination a host's decision answers with.
+  EventNomination _decidedNomination(Map<String, dynamic> body) =>
+      _mapNomination(_nominationObject(body));
+
+  @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
@@ -1047,6 +1120,23 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         eligible: json['eligible'] as bool,
         comment: json['comment'] as String?,
       );
+
+  /// A resolve's `resolution` (#518). Its status goes through
+  /// [NominationStatus.fromWire], so a name this client does not know is
+  /// [NominationStatus.unknown].
+  static NominationResolution _mapResolution(Map<String, dynamic> json) {
+    final tally = _nestedObject(json['tally'], 'resolution.tally');
+    return NominationResolution(
+      status: NominationStatus.fromWire(json['status'] as String),
+      forCount: tally['forCount'] as int,
+      againstCount: tally['againstCount'] as int,
+      interestedCount: tally['interestedCount'] as int,
+      totalVotes: tally['totalVotes'] as int,
+      quorumMet: json['quorumMet'] as bool,
+      thresholdMet: json['thresholdMet'] as bool,
+      eligibleVoterCount: json['eligibleVoterCount'] as int,
+    );
+  }
 
   /// [raw] as an object, or a [FormatException] naming [field].
   static Map<String, dynamic> _nestedObject(Object? raw, String field) {
@@ -1606,12 +1696,15 @@ enum _Route {
   /// `POST /api/events`, whose 403 and 404 refuse that create.
   create,
 
-  /// A write to one event or to one of its dates: `DELETE /api/events/:id`,
-  /// the event status writes (`cancel`, `reopen`, `archive`, `unarchive`) and
-  /// the date routes under it, a vote included. Its 403 refuses that write, its
-  /// 404 says the event or date is gone, and its enveloped 400 with one message
-  /// is a conflict with the row as it stands (#506), for a status write the
-  /// event's status. The event delete is never answered 400.
+  /// A write to one event, to one of its dates or to one of its nominations:
+  /// `DELETE /api/events/:id`, the event status writes (`cancel`, `reopen`,
+  /// `archive`, `unarchive`), the date routes under it, a vote included, and
+  /// the nomination writes (vote, withdraw, approve, reject and resolve, #517
+  /// and #518). Its 403 refuses that write, its 404 says the event, date or
+  /// nomination is gone, and its enveloped 400 with one message is a conflict
+  /// with the row as it stands (#506), for a status write the event's status
+  /// and for a nomination write the nomination's. The event delete is never
+  /// answered 400.
   write,
 
   /// `POST /api/events/:id/attendees` (#510). It maps as [write] does, and

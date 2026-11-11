@@ -36,6 +36,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// [takeBackGame] takes one back (#516). [fetchNominations] and
 /// [fetchNomination] read the nominations, [nominate] makes one,
 /// [castVote] votes on one and [withdrawNomination] withdraws one (#517).
+/// [approveNomination], [rejectNomination] and [resolveNomination] are the
+/// host's decisions on one (#518).
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -75,6 +77,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [nominate] | `POST /api/events/:id/nominations` | `{ message, nomination }` |
 /// | [castVote] | `POST /api/events/:id/nominations/:nid/votes` | `{ message, vote }`, not read |
 /// | [withdrawNomination] | `PATCH /api/events/:id/nominations/:nid/withdraw` | `{ message, nomination }` |
+/// | [approveNomination] | `POST /api/events/:id/nominations/:nid/approve` | `{ message, nomination }` |
+/// | [rejectNomination] | `POST /api/events/:id/nominations/:nid/reject` | `{ message, nomination }` |
+/// | [resolveNomination] | `POST /api/events/:id/nominations/:nid/resolve` | `{ message, nomination, resolution }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -153,13 +158,15 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   and from [offerGame], [takeBackGame], [nominate], [castVote] and
-///   [withdrawNomination], which says the API refused that write to an
+///   and from [offerGame], [takeBackGame], [nominate], [castVote],
+///   [withdrawNomination], [approveNomination], [rejectNomination] and
+///   [resolveNomination], which says the API refused that write to an
 ///   existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
 ///   message, from a write to an existing event's dates or a vote on one
-///   (below), or from [offerGame], [nominate], [castVote] or
-///   [withdrawNomination]; and a 409 carrying it from [addAttendee],
+///   (below), or from [offerGame], [nominate], [castVote],
+///   [withdrawNomination], [approveNomination], [rejectNomination] or
+///   [resolveNomination]; and a 409 carrying it from [addAttendee],
 ///   [offerGame], [takeBackGame] or [nominate]. A caller that must tell a
 ///   [nominate]'s 409 (the supplier is not attending) from its 400 (the pool
 ///   row does not match the game) reads the exception's `statusCode`.
@@ -743,6 +750,50 @@ abstract class EventRemoteDataSource {
     String eventId,
     String nominationId,
   );
+
+  /// `POST /api/events/:eventId/nominations/:nominationId/approve`: the host
+  /// approves a nomination awaiting approval, so its game joins the lineup
+  /// (#518), and returns it as the server holds it. Answers 200
+  /// `{ message, nomination }`.
+  ///
+  /// A 400 carrying the envelope with one message is
+  /// [EventWriteConflictException]: the nomination is not awaiting approval. A
+  /// 403 is [EventWriteRefusedException] and a 404
+  /// [EventRemoteNotFoundException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventNomination> approveNomination(
+    String eventId,
+    String nominationId,
+  );
+
+  /// `POST /api/events/:eventId/nominations/:nominationId/reject`: the host
+  /// rejects a nomination awaiting approval (#518), and returns it as the
+  /// server holds it. Answers 200 `{ message, nomination }`.
+  ///
+  /// Fails as [approveNomination] does.
+  Future<EventNomination> rejectNomination(
+    String eventId,
+    String nominationId,
+  );
+
+  /// `POST /api/events/:eventId/nominations/:nominationId/resolve`: closes the
+  /// vote on an open nomination (#518). The server counts the votes, settles
+  /// the nomination as passed, failed or short of quorum, and answers 200
+  /// `{ message, nomination, resolution }`.
+  ///
+  /// The resolution's figures are the server's and are stored nowhere: a later
+  /// read of the nomination carries its status alone.
+  ///
+  /// A 400 carrying the envelope with one message is
+  /// [EventWriteConflictException]: the nomination is not open. A 403 is
+  /// [EventWriteRefusedException] and a 404 [EventRemoteNotFoundException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<({EventNomination nomination, NominationResolution resolution})>
+  resolveNomination(String eventId, String nominationId);
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
   /// every date of the event stands in its availability poll. Answers 200
