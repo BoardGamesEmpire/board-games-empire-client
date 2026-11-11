@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/network.dart';
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
@@ -16,29 +17,10 @@ import '../support/in_memory_session_tombstone_store.dart';
 
 class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
 
-const _kAuthBase = '/api/auth';
 const _kServerId = 'server-1';
 
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: _kServerId,
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+ServerIdentity _identity() =>
+    testServerIdentity().copyWith(serverId: _kServerId);
 
 Map<String, dynamic> _wireUser() => {
   'id': 'user-1',
@@ -73,7 +55,7 @@ void main() {
   AuthRepositoryImpl repositoryOver(Dio dio) {
     final repository = AuthRepositoryImpl(
       identity: _identity(),
-      serverUrl: 'https://api.example.com',
+      serverUrl: testServerUrl,
       tokenStorage: freshStorage(),
       dio: dio,
       clock: LocalClockService(() => now),

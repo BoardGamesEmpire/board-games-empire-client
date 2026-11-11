@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
@@ -11,21 +12,11 @@ import '../support/in_memory_session_tombstone_store.dart';
 ServerConfig _makeConfig() => ServerConfig(
   id: 'server-local-1',
   displayName: 'Test Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: const ServerIdentity(
+  cachedIdentity: testServerIdentity().copyWith(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
-    issuer: 'https://api.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
   ),
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );
@@ -139,7 +130,7 @@ void main() {
     test('shared Dio uses the config server URL as base', () async {
       await installer().install(container, _makeConfig());
 
-      expect(container.get<Dio>().options.baseUrl, 'https://api.example.com');
+      expect(container.get<Dio>().options.baseUrl, testServerUrl);
     });
 
     test('is registration-equivalent to registerServerNetwork', () async {

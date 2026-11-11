@@ -1,43 +1,17 @@
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
 class MockDio extends Mock implements Dio {}
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
-
-// Endpoints are relative paths resolved against the user-supplied base URL by
-// the per-server Dio (set via DioFactory). The repository passes them through
-// to Dio unchanged.
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
 
 // BetterAuth wire shape: the display name is under `name` (mapped to
 // AuthUser.username), and all fields are camelCase.
@@ -102,12 +76,15 @@ void main() {
     mockDio = MockDio();
     // The repository's TEMP #101 diagnostics read options.baseUrl on
     // failure paths.
-    when(() => mockDio.options)
-        .thenReturn(BaseOptions(baseUrl: 'https://api.example.com'));
+    when(() => mockDio.options).thenReturn(BaseOptions(baseUrl: testServerUrl));
     mockStorage = MockTokenStorage();
+    // The identity's endpoints are relative paths, which the per-server Dio
+    // (set via DioFactory) resolves against the user-supplied base URL. The
+    // repository passes them through to Dio unchanged, so the stubs below
+    // match the bare paths.
     repo = AuthRepositoryImpl(
-      identity: _identity(),
-      serverUrl: 'https://api.example.com',
+      identity: testServerIdentity(),
+      serverUrl: testServerUrl,
       tokenStorage: mockStorage,
       dio: mockDio,
     );
@@ -142,7 +119,7 @@ void main() {
         stubStore();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -150,7 +127,7 @@ void main() {
         stubRetrieve();
         when(
           () => mockDio.get<String>(
-            '$_kAuthBase/get-session',
+            '$testAuthBasePath/get-session',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _ok(_sessionJson()));
@@ -276,15 +253,10 @@ void main() {
     group('signUp()', () {
       test('throws AuthRegistrationDisabledException when disabled', () {
         final disabledRepo = AuthRepositoryImpl(
-          identity: _identity().copyWith(
-            strategies: [
-              const EmailAndPasswordStrategy(
-                signUpDisabled: true,
-                signInEndpoint: '$_kAuthBase/sign-in/email',
-              ),
-            ],
+          identity: testServerIdentity().copyWith(
+            strategies: [testEmailAndPasswordStrategy(signUpDisabled: true)],
           ),
-          serverUrl: 'https://api.example.com',
+          serverUrl: testServerUrl,
           tokenStorage: mockStorage,
           dio: mockDio,
         );
@@ -401,7 +373,7 @@ void main() {
         );
         verify(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -447,7 +419,7 @@ void main() {
         stubStore();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -464,7 +436,7 @@ void main() {
         stubStore();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -481,7 +453,7 @@ void main() {
         stubStore();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -498,7 +470,7 @@ void main() {
         stubStore();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -597,8 +569,8 @@ void main() {
     group('no email strategy', () {
       test('signIn throws AuthServerException', () {
         final noStrategyRepo = AuthRepositoryImpl(
-          identity: _identity().copyWith(strategies: []),
-          serverUrl: 'https://api.example.com',
+          identity: testServerIdentity().copyWith(strategies: []),
+          serverUrl: testServerUrl,
           tokenStorage: mockStorage,
           dio: mockDio,
         );
