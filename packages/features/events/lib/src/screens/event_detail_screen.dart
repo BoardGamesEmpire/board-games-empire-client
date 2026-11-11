@@ -465,6 +465,23 @@ class EventDetailScreen extends StatelessWidget {
   static Key poolTakeBackKey(String offeredGameId) =>
       Key('event_detail.pool_take_back_$offeredGameId');
 
+  /// Key on a row's Nominate (#517), by the offered game's id.
+  static Key poolNominateKey(String offeredGameId) =>
+      Key('event_detail.pool_nominate_$offeredGameId');
+
+  /// Key on a row's "Nominated" marker (#517), by the offered game's id: the
+  /// row supplies a live nomination.
+  static Key poolNominatedKey(String offeredGameId) =>
+      Key('event_detail.pool_nominated_$offeredGameId');
+
+  /// Key on one choice of the nominate dialog (#517): the date's id, or
+  /// null for the whole event.
+  static Key nominateScopeKey(String? occurrenceId) =>
+      Key('event_detail.nominate_scope_${occurrenceId ?? 'event'}');
+
+  /// Key on the nominate dialog's Nominate button (#517).
+  static const Key nominateConfirmKey = Key('event_detail.nominate_confirm');
+
   /// Key on the count of the games the filter keeps.
   static const Key poolCountKey = Key('event_detail.pool_count');
 
@@ -1251,7 +1268,7 @@ class _ReadyPage extends StatelessWidget {
             nominations: nominationsState,
             controller: EventGamesTabScope.of(context),
             acting: acting,
-            now: now(),
+            now: now,
             onOfferGames: onOfferGames,
           )
         : null;

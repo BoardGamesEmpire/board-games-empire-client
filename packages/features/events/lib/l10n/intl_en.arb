@@ -978,6 +978,54 @@
       }
     }
   },
+  "eventsNominate": "Nominate",
+  "@eventsNominate": {
+    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it first asks which (eventsNominateTitle). Screen readers hear eventsNominateNamed instead."
+  },
+  "eventsNominateNamed": "Nominate {title}",
+  "@eventsNominateNamed": {
+    "description": "eventsNominate as a screen reader reads it, naming the game, so each game's button says which it nominates.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateSupplierNotGoingHint": "Whoever brings it isn't going",
+  "@eventsNominateSupplierNotGoingHint": {
+    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, and read to a screen reader as the button's hint: the person who offered to bring the game has answered Not going to the event, so it can't be nominated. Someone else's games only: the user's own say eventsNominateYouNotGoingHint."
+  },
+  "eventsNominateYouNotGoingHint": "You aren't going",
+  "@eventsNominateYouNotGoingHint": {
+    "description": "eventsNominateSupplierNotGoingHint on the user's own games: under the Nominate button (eventsNominate) of a game the user offered to bring, which can't be pressed, and read to a screen reader as the button's hint. The user answered Not going to the event, so their games can't be nominated."
+  },
+  "eventsNominateAlready": "Already nominated",
+  "@eventsNominateAlready": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when that copy of the game is nominated already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the copy is nominated already for the whole event, or for that date."
+  },
+  "eventsNominateTitle": "Nominate {title}",
+  "@eventsNominateTitle": {
+    "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateCancel": "Cancel",
+  "@eventsNominateCancel": {
+    "description": "Button in the nominate dialog (eventsNominateTitle) that closes it and nominates nothing."
+  },
+  "eventsNominateConfirm": "Nominate",
+  "@eventsNominateConfirm": {
+    "description": "Button in the nominate dialog (eventsNominateTitle) that nominates the game for the choice picked: the whole event or one date."
+  },
+  "eventsPoolNominated": "Nominated",
+  "@eventsPoolNominated": {
+    "description": "Marker on a game in the games pool on the Games tab of an event's screen, the games people offer to bring: that copy of the game is nominated for the event's lineup, and the nomination is still being voted on, waiting for a host, or paused. It fits on one line, and shrinks rather than wraps."
+  },
   "eventsVoteDone": "Your vote on {title} is in.",
   "@eventsVoteDone": {
     "description": "Banner at the foot of an event's screen once the user's vote on a nominated game (for it, against it, or interested) is recorded. The title is the nominated game's.",
@@ -1122,11 +1170,11 @@
   },
   "eventsNominationsFailedTitle": "Couldn't load nominations",
   "@eventsNominationsFailedTitle": {
-    "description": "In the Nominations section of an event's Games tab when the nominations couldn't be read and none were read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry)."
+    "description": "In the Nominations section of an event's Games tab when the nominations couldn't be read and none were read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry). Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
   },
   "eventsNominationsHiddenTitle": "Nominations aren't shown to you",
   "@eventsNominationsHiddenTitle": {
-    "description": "In the Nominations section of an event's Games tab when the server won't show the user the event's nominations."
+    "description": "In the Nominations section of an event's Games tab when the server won't show the user the event's nominations. Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
   },
   "eventsNominationsEmptyTitle": "Nothing nominated yet",
   "@eventsNominationsEmptyTitle": {
@@ -1134,7 +1182,7 @@
   },
   "eventsNominationsEmptyBody": "Nominate a game from the games pool below.",
   "@eventsNominationsEmptyBody": {
-    "description": "Under eventsNominationsEmptyTitle. The games pool is the list of games people offer to bring, below the Nominations section on the same tab, and a game is nominated from its row there."
+    "description": "Under eventsNominationsEmptyTitle, shown only to someone who can nominate a game there. The games pool is the list of games people offer to bring, below the Nominations section on the same tab, and a game is nominated from its row there (eventsNominate)."
   },
   "eventsGamesPoolHeading": "Games pool",
   "@eventsGamesPoolHeading": {
@@ -1174,11 +1222,11 @@
   },
   "eventsNominationWholeEvent": "For the whole event",
   "@eventsNominationWholeEvent": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate)."
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle)."
   },
   "eventsNominationForDate": "For {date}",
   "@eventsNominationForDate": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
     "placeholders": {
       "date": {
         "type": "String",

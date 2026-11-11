@@ -53,7 +53,9 @@ enum EventNominationsBody {
 /// [SliverToBoxAdapter], not a [BgeStateSliver]: one would fill the rest of
 /// the view and push the pool below it. A first read that
 /// fails says so here, with Try again; one that fails over nominations read
-/// before leaves them and is the footer's to say.
+/// before leaves them and is the footer's to say. With none nominated, it
+/// points to the pool below only where the viewer is offered Nominate there
+/// ([nominateGate]).
 ///
 /// A row says, top to bottom: the game and its platform; who nominated it;
 /// whose copy it is; whether it is for the whole event or one date; where
@@ -210,7 +212,11 @@ class EventNominationsSection extends StatelessWidget {
             child: _State(
               child: BgeEmptyState(
                 title: l10n.eventsNominationsEmptyTitle,
-                body: l10n.eventsNominationsEmptyBody,
+                // Pointing to the pool only where the viewer is offered
+                // Nominate there.
+                body: nominateGate(detail) == NominateGate.open
+                    ? l10n.eventsNominationsEmptyBody
+                    : null,
               ),
             ),
           ),

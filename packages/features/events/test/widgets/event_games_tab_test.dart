@@ -70,10 +70,14 @@ OfferedGame _game(
 
 /// The Games tab of an event's screen (#516): when the pool is read, what
 /// it shows in each state, its rows, the filter and the people sheet, Take
-/// back and its outcomes in the page's footer, and the Offer games button.
+/// back and its outcomes in the page's footer, the Offer games button, and
+/// each row's Nominate and "Nominated" marker (#517).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
+
+  /// What the screen's clock reads: [now], unless a test moves it on.
+  late DateTime clock;
 
   late _MockEventRepository repository;
   late StreamController<EventDetail?> cache;
@@ -95,6 +99,11 @@ void main() {
   /// otherwise, so the section above the pool says nothing is nominated.
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
+
+  /// What each nominate answers (#517): the nomination as the server holds
+  /// it, open for votes, unless a test says otherwise.
+  late FutureOr<EventNomination> Function(NominateRequest request)
+  nominateAnswer;
 
   /// A detail read held until a test completes it, while set.
   Completer<EventSnapshot>? heldRead;
@@ -118,12 +127,15 @@ void main() {
   final wingspanMine = _game('o-5', 'att-me', 'Wingspan');
 
   /// Event `e-1`, Scheduled with a date ahead, as the viewer [viewer] sees
-  /// it, with [roster] on it.
+  /// it, with [roster] on it. [occurrences] replace its one date, and
+  /// [policy] is its rules, none by default.
   EventDetail detailOf({
     EventAttendee? viewer,
     List<EventAttendee>? roster,
     bool rosterGiven = true,
     EventStatus status = EventStatus.scheduled,
+    List<EventOccurrence>? occurrences,
+    EventPolicy? policy,
   }) {
     final self = viewer ?? me;
     return EventDetail(
@@ -132,10 +144,16 @@ void main() {
           'e-1',
           title: 'Catan night',
         ).event.copyWith(status: status),
-        occurrences: [
-          confirmed('o-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1'),
-        ],
+        occurrences:
+            occurrences ??
+            [
+              confirmed(
+                'o-1',
+                DateTime(2026, 11, 6, 19),
+              ).copyWith(eventId: 'e-1'),
+            ],
         attendees: rosterGiven ? (roster ?? [self, ada, bo]) : null,
+        policy: policy,
       ),
       attendance: self,
     );
@@ -147,6 +165,7 @@ void main() {
   });
 
   setUp(() {
+    clock = now;
     repository = _MockEventRepository();
     cache = StreamController<EventDetail?>.broadcast();
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
@@ -164,6 +183,21 @@ void main() {
     );
     pageAnswer = (_) async => null;
     nominationsAnswer = (_) => const [];
+    nominateAnswer = (request) => EventNomination(
+      id: 'n-${request.suppliedFromId}',
+      eventId: request.eventId,
+      platformGameId: request.platformGameId,
+      gameId: 'g-${request.suppliedFromId}',
+      title: served
+          .firstWhere((game) => game.id == request.suppliedFromId)
+          .title,
+      platformName: 'Tabletop',
+      status: NominationStatus.open,
+      nominatedById: 'att-me',
+      suppliedFromId: request.suppliedFromId,
+      occurrenceId: request.occurrenceId,
+      createdAt: kItemInstant,
+    );
     heldRead = null;
   });
 
@@ -201,6 +235,7 @@ void main() {
       offered: (request) => offerAnswer(request),
       takenBack: (request) => takeBackAnswer(request),
       nominations: (eventId) => nominationsAnswer(eventId),
+      nominated: (request) => nominateAnswer(request),
     );
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
@@ -227,7 +262,7 @@ void main() {
         confirmSession: guarded ? confirmSession : null,
         onBack: (_) {},
         onOfferGames: offers ? recordOffer : null,
-        now: () => now,
+        now: () => clock,
       ),
     );
   }
@@ -323,7 +358,10 @@ void main() {
       (eventId, attendeeIds),
   ];
   Finder outcome() => find.byKey(EventDetailScreen.poolOutcomeKey);
-  Finder offerGames() => find.byKey(EventDetailScreen.offerGamesKey);
+  // Above the rows: a press on a row can scroll it out of view, built all
+  // the same.
+  Finder offerGames() =>
+      find.byKey(EventDetailScreen.offerGamesKey, skipOffstage: false);
   Finder search() => find.byKey(EventDetailScreen.poolSearchKey);
   Finder people() => find.byKey(EventDetailScreen.poolPeopleKey);
   Finder notMine() => find.byKey(EventDetailScreen.poolNotMineKey);
@@ -2941,11 +2979,827 @@ void main() {
 
       expect(tester.widget<ButtonStyleButton>(offerGames()).onPressed, isNull);
       expect(
-        find.descendant(of: offerGames(), matching: find.text('Offer games')),
+        find.descendant(
+          of: offerGames(),
+          matching: find.text('Offer games', skipOffstage: false),
+        ),
         findsOneWidget,
       );
       held.complete();
       await animate(tester);
+    });
+  });
+
+  group('Nominate (#517)', () {
+    /// `e-1`'s rules, adding games as [mode] says.
+    EventPolicy policyOf(GameAdditionMode mode) => EventPolicy(
+      id: 'p-1',
+      eventId: 'e-1',
+      allowMemberInvites: true,
+      allowGuestInvites: false,
+      restrictToGameCategories: false,
+      requireHostApprovalToJoin: false,
+      allowSpectators: false,
+      strictCapacity: false,
+      gameAdditionMode: mode,
+      restrictToAttendeePool: false,
+      voteThresholdType: VoteThresholdType.unknown,
+      voteQuorumType: VoteQuorumType.unknown,
+      voteEligibility: VoteEligibility.allAttendees,
+      interestedWeight: InterestedWeight.asFor,
+      createdAt: kItemInstant,
+      updatedAt: kItemInstant,
+    );
+
+    /// Two dates ahead: Friday the 6th and Saturday the 7th, at seven.
+    final twoDates = [
+      confirmed('d-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1'),
+      confirmed(
+        'd-2',
+        DateTime(2026, 11, 7, 19),
+        sortOrder: 1,
+      ).copyWith(eventId: 'e-1'),
+    ];
+
+    /// A nomination by Bo of [game], for the whole event or, with
+    /// [occurrenceId], one date, open unless a test says otherwise.
+    EventNomination nominationOf(
+      String id,
+      OfferedGame game, {
+      String? occurrenceId,
+      NominationStatus status = NominationStatus.open,
+    }) => EventNomination(
+      id: id,
+      eventId: 'e-1',
+      platformGameId: game.platformGameId,
+      gameId: game.gameId,
+      title: game.title,
+      platformName: game.platformName,
+      status: status,
+      nominatedById: 'att-bo',
+      suppliedFromId: game.id,
+      occurrenceId: occurrenceId,
+      createdAt: kItemInstant,
+    );
+
+    const notGoingHint = "Whoever brings it isn't going";
+    const youNotGoingHint = "You aren't going";
+
+    Finder nominate(String id) => find.byKey(
+      EventDetailScreen.poolNominateKey(id),
+      skipOffstage: false,
+    );
+    Finder nominated(String id) => find.byKey(
+      EventDetailScreen.poolNominatedKey(id),
+      skipOffstage: false,
+    );
+    Finder scope(String? occurrenceId) =>
+        find.byKey(EventDetailScreen.nominateScopeKey(occurrenceId));
+    Finder confirm() => find.byKey(EventDetailScreen.nominateConfirmKey);
+    Finder nominationsOutcome() =>
+        find.byKey(EventDetailScreen.nominationsOutcomeKey);
+    VoidCallback? onPressed(WidgetTester tester, String id) =>
+        tester.widget<ButtonStyleButton>(nominate(id)).onPressed;
+
+    testWidgets('Nominate on a single-date event sends a whole-event '
+        'nomination', (tester) async {
+      await showGames(tester);
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      // Nothing to choose: no dialog.
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedFromId: 'o-2',
+          occurrenceId: null,
+        ),
+      ]);
+      expect(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text('Azul is nominated. Voting is open.'),
+        ),
+        findsOneWidget,
+      );
+      expect(nominated(azul.id), findsOneWidget);
+    });
+
+    testWidgets('Nominate on a multi-date event asks for the scope', (
+      tester,
+    ) async {
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(find.text('Nominate Azul'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: scope(null),
+          matching: find.text('For the whole event'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: scope('d-1'),
+          matching: find.text('For Fri, Nov 6 · 7:00 PM'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: scope('d-2'),
+          matching: find.text('For Sat, Nov 7 · 7:00 PM'),
+        ),
+        findsOneWidget,
+      );
+
+      // Cancel sends nothing.
+      await tester.tap(find.text('Cancel'));
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates, isEmpty);
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+      await tester.tap(scope('d-2'));
+      await tester.pump();
+      await tester.tap(confirm());
+      await animate(tester);
+
+      expect(remote.nominates, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-2',
+          suppliedFromId: 'o-2',
+          occurrenceId: 'd-2',
+        ),
+      ]);
+    });
+
+    testWidgets('a date already past, or cancelled, is not offered', (
+      tester,
+    ) async {
+      await showGames(
+        tester,
+        detail: detailOf(
+          occurrences: [
+            confirmed(
+              'd-0',
+              DateTime(2026, 10, 2, 19),
+            ).copyWith(eventId: 'e-1'),
+            twoDates.first,
+            twoDates.last.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+      );
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(scope(null), findsOneWidget);
+      expect(scope('d-1'), findsOneWidget);
+      expect(scope('d-0'), findsNothing);
+      expect(scope('d-2'), findsNothing);
+    });
+
+    testWidgets('a date that starts while the scope dialog is open is '
+        'dropped', (tester) async {
+      final soon = confirmed(
+        'd-1',
+        now.add(const Duration(minutes: 1)),
+      ).copyWith(eventId: 'e-1');
+      await showGames(
+        tester,
+        detail: detailOf(occurrences: [soon, twoDates.last]),
+      );
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+      expect(scope('d-1'), findsOneWidget);
+
+      // The date starts while the dialog is open, and the server would
+      // still take a nomination for it.
+      clock = now.add(const Duration(minutes: 2));
+      await tester.tap(scope('d-1'));
+      await tester.pump();
+      await tester.tap(confirm());
+      await animate(tester);
+
+      expect(remote.nominates, isEmpty);
+      expect(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text(
+            "Azul wasn't nominated: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an event of many dates with none still ahead nominates for '
+        'the whole event, asking nothing', (tester) async {
+      await showGames(
+        tester,
+        detail: detailOf(
+          occurrences: [
+            for (final date in twoDates)
+              date.copyWith(status: OccurrenceStatus.cancelled),
+          ],
+        ),
+      );
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.nominates.single.occurrenceId, isNull);
+    });
+
+    testWidgets('a scope already nominated is disabled in the dialog', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+      // The whole event is taken, and the dates are left.
+      expect(onPressed(tester, azul.id), isNotNull);
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(
+        tester.widget<RadioListTile<NominationScope>>(scope(null)).enabled,
+        isFalse,
+      );
+      expect(
+        find.descendant(
+          of: scope(null),
+          matching: find.text('Already nominated'),
+        ),
+        findsOneWidget,
+      );
+      // Pressing it chooses nothing; the first date, chosen as it opened,
+      // goes.
+      await tester.tap(scope(null));
+      await tester.pump();
+      await tester.tap(confirm());
+      await animate(tester);
+
+      expect(remote.nominates.single.occurrenceId, 'd-1');
+    });
+
+    testWidgets('with every scope taken, Nominate is disabled and says so', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', root, occurrenceId: 'o-1'),
+      ];
+      // Tall enough that the pool is built below the two nominations.
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: 'Already nominated',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      // The marker on the row already says it: not drawn again.
+      expect(
+        find.text('Already nominated', skipOffstage: false),
+        findsNothing,
+      );
+      // A nomination for one date of a single-date event leaves the whole
+      // event to nominate for.
+      expect(onPressed(tester, root.id), isNotNull);
+      handle.dispose();
+    });
+
+    testWidgets("Nominate is disabled with its reason when the supplier isn't "
+        'going', (tester) async {
+      final handle = tester.ensureSemantics();
+      final adaOut = _row(
+        'att-ada',
+        name: 'Ada',
+        status: EventParticipationStatus.notAttending,
+      );
+      // Azul is nominated too, its nomination paused: not going comes
+      // first.
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul, status: NominationStatus.paused),
+      ];
+      // Tall enough that the pool is built below the nomination.
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(roster: [me, adaOut, bo]));
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: notGoingHint,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      // Drawn under each of Ada's two rows, Azul and her Catan, and only
+      // there.
+      expect(find.text(notGoingHint, skipOffstage: false), findsNWidgets(2));
+      for (final game in [azul, catanAdas]) {
+        expect(
+          find.descendant(
+            of: row(game.id),
+            matching: find.text(notGoingHint, skipOffstage: false),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+          reason: game.title,
+        );
+      }
+      for (final game in [catanMine, root]) {
+        expect(onPressed(tester, game.id), isNotNull, reason: game.title);
+      }
+      handle.dispose();
+    });
+
+    testWidgets("where the roster is withheld, the viewer's own answer decides "
+        'for their rows, said in the second person', (tester) async {
+      final handle = tester.ensureSemantics();
+      served = [catanMine, wingspanMine];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row(
+            'att-me',
+            name: 'Me',
+            status: EventParticipationStatus.notAttending,
+          ),
+          roster: const [],
+        ),
+      );
+
+      for (final game in [catanMine, wingspanMine]) {
+        expect(onPressed(tester, game.id), isNull, reason: game.title);
+      }
+      expect(find.text(youNotGoingHint, skipOffstage: false), findsNWidgets(2));
+      expect(find.text(notGoingHint, skipOffstage: false), findsNothing);
+      await tester.ensureVisible(nominate(catanMine.id));
+      await tester.pump();
+      expect(
+        tester.getSemantics(nominate(catanMine.id)),
+        matchesSemantics(
+          label: 'Nominate Catan',
+          hint: youNotGoingHint,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('where the roster is withheld, Nominate sends a nomination '
+        "for the viewer's own row", (tester) async {
+      served = [catanMine, wingspanMine];
+      await showGames(tester, detail: detailOf(roster: const []));
+
+      await press(tester, nominate(wingspanMine.id));
+      await animate(tester);
+
+      expect(remote.nominates, [
+        (
+          eventId: 'e-1',
+          platformGameId: 'pg-o-5',
+          suppliedFromId: 'o-5',
+          occurrenceId: null,
+        ),
+      ]);
+      expect(nominated(wingspanMine.id), findsOneWidget);
+    });
+
+    testWidgets("Nominate says why after the nominations' first read failed, "
+        'before whoever brings it not going', (tester) async {
+      final handle = tester.ensureSemantics();
+      final adaOut = _row(
+        'att-ada',
+        name: 'Ada',
+        status: EventParticipationStatus.notAttending,
+      );
+      nominationsAnswer = (_) => throw _offline;
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(roster: [me, adaOut, bo]));
+
+      for (final game in [azul, root]) {
+        await tester.ensureVisible(nominate(game.id));
+        await tester.pump();
+        expect(onPressed(tester, game.id), isNull, reason: game.title);
+        expect(
+          tester.getSemantics(nominate(game.id)),
+          matchesSemantics(
+            label: 'Nominate ${game.title}',
+            hint: "Couldn't load nominations",
+            isButton: true,
+            hasEnabledState: true,
+          ),
+          reason: game.title,
+        );
+      }
+      handle.dispose();
+    });
+
+    testWidgets("Nominate says why while the nominations aren't shown to the "
+        'viewer', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) =>
+          throw const EventRemoteForbiddenException('no', statusCode: 403);
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: "Nominations aren't shown to you",
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('offline, a failed nominations read gives way to the offline '
+        'reason', (tester) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      nominationsAnswer = (_) => throw _offline;
+      await showGames(tester, offline: offline);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: _onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('offline, Nominate is disabled with the offline reason alone', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      final adaOut = _row(
+        'att-ada',
+        name: 'Ada',
+        status: EventParticipationStatus.notAttending,
+      );
+      await showGames(
+        tester,
+        detail: detailOf(roster: [me, adaOut, bo]),
+        offline: offline,
+      );
+
+      // Not going too, and the hint says only one thing.
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: _onlineOnlyCopy,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      await tester.ensureVisible(nominate(root.id));
+      await tester.pump();
+      expect(onPressed(tester, root.id), isNull);
+      // Drawn once for the tab.
+      expect(find.text(_onlineOnlyCopy, skipOffstage: false), findsOneWidget);
+
+      offline.value = false;
+      await tester.pump();
+      expect(onPressed(tester, root.id), isNotNull);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      // Back online, not going comes first.
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: notGoingHint,
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("Nominate isn't built under HostOnly", (tester) async {
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+
+      expect(row(azul.id), findsOneWidget);
+      for (final game in [catanMine, azul, catanAdas, root]) {
+        expect(nominate(game.id), findsNothing, reason: game.title);
+      }
+
+      // Under a vote it is.
+      await tester.pumpWidget(const SizedBox());
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.requiresVote)),
+      );
+      expect(nominate(azul.id), findsOneWidget);
+
+      // Nor for a guest, whose role can't nominate.
+      await tester.pumpWidget(const SizedBox());
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.guest),
+        ),
+      );
+      expect(row(azul.id), findsOneWidget);
+      expect(nominate(azul.id), findsNothing);
+    });
+
+    testWidgets('a row that supplies a live nomination shows Nominated', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', catanAdas, status: NominationStatus.paused),
+        nominationOf('n-3', root, status: NominationStatus.withdrawn),
+        nominationOf('n-4', catanMine, status: NominationStatus.passed),
+      ];
+      // Tall enough that every row is built, below the four nominations.
+      useViewSize(tester, const Size(800, 3200));
+
+      await showGames(tester);
+
+      expect(nominated(azul.id), findsOneWidget);
+      expect(nominated(catanAdas.id), findsOneWidget);
+      expect(nominated(root.id), findsNothing);
+      expect(nominated(catanMine.id), findsNothing);
+      // A chip's label can't wrap: it scales down instead.
+      expect(
+        find.descendant(
+          of: nominated(azul.id),
+          matching: find.byType(FittedBox),
+        ),
+        findsOneWidget,
+      );
+      // Read with the row, as its last line.
+      expect(
+        tester.getSemantics(
+          find.descendant(of: row(azul.id), matching: find.text('Azul')),
+        ),
+        matchesSemantics(
+          label: 'Azul\nTabletop, Physical\nAda is bringing this\nNominated',
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('waits for the nominations to be read', (tester) async {
+      final handle = tester.ensureSemantics();
+      final read = Completer<List<EventNomination>>();
+      nominationsAnswer = (_) => read.future;
+      await showGames(tester);
+
+      // Until they are, a row's nominations aren't known: a wait, with no
+      // reason to give.
+      expect(onPressed(tester, azul.id), isNull);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(tester.getSemantics(nominate(azul.id)).hint, isEmpty);
+      handle.dispose();
+
+      read.complete(const []);
+      await animate(tester);
+      expect(onPressed(tester, azul.id), isNotNull);
+    });
+
+    testWidgets('is disabled while a detail read runs, and while another '
+        'nominations write is out', (tester) async {
+      final held = Completer<EventNomination>();
+      nominateAnswer = (_) => held.future;
+      await showGames(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(onPressed(tester, azul.id), isNull);
+
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+      expect(onPressed(tester, azul.id), isNotNull);
+
+      await press(tester, nominate(azul.id));
+      await settle(tester);
+      expect(remote.nominates, hasLength(1));
+      expect(onPressed(tester, root.id), isNull);
+
+      held.complete(nominationOf('n-1', azul));
+      await animate(tester);
+      expect(onPressed(tester, root.id), isNotNull);
+    });
+
+    testWidgets('keeps focus through its nominate, and after it while it '
+        'holds focus, nominated', (tester) async {
+      final handle = tester.ensureSemantics();
+      final held = Completer<EventNomination>();
+      nominateAnswer = (_) => held.future;
+      await showGames(tester);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      final focus =
+          tester.widget<ButtonStyleButton>(nominate(azul.id)).focusNode!
+            ..requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await settle(tester);
+      expect(remote.nominates, hasLength(1));
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      held.complete(nominationOf('n-1', azul));
+      await animate(tester);
+
+      // Nominated for the one scope there is: unavailable, still focused,
+      // and saying why. The new nomination above can have pushed it down.
+      expect(focus.hasPrimaryFocus, isTrue);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominate Azul',
+          hint: 'Already nominated',
+          isButton: true,
+          hasEnabledState: true,
+          isFocusable: true,
+          isFocused: true,
+          hasFocusAction: true,
+        ),
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      // A press does nothing.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(remote.nominates, hasLength(1));
+
+      // Once focus moves on, it is disabled.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(focus.hasFocus, isFalse);
+      expect(onPressed(tester, azul.id), isNull);
+      handle.dispose();
+    });
+
+    testWidgets('keeps focus through the dialog and the nominate it sends', (
+      tester,
+    ) async {
+      final held = Completer<EventNomination>();
+      nominateAnswer = (_) => held.future;
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      final focus =
+          tester.widget<ButtonStyleButton>(nominate(azul.id)).focusNode!
+            ..requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(confirm());
+      await animate(tester);
+
+      // The dialog hands focus back, and the nomination going out keeps it.
+      expect(remote.nominates.single.occurrenceId, isNull);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      held.complete(nominationOf('n-1', azul));
+      await animate(tester);
+
+      // The dates are left: available again, and still focused.
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(onPressed(tester, azul.id), isNotNull);
+    });
+
+    testWidgets('a nominate re-check that fails says so in the footer', (
+      tester,
+    ) async {
+      await showGames(tester);
+      // On screen before the read starts, so the press needs no frame.
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      // A read starts, and the press lands before a frame shows it.
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      expect((detail.state as EventDetailReady).reading, isTrue);
+      await tester.tap(nominate(azul.id));
+
+      // Meanwhile a read of the pool finds the game gone.
+      served = [catanMine, catanAdas, root];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await settle(tester);
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect(remote.nominates, isEmpty);
+      expect(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text(
+            "Azul wasn't nominated: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a nominate whose scope was nominated meanwhile is dropped', (
+      tester,
+    ) async {
+      await showGames(tester);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      heldRead = Completer<EventSnapshot>();
+
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await tester.tap(nominate(azul.id));
+
+      // Meanwhile someone else nominates it for the whole event.
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect(remote.nominates, isEmpty);
+      expect(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text(
+            "Azul wasn't nominated: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
     });
   });
 
@@ -3046,6 +3900,63 @@ void main() {
         ),
       );
       expect(paragraph.didExceedMaxLines, isFalse);
+      await expectMeetsAccessibilityGuidelines(tester);
+      handle.dispose();
+    });
+
+    testWidgets("a nominated row whose supplier isn't going, at 320×640 and "
+        '200% text: no overflow, and the guidelines pass (#517)', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final handle = tester.ensureSemantics();
+      final mine = _game('o-1', 'att-me', _longTitle);
+      served = [mine, azul];
+      nominationsAnswer = (_) => [
+        EventNomination(
+          id: 'n-1',
+          eventId: 'e-1',
+          platformGameId: mine.platformGameId,
+          gameId: mine.gameId,
+          title: mine.title,
+          platformName: mine.platformName,
+          status: NominationStatus.paused,
+          nominatedById: 'att-bo',
+          suppliedFromId: mine.id,
+          createdAt: kItemInstant,
+        ),
+      ];
+
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row(
+            'att-me',
+            name: 'Me',
+            status: EventParticipationStatus.notAttending,
+          ),
+        ),
+      );
+      final nominate = find.byKey(
+        EventDetailScreen.poolNominateKey('o-1'),
+        skipOffstage: false,
+      );
+      await tester.ensureVisible(nominate);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(EventDetailScreen.poolNominatedKey('o-1')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<ButtonStyleButton>(nominate).onPressed,
+        isNull,
+      );
+      expect(takeBack('o-1'), findsOneWidget);
       await expectMeetsAccessibilityGuidelines(tester);
       handle.dispose();
     });

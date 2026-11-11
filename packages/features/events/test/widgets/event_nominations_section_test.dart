@@ -629,6 +629,25 @@ void main() {
       expect(find.textContaining('nominations'), findsNothing);
     });
 
+    testWidgets("none nominated, for a viewer who can't nominate, says so "
+        'and points nowhere', (tester) async {
+      // Only the hosts add games.
+      await showGames(
+        tester,
+        detail: detailOf(
+          policy: _policy(
+            InterestedWeight.asFor,
+          ).copyWith(gameAdditionMode: GameAdditionMode.hostOnly),
+        ),
+      );
+
+      expect(find.text('Nothing nominated yet'), findsOneWidget);
+      expect(
+        find.text('Nominate a game from the games pool below.'),
+        findsNothing,
+      );
+    });
+
     testWidgets('none nominated, read again, shows no spinner meanwhile', (
       tester,
     ) async {
