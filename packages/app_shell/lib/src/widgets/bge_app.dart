@@ -410,6 +410,7 @@ class _BgeAppState extends State<BgeApp> {
       eventDetailBuilder: _buildEventDetailRoute,
       eventAvailabilityBuilder: _buildEventAvailabilityRoute,
       eventAddAttendeeBuilder: _buildEventAddAttendeeRoute,
+      eventOfferGamesBuilder: _buildEventOfferGamesRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -2042,6 +2043,11 @@ class _BgeAppState extends State<BgeApp> {
   /// with what the page offers as the push's `extra`, and the detail sends
   /// the add the page pops with. Offered only where the server has the user
   /// search the page finds people through.
+  ///
+  /// *Offer games*, on the Games tab, pushes the Offer games page above it
+  /// the same way (#516), with what the page leaves out as the push's
+  /// `extra`, and the detail sends the games the page pops with. Offered
+  /// only where the session has the collection the page lists.
   Widget? _buildEventDetailRoute(BuildContext context, String eventId) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -2059,6 +2065,12 @@ class _BgeAppState extends State<BgeApp> {
       onAddAttendee: container.isRegistered<UserRemoteDataSource>()
           ? (ctx, args) => ctx.push<EventAttendeeAddition>(
               AppRoutes.eventAddAttendeeOf(eventId),
+              extra: args,
+            )
+          : null,
+      onOfferGames: container.isRegistered<GameCollectionRepository>()
+          ? (ctx, args) => ctx.push<List<OfferPick>>(
+              AppRoutes.eventOfferGamesOf(eventId),
               extra: args,
             )
           : null,
@@ -2104,6 +2116,31 @@ class _BgeAppState extends State<BgeApp> {
 
     return AddAttendeeScreen(
       users: container.get<UserRemoteDataSource>(),
+      args: args,
+    );
+  }
+
+  /// The #516 Offer games page of the event [eventId], behind
+  /// [_eventsContainer]'s gate and the collection it lists, as the detail's
+  /// way to it is. [args] is what the detail pushed it with: anything else,
+  /// which nothing pushes, falls back to the placeholder.
+  ///
+  /// Back, or its Offer button, pops it with its answer to the detail
+  /// beneath it, which sends the games.
+  Widget? _buildEventOfferGamesRoute(
+    BuildContext context,
+    String eventId,
+    Object args,
+  ) {
+    final container = _eventsContainer();
+    if (container == null ||
+        args is! OfferGamesArgs ||
+        !container.isRegistered<GameCollectionRepository>()) {
+      return null;
+    }
+
+    return OfferGamesScreen(
+      collection: container.get<GameCollectionRepository>(),
       args: args,
     );
   }

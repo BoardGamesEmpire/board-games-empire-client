@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/rendering.dart'
+    show DebugSemanticsDumpOrder, RenderAbstractViewport, SemanticsNode;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
@@ -42,6 +44,20 @@ class _GrowingListState extends State<_GrowingList> {
       ),
     ],
   );
+}
+
+/// A text field with a `State` of its own, so a test can tell whether the
+/// content under a page's header was built again.
+class _StatefulField extends StatefulWidget {
+  const _StatefulField();
+
+  @override
+  State<_StatefulField> createState() => _StatefulFieldState();
+}
+
+class _StatefulFieldState extends State<_StatefulField> {
+  @override
+  Widget build(BuildContext context) => const TextField();
 }
 
 /// The windows a floating button has to leave a list's last row reachable
@@ -1404,6 +1420,333 @@ void main() {
       // would have no way to report a growing count and would have to pass
       // null, which announces nothing at all.
       expect(scrollChildCountOnScrollingNode(tester), 40);
+
+      handle.dispose();
+    });
+  });
+
+  group('BgePage.slivers header (#516)', () {
+    /// Every node in the semantics tree, in the order a screen reader reads
+    /// them: a viewport lists its slivers' nodes in paint order, which runs
+    /// the other way.
+    List<SemanticsNode> semanticsNodes(WidgetTester tester) {
+      final nodes = <SemanticsNode>[];
+      void walk(SemanticsNode node) {
+        nodes.add(node);
+        node
+            .debugListChildrenInOrder(DebugSemanticsDumpOrder.traversalOrder)
+            .forEach(walk);
+      }
+
+      tester.binding.rootPipelineOwner.visitChildren((owner) {
+        final root = owner.semanticsOwner?.rootSemanticsNode;
+        if (root != null) walk(root);
+      });
+      return nodes;
+    }
+
+    /// The live regions in the semantics tree, each by its own label: the
+    /// text a screen reader announces from it.
+    List<String> liveRegions(WidgetTester tester) => [
+      for (final node in semanticsNodes(tester))
+        if (node.getSemanticsData().flagsCollection.isLiveRegion)
+          node.getSemanticsData().label,
+    ];
+
+    bool inTree(WidgetTester tester, String label) => semanticsNodes(
+      tester,
+    ).any((node) => node.getSemanticsData().label == label);
+
+    /// A banner as `BgeInlineBanner` builds one: its text merged into the
+    /// live region's own node, and its action outside it, where it stays a
+    /// control of its own.
+    Widget banner(String text) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MergeSemantics(
+          child: Semantics(liveRegion: true, child: Text(text)),
+        ),
+        TextButton(onPressed: () {}, child: const Text('Dismiss')),
+      ],
+    );
+
+    /// 200 rows of 48dp, each a button.
+    Widget rows() => SliverList.builder(
+      itemCount: 200,
+      itemBuilder: (context, index) => SizedBox(
+        height: 48,
+        child: TextButton(onPressed: () {}, child: Text('row $index')),
+      ),
+    );
+
+    /// A page of [rows] under [header], or with the banner as the first of
+    /// its slivers when [asSliver], scrolled ten viewports down.
+    Future<void> scrolledFar(
+      WidgetTester tester, {
+      required ValueListenable<String> text,
+      bool asSliver = false,
+    }) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          ValueListenableBuilder<String>(
+            valueListenable: text,
+            builder: (context, text, _) => BgePage.slivers(
+              title: const Text('list'),
+              scrollController: controller,
+              header: asSliver ? null : banner(text),
+              slivers: [
+                if (asSliver) SliverToBoxAdapter(child: banner(text)),
+                rows(),
+              ],
+            ),
+          ),
+          size: const Size(400, 600),
+        ),
+      );
+      controller.jumpTo(48.0 * 120);
+      await tester.pump();
+    }
+
+    testWidgets('keeps the header in the semantics tree however far the page '
+        'is scrolled, and its live region follows its text', (tester) async {
+      final handle = tester.ensureSemantics();
+      final text = ValueNotifier('One thing happened');
+      addTearDown(text.dispose);
+
+      await scrolledFar(tester, text: text);
+
+      // Ten viewports down, well past the cache extent: the live region's own
+      // label, which a screen reader announces, is in the tree, and follows
+      // the text.
+      expect(liveRegions(tester), ['One thing happened']);
+      // Not marked hidden, which Android needs before it announces a live
+      // region.
+      final live = semanticsNodes(tester).singleWhere(
+        (node) => node.getSemanticsData().flagsCollection.isLiveRegion,
+      );
+      expect(
+        live.getSemanticsData().flagsCollection.isHidden,
+        isFalse,
+      );
+      text.value = 'Another thing happened';
+      await tester.pump();
+      expect(liveRegions(tester), ['Another thing happened']);
+      // Nothing else that far away joins it.
+      expect(inTree(tester, 'row 0'), isFalse);
+      expect(inTree(tester, 'row 199'), isFalse);
+
+      handle.dispose();
+    });
+
+    testWidgets('a banner as the first of the slivers would leave the tree', (
+      tester,
+    ) async {
+      // Why the header is its own slot: the viewport lifts its semantics clip
+      // only for a sliver directly under it, and the slivers go in a group.
+      final handle = tester.ensureSemantics();
+      final text = ValueNotifier('One thing happened');
+      addTearDown(text.dispose);
+
+      await scrolledFar(tester, text: text, asSliver: true);
+
+      expect(liveRegions(tester), isEmpty);
+
+      handle.dispose();
+    });
+
+    testWidgets('scrolls back to a header that asks to be shown', (
+      tester,
+    ) async {
+      final text = ValueNotifier('One thing happened');
+      addTearDown(text.dispose);
+      await scrolledFar(tester, text: text);
+
+      await tester.ensureVisible(
+        find.text('One thing happened', skipOffstage: false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('One thing happened'), findsOneWidget);
+      expect(
+        tester.getRect(find.text('One thing happened')).top,
+        greaterThanOrEqualTo(kToolbarHeight),
+      );
+    });
+
+    /// A page at [width] on a wide window, with [header] over one button.
+    Future<void> pumpPage(
+      WidgetTester tester, {
+      Widget? header,
+      BgePageWidth width = BgePageWidth.form,
+    }) => tester.pumpWidget(
+      hostAtSize(
+        tester,
+        BgePage.slivers(
+          title: const Text('list'),
+          width: width,
+          header: header,
+          slivers: [
+            SliverToBoxAdapter(
+              child: TextButton(onPressed: () {}, child: const Text('content')),
+            ),
+          ],
+        ),
+        size: const Size(1200, 600),
+      ),
+    );
+
+    // A wide window, where the measure leaves a gutter each side, and a
+    // narrow one, where it leaves none; each way round, with a padding that
+    // differs on every side and follows the text direction.
+    for (final width in BgePageWidth.values) {
+      for (final window in [1200.0, 360.0]) {
+        for (final direction in TextDirection.values) {
+          testWidgets(
+            'on a ${width.name} page ${window.toInt()}dp wide, '
+            "${direction.name}, the header takes the content's measure and "
+            "the page's top inset, and the bottom inset comes once",
+            (tester) async {
+              const headerKey = Key('header');
+              const contentKey = Key('content');
+              final controller = ScrollController();
+              addTearDown(controller.dispose);
+
+              Future<void> pump({required bool header}) => tester.pumpWidget(
+                hostAtSize(
+                  tester,
+                  Directionality(
+                    textDirection: direction,
+                    child: BgePage.slivers(
+                      title: const Text('list'),
+                      width: width,
+                      scrollController: controller,
+                      padding: const EdgeInsetsDirectional.fromSTEB(
+                        8,
+                        16,
+                        48,
+                        32,
+                      ),
+                      header: header
+                          ? const SizedBox(key: headerKey, height: 40)
+                          : null,
+                      slivers: const [
+                        SliverToBoxAdapter(
+                          child: SizedBox(key: contentKey, height: 2000),
+                        ),
+                      ],
+                    ),
+                  ),
+                  size: Size(window, 600),
+                ),
+              );
+
+              await pump(header: false);
+              final alone = tester.getRect(find.byKey(contentKey));
+              final aloneExtent = controller.position.maxScrollExtent;
+
+              await pump(header: true);
+              final header = tester.getRect(find.byKey(headerKey));
+              final content = tester.getRect(find.byKey(contentKey));
+
+              expect(header.left, alone.left);
+              expect(header.right, alone.right);
+              expect(header.top, alone.top);
+              expect(content.left, alone.left);
+              expect(content.right, alone.right);
+              expect(content.top, header.bottom);
+              // The page grows by the header alone: the bottom inset is
+              // under the content once, and none sits under the header.
+              expect(controller.position.maxScrollExtent, aloneExtent + 40);
+            },
+          );
+        }
+      }
+    }
+
+    testWidgets('a header that comes and goes leaves the content its state '
+        'and its focus', (tester) async {
+      Future<void> pump(Widget? header) => tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            title: const Text('list'),
+            header: header,
+            slivers: const [SliverToBoxAdapter(child: _StatefulField())],
+          ),
+          size: const Size(400, 600),
+        ),
+      );
+
+      await pump(null);
+      final state = tester.state(find.byType(_StatefulField));
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      final focus = FocusManager.instance.primaryFocus;
+      expect(focus, isNotNull);
+
+      await pump(const Text('Something happened'));
+      expect(tester.state(find.byType(_StatefulField)), same(state));
+      expect(FocusManager.instance.primaryFocus, same(focus));
+
+      await pump(null);
+      expect(tester.state(find.byType(_StatefulField)), same(state));
+      expect(FocusManager.instance.primaryFocus, same(focus));
+      expect(focus!.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('without a header, the page builds the tree it always has', (
+      tester,
+    ) async {
+      await pumpPage(tester);
+
+      expect(find.byType(SliverEnsureSemantics), findsNothing);
+      final viewport = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
+      );
+      expect(viewport.slivers, hasLength(1));
+      final padding = viewport.slivers.single as SliverPadding;
+      const tokens = BgeTokens.standard;
+      final gutter = (1200 - 2 * tokens.spaceLg - tokens.contentMaxWidth) / 2;
+      expect(
+        padding.padding,
+        EdgeInsets.all(tokens.spaceLg) +
+            EdgeInsets.symmetric(horizontal: gutter),
+      );
+      expect(padding.child, isA<SliverMainAxisGroup>());
+    });
+
+    testWidgets('an empty header adds no semantics node and no height', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpPage(tester);
+      final nodes = semanticsNodes(tester).length;
+      final top = tester.getRect(find.byType(TextButton)).top;
+
+      for (final empty in [const SizedBox.shrink(), const Column()]) {
+        await pumpPage(tester, header: empty);
+        expect(semanticsNodes(tester), hasLength(nodes), reason: '$empty');
+        expect(tester.getRect(find.byType(TextButton)).top, top);
+      }
+
+      handle.dispose();
+    });
+
+    testWidgets('the header comes before the content, read and tabbed '
+        'through', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpPage(tester, header: banner('header'));
+
+      final labels = [
+        for (final node in semanticsNodes(tester))
+          node.getSemanticsData().label,
+      ];
+      expect(labels.indexOf('header'), lessThan(labels.indexOf('content')));
+      // The banner's action is its one Tab stop.
+      expect(await tabOrder(tester), ['Dismiss', 'content']);
 
       handle.dispose();
     });

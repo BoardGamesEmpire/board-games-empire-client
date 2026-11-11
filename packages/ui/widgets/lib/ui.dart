@@ -49,10 +49,10 @@
 /// here with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
 /// same way. That picker, the collection entry picker, is now its second.
-/// `BgeSearchField` came here with #715, whose Collection list uses it, ahead
-/// of a second call site, because #516's two lists, an event's games tab and
-/// its game picker, were designed with it to filter the same way as the user
-/// types.
+/// `BgeSearchField` came here with #715, whose Collection list was its one
+/// call site, because #516's two lists, an event's Games tab and its Offer
+/// games page, were designed with it to filter the same way as the user types.
+/// Those two are its second and third.
 library;
 
 export 'src/banners/bge_inline_banner.dart';

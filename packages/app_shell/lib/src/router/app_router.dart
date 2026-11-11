@@ -241,6 +241,20 @@ abstract final class AppRoutes {
   static String eventAddAttendeeOf(String eventId) =>
       '${eventDetailOf(eventId)}/$_eventAddAttendeeSegment';
 
+  /// The Offer games page of one event (#516), beneath its detail. Build a
+  /// concrete location with [eventOfferGamesOf].
+  ///
+  /// The page is opened only from the detail's Games tab, which hands it
+  /// what to leave out as the push's `extra`. A deep link carries none, and
+  /// is sent to the detail: see [EventOfferGamesScreenBuilder].
+  static const eventOfferGames = '$eventDetail/$_eventOfferGamesSegment';
+
+  static const _eventOfferGamesSegment = 'games/offer';
+
+  /// The location of one event's Offer games page.
+  static String eventOfferGamesOf(String eventId) =>
+      '${eventDetailOf(eventId)}/$_eventOfferGamesSegment';
+
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
@@ -628,6 +642,26 @@ typedef EventAddAttendeeScreenBuilder = Widget? Function(
   Object args,
 );
 
+/// Builds one event's Offer games page (#516) for the
+/// [AppRoutes.eventOfferGames] route, given the `:eventId` the path carried
+/// and the `extra` the detail's Games tab pushed it with: the collection
+/// entries the viewer has offered already, worked out from the open detail.
+/// Same null contract as [EventOverviewScreenBuilder], and null too for
+/// [args] the builder doesn't recognise.
+///
+/// Everything else is [EventAddAttendeeScreenBuilder]'s: [args] is `Object`
+/// so this file stays free of feature packages; a location that carries no
+/// `extra`, a deep link or a `go`, is redirected to the event's detail; the
+/// page's own browser history entry, restored once the page has closed,
+/// builds nothing and leaves for the detail beneath it at once, in that
+/// entry's place; and only `extra` the builder doesn't recognise, which
+/// nothing pushes, falls back to [NotYetAvailableScreen].
+typedef EventOfferGamesScreenBuilder = Widget? Function(
+  BuildContext context,
+  String eventId,
+  Object args,
+);
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -751,6 +785,7 @@ GoRouter buildAppRouter({
   EventDetailScreenBuilder? eventDetailBuilder,
   EventAvailabilityScreenBuilder? eventAvailabilityBuilder,
   EventAddAttendeeScreenBuilder? eventAddAttendeeBuilder,
+  EventOfferGamesScreenBuilder? eventOfferGamesBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -1132,6 +1167,9 @@ GoRouter buildAppRouter({
             // #510: the Add people page, nested the same way. It is built
             // only from what the detail pushed it with, so a deep link lands
             // on the detail instead (see [EventAddAttendeeScreenBuilder]).
+            //
+            // #516: the Offer games page, nested and built as Add people's
+            // is (see [EventOfferGamesScreenBuilder]).
             routes: [
               GoRoute(
                 path: AppRoutes._eventAvailabilitySegment,
@@ -1162,6 +1200,28 @@ GoRouter buildAppRouter({
                   return _materialPage(
                     state,
                     eventAddAttendeeBuilder?.call(context, id, args) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+              GoRoute(
+                path: AppRoutes._eventOfferGamesSegment,
+                redirect: (context, state) => state.extra == null
+                    ? AppRoutes.eventDetailOf(
+                        state.pathParameters[AppRoutes.eventIdParam] ?? '',
+                      )
+                    : null,
+                pageBuilder: (context, state) {
+                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
+                  final args = state.extra;
+                  // The page's own history entry, restored once the page
+                  // has closed, which the redirect never sees.
+                  if (args == null) {
+                    return _passThroughPage(state, _LeaveForEvent(eventId: id));
+                  }
+                  return _materialPage(
+                    state,
+                    eventOfferGamesBuilder?.call(context, id, args) ??
                         const NotYetAvailableScreen(),
                   );
                 },
@@ -1318,7 +1378,8 @@ Page<void> _noTransitionPage(GoRouterState state, Widget child) =>
     _page(NoTransitionPage<void>.new, state, child);
 
 /// A page that leaves the route beneath it showing, and comes and goes with
-/// no transition, for a route that leaves as soon as it is built (#510).
+/// no transition, for a route that leaves as soon as it is built (#510,
+/// #516).
 Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
   ({required child, key, name, arguments, restorationId}) =>
       CustomTransitionPage<void>(
@@ -1336,9 +1397,10 @@ Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
   child,
 );
 
-/// What the Add people route builds where it has nothing to build the page
-/// from (#510): its own browser history entry, restored by Back or Forward
-/// once the page has closed (see [EventAddAttendeeScreenBuilder]).
+/// What the Add people route (#510) and the Offer games route (#516) build
+/// where they have nothing to build their page from: the page's own browser
+/// history entry, restored by Back or Forward once the page has closed (see
+/// [EventAddAttendeeScreenBuilder]).
 ///
 /// It draws nothing, and after its first frame leaves for the event beneath
 /// it: a pop, or a `go` to the event where there is nothing to pop. Under

@@ -212,7 +212,7 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness; its `header:` sits above the slivers, scrolls with them and stays in the semantics tree however far the page is scrolled, where a sliver among the content leaves the tree past the cache extent; a banner in the header is heard as it arrives on iOS at any depth, and on Android when the header is on screen or more than a cache extent (250dp, a viewport with a footer) above the view; in between, Android stays silent and the banner's reveal puts it on screen (#516) |
 | `BgeKeyedSliverList` | a `SliverList.builder` whose rows carried their key one level in, or keyed the child with no lookup (#549) | Each row is keyed and the sliver finds it by that key, so a row keeps its state — focus included — when rows above it leave or arrive |
 | `BgeKeyedSliverGrid` (with `bgeGridColumns` and `bgeCoverGridDelegate`) | a `SliverGrid.builder` for a grid whose tiles can leave or move, which would lose a tile's focus with its position | The grid sibling of `BgeKeyedSliverList`: each tile is keyed by its id; the columns come from the window width, not the grid's own, so a cover grid reads the same breakpoints as everything else (#710) |
 | `BgeUnfoldingCoverGrid` | nothing: a strip under a grid row had no slot, as each screen drew its covers as one `SliverGrid` (#711) | A `BgeKeyedSliverGrid` of covers that opens a full-width strip under one item's row, padded `spaceSm` above and below as the rows are spaced; the rows up to the strip stay the first sliver, so the item whose strip it is keeps its element and its focus as the strip opens and closes; the covers after it count on from the ones before it, and the strip takes no index; another item's strip is a new one. A tile after the strip is built again as the strip comes and goes, so its focus goes through a `BgeFocusHandoff`. `BgeUnfoldingCovers` holds which item is open, for tiles that open their own: one at a time, folded once the item goes or has no strip, and kept by the item's id while its tile changes form |
@@ -308,6 +308,47 @@ Nothing verifies it for you. `ListView.builder` asserts the count against its
 inside the slivers it is handed. A count that disagrees with the list is silent,
 so it belongs in the screen's test.
 
+### Tabs
+
+A screen takes tabs when it holds **two or more views of one thing that are
+each a destination in their own right**: an event's details and its games pool
+(#516). Not to hide sections of a short page, which scrolls instead, and not to
+switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
+
+- **Tabs are Material's `TabBar`**, not scrollable, with a `Tab` each. It gives
+  every tab the tab role, its selected state and its place, "tab 1 of 2", so
+  a screen builds none of them itself.
+- **A tab's label scales down, never clips.** A tab is one line tall and can't
+  wrap, so the label's `Text` goes in a `FittedBox(fit: BoxFit.scaleDown)`, as
+  a chip's does. Check a tab bar of two tabs in a 320dp window at 200% text.
+- **What answers the whole screen stays above the bar**, on every tab: the
+  refresh banner and the outcome banners. On a sliver page they go in
+  `BgePage.slivers`' `header:`, which keeps them in the semantics tree
+  however far the page is scrolled. When a banner there is heard, on iOS
+  and on Android, and where its reveal stands in, is in the `BgePage` row
+  of the table above. That reveal scrolls an outcome banner into view as it
+  arrives, which takes the page from wherever the reader was; it is
+  accepted here because these banners answer the whole screen. This is the
+  exception to "an outcome on a long list sits in the
+  footer" (Error and outcome surfaces): it answers the screen, not a row of
+  one tab's list. Pass the header on every build, empty when there is nothing
+  to say, so the call site keeps one shape; an empty header adds no node and
+  no height.
+- **One scroll view, not a `TabBarView`.** A tab that holds a list makes the
+  page `BgePage.slivers`, and the bar sits in it as a sliver above the
+  selected tab's slivers, which the bar swaps. `semanticChildCount` follows
+  the selected tab: what its list holds, and null on a tab with no list. The
+  bar keeps its place as the tabs swap, so focus stays on the tab chosen.
+- **The selected tab outlives the screen's own rebuilds.** Hold the
+  `TabController` above the screen's bloc builders, so no read, write or clock
+  tick sets it back. A `DefaultTabController` does that, and its
+  `animationDuration` goes through `BgeMotion.durationOf`, so under reduced
+  motion the indicator moves at once; it keeps the tab when that setting
+  changes. The tab isn't in the route: a screen opens on its first.
+- **A screen that can't show a tab shows none.** Where one tab would have
+  nothing to hold, the page is the other alone, with no bar, rather than a
+  bar with one tab or a dead one.
+
 ### In-flight forms
 
 One rule, app-wide: while a submission is in flight, fields go **`readOnly`,
@@ -340,13 +381,25 @@ over.
 
 ### Where the primary action goes
 
-Inline, at the end of the form, unless the page is a **flow step** or a **long
-review surface**. Those pin it with `BgePage.footer`, and so does the outcome
-of an action on a **long list** or a long page, which has no form to sit on.
-Today that is feedback compose and review, and the banners that answer actions
-on a DataGateway's page: on the DataGateway itself, and on its language
-worklist (#457). The reasoning, and the measurements behind it, are on
-`BgePage.footer`:
+Inline, at the end of the form, unless the page is a **flow step**, a **long
+review surface** or a **long picker**. Those pin it with `BgePage.footer`, and
+so does the outcome of an action on a **long list** or a long page, which has
+no form to sit on. A long picker pins because its action counts the picks
+across a list of any length: at the list's end it would be out of reach for
+as long as the user is choosing.
+
+The pages that pin, and this list is where a new one is added:
+
+- feedback compose and review;
+- the Offer games page, a picker of the viewer's whole collection, whose
+  Offer button counts the picks (#516);
+- the banners that answer actions on a DataGateway's page: on the DataGateway
+  itself, and on its language worklist (#457);
+- an event's screen, whose footer holds how far a run of offers has got and
+  how the Games tab's last write went, on either tab, and the Games tab's
+  stale-data banner (#516).
+
+The reasoning, and the measurements behind it, are on `BgePage.footer`:
 
 - a flow step pins because the step it hands over to does, and an action that
   scrolls on one step and is pinned on the next moves at the handoff;
@@ -465,6 +518,10 @@ to a banner living inside the page's scroll view, and so to having no height
 cap (#228): the footer holds at most half the body and scrolls, so even a tall
 banner there stays reachable. A banner there reveals itself within the
 footer's own scroll view, so the page doesn't move.
+
+On a screen with tabs, a banner that answers the whole screen rather than a
+list is not this footer's: it stays above the tab bar, in the page's
+`header:` (Tabs, above).
 
 Such a footer is passed on every build, and renders nothing while there is
 nothing to report. `BgePage` builds a different tree with a footer than
@@ -635,7 +692,9 @@ legible body text on every surface role.
 - [ ] Built on `BgePage` — `BgePage.slivers` for a list surface, the box
       constructor otherwise
 - [ ] The primary action is inline at the end of the form, unless the page is
-      a flow step or a long review surface, which pin it with `footer:`
+      a flow step, a long review surface or a long picker, which pin it with
+      `footer:`, as does an outcome on a long list; a page that pins is
+      listed in "Where the primary action goes"
 - [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
       trailing control; the default 480 for prose, and for a surface mixing
       prose with rows
@@ -647,6 +706,9 @@ legible body text on every surface role.
 - [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by
       the row's id; the row itself does not carry the key (#549). A grid whose
       tiles can leave or move is a `BgeKeyedSliverGrid`
+- [ ] Tabs only for views that are each a destination: Material's `TabBar`,
+      labels that scale down, banners above the bar in the page's `header:`,
+      and a selected tab held above the screen's rebuilds (Tabs, above)
 - [ ] Loading, empty and failure states use the shared widgets
       (`BgeLoadingState`, `BgeEmptyState`, `BgeErrorState`), in a
       `BgeStateSliver` on a sliver page

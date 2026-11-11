@@ -168,8 +168,19 @@ Know these limits before trusting a green run.
   the device walk should check the ring after mouse use there.
 - **Text on event detail.** The vote chips, "Confirm this date", the
   tallies and the type and status line speak a label that differs from their
-  drawn text, so the contrast guideline measures none of them there. The
-  same colour pairs are measured elsewhere on the page.
+  drawn text, so the contrast guideline measures none of them there. Nor
+  the Games tab's rows (#516): each is one merged node, its title, where it
+  is played and who brings it, and its platform line speaks a comma where it
+  draws a dot. Nor each Take back, which draws "Take back" and speaks "Take
+  back" with its game's title. The same colour pairs are measured
+  elsewhere on the page. Nor the Offer games page's rows, each one merged
+  node, its title, where it is played and, where it can't be picked, why.
+  There the reason a row can't be picked, in `bodySmall` and
+  `onSurfaceVariant`, is held to 4.5:1 against the surface under it, light
+  and dark, from the colours the widgets resolve, by
+  `offer_games_screen_test.dart`. The title and platform line of such a
+  row keep the disabled look, which WCAG 1.4.3 exempts, and are measured
+  nowhere.
 
 ---
 
@@ -207,7 +218,51 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    a roster row's menu, with its Remove dialog and the Not going dialog for
    someone else. Check that each dialog names the person. Then Add people:
    the page's search, its role list and Add, and that focus is back on Add
-   people once the page closes.
+   people once the page closes. Then the Games tab (#516): check the tabs
+   read "Tab 1 of 2" and "Tab 2 of 2", that opening Games reads "Loading
+   the games" once and then the pool, and that each row is one item saying
+   the game, where it is played ("Tabletop, Physical") and who brings it.
+   Type in the search and check the count ("2 games of 4") is read as it
+   changes. Open People, check the pop-up is read as "Whose games", choose
+   someone, and close it: focus is back on People, and the chip under the
+   search names them. Turn on Not mine and check your own rows leave. Take
+   one of your games back and check the footer reads "… is off your
+   games." Then stop the server, and on Details change your answer (Going
+   to Maybe, say): the change fails, so the event is read again, and that
+   read fails, so the games are read again, and fail too. Back on Games,
+   check the footer also reads "Couldn't update the games. These may be
+   out of date." under that outcome, and that both its Dismiss and its Try
+   again are reached, by the reader and with Tab, at the largest text. Then,
+   with the server back, take back a game that is nominated, or in the
+   lineup for a date still to come (the server's 409), and check the
+   footer reads "… is nominated, or in the lineup for a date still to
+   come, so it can't come off your games yet.", and that its Dismiss is
+   reached. Offline, check Offer games and each Take back say "Available
+   when you're online" as their hint, and that it is drawn once, under
+   Offer games. As someone who answered Not going, check Offer games is
+   read as unavailable, with why as its hint.
+   Then, online, press Offer games, and check the page is read as "Offer
+   games", that each row is one item saying the game, where it is played
+   and whether it is checked, and that a game you offered already reads
+   "Already offered" and one added offline "Not synced yet", each as
+   unavailable, with Tab passing over both. Type in the search and check
+   the count ("3 games shown") is read as it changes. Open Filters, choose
+   a platform, close it, and press Select all shown: it reads "Clear
+   selection" and keeps focus. Search for something no game has, check "No
+   games match" is read, and that Clear filters puts you on Filters, with
+   no on-screen keyboard. Pick two games and press "Offer 2 games": back on the
+   event, focus is on Offer games, which reads "Offering…" while the
+   footer reads "Offering 1 of 2…", and then "2 games offered.". With ten
+   or more picked, check the footer's line is not read at every step and
+   doesn't run on after the run has ended.
+   With a banner showing above the tabs (stop the server and change your
+   answer on Details: the change and the read of the event after it fail,
+   and their banners show above the tabs), open Games, scroll the pool
+   several screens down, then with TalkBack swipe back from the first row
+   in view, and note
+   whether focus jumps to the banner and whether the page scrolls. With
+   VoiceOver, move focus to the banner by the rotor, and note whether the
+   page scrolls to it.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
@@ -246,8 +301,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
   "Controls", then again with "Headings".
 - Check that opening the drawer, the filter sheet and a dialog announces a
   name for it.
-- Check the focus hand-offs from #479 and #478, from #684 and #685, and
-  from #715 (below).
+- Check the focus hand-offs from #479 and #478, from #684 and #685, from
+  #715, and from #516 (below).
 
 ### VoiceOver (iOS and macOS)
 
@@ -260,8 +315,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
 - The drawer is named "Navigation menu" on iOS and macOS as elsewhere. The
   filter sheet and `AlertDialog` routes are unnamed there today
   (#762). Check that each is read as something.
-- Check the focus hand-offs from #479 and #478, from #684 and #685, and
-  from #715 (below).
+- Check the focus hand-offs from #479 and #478, from #684 and #685, from
+  #715, and from #516 (below).
 
 ### A browser screen reader (web)
 
@@ -293,8 +348,9 @@ Flutter's semantics tree under `flutter test`.
 - **The unverified-session banner** (#98) gets the same container. A screen
   reader should reach it.
 - **Busy controls** (`BgeInertButton`: the refresh banners' retry, the
-  household member menu, the event poll's retry, and event detail's Add
-  people while its own add is out). While busy they should read as in
+  household member menu, the event poll's retry, event detail's Add people
+  while its own add is out, and its Games tab's Offer games while its own
+  run of offers is out). While busy they should read as in
   progress, not as an available action, keep one node through the pass, and
   keep accessibility focus. On iOS they offer no focus action while busy.
 - **Online-only controls while offline** (the `BgeOnlineOnly` family, about 30
@@ -348,6 +404,48 @@ handed on:
   else the one before it, else the Filters button. A chip removed by a
   pointer while keyboard focus sits on another control moves no focus.
 
+### Focus hand-offs from #516
+
+The same check, for the event screen's Games tab and its Offer games page.
+A control that removes itself hands focus on after its own press, however
+the press came: a key, a pointer, or the reader's double-tap, which moves
+no input focus. It moves focus only if focus is then free: on nothing, on
+the page, or still on the control that left. So with the reader, the
+cursor should land on the control named below. A press while input focus
+stays on another control moves nothing, but two kinds of press free focus
+first, and then the hand-off moves it as expected:
+
+- On desktop and the web, a mouse press on a chip while the search field
+  has focus first takes focus off the field, so the chip's neighbour takes
+  it.
+- While one row's take-back is out, every other Take back is disabled, so
+  one that held keyboard focus drops it. Once the pressed row has gone,
+  focus goes on from that row, and can land back on the Take back that
+  dropped it.
+
+The hand-offs:
+
+- Take back, its row gone as the server answers that the game is off the
+  pool, whether or not the read after it works: the next of your rows'
+  Take back, else the one before it, else Offer games, else the search
+  field. Nothing moves if focus went elsewhere while it was out, or if the
+  take-back was refused and the row stays. If the games become hidden,
+  nothing of the tab is left to take it, and it stays on the page.
+- A person's chip under the search, removed: the chip that takes its
+  place, else the one before it, else People. A chip removed by pointer
+  while focus is on another chip moves no focus.
+- Clear filters, in "No games match", however it is pressed: People, never
+  the emptied search field, so no on-screen keyboard opens. Pressed by a
+  pointer while keyboard focus sits on another control, it moves no
+  focus.
+- *Whose games*, closed: People.
+- The Offer games page, closed by its Offer button or by Back: Offer games,
+  which keeps it, read as "Offering…", through the run it sent.
+- On the page, Clear filters, in "No games match", however it is pressed:
+  Filters, never the emptied search field. A filter chip removed: the chip
+  that takes its place, else the one before it, else Filters. Select all
+  shown keeps focus as it becomes Clear selection, and back.
+
 ### #322's selection and copy checks
 
 - **Pointer platforms** (macOS, Windows, Linux, native and in a browser): a
@@ -391,7 +489,8 @@ no false finding.
 
 ### Coverage
 
-From `dart run tool/check_a11y_audit.dart`: 35 screens checked, 35 audited.
+`dart run tool/check_a11y_audit.dart` checks every `*_screen.dart`, prints
+how many it checked, and fails on any that is neither audited nor exempt.
 A screen with more than one test file lists each file. Home's four sections
 and household detail's events section aren't `*_screen.dart`, so the check
 doesn't count them; they are listed after the audited screens.
@@ -409,7 +508,7 @@ doesn't count them; they are listed after the audited screens.
 | `DataGatewayListScreen` | `packages/features/data_gateway/test/widgets/data_gateway_list_screen_test.dart` | audited |
 | `EditHouseholdScreen` | `packages/features/household/test/widgets/edit_household_screen_test.dart` | audited |
 | `EventAvailabilityScreen` | `packages/features/events/test/widgets/event_availability_screen_test.dart` | audited |
-| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` | audited |
+| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart`, `packages/features/events/test/widgets/event_detail_tabs_test.dart` and, for the Games tab's rows, controls and *Whose games* (#516), `packages/features/events/test/widgets/event_games_tab_test.dart` | audited |
 | `EventGroupScreen` | `packages/features/events/test/widgets/event_group_screen_test.dart` | audited |
 | `EventOverviewScreen` | `packages/features/events/test/widgets/event_overview_screen_test.dart` | audited |
 | `FeedbackFlowScreen` | `packages/app_shell/test/screens/feedback_flow_screen_test.dart` | audited |
@@ -425,6 +524,7 @@ doesn't count them; they are listed after the audited screens.
 | `HouseholdListScreen` | `packages/features/household/test/widgets/household_list_screen_test.dart` | audited |
 | `InviteInboxScreen` | `packages/features/household/test/widgets/invite_inbox_screen_test.dart` | audited |
 | `NotYetAvailableScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
+| `OfferGamesScreen` | `packages/features/events/test/widgets/offer_games_screen_test.dart` | audited |
 | `RouteNotFoundScreen` | `packages/app_shell/test/screens/shell_screens_test.dart` | audited |
 | `SendHouseholdInviteScreen` | `packages/features/household/test/widgets/send_household_invite_screen_test.dart` | audited |
 | `SentInvitesScreen` | `packages/features/household/test/widgets/sent_invites_screen_test.dart` | audited |

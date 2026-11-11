@@ -7,6 +7,9 @@ import 'package:events/src/bloc/event_actions_state.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_event.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
+import 'package:events/src/bloc/event_games_bloc.dart';
+import 'package:events/src/bloc/event_games_event.dart';
+import 'package:events/src/bloc/event_games_state.dart';
 import 'package:events/src/bloc/event_poll_bloc.dart';
 import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
@@ -14,6 +17,8 @@ import 'package:events/src/detail/event_actions.dart';
 import 'package:events/src/detail/event_attendee_addition.dart';
 import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
+import 'package:events/src/detail/event_game_offers.dart';
+import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_poll.dart';
 import 'package:events/src/detail/event_status_now.dart';
 import 'package:events/src/widgets/cancel_reason_dialog.dart';
@@ -22,9 +27,15 @@ import 'package:events/src/widgets/destructive_button_style.dart';
 import 'package:events/src/widgets/event_date_dialogs.dart';
 import 'package:events/src/widgets/event_date_poll.dart';
 import 'package:events/src/widgets/event_detail_sections.dart';
+import 'package:events/src/widgets/event_detail_tabs.dart';
+import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_tab.dart';
+import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
+import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -33,27 +44,113 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// One event (#498): its header, its dates, who's coming and its games, read
-/// reactively from the local cache and from the server once per open.
+/// One event (#498): its header, its dates and who's coming, read reactively
+/// from the local cache and from the server once per open, and a tab for its
+/// games (#516).
 ///
 /// The household detail's shape: the caller resolves the repository, the
 /// optional server and streams and the callbacks, and the screen owns its
 /// blocs: the detail's ([EventDetailBloc], whose class doc has the state
 /// table) and, where Delete can be offered, the actions'
-/// ([EventActionsBloc]). Loading, not found and error are short centred
-/// pages. Ready is one scrolling page, with the couldn't-refresh banner over
-/// the cached event where the last read failed.
+/// ([EventActionsBloc]), the poll's ([EventPollBloc]) and the games pool's
+/// ([EventGamesBloc]). Loading, not found and error are short centred pages.
+/// Ready is one scroll view of slivers ([BgePage.slivers]).
 ///
-/// ## What it doesn't show yet
+/// ## The page and its tabs
 ///
-/// Most actions. The bloc works out what the viewer may do, and the app
-/// bar's menu offers the event's status changes (#502) and Delete (#501),
-/// the dates their own (#506), a poll's dates their answers (#507), and
-/// who's coming the viewer's own answer to the invitation (#508), and
-/// adding people, someone else's answer and removal (#510), to a viewer the
-/// role table gives them. The other actions' issues (#500, #503–#518) add
-/// theirs. The games section says the event's games will show there, until
-/// #519 has something to show.
+/// What answers the whole screen comes first, in the page's header: the
+/// couldn't-refresh banner, where the last read failed and while its retry
+/// runs, then how the last action and the last vote went. The header stays in
+/// the semantics tree however far down the page is scrolled, so a banner that
+/// lands while the user is far down the roster is heard as it arrives
+/// ([BgePage.header] says how, per platform). An outcome banner also scrolls
+/// itself into view as it arrives, which takes the page from wherever the
+/// user was; the refresh banner doesn't.
+///
+/// Under it, where the screen has its actions' blocs and the event is one the
+/// server knows, a bar of two tabs (#516): Details, with the event's header,
+/// its dates and who's coming, and Games, for the games the people coming
+/// offer to bring. An event made offline has nothing on the server to offer
+/// games to, and a screen with no server or no way back has no games bloc,
+/// so both show Details alone, with no bar. Choosing a tab swaps what is
+/// under the bar and keeps the bar, so focus stays on the tab chosen. The
+/// selected tab is held above the detail's builder, so no read, write or
+/// clock tick sets it back. It isn't in the route: the screen opens on
+/// Details.
+///
+/// ## Which actions it offers
+///
+/// The bloc works out what the viewer may do, and the screen offers it to a
+/// viewer the role table gives it: the app bar's menu has the event's status
+/// changes (#502) and Delete (#501), the dates have their own (#506), a
+/// poll's dates their answers (#507), who's coming has the viewer's own
+/// answer to the invitation (#508) and adding people, someone else's answer
+/// and removal (#510), and the Games tab has offering a game and taking it
+/// back (#516). It offers no editing of the event (#500) and nothing on a
+/// nominated game (#518), which the role table names.
+///
+/// ## The Games tab
+///
+/// The games the attendees offer to bring, one row per offered copy, with a
+/// title search, a filter by person, and Take back on the viewer's own rows
+/// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
+/// what was read last.
+///
+/// It is read the first time the tab shows on a ready event, or, where a read
+/// of the event is running then, once that read ends, and so once; and again
+/// each time a read of the event ends once the tab has shown, for the event
+/// and the roster the detail shows then ([poolAttendeeIds]); and, once the
+/// tab has shown, whenever those ids come to differ from the ids it was last
+/// read for, as when the roster a read wrote reaches the screen after the
+/// read has ended. Never before the tab is opened, and never for ids that
+/// are the same or for none. The viewer's own writes read it as they end: a
+/// run of offers, however it ended, and a take-back unless it failed, which
+/// changed nothing. A write the screen's re-check dropped reads nothing, and
+/// Try again, on the failed state and on the stale-data banner, reads it as
+/// the user asks. With nobody to read it for, nothing is read: where the roster
+/// was read and withheld, the tab says the games aren't shown; where it
+/// hasn't been read, as for an event cached from the list, the tab waits for
+/// the event's read to bring it, and says it couldn't load the games if that
+/// read fails, with Try again reading the event. A read that finds the
+/// event gone reads the event again, as the poll's does.
+///
+/// The page's footer holds what answers the list: how far a run of offers
+/// has got while it is out, or how the pool's last write went, a run of
+/// offers or a take-back, on either tab, since a run can outlast the stay on
+/// Games; then, while Games is selected, the stale-data banner while the
+/// games shown may be out of date. There each is on screen and heard however
+/// far down the list the user is; what answers the whole screen stays in the
+/// header.
+///
+/// *Offer games* is built where [onOfferGames] is given, the role table gives
+/// the viewer `offerGame`, they have a row on the roster and the event takes
+/// writes (`offerGamesGate`). It sits at the head of the tab, so it is there
+/// in every state of the tab but the wait for a first answer and the games
+/// being hidden. Where the viewer has answered Not going it is disabled,
+/// saying why, and offline it is disabled, each throughout, its own run
+/// included. It is disabled too while a read of the event runs, while the
+/// screen's own request is out and while another of the pool's writes is,
+/// except through the run its own press sent (below). Take back
+/// is built wherever the gate isn't hidden, so a viewer who answered Not
+/// going still has it, and it needs no [onOfferGames].
+///
+/// Offer games opens the page of the viewer's collection through
+/// [onOfferGames], which shows the games the viewer already offers as
+/// checked and disabled, so none is picked twice, and sends the games picked
+/// there once it closes, one at a time, as Add people sends its add: once a
+/// running read of the event has ended, for the event, the viewer's row and
+/// the roster as the detail shows them then, and not at all if the viewer
+/// may no longer offer games, or has answered Not going meanwhile, which the
+/// footer says. Take back is sent once a running read of the event has
+/// ended too, and only if the viewer may still take games back and the game
+/// is still theirs and in the pool; answering Not going doesn't stop it.
+///
+/// The Offer games button keeps its focus through the run it sent, which the
+/// page hands it back as it closes (#607). While the run is out it stays
+/// enabled, ignores presses and says it is offering. Once the run ends it is
+/// available again, through the pool's read that follows it too, unless a
+/// read of the event or the screen's own request holds it back as it does any
+/// control.
 ///
 /// ## Delete
 ///
@@ -228,6 +325,7 @@ class EventDetailScreen extends StatelessWidget {
     this.onBack,
     this.onWhoAnswered,
     this.onAddAttendee,
+    this.onOfferGames,
     this.now,
     super.key,
   });
@@ -306,8 +404,71 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on who's coming's *Add people* button (#510).
   static const Key addAttendeeKey = Key('event_detail.add_attendee');
 
-  /// Key on the games section.
-  static const Key gamesKey = Key('event_detail.games');
+  /// Key on the tab bar (#516), Details and Games, where the screen shows it.
+  static const Key tabBarKey = Key('event_detail.tab_bar');
+
+  /// Key on one tab of the bar (#516).
+  static Key tabKey(EventDetailTab tab) => Key('event_detail.tab_${tab.name}');
+
+  /// Key on what the Games tab shows under the bar (#516).
+  static const Key gamesBodyKey = Key('event_detail.games_body');
+
+  /// Key on the Games tab's search field (#516).
+  static const Key poolSearchKey = Key('event_detail.pool_search');
+
+  /// Key on the Games tab's People button, which opens *Whose games*.
+  static const Key poolPeopleKey = Key('event_detail.pool_people');
+
+  /// Key on the Games tab's "Not mine" chip.
+  static const Key poolNotMineKey = Key('event_detail.pool_not_mine');
+
+  /// Key on one person's chip in *Whose games*, by their roster row's id.
+  static Key poolPersonKey(String attendeeId) =>
+      Key('event_detail.pool_person_$attendeeId');
+
+  /// Key on *Whose games*' switch that leaves the people chosen out.
+  static const Key poolLeaveOutKey = Key('event_detail.pool_leave_out');
+
+  /// Key on the chip under the search field for a person chosen, by their
+  /// roster row's id.
+  static Key poolInUseKey(String attendeeId) =>
+      Key('event_detail.pool_in_use_$attendeeId');
+
+  /// Key on one row of the pool, by the offered game's id.
+  static Key poolRowKey(String offeredGameId) =>
+      Key('event_detail.pool_row_$offeredGameId');
+
+  /// Key on a row's Take back, by the offered game's id.
+  static Key poolTakeBackKey(String offeredGameId) =>
+      Key('event_detail.pool_take_back_$offeredGameId');
+
+  /// Key on the count of the games the filter keeps.
+  static const Key poolCountKey = Key('event_detail.pool_count');
+
+  /// Key on the banner in the footer saying how the pool's last write went:
+  /// a run of offers, or a take-back.
+  static const Key poolOutcomeKey = Key('event_detail.pool_outcome');
+
+  /// Key on the line in the footer saying how far a run of offers has got.
+  static const Key poolProgressKey = Key('event_detail.pool_progress');
+
+  /// Key on the footer's banner saying the games shown may be out of date,
+  /// after a read of the pool failed.
+  static const Key poolRefreshBannerKey = Key(
+    'event_detail.pool_refresh_banner',
+  );
+
+  /// Key on the retry of a pool read that failed: the failed state's, or the
+  /// refresh banner's over games read before. Never both at once.
+  static const Key poolRetryKey = Key('event_detail.pool_retry');
+
+  /// Key on Clear filters, where the filter leaves no game.
+  static const Key poolClearFiltersKey = Key(
+    'event_detail.pool_clear_filters',
+  );
+
+  /// Key on the Games tab's Offer games button.
+  static const Key offerGamesKey = Key('event_detail.offer_games');
 
   /// Key on the viewer's role line.
   static const Key roleKey = Key('event_detail.role');
@@ -437,6 +598,16 @@ class EventDetailScreen extends StatelessWidget {
   )?
   onAddAttendee;
 
+  /// Opens the Offer games page (#516) with [OfferGamesArgs], with this
+  /// screen's context, and completes with the games picked, or null on
+  /// back: the feature package doesn't know the route table. Null builds no
+  /// Offer games button; Take back doesn't need it.
+  final Future<List<OfferPick>?> Function(
+    BuildContext context,
+    OfferGamesArgs args,
+  )?
+  onOfferGames;
+
   /// The clock that decides whether a date is this year's, whether a
   /// proposed one has passed, and where the event stands as its dates pass,
   /// which picks the menu's status changes (#502, #655). Defaults to the
@@ -465,7 +636,7 @@ class EventDetailScreen extends StatelessWidget {
           ),
         ),
         // None without a server or a way back, and then nothing offers
-        // Delete, a date's actions or the poll.
+        // Delete, a date's actions, the poll or the Games tab.
         if (hasActions) ...[
           BlocProvider<EventActionsBloc>(
             create: (_) => EventActionsBloc(
@@ -478,12 +649,17 @@ class EventDetailScreen extends StatelessWidget {
             create: (_) =>
                 EventPollBloc(remote: remote, confirmSession: confirmSession),
           ),
+          BlocProvider<EventGamesBloc>(
+            create: (_) =>
+                EventGamesBloc(remote: remote, confirmSession: confirmSession),
+          ),
         ],
       ],
       child: _EventDetailView(
         onBack: onBack,
         onWhoAnswered: onWhoAnswered,
         onAddAttendee: onAddAttendee,
+        onOfferGames: onOfferGames,
         now: now ?? DateTime.now,
         hasActions: hasActions,
       ),
@@ -498,12 +674,14 @@ class _EventDetailView extends StatelessWidget {
     this.onBack,
     this.onWhoAnswered,
     this.onAddAttendee,
+    this.onOfferGames,
   });
 
   final DateTime Function() now;
   final void Function(BuildContext context)? onBack;
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
+  final OpenOfferGames? onOfferGames;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -547,12 +725,37 @@ class _EventDetailView extends StatelessWidget {
             hasActions: hasActions,
             onWhoAnswered: onWhoAnswered,
             onAddAttendee: onAddAttendee,
+            onOfferGames: onOfferGames,
           ),
         };
       },
     );
     if (!hasActions) return page;
 
+    // The selected tab (#516), held above the detail's builder so that no
+    // read, write or clock tick under it sets it back to Details. Not in the
+    // route: the screen opens on Details. Under reduced motion the bar's
+    // indicator moves at once; the controller keeps its tab when that
+    // setting changes. Beside it, what the Games tab keeps: its filter, and
+    // whether it has shown, which decides whether a detail read reads the
+    // pool.
+    return DefaultTabController(
+      length: EventDetailTab.values.length,
+      animationDuration: BgeMotion.durationOf(
+        context,
+        BgeTokens.of(context).motionMedium,
+      ),
+      child: EventGamesTabScope(
+        onFirstShown: _gamesFirstShown,
+        child: _listeners(page),
+      ),
+    );
+  }
+
+  /// [page] under the listeners that answer the actions' and the poll's
+  /// ends, read the poll and the games pool as the detail calls for them,
+  /// and answer a pool read that finds the event gone.
+  Widget _listeners(Widget page) {
     return MultiBlocListener(
       listeners: [
         BlocListener<EventActionsBloc, EventActionsState>(
@@ -571,7 +774,7 @@ class _EventDetailView extends StatelessWidget {
               current.outcome != null && current.outcome != previous.outcome,
           listener: (context, state) {
             if (state.outcome?.rereads ?? false) {
-              unawaited(_rereadForPoll(context));
+              unawaited(_rereadEvent(context));
             }
           },
         ),
@@ -581,7 +784,24 @@ class _EventDetailView extends StatelessWidget {
           listenWhen: (previous, current) =>
               previous.load != EventPollLoad.gone &&
               current.load == EventPollLoad.gone,
-          listener: (context, _) => unawaited(_rereadForPoll(context)),
+          listener: (context, _) => unawaited(_rereadEvent(context)),
+        ),
+        const BlocListener<EventDetailBloc, EventDetailState>(
+          listenWhen: _detailReadEnded,
+          listener: _readPoolAgain,
+        ),
+        const BlocListener<EventDetailBloc, EventDetailState>(
+          listenWhen: _poolIdsMayHaveChanged,
+          listener: _readPoolForNewIds,
+        ),
+        BlocListener<EventGamesBloc, EventGamesState>(
+          // On the way into gone only. The read after the event's re-read
+          // ends gone again as failed, never into gone, so this can't start
+          // a loop of reads.
+          listenWhen: (previous, current) =>
+              previous.load != EventGamesLoad.gone &&
+              current.load == EventGamesLoad.gone,
+          listener: (context, _) => unawaited(_rereadEvent(context)),
         ),
       ],
       child: page,
@@ -629,14 +849,14 @@ bool _covered(BuildContext context) =>
     !(ModalRoute.isCurrentOf(context) ?? true);
 
 /// Reads the event again after a vote's end that asks for it, or a poll read
-/// that found the event gone (#507), once no read is running and no date
-/// write, status write (#502) or Delete is out, and not at all once the event
-/// is removed.
+/// that found the event gone (#507), or a games pool read that did (#516),
+/// once no read is running and no date write, status write (#502) or Delete
+/// is out, and not at all once the event is removed.
 ///
-/// A vote or a poll read runs beside the event's read, so it can end while one
-/// is running, whose answer may have been served before what this found. The
-/// detail would drop a retry then, and a poll that stays gone asks only once,
-/// so this waits and reads after it.
+/// A vote, a poll read or a pool read runs beside the event's read, so it can
+/// end while one is running, whose answer may have been served before what
+/// this found. The detail would drop a retry then, and a poll or a pool that
+/// stays gone asks only once, so this waits and reads after it.
 ///
 /// It runs beside the actions' requests too, so it can end while one of them
 /// is out. A read then could land after the write's answer and put the date
@@ -644,7 +864,7 @@ bool _covered(BuildContext context) =>
 /// again (#501). The write's own end reads the event where its outcome says
 /// to. Where that read is running, it began after what this found, so the
 /// detail drops this one, and the running read shows the event as it is.
-Future<void> _rereadForPoll(BuildContext context) async {
+Future<void> _rereadEvent(BuildContext context) async {
   final actions = context.read<EventActionsBloc>();
   final detail = context.read<EventDetailBloc>();
   await readEnded(detail);
@@ -692,7 +912,106 @@ void _readPoll(BuildContext context, EventDetailState state) {
   );
 }
 
-/// The event itself.
+/// Whether a detail read has just ended as the detail goes from [previous]
+/// to [current] (#516): the games pool is read again then, once the Games
+/// tab has shown, since a read can change the roster whose games it holds.
+bool _detailReadEnded(EventDetailState previous, EventDetailState current) =>
+    previous is EventDetailReady &&
+    current is EventDetailReady &&
+    previous.reading &&
+    !current.reading;
+
+/// Reads the games pool again after the detail read [state] ended with,
+/// where the Games tab has shown at least once (#516).
+void _readPoolAgain(BuildContext context, EventDetailState state) {
+  final scope = EventGamesTabScope.of(context);
+  if (state is! EventDetailReady || !scope.shown) return;
+  _readPool(context, state, scope);
+}
+
+/// Reads the games pool for the Games tab's first showing (#516), and
+/// answers whether it showed on a ready detail of an event the server
+/// knows. Only that counts as having shown.
+///
+/// While a detail read is running, as the one every open starts may be,
+/// the pool is not read here: that read's end reads it ([_readPoolAgain]),
+/// as the tab has shown by then, and a roster that arrives after it reads
+/// it for that ([_readPoolForNewIds]).
+bool _gamesFirstShown(
+  BuildContext context,
+  EventGamesTabController controller,
+) {
+  final state = context.read<EventDetailBloc>().state;
+  if (state is! EventDetailReady || state.detail.snapshot.event.isLocalOnly) {
+    return false;
+  }
+  if (!state.reading) _readPool(context, state, controller);
+  return true;
+}
+
+/// Whether [current] is a ready detail with no read running that isn't
+/// the end of one (#516): where the ids to read the pool for can have
+/// changed with nothing else reading it. A read's end reads it already.
+bool _poolIdsMayHaveChanged(
+  EventDetailState previous,
+  EventDetailState current,
+) =>
+    current is EventDetailReady &&
+    !current.reading &&
+    !_detailReadEnded(previous, current);
+
+/// Reads the games pool where the Games tab has shown and the ids to read
+/// it for differ, by value and order, from the ids it was last asked for
+/// (#516): as when a read of the event has ended and the roster it wrote
+/// reaches the screen after it. Ids that are the same read nothing, and so
+/// do none, which forgets the ids last asked for ([_readPool]).
+///
+/// A read of the pool changes no detail, and each request is for ids that
+/// differ from the last asked, so this sends one request per change of the
+/// ids and can't loop. A read already out for the old ids is followed by
+/// one for these, as the bloc runs one more read for the latest request.
+void _readPoolForNewIds(BuildContext context, EventDetailState state) {
+  if (state is! EventDetailReady) return;
+  final scope = EventGamesTabScope.of(context);
+  if (!scope.shown) return;
+  final ids = poolAttendeeIds(state.detail);
+  if (ids.isNotEmpty && listEquals(ids, scope.requestedIds)) return;
+  _readPool(context, state, scope);
+}
+
+/// Reads the games pool of the event [state] shows, for the roster it shows
+/// then, by the ids it shows then, which a reconcile can move (#499), and
+/// notes those ids on [controller]. Not at all with nobody to read it
+/// for, or for an event the server doesn't know.
+///
+/// Nobody to read it for forgets the ids last asked for. The tab shows no
+/// games then, so a roster that comes back, the same one included, is read
+/// for again, and the games shown are never as old as its absence.
+void _readPool(
+  BuildContext context,
+  EventDetailReady state,
+  EventGamesTabController controller,
+) {
+  final event = state.detail.snapshot.event;
+  if (event.isLocalOnly) return;
+  final ids = poolAttendeeIds(state.detail);
+  if (ids.isEmpty) {
+    controller.requestedIds = null;
+    return;
+  }
+  controller.requestedIds = ids;
+  context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
+}
+
+/// The event itself: one scroll view of slivers (#516). What answers the
+/// whole screen, the refresh banner and the outcome banners, comes first, in
+/// the page's header, then the tab bar where the screen shows one, then the
+/// selected tab.
+///
+/// The bar shows where the screen has its actions' blocs and the event is
+/// one the server knows: an event made offline has nothing on the server to
+/// offer games to. Without the bar the page is Details alone, whatever the
+/// controller holds.
 class _ReadyPage extends StatelessWidget {
   const _ReadyPage({
     required this.state,
@@ -700,16 +1019,29 @@ class _ReadyPage extends StatelessWidget {
     required this.hasActions,
     this.onWhoAnswered,
     this.onAddAttendee,
+    this.onOfferGames,
   });
+
+  /// Key on the sliver that holds the tab bar.
+  static const _tabBarSliverKey = ValueKey<String>(
+    'event_detail.tab_bar_sliver',
+  );
+
+  /// Key on the sliver that holds Details, so it keeps its state where the
+  /// bar comes in above it, as when an event made offline reaches the
+  /// server.
+  static const _detailsKey = ValueKey<String>('event_detail.details');
 
   final EventDetailReady state;
   final DateTime Function() now;
 
-  /// Whether an [EventActionsBloc] and an [EventPollBloc] are provided
-  /// above.
+  /// Whether an [EventActionsBloc], an [EventPollBloc], an [EventGamesBloc],
+  /// the tabs' [TabController] and the Games tab's [EventGamesTabScope] are
+  /// provided above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
+  final OpenOfferGames? onOfferGames;
 
   @override
   Widget build(BuildContext context) {
@@ -720,31 +1052,47 @@ class _ReadyPage extends StatelessWidget {
       occurrences: snapshot.occurrences,
       now: now,
       builder: (context) {
-        if (!hasActions) return _build(context, null, null);
+        if (!hasActions) return _build(context, null, null, null, null);
 
+        final tabs = DefaultTabController.of(context);
+        final games = EventGamesTabScope.of(context);
         return BlocBuilder<EventActionsBloc, EventActionsState>(
           builder: (context, actionsState) =>
               BlocBuilder<EventPollBloc, EventPollState>(
                 builder: (context, pollState) =>
-                    _build(context, actionsState, pollState),
+                    BlocBuilder<EventGamesBloc, EventGamesState>(
+                      builder: (context, gamesState) => ListenableBuilder(
+                        // Built again as the selected tab changes, and as
+                        // the Games tab's filter does.
+                        listenable: Listenable.merge([tabs, games]),
+                        builder: (context, _) => _build(
+                          context,
+                          actionsState,
+                          pollState,
+                          gamesState,
+                          tabs,
+                        ),
+                      ),
+                    ),
               ),
         );
       },
     );
   }
 
-  /// [actionsState] and [pollState] are null where there are no such blocs,
-  /// and then the app bar offers no menu, and no poll shows.
+  /// [actionsState], [pollState], [gamesState] and [tabs] are null where
+  /// there are no such blocs, and then the app bar offers no menu, no poll
+  /// shows and there are no tabs.
   Widget _build(
     BuildContext context,
     EventActionsState? actionsState,
     EventPollState? pollState,
+    EventGamesState? gamesState,
+    TabController? tabs,
   ) {
     final l10n = EventsLocalizations.of(context);
     final snapshot = state.detail.snapshot;
     final event = snapshot.event;
-    final outcome = actionsState?.outcome;
-    final pollOutcome = pollState?.outcome;
     // A request on its way, or a delete done and the screen leaving.
     final acting =
         actionsState != null && (actionsState.busy || _deleted(actionsState));
@@ -754,8 +1102,13 @@ class _ReadyPage extends StatelessWidget {
       state.actions,
     );
     final deletes = state.actions.contains(EventAction.delete);
+    // The bar shows only where there is a server that knows the event.
+    final shownTabs = event.isLocalOnly ? null : tabs;
+    final tab = shownTabs == null
+        ? EventDetailTab.details
+        : EventDetailTab.values[shownTabs.index];
 
-    return BgePage(
+    return BgePage.slivers(
       // The section name, not the event's: the title is the page's heading
       // below, where a long one wraps rather than being cut short.
       title: Text(l10n.eventsTitle),
@@ -777,92 +1130,189 @@ class _ReadyPage extends StatelessWidget {
           ),
       ],
       width: BgePageWidth.pane,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (state.refreshFailed || state.refreshing) ...[
-            BgeRefreshBanner(
-              key: EventDetailScreen.refreshBannerKey,
-              retryKey: EventDetailScreen.refreshRetryKey,
-              failedMessage: l10n.eventsDetailRefreshFailed,
-              inProgressLabel: l10n.eventsRefreshInProgress,
-              retryLabel: l10n.eventsRefreshRetry,
-              refreshing: state.refreshing,
-              // No read while the delete is out or done: its answer could land
-              // after the removal and cache the event again (#501).
-              onRetry: state.canRetry && !acting ? () => _retry(context) : null,
+      // Details holds no list. The Games tab holds the rows it shows, and
+      // none while it shows a state (#516).
+      semanticChildCount: switch ((tab, gamesState)) {
+        (EventDetailTab.games, final EventGamesState games) =>
+          EventGamesTab.rowCount(context, state, games),
+        _ => null,
+      },
+      // How far a run of offers has got or how the pool's last write went
+      // (#516), on either tab, then, on the Games tab, the stale-data
+      // banner: answers on a long list, so on screen and heard wherever the
+      // list is scrolled. A run can outlast the stay on Games, and a footer
+      // left out on Details would silence its live region. Passed on every
+      // build where there is a games bloc, so the page keeps one shape as
+      // the tabs swap.
+      footer: gamesState == null
+          ? null
+          : EventGamesFooter(
+              state: gamesState,
+              showStale: tab == EventDetailTab.games,
             ),
-            const BgeGap.lg(),
-          ],
-          // A delete's done has no banner: the screen leaves with a snackbar.
-          if (actionsState != null &&
-              outcome != null &&
-              !_deleted(actionsState)) ...[
-            _ActionOutcomeBanner(
-              bannerKey: EventDetailScreen.actionOutcomeKey,
-              outcome: outcome,
-              onDismiss: () => context.read<EventActionsBloc>().add(
-                const EventActionOutcomeDismissed(),
+      // Above the tabs, and in the semantics tree however far down the page
+      // is, so a banner that lands while the user is far down is heard as it
+      // arrives. Passed on every build, an empty column with nothing to say,
+      // so the call site keeps one shape, as the style guide's Tabs section
+      // asks; an empty header adds no node and no height.
+      header: _banners(context, actionsState, pollState, acting: acting),
+      slivers: [
+        if (shownTabs != null)
+          SliverToBoxAdapter(
+            key: _tabBarSliverKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EventDetailTabBar(
+                  key: EventDetailScreen.tabBarKey,
+                  controller: shownTabs,
+                ),
+                const BgeGap.lg(),
+              ],
+            ),
+          ),
+        ...switch (tab) {
+          EventDetailTab.details => [
+            SliverToBoxAdapter(
+              key: _detailsKey,
+              child: _details(
+                context,
+                actionsState,
+                pollState,
+                acting: acting,
               ),
             ),
-            const BgeGap.lg(),
           ],
-          // A vote's, beside the actions': nothing holds a date write back
-          // for a vote that is out, so both can end (#507).
-          if (pollOutcome != null) ...[
-            _ActionOutcomeBanner(
-              bannerKey: EventDetailScreen.pollOutcomeKey,
-              outcome: pollOutcome,
-              onDismiss: () => context.read<EventPollBloc>().add(
-                const EventPollOutcomeDismissed(),
+          // The bar shows only with a games bloc, which the tab reads.
+          EventDetailTab.games => [
+            if (gamesState != null)
+              EventGamesTab(
+                key: EventDetailScreen.gamesBodyKey,
+                detail: state,
+                games: gamesState,
+                acting: acting,
+                onOfferGames: onOfferGames,
               ),
-            ),
-            const BgeGap.lg(),
           ],
-          EventDetailHeader(
-            event: event,
-            occurrences: snapshot.occurrences,
-            now: now,
-            householdName: state.householdName,
-            role: state.detail.attendance?.role,
-          ),
-          const BgeGap.xl(),
-          _Dates(
-            state: state,
-            now: now,
-            hasActions: actionsState != null,
-            poll: pollState,
-            onWhoAnswered: onWhoAnswered,
-            acting: acting,
-            // Not while a read runs, whose answer landing after the write
-            // would put the date back as it was (#589). Nor while a request
-            // is out or once the delete is done.
-            enabled: !state.reading && !acting,
-          ),
-          const BgeGap.lg(),
-          EventAttendeesSection(
-            attendees: snapshot.attendees,
-            controls: _rsvpControls(context, actionsState, acting: acting),
-            reach: actionsState == null
-                ? AttendeeReach.none
-                : _rosterReach(state),
-            viewerAttendeeId: state.detail.attendance?.id,
-            // As the dates' controls are: not while a read runs, whose answer
-            // landing after the write would put the row back as it was
-            // (#589), nor while a request is out or once the delete is done.
-            enabled: !state.reading && !acting,
-            onAnswer: actionsState == null
-                ? null
-                : (row, answer) => unawaited(_answerFor(context, row, answer)),
-            onRemove: actionsState == null
-                ? null
-                : (row) => unawaited(_removeAttendee(context, row)),
-            addButton: _addButton(context, actionsState, acting: acting),
+        },
+      ],
+    );
+  }
+
+  /// What answers the whole screen, over every tab: the couldn't-refresh
+  /// banner, then how the last action and the last vote went. An empty
+  /// column where none shows. [acting] is [_build]'s.
+  Widget _banners(
+    BuildContext context,
+    EventActionsState? actionsState,
+    EventPollState? pollState, {
+    required bool acting,
+  }) {
+    final l10n = EventsLocalizations.of(context);
+    final outcome = actionsState?.outcome;
+    final pollOutcome = pollState?.outcome;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (state.refreshFailed || state.refreshing) ...[
+          BgeRefreshBanner(
+            key: EventDetailScreen.refreshBannerKey,
+            retryKey: EventDetailScreen.refreshRetryKey,
+            failedMessage: l10n.eventsDetailRefreshFailed,
+            inProgressLabel: l10n.eventsRefreshInProgress,
+            retryLabel: l10n.eventsRefreshRetry,
+            refreshing: state.refreshing,
+            // No read while the delete is out or done: its answer could land
+            // after the removal and cache the event again (#501).
+            onRetry: state.canRetry && !acting ? () => _retry(context) : null,
           ),
           const BgeGap.lg(),
-          const EventGamesSection(),
         ],
-      ),
+        // A delete's done has no banner: the screen leaves with a snackbar.
+        if (actionsState != null &&
+            outcome != null &&
+            !_deleted(actionsState)) ...[
+          _ActionOutcomeBanner(
+            bannerKey: EventDetailScreen.actionOutcomeKey,
+            outcome: outcome,
+            onDismiss: () => context.read<EventActionsBloc>().add(
+              const EventActionOutcomeDismissed(),
+            ),
+          ),
+          const BgeGap.lg(),
+        ],
+        // A vote's, beside the actions': nothing holds a date write back
+        // for a vote that is out, so both can end (#507).
+        if (pollOutcome != null) ...[
+          _ActionOutcomeBanner(
+            bannerKey: EventDetailScreen.pollOutcomeKey,
+            outcome: pollOutcome,
+            onDismiss: () => context.read<EventPollBloc>().add(
+              const EventPollOutcomeDismissed(),
+            ),
+          ),
+          const BgeGap.lg(),
+        ],
+      ],
+    );
+  }
+
+  /// The Details tab, and the whole page where there are no tabs: the
+  /// event's header, its dates and who's coming. [acting] is [_build]'s.
+  Widget _details(
+    BuildContext context,
+    EventActionsState? actionsState,
+    EventPollState? pollState, {
+    required bool acting,
+  }) {
+    final snapshot = state.detail.snapshot;
+    final event = snapshot.event;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EventDetailHeader(
+          event: event,
+          occurrences: snapshot.occurrences,
+          now: now,
+          householdName: state.householdName,
+          role: state.detail.attendance?.role,
+        ),
+        const BgeGap.xl(),
+        _Dates(
+          state: state,
+          now: now,
+          hasActions: actionsState != null,
+          poll: pollState,
+          onWhoAnswered: onWhoAnswered,
+          acting: acting,
+          // Not while a read runs, whose answer landing after the write
+          // would put the date back as it was (#589). Nor while a request
+          // is out or once the delete is done.
+          enabled: !state.reading && !acting,
+        ),
+        const BgeGap.lg(),
+        EventAttendeesSection(
+          attendees: snapshot.attendees,
+          controls: _rsvpControls(context, actionsState, acting: acting),
+          reach: actionsState == null
+              ? AttendeeReach.none
+              : _rosterReach(state),
+          viewerAttendeeId: state.detail.attendance?.id,
+          // As the dates' controls are: not while a read runs, whose answer
+          // landing after the write would put the row back as it was
+          // (#589), nor while a request is out or once the delete is done.
+          enabled: !state.reading && !acting,
+          onAnswer: actionsState == null
+              ? null
+              : (row, answer) => unawaited(_answerFor(context, row, answer)),
+          onRemove: actionsState == null
+              ? null
+              : (row) => unawaited(_removeAttendee(context, row)),
+          addButton: _addButton(context, actionsState, acting: acting),
+        ),
+      ],
     );
   }
 
@@ -934,9 +1384,10 @@ class _ReadyPage extends StatelessWidget {
 /// unavailable after its own press, through the add and the read the add's
 /// end starts, it stays enabled and ignores presses, saying it is adding.
 /// While it is unavailable for another reason, a read or another request,
-/// it is disabled, and offline too (#49). The press is forgotten the first
-/// time it is built available after its add went out, and as soon as the
-/// page answers with nothing to send.
+/// it is disabled, and offline too (#49). The press is held through
+/// [HeldPress], and forgotten the first time the button is built available
+/// after its add went out, and as soon as the page answers with nothing to
+/// send.
 class _AddPeopleButton extends StatefulWidget {
   const _AddPeopleButton({required this.enabled, required this.onPressed});
 
@@ -952,46 +1403,22 @@ class _AddPeopleButton extends StatefulWidget {
   State<_AddPeopleButton> createState() => _AddPeopleButtonState();
 }
 
-class _AddPeopleButtonState extends State<_AddPeopleButton> {
-  /// A press is remembered: its page is open, or its add is out.
-  bool _pressed = false;
-
-  /// The remembered press's add went out.
-  bool _sent = false;
-
+class _AddPeopleButtonState extends State<_AddPeopleButton>
+    with HeldPress<_AddPeopleButton> {
+  /// Built available after its add went out: the add and the read its
+  /// outcome started have ended, or ended before a frame showed them.
   @override
-  void didUpdateWidget(_AddPeopleButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Built available after its add went out: the add and the read its
-    // outcome started have ended, or ended before a frame showed them.
-    if (_sent && widget.enabled) {
-      _pressed = false;
-      _sent = false;
-    }
-  }
-
-  Future<void> _press() async {
-    // One press at a time: the page is open, or its add is out.
-    if (_pressed) return;
-    _pressed = true;
-    var sent = false;
-    try {
-      sent = await widget.onPressed();
-    } finally {
-      if (sent) {
-        _sent = true;
-      } else if (mounted) {
-        setState(() => _pressed = false);
-      }
-    }
-  }
+  bool get heldActionOver => widget.enabled;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
     // Offline it is disabled, pressed or not: no press made it so (#49).
-    final inert = _pressed && !widget.enabled && !offline;
+    final inert = heldInert(
+      available: widget.enabled && !offline,
+      disabled: offline,
+    );
     final label = inert
         ? l10n.eventsAddAttendeeInProgress
         : l10n.eventsAddAttendee;
@@ -1001,7 +1428,7 @@ class _AddPeopleButtonState extends State<_AddPeopleButton> {
         inert: inert,
         label: label,
         onPressed: (widget.enabled && !offline) || inert
-            ? () => unawaited(_press())
+            ? () => unawaited(holdPress(widget.onPressed))
             : null,
         builder: (context, focusNode, onPressed) => TextButton.icon(
           key: EventDetailScreen.addAttendeeKey,
@@ -1636,6 +2063,7 @@ class _Dates extends StatelessWidget {
       case EventAction.approveGame:
       case EventAction.rejectGame:
       case EventAction.resolveNomination:
+      case EventAction.offerGame:
         return null;
     }
   }
@@ -1983,6 +2411,21 @@ class _ActionOutcomeBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final action = outcome.action;
+    final message = switch (outcome) {
+      // Cancel and reopen share an action, as archive and unarchive do, so
+      // the outcome says which it was (#502). So do the roster's three
+      // writes (#510).
+      EventActionOutcome(:final statusWrite?) => _statusWriteMessage(
+        l10n,
+        statusWrite,
+      ),
+      EventActionOutcome(:final attendeeWrite?) => _attendeeMessage(
+        l10n,
+        attendeeWrite,
+      ),
+      _ => _actionMessage(l10n),
+    };
+    if (message == null) return const SizedBox.shrink();
 
     return BgeInlineBanner(
       key: bannerKey,
@@ -2002,20 +2445,7 @@ class _ActionOutcomeBanner extends StatelessWidget {
         EventActionResult.partlyDone => BgeBannerTone.warning,
         EventActionResult.failed => BgeBannerTone.error,
       },
-      message: switch (outcome) {
-        // Cancel and reopen share an action, as archive and unarchive do,
-        // so the outcome says which it was (#502). So do the roster's three
-        // writes (#510).
-        EventActionOutcome(:final statusWrite?) => _statusWriteMessage(
-          l10n,
-          statusWrite,
-        ),
-        EventActionOutcome(:final attendeeWrite?) => _attendeeMessage(
-          l10n,
-          attendeeWrite,
-        ),
-        _ => _actionMessage(l10n),
-      },
+      message: message,
       action: TextButton(
         onPressed: onDismiss,
         child: Text(l10n.eventsActionDismiss),
@@ -2023,8 +2453,9 @@ class _ActionOutcomeBanner extends StatelessWidget {
     );
   }
 
-  /// The copy of an outcome that is not a status write, by its action.
-  String _actionMessage(EventsLocalizations l10n) => switch (outcome.action) {
+  /// The copy of an outcome that is not a status write, by its action, or
+  /// null for an action whose outcome this banner never shows.
+  String? _actionMessage(EventsLocalizations l10n) => switch (outcome.action) {
     EventAction.addDate => _dateMessage(l10n, done: l10n.eventsDateAdded),
     EventAction.editDate => _dateMessage(l10n, done: l10n.eventsDateSaved),
     EventAction.confirmDate => _dateMessage(
@@ -2042,8 +2473,13 @@ class _ActionOutcomeBanner extends StatelessWidget {
     EventAction.removeDate => _dateMessage(l10n, done: l10n.eventsDateRemoved),
     EventAction.voteAvailability => _voteMessage(l10n),
     EventAction.rsvp => _rsvpMessage(l10n),
-    // Delete is the only other action the screen sends yet. #500's adds its
-    // own copy.
+    // An offer never travels through the actions bloc: the games pool's
+    // bloc sends it and owns its outcome, which the page's footer shows
+    // (#516). So this banner has no copy for it, and shows none.
+    EventAction.offerGame => null,
+    // Delete is the only other action whose outcome reaches here: a status
+    // write's and a roster write's take the arms above. The event's edit
+    // (#500) is offered nowhere on this screen, so none reaches here.
     _ => _deleteMessage(l10n),
   };
 
