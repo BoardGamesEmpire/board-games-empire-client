@@ -82,6 +82,7 @@ class _DataGateways implements DataGatewayRemoteDataSource {
 }
 
 AuthResponse _sessionOf(String id, String username) => testAuthResponse()
+    .copyWith(token: null)
     .copyWith
     .user(id: id, username: username, email: '$id@example.com');
 
