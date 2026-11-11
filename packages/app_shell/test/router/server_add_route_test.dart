@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:di/di.dart';
 import 'package:flutter/material.dart';
@@ -43,19 +44,7 @@ class _FakeWellKnownClient implements WellKnownClient {
 
 /// Declares no client-version bounds, so negotiation passes against
 /// [BuildInfo.unknown] (whose `0.0.0` would fail any declared minimum).
-const _compatibleIdentity = ServerIdentity(
-  wellKnownSchemaVersion: 1,
-  serverId: 'server-uuid',
-  name: 'Home BGE',
-  issuer: 'https://bge.example.com',
-  deviceAuthorizationEndpoint: '/api/auth/device/code',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-);
+final ServerIdentity _compatibleIdentity = testServerIdentity();
 
 class _FakeConnectivityService implements ConnectivityService {
   @override

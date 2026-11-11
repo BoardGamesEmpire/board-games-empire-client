@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,21 +54,11 @@ class FailingInstaller implements ServerScopeInstaller {
 ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   id: id,
   displayName: 'Test Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: const ServerIdentity(
+  cachedIdentity: testServerIdentity().copyWith(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
-    issuer: 'https://api.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
   ),
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );

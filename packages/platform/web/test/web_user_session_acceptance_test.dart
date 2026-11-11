@@ -28,6 +28,7 @@
 @TestOn('browser')
 library;
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -98,18 +99,14 @@ class _FakeAuthRepository implements AuthRepository {
 }
 
 AuthState _authenticated(String userId) => AuthStateAuthenticated(
-  session: AuthResponse(
-    token: 'tok-$userId',
-    user: AuthUser(
-      id: userId,
-      username: 'tester-$userId',
-      email: '$userId@example.com',
-      emailVerified: true,
-      createdAt: DateTime.utc(2024),
-      updatedAt: DateTime.utc(2024),
-    ),
-    expiresAt: DateTime.utc(2099),
-  ),
+  session: testAuthResponse()
+      .copyWith(token: 'tok-$userId')
+      .copyWith
+      .user(
+        id: userId,
+        username: 'tester-$userId',
+        email: '$userId@example.com',
+      ),
 );
 
 /// Frozen clock. Web's real one is the skew-corrected estimator from #118,

@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,7 +78,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           householdRepository: withRepository ? repository : null,
           householdRemoteDataSource: withRemote
               ? _MockHouseholdRemoteDataSource()

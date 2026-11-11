@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/network.dart';
 import 'package:bge_test_support/waits.dart';
 import 'package:di/di.dart';
@@ -152,25 +153,9 @@ class NativeRootHarness {
   };
 
   /// The fixture server's discovery document: email and password sign-in.
-  static const ServerIdentity identity = ServerIdentity(
+  static final ServerIdentity identity = testServerIdentity().copyWith(
     serverId: bgeServerId,
     issuer: serverUrl,
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
-    strategies: [
-      EmailAndPasswordStrategy(
-        signUpDisabled: false,
-        signInEndpoint: '/api/auth/sign-in/email',
-        signUpEndpoint: '/api/auth/sign-up/email',
-      ),
-    ],
   );
 
   static const _keyService = _FixedKeyService();

@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/provider_sign_in/pkce.dart';
@@ -26,9 +27,8 @@ import 'package:observability/observability.dart' show LogRecordFormatter;
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
 const _kServer = 'https://api.example.com';
-const _kAuthBase = '/api/auth';
-const _kStartPath = '$_kAuthBase/app-sign-in/start';
-const _kTokenPath = '$_kAuthBase/app-sign-in/token';
+const _kStartPath = '$testAuthBasePath/app-sign-in/start';
+const _kTokenPath = '$testAuthBasePath/app-sign-in/token';
 
 /// Distinctive enough that finding it in a log line can only mean it leaked.
 const _kCode = 'one-time-code-7f3a9b51';
@@ -44,32 +44,16 @@ const _kStrategy = OidcStrategy(
   providerId: 'authentik',
   displayName: 'Authentik',
   discoveryUrl: 'https://idp.example.com/.well-known/openid-configuration',
-  authorizationEndpoint: '$_kAuthBase/sign-in/social',
+  authorizationEndpoint: '$testAuthBasePath/sign-in/social',
   appSignInEndpoint: _kStartPath,
   appTokenEndpoint: _kTokenPath,
 );
 
-ServerIdentity _identity({String issuer = _kServer}) => ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: issuer,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: const [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-    _kStrategy,
-  ],
-);
+ServerIdentity _identity({String issuer = _kServer}) =>
+    testServerIdentity().copyWith(
+      issuer: issuer,
+      strategies: [testEmailAndPasswordStrategy(), _kStrategy],
+    );
 
 Map<String, dynamic> _wireUser() => {
   'id': 'user-1',
@@ -128,14 +112,14 @@ class _ServerAdapter implements HttpClientAdapter {
     requests.add(options);
     final path = options.uri.path;
     if (path.endsWith(_kTokenPath)) return tokenAnswer();
-    if (path.endsWith('$_kAuthBase/get-session')) {
+    if (path.endsWith('$testAuthBasePath/get-session')) {
       return _json(_sessionJson(), 200);
     }
-    if (path.endsWith('$_kAuthBase/sign-in/email') ||
-        path.endsWith('$_kAuthBase/sign-up/email')) {
+    if (path.endsWith('$testAuthBasePath/sign-in/email') ||
+        path.endsWith('$testAuthBasePath/sign-up/email')) {
       return _json({'token': _kPasswordToken, 'user': _wireUser()}, 200);
     }
-    if (path.endsWith('$_kAuthBase/sign-out')) {
+    if (path.endsWith('$testAuthBasePath/sign-out')) {
       return _json({'success': true}, 200);
     }
     throw StateError('no canned answer for ${options.uri}');
@@ -1066,7 +1050,7 @@ void main() {
           displayName: 'Authentik',
           discoveryUrl:
               'https://idp.example.com/.well-known/openid-configuration',
-          authorizationEndpoint: '$_kAuthBase/sign-in/social',
+          authorizationEndpoint: '$testAuthBasePath/sign-in/social',
           appSignInEndpoint: _kMalformedEndpoint,
           appTokenEndpoint: _kTokenPath,
         ),
@@ -1078,7 +1062,7 @@ void main() {
           displayName: 'Authentik',
           discoveryUrl:
               'https://idp.example.com/.well-known/openid-configuration',
-          authorizationEndpoint: '$_kAuthBase/sign-in/social',
+          authorizationEndpoint: '$testAuthBasePath/sign-in/social',
           appSignInEndpoint: _kStartPath,
           appTokenEndpoint: _kMalformedEndpoint,
         ),
@@ -1090,7 +1074,7 @@ void main() {
           displayName: 'Authentik',
           discoveryUrl:
               'https://idp.example.com/.well-known/openid-configuration',
-          authorizationEndpoint: '$_kAuthBase/sign-in/social',
+          authorizationEndpoint: '$testAuthBasePath/sign-in/social',
           appSignInEndpoint: _kStartPath,
           appTokenEndpoint: 'https://elsewhere.example.com/app-sign-in/token',
         ),

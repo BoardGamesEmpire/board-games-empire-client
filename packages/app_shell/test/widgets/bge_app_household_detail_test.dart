@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter/material.dart';
@@ -126,7 +127,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           // No household remote anywhere in this file: the detail route
           // must not need one. A member client is optional, and only the
           // member-menu tests pass one.

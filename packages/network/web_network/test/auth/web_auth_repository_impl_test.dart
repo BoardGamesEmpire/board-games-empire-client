@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -12,31 +13,17 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
 
-// Endpoints are relative paths resolved against the browser origin by the
-// per-server Dio (set via WebDioFactory). The repository passes them through to
-// Dio unchanged.
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity({bool signUpDisabled = false}) => ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: signUpDisabled,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: signUpDisabled ? null : '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+/// The shared identity, with sign-up open unless [signUpDisabled].
+///
+/// Its endpoints are relative paths, which the per-server Dio (set via
+/// WebDioFactory) resolves against the browser origin. The repository passes
+/// them through to Dio unchanged.
+ServerIdentity _identity({bool signUpDisabled = false}) =>
+    testServerIdentity().copyWith(
+      strategies: [
+        testEmailAndPasswordStrategy(signUpDisabled: signUpDisabled),
+      ],
+    );
 
 // BetterAuth wire shape: camelCase fields, display name under `name`
 // (mapped to AuthUser.username).
@@ -111,7 +98,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -119,7 +106,7 @@ void main() {
 
           when(
             () => mockDio.get<String>(
-              '$_kAuthBase/get-session',
+              '$testAuthBasePath/get-session',
               options: any(named: 'options'),
             ),
           ).thenAnswer((_) async => _ok(_sessionJson()));
@@ -388,7 +375,7 @@ void main() {
         );
         verify(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -581,7 +568,7 @@ void main() {
       setUp(() {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -652,7 +639,7 @@ void main() {
           'AuthSupersededException, not a server fault (#146)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer(
@@ -705,7 +692,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -738,7 +725,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -767,7 +754,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -789,7 +776,7 @@ void main() {
           '"no session granted" on sign-in too', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -812,7 +799,7 @@ void main() {
           "reconcile's own failure", () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -888,7 +875,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-up/email',
+              '$testAuthBasePath/sign-up/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -909,7 +896,7 @@ void main() {
       test('names the sign-up in the unreadable-envelope warning', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -941,7 +928,7 @@ void main() {
           '"no session granted"', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -973,7 +960,7 @@ void main() {
           'unreadable', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -998,7 +985,7 @@ void main() {
       test('a grant response with no body does not fail the sign-up', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1016,7 +1003,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-up/email',
+              '$testAuthBasePath/sign-up/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -1031,7 +1018,7 @@ void main() {
       test('an INDETERMINATE reconcile keeps the granted session', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1051,7 +1038,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-up/email',
+              '$testAuthBasePath/sign-up/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -1072,7 +1059,7 @@ void main() {
           'granted", not a server fault (#331)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1094,7 +1081,7 @@ void main() {
           'not "no session granted"', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1251,7 +1238,7 @@ void main() {
 
         verify(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).called(1);
@@ -1282,7 +1269,7 @@ void main() {
         final signOutGate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => signOutGate.future);
@@ -1311,7 +1298,7 @@ void main() {
         final signOutGate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => signOutGate.future);
@@ -1351,13 +1338,13 @@ void main() {
         final signOutGate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => signOutGate.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1402,7 +1389,7 @@ void main() {
         final gates = <Completer<Response<String>>>[first, second];
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gates.removeAt(0).future);
@@ -1553,7 +1540,7 @@ void main() {
         final gates = <Completer<Response<String>>>[failing, succeeding];
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gates.removeAt(0).future);
@@ -1584,7 +1571,7 @@ void main() {
         final gates = <Completer<Response<String>>>[failing, succeeding];
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gates.removeAt(0).future);
@@ -1614,13 +1601,13 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-out',
+              '$testAuthBasePath/sign-out',
               options: any(named: 'options'),
             ),
           ).thenAnswer((_) async => _status(500));
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -1647,13 +1634,13 @@ void main() {
       test('a rejected sign-in does not release a held latch (#348)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _status(500));
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1687,13 +1674,13 @@ void main() {
           '(#348)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _status(500));
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1733,13 +1720,13 @@ void main() {
         final revocation = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1782,13 +1769,13 @@ void main() {
         final revocation = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1822,13 +1809,13 @@ void main() {
         final revocation = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1874,13 +1861,13 @@ void main() {
           final firstRead = Completer<Response<String>>();
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-out',
+              '$testAuthBasePath/sign-out',
               options: any(named: 'options'),
             ),
           ).thenAnswer((_) => revocation.future);
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-in/email',
+              '$testAuthBasePath/sign-in/email',
               data: any(named: 'data'),
               options: any(named: 'options'),
             ),
@@ -1931,13 +1918,13 @@ void main() {
         final firstRead = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -1980,13 +1967,13 @@ void main() {
         final firstRead = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -2031,13 +2018,13 @@ void main() {
         final firstRead = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -2079,13 +2066,13 @@ void main() {
         final settleRead = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => revocation.future);
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -2135,13 +2122,13 @@ void main() {
           'failed revocation left live (#348)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _status(500));
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -2175,13 +2162,13 @@ void main() {
           'session granted" (#331)', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _status(500));
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-up/email',
+            '$testAuthBasePath/sign-up/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),

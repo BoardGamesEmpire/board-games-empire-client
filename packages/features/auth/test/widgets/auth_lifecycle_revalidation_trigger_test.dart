@@ -2,6 +2,7 @@ import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/widgets/auth_lifecycle_revalidation_trigger.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -153,7 +154,7 @@ void main() {
       testWidgets('dispatches for a verified session — the handler no-ops, '
           'not this widget', (tester) async {
         when(() => mockBloc.state)
-            .thenReturn(AuthAuthenticated(session: testSession()));
+            .thenReturn(AuthAuthenticated(session: testAuthResponse()));
         await pumpTrigger(tester);
 
         await _suspendAndResume(tester);
@@ -176,7 +177,7 @@ void main() {
           'trigger exists for', (tester) async {
         when(() => mockBloc.state).thenReturn(
           AuthAuthenticated(
-            session: testSession(),
+            session: testAuthResponse(),
             verification: SessionVerification.unverifiedOffline,
           ),
         );

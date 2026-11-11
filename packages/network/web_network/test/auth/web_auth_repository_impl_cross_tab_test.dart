@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -13,26 +14,12 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
 
-const _kAuthBase = '/api/auth';
-const _kSession = '$_kAuthBase/get-session';
-const _kSignOut = '$_kAuthBase/sign-out';
-const _kSignIn = '$_kAuthBase/sign-in/email';
+const _kSession = '$testAuthBasePath/get-session';
+const _kSignOut = '$testAuthBasePath/sign-out';
+const _kSignIn = '$testAuthBasePath/sign-in/email';
 
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: _kSession,
-  signOutEndpoint: _kSignOut,
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: [
-    EmailAndPasswordStrategy(signUpDisabled: true, signInEndpoint: _kSignIn),
-  ],
+ServerIdentity _identity() => testServerIdentity().copyWith(
+  strategies: [testEmailAndPasswordStrategy(signUpDisabled: true)],
 );
 
 Response<String> _grantFor(String userId, {bool carriesSession = true}) =>

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -30,11 +31,11 @@ void main() {
     '[AuthLoading(providerId), AuthAuthenticated]',
     build: () {
       when(() => repo.signInWithProvider(any()))
-          .thenAnswer((_) async => ProviderSignInCompleted(testSession()));
+          .thenAnswer((_) async => ProviderSignInCompleted(testAuthResponse()));
       return AuthBloc(authRepository: repo);
     },
     act: (b) => b.add(const AuthProviderSignInRequested(kOidcStrategy)),
-    expect: () => [loading, AuthAuthenticated(session: testSession())],
+    expect: () => [loading, AuthAuthenticated(session: testAuthResponse())],
   );
 
   blocTest<AuthBloc, AuthBlocState>(
@@ -173,11 +174,11 @@ void main() {
         act: (b) async {
           b.add(const AuthProviderSignInRequested(kOidcStrategy));
           await pumpEventQueue();
-          repoStates.add(AuthStateAuthenticated(session: testSession()));
+          repoStates.add(AuthStateAuthenticated(session: testAuthResponse()));
           await pumpEventQueue();
           end(gate);
         },
-        expect: () => [loading, AuthAuthenticated(session: testSession())],
+        expect: () => [loading, AuthAuthenticated(session: testAuthResponse())],
       );
     }
   });
@@ -226,7 +227,7 @@ void main() {
           ),
         ).thenAnswer((_) => gate.future);
         addTearDown(() {
-          if (!gate.isCompleted) gate.complete(testSession());
+          if (!gate.isCompleted) gate.complete(testAuthResponse());
         });
         return AuthBloc(authRepository: repo);
       },
@@ -242,8 +243,9 @@ void main() {
     blocTest<AuthBloc, AuthBlocState>(
       'but once the grant has settled the mirror follows again',
       build: () {
-        when(() => repo.signInWithProvider(any()))
-            .thenAnswer((_) async => ProviderSignInCompleted(testSession()));
+        when(
+          () => repo.signInWithProvider(any()),
+        ).thenAnswer((_) async => ProviderSignInCompleted(testAuthResponse()));
         return AuthBloc(authRepository: repo);
       },
       act: (b) async {
@@ -254,7 +256,7 @@ void main() {
       },
       expect: () => [
         loading,
-        AuthAuthenticated(session: testSession()),
+        AuthAuthenticated(session: testAuthResponse()),
         const AuthUnauthenticated(),
       ],
     );
@@ -292,7 +294,7 @@ void main() {
           ),
         ).thenAnswer((_) => gate.future);
         addTearDown(() {
-          if (!gate.isCompleted) gate.complete(testSession());
+          if (!gate.isCompleted) gate.complete(testAuthResponse());
         });
         return AuthBloc(authRepository: repo);
       },
@@ -361,7 +363,7 @@ void main() {
             email: any(named: 'email'),
             password: any(named: 'password'),
           ),
-        ).thenAnswer((_) async => testSession());
+        ).thenAnswer((_) async => testAuthResponse());
         return AuthBloc(authRepository: repo);
       },
       act: (b) async {
@@ -373,7 +375,7 @@ void main() {
         loading,
         const AuthUnauthenticated(),
         const AuthLoading(),
-        AuthAuthenticated(session: testSession()),
+        AuthAuthenticated(session: testAuthResponse()),
       ],
     );
   });

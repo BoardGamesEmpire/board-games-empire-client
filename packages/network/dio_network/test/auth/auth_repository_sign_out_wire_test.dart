@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
@@ -8,7 +9,6 @@ import 'package:dio_network/src/network/token_interceptor.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
 
 import '../support/in_memory_session_tombstone_store.dart';
 
@@ -46,28 +46,8 @@ class _RecordingAdapter implements HttpClientAdapter {
   }
 }
 
-const _signOutEndpoint = '/api/auth/sign-out';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: _signOutEndpoint,
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '/api/auth/sign-in/email',
-      signUpEndpoint: '/api/auth/sign-up/email',
-    ),
-  ],
-);
+/// Where the repository posts a sign-out: the shared identity's endpoint.
+final String _signOutEndpoint = testServerIdentity().signOutEndpoint;
 
 /// Pins what the sign-out POST puts on the wire (#433).
 ///
@@ -124,7 +104,7 @@ void main() {
     dio =
         Dio(
             BaseOptions(
-              baseUrl: 'https://api.example.com',
+              baseUrl: testServerUrl,
               validateStatus: (_) => true,
             ),
           )
@@ -137,8 +117,8 @@ void main() {
             TokenInterceptor(tokenStorage: storage),
           ]);
     repository = AuthRepositoryImpl(
-      identity: _identity(),
-      serverUrl: 'https://api.example.com',
+      identity: testServerIdentity(),
+      serverUrl: testServerUrl,
       tokenStorage: storage,
       dio: dio,
     );

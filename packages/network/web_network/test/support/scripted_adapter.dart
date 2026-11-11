@@ -6,10 +6,9 @@ import 'package:dio/dio.dart';
 /// headers, or throwing a scripted [DioException] to exercise the
 /// transport-failure path.
 ///
-/// Shared rather than restated per suite, following `server_identity_fixture`
-/// (#125): the registration suite and the clock-skew diagnostic suite both
-/// need a response whose headers they choose, and one of them also needs a
-/// failure with no response at all.
+/// Shared rather than restated per suite (#125): the registration suite and
+/// the clock-skew diagnostic suite both need a response whose headers they
+/// choose, and one of them also needs a failure with no response at all.
 ///
 /// Distinct from `CannedAdapter` (`package:bge_test_support/network.dart`),
 /// which

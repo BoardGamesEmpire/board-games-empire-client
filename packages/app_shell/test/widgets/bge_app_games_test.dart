@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -343,7 +344,7 @@ void main() {
     SyncOperationSender? sender,
   }) => FakeActiveServerScope(
     buildActiveServer(
-      FakeAuthRepository(initialSession: sampleSession()),
+      FakeAuthRepository(initialSession: testAuthResponse()),
       gamesRemoteDataSource: withGames ? games : null,
       listLayoutRepository: layouts,
       dataGatewayRemoteDataSource: dataGateways,
@@ -593,7 +594,7 @@ void main() {
 
   testWidgets('a game found gone after a sign-out is not taken off the next '
       "user's list", (tester) async {
-    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final repo = FakeAuthRepository(initialSession: testAuthResponse());
     final app = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
         activeServerScope: FakeActiveServerScope(
@@ -626,7 +627,7 @@ void main() {
     expect(find.byType(GameDetailScreen), findsNothing);
 
     // The next user opens the catalog, and then the old read answers.
-    final first = sampleSession();
+    final first = testAuthResponse();
     repo.emitAuthState(
       AuthStateAuthenticated(
         session: first.copyWith(
@@ -984,7 +985,7 @@ void main() {
     testWidgets('the picker over the detail page closes as the session ends', (
       tester,
     ) async {
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final owned = StreamController<List<GameCollection>>()
         ..add([
           _copy('gc_1', GameMedium.physical),

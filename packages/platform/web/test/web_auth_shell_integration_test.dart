@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -125,43 +126,11 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> dispose() => _controller.close();
 }
 
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://bge.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
-
-AuthResponse _sampleSession() => AuthResponse(
+AuthResponse _sampleSession() => testAuthResponse().copyWith(
   // Null, like the real web path (#291): the browser holds the httpOnly
   // cookie, so a web session carries no bearer credential. A fake that
   // handed one back would model a shape this platform cannot produce.
   token: null,
-  user: AuthUser(
-    id: 'u1',
-    username: 'tester',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
 );
 
 /// Builds the origin [ActiveServer] the way the web path does — a fresh
@@ -172,7 +141,7 @@ ActiveServer _activeServer(AuthRepository repo) {
   return ActiveServer(
     serverId: 'server-uuid-1',
     displayName: 'Test BGE Server',
-    identity: _identity(),
+    identity: testServerIdentity(),
     container: container,
   );
 }

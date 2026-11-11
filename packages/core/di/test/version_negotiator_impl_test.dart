@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
@@ -14,20 +15,10 @@ ServerIdentity _identity({
   int schemaVersion = 1,
   String? minClientVersion,
   String? maxClientVersion,
-}) => ServerIdentity(
+}) => testServerIdentity().copyWith(
   wellKnownSchemaVersion: schemaVersion,
-  serverId: '550e8400-e29b-41d4-a716-446655440000',
-  name: 'Test BGE Server',
   minClientVersion: minClientVersion,
   maxClientVersion: maxClientVersion,
-  issuer: 'https://api.example.com',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
 );
 
 void main() {

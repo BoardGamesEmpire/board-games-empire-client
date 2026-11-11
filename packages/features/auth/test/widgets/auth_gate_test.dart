@@ -7,6 +7,7 @@ import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/screens/auth_gate.dart';
 import 'package:auth/src/screens/auth_screen.dart';
 import 'package:auth/src/widgets/login_form.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -80,7 +81,10 @@ void main() {
 
     testWidgets('renders splash for AuthAuthenticated — the router is about '
         'to redirect; the gate holds splash for the microtask', (tester) async {
-      await pumpWithState(tester, AuthAuthenticated(session: testSession()));
+      await pumpWithState(
+        tester,
+        AuthAuthenticated(session: testAuthResponse()),
+      );
 
       expect(find.byKey(_kSplashKey), findsOneWidget);
       expect(find.byType(AuthScreen), findsNothing);

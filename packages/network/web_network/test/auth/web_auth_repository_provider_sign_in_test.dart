@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/network.dart' show FailingAdapter;
 import 'package:dio/dio.dart';
 import 'package:fake_async/fake_async.dart';
@@ -24,9 +25,8 @@ import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 import 'package:web_network/src/network/web_dio_factory.dart';
 
-const _kOrigin = 'https://bge.example.com';
-const _kAuthBase = '/api/auth';
-const _kStart = '$_kAuthBase/sign-in/social';
+const String _kOrigin = testServerUrl;
+const _kStart = '$testAuthBasePath/sign-in/social';
 const _kProviderUrl =
     'https://provider.example/authorize?x=1&state=provider-state-secret';
 
@@ -35,24 +35,12 @@ const _kStrategy = OidcStrategy(
   displayName: 'Authentik',
   discoveryUrl: 'https://idp.example.com/.well-known/openid-configuration',
   authorizationEndpoint: _kStart,
-  appSignInEndpoint: '$_kAuthBase/app-sign-in/start',
-  appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
+  appSignInEndpoint: '$testAuthBasePath/app-sign-in/start',
+  appTokenEndpoint: '$testAuthBasePath/app-sign-in/token',
 );
 
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: _kOrigin,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [_kStrategy],
-);
+ServerIdentity _identity() =>
+    testServerIdentity().copyWith(strategies: [_kStrategy]);
 
 /// Answers every request with [statusCode], [body] and any [headers], and
 /// keeps each request it was asked. With a [gate], each answer waits for it.

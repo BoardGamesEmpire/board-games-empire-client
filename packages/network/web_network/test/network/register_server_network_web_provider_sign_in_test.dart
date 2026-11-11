@@ -1,11 +1,9 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
-
 import 'package:web_network/src/auth/provider_sign_in_bindings.dart';
 import 'package:web_network/src/network/register_server_network_web.dart';
-
-import '../support/server_identity_fixture.dart';
 
 /// How the network registration hands the repository the browser half of a
 /// provider sign-in (#583).

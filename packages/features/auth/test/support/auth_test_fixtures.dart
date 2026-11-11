@@ -1,15 +1,16 @@
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:models/dto.dart';
 
 /// Shared fixtures for the auth feature's suites (#102): the bloc double the
-/// widget suites drive, the repository double the bloc suites drive, and the
-/// server identity and session they build.
+/// widget suites drive and the repository double the bloc suites drive. The
+/// server identity and session they build come from `bge_test_support`'s
+/// `domain.dart` (#409).
 
 class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
     implements AuthBloc {}
@@ -25,61 +26,18 @@ void stubProviderSignInAvailability(
   ProviderSignInAvailability availability = const ProviderSignInAvailable(),
 ]) => when(() => bloc.providerSignInAvailability).thenReturn(availability);
 
-const _kAuthBase = '/api/auth';
-
 /// A provider sign-in strategy, as the server advertises one (#583).
 const kOidcStrategy = OidcStrategy(
   providerId: 'authentik',
   discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
   displayName: 'Authentik',
-  authorizationEndpoint: '$_kAuthBase/sign-in/social',
-  appSignInEndpoint: '$_kAuthBase/app-sign-in/start',
-  appTokenEndpoint: '$_kAuthBase/app-sign-in/token',
+  authorizationEndpoint: '$testAuthBasePath/sign-in/social',
+  appSignInEndpoint: '$testAuthBasePath/app-sign-in/start',
+  appTokenEndpoint: '$testAuthBasePath/app-sign-in/token',
 );
 
-/// A server identity advertising the strategies a suite asks for: email and
-/// password by default, open for sign-up unless [signUpDisabled].
-///
-/// [hasOidc] adds [kOidcStrategy]; [oidcStrategies], when given, are the
-/// provider strategies instead.
-ServerIdentity testServerIdentity({
-  bool hasEmailPassword = true,
-  bool signUpDisabled = false,
-  bool hasOidc = false,
-  List<OidcStrategy>? oidcStrategies,
-}) => ServerIdentity(
-  serverId: 'server-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    if (hasEmailPassword)
-      EmailAndPasswordStrategy(
-        signUpDisabled: signUpDisabled,
-        signInEndpoint: '$_kAuthBase/sign-in/email',
-        signUpEndpoint: signUpDisabled ? null : '$_kAuthBase/sign-up/email',
-      ),
-    ...(oidcStrategies ?? [if (hasOidc) kOidcStrategy]),
-  ],
-);
-
-/// A granted session for user `u1`, expiring far in the future.
-AuthResponse testSession({String token = 'tok-abc'}) => AuthResponse(
-  token: token,
-  user: AuthUser(
-    id: 'u1',
-    username: 'testuser',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
+/// The shared identity with [kOidcStrategy] after its email strategy: a server
+/// that offers both ways in.
+ServerIdentity testIdentityWithOidc() => testServerIdentity().copyWith(
+  strategies: [testEmailAndPasswordStrategy(), kOidcStrategy],
 );

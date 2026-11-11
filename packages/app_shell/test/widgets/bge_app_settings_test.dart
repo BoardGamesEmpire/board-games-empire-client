@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,7 +55,9 @@ void main() {
     // fallback — the mock previously drove a state the app can't reach.
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
-        buildActiveServer(FakeAuthRepository(initialSession: sampleSession())),
+        buildActiveServer(
+          FakeAuthRepository(initialSession: testAuthResponse()),
+        ),
       ),
     );
     whenListen(

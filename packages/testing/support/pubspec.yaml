@@ -1,5 +1,5 @@
 name: bge_test_support
-description: "Shared test helpers that cannot live in any one package's test/ tree (issues #354, #213, #257)"
+description: "Shared test helpers that cannot live in any one package's test/ tree (issues #354, #213, #257, #409)"
 publish_to: none
 
 environment:
@@ -9,11 +9,12 @@ resolution: workspace
 
 # Separate entry points, one package (#354 D1). `network.dart` needs only
 # `dio`; `widgets.dart` needs `flutter_test` and the theme; `images.dart` (#42)
-# needs `flutter_test` and `dart:io`. They are separate LIBRARIES
-# rather than separate PACKAGES because pub resolves dependencies per package,
-# not per library — a second package would not have isolated anything, since
-# both `dio_network` and `web_network` already declare `flutter` as a regular
-# dependency and `flutter_test` as a dev one.
+# needs `flutter_test` and `dart:io`; `domain.dart` (#409) needs only `models`.
+# They are separate LIBRARIES rather than separate PACKAGES because pub
+# resolves dependencies per package, not per library — a second package would
+# not have isolated anything, since both `dio_network` and `web_network`
+# already declare `flutter` as a regular dependency and `flutter_test` as a dev
+# one.
 #
 # The export split still earns its place: it keeps the import surface honest and
 # makes a future split mechanical if a genuinely pure-Dart consumer ever appears

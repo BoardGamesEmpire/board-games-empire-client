@@ -21,6 +21,7 @@
 @TestOn('vm')
 library;
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -93,26 +94,7 @@ const _kEmptyPage =
     '{"households":[],"pagination":{"page":1,"limit":100,"total":0,'
     '"totalPages":0,"hasMore":false}}';
 
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: _kOrigin,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '/api/auth/sign-in/email',
-      signUpEndpoint: '/api/auth/sign-up/email',
-    ),
-  ],
-);
+ServerIdentity _identity() => testServerIdentity().copyWith(issuer: _kOrigin);
 
 void main() {
   late _MockWellKnownClient wellKnown;

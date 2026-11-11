@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
@@ -15,19 +16,7 @@ const _kServerUrl = 'https://api.example.com';
 ServerIdentity _makeIdentity({
   String serverId = _kBgeServerId,
   String issuer = _kServerUrl,
-}) => ServerIdentity(
-  serverId: serverId,
-  issuer: issuer,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+}) => testServerIdentity().copyWith(serverId: serverId, issuer: issuer);
 
 Future<ServerConfig> _addServer(
   ServerRepository repo, {

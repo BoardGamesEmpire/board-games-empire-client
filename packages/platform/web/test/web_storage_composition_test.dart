@@ -12,6 +12,7 @@ library;
 
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/wasm.dart' show WasmStorageImplementation;
@@ -260,22 +261,10 @@ void main() {
   });
 }
 
-/// Shaped like `testServerIdentity` in `core/di`'s fixtures; only
-/// [ServerIdentity.serverId] matters here, as the database name derives from
-/// it.
-ServerIdentity _identity(String serverId) => ServerIdentity(
-  serverId: serverId,
-  issuer: 'https://origin.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test Origin',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+/// Only [ServerIdentity.serverId] matters here, as the database name derives
+/// from it.
+ServerIdentity _identity(String serverId) =>
+    testServerIdentity().copyWith(serverId: serverId);
 
 /// The report never queries; a mock keeps this suite from needing a real
 /// database to assert a log level.

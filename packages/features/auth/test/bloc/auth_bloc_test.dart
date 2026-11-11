@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
@@ -51,7 +52,7 @@ void main() {
         'leaves an authenticated session alone — clearing a banner must not '
         'look like a sign-out',
         build: () => AuthBloc(authRepository: mockRepo),
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         act: (b) => b.add(const AuthFailureCleared()),
         expect: () => const <AuthBlocState>[],
       );
@@ -71,7 +72,7 @@ void main() {
         'exists',
         build: () {
           when(() => mockRepo.getSession())
-              .thenAnswer((_) async => testSession());
+              .thenAnswer((_) async => testAuthResponse());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -183,7 +184,7 @@ void main() {
             // A cached session bounds the check. The restore it would enter
             // on then fails, so the timeout is what surfaces.
             when(() => mockRepo.getCachedSession())
-                .thenAnswer((_) async => testSession());
+                .thenAnswer((_) async => testAuthResponse());
             when(() => mockRepo.restoreCachedSession())
                 .thenThrow(StateError('keychain unavailable'));
             when(() => mockRepo.getSession())
@@ -252,7 +253,7 @@ void main() {
           when(() => mockRepo.getSession()).thenAnswer((_) async {
             calls++;
             await Future<void>.delayed(const Duration(milliseconds: 20));
-            return calls == 1 ? testSession() : null;
+            return calls == 1 ? testAuthResponse() : null;
           });
           return AuthBloc(authRepository: mockRepo);
         },
@@ -279,7 +280,7 @@ void main() {
               email: any(named: 'email'),
               password: any(named: 'password'),
             ),
-          ).thenAnswer((_) async => testSession());
+          ).thenAnswer((_) async => testAuthResponse());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(
@@ -494,13 +495,15 @@ void main() {
                 const AuthSignInRequested(email: 'a@b.com', password: 'pass'),
               );
               await pumpEventQueue();
-              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              repoStates.add(
+                AuthStateAuthenticated(session: testAuthResponse()),
+              );
               await pumpEventQueue();
               gate.completeError(error);
             },
             expect: () => [
               const AuthLoading(),
-              AuthAuthenticated(session: testSession()),
+              AuthAuthenticated(session: testAuthResponse()),
             ],
           );
         }
@@ -519,7 +522,7 @@ void main() {
               firstName: any(named: 'firstName'),
               lastName: any(named: 'lastName'),
             ),
-          ).thenAnswer((_) async => testSession());
+          ).thenAnswer((_) async => testAuthResponse());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(
@@ -736,13 +739,15 @@ void main() {
                 ),
               );
               await pumpEventQueue();
-              repoStates.add(AuthStateAuthenticated(session: testSession()));
+              repoStates.add(
+                AuthStateAuthenticated(session: testAuthResponse()),
+              );
               await pumpEventQueue();
               gate.completeError(error);
             },
             expect: () => [
               const AuthLoading(),
-              AuthAuthenticated(session: testSession()),
+              AuthAuthenticated(session: testAuthResponse()),
             ],
           );
         }
@@ -854,7 +859,7 @@ void main() {
               email: any(named: 'email'),
               password: any(named: 'password'),
             ),
-          ).thenAnswer((_) async => testSession());
+          ).thenAnswer((_) async => testAuthResponse());
           // Handed to `act` through the closure below.
           _signOutGate = signOutGate;
           return AuthBloc(authRepository: mockRepo);
@@ -887,7 +892,7 @@ void main() {
           _signOutGate = signOutGate;
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         act: (b) async {
           b.add(const AuthSignOutRequested());
           await Future<void>.delayed(Duration.zero);
@@ -941,7 +946,7 @@ void main() {
           when(() => mockRepo.signOut()).thenAnswer((_) async {});
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         act: (b) => b.add(const AuthSignOutRequested()),
         expect: () => [
           const AuthLoading(),
@@ -955,7 +960,7 @@ void main() {
           when(() => mockRepo.signOut()).thenAnswer((_) async {});
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         act: (b) =>
             b.add(const AuthSignOutRequested(cause: SignOutCause.sessionLost)),
         expect: () => [
@@ -985,7 +990,7 @@ void main() {
           _signOutGate = signOutGate;
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         act: (b) async {
           b.add(const AuthSignOutRequested());
           await Future<void>.delayed(Duration.zero);
@@ -1016,7 +1021,7 @@ void main() {
           return AuthBloc(authRepository: mockRepo, revalidationInterval: null);
         },
         seed: () => AuthAuthenticated(
-          session: testSession(),
+          session: testAuthResponse(),
           verification: SessionVerification.unverifiedOffline,
         ),
         act: (b) async {
@@ -1042,7 +1047,7 @@ void main() {
           ).thenAnswer((_) => Stream.value(const AuthStateUnauthenticated()));
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: testSession()),
+        seed: () => AuthAuthenticated(session: testAuthResponse()),
         expect: () => [
           // Pins the cause itself, not whatever the default is.
           // ignore: avoid_redundant_argument_values

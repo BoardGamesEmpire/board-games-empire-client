@@ -1,36 +1,16 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
-const _kAuthBase = 'https://api.example.test/api/auth';
-
 ServerConfig _config() => ServerConfig(
   id: 'local-1',
   displayName: 'My Server',
-  serverUrl: 'https://api.example.test',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.active,
   bgeServerId: 'server-1',
-  cachedIdentity: const ServerIdentity(
-    serverId: 'server-1',
-    issuer: 'https://api.example.test',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '$_kAuthBase/device',
-    authBasePath: _kAuthBase,
-    sessionEndpoint: '$_kAuthBase/get-session',
-    signOutEndpoint: '$_kAuthBase/sign-out',
-    passkeySupported: false,
-    twoFactorSupported: false,
-    anonymousAuthSupported: false,
-    strategies: [
-      EmailAndPasswordStrategy(
-        signUpDisabled: false,
-        signInEndpoint: '$_kAuthBase/sign-in/email',
-        signUpEndpoint: '$_kAuthBase/sign-up/email',
-      ),
-    ],
-  ),
+  cachedIdentity: testServerIdentity().copyWith(serverId: 'server-1'),
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 

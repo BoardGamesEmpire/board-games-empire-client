@@ -6,35 +6,12 @@
 
 import 'dart:typed_data';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
 
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
-
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
 
 /// Answers every request with [statusCode], [body] and any [headers].
 ///
@@ -96,7 +73,10 @@ Matcher _rateLimited(Duration? retryAfter) => isA<AuthRateLimitedException>()
 
 void main() {
   WebAuthRepositoryImpl repoWith(Dio dio) {
-    final repo = WebAuthRepositoryImpl(identity: _identity(), dio: dio);
+    final repo = WebAuthRepositoryImpl(
+      identity: testServerIdentity(),
+      dio: dio,
+    );
     addTearDown(repo.onDispose);
     return repo;
   }

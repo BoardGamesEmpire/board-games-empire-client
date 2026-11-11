@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
@@ -21,7 +22,6 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
@@ -408,7 +408,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           gamesRemoteDataSource: games,
           gameRepository: gameCache,
           householdRemoteDataSource: pool,
@@ -984,7 +984,7 @@ void main() {
       onDeactivate: () => container.popUser(),
     );
     final server = buildActiveServer(
-      FakeAuthRepository(initialSession: sampleSession()),
+      FakeAuthRepository(initialSession: testAuthResponse()),
       userSessionScope: scope,
       gamesRemoteDataSource: _GamesRemote(const []),
       householdRemoteDataSource: _Pool(),
@@ -1053,7 +1053,7 @@ void main() {
       );
       server = _GamesRemote(const []);
       pool = _Pool();
-      repo = FakeAuthRepository(initialSession: sampleSession());
+      repo = FakeAuthRepository(initialSession: testAuthResponse());
 
       late final ActiveServer active;
       var current = first;
@@ -1092,21 +1092,12 @@ void main() {
     }
 
     void switchToSecondUser() {
-      final session = sampleSession();
       repo.emitAuthState(
         AuthStateAuthenticated(
-          session: AuthResponse(
-            token: null,
-            user: AuthUser(
-              id: 'u2',
-              username: 'other',
-              email: 'u2@example.com',
-              emailVerified: true,
-              createdAt: DateTime(2099),
-              updatedAt: DateTime(2099),
-            ),
-            expiresAt: session.expiresAt,
-          ),
+          session: testAuthResponse()
+              .copyWith(token: null)
+              .copyWith
+              .user(id: 'u2', username: 'other', email: 'u2@example.com'),
         ),
       );
     }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
@@ -8,14 +9,11 @@ import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
 class MockDio extends Mock implements Dio {}
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
-
-const _kAuthBase = '/api/auth';
 
 /// What the client holds before revalidating.
 const _kStoredToken = 'session-tok-abc';
@@ -23,27 +21,6 @@ const _kStoredToken = 'session-tok-abc';
 /// What `GET /get-session` returns — the authoritative credential, which
 /// the server may have renewed since sign-in.
 const _kServerVendedToken = 'session-tok-renewed';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
 
 Map<String, dynamic> _wireUser() => {
   'id': 'user-1',
@@ -101,8 +78,8 @@ void main() {
 
   AuthRepositoryImpl build({DateTime? clockNow, DateTime? deviceNow}) =>
       AuthRepositoryImpl(
-        identity: _identity(),
-        serverUrl: 'https://api.example.com',
+        identity: testServerIdentity(),
+        serverUrl: testServerUrl,
         tokenStorage: mockStorage,
         dio: mockDio,
         clock: LocalClockService(() => clockNow ?? now),
@@ -111,8 +88,7 @@ void main() {
 
   setUp(() {
     mockDio = MockDio();
-    when(() => mockDio.options)
-        .thenReturn(BaseOptions(baseUrl: 'https://api.example.com'));
+    when(() => mockDio.options).thenReturn(BaseOptions(baseUrl: testServerUrl));
     mockStorage = MockTokenStorage();
     when(
       () => mockStorage.store(
@@ -263,7 +239,7 @@ void main() {
         stubRetrieve(restorable());
         when(
           () => mockDio.get<String>(
-            '$_kAuthBase/get-session',
+            '$testAuthBasePath/get-session',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -274,8 +250,8 @@ void main() {
         // Same repository, same in-memory session — but time has moved past
         // the confirmed expiry.
         final expired = AuthRepositoryImpl(
-          identity: _identity(),
-          serverUrl: 'https://api.example.com',
+          identity: testServerIdentity(),
+          serverUrl: testServerUrl,
           tokenStorage: mockStorage,
           dio: mockDio,
           clock: LocalClockService(() => DateTime.utc(2026, 2)),
@@ -352,7 +328,7 @@ void main() {
       stubRetrieve(restorable());
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -429,7 +405,7 @@ void main() {
       final gate = Completer<Response<String>>();
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) => gate.future);
@@ -461,7 +437,7 @@ void main() {
       stubRetrieve(restorable());
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -497,7 +473,7 @@ void main() {
           );
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -527,7 +503,7 @@ void main() {
       stubRetrieve(restorable());
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -577,7 +553,7 @@ void main() {
     void stubSignInOk() =>
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-in/email',
+            '$testAuthBasePath/sign-in/email',
             data: any(named: 'data'),
             options: any(named: 'options'),
           ),
@@ -598,7 +574,7 @@ void main() {
       );
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => _response(200, _sessionJson()));
@@ -712,7 +688,7 @@ void main() {
       final gate = Completer<Response<String>>();
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) => gate.future);

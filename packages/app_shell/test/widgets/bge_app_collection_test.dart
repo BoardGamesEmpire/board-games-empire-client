@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -154,7 +155,7 @@ void main() {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
+          FakeAuthRepository(initialSession: testAuthResponse()),
           gameCollectionRepository: withRepository ? repository : null,
           syncOperationSender: withSender ? _MockSyncOperationSender() : null,
           gameCollectionHydrationStatus: status,
@@ -517,7 +518,7 @@ void main() {
           _item('e-2', gameId: 'g-e-1', medium: GameMedium.digital),
         ]),
       );
-      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final app = AppBootstrapCubit(
         platformBootstrap: FakePlatformBootstrap(
           activeServerScope: FakeActiveServerScope(

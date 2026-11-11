@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -80,18 +81,10 @@ class _DataGateways implements DataGatewayRemoteDataSource {
       throw UnimplementedError('${invocation.memberName} is not faked');
 }
 
-AuthResponse _sessionOf(String id, String username) => AuthResponse(
-  token: null,
-  user: AuthUser(
-    id: id,
-    username: username,
-    email: '$id@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
+AuthResponse _sessionOf(String id, String username) => testAuthResponse()
+    .copyWith(token: null)
+    .copyWith
+    .user(id: id, username: username, email: '$id@example.com');
 
 /// A different user arriving over a live session (#432).
 ///
@@ -126,7 +119,7 @@ void main() {
   }) async {
     repo =
         repository?.call() ??
-        FakeAuthRepository(initialSession: sampleSession());
+        FakeAuthRepository(initialSession: testAuthResponse());
     late final ActiveServer active;
     sessionScope = _RecordingUserSessionScope(
       holdActivation: holdActivation,
@@ -293,12 +286,9 @@ void main() {
   ) async {
     await signedInAsFirstUser(tester);
 
-    final renewed = sampleSession();
     repo.emitAuthState(
       AuthStateAuthenticated(
-        session: AuthResponse(
-          token: renewed.token,
-          user: renewed.user,
+        session: testAuthResponse().copyWith(
           expiresAt: DateTime(2100).toUtc(),
         ),
       ),
@@ -316,7 +306,8 @@ void main() {
     Future<void> signedOutElsewhere(WidgetTester tester) async {
       await signedInAsFirstUser(
         tester,
-        repository: () => _SignsInAsSecondUser(initialSession: sampleSession()),
+        repository: () =>
+            _SignsInAsSecondUser(initialSession: testAuthResponse()),
       );
       repo.emitAuthState(const AuthStateUnauthenticated());
       await tester.pumpAndSettle();
@@ -340,7 +331,7 @@ void main() {
     ) async {
       await signedOutElsewhere(tester);
 
-      repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+      repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
       await tester.pumpAndSettle();
 
       expect(find.byType(HomeScreen), findsOneWidget);
@@ -382,7 +373,7 @@ void main() {
     expect(cubit.state, isA<AppBootstrapNeedsAuth>());
     expect(noticeText, findsNothing);
 
-    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
     await tester.pumpAndSettle();
 
     expect(find.byType(HomeScreen), findsOneWidget);

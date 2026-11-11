@@ -1,31 +1,8 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
-import 'package:models/domain.dart';
 import 'package:web_network/src/orchestration/web_active_server_scope.dart';
-
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://bge.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
 
 void main() {
   late DependencyContainerImpl container;
@@ -37,7 +14,7 @@ void main() {
     server = ActiveServer(
       serverId: 'server-uuid-1',
       displayName: 'Test BGE Server',
-      identity: _identity(),
+      identity: testServerIdentity(),
       container: container,
     );
     scope = WebActiveServerScope(server);
