@@ -1326,11 +1326,25 @@ void main() {
       createdAt: kItemInstant,
     );
 
+    /// How a resolve of Catan came out (#518): passed, 5 for and 2 against,
+    /// with 7 of the 9 eligible voting.
+    const passed = NominationResolution(
+      status: NominationStatus.passed,
+      forCount: 5,
+      againstCount: 2,
+      interestedCount: 0,
+      totalVotes: 7,
+      quorumMet: true,
+      thresholdMet: true,
+      eligibleVoterCount: 9,
+    );
+
     /// A server whose reads serve [detail], unless [read] says otherwise,
     /// whose games pool is empty, unless [pool] says otherwise, and whose
     /// nominations are Catan alone, unless [nominations] says otherwise. A
-    /// nominate answers Catan, a vote goes through, and a withdrawal answers
-    /// Catan withdrawn, unless a test says otherwise.
+    /// nominate answers Catan, a vote goes through, a withdrawal answers
+    /// Catan withdrawn, an approval and a rejection answer Catan so decided,
+    /// and a resolve answers Catan [passed], unless a test says otherwise.
     FakeEventRemote serving(
       EventDetail detail, {
       FutureOr<EventSnapshot> Function(String id)? read,
@@ -1339,6 +1353,12 @@ void main() {
       FutureOr<EventNomination> Function(NominateRequest request)? nominated,
       FutureOr<void> Function(CastVoteRequest request)? voteCast,
       FutureOr<EventNomination> Function(WithdrawRequest request)? withdrawn,
+      FutureOr<EventNomination> Function(NominationDecisionRequest request)?
+      approved,
+      FutureOr<EventNomination> Function(NominationDecisionRequest request)?
+      rejected,
+      FutureOr<ResolveAnswer> Function(NominationDecisionRequest request)?
+      resolved,
     }) => FakeEventRemote.detail(
       read ?? (_) => detail.snapshot,
       pool: pool ?? (_) => const [],
@@ -1351,6 +1371,16 @@ void main() {
       withdrawn:
           withdrawn ??
           (_) => catan.copyWith(status: NominationStatus.withdrawn),
+      approved:
+          approved ?? (_) => catan.copyWith(status: NominationStatus.approved),
+      rejected:
+          rejected ?? (_) => catan.copyWith(status: NominationStatus.rejected),
+      resolved:
+          resolved ??
+          (_) => (
+            nomination: catan.copyWith(status: NominationStatus.passed),
+            resolution: passed,
+          ),
     );
 
     /// Shows [detail] from [remote] with a way back, as the app opens it,
@@ -2065,6 +2095,211 @@ void main() {
               withdrawn: (_) => thrown != null
                   ? throw thrown
                   : catan.copyWith(status: NominationStatus.withdrawn),
+            ),
+          );
+
+          nominationsOf(tester).add(write);
+          await animate(tester);
+
+          expect(inNominationsOutcome(copy), findsOneWidget);
+          expect(
+            tester.widget<BgeInlineBanner>(nominationsOutcome()).tone,
+            tone,
+          );
+        });
+      }
+    });
+
+    testWidgets("a resolve's reasons are in the footer", (tester) async {
+      // Disposed in the body: the framework checks for live handles before
+      // teardowns run.
+      final handle = tester.ensureSemantics();
+      const reasons = 'Catan passed: 5 for, 2 against. 7 of 9 counted.';
+      final detail = hosted();
+      var listed = [catan];
+      final remote = serving(detail, nominations: (_) => listed);
+      await showTabbed(tester, detail, remote);
+      await choose(tester, games);
+
+      // The list read after the resolve serves it as the server stored it.
+      listed = [catan.copyWith(status: NominationStatus.passed)];
+      nominationsOf(tester).add(NominationResolved('e-1', catan));
+      await animate(tester);
+
+      expect(remote.resolutions, hasLength(1));
+      expectInFooter(tester, nominationsOutcome());
+      expect(inNominationsOutcome(reasons), findsOneWidget);
+      expect(
+        tester.widget<BgeInlineBanner>(nominationsOutcome()).tone,
+        BgeBannerTone.success,
+      );
+      expect(liveRegionSaying(reasons), findsOne);
+
+      // The row itself says only where it stands: no read carries the count.
+      expect(
+        find.descendant(
+          of: find.byKey(EventDetailScreen.nominationRowKey('n-1')),
+          matching: find.text('Passed'),
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    group("each host decision's end has its copy and tone (#518)", () {
+      const success = BgeBannerTone.success;
+      const warning = BgeBannerTone.warning;
+      const error = BgeBannerTone.error;
+      const refused = EventWriteRefusedException('no', statusCode: 403);
+      const gone = EventRemoteNotFoundException('gone', statusCode: 404);
+      const offline = EventRemoteTransientException('offline');
+      const badRequest = EventWriteConflictException('no', statusCode: 400);
+      final approve = NominationApproved('e-1', catan);
+      final reject = NominationRejected('e-1', catan);
+      final resolve = NominationResolved('e-1', catan);
+
+      /// [passed], ending as [status] instead.
+      NominationResolution ended(NominationStatus status) =>
+          passed.copyWith(status: status);
+
+      final cases =
+          <
+            ({
+              String name,
+              EventNominationsEvent write,
+              EventRemoteException? thrown,
+              NominationResolution resolution,
+              String copy,
+              BgeBannerTone tone,
+            })
+          >[
+            (
+              name: 'an approval done',
+              write: approve,
+              thrown: null,
+              resolution: passed,
+              copy: 'Catan is approved and in the lineup.',
+              tone: success,
+            ),
+            (
+              name: 'a rejection done',
+              write: reject,
+              thrown: null,
+              resolution: passed,
+              copy: 'Catan is rejected.',
+              tone: success,
+            ),
+            (
+              name: 'a resolve that passed',
+              write: resolve,
+              thrown: null,
+              resolution: passed,
+              // Nothing of quorum: the server passes a vote only once it
+              // is met, or where the event has no quorum rule.
+              copy: 'Catan passed: 5 for, 2 against. 7 of 9 counted.',
+              tone: success,
+            ),
+            (
+              name: "a resolve that didn't pass",
+              write: resolve,
+              thrown: null,
+              resolution: ended(NominationStatus.failed),
+              copy: "Catan didn't pass: 5 for, 2 against. 7 of 9 counted.",
+              tone: success,
+            ),
+            (
+              name: "a resolve that didn't meet quorum",
+              write: resolve,
+              thrown: null,
+              resolution: ended(
+                NominationStatus.quorumNotMet,
+              ).copyWith(quorumMet: false),
+              copy: "Catan didn't get enough votes: 7 of 9 counted.",
+              tone: success,
+            ),
+            (
+              name: 'a resolve that ended any other way',
+              write: resolve,
+              thrown: null,
+              resolution: ended(NominationStatus.unknown),
+              copy: 'The vote on Catan is closed.',
+              tone: success,
+            ),
+            for (final (decision, write) in [
+              ('an approval', approve as EventNominationsEvent),
+              ('a rejection', reject),
+              ('a resolve', resolve),
+            ]) ...[
+              (
+                name: '$decision of a nomination that changed',
+                write: write,
+                thrown: badRequest,
+                resolution: passed,
+                copy: 'Catan changed before your decision reached it.',
+                tone: warning,
+              ),
+              (
+                name: '$decision refused',
+                write: write,
+                thrown: refused,
+                resolution: passed,
+                copy: "You can't decide on Catan.",
+                tone: warning,
+              ),
+              (
+                name: '$decision that finds it gone',
+                write: write,
+                thrown: gone,
+                resolution: passed,
+                copy: "Catan isn't nominated any more.",
+                tone: warning,
+              ),
+              (
+                name: '$decision failed',
+                write: write,
+                thrown: offline,
+                resolution: passed,
+                copy: "Your decision on Catan didn't go through. Try again.",
+                tone: error,
+              ),
+            ],
+            for (final (decision, write) in [
+              ('an approval', NominationWrite.approve),
+              ('a rejection', NominationWrite.reject),
+              ('a resolve', NominationWrite.resolve),
+            ])
+              (
+                name: '$decision dropped',
+                write: NominationWriteDropped(write, title: 'Catan'),
+                thrown: null,
+                resolution: passed,
+                copy:
+                    "Your decision on Catan wasn't sent: something changed "
+                    'on this event first.',
+                tone: warning,
+              ),
+          ];
+
+      for (final (:name, :write, :thrown, :resolution, :copy, :tone) in cases) {
+        testWidgets('$name: "$copy"', (tester) async {
+          final detail = hosted();
+          await showTabbed(
+            tester,
+            detail,
+            serving(
+              detail,
+              approved: (_) => thrown != null
+                  ? throw thrown
+                  : catan.copyWith(status: NominationStatus.approved),
+              rejected: (_) => thrown != null
+                  ? throw thrown
+                  : catan.copyWith(status: NominationStatus.rejected),
+              resolved: (_) => thrown != null
+                  ? throw thrown
+                  : (
+                      nomination: catan.copyWith(status: resolution.status),
+                      resolution: resolution,
+                    ),
             ),
           );
 
@@ -10098,6 +10333,32 @@ void main() {
                 ),
               )
               .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    // A host's decision asks first (#518): Close vote's dialog, with the
+    // tally of the votes that count so far.
+    auditScreen(
+      "a host's Close vote dialog",
+      build: screen(remote: nominating),
+      arrange: (tester) async {
+        await showing(tester, host);
+        await press(
+          tester,
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await press(
+          tester,
+          find.byKey(
+            EventDetailScreen.nominationCloseVoteKey('n-1'),
+            skipOffstage: false,
+          ),
+        );
+        expect(find.text('Close the vote on Catan?'), findsOneWidget);
+        expect(
+          find.byKey(EventDetailScreen.hostDecisionConfirmKey),
           findsOneWidget,
         );
       },

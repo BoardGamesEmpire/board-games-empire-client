@@ -369,7 +369,9 @@ class EventGamesTabController extends ChangeNotifier {
   static bool _readsWhole(EventNominationsOutcome? outcome) =>
       switch (outcome) {
         VoteOutcome(result: VoteResult.done || VoteResult.closed) ||
-        WithdrawOutcome(result: WithdrawResult.notWithdrawable) => true,
+        WithdrawOutcome(result: WithdrawResult.notWithdrawable) ||
+        HostDecisionOutcome(result: HostDecisionResult.changed) ||
+        ResolveOutcome(result: ResolveResult.changed) => true,
         _ => false,
       };
 
@@ -378,25 +380,37 @@ class EventGamesTabController extends ChangeNotifier {
   /// [context], the scope's, for the viewer [viewerId].
   ///
   /// A row that leaves the rows shown, filtered and sorted, while it holds
-  /// focus, or as the vote or withdrawal on it that was out ends, as one
-  /// voted on under "Not voted yet" does, or as the whole list's read after
-  /// that write does, where the write's own read of the row failed
-  /// ([_readsWhole]), hands focus on once that frame has ended: to the first
-  /// control of the next row shown that has one, else of the one before it,
-  /// else Filters, where it is built. The write's end arms it however it was
-  /// pressed, so a screen reader's activation, which moves no input focus,
-  /// is handed on too. It moves focus only while focus is free then: on
-  /// nothing, on the page, or still on the row that left. A row that stays
-  /// keeps its own focus, as Withdraw's hands it to the row's lines.
+  /// focus, or as the write on it that was out ends, or as the whole list's
+  /// read after that write does, where the write's own read of the row
+  /// failed ([_readsWhole]), hands focus on once
+  /// that frame has ended: to the first control of the next row shown that
+  /// has one, else of the one before it, else Filters, where it is built.
+  /// The writes that can take their row away are a vote, as one voted on
+  /// under "Not voted yet" leaves, a withdrawal, and a host's approval,
+  /// rejection or close of a vote (#518), each of which changes the row's
+  /// status, so it can leave a status filter, or finds it gone. The write's
+  /// end arms it however it was pressed, so a screen reader's activation,
+  /// which moves no input focus, is handed on too. It moves focus only while
+  /// focus is free then: on nothing, on the page, or still on the row that
+  /// left. A row that stays keeps its own focus, as Withdraw's and a host's
+  /// decision's hand it to the row's lines.
   void nominationsChanged(
     BuildContext context,
     EventNominationsState previous,
     EventNominationsState current, {
     required String? viewerId,
   }) {
-    // The vote or withdrawal out before this change: the row it was on.
+    // The write on a row that was out before this change: the row it was
+    // on. A nominate's id is the pool row's, and its row is a new one.
     final ended = switch (previous.writing) {
-      (write: NominationWrite.vote || NominationWrite.withdraw, :final id) =>
+      (
+        write: NominationWrite.vote ||
+            NominationWrite.withdraw ||
+            NominationWrite.approve ||
+            NominationWrite.reject ||
+            NominationWrite.resolve,
+        :final id,
+      ) =>
         id,
       _ => null,
     };

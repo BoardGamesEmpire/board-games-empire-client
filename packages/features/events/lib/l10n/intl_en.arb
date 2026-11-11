@@ -1196,7 +1196,7 @@
   },
   "eventsVoteGone": "{title} isn't nominated any more.",
   "@eventsVoteGone": {
-    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone, or, as a host, approved, rejected or closed the vote on one that is gone. The title is the game's.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1313,6 +1313,282 @@
   "eventsWithdrawDropped": "{title} wasn't withdrawn: something changed on this event first.",
   "@eventsWithdrawDropped": {
     "description": "Banner at the foot of an event's screen when a withdrawal was not sent at all, because the event changed between the user's press and the moment it would have gone. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsApprove": "Approve",
+  "@eventsApprove": {
+    "description": "Button under a nominated game awaiting a host's approval, in the Nominations section of an event's Games tab, shown to the event's host or co-host: it puts the game into the lineup, the games to be played, and asks first (eventsApproveConfirmTitle). Screen readers hear eventsApproveNamed instead."
+  },
+  "eventsApproveNamed": "Approve {title}",
+  "@eventsApproveNamed": {
+    "description": "eventsApprove as a screen reader reads it, naming the game, so each nominated game's button says which it approves.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsReject": "Reject",
+  "@eventsReject": {
+    "description": "Button under a nominated game awaiting a host's approval, in the Nominations section of an event's Games tab, shown to the event's host or co-host: it turns the nomination down, and asks first (eventsRejectConfirmTitle). Screen readers hear eventsRejectNamed instead."
+  },
+  "eventsRejectNamed": "Reject {title}",
+  "@eventsRejectNamed": {
+    "description": "eventsReject as a screen reader reads it, naming the game, so each nominated game's button says which it rejects.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsCloseVote": "Close vote",
+  "@eventsCloseVote": {
+    "description": "Button under a nominated game that is up for a vote, in the Nominations section of an event's Games tab, shown to the event's host, co-host or moderator, or to a household's owner or admin on the household's event: it ends the vote, and the server counts it and settles whether the game goes into the lineup. It asks first (eventsCloseVoteConfirmTitle). Screen readers hear eventsCloseVoteNamed instead."
+  },
+  "eventsCloseVoteNamed": "Close the vote on {title}",
+  "@eventsCloseVoteNamed": {
+    "description": "eventsCloseVote as a screen reader reads it, naming the game, so each nominated game's button says which vote it closes.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsHostDecisionKeep": "Not yet",
+  "@eventsHostDecisionKeep": {
+    "description": "Button in the dialogs that ask before a host approves or rejects a nominated game, or closes the vote on one (eventsApproveConfirmTitle, eventsRejectConfirmTitle, eventsCloseVoteConfirmTitle). Closes the dialog, sends nothing, and leaves the nomination as it is, to decide later."
+  },
+  "eventsApproveConfirmTitle": "Approve {title}?",
+  "@eventsApproveConfirmTitle": {
+    "description": "Title of the dialog that asks before a host approves a nominated game (eventsApprove). The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsApproveConfirmBody": "It goes into the lineup. Nothing can take it out yet.",
+  "@eventsApproveConfirmBody": {
+    "description": "Body of the approve dialog (eventsApproveConfirmTitle): once approved, the game is in the lineup, the games to be played, and the app has no way yet to take a game back out of it."
+  },
+  "eventsApproveConfirm": "Approve",
+  "@eventsApproveConfirm": {
+    "description": "Confirm button of the approve dialog (eventsApproveConfirmTitle): it approves the nomination, putting the game into the lineup."
+  },
+  "eventsRejectConfirmTitle": "Reject {title}?",
+  "@eventsRejectConfirmTitle": {
+    "description": "Title of the dialog that asks before a host rejects a nominated game (eventsReject). The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsRejectConfirmBody": "This can't be undone.",
+  "@eventsRejectConfirmBody": {
+    "description": "Body of the reject dialog (eventsRejectConfirmTitle): a rejected nomination stays rejected."
+  },
+  "eventsRejectConfirm": "Reject",
+  "@eventsRejectConfirm": {
+    "description": "Confirm button of the reject dialog (eventsRejectConfirmTitle), drawn as a destructive action: it rejects the nomination."
+  },
+  "eventsCloseVoteConfirmTitle": "Close the vote on {title}?",
+  "@eventsCloseVoteConfirmTitle": {
+    "description": "Title of the dialog that asks before a host closes the vote on a nominated game (eventsCloseVote). The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsCloseVoteConfirmBody": "{forCount} for, {againstCount} against, {interestedCount} interested so far. The result can't be undone.",
+  "@eventsCloseVoteConfirmBody": {
+    "description": "Body of the close-vote dialog (eventsCloseVoteConfirmTitle): how many of the votes that count so far are for the game, against it, and interested in it, as the nominated game's tally shows them (eventsNominationTally), and that the outcome the server settles once the vote is closed is final. Votes that don't count, such as those of someone who has left, aren't in the numbers. Where the event's rules say how an interested vote counts, eventsCloseVoteConfirmBodyInterested is shown instead.",
+    "placeholders": {
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsCloseVoteConfirmBodyInterested": "{forCount} for, {againstCount} against, {interestedCount} interested so far. {interested}. The result can't be undone.",
+  "@eventsCloseVoteConfirmBodyInterested": {
+    "description": "eventsCloseVoteConfirmBody where the event's rules say how an interested vote counts: {interested} is that line as the nominated game shows it under its tally, one of eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst or eventsNominationInterestedNotCounted, so the host sees how the counts will be settled. {forCount}, {againstCount} and {interestedCount} are as in eventsCloseVoteConfirmBody.",
+    "placeholders": {
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      },
+      "interested": {
+        "type": "String",
+        "example": "Interested counts as For"
+      }
+    }
+  },
+  "eventsCloseVoteConfirm": "Close vote",
+  "@eventsCloseVoteConfirm": {
+    "description": "Confirm button of the close-vote dialog (eventsCloseVoteConfirmTitle): it closes the vote, and the server counts it and settles the nomination."
+  },
+  "eventsApproved": "{title} is approved and in the lineup.",
+  "@eventsApproved": {
+    "description": "Banner at the foot of an event's screen once a host approved a nominated game: it is in the lineup, the games to be played. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsRejected": "{title} is rejected.",
+  "@eventsRejected": {
+    "description": "Banner at the foot of an event's screen once a host rejected a nominated game. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsResolvedPassed": "{title} passed: {forCount} for, {againstCount} against. {totalVotes} of {eligibleVoterCount} counted.",
+  "@eventsResolvedPassed": {
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it passed, so it is in the lineup: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "forCount": {
+        "type": "int",
+        "example": "5"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "2"
+      },
+      "totalVotes": {
+        "type": "int",
+        "example": "7"
+      },
+      "eligibleVoterCount": {
+        "type": "int",
+        "example": "9"
+      }
+    }
+  },
+  "eventsResolvedFailed": "{title} didn't pass: {forCount} for, {againstCount} against. {totalVotes} of {eligibleVoterCount} counted.",
+  "@eventsResolvedFailed": {
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and it didn't get the votes for it that the event's rules ask: the counts the server gave as it settled the vote, which nothing shows later. {forCount} and {againstCount} are the votes that counted for and against it, interested votes included where the event's rules count them as one or the other. {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "forCount": {
+        "type": "int",
+        "example": "2"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "5"
+      },
+      "totalVotes": {
+        "type": "int",
+        "example": "7"
+      },
+      "eligibleVoterCount": {
+        "type": "int",
+        "example": "9"
+      }
+    }
+  },
+  "eventsResolvedQuorumNotMet": "{title} didn't get enough votes: {totalVotes} of {eligibleVoterCount} counted.",
+  "@eventsResolvedQuorumNotMet": {
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and too few votes counted for the vote to count under the event's rules (its quorum). {totalVotes} is how many votes counted towards the result: those for and against, with interested votes folded into one or the other, or left out, as the event's rules weigh them (eventsNominationInterestedAsFor, eventsNominationInterestedAsAgainst, eventsNominationInterestedNotCounted). {eligibleVoterCount} is how many people could vote. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "totalVotes": {
+        "type": "int",
+        "example": "2"
+      },
+      "eligibleVoterCount": {
+        "type": "int",
+        "example": "9"
+      }
+    }
+  },
+  "eventsResolvedSettled": "The vote on {title} is closed.",
+  "@eventsResolvedSettled": {
+    "description": "Banner at the foot of an event's screen once a host closed the vote on a nominated game and the server settled it in a way this version of the app can't name: it says only that the vote is over. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsHostDecisionChanged": "{title} changed before your decision reached it.",
+  "@eventsHostDecisionChanged": {
+    "description": "Banner at the foot of an event's screen when a host approved, rejected, or closed the vote on a nominated game that was no longer waiting for that decision when it reached the server, as when another host decided first. The nomination is read again and shows where it stands now. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsHostDecisionRefused": "You can't decide on {title}.",
+  "@eventsHostDecisionRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user approve, reject, or close the vote on a nominated game. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsHostDecisionFailed": "Your decision on {title} didn't go through. Try again.",
+  "@eventsHostDecisionFailed": {
+    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game failed for any other reason, such as no connection. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsHostDecisionDropped": "Your decision on {title} wasn't sent: something changed on this event first.",
+  "@eventsHostDecisionDropped": {
+    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game was not sent at all, because the event changed between the press and the moment it would have gone. The title is the game's.",
     "placeholders": {
       "title": {
         "type": "String",

@@ -146,6 +146,24 @@ void main() {
   late FutureOr<EventNomination> Function(NominationRequest request)
   nominationAnswer;
 
+  /// What each approval answers (#518): the nomination, approved, unless a
+  /// test says otherwise.
+  late FutureOr<EventNomination> Function(NominationDecisionRequest request)
+  approveAnswer;
+
+  /// What each rejection answers (#518): the nomination, rejected, unless a
+  /// test says otherwise.
+  late FutureOr<EventNomination> Function(NominationDecisionRequest request)
+  rejectAnswer;
+
+  /// What each resolve answers (#518): the nomination, passed, unless a test
+  /// says otherwise.
+  late FutureOr<ResolveAnswer> Function(NominationDecisionRequest request)
+  resolveAnswer;
+
+  /// A detail read held until a test completes it, while set.
+  Completer<EventSnapshot>? heldRead;
+
   // The viewer, Ada, Bo and someone with no name, in the roster's order.
   final me = _row('att-me', name: 'Me');
   final ada = _row('att-ada', name: 'Ada');
@@ -162,20 +180,22 @@ void main() {
   ).copyWith(eventId: 'e-1');
 
   /// Event `e-1` as the viewer sees it, with [roster] (the viewer, Ada, Bo
-  /// and someone unnamed by default) and [policy] on it. Scheduled unless
+  /// and someone unnamed by default) and [policy] on it, and on the
+  /// household [householdId]'s events where it is given. Scheduled unless
   /// [status] says otherwise.
   EventDetail detailOf({
     List<EventAttendee>? roster,
     EventPolicy? policy,
     EventAttendee? viewer,
     bool viewerGiven = true,
+    String? householdId,
     EventStatus status = EventStatus.scheduled,
   }) => EventDetail(
     snapshot: EventSnapshot(
-      event: item(
-        'e-1',
-        title: 'Catan night',
-      ).event.copyWith(status: status),
+      event: item('e-1', title: 'Catan night').event.copyWith(
+        status: status,
+        householdId: householdId,
+      ),
       occurrences: [friday],
       attendees: roster ?? [me, ada, bo, unnamed],
       policy: policy,
@@ -207,21 +227,53 @@ void main() {
       from: 'o-2',
       status: NominationStatus.withdrawn,
     );
+    approveAnswer = (request) =>
+        _nomination(request.nominationId, status: NominationStatus.approved);
+    rejectAnswer = (request) =>
+        _nomination(request.nominationId, status: NominationStatus.rejected);
+    resolveAnswer = (request) => (
+      nomination: _nomination(
+        request.nominationId,
+        status: NominationStatus.passed,
+      ),
+      resolution: const NominationResolution(
+        status: NominationStatus.passed,
+        forCount: 2,
+        againstCount: 1,
+        interestedCount: 0,
+        totalVotes: 3,
+        quorumMet: true,
+        thresholdMet: true,
+        eligibleVoterCount: 4,
+      ),
+    );
+    heldRead = null;
   });
 
   tearDown(() {
     unawaited(cache.close());
   });
 
-  Widget harness(EventDetail detail, {ValueListenable<bool>? offline}) {
+  Widget harness(
+    EventDetail detail, {
+    ValueListenable<bool>? offline,
+    Future<HouseholdRole?> Function(String householdId)? householdRole,
+  }) {
     remote = FakeEventRemote.detail(
-      (_) => detail.snapshot,
+      (_) => heldRead?.future ?? detail.snapshot,
       pool: (_) => pool,
       nominations: (eventId) async =>
           kept.over(await nominationsAnswer(eventId)),
       nomination: (request) async => kept.keep(await nominationAnswer(request)),
       voteCast: (_) {},
       withdrawn: (request) async => kept.keep(await withdrawAnswer(request)),
+      approved: (request) async => kept.keep(await approveAnswer(request)),
+      rejected: (request) async => kept.keep(await rejectAnswer(request)),
+      resolved: (request) async {
+        final answer = await resolveAnswer(request);
+        kept.keep(answer.nomination);
+        return answer;
+      },
     );
     addTearDown(kept.clear);
     return MaterialApp(
@@ -246,6 +298,7 @@ void main() {
         eventId: 'e-1',
         repository: repository,
         remote: remote,
+        householdRole: householdRole,
         onBack: (_) {},
         now: () => now,
       ),
@@ -266,10 +319,15 @@ void main() {
   }
 
   /// Shows [detail] (the viewer's, by default) and opens the Games tab, with
-  /// the reads that starts ended.
-  Future<void> showGames(WidgetTester tester, {EventDetail? detail}) async {
+  /// the reads that starts ended. [householdRole] answers the viewer's role
+  /// in the event's household.
+  Future<void> showGames(
+    WidgetTester tester, {
+    EventDetail? detail,
+    Future<HouseholdRole?> Function(String householdId)? householdRole,
+  }) async {
     final shown = detail ?? detailOf();
-    await tester.pumpWidget(harness(shown));
+    await tester.pumpWidget(harness(shown, householdRole: householdRole));
     cache.add(shown);
     await settle(tester);
     await settle(tester);
@@ -1237,6 +1295,789 @@ void main() {
     });
   });
 
+  group("a host's decisions (#518)", () {
+    final host = me.copyWith(role: EventRole.host);
+    final moderator = me.copyWith(role: EventRole.moderator);
+
+    /// `e-1` as [viewer] sees it, with them on the roster in the viewer's
+    /// place.
+    EventDetail as(EventAttendee viewer) =>
+        detailOf(viewer: viewer, roster: [viewer, ada, bo, unnamed]);
+
+    /// Bo's Catan, awaiting approval, unless a test says otherwise.
+    EventNomination catan({
+      NominationStatus status = NominationStatus.awaitingApproval,
+      List<EventNominationVote> votes = const [],
+    }) => _nomination('n-1', status: status, votes: votes);
+
+    Finder approve(String id) => find.byKey(
+      EventDetailScreen.nominationApproveKey(id),
+      skipOffstage: false,
+    );
+    Finder reject(String id) => find.byKey(
+      EventDetailScreen.nominationRejectKey(id),
+      skipOffstage: false,
+    );
+    Finder closeVote(String id) => find.byKey(
+      EventDetailScreen.nominationCloseVoteKey(id),
+      skipOffstage: false,
+    );
+    Finder confirmDecision() =>
+        find.byKey(EventDetailScreen.hostDecisionConfirmKey);
+    Finder notYet() => find.byKey(EventDetailScreen.hostDecisionKeepKey);
+    Finder inOutcome(String text) =>
+        find.descendant(of: outcome(), matching: find.text(text));
+    FocusNode focusOf(WidgetTester tester, Finder button) =>
+        tester.widget<ButtonStyleButton>(button).focusNode!;
+    VoidCallback? pressOf(WidgetTester tester, Finder button) =>
+        tester.widget<TextButton>(button).onPressed;
+
+    testWidgets('Approve asks first and sends on confirm', (tester) async {
+      nominationsAnswer = (_) => [catan()];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, approve('n-1'));
+      await animate(tester);
+
+      // It asks first, naming the game and what follows.
+      expect(remote.approvals, isEmpty);
+      expect(find.text('Approve Catan?'), findsOneWidget);
+      expect(
+        find.text('It goes into the lineup. Nothing can take it out yet.'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: notYet(), matching: find.text('Not yet')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: confirmDecision(), matching: find.text('Approve')),
+        findsOneWidget,
+      );
+      // Not drawn as a destructive action.
+      expect(tester.widget<TextButton>(confirmDecision()).style, isNull);
+
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.approvals, [(eventId: 'e-1', nominationId: 'n-1')]);
+      // The answer takes the row's place, with neither decision left, and
+      // the footer says so.
+      expect(inRow('n-1', 'Approved'), findsOneWidget);
+      expect(approve('n-1'), findsNothing);
+      expect(reject('n-1'), findsNothing);
+      expect(
+        inOutcome('Catan is approved and in the lineup.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Reject asks first, as a destructive action, and sends on '
+        'confirm', (tester) async {
+      nominationsAnswer = (_) => [catan()];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, reject('n-1'));
+      await animate(tester);
+
+      expect(remote.rejections, isEmpty);
+      expect(find.text('Reject Catan?'), findsOneWidget);
+      expect(find.text("This can't be undone."), findsOneWidget);
+      expect(
+        find.descendant(of: notYet(), matching: find.text('Not yet')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: confirmDecision(), matching: find.text('Reject')),
+        findsOneWidget,
+      );
+      final confirm = tester.widget<TextButton>(confirmDecision());
+      expect(
+        confirm.style?.foregroundColor?.resolve(const {}),
+        Theme.of(tester.element(confirmDecision())).colorScheme.error,
+      );
+
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.rejections, [(eventId: 'e-1', nominationId: 'n-1')]);
+      expect(inRow('n-1', 'Rejected'), findsOneWidget);
+      expect(approve('n-1'), findsNothing);
+      expect(reject('n-1'), findsNothing);
+      expect(inOutcome('Catan is rejected.'), findsOneWidget);
+    });
+
+    testWidgets("Close vote's dialog shows the counting tally", (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [
+            _vote('att-ada', VoteType.forGame),
+            _vote('att-bo', VoteType.forGame),
+            _vote('att-me', VoteType.against),
+            _vote('att-nn', VoteType.interested),
+            // Doesn't count, so isn't in the numbers.
+            _vote('att-gone', VoteType.forGame, eligible: false),
+          ],
+        ),
+      ];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+
+      expect(remote.resolutions, isEmpty);
+      expect(find.text('Close the vote on Catan?'), findsOneWidget);
+      expect(
+        find.text(
+          "2 for, 1 against, 1 interested so far. The result can't be "
+          'undone.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: notYet(), matching: find.text('Not yet')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: confirmDecision(),
+          matching: find.text('Close vote'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, [(eventId: 'e-1', nominationId: 'n-1')]);
+      expect(inRow('n-1', 'Passed'), findsOneWidget);
+      expect(closeVote('n-1'), findsNothing);
+      // The resolve's reasons, which no later read carries.
+      expect(
+        inOutcome('Catan passed: 2 for, 1 against. 3 of 4 counted.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("Close vote's dialog says how the event counts Interested, "
+        'as the row does', (tester) async {
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [
+            _vote('att-ada', VoteType.forGame),
+            _vote('att-me', VoteType.against),
+            _vote('att-nn', VoteType.interested),
+          ],
+        ),
+      ];
+      final roster = [host, ada, bo, unnamed];
+
+      for (final (weight, line) in [
+        (InterestedWeight.asFor, 'Interested counts as For'),
+        (InterestedWeight.asAgainst, 'Interested counts as Against'),
+        (InterestedWeight.asAbstain, "Interested isn't counted"),
+        (InterestedWeight.unknown, null),
+      ]) {
+        await tester.pumpWidget(const SizedBox());
+        await showGames(
+          tester,
+          detail: detailOf(
+            viewer: host,
+            roster: roster,
+            policy: _policy(weight),
+          ),
+        );
+        // The row's line, where there is one.
+        expect(
+          line == null
+              ? find.textContaining('Interested ')
+              : inRow('n-1', line),
+          line == null ? findsNothing : findsOneWidget,
+          reason: weight.name,
+        );
+
+        await press(tester, closeVote('n-1'));
+        await animate(tester);
+
+        expect(
+          find.text(
+            line == null
+                ? "1 for, 1 against, 1 interested so far. The result can't "
+                      'be undone.'
+                : '1 for, 1 against, 1 interested so far. $line. The '
+                      "result can't be undone.",
+          ),
+          findsOneWidget,
+          reason: weight.name,
+        );
+        await tester.tap(notYet());
+        await animate(tester);
+      }
+      expect(remote.resolutions, isEmpty);
+    });
+
+    testWidgets('Not yet sends nothing, and puts focus back on the button', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [
+        catan(),
+        _nomination('n-2', title: 'Azul', from: 'o-2'),
+      ];
+
+      await showGames(tester, detail: as(host));
+      for (final (button, title) in [
+        (approve('n-1'), 'Approve Catan?'),
+        (reject('n-1'), 'Reject Catan?'),
+        (closeVote('n-2'), 'Close the vote on Azul?'),
+      ]) {
+        await tester.ensureVisible(button);
+        await tester.pump();
+        final focus = focusOf(tester, button)..requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        expect(find.text(title), findsOneWidget);
+
+        await tester.tap(notYet());
+        await animate(tester);
+
+        expect(find.text(title), findsNothing, reason: title);
+        expect(focus.hasPrimaryFocus, isTrue, reason: title);
+        expect(pressOf(tester, button), isNotNull, reason: title);
+      }
+      expect(remote.approvals, isEmpty);
+      expect(remote.rejections, isEmpty);
+      expect(remote.resolutions, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inRow('n-1', 'Awaiting approval'), findsOneWidget);
+      expect(inRow('n-2', 'Voting'), findsOneWidget);
+    });
+
+    testWidgets('a host gets Approve and Reject while it awaits approval, '
+        'Close vote while it is open, and none on any other', (tester) async {
+      nominationsAnswer = (_) => [
+        for (final status in NominationStatus.values)
+          _nomination(
+            'n-${status.name}',
+            status: status,
+            pausedFrom: NominationStatus.open,
+          ),
+      ];
+      // Tall enough that every row is built.
+      useViewSize(tester, const Size(800, 4000));
+
+      await showGames(tester, detail: as(host));
+
+      for (final status in NominationStatus.values) {
+        final id = 'n-${status.name}';
+        final awaiting = status == NominationStatus.awaitingApproval;
+        expect(row(id), findsOneWidget, reason: status.name);
+        expect(
+          approve(id),
+          awaiting ? findsOneWidget : findsNothing,
+          reason: status.name,
+        );
+        expect(
+          reject(id),
+          awaiting ? findsOneWidget : findsNothing,
+          reason: status.name,
+        );
+        expect(
+          closeVote(id),
+          status == NominationStatus.open ? findsOneWidget : findsNothing,
+          reason: status.name,
+        );
+      }
+    });
+
+    testWidgets('no host buttons on a paused nomination', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          status: NominationStatus.paused,
+          pausedFrom: NominationStatus.open,
+        ),
+        _nomination(
+          'n-2',
+          title: 'Azul',
+          from: 'o-2',
+          status: NominationStatus.paused,
+          pausedFrom: NominationStatus.awaitingApproval,
+        ),
+      ];
+
+      await showGames(tester, detail: as(host));
+
+      for (final id in ['n-1', 'n-2']) {
+        expect(row(id), findsOneWidget, reason: id);
+        expect(inRow(id, 'Paused'), findsOneWidget, reason: id);
+        expect(approve(id), findsNothing, reason: id);
+        expect(reject(id), findsNothing, reason: id);
+        expect(closeVote(id), findsNothing, reason: id);
+      }
+    });
+
+    testWidgets('a moderator gets Close vote but not Approve', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination('n-1'),
+        _nomination(
+          'n-2',
+          title: 'Azul',
+          from: 'o-2',
+          status: NominationStatus.awaitingApproval,
+        ),
+      ];
+
+      await showGames(tester, detail: as(moderator));
+
+      expect(closeVote('n-1'), findsOneWidget);
+      expect(approve('n-2'), findsNothing);
+      expect(reject('n-2'), findsNothing);
+
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, [(eventId: 'e-1', nominationId: 'n-1')]);
+    });
+
+    testWidgets("a household's admin with no row on the roster gets Close "
+        'vote, and not Approve', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination('n-1'),
+        _nomination(
+          'n-2',
+          title: 'Azul',
+          from: 'o-2',
+          status: NominationStatus.awaitingApproval,
+        ),
+      ];
+
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewerGiven: false,
+          roster: [ada, bo, unnamed],
+          householdId: 'h-1',
+        ),
+        householdRole: (_) async => HouseholdRole.householdAdmin,
+      );
+
+      expect(closeVote('n-1'), findsOneWidget);
+      expect(approve('n-2'), findsNothing);
+      expect(reject('n-2'), findsNothing);
+
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, [(eventId: 'e-1', nominationId: 'n-1')]);
+    });
+
+    testWidgets('a participant gets none', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination('n-1'),
+        _nomination(
+          'n-2',
+          title: 'Azul',
+          from: 'o-2',
+          status: NominationStatus.awaitingApproval,
+        ),
+      ];
+
+      await showGames(tester);
+
+      expect(closeVote('n-1'), findsNothing);
+      expect(approve('n-2'), findsNothing);
+      expect(reject('n-2'), findsNothing);
+    });
+
+    testWidgets('each names its game to a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        catan(),
+        _nomination('n-2', title: 'Azul', from: 'o-2'),
+      ];
+
+      await showGames(tester, detail: as(host));
+
+      for (final (button, label) in [
+        (approve('n-1'), 'Approve Catan'),
+        (reject('n-1'), 'Reject Catan'),
+        (closeVote('n-2'), 'Close the vote on Azul'),
+      ]) {
+        await tester.ensureVisible(button);
+        await tester.pump();
+        expect(
+          tester.getSemantics(button),
+          isSemantics(
+            label: label,
+            isButton: true,
+            isEnabled: true,
+            hasTapAction: true,
+          ),
+          reason: label,
+        );
+      }
+      handle.dispose();
+    });
+
+    for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+      testWidgets("a host's decisions aren't built on a ${status.name} event", (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [
+          catan(),
+          _nomination('n-2', title: 'Azul', from: 'o-2'),
+        ];
+
+        await showGames(
+          tester,
+          detail: detailOf(
+            viewer: host,
+            roster: [host, ada, bo, unnamed],
+            status: status,
+          ),
+        );
+
+        expect(row('n-1'), findsOneWidget);
+        expect(row('n-2'), findsOneWidget);
+        expect(approve('n-1'), findsNothing);
+        expect(reject('n-1'), findsNothing);
+        expect(closeVote('n-2'), findsNothing);
+      });
+    }
+
+    testWidgets('a decision is dropped where the event was cancelled while '
+        'it asked, and the footer says so', (tester) async {
+      nominationsAnswer = (_) => [catan()];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, approve('n-1'));
+      await animate(tester);
+
+      // Cancelled while the dialog was open.
+      cache.add(
+        detailOf(
+          viewer: host,
+          roster: [host, ada, bo, unnamed],
+          status: EventStatus.cancelled,
+        ),
+      );
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.approvals, isEmpty);
+      expect(
+        inOutcome(
+          "Your decision on Catan wasn't sent: something changed on this "
+          'event first.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a decision dropped by the re-check says so in the footer', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [catan()];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, approve('n-1'));
+      await animate(tester);
+
+      // Decided while the dialog was open.
+      nominationsAnswer = (_) => [catan(status: NominationStatus.approved)];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.approvals, isEmpty);
+      expect(
+        inOutcome(
+          "Your decision on Catan wasn't sent: something changed on this "
+          'event first.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a close of the vote whose tally changed while it asked is '
+        'dropped', (tester) async {
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+      expect(
+        find.text(
+          "1 for, 0 against, 0 interested so far. The result can't be "
+          'undone.',
+        ),
+        findsOneWidget,
+      );
+
+      // Voted on while the dialog was open: closing now would settle counts
+      // the host never saw.
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [
+            _vote('att-ada', VoteType.forGame),
+            _vote('att-bo', VoteType.against),
+          ],
+        ),
+      ];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, isEmpty);
+      expect(
+        inOutcome(
+          "Your decision on Catan wasn't sent: something changed on this "
+          'event first.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a detail read that starts while it asks holds the button, '
+        'and the decision waits for it', (tester) async {
+      nominationsAnswer = (_) => [catan()];
+
+      await showGames(tester, detail: as(host));
+      await tester.ensureVisible(approve('n-1'));
+      await tester.pump();
+      final focus = focusOf(tester, approve('n-1'))..requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+
+      heldRead = Completer<EventSnapshot>();
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      // Held, so the focus the dialog hands back stays (#607), and nothing
+      // goes until the read has ended.
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(remote.approvals, isEmpty);
+
+      heldRead!.complete(as(host).snapshot);
+      await animate(tester);
+
+      expect(remote.approvals, hasLength(1));
+      expect(inRow('n-1', 'Approved'), findsOneWidget);
+    });
+
+    testWidgets('disabled while a detail read runs, and while another '
+        'nominations write is out', (tester) async {
+      final sent = Completer<EventNomination>();
+      approveAnswer = (_) => sent.future;
+      nominationsAnswer = (_) => [
+        catan(),
+        _nomination('n-2', title: 'Azul', from: 'o-2'),
+      ];
+
+      await showGames(tester, detail: as(host));
+      heldRead = Completer<EventSnapshot>();
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+
+      for (final button in [approve('n-1'), reject('n-1'), closeVote('n-2')]) {
+        expect(pressOf(tester, button), isNull, reason: '$button');
+      }
+
+      heldRead!.complete(as(host).snapshot);
+      heldRead = null;
+      await animate(tester);
+      for (final button in [approve('n-1'), reject('n-1'), closeVote('n-2')]) {
+        expect(pressOf(tester, button), isNotNull, reason: '$button');
+      }
+
+      await press(tester, approve('n-1'));
+      await animate(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.approvals, hasLength(1));
+      for (final button in [reject('n-1'), closeVote('n-2')]) {
+        expect(pressOf(tester, button), isNull, reason: '$button');
+      }
+
+      sent.complete(catan(status: NominationStatus.approved));
+      await animate(tester);
+
+      expect(pressOf(tester, closeVote('n-2')), isNotNull);
+    });
+
+    testWidgets('disabled offline, saying why once under each row', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      // Catan awaits approval, with no vote control; Azul is open, with the
+      // host's vote, whose own note says it there.
+      nominationsAnswer = (_) => [
+        catan(),
+        _nomination('n-2', title: 'Azul', from: 'o-2'),
+      ];
+      useViewSize(tester, const Size(800, 3200));
+
+      await tester.pumpWidget(harness(as(host), offline: offline));
+      cache.add(as(host));
+      await settle(tester);
+      await settle(tester);
+      await tester.tap(
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+      await animate(tester);
+
+      for (final button in [approve('n-1'), reject('n-1'), closeVote('n-2')]) {
+        expect(pressOf(tester, button), isNull, reason: '$button');
+        expect(
+          tester.getSemantics(button),
+          isSemantics(hint: _onlineOnlyCopy, isEnabled: false),
+          reason: '$button',
+        );
+      }
+      for (final id in ['n-1', 'n-2']) {
+        expect(
+          find.descendant(of: row(id), matching: find.text(_onlineOnlyCopy)),
+          findsOneWidget,
+          reason: id,
+        );
+      }
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: row('n-1'),
+          matching: find.text(_onlineOnlyCopy),
+        ),
+        findsNothing,
+      );
+      for (final button in [approve('n-1'), reject('n-1'), closeVote('n-2')]) {
+        expect(pressOf(tester, button), isNotNull, reason: '$button');
+      }
+      handle.dispose();
+    });
+
+    group('after a decision, focus stays on its row', () {
+      /// The row's lines, as one node.
+      SemanticsNode lines(WidgetTester tester) =>
+          tester.getSemantics(inRow('n-1', 'Catan'));
+
+      testWidgets('from the keyboard', (tester) async {
+        final handle = tester.ensureSemantics();
+        final sent = Completer<EventNomination>();
+        approveAnswer = (_) => sent.future;
+        nominationsAnswer = (_) => [catan()];
+
+        await showGames(tester, detail: as(host));
+        await tester.ensureVisible(approve('n-1'));
+        await tester.pump();
+        final focus = focusOf(tester, approve('n-1'))..requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        // Not yet, then Approve.
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+
+        // Held while it is out, so it keeps focus (#607).
+        expect(remote.approvals, hasLength(1));
+        expect(focus.hasPrimaryFocus, isTrue);
+
+        sent.complete(catan(status: NominationStatus.approved));
+        await animate(tester);
+
+        expect(approve('n-1'), findsNothing);
+        expect(
+          lines(tester),
+          isSemantics(isFocusable: true, isFocused: true),
+        );
+        expect(lines(tester).label, contains('Approved'));
+
+        // Tab goes on from the row, and the row is no stop of its own.
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(lines(tester), isSemantics(isFocusable: false));
+        handle.dispose();
+      });
+
+      testWidgets("from a screen reader's activation, with focus on nothing", (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        nominationsAnswer = (_) => [catan(status: NominationStatus.open)];
+
+        await showGames(tester, detail: as(host));
+        await tester.ensureVisible(closeVote('n-1'));
+        await tester.pump();
+        screenReaderTap(tester, 'Close the vote on Catan');
+        await animate(tester);
+        screenReaderTap(tester, 'Close vote');
+        await animate(tester);
+
+        expect(remote.resolutions, hasLength(1));
+        expect(lines(tester), isSemantics(isFocused: true));
+        expect(lines(tester).label, contains('Passed'));
+        handle.dispose();
+      });
+
+      testWidgets('nowhere new when it is refused: the button keeps it', (
+        tester,
+      ) async {
+        rejectAnswer = (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403);
+        nominationsAnswer = (_) => [catan()];
+
+        await showGames(tester, detail: as(host));
+        await tester.ensureVisible(reject('n-1'));
+        await tester.pump();
+        final focus = focusOf(tester, reject('n-1'))..requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        await tester.tap(confirmDecision());
+        await animate(tester);
+
+        expect(remote.rejections, hasLength(1));
+        expect(inOutcome("You can't decide on Catan."), findsOneWidget);
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(pressOf(tester, reject('n-1')), isNotNull);
+      });
+    });
+  });
+
   group('filters and sort', () {
     /// Five nominations, in the server's order: Catan and Azul open for
     /// votes, Azul the viewer's own and voted on by them; Root awaiting
@@ -1692,7 +2533,8 @@ void main() {
       expect(find.text('3 of 5 nominations'), findsOneWidget);
     });
 
-    group('a vote or withdrawal that takes its row out of the filter', () {
+    group('a vote, withdrawal or decision that takes its row out of the '
+        'filter', () {
       /// The viewer's own Azul, open, which a withdrawal takes out of
       /// Voting.
       final azul = _nomination('n-1', title: 'Azul', by: 'att-me', from: 'o-2');
@@ -1839,6 +2681,53 @@ void main() {
         handle.dispose();
       });
 
+      testWidgets("a host's approval by a screen reader's activation, under "
+          'Awaiting approval, hands focus to the next row (#518)', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        final host = me.copyWith(role: EventRole.host);
+        useViewSize(tester, const Size(800, 3200));
+        nominationsAnswer = (_) => [
+          _nomination('n-1', status: NominationStatus.awaitingApproval),
+          _nomination(
+            'n-2',
+            title: 'Azul',
+            from: 'o-2',
+            status: NominationStatus.awaitingApproval,
+          ),
+        ];
+        await showGames(
+          tester,
+          detail: detailOf(viewer: host, roster: [host, ada, bo, unnamed]),
+        );
+        await filterBy(tester, [
+          EventDetailScreen.nominationsStatusKey(
+            NominationStatusGroup.awaitingApproval,
+          ),
+        ]);
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pump();
+
+        screenReaderTap(tester, 'Approve Catan');
+        await animate(tester);
+        screenReaderTap(tester, 'Approve');
+        await animate(tester);
+
+        expect(remote.approvals, hasLength(1));
+        expect(rowsShown(tester), ['n-2']);
+        expect(
+          tester
+              .widget<ButtonStyleButton>(
+                find.byKey(EventDetailScreen.nominationApproveKey('n-2')),
+              )
+              .focusNode!
+              .hasPrimaryFocus,
+          isTrue,
+        );
+        handle.dispose();
+      });
+
       testWidgets('from the only row shown, to Filters', (tester) async {
         await showVoting(tester, [azul]);
         // Last on Sort, where Flutter would put focus back on its own.
@@ -1961,6 +2850,83 @@ void main() {
         expect(tester.getRect(button).right, lessThanOrEqualTo(320));
       }
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("a host's Approve, Reject and Close vote, and their dialogs, "
+        'fit at 320dp and 200% text (#518)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final host = me.copyWith(role: EventRole.host);
+      pool = [_game('o-1', 'att-ada', _longTitle), azulMine];
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          title: _longTitle,
+          status: NominationStatus.awaitingApproval,
+        ),
+        _nomination(
+          'n-2',
+          title: _longTitle,
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+      Finder confirm() => find.byKey(EventDetailScreen.hostDecisionConfirmKey);
+      Finder notYet() => find.byKey(EventDetailScreen.hostDecisionKeepKey);
+
+      await showGames(
+        tester,
+        detail: detailOf(viewer: host, roster: [host, ada, bo, unnamed]),
+      );
+
+      expect(tester.takeException(), isNull);
+      for (final (button, title) in [
+        (
+          find.byKey(EventDetailScreen.nominationApproveKey('n-1')),
+          'Approve $_longTitle?',
+        ),
+        (
+          find.byKey(EventDetailScreen.nominationRejectKey('n-1')),
+          'Reject $_longTitle?',
+        ),
+        (
+          find.byKey(
+            EventDetailScreen.nominationCloseVoteKey('n-2'),
+            skipOffstage: false,
+          ),
+          'Close the vote on $_longTitle?',
+        ),
+      ]) {
+        await tester.scrollUntilVisible(
+          button,
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.ensureVisible(button);
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: title);
+        expect(tester.getRect(button).right, lessThanOrEqualTo(320));
+
+        await tester.tap(button);
+        await animate(tester);
+
+        expect(tester.takeException(), isNull, reason: title);
+        expect(find.text(title), findsOneWidget);
+        for (final choice in [notYet(), confirm()]) {
+          await tester.ensureVisible(choice);
+          await tester.pump();
+          expect(tester.getRect(choice).right, lessThanOrEqualTo(320));
+        }
+        await tester.tap(notYet());
+        await animate(tester);
+        expect(tester.takeException(), isNull, reason: title);
+      }
     });
   });
 }

@@ -23,11 +23,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// then the nominations' (#517). First the pool's last write, as the line
 /// saying how far a run of offers has got while one is out, then as the
 /// banner saying how it went; then the viewer's last nominations write, a
-/// nominate, a vote or a withdrawal, as the banner saying how it went; then,
-/// with [showStale], the stale-data banners: the pool's while the games shown
-/// may be out of date, then the nominations' while those shown may be. Each
-/// when there is one; nothing otherwise. Passed on every build, on either
-/// tab, so the page keeps one shape.
+/// nominate, a vote or a withdrawal, or a host's approval, rejection or close
+/// of a vote (#518), as the banner saying how it went; then, with
+/// [showStale], the stale-data banners: the pool's while the games shown may
+/// be out of date, then the nominations' while those shown may be. Each when
+/// there is one; nothing otherwise. Passed on every build, on either tab, so
+/// the page keeps one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
@@ -45,6 +46,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Each outcome is a banner of its own, built anew, so one that says what
 /// the last said is still heard as it lands.
+///
+/// A host's close of a vote (#518) says how it came out with the counts the
+/// server gave as it settled it, which it stores nowhere: this banner is the
+/// only place they show, and a later read of the row carries its status
+/// alone.
 ///
 /// A take-back the server refuses because the game still supplies a
 /// nomination or a lineup (a 409) says what to do where the nominations
@@ -111,9 +117,6 @@ class EventGamesFooter extends StatelessWidget {
             ),
           );
     final nominationsOutcome = nominations?.outcome;
-    final nominationsMessage = nominationsOutcome == null
-        ? null
-        : _nominationsMessage(l10n, nominationsOutcome);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -170,7 +173,7 @@ class EventGamesFooter extends StatelessWidget {
           ),
         // The nominations' own, beside the pool's: nothing holds one bloc's
         // write back for the other's, so both can end.
-        if (nominationsOutcome != null && nominationsMessage != null)
+        if (nominationsOutcome != null)
           KeyedSubtree(
             key: ObjectKey(nominationsOutcome),
             child: Padding(
@@ -178,7 +181,7 @@ class EventGamesFooter extends StatelessWidget {
               child: BgeInlineBanner(
                 key: EventDetailScreen.nominationsOutcomeKey,
                 tone: _nominationsTone(nominationsOutcome),
-                message: nominationsMessage,
+                message: _nominationsMessage(l10n, nominationsOutcome),
                 action: TextButton(
                   onPressed: () => context.read<EventNominationsBloc>().add(
                     const EventNominationsOutcomeDismissed(),
@@ -364,14 +367,29 @@ class EventGamesFooter extends StatelessWidget {
           WithdrawResult.dropped => BgeBannerTone.warning,
           WithdrawResult.failed => BgeBannerTone.error,
         },
-        // Unreached: the host decisions' copy comes with their buttons (#518).
-        HostDecisionOutcome() || ResolveOutcome() => BgeBannerTone.warning,
+        HostDecisionOutcome(:final result) => switch (result) {
+          HostDecisionResult.done => BgeBannerTone.success,
+          HostDecisionResult.changed ||
+          HostDecisionResult.refused ||
+          HostDecisionResult.gone ||
+          HostDecisionResult.dropped => BgeBannerTone.warning,
+          HostDecisionResult.failed => BgeBannerTone.error,
+        },
+        // A vote that didn't pass is still a close that went through.
+        ResolveOutcome(:final result) => switch (result) {
+          ResolveResult.decided => BgeBannerTone.success,
+          ResolveResult.changed ||
+          ResolveResult.refused ||
+          ResolveResult.gone ||
+          ResolveResult.dropped => BgeBannerTone.warning,
+          ResolveResult.failed => BgeBannerTone.error,
+        },
       };
 
-  /// A nominations write's copy (#517), naming its game, or null for one
-  /// this banner never shows. A nominate that went through says what the
-  /// server made of it.
-  static String? _nominationsMessage(
+  /// A nominations write's copy (#517), naming its game. A nominate that
+  /// went through says what the server made of it, and a host's close of a
+  /// vote how the vote came out (#518).
+  static String _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
   ) {
@@ -409,10 +427,80 @@ class EventGamesFooter extends StatelessWidget {
         WithdrawResult.failed => l10n.eventsWithdrawFailed(title),
         WithdrawResult.dropped => l10n.eventsWithdrawDropped(title),
       },
-      // Unreached: the host decisions' copy comes with their buttons (#518).
-      HostDecisionOutcome() || ResolveOutcome() => null,
+      HostDecisionOutcome(:final result, :final write) => switch (result) {
+        HostDecisionResult.done =>
+          write == NominationWrite.approve
+              ? l10n.eventsApproved(title)
+              : l10n.eventsRejected(title),
+        HostDecisionResult.changed => l10n.eventsHostDecisionChanged(title),
+        HostDecisionResult.refused => l10n.eventsHostDecisionRefused(title),
+        HostDecisionResult.gone => l10n.eventsVoteGone(title),
+        HostDecisionResult.failed => l10n.eventsHostDecisionFailed(title),
+        HostDecisionResult.dropped => l10n.eventsHostDecisionDropped(title),
+      },
+      ResolveOutcome(:final result, :final resolution) => switch (result) {
+        ResolveResult.decided => _resolvedMessage(l10n, title, resolution),
+        ResolveResult.changed => l10n.eventsHostDecisionChanged(title),
+        ResolveResult.refused => l10n.eventsHostDecisionRefused(title),
+        ResolveResult.gone => l10n.eventsVoteGone(title),
+        ResolveResult.failed => l10n.eventsHostDecisionFailed(title),
+        ResolveResult.dropped => l10n.eventsHostDecisionDropped(title),
+      },
     };
   }
+
+  /// How a host's close of the vote on [title] came out (#518), with the
+  /// counts the server gave in [resolution], which are its own, never worked
+  /// out here. A result this client can't name, or none, says only that the
+  /// vote is closed.
+  ///
+  /// Its total is the votes the server counted, not those cast: it folds
+  /// Interested into For or Against by the event's rules, or leaves it out
+  /// (backend `vote-resolver.ts`). So the banner says how many counted. It
+  /// says nothing of quorum on a pass or a fail: the server reaches either
+  /// only once quorum is met, and an event with no quorum rule meets it
+  /// always, so its `quorumMet` is true on both and says nothing.
+  static String _resolvedMessage(
+    EventsLocalizations l10n,
+    String title,
+    NominationResolution? resolution,
+  ) => switch (resolution) {
+    NominationResolution(
+      status: NominationStatus.passed,
+      :final forCount,
+      :final againstCount,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedPassed(
+        title,
+        forCount,
+        againstCount,
+        totalVotes,
+        eligibleVoterCount,
+      ),
+    NominationResolution(
+      status: NominationStatus.failed,
+      :final forCount,
+      :final againstCount,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedFailed(
+        title,
+        forCount,
+        againstCount,
+        totalVotes,
+        eligibleVoterCount,
+      ),
+    NominationResolution(
+      status: NominationStatus.quorumNotMet,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedQuorumNotMet(title, totalVotes, eligibleVoterCount),
+    _ => l10n.eventsResolvedSettled(title),
+  };
 }
 
 /// Builds [builder] with the first [message] it is given, whatever later
