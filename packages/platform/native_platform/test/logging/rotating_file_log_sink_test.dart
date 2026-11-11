@@ -125,22 +125,56 @@ void main() {
   });
 
   group('pre-open buffer', () {
-    String logContents() => File(path('bge.log')).readAsStringSync();
+    late Completer<Directory> opening;
+    late int lookups;
+    Future<Directory> pendingProvider() {
+      lookups++;
+      return opening.future;
+    }
+
+    setUp(() {
+      opening = Completer<Directory>();
+      lookups = 0;
+    });
+
+    /// Emits [first], then lets its drain start the open, so the records
+    /// after it arrive while the directory lookup is in flight.
+    Future<RotatingFileLogSink> openingSink(LogRecord first) async {
+      final sink = RotatingFileLogSink(
+        directoryProvider: pendingProvider,
+        preOpenBufferLimit: 3,
+      )..emit(first);
+      await pumpEventQueue();
+      expect(lookups, 1, reason: 'the open must be in flight');
+      return sink;
+    }
+
+    /// The log once the scheduled drain has written [newest], read without
+    /// closing the sink: production has no guaranteed close, and close's
+    /// final flush would write the records even if the drain did not.
+    Future<String> logOnceDrained(String newest) async {
+      final file = File(path('bge.log'));
+      for (var i = 0; i < 200; i++) {
+        if (file.existsSync()) {
+          final contents = file.readAsStringSync();
+          if (contents.contains(newest)) return contents;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      fail('the drain never wrote $newest');
+    }
 
     test('drops the oldest records past preOpenBufferLimit while the file is '
         'opening', () async {
-      final opening = Completer<Directory>();
-      final sink = RotatingFileLogSink(
-        directoryProvider: () => opening.future,
-        preOpenBufferLimit: 3,
-      );
-      for (var i = 1; i <= 5; i++) {
+      final sink = await openingSink(rec('r1'));
+      for (var i = 2; i <= 5; i++) {
         sink.emit(rec('r$i'));
       }
       opening.complete(dir);
+
+      final contents = await logOnceDrained('r5');
       await sink.close();
 
-      final contents = logContents();
       expect(contents, isNot(contains('r1')));
       expect(contents, isNot(contains('r2')));
       expect(contents, contains('r3'));
@@ -152,18 +186,15 @@ void main() {
 
     test('keeps every record when exactly preOpenBufferLimit arrive before '
         'the open', () async {
-      final opening = Completer<Directory>();
-      final sink = RotatingFileLogSink(
-        directoryProvider: () => opening.future,
-        preOpenBufferLimit: 3,
-      );
-      for (var i = 1; i <= 3; i++) {
+      final sink = await openingSink(rec('r1'));
+      for (var i = 2; i <= 3; i++) {
         sink.emit(rec('r$i'));
       }
       opening.complete(dir);
+
+      final contents = await logOnceDrained('r3');
       await sink.close();
 
-      final contents = logContents();
       expect(contents, contains('r1'));
       expect(contents, contains('r2'));
       expect(contents, contains('r3'));
