@@ -274,18 +274,9 @@ jobs:
             build-runner-${{ runner.os }}-
       - name: Resolve workspace
         run: flutter pub get
+      # The bug agent's setup action runs the same script (#849).
       - name: Generate localizations (gen-l10n stage, before build_runner)
-        run: |
-          set -euo pipefail
-          # Null-delimited so paths with spaces are safe, and the find
-          # runs OUTSIDE the loop's command substitution so a failure
-          # (e.g. a missing dir) actually aborts the step instead of
-          # silently yielding an empty list.
-          while IFS= read -r -d '' f; do
-            pkg=$(dirname "$f")
-            echo "gen-l10n: $pkg"
-            (cd "$pkg" && flutter gen-l10n)
-          done < <(find packages apps -name l10n.yaml -not -path '*/.dart_tool/*' -print0)
+        run: tool/generate_l10n.sh
       - name: Codegen must succeed (single workspace pass)
         run: flutter pub run build_runner build --workspace
       - name: Schema snapshots must be fresh

@@ -15,6 +15,11 @@ migrate_working_dir/
 lcov.info
 docs/superpowers/
 
+# The bug agent's setup action (#849) puts the Flutter SDK and HOME here,
+# inside the checkout, because the agent's sandbox can write only there and
+# to /tmp.
+/.bug-agent-env/
+
 # IntelliJ related
 *.iml
 *.ipr

@@ -1,0 +1,73 @@
+name: Bug agent setup
+description: >-
+  Installs what the bug agent's fix job needs to build, test and analyze a
+  fix: Flutter, the workspace's packages and the generated sources. Caches
+  are restored but never saved (#849). BoardGamesEmpire/automation's
+  shared workflow runs it after checking this repository out; afterwards
+  `flutter`, `dart` and `build_runner` are on PATH.
+
+# The agent's commands run under bubblewrap: the root file system
+# read-only, the checkout and /tmp writable, and no network. So the Flutter
+# SDK and HOME move into .bug-agent-env/, which .gitignore covers, the
+# network-only steps (pub get, codegen) run here before the agent starts,
+# and bin/build_runner runs codegen without pub. sandbox-check.sh runs the
+# agent's commands in that shape, on PRs that touch this setup.
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-flutter
+      with:
+        save-caches: 'false'
+
+    # The SDK's launcher writes to its own bin/cache on every run, and the
+    # analyzer and flutter_tools write under HOME, so a read-only SDK or
+    # HOME fails every command. The move runs after setup-flutter so its
+    # caches restore at CI's paths and keys. PUB_CACHE stays where
+    # setup-flutter put it: the agent's commands only read it. The runner
+    # image sets XDG_CONFIG_HOME to the old HOME's .config, and
+    # flutter_tools reads it before HOME, so it moves too.
+    - name: Move Flutter and HOME into the checkout
+      shell: bash
+      run: |
+        env_dir=$GITHUB_WORKSPACE/.bug-agent-env
+        sdk=$(dirname "$(dirname "$(command -v flutter)")")
+        mkdir -p "$env_dir/home"
+        mv "$sdk" "$env_dir/flutter"
+        {
+          echo "$env_dir/flutter/bin"
+          echo "$GITHUB_ACTION_PATH/bin"
+        } >> "$GITHUB_PATH"
+        {
+          echo "HOME=$env_dir/home"
+          echo "XDG_CONFIG_HOME=$env_dir/home/.config"
+        } >> "$GITHUB_ENV"
+
+    # build_runner's incremental state from ci.yaml's generate job, at the
+    # same key, restored and never saved, so the pass below skips what
+    # master's CI already built. A miss only costs time.
+    - name: Restore the build_runner cache without saving it
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .dart_tool/build
+        key: build-runner-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}-${{ github.sha }}
+        restore-keys: |
+          build-runner-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}-
+          build-runner-${{ runner.os }}-
+
+    # Generated sources are gitignored, and the agent's tests need them.
+    # The stages of ci.yaml's generate job, through the same
+    # tool/generate_l10n.sh and then one workspace-wide build_runner pass,
+    # but with build_runner launched through bin/build_runner, as the agent
+    # will. Analytics are turned off again because the setting lives under
+    # the new HOME. --enforce-lockfile, because a pubspec.lock that pub
+    # rewrote here would land in every fix, and publish.sh refuses a fix
+    # that changes it.
+    - name: Generate code
+      shell: bash
+      run: |
+        set -euo pipefail
+        flutter --disable-analytics
+        flutter pub get --enforce-lockfile
+        tool/generate_l10n.sh
+        build_runner build --workspace
