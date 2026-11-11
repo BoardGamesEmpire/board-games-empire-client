@@ -340,7 +340,14 @@ Every action in the workflows is pinned to a full commit SHA, with its release
 as a trailing comment (`actions/checkout@<sha> # v4.4.0`), because a tag can be
 moved to new code and a SHA cannot. Pin a new action the same way.
 [.github/renovate.json](.github/renovate.json) has Renovate move each pin and
-its comment together. The npm packages `release` runs are pinned in
+its comment together. The one exception is the bug agent's shared workflow,
+which [.github/workflows/bug-agent.yml](.github/workflows/bug-agent.yml) calls
+at BoardGamesEmpire/automation's `master`, and Renovate leaves alone (#849). A
+change pushed to automation's `master` applies here without review in this
+repository. A pin would freeze the workflow's jobs, their permissions and which
+steps receive the secrets, but not the prompts and scripts it reads from
+`master` whatever ref the caller names, which receive the API key and the app's
+short-lived token. The npm packages `release` runs are pinned in
 [tool/release/package.json](tool/release/package.json), with every transitive
 version in its lockfile. The job installs them with `npm ci --ignore-scripts`
 before the App token exists, and Renovate updates both files together, only
