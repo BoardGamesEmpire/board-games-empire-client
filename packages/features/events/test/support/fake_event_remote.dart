@@ -68,6 +68,31 @@ typedef TakeBackGameRequest = ({
   String offeredGameId,
 });
 
+/// What a nominations list read asked for (#517): the event.
+typedef NominationsRequest = String;
+
+/// What a single nomination read asked for (#517).
+typedef NominationRequest = ({String eventId, String nominationId});
+
+/// What a nominate sent (#517).
+typedef NominateRequest = ({
+  String eventId,
+  String platformGameId,
+  String suppliedFromId,
+  String? occurrenceId,
+});
+
+/// What a vote sent (#517).
+typedef CastVoteRequest = ({
+  String eventId,
+  String nominationId,
+  VoteType voteType,
+  String? comment,
+});
+
+/// What a withdrawal sent (#517).
+typedef WithdrawRequest = ({String eventId, String nominationId});
+
 /// One whole page of [rows], as a browse read answers (#613).
 PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     PaginatedResult(
@@ -102,6 +127,11 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.pool = _noPool,
     this.offered = _noOffer,
     this.takenBack = _noTakeBack,
+    this.nominations = _noNominations,
+    this.nomination = _noNomination,
+    this.nominated = _noNominate,
+    this.voteCast = _noVoteCast,
+    this.withdrawn = _noWithdraw,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -122,6 +152,11 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.pool = _noPool,
     this.offered = _noOffer,
     this.takenBack = _noTakeBack,
+    this.nominations = _noNominations,
+    this.nomination = _noNomination,
+    this.nominated = _noNominate,
+    this.voteCast = _noVoteCast,
+    this.withdrawn = _noWithdraw,
   }) : respond = ((request) {
          // The fake throws what a test hands it: an Exception or an Error.
          // ignore: only_throw_errors
@@ -146,6 +181,11 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.pool = _noPool,
     this.offered = _noOffer,
     this.takenBack = _noTakeBack,
+    this.nominations = _noNominations,
+    this.nomination = _noNomination,
+    this.nominated = _noNominate,
+    this.voteCast = _noVoteCast,
+    this.withdrawn = _noWithdraw,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -177,6 +217,21 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noTakeBack(TakeBackGameRequest request) =>
       throw UnimplementedError('takeBackGame is not faked');
+
+  static Never _noNominations(NominationsRequest request) =>
+      throw UnimplementedError('fetchNominations is not faked');
+
+  static Never _noNomination(NominationRequest request) =>
+      throw UnimplementedError('fetchNomination is not faked');
+
+  static Never _noNominate(NominateRequest request) =>
+      throw UnimplementedError('nominate is not faked');
+
+  static Never _noVoteCast(CastVoteRequest request) =>
+      throw UnimplementedError('castVote is not faked');
+
+  static Never _noWithdraw(WithdrawRequest request) =>
+      throw UnimplementedError('withdrawNomination is not faked');
 
   static Never _noVote(EventVoteRequest request) =>
       throw UnimplementedError('submitAvailability is not faked');
@@ -261,6 +316,40 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each take-back, in order, recorded before it is answered.
   final List<TakeBackGameRequest> takeBacks = [];
+
+  /// Answers each nominations list read, which throws unless a test supplies
+  /// one (#517).
+  final FutureOr<List<EventNomination>> Function(NominationsRequest request)
+  nominations;
+
+  /// Each nominations list read, in order, recorded before it is answered.
+  final List<NominationsRequest> nominationReads = [];
+
+  /// Answers each single nomination read (#517).
+  final FutureOr<EventNomination> Function(NominationRequest request)
+  nomination;
+
+  /// Each single nomination read, in order.
+  final List<NominationRequest> singleNominationReads = [];
+
+  /// Answers each nominate with the nomination as the server holds it (#517).
+  final FutureOr<EventNomination> Function(NominateRequest request) nominated;
+
+  /// Each nominate, in order, recorded before it is answered.
+  final List<NominateRequest> nominates = [];
+
+  /// Answers each vote (#517).
+  final FutureOr<void> Function(CastVoteRequest request) voteCast;
+
+  /// Each vote, in order, recorded before it is answered.
+  final List<CastVoteRequest> votes = [];
+
+  /// Answers each withdrawal with the nomination as the server holds it
+  /// (#517).
+  final FutureOr<EventNomination> Function(WithdrawRequest request) withdrawn;
+
+  /// Each withdrawal, in order, recorded before it is answered.
+  final List<WithdrawRequest> withdrawals = [];
 
   final List<EventListRequest> requests = [];
 
@@ -582,6 +671,66 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     takeBacks.add(request);
     return takenBack(request);
+  }
+
+  @override
+  Future<List<EventNomination>> fetchNominations(String eventId) async {
+    nominationReads.add(eventId);
+    return nominations(eventId);
+  }
+
+  @override
+  Future<EventNomination> fetchNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    final request = (eventId: eventId, nominationId: nominationId);
+    singleNominationReads.add(request);
+    return nomination(request);
+  }
+
+  @override
+  Future<EventNomination> nominate(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedFromId,
+    String? occurrenceId,
+  }) async {
+    final request = (
+      eventId: eventId,
+      platformGameId: platformGameId,
+      suppliedFromId: suppliedFromId,
+      occurrenceId: occurrenceId,
+    );
+    nominates.add(request);
+    return nominated(request);
+  }
+
+  @override
+  Future<void> castVote(
+    String eventId,
+    String nominationId, {
+    required VoteType voteType,
+    String? comment,
+  }) async {
+    final request = (
+      eventId: eventId,
+      nominationId: nominationId,
+      voteType: voteType,
+      comment: comment,
+    );
+    votes.add(request);
+    return voteCast(request);
+  }
+
+  @override
+  Future<EventNomination> withdrawNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    final request = (eventId: eventId, nominationId: nominationId);
+    withdrawals.add(request);
+    return withdrawn(request);
   }
 
   @override

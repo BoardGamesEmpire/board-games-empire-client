@@ -98,6 +98,38 @@ class FakeEventRemote implements EventRemoteDataSource {
   ) async => throw UnimplementedError('takeBackGame is not faked');
 
   @override
+  Future<List<EventNomination>> fetchNominations(String eventId) async =>
+      throw UnimplementedError('fetchNominations is not faked');
+
+  @override
+  Future<EventNomination> fetchNomination(
+    String eventId,
+    String nominationId,
+  ) async => throw UnimplementedError('fetchNomination is not faked');
+
+  @override
+  Future<EventNomination> nominate(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedFromId,
+    String? occurrenceId,
+  }) async => throw UnimplementedError('nominate is not faked');
+
+  @override
+  Future<void> castVote(
+    String eventId,
+    String nominationId, {
+    required VoteType voteType,
+    String? comment,
+  }) async => throw UnimplementedError('castVote is not faked');
+
+  @override
+  Future<EventNomination> withdrawNomination(
+    String eventId,
+    String nominationId,
+  ) async => throw UnimplementedError('withdrawNomination is not faked');
+
+  @override
   Future<CreatedEvent> createEvent(
     EventDraft draft, {
     required String clientRequestId,
