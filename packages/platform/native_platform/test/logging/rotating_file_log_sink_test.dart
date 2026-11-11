@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -121,5 +122,53 @@ void main() {
     // The line whose rotation failed is not lost, and recovery wrote too.
     expect(written, contains('two-'));
     expect(written, contains('three-'));
+  });
+
+  group('pre-open buffer', () {
+    String logContents() => File(path('bge.log')).readAsStringSync();
+
+    test('drops the oldest records past preOpenBufferLimit while the file is '
+        'opening', () async {
+      final opening = Completer<Directory>();
+      final sink = RotatingFileLogSink(
+        directoryProvider: () => opening.future,
+        preOpenBufferLimit: 3,
+      );
+      for (var i = 1; i <= 5; i++) {
+        sink.emit(rec('r$i'));
+      }
+      opening.complete(dir);
+      await sink.close();
+
+      final contents = logContents();
+      expect(contents, isNot(contains('r1')));
+      expect(contents, isNot(contains('r2')));
+      expect(contents, contains('r3'));
+      expect(contents, contains('r4'));
+      expect(contents, contains('r5'));
+      expect(contents.indexOf('r3'), lessThan(contents.indexOf('r4')));
+      expect(contents.indexOf('r4'), lessThan(contents.indexOf('r5')));
+    });
+
+    test('keeps every record when exactly preOpenBufferLimit arrive before '
+        'the open', () async {
+      final opening = Completer<Directory>();
+      final sink = RotatingFileLogSink(
+        directoryProvider: () => opening.future,
+        preOpenBufferLimit: 3,
+      );
+      for (var i = 1; i <= 3; i++) {
+        sink.emit(rec('r$i'));
+      }
+      opening.complete(dir);
+      await sink.close();
+
+      final contents = logContents();
+      expect(contents, contains('r1'));
+      expect(contents, contains('r2'));
+      expect(contents, contains('r3'));
+      expect(contents.indexOf('r1'), lessThan(contents.indexOf('r2')));
+      expect(contents.indexOf('r2'), lessThan(contents.indexOf('r3')));
+    });
   });
 }
