@@ -1,9 +1,10 @@
 /// Who is offered Offer games and Take back on an event, and the values the
 /// offer flow passes between its pages (#516).
 ///
-/// The role table ([EventAction.offerGame]) knows who may offer. This narrows
-/// its answer by what the event and the viewer's own row say, so a screen
-/// shows a control only when all of them agree.
+/// The role table ([EventAction.offerGame], and for someone else's games
+/// [EventAction.manageOfferedGames], #518) knows who may offer and take
+/// back. This narrows its answer by what the event and the viewer's own row
+/// say, so a screen shows a control only when all of them agree.
 library;
 
 import 'package:equatable/equatable.dart';
@@ -49,6 +50,23 @@ OfferGamesGate offerGamesGate(EventDetailReady state) {
   return attendance.status == EventParticipationStatus.notAttending
       ? OfferGamesGate.notGoing
       : OfferGamesGate.open;
+}
+
+/// Whether the viewer is offered Take back on someone else's game on
+/// [state] (#518): their actions hold [EventAction.manageOfferedGames], the
+/// event isn't local-only, and it takes writes at all ([takesDateWrites]).
+///
+/// Unlike [offerGamesGate] it asks for no row of the viewer's on the
+/// roster, nor any answer of theirs: the take-back names the row's
+/// attendee, not the viewer's, and a household owner or admin may take
+/// games off the lists on their household's event without attending it.
+/// The viewer's own games stay [offerGamesGate]'s.
+bool canTakeBackAnyGame(EventDetailReady state) {
+  final event = state.detail.snapshot.event;
+
+  return state.actions.contains(EventAction.manageOfferedGames) &&
+      !event.isLocalOnly &&
+      takesDateWrites(event);
 }
 
 /// What the Offer games page needs from the event beneath it: the games the

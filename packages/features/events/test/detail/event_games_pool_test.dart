@@ -193,5 +193,20 @@ void main() {
       expect(poolAttendeeIds(detail()), isEmpty);
       expect(poolAttendeeIds(detail(roster: const [])), isEmpty);
     });
+
+    test("poolNames names the roster's rows, and nobody without one", () {
+      final ada = member('att-ada').copyWith(username: 'ada');
+      final nameless = member('att-x').copyWith(
+        username: null,
+        displayName: null,
+      );
+
+      expect(poolNames(detail(roster: [ada, nameless], viewer: me)), {
+        'att-ada': 'ada',
+        'att-x': null,
+      });
+      expect(poolNames(detail(viewer: me)), isEmpty);
+      expect(poolNames(detail(roster: const [], viewer: me)), isEmpty);
+    });
   });
 }

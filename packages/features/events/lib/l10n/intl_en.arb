@@ -342,7 +342,7 @@
   },
   "eventsAttendeeSomeone": "this person",
   "@eventsAttendeeSomeone": {
-    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows, on the Games tab in eventsGamesPersonLeftOut, and in its Nominations section in eventsNominatedBy, eventsNominationFrom and eventsNominationPaused. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
+    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows, on the Games tab in eventsGamesPersonLeftOut, eventsTakeBackTheirsConfirmTitle and the eventsGamesTheirs… banners (eventsGamesTheirsTakenBack and the eventsGamesTheirsStillSupplies… ones), and in its Nominations section in eventsNominatedBy, eventsNominationFrom and eventsNominationPaused. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
@@ -712,7 +712,7 @@
   },
   "eventsGamesTakeBack": "Take back",
   "@eventsGamesTakeBack": {
-    "description": "Button under a game the user offered to bring, on the Games tab of an event's screen: it takes the game off the games they're bringing. Screen readers hear eventsGamesTakeBackNamed instead."
+    "description": "Button under a game the user offered to bring, on the Games tab of an event's screen: it takes the game off the games they're bringing. A host, co-host or moderator, or a household's owner or admin on the household's event, also has it under the games other people offered, where it takes the game off that person's games once they confirm (eventsTakeBackTheirsConfirmTitle). Screen readers hear eventsGamesTakeBackNamed instead."
   },
   "eventsGamesTakeBackNamed": "Take back {title}",
   "@eventsGamesTakeBackNamed": {
@@ -818,6 +818,76 @@
       }
     }
   },
+  "eventsGamesTheirsTakenBack": "{title} is off {name}'s games.",
+  "@eventsGamesTheirsTakenBack": {
+    "description": "Banner at the foot of an event's screen once a game someone else offered to bring, which the user took back for them (eventsTakeBackTheirsConfirmTitle), is off that person's games: eventsGamesTakenBack, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsGamesTheirsStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off {name}'s games yet.",
+  "@eventsGamesTheirsStillSupplies": {
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games: it has been put forward for the event, or is set to be played on a date that hasn't happened. eventsGamesStillSupplies, for another person's game. {name} is that person's name, or eventsAttendeeSomeone for someone with none.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsGamesTheirsStillSuppliesYours": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination first.",
+  "@eventsGamesTheirsStillSuppliesYours": {
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination in the Nominations section above the games). eventsGamesStillSuppliesYours, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsGamesTheirsStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
+  "@eventsGamesTheirsStillSuppliesYoursAndTheirs": {
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination in the Nominations section above the games), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. eventsGamesStillSuppliesYoursAndTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsGamesTheirsStillSuppliesTheirs": "{title} is nominated, so it can't come off {name}'s games yet. Only whoever nominated it can withdraw it.",
+  "@eventsGamesTheirsStillSuppliesTheirs": {
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because someone other than the user put it forward for the event: only whoever did can withdraw the nomination, and the user can't. eventsGamesStillSuppliesTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none; the person who nominated it may be someone else again.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
   "eventsGamesTakeBackRefused": "You can't take {title} back.",
   "@eventsGamesTakeBackRefused": {
     "description": "Banner at the foot of an event's screen when the server refused to let the user take a game back.",
@@ -847,6 +917,32 @@
         "example": "Catan"
       }
     }
+  },
+  "eventsTakeBackTheirsConfirmTitle": "Take {title} off {name}'s games?",
+  "@eventsTakeBackTheirsConfirmTitle": {
+    "description": "Title of the dialog that asks before the user takes back a game someone else offered to bring (eventsGamesTakeBack, under that person's game on the Games tab of an event's screen), which a host, co-host or moderator, or a household's owner or admin on the household's event, may do. {title} is the game's; {name} is the person's name, or eventsAttendeeSomeone for someone with none, as the person whose games they are.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "name": {
+        "type": "String",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "eventsTakeBackTheirsConfirmBody": "Only they can offer it again.",
+  "@eventsTakeBackTheirsConfirmBody": {
+    "description": "Body of the dialog that asks before the user takes back someone else's game (eventsTakeBackTheirsConfirmTitle): once it is off that person's games, the user can't put it back for them; only that person can offer it again."
+  },
+  "eventsTakeBackTheirsConfirmKeep": "Keep it",
+  "@eventsTakeBackTheirsConfirmKeep": {
+    "description": "Button in the dialog that asks before the user takes back someone else's game (eventsTakeBackTheirsConfirmTitle): it closes the dialog, sends nothing, and leaves the game on that person's games."
+  },
+  "eventsTakeBackTheirsConfirm": "Take back",
+  "@eventsTakeBackTheirsConfirm": {
+    "description": "Confirm button of the dialog that asks before the user takes back someone else's game (eventsTakeBackTheirsConfirmTitle), drawn as a destructive action: it takes the game off that person's games."
   },
   "eventsGamesOfferInProgress": "Offering…",
   "@eventsGamesOfferInProgress": {

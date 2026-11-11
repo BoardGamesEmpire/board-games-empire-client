@@ -100,14 +100,18 @@ EventGamesOutcome _offerEnded(
   notOffered: notOffered,
 );
 
-/// A take-back's end, of [game]: named by its title, and by its id.
+/// A take-back's end, of [game]: named by its title, by its id, and by the
+/// row's attendee [attendeeId] it was sent for (#518), `a-1` as [_takeBack]
+/// sends it.
 EventGamesOutcome _takeBackEnded(
   EventTakeBackResult result,
-  OfferedGame game,
-) => EventTakeBackOutcome(
+  OfferedGame game, {
+  String attendeeId = 'a-1',
+}) => EventTakeBackOutcome(
   result: result,
   title: game.title,
   offeredGameId: game.id,
+  attendeeId: attendeeId,
 );
 
 /// A pool read of the attendees [attendeeIds] of the event [eventId]. A
@@ -984,6 +988,28 @@ void main() {
         loaded(one, outcome: ended),
       ]);
       expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
+    });
+
+    test("a take-back of someone else's row names that row's attendee in "
+        'its outcome (#518)', () async {
+      final remote = serving(takenBack: (_) => throw _stillSupplies);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(EventGameTakenBack('e-1', 'a-2', _game(2), attendeeIds: _ids));
+      await pumpEventQueue();
+
+      expect(remote.takeBacks, [
+        (eventId: 'e-1', attendeeId: 'a-2', offeredGameId: 'g-2'),
+      ]);
+      expect(
+        bloc.state.outcome,
+        _takeBackEnded(
+          EventTakeBackResult.stillSupplies,
+          _game(2),
+          attendeeId: 'a-2',
+        ),
+      );
     });
 
     test('a take-back whose roster changed while it was out reads for the '

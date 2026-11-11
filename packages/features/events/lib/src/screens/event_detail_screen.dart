@@ -465,6 +465,17 @@ class EventDetailScreen extends StatelessWidget {
   static Key poolTakeBackKey(String offeredGameId) =>
       Key('event_detail.pool_take_back_$offeredGameId');
 
+  /// Key on the Take back button of the dialog that asks before someone
+  /// else's game is taken back (#518).
+  static const Key poolTakeBackConfirmKey = Key(
+    'event_detail.take_back_theirs_confirm',
+  );
+
+  /// Key on that dialog's Keep it button (#518).
+  static const Key poolTakeBackKeepKey = Key(
+    'event_detail.take_back_theirs_keep',
+  );
+
   /// Key on a row's Nominate (#517), by the offered game's id.
   static Key poolNominateKey(String offeredGameId) =>
       Key('event_detail.pool_nominate_$offeredGameId');
@@ -1403,6 +1414,9 @@ class _ReadyPage extends StatelessWidget {
               state: gamesState,
               nominations: nominationsState,
               viewerId: state.detail.attendance?.id,
+              // Whose games a take-back of someone else's was about (#518),
+              // named as the pool's rows name them.
+              names: poolNames(state.detail),
               showStale: tab == EventDetailTab.games,
             ),
       // Above the tabs, and in the semantics tree however far down the page

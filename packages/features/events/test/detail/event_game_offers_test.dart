@@ -4,8 +4,9 @@ import 'package:models/domain.dart';
 
 import '../support/event_list_items.dart';
 
-/// Who is offered Offer games and Take back on an event (#516), and the two
-/// value classes the offer flow passes around.
+/// Who is offered Offer games and Take back on an event (#516), Take back
+/// on anyone's game included (#518), and the two value classes the offer
+/// flow passes around.
 void main() {
   /// The detail as the screen holds it: [event] with [attendance] as the
   /// viewer's row, and [actions] the role table gave them.
@@ -123,6 +124,121 @@ void main() {
       );
 
       expect(offerGamesGate(state), OfferGamesGate.open);
+    });
+  });
+
+  group('canTakeBackAnyGame (#518)', () {
+    final going = attendance(EventParticipationStatus.attending);
+
+    /// [ready] for a viewer holding [role] on [event], and on a household
+    /// event [householdRole], with the actions the role table gives them.
+    EventDetailReady as(
+      EventRole? role, {
+      Event? event,
+      HouseholdRole? householdRole,
+      EventAttendee? row,
+    }) {
+      final shown = event ?? item('e').event;
+      return ready(
+        event: shown,
+        actions: eventActionsFor(
+          shown,
+          eventRole: role,
+          householdRole: householdRole,
+        ),
+        attendance: row,
+      );
+    }
+
+    for (final role in [
+      EventRole.host,
+      EventRole.coHost,
+      EventRole.moderator,
+    ]) {
+      test('holds for the role ${role.name}', () {
+        expect(
+          canTakeBackAnyGame(
+            as(role, row: going.copyWith(role: role)),
+          ),
+          isTrue,
+        );
+      });
+    }
+
+    for (final role in [
+      EventRole.organizer,
+      EventRole.participant,
+      EventRole.guest,
+      EventRole.spectator,
+    ]) {
+      test("doesn't hold for the role ${role.name}", () {
+        expect(
+          canTakeBackAnyGame(
+            as(role, row: going.copyWith(role: role)),
+          ),
+          isFalse,
+        );
+      });
+    }
+
+    test(
+      'holds for a household admin with no row on their household event',
+      () {
+        expect(
+          canTakeBackAnyGame(
+            as(
+              null,
+              event: item('e', householdId: 'h-1').event,
+              householdRole: HouseholdRole.householdAdmin,
+            ),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('holds for a host who answered Not attending', () {
+      final row = attendance(
+        EventParticipationStatus.notAttending,
+      ).copyWith(role: EventRole.host);
+
+      expect(canTakeBackAnyGame(as(EventRole.host, row: row)), isTrue);
+    });
+
+    for (final status in [
+      EventStatus.cancelled,
+      EventStatus.archived,
+      EventStatus.unknown,
+    ]) {
+      test("doesn't hold on an event that is ${status.name}", () {
+        final event = item('e').event.copyWith(status: status);
+
+        expect(
+          canTakeBackAnyGame(
+            ready(
+              event: event,
+              actions: const {EventAction.manageOfferedGames},
+              attendance: going,
+            ),
+          ),
+          isFalse,
+        );
+      });
+    }
+
+    test("doesn't hold on a local-only event, whatever the actions say", () {
+      final event = item('e').event.copyWith(isLocalOnly: true);
+
+      expect(
+        canTakeBackAnyGame(
+          ready(
+            event: event,
+            actions: const {EventAction.manageOfferedGames},
+            attendance: going,
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 

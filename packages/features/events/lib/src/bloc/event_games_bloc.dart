@@ -351,6 +351,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
           result: result,
           title: game.title,
           offeredGameId: game.id,
+          attendeeId: event.attendeeId,
         ),
       ),
     );

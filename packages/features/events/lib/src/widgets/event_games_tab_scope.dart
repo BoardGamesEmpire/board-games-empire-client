@@ -139,7 +139,7 @@ class EventGamesTabController extends ChangeNotifier {
     skipTraversal: true,
   );
 
-  /// Each own row's Take back, by the offered game's id.
+  /// Each row's Take back, where it is built, by the offered game's id.
   final Map<String, FocusNode> _takeBackAreas = {};
 
   /// The games whose Take back was pressed, and whose row leaving hands
@@ -276,13 +276,12 @@ class EventGamesTabController extends ChangeNotifier {
   /// Answers the pool going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it: Take back's hand-off (see
   /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
-  /// scope's, for the viewer [viewerId].
+  /// scope's.
   void poolChanged(
     BuildContext context,
     EventGamesState previous,
-    EventGamesState current, {
-    required String? viewerId,
-  }) {
+    EventGamesState current,
+  ) {
     // The take-back that ended here, if one did. A done one takes its row
     // away in this same change; any other end leaves the row. Either way
     // its arm is spent once this change is answered, so a later read that
@@ -334,13 +333,15 @@ class EventGamesTabController extends ChangeNotifier {
           .take(left)
           .where((game) => stays.contains(game.id))
           .length;
-      final own = [
-        for (final game in shownAfter.skip(at))
-          if (game.attendeeId == viewerId) game,
-        for (final game in shownAfter.take(at).toList().reversed)
-          if (game.attendeeId == viewerId) game,
+      // Each row that stays, the next first, then back from the one before:
+      // the first whose Take back is built and enabled takes it. Only the
+      // viewer's own rows have one, unless they may take back anyone's
+      // (#518).
+      final order = [
+        ...shownAfter.skip(at),
+        ...shownAfter.take(at).toList().reversed,
       ];
-      for (final game in own) {
+      for (final game in order) {
         final target =
             _takeBackAreas[game.id]?.traversalDescendants.firstOrNull;
         if (target != null) {
@@ -512,18 +513,19 @@ class EventGamesTabController extends ChangeNotifier {
 /// It hears each change of the pool before the frame that builds it, while
 /// a row that leaves is still built. When a row whose Take back was
 /// pressed leaves, or one whose Take back holds keyboard focus, focus
-/// goes, once that frame has ended, to the next own row's Take back among
-/// the rows shown, else the previous one's, else Offer games where it is
-/// built and enabled, else the search field. The press arms it however it
-/// came, so a screen reader's activation, which moves no input focus, is
-/// handed on too, and the reader's cursor follows. It moves focus only
-/// while focus is free then: on nothing, on the page, or still on the Take
-/// back that left. A press elsewhere meanwhile keeps its focus. A done
-/// take-back takes its row away in the state that says so, so the row
-/// leaves as the take-back ends, whatever the read after it does. Any
-/// take-back's end disarms it: one that ends with its row still there,
-/// refused, failed or dropped, hands nothing on, and nor does a later read
-/// that takes the row away.
+/// goes, once that frame has ended, to the Take back of the next row shown
+/// that has one built and enabled, else of the nearest such row before it,
+/// else Offer games where it is built and enabled, else the search field.
+/// Only the viewer's own rows have Take back, unless they may take back
+/// anyone's game (#518). The press arms it however it came, so a screen
+/// reader's activation, which moves no input focus, is handed on too, and
+/// the reader's cursor follows. It moves focus only while focus is free
+/// then: on nothing, on the page, or still on the Take back that left. A
+/// press elsewhere meanwhile keeps its focus. A done take-back takes its
+/// row away in the state that says so, so the row leaves as the take-back
+/// ends, whatever the read after it does. Any take-back's end disarms it:
+/// one that ends with its row still there, refused, failed or dropped,
+/// hands nothing on, and nor does a later read that takes the row away.
 ///
 /// Where the tab has nothing left to take focus, as when the pool turns
 /// hidden and the header goes with the rows, nothing is focused: focus
@@ -609,15 +611,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
     _last = state;
     _controller.poolEmitted(state);
     if (!mounted) return;
-    final detail = context.read<EventDetailBloc>().state;
-    _controller.poolChanged(
-      context,
-      previous,
-      state,
-      viewerId: detail is EventDetailReady
-          ? detail.detail.attendance?.id
-          : null,
-    );
+    _controller.poolChanged(context, previous, state);
   }
 
   void _nominationsChanged(EventNominationsState state) {

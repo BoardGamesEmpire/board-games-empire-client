@@ -55,14 +55,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// did; and otherwise that it is nominated or in the lineup, as before,
 /// since the lineup is #520's. The row is found by the outcome's offered
 /// game id, which is all a nomination names it by, whether or not the pool
-/// still holds it. The pool's banner keeps the words it landed with: the
+/// still holds it. A take-back of someone else's
+/// game (#518) says whose games it is off, or can't come off yet, naming
+/// them as the pool's row does, from the roster ([names]); the viewer's own
+/// says "your games". The pool's banner keeps the words it landed with: the
 /// nominations can change under it, as the viewer withdraws the one it
-/// names, and words that changed would be read out
+/// names, and so can the roster, and words that changed would be read out
 /// again, saying what no longer holds.
 class EventGamesFooter extends StatelessWidget {
   const EventGamesFooter({
     required this.state,
     required this.showStale,
+    required this.names,
     this.nominations,
     this.viewerId,
     super.key,
@@ -78,6 +82,12 @@ class EventGamesFooter extends StatelessWidget {
   /// The viewer's roster row id, which says which nominations are theirs, or
   /// null where they have none.
   final String? viewerId;
+
+  /// The roster's names, by row id, which name whose games a take-back of
+  /// someone else's game was about (#518): empty where the roster is
+  /// withheld or not read. Given by every caller, since an empty map names
+  /// everyone "this person".
+  final Map<String, String?> names;
 
   /// Whether the Games tab is selected, so the stale-data banners may show.
   final bool showStale;
@@ -216,7 +226,7 @@ class EventGamesFooter extends StatelessWidget {
 
   /// The banner's copy, by the write it answers, or null for none. A
   /// take-back's 409 names what to do by [supplied] (#517).
-  static String? _message(
+  String? _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
     StillSuppliedBy supplied,
@@ -270,23 +280,50 @@ class EventGamesFooter extends StatelessWidget {
   /// with no title has none. A 409 says what to do by [supplied] (#517):
   /// where nobody holds a live nomination of the row, it is in the lineup,
   /// or nominated in a way the nominations held don't show.
-  static String? _takeBackMessage(
+  ///
+  /// Whose games it was about comes from the roster row the outcome names
+  /// (#518): someone else's where that isn't the viewer's [viewerId], and
+  /// they are then named in place of "your games", from [names] as the
+  /// pool's row names them, or "this person" where the roster gives no
+  /// name. A refusal, a failure and a drop say no one's, and a drop names no
+  /// row.
+  String? _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
     StillSuppliedBy supplied,
   ) {
     final title = outcome.title;
     if (title == null) return null;
+    final id = outcome.attendeeId;
+    final theirs = id != null && id != viewerId;
+    String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;
     return switch (outcome.result) {
-      EventTakeBackResult.done => l10n.eventsGamesTakenBack(title),
-      EventTakeBackResult.stillSupplies => switch (supplied) {
-        StillSuppliedBy.viewer => l10n.eventsGamesStillSuppliesYours(title),
-        StillSuppliedBy.someoneElse => l10n.eventsGamesStillSuppliesTheirs(
+      EventTakeBackResult.done =>
+        theirs
+            ? l10n.eventsGamesTheirsTakenBack(title, offeredBy())
+            : l10n.eventsGamesTakenBack(title),
+      EventTakeBackResult.stillSupplies => switch ((supplied, theirs)) {
+        (StillSuppliedBy.viewer, false) => l10n.eventsGamesStillSuppliesYours(
           title,
         ),
-        StillSuppliedBy.viewerAndSomeoneElse =>
+        (StillSuppliedBy.viewer, true) =>
+          l10n.eventsGamesTheirsStillSuppliesYours(title, offeredBy()),
+        (StillSuppliedBy.viewerAndSomeoneElse, false) =>
           l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
-        StillSuppliedBy.none => l10n.eventsGamesStillSupplies(title),
+        (StillSuppliedBy.viewerAndSomeoneElse, true) =>
+          l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(
+            title,
+            offeredBy(),
+          ),
+        (StillSuppliedBy.someoneElse, false) =>
+          l10n.eventsGamesStillSuppliesTheirs(title),
+        (StillSuppliedBy.someoneElse, true) =>
+          l10n.eventsGamesTheirsStillSuppliesTheirs(title, offeredBy()),
+        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(title),
+        (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
+          title,
+          offeredBy(),
+        ),
       },
       EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
