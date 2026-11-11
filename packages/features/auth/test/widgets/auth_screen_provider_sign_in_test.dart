@@ -8,6 +8,7 @@ import 'package:auth/src/screens/auth_screen.dart';
 import 'package:auth/src/widgets/login_form.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
 import 'package:auth/src/widgets/register_form.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -27,9 +28,15 @@ const _keycloak = OidcStrategy(
   providerId: 'keycloak',
   discoveryUrl: 'https://sso.acme.com/.well-known/openid-configuration',
   displayName: 'Keycloak',
-  authorizationEndpoint: '/api/auth/sign-in/social',
-  appSignInEndpoint: '/api/auth/app-sign-in/start',
-  appTokenEndpoint: '/api/auth/app-sign-in/token',
+  authorizationEndpoint: '$testAuthBasePath/sign-in/social',
+  appSignInEndpoint: '$testAuthBasePath/app-sign-in/start',
+  appTokenEndpoint: '$testAuthBasePath/app-sign-in/token',
+);
+
+/// [testServerIdentity] with the Authentik ([kOidcStrategy]) and Keycloak
+/// providers after its email strategy.
+ServerIdentity _identityWithTwoProviders() => testServerIdentity().copyWith(
+  strategies: [testEmailAndPasswordStrategy(), kOidcStrategy, _keycloak],
 );
 
 /// A display name long enough to wrap at 320dp and 2.0 text.
@@ -37,9 +44,9 @@ const _longName = OidcStrategy(
   providerId: 'corp-sso',
   discoveryUrl: 'https://sso.corp.example/.well-known/openid-configuration',
   displayName: 'Authentik Corporate Single Sign-On',
-  authorizationEndpoint: '/api/auth/sign-in/social',
-  appSignInEndpoint: '/api/auth/app-sign-in/start',
-  appTokenEndpoint: '/api/auth/app-sign-in/token',
+  authorizationEndpoint: '$testAuthBasePath/sign-in/social',
+  appSignInEndpoint: '$testAuthBasePath/app-sign-in/start',
+  appTokenEndpoint: '$testAuthBasePath/app-sign-in/token',
 );
 
 const _configuredAddress = 'https://bge.example.com';
@@ -122,7 +129,9 @@ void main() {
     whenListen(bloc, states.stream, initialState: initial);
     await tester.pumpWidget(
       _wrap(
-        _screen(identity ?? testServerIdentity(hasOidc: true)),
+        _screen(
+          identity ?? testIdentityWithOidc(),
+        ),
         bloc,
         textScale: textScale,
       ),
@@ -277,7 +286,9 @@ void main() {
         'exists)', (tester) async {
       await pumpScreen(
         tester,
-        identity: testServerIdentity(hasEmailPassword: false, hasOidc: true),
+        identity: testServerIdentity().copyWith(
+          strategies: const [kOidcStrategy],
+        ),
       );
       states.add(
         const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
@@ -313,7 +324,7 @@ void main() {
         'provider failure, above the no-methods message', (tester) async {
       await pumpScreen(
         tester,
-        identity: testServerIdentity(hasEmailPassword: false),
+        identity: testServerIdentity().copyWith(strategies: const []),
       );
       states.add(
         const AuthFailureProviderSignIn(ProviderSignInFailureReason.generic),
@@ -375,9 +386,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await pumpScreen(
         tester,
-        identity: testServerIdentity(
-          oidcStrategies: const [kOidcStrategy, _keycloak],
-        ),
+        identity: _identityWithTwoProviders(),
       );
       final focus = _focusOf(tester, 'authentik')..requestFocus();
       await tester.pump();
@@ -468,9 +477,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await pumpScreen(
         tester,
-        identity: testServerIdentity(
-          oidcStrategies: const [kOidcStrategy, _keycloak],
-        ),
+        identity: _identityWithTwoProviders(),
       );
       await land(tester, const AuthLoading());
 
@@ -574,9 +581,7 @@ void main() {
       );
       await pumpScreen(
         tester,
-        identity: testServerIdentity(
-          oidcStrategies: const [kOidcStrategy, _keycloak],
-        ),
+        identity: _identityWithTwoProviders(),
       );
 
       expect(
@@ -606,9 +611,7 @@ void main() {
       );
       await pumpScreen(
         tester,
-        identity: testServerIdentity(
-          oidcStrategies: const [kOidcStrategy, _keycloak],
-        ),
+        identity: _identityWithTwoProviders(),
       );
 
       expect(find.text('Continue with Authentik'), findsOneWidget);
@@ -660,9 +663,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           _screen(
-            testServerIdentity(
-              oidcStrategies: const [kOidcStrategy, _keycloak],
-            ),
+            _identityWithTwoProviders(),
           ),
           bloc,
         ),
@@ -689,7 +690,9 @@ void main() {
       stubProviderSignInAvailability(bloc, availability);
       await pumpScreen(
         tester,
-        identity: testServerIdentity(oidcStrategies: const [_longName]),
+        identity: testServerIdentity().copyWith(
+          strategies: [testEmailAndPasswordStrategy(), _longName],
+        ),
         textScale: 2,
       );
       expect(
@@ -801,7 +804,9 @@ void main() {
             // bloc when the tree goes.
             home: BlocProvider<AuthBloc>(
               create: (_) => AuthBloc(authRepository: repo),
-              child: _screen(testServerIdentity(hasOidc: true)),
+              child: _screen(
+                testIdentityWithOidc(),
+              ),
             ),
           ),
         ),

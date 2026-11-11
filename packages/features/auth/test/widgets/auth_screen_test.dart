@@ -8,6 +8,7 @@ import 'package:auth/src/screens/auth_screen.dart';
 import 'package:auth/src/widgets/login_form.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
 import 'package:auth/src/widgets/register_form.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -80,7 +81,10 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(hasEmailPassword: false)), mockBloc),
+          _wrap(
+            _screen(testServerIdentity().copyWith(strategies: const [])),
+            mockBloc,
+          ),
         );
 
         expect(find.byType(LoginForm), findsNothing);
@@ -90,7 +94,12 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(hasOidc: true)), mockBloc),
+          _wrap(
+            _screen(
+              testIdentityWithOidc(),
+            ),
+            mockBloc,
+          ),
         );
 
         expect(find.byType(OidcStrategyButton), findsOneWidget);
@@ -100,7 +109,12 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(hasOidc: true)), mockBloc),
+          _wrap(
+            _screen(
+              testIdentityWithOidc(),
+            ),
+            mockBloc,
+          ),
         );
 
         expect(find.byType(LoginForm), findsOneWidget);
@@ -112,7 +126,10 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(hasEmailPassword: false)), mockBloc),
+          _wrap(
+            _screen(testServerIdentity().copyWith(strategies: const [])),
+            mockBloc,
+          ),
         );
 
         expect(
@@ -127,7 +144,10 @@ void main() {
       ) async {
         final handle = tester.ensureSemantics();
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(hasEmailPassword: false)), mockBloc),
+          _wrap(
+            _screen(testServerIdentity().copyWith(strategies: const [])),
+            mockBloc,
+          ),
         );
 
         final node = tester.getSemantics(
@@ -210,7 +230,16 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(testServerIdentity(signUpDisabled: true)), mockBloc),
+          _wrap(
+            _screen(
+              testServerIdentity().copyWith(
+                strategies: [
+                  testEmailAndPasswordStrategy(signUpDisabled: true),
+                ],
+              ),
+            ),
+            mockBloc,
+          ),
         );
 
         expect(find.text("Don't have an account? Register"), findsNothing);
@@ -1023,7 +1052,7 @@ void main() {
 
         states
           ..add(const AuthLoading())
-          ..add(AuthAuthenticated(session: testSession()))
+          ..add(AuthAuthenticated(session: testAuthResponse()))
           ..add(const AuthLoading())
           ..add(const AuthUnauthenticated());
         await tester.pumpAndSettle();
@@ -1036,7 +1065,7 @@ void main() {
     group('accessibility audit', () {
       /// Both strategies, so the form, the divider and a provider button are
       /// all on the page.
-      final both = testServerIdentity(hasOidc: true);
+      final both = testIdentityWithOidc();
 
       /// The screen for [identity], with the bloc parked in [state].
       Widget Function(ThemeData) screenIn(
@@ -1225,7 +1254,7 @@ void main() {
 
       final noStrategies = screenIn(
         const AuthInitial(),
-        identity: testServerIdentity(hasEmailPassword: false),
+        identity: testServerIdentity().copyWith(strategies: const []),
       );
 
       auditScreen('no strategies', build: noStrategies);
