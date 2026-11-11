@@ -2322,6 +2322,7 @@ class _Dates extends StatelessWidget {
       case EventAction.offerGame:
       case EventAction.nominateGame:
       case EventAction.voteGame:
+      case EventAction.manageOfferedGames:
         return null;
     }
   }
@@ -2738,6 +2739,9 @@ class _ActionOutcomeBanner extends StatelessWidget {
     // Nor does a nomination or a vote (#517): the nominations' bloc owns
     // theirs.
     EventAction.nominateGame || EventAction.voteGame => null,
+    // Nor does a take-back of someone else's game (#518): the games pool's
+    // bloc sends it, as it does an offer.
+    EventAction.manageOfferedGames => null,
     // Delete is the only other action whose outcome reaches here: a status
     // write's and a roster write's take the arms above. The event's edit
     // (#500) is offered nowhere on this screen, so none reaches here.
