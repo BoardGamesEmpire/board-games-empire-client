@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -119,16 +120,27 @@ void main() {
     VoidCallback? onEnter,
     TextScaler? textScaler,
     ThemeData? theme,
+    TransitionBuilder? builder,
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
-    builder: textScaler == null
+    // A caller's region goes innermost and the text scaler wraps it, the
+    // order `BgeApp` builds: its clamped text scaling is outermost, with the
+    // region inside.
+    builder: textScaler == null && builder == null
         ? null
-        : (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: child!,
-          ),
+        : (context, child) {
+            final region = builder == null ? child! : builder(context, child);
+            return textScaler == null
+                ? region
+                : MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(textScaler: textScaler),
+                    child: region,
+                  );
+          },
     home: HouseholdListScreen(
       repository: repository,
       hydration: status.watch(),
@@ -145,6 +157,77 @@ void main() {
   void useNarrowWindow(WidgetTester tester, {double width = 320}) {
     useViewSize(tester, Size(width, 800));
   }
+
+  group('under the selection region (#338)', () {
+    Future<void> pumpUnderRegion(
+      WidgetTester tester, {
+      void Function(BuildContext context, String householdId)? onOpen,
+    }) async {
+      useViewSize(tester, const Size(1280, 800));
+      status.finished(HydrateOutcome.complete);
+      await tester.pumpWidget(
+        harness(
+          theme: pointerPlatformTheme(),
+          builder: underSelectionRegion,
+          onOpen: onOpen,
+        ),
+      );
+      households.add([
+        for (var i = 1; i <= 30; i++) _household('h-$i', name: 'Crew $i'),
+      ]);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the region is installed', (tester) async {
+      await pumpUnderRegion(tester);
+
+      expect(find.byType(SelectableRegion), findsOneWidget);
+    });
+
+    testWidgets(
+      'a vertical touch drag scrolls the list rather than selecting',
+      (
+        tester,
+      ) async {
+        final copies = captureClipboardCopies();
+        await pumpUnderRegion(tester);
+
+        final list = tester.state<ScrollableState>(
+          find.byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          ),
+        );
+        expect(list.position.maxScrollExtent, greaterThan(0));
+        expect(list.position.pixels, 0);
+
+        await tester.drag(
+          find.byKey(HouseholdListScreen.rowKey('h-1')),
+          const Offset(0, -400),
+        );
+        await tester.pumpAndSettle();
+
+        expect(list.position.pixels, greaterThan(0));
+
+        await sendCopyShortcut(tester);
+        expect(copies, isEmpty);
+      },
+    );
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets('a ${kind.name} tap on a row still opens it', (tester) async {
+        final opened = <String>[];
+        await pumpUnderRegion(tester, onOpen: (_, id) => opened.add(id));
+
+        await tester.tap(
+          find.byKey(HouseholdListScreen.rowKey('h-2')),
+          kind: kind,
+        );
+        await tester.pump();
+
+        expect(opened, equals(['h-2']));
+      });
+    }
+  });
 
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than an empty state', (tester) async {

@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -31,8 +33,9 @@ void main() {
     stubState(bloc, const ServerOnboardingIdle());
   });
 
-  Widget harness({ThemeData? theme}) => MaterialApp(
+  Widget harness({ThemeData? theme, TransitionBuilder? builder}) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
+    builder: builder,
     localizationsDelegates:
         ServerOnboardingLocalizations.localizationsDelegates,
     supportedLocales: ServerOnboardingLocalizations.supportedLocales,
@@ -151,6 +154,75 @@ void main() {
             'the banner has to come UP into the viewport, not be left '
             'below it because the reveal only ever scrolls backwards',
       );
+    });
+
+    group('under the selection region (#338)', () {
+      Future<void> pumpUnderRegion(WidgetTester tester) async {
+        useViewSize(tester, const Size(1280, 800));
+        await tester.pumpWidget(
+          harness(theme: pointerPlatformTheme(), builder: underSelectionRegion),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      /// Whether the field under [key] holds focus.
+      bool hasFocus(WidgetTester tester, Key key) {
+        final editable = find.descendant(
+          of: find.byKey(key),
+          matching: find.byType(EditableText),
+        );
+        return tester.widget<EditableText>(editable).focusNode.hasFocus;
+      }
+
+      testWidgets('the region is installed', (tester) async {
+        await pumpUnderRegion(tester);
+
+        expect(find.byType(SelectableRegion), findsOneWidget);
+      });
+
+      for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+        testWidgets(
+          'a ${kind.name} tap reaches each field and the submit, and typing '
+          'works',
+          (tester) async {
+            await pumpUnderRegion(tester);
+
+            // enterText focuses without a pointer event, so the tap is what
+            // shows the region lets a click through to the field.
+            for (final (key, text) in [
+              (ServerAddForm.urlFieldKey, 'bge.example.com'),
+              (ServerAddForm.aliasFieldKey, 'Home'),
+            ]) {
+              await tester.tap(find.byKey(key), kind: kind);
+              await tester.pump();
+              expect(
+                hasFocus(tester, key),
+                isTrue,
+                reason: 'a ${kind.name} tap on $key should focus it',
+              );
+
+              await tester.enterText(find.byKey(key), text);
+              // reactive_forms delivers control changes asynchronously.
+              await tester.pumpAndSettle();
+            }
+
+            final submit = find.byKey(ServerAddForm.submitButtonKey);
+            await tester.ensureVisible(submit);
+            await tester.pumpAndSettle();
+            await tester.tap(submit, kind: kind);
+            await tester.pumpAndSettle();
+
+            verify(
+              () => bloc.add(
+                const ServerOnboardingSubmitted(
+                  url: 'bge.example.com',
+                  alias: 'Home',
+                ),
+              ),
+            ).called(1);
+          },
+        );
+      }
     });
 
     group('accessibility audit', () {
