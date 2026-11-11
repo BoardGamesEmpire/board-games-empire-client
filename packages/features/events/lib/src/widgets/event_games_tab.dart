@@ -67,7 +67,8 @@ enum _Body {
 }
 
 /// What the Nominations section shows: its body, the rows when it shows
-/// rows, and the nominations' state it was worked out from.
+/// rows, filtered and sorted, and the nominations' state it was worked out
+/// from.
 typedef _NominationsShown = ({
   EventNominationsBody body,
   List<EventNomination> rows,
@@ -76,9 +77,10 @@ typedef _NominationsShown = ({
 
 /// What the Games tab shows, worked out once per build (#517): the
 /// Nominations section's body and rows, if it has a nominations' state, the
-/// pool's, and the roster's names that both name people from. The screen
-/// counts its rows for the page's `semanticChildCount`, and the tab draws
-/// the same value, so the two can't disagree.
+/// pool's, and the roster's names that both name people from. Each list's
+/// rows are the ones its filter keeps, the nominations' in the order chosen.
+/// The screen counts its rows for the page's `semanticChildCount`, and the
+/// tab draws the same value, so the two can't disagree.
 final class _GamesBody {
   const _GamesBody({
     required this.pool,
@@ -100,7 +102,7 @@ final class _GamesBody {
       poolRows: rows,
       nominations: nominations == null
           ? null
-          : _nominationsOf(nominations, controller),
+          : _nominationsOf(detail, nominations, controller),
       names: {
         for (final row in detail.detail.snapshot.attendees ?? <EventAttendee>[])
           row.id: row.name,
@@ -120,8 +122,9 @@ final class _GamesBody {
   /// The roster's names, by row id: none where it is withheld or not read.
   final Map<String, String?> names;
 
-  /// How many nominations the section shows as rows: none while it shows a
-  /// state. The pool's rows are counted on from them.
+  /// How many nominations the section shows as rows, those its filter
+  /// keeps: none while it shows a state. The pool's rows are counted on from
+  /// them.
   int get nominationRowCount => switch (nominations) {
     (body: EventNominationsBody.rows, :final rows, state: _) => rows.length,
     _ => 0,
@@ -175,39 +178,52 @@ final class _GamesBody {
     return (body: rows.isEmpty ? _Body.noMatches : _Body.rows, rows: rows);
   }
 
-  /// What the Nominations section shows for [state] (#517): the
-  /// nominations, else the state their read is drawn in
+  /// What the Nominations section shows for [state] on [detail] (#517):
+  /// the nominations the [controller]'s filter keeps, in the order it holds
+  /// ([filterNominations], then [sortNominations]), or no match, else the
+  /// state their read is drawn in
   /// ([EventGamesTabController.drawnNominationsLoad]). They need no roster,
   /// so they show wherever the pool can't.
   static _NominationsShown _nominationsOf(
+    EventDetailReady detail,
     EventNominationsState state,
     EventGamesTabController controller,
   ) {
     final load = controller.drawnNominationsLoad(state);
-    final body = load == EventNominationsLoad.hidden
-        ? EventNominationsBody.hidden
-        : state.nominations.isNotEmpty
-        ? EventNominationsBody.rows
-        : switch (load) {
-            // Gone makes no claim of its own, as the pool's doesn't: the
-            // event's read again settles it.
-            EventNominationsLoad.idle ||
-            EventNominationsLoad.loading ||
-            EventNominationsLoad.gone => EventNominationsBody.loading,
-            EventNominationsLoad.failed => EventNominationsBody.failed,
-            EventNominationsLoad.loaded => EventNominationsBody.empty,
-            EventNominationsLoad.hidden => EventNominationsBody.hidden,
-          };
-    return (
-      body: body,
-      rows: body == EventNominationsBody.rows ? state.nominations : const [],
-      state: state,
-    );
+    if (load != EventNominationsLoad.hidden && state.nominations.isNotEmpty) {
+      final rows = sortNominations(
+        filterNominations(
+          state.nominations,
+          controller.nominationFilter,
+          viewerId: detail.detail.attendance?.id,
+        ),
+        controller.nominationSort,
+      );
+      return (
+        body: rows.isEmpty
+            ? EventNominationsBody.noMatches
+            : EventNominationsBody.rows,
+        rows: rows,
+        state: state,
+      );
+    }
+    final body = switch (load) {
+      // Gone makes no claim of its own, as the pool's doesn't: the event's
+      // read again settles it.
+      EventNominationsLoad.idle ||
+      EventNominationsLoad.loading ||
+      EventNominationsLoad.gone => EventNominationsBody.loading,
+      EventNominationsLoad.failed => EventNominationsBody.failed,
+      EventNominationsLoad.loaded => EventNominationsBody.empty,
+      EventNominationsLoad.hidden => EventNominationsBody.hidden,
+    };
+    return (body: body, rows: const [], state: state);
   }
 }
 
 /// The Games tab of an event's screen (#516): the games nominated for the
-/// lineup ([EventNominationsSection], #517), then the games its attendees
+/// lineup ([EventNominationsSection], #517), narrowed and ordered by its own
+/// filters and sort, then the games its attendees
 /// offer to bring, one row per offered copy, under a header with Offer
 /// games, a title search, a filter by person and "Not mine". A row that
 /// supplies a live nomination says "Nominated" (#517). Each row ends with
@@ -392,6 +408,7 @@ class EventGamesTab extends StatelessWidget {
             rows: shown.rows,
             detail: detail,
             state: shown.state,
+            controller: controller,
             pool: games.games,
             // Before a read has answered, an empty pool says nothing of
             // what the viewer offers. While one is out, the last to end

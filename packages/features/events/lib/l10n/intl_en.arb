@@ -1222,7 +1222,7 @@
   },
   "eventsNominationsCount": "{count, plural, =1{1 nomination} other{{count} nominations}}",
   "@eventsNominationsCount": {
-    "description": "Under the Nominations heading (eventsNominationsHeading) on the Games tab of an event's screen: how many nominations the section lists.",
+    "description": "Under the Nominations section's Filters and Sort (eventsNominationsFilters, eventsNominationsSort) on the Games tab of an event's screen, while no filter narrows the list: how many nominations there are. While one does, eventsNominationsShown takes its place.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -1249,6 +1249,92 @@
   "eventsNominationsEmptyBody": "Nominate a game from the games pool below.",
   "@eventsNominationsEmptyBody": {
     "description": "Under eventsNominationsEmptyTitle, shown only to someone who can nominate a game there. The games pool is the list of games people offer to bring, below the Nominations section on the same tab, and a game is nominated from its row there (eventsNominate)."
+  },
+  "eventsNominationsFilters": "Filters",
+  "@eventsNominationsFilters": {
+    "description": "Button under the Nominations heading on the Games tab of an event's screen that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
+  },
+  "eventsNominationsSort": "Sort: {sort}",
+  "@eventsNominationsSort": {
+    "description": "Button beside eventsNominationsFilters on the Games tab of an event's screen that opens a menu of the orders the nominations can be listed in. {sort} is the order they are in: eventsNominationsSortNewest, eventsNominationsSortSupport or eventsNominationsSortDeadline.",
+    "placeholders": {
+      "sort": {
+        "type": "String",
+        "example": "Newest"
+      }
+    }
+  },
+  "eventsNominationsSortNewest": "Newest",
+  "@eventsNominationsSortNewest": {
+    "description": "In the menu eventsNominationsSort opens, and the order chosen until another is: list the nominations newest first. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsSortSupport": "Most support",
+  "@eventsNominationsSortSupport": {
+    "description": "In the menu eventsNominationsSort opens: list the nominations with the most votes For first, counting only the votes that count. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsSortDeadline": "Soonest deadline",
+  "@eventsNominationsSortDeadline": {
+    "description": "In the menu eventsNominationsSort opens: list the nominations whose voting closes soonest first, and those with no closing time last. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsShown": "{shown} of {total, plural, =1{1 nomination} other{{total} nominations}}",
+  "@eventsNominationsShown": {
+    "description": "Under the Nominations section's Filters and Sort on the Games tab of an event's screen while a filter narrows the list, and read out as it changes: how many nominations the filters keep, of all the event's nominations. In place of eventsNominationsCount.",
+    "placeholders": {
+      "shown": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "eventsNominationsNoMatches": "No nominations match",
+  "@eventsNominationsNoMatches": {
+    "description": "In the Nominations section of an event's Games tab when games are nominated but the filters (eventsNominationsFilters) leave none of them. Followed by eventsNominationsClearFilters."
+  },
+  "eventsNominationsClearFilters": "Clear filters",
+  "@eventsNominationsClearFilters": {
+    "description": "Button under eventsNominationsNoMatches that stops narrowing the nominations by every filter, so every nomination shows again. The order chosen with eventsNominationsSort stays."
+  },
+  "eventsNominationsStatus": "Status",
+  "@eventsNominationsStatus": {
+    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a chip per status a nomination can be in, to show only the nominations in the statuses chosen."
+  },
+  "eventsNominationsDecided": "Decided",
+  "@eventsNominationsDecided": {
+    "description": "Status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list: nominations whose vote or a host's decision has settled them, whether the game went into the lineup or not (approved, passed, failed, quorum not met or rejected)."
+  },
+  "eventsNominationsDate": "Date",
+  "@eventsNominationsDate": {
+    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a choice of which nominations to show by what they are for: any date (eventsNominationsAnyDate), the whole event (eventsNominationWholeEvent), or one of the event's dates (eventsNominationForDate)."
+  },
+  "eventsNominationsAnyDate": "Any date",
+  "@eventsNominationsAnyDate": {
+    "description": "First choice under eventsNominationsDate in the nominations' filters, chosen until another is: show nominations whatever they are for, the whole event or any one of its dates."
+  },
+  "eventsNominationsDateGone": "For a date no longer on the event",
+  "@eventsNominationsDateGone": {
+    "description": "Chip naming the date the nominations are narrowed to (eventsNominationsDate), when that date has since been taken off the event, so it can't be named."
+  },
+  "eventsNominationsMine": "Mine",
+  "@eventsNominationsMine": {
+    "description": "Switch in the nominations' filters (eventsNominationsFilters), and the chip naming it while it is on: show only the nominations the user made."
+  },
+  "eventsNominationsNotVoted": "Not voted yet",
+  "@eventsNominationsNotVoted": {
+    "description": "Switch in the nominations' filters (eventsNominationsFilters), offered to someone who can vote, and the chip naming it while it is on: show only the nominations still open for votes that the user hasn't voted on."
+  },
+  "eventsNominationsFilterRemove": "Remove {filter}",
+  "@eventsNominationsFilterRemove": {
+    "description": "Accessible name and tooltip of the remove button on a chip under the Nominations section's Filters, which stops narrowing the nominations by that filter. {filter} is the chip's own words, such as 'Voting', 'Mine' or 'For the whole event'.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Voting"
+      }
+    }
   },
   "eventsGamesPoolHeading": "Games pool",
   "@eventsGamesPoolHeading": {
@@ -1288,11 +1374,11 @@
   },
   "eventsNominationWholeEvent": "For the whole event",
   "@eventsNominationWholeEvent": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle)."
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
   },
   "eventsNominationForDate": "For {date}",
   "@eventsNominationForDate": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
     "placeholders": {
       "date": {
         "type": "String",
@@ -1302,11 +1388,11 @@
   },
   "eventsNominationStatusVoting": "Voting",
   "@eventsNominationStatusVoting": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: people are voting on it."
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: people are voting on it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusAwaitingApproval": "Awaiting approval",
   "@eventsNominationStatusAwaitingApproval": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: it waits for a host to approve or reject it."
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: it waits for a host to approve or reject it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusApproved": "Approved",
   "@eventsNominationStatusApproved": {
@@ -1330,11 +1416,11 @@
   },
   "eventsNominationStatusWithdrawn": "Withdrawn",
   "@eventsNominationStatusWithdrawn": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person who nominated it took it back before it was decided."
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person who nominated it took it back before it was decided. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusPaused": "Paused",
   "@eventsNominationStatusPaused": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person bringing it isn't coming, so it is on hold. eventsNominationPaused says more."
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person bringing it isn't coming, so it is on hold. eventsNominationPaused says more. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusUnknown": "Unknown",
   "@eventsNominationStatusUnknown": {

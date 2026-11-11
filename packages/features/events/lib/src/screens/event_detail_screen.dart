@@ -567,6 +567,55 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the withdraw dialog's Keep it button (#517).
   static const Key withdrawKeepKey = Key('event_detail.withdraw_keep');
 
+  /// Key on the Nominations section's Filters button (#517), which opens
+  /// the nominations' filters.
+  static const Key nominationsFiltersKey = Key(
+    'event_detail.nominations_filters',
+  );
+
+  /// Key on the Nominations section's Sort button (#517), which opens the
+  /// menu of orders.
+  static const Key nominationsSortKey = Key('event_detail.nominations_sort');
+
+  /// Key on one order in the nominations' Sort menu (#517).
+  static Key nominationsSortItemKey(NominationSort sort) =>
+      Key('event_detail.nominations_sort_${sort.name}');
+
+  /// Key on one status chip in the nominations' filters (#517).
+  static Key nominationsStatusKey(NominationStatusGroup group) =>
+      Key('event_detail.nominations_status_${group.name}');
+
+  /// Key on one choice of the nominations' date filter (#517): any date
+  /// (null), the whole event, or one date by its id.
+  static Key nominationsDateKey(NominationScope? scope) => Key(
+    'event_detail.nominations_date_${switch (scope) {
+      null => 'any',
+      WholeEventScope() => 'event',
+      DateScope(:final occurrenceId) => occurrenceId,
+    }}',
+  );
+
+  /// Key on the nominations' filters' Mine switch (#517).
+  static const Key nominationsMineKey = Key('event_detail.nominations_mine');
+
+  /// Key on the nominations' filters' Not voted yet switch (#517).
+  static const Key nominationsNotVotedKey = Key(
+    'event_detail.nominations_not_voted',
+  );
+
+  /// Key on the chip under the nominations' Filters for one filter in use
+  /// (#517): `status_<group>`, `date`, `mine` or `not_voted`.
+  static Key nominationsInUseKey(String id) =>
+      Key('event_detail.nominations_in_use_$id');
+
+  /// Key on the count of the nominations shown (#517).
+  static const Key nominationsCountKey = Key('event_detail.nominations_count');
+
+  /// Key on Clear filters, where the nominations' filter leaves none (#517).
+  static const Key nominationsClearFiltersKey = Key(
+    'event_detail.nominations_clear_filters',
+  );
+
   /// Key on the Games tab's Offer games button.
   static const Key offerGamesKey = Key('event_detail.offer_games');
 

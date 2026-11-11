@@ -7,22 +7,27 @@ import 'package:events/src/bloc/event_games_state.dart';
 import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:models/domain.dart' show EventNomination;
 import 'package:ui/ui.dart';
 
 /// What the Games tab keeps across the screen's rebuilds (#516): its filter,
 /// whether it has been shown, the ids the pool was last asked for, how the
-/// pool's last read ended and how the nominations' did (#517), and the focus
-/// nodes a control that leaves hands focus on to.
+/// pool's last read ended and how the nominations' did (#517), the
+/// nominations' own filter and order (#517), and the focus nodes a control
+/// that leaves hands focus on to.
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
-/// beside the tab controller, so no read, write or clock tick under it
-/// forgets the filter, and the screen reads the pool and the nominations
-/// after a detail read only once the tab has been shown.
+/// beside the tab controller, so no read, write, clock tick or switch to the
+/// Details tab under it forgets either filter, and the screen reads the pool
+/// and the nominations after a detail read only once the tab has been shown.
 class EventGamesTabController extends ChangeNotifier {
   PoolFilter _filter = const PoolFilter();
+  NominationFilter _nominationFilter = const NominationFilter();
+  NominationSort _nominationSort = NominationSort.newest;
   int _searchEpoch = 0;
   bool _shown = false;
   EventGamesLoad? _settled;
@@ -30,6 +35,77 @@ class EventGamesTabController extends ChangeNotifier {
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
+
+  /// What the Nominations section narrows the nominations to (#517).
+  NominationFilter get nominationFilter => _nominationFilter;
+
+  /// How the Nominations section orders the nominations it shows (#517).
+  NominationSort get nominationSort => _nominationSort;
+
+  /// Narrows the nominations to [filter], as each change in the Filters
+  /// pop-up or a chip's removal makes it.
+  void setNominationFilter(NominationFilter filter) {
+    if (filter == _nominationFilter) return;
+    _nominationFilter = filter;
+    notifyListeners();
+  }
+
+  /// Orders the nominations by [sort].
+  void setNominationSort(NominationSort sort) {
+    if (sort == _nominationSort) return;
+    _nominationSort = sort;
+    notifyListeners();
+  }
+
+  /// The nominations' Filters button's focus: where Clear filters and the
+  /// last chip's removal hand focus, and where it comes back once the
+  /// Filters pop-up closes.
+  final FocusNode nominationsFiltersFocus = FocusNode(
+    debugLabel: 'Nominations filters',
+  );
+
+  /// The nominations' Sort button's focus, which its menu hands back as it
+  /// closes.
+  final FocusNode nominationsSortFocus = FocusNode(
+    debugLabel: 'Nominations sort',
+  );
+
+  /// Clear filters' focus, in the state that says no nomination matches.
+  final FocusNode nominationsClearFiltersFocus = FocusNode(
+    debugLabel: 'Clear nominations filters',
+  );
+
+  /// Each nomination row, by the nomination's id.
+  final Map<String, FocusNode> _nominationAreas = {};
+
+  /// The node that holds nomination [id]'s row, made as it is first built
+  /// and let go once the nomination is no longer held.
+  FocusNode nominationArea(String id) => _nominationAreas.putIfAbsent(
+    id,
+    () => FocusNode(
+      debugLabel: 'Nomination $id',
+      canRequestFocus: false,
+      skipTraversal: true,
+    ),
+  );
+
+  /// Stops narrowing the nominations, from Clear filters, which leaves with
+  /// the state it sits in, and hands focus to Filters once the frame that
+  /// builds it has ended, if focus is free then ([focusIsFree], from
+  /// [context], with Clear filters counting as free if it held focus at the
+  /// press). The press arms it however it came. The order stays as chosen.
+  void clearNominationFilters(BuildContext context) {
+    final held = nominationsClearFiltersFocus.hasFocus
+        ? nominationsClearFiltersFocus
+        : null;
+    setNominationFilter(const NominationFilter());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted || !focusIsFree(context, untouched: held)) return;
+      if (nominationsFiltersFocus.context?.mounted ?? false) {
+        nominationsFiltersFocus.requestFocus();
+      }
+    });
+  }
 
   /// Moves on when the filter is cleared from outside the search field, so
   /// the field is built anew, empty. Never as the user types.
@@ -282,12 +358,132 @@ class EventGamesTabController extends ChangeNotifier {
     });
   }
 
+  /// The row of a write that ended with no change to the rows, its own read
+  /// having failed, until the whole list's read that follows changes them
+  /// ([nominationsChanged]).
+  String? _unreadWrite;
+
+  /// Whether a write that ended as [outcome] with no change to the rows read
+  /// the whole list next: its row was to be read again, and that read failed.
+  static bool _readsWhole(EventNominationsOutcome? outcome) =>
+      switch (outcome) {
+        VoteOutcome(result: VoteResult.done || VoteResult.closed) ||
+        WithdrawOutcome(result: WithdrawResult.notWithdrawable) => true,
+        _ => false,
+      };
+
+  /// Answers the nominations going from [previous] to [current], as the
+  /// bloc emits them and before the frame that builds them (#517), from
+  /// [context], the scope's, for the viewer [viewerId].
+  ///
+  /// A row that leaves the rows shown, filtered and sorted, while it holds
+  /// focus, or as the vote or withdrawal on it that was out ends, as one
+  /// voted on under "Not voted yet" does, or as the whole list's read after
+  /// that write does, where the write's own read of the row failed
+  /// ([_readsWhole]), hands focus on once that frame has ended: to the first
+  /// control of the next row shown that has one, else of the one before it,
+  /// else Filters, where it is built. The write's end arms it however it was
+  /// pressed, so a screen reader's activation, which moves no input focus,
+  /// is handed on too. It moves focus only while focus is free then: on
+  /// nothing, on the page, or still on the row that left. A row that stays
+  /// keeps its own focus, as Withdraw's hands it to the row's lines.
+  void nominationsChanged(
+    BuildContext context,
+    EventNominationsState previous,
+    EventNominationsState current, {
+    required String? viewerId,
+  }) {
+    // The vote or withdrawal out before this change: the row it was on.
+    final ended = switch (previous.writing) {
+      (write: NominationWrite.vote || NominationWrite.withdraw, :final id) =>
+        id,
+      _ => null,
+    };
+    if (identical(previous.nominations, current.nominations)) {
+      // A write that ended with no change to the rows, where the row was to
+      // be read again and that read failed, reads the whole list instead:
+      // that read's change is still the write's (#517).
+      if (current.writing != null) {
+        _unreadWrite = null;
+      } else if (ended != null && _readsWhole(current.outcome)) {
+        _unreadWrite = ended;
+      }
+      return;
+    }
+    final written = ended ?? _unreadWrite;
+    _unreadWrite = null;
+    List<EventNomination> shown(List<EventNomination> all) => sortNominations(
+      filterNominations(all, _nominationFilter, viewerId: viewerId),
+      _nominationSort,
+    );
+    final shownBefore = shown(previous.nominations);
+    final shownAfter = shown(current.nominations);
+    final stays = {for (final nomination in shownAfter) nomination.id};
+
+    int? left;
+    FocusNode? held;
+    for (final (index, nomination) in shownBefore.indexed) {
+      if (stays.contains(nomination.id)) continue;
+      final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
+      if (!focused && nomination.id != written) continue;
+      left = index;
+      held = focused ? FocusManager.instance.primaryFocus : null;
+      break;
+    }
+
+    // Let go the nodes of nominations no longer held, once their rows have
+    // gone too.
+    final inSet = {for (final nomination in current.nominations) nomination.id};
+    final gone = [
+      for (final MapEntry(:key, :value) in _nominationAreas.entries)
+        if (!inSet.contains(key)) (key, value),
+    ];
+    for (final (id, _) in gone) {
+      _nominationAreas.remove(id);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final (_, node) in gone) {
+        node.dispose();
+      }
+      if (left == null || !context.mounted) return;
+      if (!focusIsFree(context, untouched: held)) return;
+      // Where the row was among those that stay.
+      final at = shownBefore
+          .take(left)
+          .where((nomination) => stays.contains(nomination.id))
+          .length;
+      for (final nomination in [
+        ...shownAfter.skip(at),
+        ...shownAfter.take(at).toList().reversed,
+      ]) {
+        final target =
+            _nominationAreas[nomination.id]?.traversalDescendants.firstOrNull;
+        if (target != null) {
+          target.requestFocus();
+          return;
+        }
+      }
+      // Only where it is built: a node asked while it isn't would take focus
+      // whenever it is built again, as the Games tab is shown again.
+      if (nominationsFiltersFocus.context?.mounted ?? false) {
+        nominationsFiltersFocus.requestFocus();
+      }
+    });
+  }
+
   @override
   void dispose() {
     offerArea.dispose();
     peopleFocus.dispose();
     clearFiltersFocus.dispose();
     searchArea.dispose();
+    nominationsFiltersFocus.dispose();
+    nominationsSortFocus.dispose();
+    nominationsClearFiltersFocus.dispose();
+    for (final node in _nominationAreas.values) {
+      node.dispose();
+    }
     for (final node in _takeBackAreas.values) {
       node.dispose();
     }
@@ -307,7 +503,9 @@ class EventGamesTabController extends ChangeNotifier {
 /// emits it, before the frame that builds it and on either tab: how the last
 /// read ended ([EventGamesTabController.poolEmitted]), and a row leaving,
 /// below. It watches the nominations the same way, for how their last read
-/// ended ([EventGamesTabController.nominationsEmitted]).
+/// ended ([EventGamesTabController.nominationsEmitted]), and a row leaving
+/// the rows the nominations' filter keeps
+/// ([EventGamesTabController.nominationsChanged]).
 ///
 /// ## Take back's hand-off
 ///
@@ -365,6 +563,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
   EventGamesState _last = const EventGamesState();
   EventNominationsBloc? _nominationsBloc;
   StreamSubscription<EventNominationsState>? _nominations;
+  EventNominationsState _lastNominations = const EventNominationsState();
 
   @override
   void didChangeDependencies() {
@@ -388,8 +587,11 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
     if (nominations != _nominationsBloc) {
       unawaited(_nominations?.cancel());
       _nominationsBloc = nominations;
+      _lastNominations = nominations.state;
       _controller.nominationsEmitted(nominations.state);
-      _nominations = nominations.stream.listen(_controller.nominationsEmitted);
+      // Heard before the frame that drops a row is built, while the row is
+      // still built.
+      _nominations = nominations.stream.listen(_nominationsChanged);
     }
   }
 
@@ -409,6 +611,22 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
     if (!mounted) return;
     final detail = context.read<EventDetailBloc>().state;
     _controller.poolChanged(
+      context,
+      previous,
+      state,
+      viewerId: detail is EventDetailReady
+          ? detail.detail.attendance?.id
+          : null,
+    );
+  }
+
+  void _nominationsChanged(EventNominationsState state) {
+    final previous = _lastNominations;
+    _lastNominations = state;
+    _controller.nominationsEmitted(state);
+    if (!mounted) return;
+    final detail = context.read<EventDetailBloc>().state;
+    _controller.nominationsChanged(
       context,
       previous,
       state,

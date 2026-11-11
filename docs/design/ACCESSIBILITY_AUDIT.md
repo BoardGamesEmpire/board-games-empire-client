@@ -180,7 +180,9 @@ Know these limits before trusting a green run.
   and dark, from the colours the widgets resolve, by
   `offer_games_screen_test.dart`. The title and platform line of such a
   row keep the disabled look, which WCAG 1.4.3 exempts, and are measured
-  nowhere.
+  nowhere. Nor the Nominations section's rows (#517): each is one merged
+  node, whose tally speaks commas where it draws dots, and each vote choice
+  and Withdraw speaks its game's title beside its drawn word.
 
 ---
 
@@ -263,6 +265,49 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    whether focus jumps to the banner and whether the page scrolls. With
    VoiceOver, move focus to the banner by the rotor, and note whether the
    page scrolls to it.
+   Then the Nominations section (#517), above the pool, with an event that
+   has several nominations, one of them yours, and more than one date.
+   Check that heading navigation finds "Nominations" and then "Games
+   pool", that opening Games reads "Loading nominations" once, and that
+   each row is one item saying the game, where it is played, who
+   nominated it, whose copy it is, what it is for ("For the whole event"),
+   where it stands ("Voting"), and its tally as words ("2 for, 1 against,
+   0 interested"), then the Interested line and when voting closes where
+   they show. A paused row says who isn't coming and what it goes back
+   to. Under an open row, check the three vote choices each name the game
+   ("For Catan"), that the one chosen reads as selected, that a choice
+   pressed reads "…, saving your vote…" and keeps focus until it lands,
+   and that the footer then reads "Your vote on Catan is in." Where your
+   vote won't count yet, check the line above the choices ("Your vote
+   counts once you say you're going.") is read before them. Check "Add a
+   note" names the game, and its dialog. Open Who voted: the pop-up is
+   read as "Who voted on Catan", a struck-through vote says it doesn't
+   count, and closing it puts you back on Who voted. On your own live
+   nomination, Withdraw reads "Withdraw Azul" and asks first; after it,
+   the footer reads "You withdrew Azul." and the reader lands on the row,
+   which now reads "Withdrawn". On a pool row, Nominate reads "Nominate
+   Catan"; on an event with more than one date it asks which, a date
+   nominated already reading "Already nominated" and unavailable; after
+   it, the footer reads "Catan is nominated. Voting is open." and the
+   pool row reads "Nominated".
+   Then the header: open Filters, check the pop-up is read as "Filters",
+   with "Status" and "Date" as headings, each status chip saying whether
+   it is selected, the dates as radio buttons with "Any date" chosen, and
+   the Mine and Not voted yet switches. Choose Voting and close it: focus
+   is back on Filters, a "Voting" chip shows, and the count ("2 of 5
+   nominations") is read once as it changes. Open Sort ("Sort: Newest"):
+   it says it is expanded, the current order reads as selected, and
+   picking Most support puts focus back on Sort, read as "Sort: Most
+   support", and reorders the rows. Turn on Not voted yet and vote on the
+   first row: it leaves the list, and the reader lands on the next row's
+   first vote choice. Choose filters that leave nothing, check "No
+   nominations match" is read, and that Clear filters brings every
+   nomination back and puts you on Filters. Switch to Details and back:
+   the filters and the order are as you left them. At the largest text,
+   check Filters, Sort, every chip and the count fit the screen, and that
+   the Filters pop-up scrolls to its last switch with the keyboard up.
+   Offline, check each vote choice and Withdraw say "Available when
+   you're online", while Filters and Sort still work.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
@@ -446,6 +491,53 @@ The hand-offs:
   that takes its place, else the one before it, else Filters. Select all
   shown keeps focus as it becomes Clear selection, and back.
 
+### Focus hand-offs from #517
+
+The same check, for the Games tab's Nominations section. Each hand-off
+moves focus only if focus is then free, as #516's do, and a press however
+it came arms it, the reader's double-tap included.
+
+- Withdraw, its row staying as Withdrawn: the row itself, read as one
+  item with its new status. Tab goes on from it, and it is no stop of its
+  own afterwards.
+- A vote or a withdrawal that takes its row out of the filter, as a vote
+  under Not voted yet does, or a row that leaves the filter while it holds
+  focus: the first control of the next row shown, else of the row before
+  it, else Filters.
+- Who voted, closed: Who voted.
+- Filters, closed: Filters. Sort, an order picked or the menu closed:
+  Sort.
+- A filter chip removed: the chip that takes its place, else the one
+  before it, else Filters. A chip removed by pointer while focus is on
+  another control moves no focus.
+- Clear filters, in "No nominations match", however it is pressed:
+  Filters.
+- Nominate, through its dialog and its nomination: Nominate, which keeps
+  focus, read as unavailable once the row is nominated for everything it
+  could be, until focus moves on.
+
+### #850's list from #517
+
+#850's device pass takes these too, from the same build: the Nominations
+section was checked only in Flutter's semantics tree under `flutter test`,
+at 320dp and 200% text.
+
+- Flow 7, from "Then the Nominations section (#517)": the rows read as one
+  item each, the vote choices and their in-progress label, Who voted and
+  its pop-up, Withdraw and its dialog, Nominate and its dialog, Filters,
+  Sort and the count, and the offline hints.
+- "Focus hand-offs from #517": whether the reader's cursor lands where
+  input focus is handed, the next row's vote after a vote under Not voted
+  yet above all.
+- The count under Filters and Sort ("2 of 5 nominations"): read once as
+  each filter changes, and not again as the reader passes over it.
+- A vote choice while its vote is out: it is held enabled, so it keeps
+  focus, and reads "…, saving your vote…". Note whether the reader still
+  offers it as an action to press.
+- The header and the Filters pop-up at 320×640 with 200% text, on a phone,
+  with every filter in use: each chip's label scales down rather than
+  clips, and the pop-up scrolls clear of the keyboard.
+
 ### #322's selection and copy checks
 
 - **Pointer platforms** (macOS, Windows, Linux, native and in a browser): a
@@ -508,7 +600,7 @@ doesn't count them; they are listed after the audited screens.
 | `DataGatewayListScreen` | `packages/features/data_gateway/test/widgets/data_gateway_list_screen_test.dart` | audited |
 | `EditHouseholdScreen` | `packages/features/household/test/widgets/edit_household_screen_test.dart` | audited |
 | `EventAvailabilityScreen` | `packages/features/events/test/widgets/event_availability_screen_test.dart` | audited |
-| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart`, `packages/features/events/test/widgets/event_detail_tabs_test.dart` and, for the Games tab's rows, controls and *Whose games* (#516), `packages/features/events/test/widgets/event_games_tab_test.dart` | audited |
+| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` (the Nominations section's rows, Filters and Sort among them, #517), `packages/features/events/test/widgets/event_detail_tabs_test.dart`, for the Games tab's rows, controls and *Whose games* (#516), `packages/features/events/test/widgets/event_games_tab_test.dart` and, for a nomination row and Withdraw at 320dp and 200% text (#517), `packages/features/events/test/widgets/event_nominations_section_test.dart` | audited |
 | `EventGroupScreen` | `packages/features/events/test/widgets/event_group_screen_test.dart` | audited |
 | `EventOverviewScreen` | `packages/features/events/test/widgets/event_overview_screen_test.dart` | audited |
 | `FeedbackFlowScreen` | `packages/app_shell/test/screens/feedback_flow_screen_test.dart` | audited |

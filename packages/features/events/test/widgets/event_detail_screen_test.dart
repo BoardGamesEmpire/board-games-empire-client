@@ -9844,5 +9844,231 @@ void main() {
       build: screen(),
       arrange: (tester) => openWhole(tester, openEditDateDialog),
     );
+
+    // The Games tab's Nominations section (#517): Ada's Catan, which the
+    // host voted for, and the host's own Azul, which they may withdraw.
+    const adasCatan = OfferedGame(
+      id: 'o-catan',
+      attendeeId: 'att-2',
+      collectionId: 'col-catan',
+      platformGameId: 'pg-catan',
+      gameId: 'g-catan',
+      title: 'Catan',
+      platformName: 'Tabletop',
+      medium: GameMedium.physical,
+    );
+    const myAzul = OfferedGame(
+      id: 'o-azul',
+      attendeeId: 'att-me',
+      collectionId: 'col-azul',
+      platformGameId: 'pg-azul',
+      gameId: 'g-azul',
+      title: 'Azul',
+      platformName: 'Tabletop',
+      medium: GameMedium.physical,
+    );
+
+    /// [game] nominated by [by] for the whole event, open for votes.
+    EventNomination nominationOf(
+      String id,
+      OfferedGame game, {
+      required String by,
+      List<EventNominationVote> votes = const [],
+    }) => EventNomination(
+      id: id,
+      eventId: 'e-1',
+      platformGameId: game.platformGameId,
+      gameId: game.gameId,
+      title: game.title,
+      platformName: game.platformName,
+      status: NominationStatus.open,
+      nominatedById: by,
+      suppliedFromId: game.id,
+      votes: votes,
+      createdAt: kItemInstant,
+    );
+
+    /// A server whose pool holds Catan and Azul, and whose nominations are
+    /// both.
+    FakeEventRemote nominating() => FakeEventRemote.detail(
+      (_) => host.snapshot,
+      summary: answers,
+      pool: (_) => const [adasCatan, myAzul],
+      nominations: (_) => [
+        nominationOf(
+          'n-1',
+          adasCatan,
+          by: 'att-2',
+          votes: const [
+            EventNominationVote(
+              id: 'v-1',
+              attendeeId: 'att-me',
+              voteType: VoteType.forGame,
+              eligible: true,
+            ),
+          ],
+        ),
+        nominationOf('n-2', myAzul, by: 'att-me'),
+      ],
+    );
+
+    // Built past the view's edge too: the page scrolls them away.
+    Finder nominationsFilters() => find.byKey(
+      EventDetailScreen.nominationsFiltersKey,
+      skipOffstage: false,
+    );
+    Finder nominationsSort() =>
+        find.byKey(EventDetailScreen.nominationsSortKey, skipOffstage: false);
+    Finder inUse(String id) => find.byKey(
+      EventDetailScreen.nominationsInUseKey(id),
+      skipOffstage: false,
+    );
+
+    /// The host's Games tab, with Voting chosen in its filters, so the
+    /// header has a chip and a count read out.
+    Future<void> showNominations(WidgetTester tester) async {
+      await showing(tester, host);
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+      await press(tester, nominationsFilters());
+      await press(
+        tester,
+        find.byKey(
+          EventDetailScreen.nominationsStatusKey(NominationStatusGroup.voting),
+        ),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(inUse('status_voting'), findsOneWidget);
+    }
+
+    // From the Nominations heading down: the header, its chip and count,
+    // then the rows, each with its vote, Who voted and the host's Withdraw.
+    auditScreen(
+      'nominations rows meet tap target and label guidelines',
+      build: screen(remote: nominating),
+      arrange: (tester) async {
+        await showNominations(tester);
+        await Scrollable.ensureVisible(
+          tester.element(find.text('Nominations', skipOffstage: false)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(EventDetailScreen.nominationRowKey('n-1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'nominations filters open',
+      build: screen(remote: nominating),
+      arrange: (tester) async {
+        await showNominations(tester);
+        await press(tester, nominationsFilters());
+        expect(
+          find.byKey(EventDetailScreen.nominationsNotVotedKey),
+          findsOneWidget,
+        );
+      },
+    );
+
+    auditScreen(
+      'nominations sort menu open',
+      build: screen(remote: nominating),
+      arrange: (tester) async {
+        await showNominations(tester);
+        await press(tester, nominationsSort());
+        expect(
+          find
+              .byKey(
+                EventDetailScreen.nominationsSortItemKey(
+                  NominationSort.soonestDeadline,
+                ),
+              )
+              .hitTestable(),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('the nominations header fits at 320dp and 200% text', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      /// Brings [finder] on screen, and expects it within the window's
+      /// width, so nothing is cut off at either edge.
+      Future<void> expectFits(Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(finder);
+        expect(rect.left, greaterThanOrEqualTo(0), reason: '$finder');
+        expect(rect.right, lessThanOrEqualTo(320), reason: '$finder');
+        expect(tester.takeException(), isNull, reason: '$finder');
+      }
+
+      await tester.pumpWidget(screen(remote: nominating)(BgeTheme.light()));
+      await showing(tester, host);
+      await press(
+        tester,
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+
+      // Every filter in use, so every chip shows, the longest included. The
+      // filters themselves fit as they are chosen.
+      await press(tester, nominationsFilters());
+      for (final key in [
+        for (final group in NominationStatusGroup.values)
+          EventDetailScreen.nominationsStatusKey(group),
+        EventDetailScreen.nominationsDateKey(const DateScope('o-3')),
+        EventDetailScreen.nominationsMineKey,
+        EventDetailScreen.nominationsNotVotedKey,
+      ]) {
+        await expectFits(find.byKey(key));
+        await tester.tap(find.byKey(key));
+        await tester.pumpAndSettle();
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('No nominations match', skipOffstage: false),
+        findsOneWidget,
+      );
+      for (final finder in [
+        nominationsFilters(),
+        nominationsSort(),
+        for (final group in NominationStatusGroup.values)
+          inUse('status_${group.name}'),
+        for (final id in ['date', 'mine', 'not_voted']) inUse(id),
+        find.byKey(
+          EventDetailScreen.nominationsCountKey,
+          skipOffstage: false,
+        ),
+        find.byKey(
+          EventDetailScreen.nominationsClearFiltersKey,
+          skipOffstage: false,
+        ),
+      ]) {
+        await expectFits(finder);
+      }
+
+      // The Sort menu's orders wrap rather than run past the window.
+      await press(tester, nominationsSort());
+      for (final order in NominationSort.values) {
+        await expectFits(
+          find.byKey(EventDetailScreen.nominationsSortItemKey(order)),
+        );
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   });
 }
