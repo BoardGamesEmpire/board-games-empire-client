@@ -788,6 +788,36 @@
       }
     }
   },
+  "eventsGamesStillSuppliesYours": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination first.",
+  "@eventsGamesStillSuppliesYours": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination in the Nominations section above the games).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
+  "@eventsGamesStillSuppliesYoursAndTheirs": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination in the Nominations section above the games), but the game comes off only once the others' nominations are withdrawn too, which only those people can do.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSuppliesTheirs": "{title} is nominated, so it can't come off your games yet. Only whoever nominated it can withdraw it.",
+  "@eventsGamesStillSuppliesTheirs": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because someone else put it forward for the event: only that person can withdraw the nomination, and the user can't.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
   "eventsGamesTakeBackRefused": "You can't take {title} back.",
   "@eventsGamesTakeBackRefused": {
     "description": "Banner at the foot of an event's screen when the server refused to let the user take a game back.",
@@ -1085,6 +1115,42 @@
         "example": "Catan"
       }
     }
+  },
+  "eventsWithdraw": "Withdraw",
+  "@eventsWithdraw": {
+    "description": "Button under a game the user nominated, in the Nominations section of an event's Games tab, while it is still up for a vote, awaiting a host's approval or paused: it takes the nomination back, and asks first (eventsWithdrawConfirmTitle). Screen readers hear eventsWithdrawNamed instead."
+  },
+  "eventsWithdrawNamed": "Withdraw {title}",
+  "@eventsWithdrawNamed": {
+    "description": "eventsWithdraw as a screen reader reads it, naming the game, so each nomination's button says which it withdraws.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawConfirmTitle": "Withdraw {title}?",
+  "@eventsWithdrawConfirmTitle": {
+    "description": "Title of the dialog that asks before the user withdraws a game they nominated (eventsWithdraw). The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawConfirmBody": "Its votes are lost. Nominating it again starts from none.",
+  "@eventsWithdrawConfirmBody": {
+    "description": "Body of the withdraw dialog (eventsWithdrawConfirmTitle): withdrawing throws away every vote cast on the nomination, and if the user nominates the game again, the new nomination starts with no votes."
+  },
+  "eventsWithdrawConfirmKeep": "Keep it",
+  "@eventsWithdrawConfirmKeep": {
+    "description": "Button in the withdraw dialog that closes it and leaves the nomination as it is, votes and all."
+  },
+  "eventsWithdrawConfirm": "Withdraw",
+  "@eventsWithdrawConfirm": {
+    "description": "Confirm button of the withdraw dialog, drawn as a destructive action: it withdraws the nomination, and its votes are lost."
   },
   "eventsWithdrawDone": "You withdrew {title}.",
   "@eventsWithdrawDone": {

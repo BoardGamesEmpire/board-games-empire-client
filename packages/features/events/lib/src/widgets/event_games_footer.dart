@@ -10,10 +10,12 @@ import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
+import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -43,19 +45,39 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Each outcome is a banner of its own, built anew, so one that says what
 /// the last said is still heard as it lands.
+///
+/// A take-back the server refuses because the game still supplies a
+/// nomination or a lineup (a 409) says what to do where the nominations
+/// held can tell (#517): withdraw your nomination first, where only the
+/// viewer made a live one the row supplies; that, and that the others who
+/// nominated it must withdraw theirs, where both they and someone else did;
+/// that only whoever nominated it can withdraw it, where only someone else
+/// did; and otherwise that it is nominated or in the lineup, as before,
+/// since the lineup is #520's. The row is found by the outcome's offered
+/// game id, which is all a nomination names it by, whether or not the pool
+/// still holds it. The pool's banner keeps the words it landed with: the
+/// nominations can change under it, as the viewer withdraws the one it
+/// names, and words that changed would be read out
+/// again, saying what no longer holds.
 class EventGamesFooter extends StatelessWidget {
   const EventGamesFooter({
     required this.state,
     required this.showStale,
     this.nominations,
+    this.viewerId,
     super.key,
   });
 
   final EventGamesState state;
 
   /// The nominations' state (#517), whose last write's banner and stale-data
-  /// banner follow the pool's. Null shows neither.
+  /// banner follow the pool's. Null shows neither, and a take-back's 409
+  /// names no nomination.
   final EventNominationsState? nominations;
+
+  /// The viewer's roster row id, which says which nominations are theirs, or
+  /// null where they have none.
+  final String? viewerId;
 
   /// Whether the Games tab is selected, so the stale-data banners may show.
   final bool showStale;
@@ -66,8 +88,18 @@ class EventGamesFooter extends StatelessWidget {
     final gap = BgeTokens.of(context).spaceSm;
     final sending = state.sending;
     final outcome = state.outcome;
-    final message = outcome == null ? null : _message(l10n, outcome);
     final nominations = this.nominations;
+    final message = outcome == null
+        ? null
+        : _message(
+            l10n,
+            outcome,
+            _suppliedBy(
+              outcome,
+              nominations: nominations?.nominations ?? const [],
+              viewerId: viewerId,
+            ),
+          );
     final nominationsOutcome = nominations?.outcome;
 
     return Column(
@@ -89,31 +121,36 @@ class EventGamesFooter extends StatelessWidget {
             key: ObjectKey(outcome),
             child: Padding(
               padding: EdgeInsets.only(top: gap),
-              child: BgeInlineBanner(
-                key: EventDetailScreen.poolOutcomeKey,
-                tone: switch (outcome) {
-                  EventOfferOutcome(:final result) => switch (result) {
-                    EventOfferResult.done => BgeBannerTone.success,
-                    EventOfferResult.partly ||
-                    EventOfferResult.none ||
-                    EventOfferResult.refused ||
-                    EventOfferResult.dropped => BgeBannerTone.warning,
-                    EventOfferResult.failed => BgeBannerTone.error,
-                  },
-                  EventTakeBackOutcome(:final result) => switch (result) {
-                    EventTakeBackResult.done => BgeBannerTone.success,
-                    EventTakeBackResult.stillSupplies ||
-                    EventTakeBackResult.refused ||
-                    EventTakeBackResult.dropped => BgeBannerTone.warning,
-                    EventTakeBackResult.failed => BgeBannerTone.error,
-                  },
-                },
+              // In the words it landed with, which the nominations' changes
+              // leave as they were.
+              child: _Landed(
                 message: message,
-                action: TextButton(
-                  onPressed: () => context.read<EventGamesBloc>().add(
-                    const EventGamesOutcomeDismissed(),
+                builder: (context, message) => BgeInlineBanner(
+                  key: EventDetailScreen.poolOutcomeKey,
+                  tone: switch (outcome) {
+                    EventOfferOutcome(:final result) => switch (result) {
+                      EventOfferResult.done => BgeBannerTone.success,
+                      EventOfferResult.partly ||
+                      EventOfferResult.none ||
+                      EventOfferResult.refused ||
+                      EventOfferResult.dropped => BgeBannerTone.warning,
+                      EventOfferResult.failed => BgeBannerTone.error,
+                    },
+                    EventTakeBackOutcome(:final result) => switch (result) {
+                      EventTakeBackResult.done => BgeBannerTone.success,
+                      EventTakeBackResult.stillSupplies ||
+                      EventTakeBackResult.refused ||
+                      EventTakeBackResult.dropped => BgeBannerTone.warning,
+                      EventTakeBackResult.failed => BgeBannerTone.error,
+                    },
+                  },
+                  message: message,
+                  action: TextButton(
+                    onPressed: () => context.read<EventGamesBloc>().add(
+                      const EventGamesOutcomeDismissed(),
+                    ),
+                    child: Text(l10n.eventsActionDismiss),
                   ),
-                  child: Text(l10n.eventsActionDismiss),
                 ),
               ),
             ),
@@ -174,13 +211,32 @@ class EventGamesFooter extends StatelessWidget {
     );
   }
 
-  /// The banner's copy, by the write it answers, or null for none.
+  /// The banner's copy, by the write it answers, or null for none. A
+  /// take-back's 409 names what to do by [supplied] (#517).
   static String? _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
+    StillSuppliedBy supplied,
   ) => switch (outcome) {
     EventOfferOutcome() => _offerMessage(l10n, outcome),
-    EventTakeBackOutcome() => _takeBackMessage(l10n, outcome),
+    EventTakeBackOutcome() => _takeBackMessage(l10n, outcome, supplied),
+  };
+
+  /// Who holds the live nominations of the pool row a take-back's 409 is
+  /// about (#517), in [nominations], for the viewer [viewerId], found by the
+  /// row's id, whether or not the pool still holds it. None for any other
+  /// outcome, and for one that names no row.
+  static StillSuppliedBy _suppliedBy(
+    EventGamesOutcome outcome, {
+    required List<EventNomination> nominations,
+    required String? viewerId,
+  }) => switch (outcome) {
+    EventTakeBackOutcome(
+      result: EventTakeBackResult.stillSupplies,
+      offeredGameId: final id?,
+    ) =>
+      stillSuppliedBy(id, nominations, viewerId: viewerId),
+    _ => StillSuppliedBy.none,
   };
 
   /// A run of offers' copy, by how it ended and what it offered. A run that
@@ -208,16 +264,27 @@ class EventGamesFooter extends StatelessWidget {
   }
 
   /// A take-back's copy, naming its game; the tab always names it, so one
-  /// with no title has none.
+  /// with no title has none. A 409 says what to do by [supplied] (#517):
+  /// where nobody holds a live nomination of the row, it is in the lineup,
+  /// or nominated in a way the nominations held don't show.
   static String? _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
+    StillSuppliedBy supplied,
   ) {
     final title = outcome.title;
     if (title == null) return null;
     return switch (outcome.result) {
       EventTakeBackResult.done => l10n.eventsGamesTakenBack(title),
-      EventTakeBackResult.stillSupplies => l10n.eventsGamesStillSupplies(title),
+      EventTakeBackResult.stillSupplies => switch (supplied) {
+        StillSuppliedBy.viewer => l10n.eventsGamesStillSuppliesYours(title),
+        StillSuppliedBy.someoneElse => l10n.eventsGamesStillSuppliesTheirs(
+          title,
+        ),
+        StillSuppliedBy.viewerAndSomeoneElse =>
+          l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
+        StillSuppliedBy.none => l10n.eventsGamesStillSupplies(title),
+      },
       EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
       EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(title),
@@ -301,6 +368,31 @@ class EventGamesFooter extends StatelessWidget {
       },
     };
   }
+}
+
+/// Builds [builder] with the first [message] it is given, whatever later
+/// builds give it: an outcome's banner in the words it landed with.
+class _Landed extends StatefulWidget {
+  const _Landed({required this.message, required this.builder});
+
+  final String message;
+  final Widget Function(BuildContext context, String message) builder;
+
+  @override
+  State<_Landed> createState() => _LandedState();
+}
+
+class _LandedState extends State<_Landed> {
+  late final String _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _message = widget.message;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _message);
 }
 
 /// How far a run of offers has got (#516): a spinner and [text], drawn as

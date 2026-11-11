@@ -294,19 +294,34 @@ void main() {
   });
 
   group('stillSuppliedBy', () {
-    final game = offered('o1', 'att-me');
+    const game = 'o1';
 
-    test("names the viewer's own live nomination first", () {
-      final all = [nom('a'), nom('b', by: 'att-me')];
+    test("names the viewer where every live nomination is the viewer's", () {
+      final all = [
+        nom('a', by: 'att-me'),
+        nom('b', by: 'att-ada', status: NominationStatus.withdrawn),
+      ];
       expect(
         stillSuppliedBy(game, all, viewerId: 'att-me'),
         StillSuppliedBy.viewer,
       );
     });
 
+    test('names the viewer and someone else where both hold one', () {
+      final all = [nom('a'), nom('b', by: 'att-me')];
+      expect(
+        stillSuppliedBy(game, all, viewerId: 'att-me'),
+        StillSuppliedBy.viewerAndSomeoneElse,
+      );
+    });
+
     test('names someone else, or none', () {
       expect(
         stillSuppliedBy(game, [nom('a')], viewerId: 'att-me'),
+        StillSuppliedBy.someoneElse,
+      );
+      expect(
+        stillSuppliedBy(game, [nom('a', by: 'att-me')], viewerId: null),
         StillSuppliedBy.someoneElse,
       );
       expect(

@@ -11,11 +11,14 @@ import 'package:events/src/detail/event_date_actions.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_section_states.dart';
+import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/nomination_vote_control.dart';
 import 'package:events/src/widgets/nomination_voters_sheet.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -98,6 +101,39 @@ enum EventNominationsBody {
 /// count included, and opens [showNominationVoters]: counts alone where the
 /// roster was read and withheld, and the votes otherwise. Its focus comes
 /// back to it as the list closes.
+///
+/// ## Withdrawing
+///
+/// The viewer's own nominations carry Withdraw while they are live (open,
+/// awaiting approval or paused), where their actions hold
+/// [EventAction.nominateGame], they have a row on the roster and the event
+/// takes writes ([takesDateWrites]). It is a direct write, disabled as a
+/// vote is: offline, saying why once under the row's controls, while a
+/// detail read runs, while the screen's own request is out, and while
+/// another nominations write is out. It asks first, as a destructive action,
+/// since the nomination's votes are lost and nominating the game again
+/// starts from none. Then it waits for any running detail read to end, and
+/// sends only if the event still takes writes, the viewer may still
+/// nominate and the nomination is still theirs and live as the nominations'
+/// state holds it; otherwise nothing is sent, and the footer says so
+/// ([_withdraw]). It is held, inert, from its press through its withdrawal,
+/// as Nominate is, so the focus the dialog hands back to it stays
+/// ([_WithdrawButton]).
+///
+/// A withdrawal's answer takes the row's place, so the row stays, as
+/// Withdrawn, or as decided where the server answered that it can't be
+/// withdrawn now, and Withdraw goes with its control. Focus stays on the row:
+/// once the frame that took Withdraw away has ended, the row's lines take it,
+/// as one node, which reads the row's new status. They take it only while
+/// focus is free then, on nothing, on the page, or still on Withdraw: a
+/// press elsewhere meanwhile keeps its focus. Withdraw's press arms it however
+/// it came, so a screen reader's activation, which moves no input focus, is
+/// handed on too, and the reader's cursor follows. The lines are no stop of
+/// their own: Tab goes on from them, and they can't take focus again until
+/// the next withdrawal hands it to them. Their ring shows for focus a key
+/// press gave, as a button's does, and not for a press of a mouse or a
+/// trackpad on Withdraw ([BgePointerFocus]). A withdrawal that leaves the row
+/// live, refused or failed, leaves focus on Withdraw.
 class EventNominationsSection extends StatelessWidget {
   const EventNominationsSection({
     required this.body,
@@ -147,8 +183,8 @@ class EventNominationsSection extends StatelessWidget {
     final snapshot = detail.detail.snapshot;
     final viewerId = detail.detail.attendance?.id;
     final copies = {for (final game in pool) game.id: game};
-    // Not on an event that takes no writes, cancelled or archived, as
-    // Nominate isn't.
+    // No vote and no Withdraw on an event that takes no writes, cancelled
+    // or archived, as no Nominate.
     final takesWrites = takesDateWrites(snapshot.event);
     final mayVote =
         takesWrites &&
@@ -166,6 +202,15 @@ class EventNominationsSection extends StatelessWidget {
             enabled: !detail.reading && !acting,
             busy: state.busy,
           )
+        : null;
+    // Withdraw (#517), on the viewer's own live rows. As a vote is, not
+    // while a detail read runs or the screen's own request is out, nor while
+    // another nominations write is out.
+    final withdrawing =
+        takesWrites &&
+            detail.actions.contains(EventAction.nominateGame) &&
+            viewerId != null
+        ? (enabled: !detail.reading && !acting && !state.busy, busy: state.busy)
         : null;
     // A roster read and withheld is an empty list; one not read yet is null,
     // and withholds nothing.
@@ -232,6 +277,7 @@ class EventNominationsSection extends StatelessWidget {
               occurrences: snapshot.occurrences,
               interestedWeight: snapshot.policy?.interestedWeight,
               voting: voting,
+              withdrawing: withdrawing,
               rosterShown: rosterShown,
               now: now,
             ),
@@ -299,10 +345,18 @@ class _State extends StatelessWidget {
 /// [NominationVoteControl.busy]).
 typedef _Voting = ({VoteHint? hint, bool enabled, bool busy});
 
+/// What Withdraw on the viewer's own live rows needs: whether it may be
+/// pressed now, connection aside ([_WithdrawButton.enabled]), and whether a
+/// nominations write is out.
+typedef _Withdrawing = ({bool enabled, bool busy});
+
 /// One nomination (#517): its picture, then its lines, read as one node, and
 /// under both, outside that node and at the row's full width, the viewer's
-/// vote while it is open and *Who voted* once it has a vote.
-class _NominationRow extends StatelessWidget {
+/// vote while it is open, then *Who voted* once it has a vote and Withdraw
+/// on the viewer's own while it is live. Its lines take focus when its
+/// Withdraw goes after its own withdrawal (see "Withdrawing" on
+/// [EventNominationsSection]).
+class _NominationRow extends StatefulWidget {
   const _NominationRow({
     required this.nomination,
     required this.viewerId,
@@ -311,6 +365,7 @@ class _NominationRow extends StatelessWidget {
     required this.occurrences,
     required this.interestedWeight,
     required this.voting,
+    required this.withdrawing,
     required this.rosterShown,
     required this.now,
   });
@@ -335,23 +390,110 @@ class _NominationRow extends StatelessWidget {
   /// may not.
   final _Voting? voting;
 
+  /// What Withdraw needs, where the viewer may withdraw their own
+  /// nominations; null where they may not.
+  final _Withdrawing? withdrawing;
+
   /// Whether who voted may name the voters: false where the roster was read
   /// and withheld.
   final bool rosterShown;
   final DateTime now;
 
+  /// Whether the row carries Withdraw: the viewer may withdraw, and it is
+  /// their own live nomination.
+  bool get offersWithdraw =>
+      withdrawing != null &&
+      viewerId != null &&
+      nomination.nominatedById == viewerId &&
+      nomination.status.isLive;
+
+  @override
+  State<_NominationRow> createState() => _NominationRowState();
+}
+
+class _NominationRowState extends State<_NominationRow>
+    with BgePointerFocus<_NominationRow> {
+  /// The row's lines, as one node: where focus goes once Withdraw has gone
+  /// after its own withdrawal. They take focus only then, and are no stop
+  /// of their own.
+  final FocusNode _lines = FocusNode(
+    debugLabel: 'Nomination',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// Holds Withdraw, so the row can tell whether it holds focus.
+  final FocusNode _withdrawArea = FocusNode(
+    debugLabel: 'Withdraw',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// Whether Withdraw's press sent its withdrawal, which hasn't ended yet.
+  bool _sent = false;
+
+  @override
+  void didUpdateWidget(_NominationRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Built again with no nominations write out: the withdrawal the press
+    // sent has ended, and its answer, if any, is in this row.
+    if (!_sent || (widget.withdrawing?.busy ?? false)) return;
+    _sent = false;
+    // Withdraw stays, as after a refusal, and keeps its own focus.
+    if (widget.offersWithdraw) return;
+    // Withdraw is still built, and goes with this frame.
+    final held = _withdrawArea.hasFocus
+        ? FocusManager.instance.primaryFocus
+        : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !focusIsFree(context, untouched: held)) return;
+      _lines
+        ..canRequestFocus = true
+        ..requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _lines.dispose();
+    _withdrawArea.dispose();
+    super.dispose();
+  }
+
+  /// Withdraw's press: asks, and sends ([_withdraw]). Completes true when
+  /// the withdrawal was sent, which arms the hand-off as it ends.
+  Future<bool> _withdrawPressed() async {
+    final sent = await _withdraw(context, widget.nomination);
+    if (sent && mounted) _sent = true;
+    return sent;
+  }
+
+  void _linesFocusChanged(bool focused) {
+    if (focused) return;
+    // A stop only while it holds the focus handed to it. Once this change
+    // has been told: a node marked while the focus manager tells its nodes
+    // is cleared with them, and its Focus never hears.
+    scheduleMicrotask(() {
+      if (mounted && !_lines.hasFocus) _lines.canRequestFocus = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final nomination = widget.nomination;
+    final names = widget.names;
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
+    final tokens = BgeTokens.of(context);
     final quiet = theme.textTheme.bodyMedium?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
+    final now = widget.now;
     final tally = tallyOf(nomination);
     final deadline = nomination.votingDeadline;
     final supplier = _supplier(l10n);
     final scope = _scope(context, l10n);
-    final interested = switch (interestedWeight) {
+    final interested = switch (widget.interestedWeight) {
       InterestedWeight.asFor => l10n.eventsNominationInterestedAsFor,
       InterestedWeight.asAgainst => l10n.eventsNominationInterestedAsAgainst,
       InterestedWeight.asAbstain => l10n.eventsNominationInterestedNotCounted,
@@ -381,8 +523,9 @@ class _NominationRow extends StatelessWidget {
             _Viewer() => l10n.eventsNominationPausedYours(back),
             _Named(:final name) => l10n.eventsNominationPaused(name, back),
           };
-    final viewerId = this.viewerId;
-    final voting = this.voting;
+    final viewerId = widget.viewerId;
+    final voting = widget.voting;
+    final withdrawing = widget.withdrawing;
     final vote = viewerId == null ? null : _viewerVote(nomination, viewerId);
     // Votes are taken while it is open, and only then (#517).
     final control =
@@ -400,9 +543,67 @@ class _NominationRow extends StatelessWidget {
             onEditNote: () =>
                 _editNote(context, nomination, note: vote?.comment),
           );
+    final withdraw = withdrawing == null || !widget.offersWithdraw
+        ? null
+        : _WithdrawButton(
+            nomination: nomination,
+            area: _withdrawArea,
+            enabled: withdrawing.enabled,
+            runOver: !withdrawing.busy,
+            onPressed: _withdrawPressed,
+            onPointerDown: notePointerPress,
+          );
+    final whoVoted = nomination.votes.isEmpty
+        ? null
+        : _WhoVoted(
+            nomination: nomination,
+            names: names,
+            rosterShown: widget.rosterShown,
+            viewerId: viewerId,
+          );
+
+    // Read as one node.
+    final lines = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(nomination.title, style: theme.textTheme.bodyLarge),
+        Text(nomination.platformName, style: quiet),
+        Text(_nominatedBy(l10n), style: quiet),
+        Text(
+          switch (supplier) {
+            _NobodyNamed() => l10n.eventsNominationFromUnknown,
+            _Viewer() => l10n.eventsNominationFromYours,
+            _Named(:final name) => l10n.eventsNominationFrom(name),
+          },
+          style: quiet,
+        ),
+        if (scope != null) Text(scope, style: quiet),
+        Text(
+          _statusLabel(l10n, nomination.status),
+          style: theme.textTheme.labelLarge,
+        ),
+        Text(
+          l10n.eventsNominationTally(
+            tally.forCount,
+            tally.againstCount,
+            tally.interestedCount,
+          ),
+          // The symbol between the counts would be read out.
+          semanticsLabel: l10n.eventsNominationTallySpoken(
+            tally.forCount,
+            tally.againstCount,
+            tally.interestedCount,
+          ),
+          style: quiet,
+        ),
+        if (interested != null) Text(interested, style: quiet),
+        if (closes != null) Text(closes, style: quiet),
+        if (paused != null) Text(paused, style: quiet),
+      ],
+    );
 
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceSm),
+      padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -410,48 +611,29 @@ class _NominationRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               BgeThumbnail(url: nomination.thumbnail),
-              const BgeGap.md(axis: Axis.horizontal),
+              // The ring's inset comes out of the pool's 16: 8 here and 8
+              // inside the ring, so the lines sit where the pool's do.
+              const BgeGap.sm(axis: Axis.horizontal),
               Expanded(
                 child: MergeSemantics(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(nomination.title, style: theme.textTheme.bodyLarge),
-                      Text(nomination.platformName, style: quiet),
-                      Text(_nominatedBy(l10n), style: quiet),
-                      Text(
-                        switch (supplier) {
-                          _NobodyNamed() => l10n.eventsNominationFromUnknown,
-                          _Viewer() => l10n.eventsNominationFromYours,
-                          _Named(:final name) => l10n.eventsNominationFrom(
-                            name,
-                          ),
-                        },
-                        style: quiet,
-                      ),
-                      if (scope != null) Text(scope, style: quiet),
-                      Text(
-                        _statusLabel(l10n, nomination.status),
-                        style: theme.textTheme.labelLarge,
-                      ),
-                      Text(
-                        l10n.eventsNominationTally(
-                          tally.forCount,
-                          tally.againstCount,
-                          tally.interestedCount,
+                  child: BgeFocusRing(
+                    borderRadius: BorderRadius.circular(tokens.radiusSm),
+                    suppressed: pointerFocus,
+                    builder: (context, onFocusChange) => Focus(
+                      focusNode: _lines,
+                      onFocusChange: (focused) {
+                        onFocusChange(focused);
+                        _linesFocusChanged(focused);
+                      },
+                      // Inset from the ring, which would otherwise run
+                      // through the first letter of each line.
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spaceSm,
                         ),
-                        // The symbol between the counts would be read out.
-                        semanticsLabel: l10n.eventsNominationTallySpoken(
-                          tally.forCount,
-                          tally.againstCount,
-                          tally.interestedCount,
-                        ),
-                        style: quiet,
+                        child: lines,
                       ),
-                      if (interested != null) Text(interested, style: quiet),
-                      if (closes != null) Text(closes, style: quiet),
-                      if (paused != null) Text(paused, style: quiet),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -462,13 +644,18 @@ class _NominationRow extends StatelessWidget {
           // so little that a chosen Interested shrinks to half size at a
           // phone's width and ordinary text.
           if (control != null) ...[const BgeGap.sm(), control],
-          if (nomination.votes.isNotEmpty)
-            _WhoVoted(
-              nomination: nomination,
-              names: names,
-              rosterShown: rosterShown,
-              viewerId: viewerId,
+          if (whoVoted != null || withdraw != null)
+            Wrap(
+              spacing: tokens.spaceSm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [?whoVoted, ?withdraw],
             ),
+          // Once for the row's controls: the vote's says it where it is
+          // built.
+          if (withdraw != null &&
+              control == null &&
+              BgeConnectivityScope.offlineOf(context))
+            const BgeOnlineOnlyNote(),
         ],
       ),
     );
@@ -478,10 +665,12 @@ class _NominationRow extends StatelessWidget {
   /// username the nomination carries, else "this person", as the pool names
   /// someone the roster doesn't.
   String _nominatedBy(EventsLocalizations l10n) {
+    final nomination = widget.nomination;
+    final viewerId = widget.viewerId;
     final by = nomination.nominatedById;
     if (viewerId != null && by == viewerId) return l10n.eventsNominatedByYou;
     return l10n.eventsNominatedBy(
-      names[by] ??
+      widget.names[by] ??
           personName(username: nomination.nominatedByUsername) ??
           l10n.eventsAttendeeSomeone,
     );
@@ -489,23 +678,190 @@ class _NominationRow extends StatelessWidget {
 
   /// Whose copy it is, from the pool row it was nominated from (#517).
   _Supplier _supplier(EventsLocalizations l10n) {
-    final copy = this.copy;
+    final copy = widget.copy;
+    final viewerId = widget.viewerId;
     if (copy == null) return const _NobodyNamed();
     if (viewerId != null && copy.attendeeId == viewerId) return const _Viewer();
-    return _Named(names[copy.attendeeId] ?? l10n.eventsAttendeeSomeone);
+    return _Named(widget.names[copy.attendeeId] ?? l10n.eventsAttendeeSomeone);
   }
 
   /// What it is for: the whole event, or the date it names. Null for a date
   /// the event no longer has, rather than name one it doesn't.
   String? _scope(BuildContext context, EventsLocalizations l10n) {
-    final id = nomination.occurrenceId;
+    final id = widget.nomination.occurrenceId;
     if (id == null) return l10n.eventsNominationWholeEvent;
-    final date = occurrences.where((each) => each.id == id).firstOrNull;
+    final date = widget.occurrences.where((each) => each.id == id).firstOrNull;
     if (date == null) return null;
     return l10n.eventsNominationForDate(
-      eventDateName(context, date, now: now),
+      eventDateName(context, date, now: widget.now),
     );
   }
+}
+
+/// Withdraw on one of the viewer's own live nominations (#517): a direct
+/// write, so disabled offline through [BgeOnlineOnly], with the connection's
+/// reason as its hint. Named for its game to a screen reader.
+///
+/// Its press opens the withdraw dialog, which hands focus back to it as it
+/// closes, just before the withdrawal goes out, and a disabled button can't
+/// hold focus (#607). So, as Nominate is, it is held through [HeldPress]
+/// from its press until its withdrawal is over ([runOver]): enabled,
+/// ignoring presses and showing a spinner, wherever it would otherwise be
+/// unavailable. It is disabled with no hint while it may not be pressed for
+/// a while ([enabled]).
+class _WithdrawButton extends StatefulWidget {
+  const _WithdrawButton({
+    required this.nomination,
+    required this.area,
+    required this.enabled,
+    required this.runOver,
+    required this.onPressed,
+    required this.onPointerDown,
+  });
+
+  final EventNomination nomination;
+
+  /// Holds the button, so its row can tell whether it holds focus.
+  final FocusNode area;
+
+  /// Whether it may be pressed now, connection aside: false while a detail
+  /// read runs, the screen's own request is out, or a nominations write is
+  /// out.
+  final bool enabled;
+
+  /// Whether no nominations write is out: once its own withdrawal went out,
+  /// that is over.
+  final bool runOver;
+
+  /// Asks first, and sends the withdrawal. Completes true when it was sent,
+  /// and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  /// Told the kind of each pointer pressed on it, before the press.
+  final void Function(PointerDeviceKind kind) onPointerDown;
+
+  @override
+  State<_WithdrawButton> createState() => _WithdrawButtonState();
+}
+
+class _WithdrawButtonState extends State<_WithdrawButton>
+    with HeldPress<_WithdrawButton> {
+  @override
+  bool get heldActionOver => widget.runOver;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final offline = BgeConnectivityScope.offlineOf(context);
+    final nomination = widget.nomination;
+    final available = widget.enabled && !offline;
+    // Offline it is disabled, pressed or not: no press made it so (#49).
+    final inert = heldInert(available: available, disabled: offline);
+
+    return Focus(
+      focusNode: widget.area,
+      includeSemantics: false,
+      child: Listener(
+        onPointerDown: (event) => widget.onPointerDown(event.kind),
+        child: BgeOnlineOnly(
+          showNote: false,
+          child: BgeInertButton(
+            inert: inert,
+            label: l10n.eventsWithdrawNamed(nomination.title),
+            onPressed: available || inert
+                ? () => unawaited(holdPress(widget.onPressed))
+                : null,
+            builder: (context, focusNode, onPressed) => TextButton.icon(
+              key: EventDetailScreen.nominationWithdrawKey(nomination.id),
+              focusNode: focusNode,
+              onPressed: onPressed,
+              icon: inert
+                  ? const _HeldSpinner()
+                  : const Icon(Icons.playlist_remove),
+              label: Text(l10n.eventsWithdraw),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Withdraws the viewer's own [nomination] once they confirm it, and once
+/// any running detail read has ended (#517). Completes true when the
+/// withdrawal was sent, and false when nothing was: Keep it, or as below.
+///
+/// It asks first, as a destructive action: the nomination's votes are lost,
+/// and nominating the game again starts from none. Then it goes for the
+/// event as the detail shows it then, whose id a reconcile can have moved
+/// (#499), and for the nomination as the nominations' state holds it then.
+/// Nothing is sent if, by then, the event takes no writes (cancelled or
+/// archived), the viewer may no longer nominate, or the nomination is gone,
+/// isn't theirs, or is no longer live: the page already shows that, and the
+/// footer says the withdrawal was dropped, or a screen reader would hear
+/// nothing happen.
+Future<bool> _withdraw(
+  BuildContext context,
+  EventNomination nomination,
+) async {
+  // Read before the dialog opens: the row under it can rebuild without
+  // Withdraw, and take this context with it.
+  final l10n = EventsLocalizations.of(context);
+  final detail = context.read<EventDetailBloc>();
+  final nominations = context.read<EventNominationsBloc>();
+  final title = nomination.title;
+  final confirmed = await showConfirmDialog(
+    context,
+    title: l10n.eventsWithdrawConfirmTitle(title),
+    body: l10n.eventsWithdrawConfirmBody,
+    keepLabel: l10n.eventsWithdrawConfirmKeep,
+    confirmLabel: l10n.eventsWithdrawConfirm,
+    destructive: true,
+    keepKey: EventDetailScreen.withdrawKeepKey,
+    confirmKey: EventDetailScreen.withdrawConfirmKey,
+  );
+  if (!confirmed || nominations.isClosed) return false;
+
+  final state = await readEnded(detail);
+  if (state is! EventDetailReady || nominations.isClosed) return false;
+  final viewer = state.detail.attendance;
+  final current = nominations.state.nominations
+      .where((shown) => shown.id == nomination.id)
+      .firstOrNull;
+  if (!takesDateWrites(state.detail.snapshot.event) ||
+      !state.actions.contains(EventAction.nominateGame) ||
+      viewer == null ||
+      current == null ||
+      current.nominatedById != viewer.id ||
+      !current.status.isLive) {
+    nominations.add(
+      NominationWriteDropped(NominationWrite.withdraw, title: title),
+    );
+    return false;
+  }
+  // One write at a time; the bloc would ignore this one.
+  if (nominations.state.busy) return false;
+  nominations.add(
+    NominationWithdrawn(state.detail.snapshot.event.id, current),
+  );
+  return true;
+}
+
+/// Withdraw's icon while its withdrawal is out: scaled with the label beside
+/// it, in the button's icon colour, as the screen's other held buttons'.
+class _HeldSpinner extends StatelessWidget {
+  const _HeldSpinner();
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: BgeTextScale.clampedOf(
+      context,
+    ).scale(BgeTokens.of(context).spaceMd),
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: IconTheme.of(context).color,
+    ),
+  );
 }
 
 /// The viewer's vote on [nomination], by their roster row [viewerId], or

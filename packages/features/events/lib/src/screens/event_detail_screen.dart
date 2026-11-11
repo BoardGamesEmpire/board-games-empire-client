@@ -556,6 +556,17 @@ class EventDetailScreen extends StatelessWidget {
   static Key nominationVotersKey(String nominationId) =>
       Key('event_detail.nomination_voters_$nominationId');
 
+  /// Key on Withdraw on one of the viewer's own nominations (#517), by the
+  /// nomination's id.
+  static Key nominationWithdrawKey(String nominationId) =>
+      Key('event_detail.nomination_withdraw_$nominationId');
+
+  /// Key on the withdraw dialog's Withdraw button (#517).
+  static const Key withdrawConfirmKey = Key('event_detail.withdraw_confirm');
+
+  /// Key on the withdraw dialog's Keep it button (#517).
+  static const Key withdrawKeepKey = Key('event_detail.withdraw_keep');
+
   /// Key on the Games tab's Offer games button.
   static const Key offerGamesKey = Key('event_detail.offer_games');
 
@@ -1312,6 +1323,7 @@ class _ReadyPage extends StatelessWidget {
           : EventGamesFooter(
               state: gamesState,
               nominations: nominationsState,
+              viewerId: state.detail.attendance?.id,
               showStale: tab == EventDetailTab.games,
             ),
       // Above the tabs, and in the semantics tree however far down the page

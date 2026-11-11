@@ -100,9 +100,15 @@ EventGamesOutcome _offerEnded(
   notOffered: notOffered,
 );
 
-/// A take-back's end, of the game titled [title].
-EventGamesOutcome _takeBackEnded(EventTakeBackResult result, String title) =>
-    EventTakeBackOutcome(result: result, title: title);
+/// A take-back's end, of [game]: named by its title, and by its id.
+EventGamesOutcome _takeBackEnded(
+  EventTakeBackResult result,
+  OfferedGame game,
+) => EventTakeBackOutcome(
+  result: result,
+  title: game.title,
+  offeredGameId: game.id,
+);
 
 /// A pool read of the attendees [attendeeIds] of the event [eventId]. A
 /// record compares its list by identity, so the fields are matched instead.
@@ -970,7 +976,7 @@ void main() {
       takeBacks.answer(0, null);
       await pumpEventQueue();
 
-      final ended = _takeBackEnded(EventTakeBackResult.done, 'Game 2');
+      final ended = _takeBackEnded(EventTakeBackResult.done, _game(2));
       expect(states, [
         const EventGamesState(takingBack: 'g-2'),
         EventGamesState(outcome: ended),
@@ -1018,7 +1024,7 @@ void main() {
         bloc.add(_takeBack(_game(2)));
         await pumpEventQueue();
 
-        expect(bloc.state.outcome, _takeBackEnded(result, 'Game 2'));
+        expect(bloc.state.outcome, _takeBackEnded(result, _game(2)));
         expect(bloc.state.takingBack, isNull);
         expect(remote.poolRequests, hasLength(1));
         verifyNoWarnings();
@@ -1061,7 +1067,7 @@ void main() {
         bloc.add(_takeBack(_game(2)));
         await pumpEventQueue();
 
-        final ended = _takeBackEnded(EventTakeBackResult.done, 'Game 2');
+        final ended = _takeBackEnded(EventTakeBackResult.done, _game(2));
         expect(states.take(2), [
           loaded(two).copyWith(takingBack: () => 'g-2'),
           loaded(one, outcome: ended),
@@ -1145,7 +1151,7 @@ void main() {
       expect(states, [
         const EventGamesState(takingBack: 'g-2'),
         EventGamesState(
-          outcome: _takeBackEnded(EventTakeBackResult.failed, 'Game 2'),
+          outcome: _takeBackEnded(EventTakeBackResult.failed, _game(2)),
         ),
       ]);
       expect(remote.poolRequests, isEmpty);
@@ -1164,7 +1170,7 @@ void main() {
       expect(remote.poolRequests, isEmpty);
       expect(
         bloc.state.outcome,
-        _takeBackEnded(EventTakeBackResult.failed, 'Game 2'),
+        _takeBackEnded(EventTakeBackResult.failed, _game(2)),
       );
     });
 
@@ -1293,7 +1299,7 @@ void main() {
       build: () => build(serving()),
       seed: () => loaded(
         one,
-        outcome: _takeBackEnded(EventTakeBackResult.refused, 'Game 1'),
+        outcome: _takeBackEnded(EventTakeBackResult.refused, _game(1)),
       ),
       act: (bloc) => bloc.add(const EventGamesOutcomeDismissed()),
       expect: () => [loaded(one)],

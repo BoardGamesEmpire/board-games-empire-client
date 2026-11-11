@@ -298,8 +298,12 @@ bool suppliesLive(
 
 /// Who holds the live nominations a pool row still supplies.
 enum StillSuppliedBy {
-  /// The viewer nominated it, and may withdraw it.
+  /// Only the viewer nominated it, and withdrawing frees it.
   viewer,
+
+  /// The viewer and someone else did: withdrawing the viewer's frees it
+  /// only once the others are withdrawn too, which only they can do.
+  viewerAndSomeoneElse,
 
   /// Only someone else has, and only they can withdraw it.
   someoneElse,
@@ -308,20 +312,28 @@ enum StillSuppliedBy {
   none,
 }
 
-/// Who nominated the live nominations [game] supplies in [all]: the viewer
-/// first, when both they and someone else did.
+/// Who nominated the live nominations in [all] that the pool row
+/// [offeredGameId] supplies. By the row's id alone, which is all a
+/// nomination names it by, so it answers for a row the pool no longer holds.
 StillSuppliedBy stillSuppliedBy(
-  OfferedGame game,
+  String offeredGameId,
   List<EventNomination> all, {
   required String? viewerId,
 }) {
-  final live = all.where((n) => n.status.isLive && n.suppliedFromId == game.id);
+  final live = all.where(
+    (n) => n.status.isLive && n.suppliedFromId == offeredGameId,
+  );
 
   if (live.isEmpty) return StillSuppliedBy.none;
 
-  return viewerId != null && live.any((n) => n.nominatedById == viewerId)
-      ? StillSuppliedBy.viewer
-      : StillSuppliedBy.someoneElse;
+  final viewers = viewerId == null
+      ? 0
+      : live.where((n) => n.nominatedById == viewerId).length;
+  return switch (viewers) {
+    0 => StillSuppliedBy.someoneElse,
+    _ when viewers == live.length => StillSuppliedBy.viewer,
+    _ => StillSuppliedBy.viewerAndSomeoneElse,
+  };
 }
 
 /// A note the voting control gives the viewer before they vote.

@@ -3,14 +3,17 @@ import 'dart:async';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
@@ -19,6 +22,7 @@ import '../support/fake_event_remote.dart';
 class _MockEventRepository extends Mock implements EventRepository {}
 
 const _offline = EventRemoteTransientException('offline');
+const _onlineOnlyCopy = "Available when you're online";
 const _longTitle =
     'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
     'Volumes';
@@ -127,6 +131,11 @@ void main() {
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
 
+  /// What each withdrawal answers: the nomination, withdrawn, unless a test
+  /// says otherwise.
+  late FutureOr<EventNomination> Function(WithdrawRequest request)
+  withdrawAnswer;
+
   // The viewer, Ada, Bo and someone with no name, in the roster's order.
   final me = _row('att-me', name: 'Me');
   final ada = _row('att-ada', name: 'Ada');
@@ -143,18 +152,20 @@ void main() {
   ).copyWith(eventId: 'e-1');
 
   /// Event `e-1` as the viewer sees it, with [roster] (the viewer, Ada, Bo
-  /// and someone unnamed by default) and [policy] on it.
+  /// and someone unnamed by default) and [policy] on it. Scheduled unless
+  /// [status] says otherwise.
   EventDetail detailOf({
     List<EventAttendee>? roster,
     EventPolicy? policy,
     EventAttendee? viewer,
     bool viewerGiven = true,
+    EventStatus status = EventStatus.scheduled,
   }) => EventDetail(
     snapshot: EventSnapshot(
       event: item(
         'e-1',
         title: 'Catan night',
-      ).event.copyWith(status: EventStatus.scheduled),
+      ).event.copyWith(status: status),
       occurrences: [friday],
       attendees: roster ?? [me, ada, bo, unnamed],
       policy: policy,
@@ -177,23 +188,44 @@ void main() {
     when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
     pool = [catanAdas, azulMine];
     nominationsAnswer = (_) => const [];
+    withdrawAnswer = (request) => _nomination(
+      request.nominationId,
+      title: 'Azul',
+      by: 'att-me',
+      from: 'o-2',
+      status: NominationStatus.withdrawn,
+    );
   });
 
   tearDown(() {
     unawaited(cache.close());
   });
 
-  Widget harness(EventDetail detail) {
+  Widget harness(EventDetail detail, {ValueListenable<bool>? offline}) {
     remote = FakeEventRemote.detail(
       (_) => detail.snapshot,
       pool: (_) => pool,
       nominations: (eventId) => nominationsAnswer(eventId),
+      withdrawn: (request) => withdrawAnswer(request),
     );
     return MaterialApp(
       theme: BgeTheme.light(),
       locale: const Locale('en', 'US'),
       localizationsDelegates: EventsLocalizations.localizationsDelegates,
       supportedLocales: EventsLocalizations.supportedLocales,
+      builder: (context, child) {
+        if (offline == null) return child!;
+        return ValueListenableBuilder<bool>(
+          valueListenable: offline,
+          child: child,
+          builder: (context, isOffline, app) => BgeConnectivityScope(
+            offline: isOffline,
+            noticeShowing: isOffline,
+            onlineOnlyReason: _onlineOnlyCopy,
+            child: app!,
+          ),
+        );
+      },
       home: EventDetailScreen(
         eventId: 'e-1',
         repository: repository,
@@ -255,6 +287,34 @@ void main() {
     skipOffstage: false,
   );
   Finder retry() => find.byKey(EventDetailScreen.nominationsRetryKey);
+  Finder withdraw(String id) => find.byKey(
+    EventDetailScreen.nominationWithdrawKey(id),
+    skipOffstage: false,
+  );
+  Finder confirmWithdraw() => find.byKey(EventDetailScreen.withdrawConfirmKey);
+  Finder keepIt() => find.byKey(EventDetailScreen.withdrawKeepKey);
+  Finder outcome() => find.byKey(EventDetailScreen.nominationsOutcomeKey);
+  FocusNode withdrawFocus(WidgetTester tester) =>
+      tester.widget<ButtonStyleButton>(withdraw('n-1')).focusNode!;
+
+  /// Brings [finder] on screen, then taps it.
+  Future<void> press(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pump();
+    await tester.tap(finder);
+  }
+
+  /// Activates the node [label] names, with the tap action, as a screen
+  /// reader's double-tap does: no pointer, and no input focus moved.
+  void screenReaderTap(WidgetTester tester, String label) =>
+      tester.semantics.tap(
+        find.semantics.byPredicate(
+          (node) =>
+              node.label == label &&
+              node.getSemanticsData().hasAction(SemanticsAction.tap),
+          describeMatch: (_) => 'a node "$label" with a tap',
+        ),
+      );
 
   group('rows', () {
     testWidgets('a row shows status, tally of counting votes, and who '
@@ -685,6 +745,430 @@ void main() {
     });
   });
 
+  group('Withdraw', () {
+    /// The viewer's own nomination of their own Azul, open for votes, unless
+    /// a test says otherwise.
+    EventNomination mine({
+      NominationStatus status = NominationStatus.open,
+      List<EventNominationVote> votes = const [],
+    }) => _nomination(
+      'n-1',
+      title: 'Azul',
+      by: 'att-me',
+      from: 'o-2',
+      status: status,
+      votes: votes,
+    );
+
+    testWidgets('Withdraw asks first and sends on confirm', (tester) async {
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(tester);
+      await press(tester, withdraw('n-1'));
+      await animate(tester);
+
+      // It asks first, naming the game and what is lost.
+      expect(remote.withdrawals, isEmpty);
+      expect(find.text('Withdraw Azul?'), findsOneWidget);
+      expect(
+        find.text('Its votes are lost. Nominating it again starts from none.'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: keepIt(), matching: find.text('Keep it')),
+        findsOneWidget,
+      );
+      // Drawn as a destructive action.
+      final confirm = tester.widget<TextButton>(confirmWithdraw());
+      expect(
+        confirm.style?.foregroundColor?.resolve(const {}),
+        Theme.of(tester.element(confirmWithdraw())).colorScheme.error,
+      );
+      expect(
+        find.descendant(of: confirmWithdraw(), matching: find.text('Withdraw')),
+        findsOneWidget,
+      );
+
+      await tester.tap(confirmWithdraw());
+      await animate(tester);
+
+      expect(remote.withdrawals, [(eventId: 'e-1', nominationId: 'n-1')]);
+      // The answer takes the row's place, and the footer says so.
+      expect(inRow('n-1', 'Withdrawn'), findsOneWidget);
+      expect(withdraw('n-1'), findsNothing);
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text('You withdrew Azul.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Keep it sends nothing', (tester) async {
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(tester);
+      await tester.ensureVisible(withdraw('n-1'));
+      await tester.pump();
+      final focus = withdrawFocus(tester)..requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(find.text('Withdraw Azul?'), findsOneWidget);
+
+      await tester.tap(keepIt());
+      await animate(tester);
+
+      expect(find.text('Withdraw Azul?'), findsNothing);
+      expect(remote.withdrawals, isEmpty);
+      expect(outcome(), findsNothing);
+      expect(inRow('n-1', 'Voting'), findsOneWidget);
+      // Back on Withdraw, which can be pressed again.
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(tester.widget<TextButton>(withdraw('n-1')).onPressed, isNotNull);
+    });
+
+    testWidgets("Withdraw isn't built on someone else's nomination", (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [
+        _nomination('n-1'),
+        _nomination('n-2', title: 'Azul', from: 'o-2'),
+      ];
+
+      await showGames(tester);
+
+      for (final id in ['n-1', 'n-2']) {
+        expect(row(id), findsOneWidget, reason: id);
+        expect(withdraw(id), findsNothing, reason: id);
+      }
+    });
+
+    testWidgets("Withdraw is on the viewer's own live nominations, paused "
+        'too, and on none decided or withdrawn', (tester) async {
+      const offered = {
+        NominationStatus.open: true,
+        NominationStatus.awaitingApproval: true,
+        NominationStatus.paused: true,
+        NominationStatus.approved: false,
+        NominationStatus.passed: false,
+        NominationStatus.failed: false,
+        NominationStatus.quorumNotMet: false,
+        NominationStatus.rejected: false,
+        NominationStatus.withdrawn: false,
+        NominationStatus.unknown: false,
+      };
+      nominationsAnswer = (_) => [
+        for (final status in offered.keys)
+          _nomination(
+            'n-${status.name}',
+            by: 'att-me',
+            status: status,
+            pausedFrom: NominationStatus.open,
+          ),
+      ];
+      // Tall enough that every row is built.
+      useViewSize(tester, const Size(800, 4000));
+
+      await showGames(tester);
+
+      for (final MapEntry(key: status, value: built) in offered.entries) {
+        expect(
+          withdraw('n-${status.name}'),
+          built ? findsOneWidget : findsNothing,
+          reason: status.name,
+        );
+      }
+    });
+
+    testWidgets("Withdraw isn't built for a viewer who can't nominate", (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: me.copyWith(role: EventRole.guest),
+          roster: [
+            me.copyWith(role: EventRole.guest),
+            ada,
+            bo,
+            unnamed,
+          ],
+        ),
+      );
+
+      expect(row('n-1'), findsOneWidget);
+      expect(withdraw('n-1'), findsNothing);
+    });
+
+    for (final status in [EventStatus.cancelled, EventStatus.archived]) {
+      testWidgets("Withdraw isn't built on a ${status.name} event", (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [mine()];
+
+        await showGames(tester, detail: detailOf(status: status));
+
+        expect(row('n-1'), findsOneWidget);
+        expect(withdraw('n-1'), findsNothing);
+      });
+    }
+
+    testWidgets('a withdrawal is dropped where the event was cancelled while '
+        'it asked, and the footer says so', (tester) async {
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(tester);
+      await press(tester, withdraw('n-1'));
+      await animate(tester);
+
+      // Cancelled while the dialog was open.
+      cache.add(detailOf(status: EventStatus.cancelled));
+      await settle(tester);
+      await tester.tap(confirmWithdraw());
+      await animate(tester);
+
+      expect(remote.withdrawals, isEmpty);
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            "Azul wasn't withdrawn: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Withdraw names its game to a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(tester);
+      await tester.ensureVisible(withdraw('n-1'));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(withdraw('n-1')),
+        isSemantics(
+          label: 'Withdraw Azul',
+          isButton: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a withdrawal dropped by the re-check says so in the footer', (
+      tester,
+    ) async {
+      nominationsAnswer = (_) => [mine()];
+
+      await showGames(tester);
+      await press(tester, withdraw('n-1'));
+      await animate(tester);
+
+      // Decided while the dialog was open.
+      nominationsAnswer = (_) => [mine(status: NominationStatus.passed)];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      await tester.tap(confirmWithdraw());
+      await animate(tester);
+
+      expect(remote.withdrawals, isEmpty);
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            "Azul wasn't withdrawn: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    group('after a withdrawal, focus stays on its row', () {
+      /// The row's lines, as one node.
+      SemanticsNode lines(WidgetTester tester) =>
+          tester.getSemantics(inRow('n-1', 'Azul'));
+
+      testWidgets('from the keyboard', (tester) async {
+        final handle = tester.ensureSemantics();
+        final sent = Completer<EventNomination>();
+        withdrawAnswer = (_) => sent.future;
+        nominationsAnswer = (_) => [mine()];
+
+        await showGames(tester);
+        await tester.ensureVisible(withdraw('n-1'));
+        await tester.pump();
+        final focus = withdrawFocus(tester)..requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        // Keep it, then Withdraw.
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+
+        // Held while it is out, so it keeps focus (#607).
+        expect(remote.withdrawals, hasLength(1));
+        expect(focus.hasPrimaryFocus, isTrue);
+
+        sent.complete(mine(status: NominationStatus.withdrawn));
+        await animate(tester);
+
+        expect(withdraw('n-1'), findsNothing);
+        expect(
+          lines(tester),
+          isSemantics(isFocusable: true, isFocused: true),
+        );
+        expect(lines(tester).label, contains('Withdrawn'));
+
+        // Tab goes on from the row, and the row is no stop of its own.
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        expect(lines(tester), isSemantics(isFocusable: false));
+        handle.dispose();
+      });
+
+      testWidgets("from a screen reader's activation, with focus on nothing", (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        nominationsAnswer = (_) => [mine()];
+
+        await showGames(tester);
+        await tester.ensureVisible(withdraw('n-1'));
+        await tester.pump();
+        screenReaderTap(tester, 'Withdraw Azul');
+        await animate(tester);
+        screenReaderTap(tester, 'Withdraw');
+        await animate(tester);
+
+        expect(remote.withdrawals, hasLength(1));
+        expect(lines(tester), isSemantics(isFocused: true));
+        handle.dispose();
+      });
+
+      testWidgets('not when something else took focus meanwhile', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        final sent = Completer<EventNomination>();
+        withdrawAnswer = (_) => sent.future;
+        nominationsAnswer = (_) => [mine()];
+
+        await showGames(tester);
+        await press(tester, withdraw('n-1'));
+        await animate(tester);
+        await tester.tap(confirmWithdraw());
+        await animate(tester);
+        final elsewhere = Focus.of(
+          tester.element(
+            find.byKey(
+              EventDetailScreen.tabKey(EventDetailTab.games),
+              skipOffstage: false,
+            ),
+          ),
+        )..requestFocus();
+        await tester.pump();
+
+        sent.complete(mine(status: NominationStatus.withdrawn));
+        await animate(tester);
+
+        expect(elsewhere.hasPrimaryFocus, isTrue);
+        expect(lines(tester), isSemantics(isFocused: false));
+        handle.dispose();
+      });
+
+      testWidgets('nowhere new when it is refused: Withdraw keeps it', (
+        tester,
+      ) async {
+        withdrawAnswer = (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403);
+        nominationsAnswer = (_) => [mine()];
+
+        await showGames(tester);
+        await tester.ensureVisible(withdraw('n-1'));
+        await tester.pump();
+        final focus = withdrawFocus(tester)..requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+        await tester.tap(confirmWithdraw());
+        await animate(tester);
+
+        expect(remote.withdrawals, hasLength(1));
+        expect(
+          find.descendant(
+            of: outcome(),
+            matching: find.text("You can't withdraw Azul."),
+          ),
+          findsOneWidget,
+        );
+        expect(focus.hasPrimaryFocus, isTrue);
+        expect(
+          tester.widget<TextButton>(withdraw('n-1')).onPressed,
+          isNotNull,
+        );
+      });
+    });
+
+    testWidgets('Withdraw is disabled offline, and says why once', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier(true);
+      addTearDown(offline.dispose);
+      // Awaiting approval: no vote control, whose own note would say it.
+      nominationsAnswer = (_) => [
+        mine(status: NominationStatus.awaitingApproval),
+      ];
+
+      await tester.pumpWidget(
+        harness(detailOf(), offline: offline),
+      );
+      cache.add(detailOf());
+      await settle(tester);
+      await settle(tester);
+      await tester.tap(
+        find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+      );
+      await animate(tester);
+      await tester.ensureVisible(withdraw('n-1'));
+      await tester.pump();
+
+      expect(tester.widget<TextButton>(withdraw('n-1')).onPressed, isNull);
+      expect(
+        tester.getSemantics(withdraw('n-1')),
+        isSemantics(hint: _onlineOnlyCopy, isEnabled: false),
+      );
+      expect(
+        find.descendant(of: row('n-1'), matching: find.text(_onlineOnlyCopy)),
+        findsOneWidget,
+      );
+
+      offline.value = false;
+      await tester.pump();
+
+      expect(
+        find.descendant(of: row('n-1'), matching: find.text(_onlineOnlyCopy)),
+        findsNothing,
+      );
+      expect(tester.widget<TextButton>(withdraw('n-1')).onPressed, isNotNull);
+      handle.dispose();
+    });
+  });
+
   group('accessibility audit', () {
     testWidgets('a row fits at 320dp and 200% text with no overflow', (
       tester,
@@ -742,6 +1226,48 @@ void main() {
         // Within the window, so nothing is cut off at its end.
         expect(tester.getRect(row(id)).right, lessThanOrEqualTo(320));
       }
+    });
+
+    testWidgets('Withdraw, beside who voted, and its dialog fit at 320dp and '
+        '200% text', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      pool = [catanAdas, _game('o-2', 'att-me', _longTitle)];
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          title: _longTitle,
+          by: 'att-me',
+          from: 'o-2',
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+
+      await showGames(tester);
+      await tester.ensureVisible(withdraw('n-1'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      for (final control in [
+        withdraw('n-1'),
+        find.byKey(EventDetailScreen.nominationVotersKey('n-1')),
+      ]) {
+        expect(tester.getRect(control).right, lessThanOrEqualTo(320));
+      }
+
+      await tester.tap(withdraw('n-1'));
+      await animate(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Withdraw $_longTitle?'), findsOneWidget);
+      for (final button in [keepIt(), confirmWithdraw()]) {
+        await tester.ensureVisible(button);
+        await tester.pump();
+        expect(tester.getRect(button).right, lessThanOrEqualTo(320));
+      }
+      expect(tester.takeException(), isNull);
     });
   });
 }

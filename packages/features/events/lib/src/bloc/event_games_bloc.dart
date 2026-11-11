@@ -125,12 +125,13 @@ enum _Sent {
 /// - Anything else, or the session said no or threw (below), when nothing is
 ///   sent; failed.
 ///
-/// The outcome carries the game's title as the event carried it. A done
-/// take-back's state also drops the game from [EventGamesState.games], since
-/// the answer already says it is off the pool, and a read that was out as
-/// it ended leaves the game out of its answer, which can predate the
-/// take-back. Then the pool is read again, unless the take-back failed, when
-/// the pool is as it was.
+/// The outcome carries the game's title as the event carried it, and the
+/// offered game's id, by which the screen finds the nominations of the copy
+/// (#517). A done take-back's state also drops the game from
+/// [EventGamesState.games], since the answer already says it is off the
+/// pool, and a read that was out as it ended leaves the game out of its
+/// answer, which can predate the take-back. Then the pool is read again,
+/// unless the take-back failed, when the pool is as it was.
 ///
 /// ## A dropped write
 ///
@@ -344,6 +345,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
         outcome: () => EventTakeBackOutcome(
           result: result,
           title: game.title,
+          offeredGameId: game.id,
         ),
       ),
     );

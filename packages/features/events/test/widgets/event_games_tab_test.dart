@@ -26,6 +26,12 @@ const _offline = EventRemoteTransientException('offline');
 const _stillSuppliesCopy =
     'Catan is nominated, or in the lineup for a date still to come, so it '
     "can't come off your games yet.";
+const _stillSuppliesYoursCopy =
+    "Catan is nominated, so it can't come off your games yet. Withdraw your "
+    'nomination first.';
+const _stillSuppliesTheirsCopy =
+    "Catan is nominated, so it can't come off your games yet. Only whoever "
+    'nominated it can withdraw it.';
 const _notGoingCopy =
     "You've said you're not going, so a game you offer couldn't be picked. "
     'Change your answer to offer games.';
@@ -104,6 +110,11 @@ void main() {
   /// it, open for votes, unless a test says otherwise.
   late FutureOr<EventNomination> Function(NominateRequest request)
   nominateAnswer;
+
+  /// What each withdrawal answers (#517): the nomination, withdrawn, as the
+  /// last nominations read served it.
+  late FutureOr<EventNomination> Function(WithdrawRequest request)
+  withdrawAnswer;
 
   /// A detail read held until a test completes it, while set.
   Completer<EventSnapshot>? heldRead;
@@ -198,6 +209,12 @@ void main() {
       occurrenceId: request.occurrenceId,
       createdAt: kItemInstant,
     );
+    withdrawAnswer = (request) async {
+      final read = await nominationsAnswer(request.eventId);
+      return read
+          .firstWhere((each) => each.id == request.nominationId)
+          .copyWith(status: NominationStatus.withdrawn);
+    };
     heldRead = null;
   });
 
@@ -236,6 +253,7 @@ void main() {
       takenBack: (request) => takeBackAnswer(request),
       nominations: (eventId) => nominationsAnswer(eventId),
       nominated: (request) => nominateAnswer(request),
+      withdrawn: (request) => withdrawAnswer(request),
     );
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
@@ -1694,6 +1712,149 @@ void main() {
           tester.getRect(find.byType(CustomScrollView)).bottom,
         ),
       );
+    });
+
+    group('a 409 names what to do (#517)', () {
+      /// A nomination of the viewer's Catan (`o-1`) by [by], as [status].
+      EventNomination catanNominated({
+        String by = 'att-me',
+        NominationStatus status = NominationStatus.open,
+      }) => EventNomination(
+        id: 'n-1',
+        eventId: 'e-1',
+        platformGameId: 'pg-o-1',
+        gameId: 'g-o-1',
+        title: 'Catan',
+        platformName: 'Tabletop',
+        status: status,
+        nominatedById: by,
+        suppliedFromId: catanMine.id,
+        createdAt: kItemInstant,
+      );
+
+      setUp(() {
+        takeBackAnswer = (_) => throw const EventWriteConflictException(
+          'supplies',
+          statusCode: 409,
+        );
+      });
+
+      Finder says(String copy) =>
+          find.descendant(of: outcome(), matching: find.text(copy));
+
+      testWidgets('a 409 on a game the viewer nominated says to withdraw the '
+          'nomination first', (tester) async {
+        nominationsAnswer = (_) => [catanNominated()];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+
+        expect(says(_stillSuppliesYoursCopy), findsOneWidget);
+        expect(row(catanMine.id), findsOneWidget);
+      });
+
+      testWidgets('a 409 on a game someone else nominated says only they can '
+          'withdraw it', (tester) async {
+        nominationsAnswer = (_) => [
+          catanNominated(by: 'att-ada', status: NominationStatus.paused),
+        ];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+
+        expect(says(_stillSuppliesTheirsCopy), findsOneWidget);
+      });
+
+      testWidgets('a 409 on a game both the viewer and someone else '
+          'nominated says the others must withdraw theirs too', (
+        tester,
+      ) async {
+        nominationsAnswer = (_) => [
+          catanNominated(),
+          catanNominated(by: 'att-ada').copyWith(id: 'n-2'),
+        ];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+
+        expect(
+          says(
+            "Catan is nominated, so it can't come off your games yet. "
+            'Withdraw your nomination, and whoever else nominated it has to '
+            'withdraw theirs.',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a 409 with no live nomination keeps the lineup copy', (
+        tester,
+      ) async {
+        // Decided: in the lineup, if anything, which isn't the viewer's to
+        // undo here.
+        nominationsAnswer = (_) => [
+          catanNominated(status: NominationStatus.passed),
+        ];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+
+        expect(says(_stillSuppliesCopy), findsOneWidget);
+      });
+
+      testWidgets('a 409 on a game the pool no longer holds finds its '
+          "nomination by the game's id", (tester) async {
+        final held = Completer<void>();
+        takeBackAnswer = (_) => held.future;
+        nominationsAnswer = (_) => [catanNominated()];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+        // A read lands while the take-back is out, without the game.
+        served = [azul, catanAdas, root];
+        blocOf<EventGamesBloc>(tester).add(
+          const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+        );
+        await settle(tester);
+        expect(row(catanMine.id), findsNothing);
+
+        held.completeError(
+          const EventWriteConflictException('supplies', statusCode: 409),
+        );
+        await animate(tester);
+
+        expect(says(_stillSuppliesYoursCopy), findsOneWidget);
+      });
+
+      testWidgets('the copy stays as it landed once the nomination is '
+          'withdrawn', (tester) async {
+        final handle = tester.ensureSemantics();
+        nominationsAnswer = (_) => [catanNominated()];
+        await showGames(tester);
+
+        await press(tester, takeBack(catanMine.id));
+        await animate(tester);
+        expect(says(_stillSuppliesYoursCopy), findsOneWidget);
+        final banner = tester.element(outcome());
+
+        // The viewer does as it says.
+        blocOf<EventNominationsBloc>(tester).add(
+          NominationWithdrawn('e-1', catanNominated()),
+        );
+        await animate(tester);
+        expect(remote.withdrawals, hasLength(1));
+
+        // The same banner, with the same words: words that changed would be
+        // read out again.
+        expect(tester.element(outcome()), same(banner));
+        expect(says(_stillSuppliesYoursCopy), findsOneWidget);
+        handle.dispose();
+      });
     });
 
     testWidgets('a refusal and a failure each say so', (tester) async {
