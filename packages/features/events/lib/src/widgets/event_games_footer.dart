@@ -6,6 +6,9 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_nominations_bloc.dart';
+import 'package:events/src/bloc/event_nominations_event.dart';
+import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -14,23 +17,29 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the page's footer holds for the games pool (#516): first the pool's
-/// last write, as the line saying how far a run of offers has got while one
-/// is out, then as the banner saying how it went; then, with [showStale],
-/// while the games shown may be out of date, the stale-data banner with Try
-/// again. Each when there is one; nothing otherwise. Passed on every build,
-/// on either tab, so the page keeps one shape.
+/// What the page's footer holds for the Games tab: the games pool's (#516),
+/// then the nominations' (#517). First the pool's last write, as the line
+/// saying how far a run of offers has got while one is out, then as the
+/// banner saying how it went; then the viewer's last nominations write, a
+/// nominate, a vote or a withdrawal, as the banner saying how it went; then,
+/// with [showStale], the stale-data banners: the pool's while the games shown
+/// may be out of date, then the nominations' while those shown may be. Each
+/// when there is one; nothing otherwise. Passed on every build, on either
+/// tab, so the page keeps one shape.
 ///
-/// All of them answer the list, which moves on: a run's end, or a read of
-/// the pool that fails after a write or a detail read, lands while the user
-/// may be far down it. In the footer each is on screen and heard as it
-/// arrives, and moves no row. The write's line or banner is drawn first,
-/// and the stale-data banner under it.
+/// All of them answer a list, which moves on: a run's end, a vote's, or a
+/// read that fails after a write or a detail read, lands while the user may
+/// be far down it. In the footer each is on screen and heard as it arrives,
+/// and moves no row. The writes' lines and banners are drawn first, the
+/// pool's before the nominations', and the stale-data banners under them,
+/// in the same order. Each write's banner has its own Dismiss.
 ///
-/// The write's line and banner show on either tab: a run of forty sends can
-/// outlast the stay on Games, and its line is a live region that a footer
-/// left out on Details would silence. The stale-data banner is about the
-/// games shown, so it shows only while Games is selected ([showStale]).
+/// The writes' lines and banners show on either tab: a run of forty sends
+/// can outlast the stay on Games, and its line is a live region that a footer
+/// left out on Details would silence. The stale-data banners are about what
+/// the tab shows, so they show only while Games is selected ([showStale]),
+/// and only over something read before: a first read that fails has nothing
+/// stale to warn of.
 ///
 /// Each outcome is a banner of its own, built anew, so one that says what
 /// the last said is still heard as it lands.
@@ -38,12 +47,17 @@ class EventGamesFooter extends StatelessWidget {
   const EventGamesFooter({
     required this.state,
     required this.showStale,
+    this.nominations,
     super.key,
   });
 
   final EventGamesState state;
 
-  /// Whether the Games tab is selected, so the stale-data banner may show.
+  /// The nominations' state (#517), whose last write's banner and stale-data
+  /// banner follow the pool's. Null shows neither.
+  final EventNominationsState? nominations;
+
+  /// Whether the Games tab is selected, so the stale-data banners may show.
   final bool showStale;
 
   @override
@@ -53,6 +67,8 @@ class EventGamesFooter extends StatelessWidget {
     final sending = state.sending;
     final outcome = state.outcome;
     final message = outcome == null ? null : _message(l10n, outcome);
+    final nominations = this.nominations;
+    final nominationsOutcome = nominations?.outcome;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -102,6 +118,26 @@ class EventGamesFooter extends StatelessWidget {
               ),
             ),
           ),
+        // The nominations' own, beside the pool's: nothing holds one bloc's
+        // write back for the other's, so both can end.
+        if (nominationsOutcome != null)
+          KeyedSubtree(
+            key: ObjectKey(nominationsOutcome),
+            child: Padding(
+              padding: EdgeInsets.only(top: gap),
+              child: BgeInlineBanner(
+                key: EventDetailScreen.nominationsOutcomeKey,
+                tone: _nominationsTone(nominationsOutcome),
+                message: _nominationsMessage(l10n, nominationsOutcome),
+                action: TextButton(
+                  onPressed: () => context.read<EventNominationsBloc>().add(
+                    const EventNominationsOutcomeDismissed(),
+                  ),
+                  child: Text(l10n.eventsActionDismiss),
+                ),
+              ),
+            ),
+          ),
         if (showStale && state.refreshFailed && state.games.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: gap),
@@ -113,6 +149,25 @@ class EventGamesFooter extends StatelessWidget {
               retryLabel: l10n.eventsRefreshRetry,
               refreshing: state.refreshing,
               onRetry: () => retryEventGamesPool(context),
+            ),
+          ),
+        if (showStale &&
+            nominations != null &&
+            nominations.refreshFailed &&
+            nominations.nominations.isNotEmpty)
+          Padding(
+            // Keyed, so the pool's banner coming or going above it never
+            // takes its place, and a Try again with focus keeps it.
+            key: const ValueKey<String>('nominations_stale'),
+            padding: EdgeInsets.only(top: gap),
+            child: BgeRefreshBanner(
+              key: EventDetailScreen.nominationsRefreshBannerKey,
+              retryKey: EventDetailScreen.nominationsRetryKey,
+              failedMessage: l10n.eventsNominationsRefreshFailed,
+              inProgressLabel: l10n.eventsRefreshInProgress,
+              retryLabel: l10n.eventsRefreshRetry,
+              refreshing: nominations.refreshing,
+              onRetry: () => retryEventNominations(context),
             ),
           ),
       ],
@@ -166,6 +221,84 @@ class EventGamesFooter extends StatelessWidget {
       EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
       EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(title),
+    };
+  }
+
+  /// A nominations write's tone (#517): success where it went through,
+  /// error where it failed and trying again may work, and warning where the
+  /// server or the screen's own re-check stopped it.
+  static BgeBannerTone _nominationsTone(EventNominationsOutcome outcome) =>
+      switch (outcome) {
+        NominateOutcome(:final result) => switch (result) {
+          NominateResult.open ||
+          NominateResult.awaitingApproval ||
+          NominateResult.inLineup ||
+          NominateResult.settled => BgeBannerTone.success,
+          NominateResult.refused ||
+          NominateResult.supplierNotGoing ||
+          NominateResult.notSupplied ||
+          NominateResult.gone ||
+          NominateResult.dropped => BgeBannerTone.warning,
+          NominateResult.failed => BgeBannerTone.error,
+        },
+        VoteOutcome(:final result) => switch (result) {
+          VoteResult.done => BgeBannerTone.success,
+          VoteResult.closed ||
+          VoteResult.refused ||
+          VoteResult.gone ||
+          VoteResult.dropped => BgeBannerTone.warning,
+          VoteResult.failed => BgeBannerTone.error,
+        },
+        WithdrawOutcome(:final result) => switch (result) {
+          WithdrawResult.done => BgeBannerTone.success,
+          WithdrawResult.notWithdrawable ||
+          WithdrawResult.refused ||
+          WithdrawResult.gone ||
+          WithdrawResult.dropped => BgeBannerTone.warning,
+          WithdrawResult.failed => BgeBannerTone.error,
+        },
+      };
+
+  /// A nominations write's copy (#517), naming its game. A nominate that
+  /// went through says what the server made of it.
+  static String _nominationsMessage(
+    EventsLocalizations l10n,
+    EventNominationsOutcome outcome,
+  ) {
+    final title = outcome.title;
+    return switch (outcome) {
+      NominateOutcome(:final result) => switch (result) {
+        NominateResult.open => l10n.eventsNominatedOpen(title),
+        NominateResult.awaitingApproval => l10n.eventsNominatedAwaiting(title),
+        NominateResult.inLineup => l10n.eventsNominatedInLineup(title),
+        NominateResult.settled => l10n.eventsNominatedSettled(title),
+        NominateResult.refused => l10n.eventsNominateRefused(title),
+        NominateResult.supplierNotGoing => l10n.eventsNominateSupplierNotGoing(
+          title,
+        ),
+        NominateResult.notSupplied => l10n.eventsNominateNotSupplied(title),
+        NominateResult.gone => l10n.eventsNominateGone(title),
+        NominateResult.failed => l10n.eventsNominateFailed(title),
+        NominateResult.dropped => l10n.eventsNominateDropped(title),
+      },
+      VoteOutcome(:final result) => switch (result) {
+        VoteResult.done => l10n.eventsVoteDone(title),
+        VoteResult.closed => l10n.eventsVoteClosed(title),
+        VoteResult.refused => l10n.eventsVoteRefused(title),
+        VoteResult.gone => l10n.eventsVoteGone(title),
+        VoteResult.failed => l10n.eventsVoteFailed(title),
+        VoteResult.dropped => l10n.eventsVoteDropped(title),
+      },
+      WithdrawOutcome(:final result) => switch (result) {
+        WithdrawResult.done => l10n.eventsWithdrawDone(title),
+        WithdrawResult.notWithdrawable => l10n.eventsWithdrawNotWithdrawable(
+          title,
+        ),
+        WithdrawResult.refused => l10n.eventsWithdrawRefused(title),
+        WithdrawResult.gone => l10n.eventsWithdrawGone(title),
+        WithdrawResult.failed => l10n.eventsWithdrawFailed(title),
+        WithdrawResult.dropped => l10n.eventsWithdrawDropped(title),
+      },
     };
   }
 }
@@ -269,5 +402,16 @@ void retryEventGamesPool(BuildContext context) {
   EventGamesTabScope.of(context).requestedIds = ids;
   context.read<EventGamesBloc>().add(
     EventGamesRetryRequested(state.detail.snapshot.event.id, ids),
+  );
+}
+
+/// Reads the nominations again, as the person asked (#517), for the event
+/// the detail shows now, which a reconcile can move (#499). Nothing before
+/// the detail is ready. Unlike the pool's, it needs no roster.
+void retryEventNominations(BuildContext context) {
+  final state = context.read<EventDetailBloc>().state;
+  if (state is! EventDetailReady) return;
+  context.read<EventNominationsBloc>().add(
+    EventNominationsRetryRequested(state.detail.snapshot.event.id),
   );
 }

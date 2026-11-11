@@ -10,6 +10,9 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
+import 'package:events/src/bloc/event_nominations_bloc.dart';
+import 'package:events/src/bloc/event_nominations_event.dart';
+import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/bloc/event_poll_bloc.dart';
 import 'package:events/src/bloc/event_poll_event.dart';
 import 'package:events/src/bloc/event_poll_state.dart';
@@ -52,8 +55,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// optional server and streams and the callbacks, and the screen owns its
 /// blocs: the detail's ([EventDetailBloc], whose class doc has the state
 /// table) and, where Delete can be offered, the actions'
-/// ([EventActionsBloc]), the poll's ([EventPollBloc]) and the games pool's
-/// ([EventGamesBloc]). Loading, not found and error are short centred pages.
+/// ([EventActionsBloc]), the poll's ([EventPollBloc]), the games pool's
+/// ([EventGamesBloc]) and the nominations' ([EventNominationsBloc], #517).
+/// Loading, not found and error are short centred pages.
 /// Ready is one scroll view of slivers ([BgePage.slivers]).
 ///
 /// ## The page and its tabs
@@ -114,13 +118,26 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// read fails, with Try again reading the event. A read that finds the
 /// event gone reads the event again, as the poll's does.
 ///
-/// The page's footer holds what answers the list: how far a run of offers
+/// The nominations (#517) aren't cached either: the [EventNominationsBloc]
+/// holds what was read last. They are read when the pool is: the first time
+/// the tab shows on a ready event, or once a read of the event running then
+/// ends, and again each time a read of the event ends once the tab has
+/// shown, for the event the detail shows then. They need no roster, so
+/// they are read where it is withheld or not read yet too, and a roster
+/// that changes reads nothing. The viewer's own writes change their rows
+/// through the writes' answers, and the stale-data banner's Try again reads
+/// them as the user asks. A read that finds the event gone reads the event
+/// again, as the pool's does.
+///
+/// The page's footer holds what answers the lists: how far a run of offers
 /// has got while it is out, or how the pool's last write went, a run of
-/// offers or a take-back, on either tab, since a run can outlast the stay on
-/// Games; then, while Games is selected, the stale-data banner while the
-/// games shown may be out of date. There each is on screen and heard however
-/// far down the list the user is; what answers the whole screen stays in the
-/// header.
+/// offers or a take-back, then how the viewer's last nominations write went,
+/// a nominate, a vote or a withdrawal, each with its own Dismiss, on either
+/// tab, since a run can outlast the stay on Games; then, while Games is
+/// selected, the stale-data banners, the pool's and the nominations', while
+/// what each shows may be out of date. There each is on screen and heard
+/// however far down the list the user is; what answers the whole screen
+/// stays in the header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -467,6 +484,22 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.pool_clear_filters',
   );
 
+  /// Key on the banner in the footer saying how the viewer's last
+  /// nominations write went (#517): a nominate, a vote or a withdrawal.
+  static const Key nominationsOutcomeKey = Key(
+    'event_detail.nominations_outcome',
+  );
+
+  /// Key on the footer's banner saying the nominations shown may be out of
+  /// date, after a read of them failed (#517).
+  static const Key nominationsRefreshBannerKey = Key(
+    'event_detail.nominations_refresh_banner',
+  );
+
+  /// Key on the retry of a nominations read that failed (#517): the footer's
+  /// refresh banner's, over nominations read before.
+  static const Key nominationsRetryKey = Key('event_detail.nominations_retry');
+
   /// Key on the Games tab's Offer games button.
   static const Key offerGamesKey = Key('event_detail.offer_games');
 
@@ -636,7 +669,8 @@ class EventDetailScreen extends StatelessWidget {
           ),
         ),
         // None without a server or a way back, and then nothing offers
-        // Delete, a date's actions, the poll or the Games tab.
+        // Delete, a date's actions, the poll or the Games tab, with its pool
+        // and its nominations.
         if (hasActions) ...[
           BlocProvider<EventActionsBloc>(
             create: (_) => EventActionsBloc(
@@ -652,6 +686,12 @@ class EventDetailScreen extends StatelessWidget {
           BlocProvider<EventGamesBloc>(
             create: (_) =>
                 EventGamesBloc(remote: remote, confirmSession: confirmSession),
+          ),
+          BlocProvider<EventNominationsBloc>(
+            create: (_) => EventNominationsBloc(
+              remote: remote,
+              confirmSession: confirmSession,
+            ),
           ),
         ],
       ],
@@ -738,7 +778,7 @@ class _EventDetailView extends StatelessWidget {
     // indicator moves at once; the controller keeps its tab when that
     // setting changes. Beside it, what the Games tab keeps: its filter, and
     // whether it has shown, which decides whether a detail read reads the
-    // pool.
+    // pool and the nominations.
     return DefaultTabController(
       length: EventDetailTab.values.length,
       animationDuration: BgeMotion.durationOf(
@@ -753,8 +793,9 @@ class _EventDetailView extends StatelessWidget {
   }
 
   /// [page] under the listeners that answer the actions' and the poll's
-  /// ends, read the poll and the games pool as the detail calls for them,
-  /// and answer a pool read that finds the event gone.
+  /// ends, read the poll, the games pool and the nominations as the detail
+  /// calls for them, and answer a pool read or a nominations read that
+  /// finds the event gone.
   Widget _listeners(Widget page) {
     return MultiBlocListener(
       listeners: [
@@ -803,6 +844,14 @@ class _EventDetailView extends StatelessWidget {
               current.load == EventGamesLoad.gone,
           listener: (context, _) => unawaited(_rereadEvent(context)),
         ),
+        BlocListener<EventNominationsBloc, EventNominationsState>(
+          // As the pool's: on the way into gone only, and the read after the
+          // event's re-read ends a 404 again as failed, so no loop (#517).
+          listenWhen: (previous, current) =>
+              previous.load != EventNominationsLoad.gone &&
+              current.load == EventNominationsLoad.gone,
+          listener: (context, _) => unawaited(_rereadEvent(context)),
+        ),
       ],
       child: page,
     );
@@ -849,14 +898,16 @@ bool _covered(BuildContext context) =>
     !(ModalRoute.isCurrentOf(context) ?? true);
 
 /// Reads the event again after a vote's end that asks for it, or a poll read
-/// that found the event gone (#507), or a games pool read that did (#516),
-/// once no read is running and no date write, status write (#502) or Delete
-/// is out, and not at all once the event is removed.
+/// that found the event gone (#507), or a games pool read that did (#516), or
+/// a nominations read that did (#517), once no read is running and no date
+/// write, status write (#502) or Delete is out, and not at all once the event
+/// is removed.
 ///
-/// A vote, a poll read or a pool read runs beside the event's read, so it can
-/// end while one is running, whose answer may have been served before what
-/// this found. The detail would drop a retry then, and a poll or a pool that
-/// stays gone asks only once, so this waits and reads after it.
+/// A vote, a poll read, a pool read or a nominations read runs beside the
+/// event's read, so it can end while one is running, whose answer may have
+/// been served before what this found. The detail would drop a retry then,
+/// and a poll, a pool or nominations that stay gone ask only once, so this
+/// waits and reads after it.
 ///
 /// It runs beside the actions' requests too, so it can end while one of them
 /// is out. A read then could land after the write's answer and put the date
@@ -914,29 +965,33 @@ void _readPoll(BuildContext context, EventDetailState state) {
 
 /// Whether a detail read has just ended as the detail goes from [previous]
 /// to [current] (#516): the games pool is read again then, once the Games
-/// tab has shown, since a read can change the roster whose games it holds.
+/// tab has shown, since a read can change the roster whose games it holds,
+/// and so are the nominations (#517), which others' writes change.
 bool _detailReadEnded(EventDetailState previous, EventDetailState current) =>
     previous is EventDetailReady &&
     current is EventDetailReady &&
     previous.reading &&
     !current.reading;
 
-/// Reads the games pool again after the detail read [state] ended with,
-/// where the Games tab has shown at least once (#516).
+/// Reads the games pool (#516) and the nominations (#517) again after the
+/// detail read [state] ended with, where the Games tab has shown at least
+/// once. The nominations are read whether or not there is anybody to read
+/// the pool for.
 void _readPoolAgain(BuildContext context, EventDetailState state) {
   final scope = EventGamesTabScope.of(context);
   if (state is! EventDetailReady || !scope.shown) return;
   _readPool(context, state, scope);
+  _readNominations(context, state);
 }
 
-/// Reads the games pool for the Games tab's first showing (#516), and
-/// answers whether it showed on a ready detail of an event the server
-/// knows. Only that counts as having shown.
+/// Reads the games pool (#516) and the nominations (#517) for the Games
+/// tab's first showing, and answers whether it showed on a ready detail of
+/// an event the server knows. Only that counts as having shown.
 ///
 /// While a detail read is running, as the one every open starts may be,
-/// the pool is not read here: that read's end reads it ([_readPoolAgain]),
-/// as the tab has shown by then, and a roster that arrives after it reads
-/// it for that ([_readPoolForNewIds]).
+/// neither is read here: that read's end reads both ([_readPoolAgain]), as
+/// the tab has shown by then, and a roster that arrives after it reads the
+/// pool for that ([_readPoolForNewIds]).
 bool _gamesFirstShown(
   BuildContext context,
   EventGamesTabController controller,
@@ -945,7 +1000,10 @@ bool _gamesFirstShown(
   if (state is! EventDetailReady || state.detail.snapshot.event.isLocalOnly) {
     return false;
   }
-  if (!state.reading) _readPool(context, state, controller);
+  if (!state.reading) {
+    _readPool(context, state, controller);
+    _readNominations(context, state);
+  }
   return true;
 }
 
@@ -1003,6 +1061,19 @@ void _readPool(
   context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
 }
 
+/// Reads the nominations of the event [state] shows (#517), by the id it
+/// shows then, which a reconcile can move (#499). Not for an event the
+/// server doesn't know.
+///
+/// Unlike the pool's read, it needs no roster: the nominations are the
+/// event's, so where the roster is withheld or not yet read they are read
+/// all the same, and a roster that changes doesn't read them again.
+void _readNominations(BuildContext context, EventDetailReady state) {
+  final event = state.detail.snapshot.event;
+  if (event.isLocalOnly) return;
+  context.read<EventNominationsBloc>().add(EventNominationsRequested(event.id));
+}
+
 /// The event itself: one scroll view of slivers (#516). What answers the
 /// whole screen, the refresh banner and the outcome banners, comes first, in
 /// the page's header, then the tab bar where the screen shows one, then the
@@ -1036,8 +1107,8 @@ class _ReadyPage extends StatelessWidget {
   final DateTime Function() now;
 
   /// Whether an [EventActionsBloc], an [EventPollBloc], an [EventGamesBloc],
-  /// the tabs' [TabController] and the Games tab's [EventGamesTabScope] are
-  /// provided above.
+  /// an [EventNominationsBloc], the tabs' [TabController] and the Games
+  /// tab's [EventGamesTabScope] are provided above.
   final bool hasActions;
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
@@ -1052,7 +1123,9 @@ class _ReadyPage extends StatelessWidget {
       occurrences: snapshot.occurrences,
       now: now,
       builder: (context) {
-        if (!hasActions) return _build(context, null, null, null, null);
+        if (!hasActions) {
+          return _build(context, null, null, null, null, null);
+        }
 
         final tabs = DefaultTabController.of(context);
         final games = EventGamesTabScope.of(context);
@@ -1061,18 +1134,26 @@ class _ReadyPage extends StatelessWidget {
               BlocBuilder<EventPollBloc, EventPollState>(
                 builder: (context, pollState) =>
                     BlocBuilder<EventGamesBloc, EventGamesState>(
-                      builder: (context, gamesState) => ListenableBuilder(
-                        // Built again as the selected tab changes, and as
-                        // the Games tab's filter does.
-                        listenable: Listenable.merge([tabs, games]),
-                        builder: (context, _) => _build(
-                          context,
-                          actionsState,
-                          pollState,
-                          gamesState,
-                          tabs,
-                        ),
-                      ),
+                      builder: (context, gamesState) =>
+                          BlocBuilder<
+                            EventNominationsBloc,
+                            EventNominationsState
+                          >(
+                            builder: (context, nominationsState) =>
+                                ListenableBuilder(
+                                  // Built again as the selected tab changes,
+                                  // and as the Games tab's filter does.
+                                  listenable: Listenable.merge([tabs, games]),
+                                  builder: (context, _) => _build(
+                                    context,
+                                    actionsState,
+                                    pollState,
+                                    gamesState,
+                                    nominationsState,
+                                    tabs,
+                                  ),
+                                ),
+                          ),
                     ),
               ),
         );
@@ -1080,14 +1161,15 @@ class _ReadyPage extends StatelessWidget {
     );
   }
 
-  /// [actionsState], [pollState], [gamesState] and [tabs] are null where
-  /// there are no such blocs, and then the app bar offers no menu, no poll
-  /// shows and there are no tabs.
+  /// [actionsState], [pollState], [gamesState], [nominationsState] and
+  /// [tabs] are null where there are no such blocs, and then the app bar
+  /// offers no menu, no poll shows and there are no tabs.
   Widget _build(
     BuildContext context,
     EventActionsState? actionsState,
     EventPollState? pollState,
     EventGamesState? gamesState,
+    EventNominationsState? nominationsState,
     TabController? tabs,
   ) {
     final l10n = EventsLocalizations.of(context);
@@ -1138,16 +1220,18 @@ class _ReadyPage extends StatelessWidget {
         _ => null,
       },
       // How far a run of offers has got or how the pool's last write went
-      // (#516), on either tab, then, on the Games tab, the stale-data
-      // banner: answers on a long list, so on screen and heard wherever the
-      // list is scrolled. A run can outlast the stay on Games, and a footer
-      // left out on Details would silence its live region. Passed on every
-      // build where there is a games bloc, so the page keeps one shape as
-      // the tabs swap.
+      // (#516), then how the viewer's last nominations write went (#517), on
+      // either tab, then, on the Games tab, the stale-data banners: answers
+      // on a long list, so on screen and heard wherever the list is
+      // scrolled. A run can outlast the stay on Games, and a footer left out
+      // on Details would silence its live region. Passed on every build
+      // where there is a games bloc, so the page keeps one shape as the tabs
+      // swap.
       footer: gamesState == null
           ? null
           : EventGamesFooter(
               state: gamesState,
+              nominations: nominationsState,
               showStale: tab == EventDetailTab.games,
             ),
       // Above the tabs, and in the semantics tree however far down the page

@@ -1249,6 +1249,682 @@ void main() {
     });
   });
 
+  group('nominations (#517)', () {
+    const details = EventDetailTab.details;
+    const games = EventDetailTab.games;
+    const voteDoneCopy = 'Your vote on Catan is in.';
+    const staleCopy = "Couldn't refresh nominations. They may be out of date.";
+
+    Finder tab(EventDetailTab which) =>
+        find.byKey(EventDetailScreen.tabKey(which));
+    Finder nominationsOutcome() =>
+        find.byKey(EventDetailScreen.nominationsOutcomeKey);
+    Finder inNominationsOutcome(String text) =>
+        find.descendant(of: nominationsOutcome(), matching: find.text(text));
+    Finder stale() => find.byKey(EventDetailScreen.nominationsRefreshBannerKey);
+
+    /// The host's view of `e-1`, with a date ahead and someone on the
+    /// roster.
+    EventDetail hosted() => _detail(
+      occurrences: [_ahead()],
+      attendees: [
+        _attending(EventRole.host),
+        _member('att-2', displayName: 'Ada'),
+      ],
+      attendance: _attending(EventRole.host),
+    );
+
+    /// Ada's Catan, the pool row `o-1`.
+    const catanOffered = OfferedGame(
+      id: 'o-1',
+      attendeeId: 'att-2',
+      collectionId: 'col-1',
+      platformGameId: 'pg-1',
+      gameId: 'g-1',
+      title: 'Catan',
+      platformName: 'Tabletop',
+      medium: GameMedium.physical,
+    );
+
+    /// Catan, nominated by the viewer from Ada's copy, and open for votes.
+    final catan = EventNomination(
+      id: 'n-1',
+      eventId: 'e-1',
+      platformGameId: 'pg-1',
+      gameId: 'g-1',
+      title: 'Catan',
+      platformName: 'Tabletop',
+      status: NominationStatus.open,
+      nominatedById: 'att-me',
+      suppliedFromId: 'o-1',
+      createdAt: kItemInstant,
+    );
+
+    /// A server whose reads serve [detail], unless [read] says otherwise,
+    /// whose games pool is empty, unless [pool] says otherwise, and whose
+    /// nominations are Catan alone, unless [nominations] says otherwise. A
+    /// nominate answers Catan, a vote goes through, and a withdrawal answers
+    /// Catan withdrawn, unless a test says otherwise.
+    FakeEventRemote serving(
+      EventDetail detail, {
+      FutureOr<EventSnapshot> Function(String id)? read,
+      FutureOr<List<OfferedGame>> Function(GamesPoolRequest request)? pool,
+      FutureOr<List<EventNomination>> Function(String eventId)? nominations,
+      FutureOr<EventNomination> Function(NominateRequest request)? nominated,
+      FutureOr<void> Function(CastVoteRequest request)? voteCast,
+      FutureOr<EventNomination> Function(WithdrawRequest request)? withdrawn,
+    }) => FakeEventRemote.detail(
+      read ?? (_) => detail.snapshot,
+      pool: pool ?? (_) => const [],
+      nominations: nominations ?? (_) => [catan],
+      nomination: (_) => catan,
+      nominated: nominated ?? (_) => catan,
+      voteCast: voteCast ?? (_) {},
+      withdrawn:
+          withdrawn ??
+          (_) => catan.copyWith(status: NominationStatus.withdrawn),
+    );
+
+    /// Shows [detail] from [remote] with a way back, as the app opens it,
+    /// and lets the read it starts end.
+    Future<void> showTabbed(
+      WidgetTester tester,
+      EventDetail detail,
+      FakeEventRemote remote,
+    ) async {
+      await show(tester, detail, remote: remote, onBack: (_) {});
+      await settle(tester);
+    }
+
+    Future<void> choose(WidgetTester tester, EventDetailTab which) async {
+      await tester.tap(tab(which));
+      await animate(tester);
+    }
+
+    /// Ends a read of the event, as the refresh banner's retry starts one.
+    Future<void> readEvent(WidgetTester tester) async {
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      await settle(tester);
+    }
+
+    /// The screen's nominations bloc. The provider is inside the screen, so
+    /// the lookup starts from a widget it builds.
+    EventNominationsBloc nominationsOf(WidgetTester tester) =>
+        tester.element(find.byType(Scaffold).first).read();
+
+    /// [finder] is in the page's footer: below its one scroll view.
+    void expectInFooter(WidgetTester tester, Finder finder) {
+      expect(finder, findsOneWidget);
+      expect(
+        tester.getRect(finder).top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byType(CustomScrollView)).bottom,
+        ),
+      );
+    }
+
+    testWidgets('opening Games reads nominations once', (tester) async {
+      final detail = hosted();
+      final remote = serving(detail);
+      await showTabbed(tester, detail, remote);
+
+      // Not before the tab is opened.
+      expect(remote.nominationReads, isEmpty);
+
+      await choose(tester, games);
+
+      expect(remote.nominationReads, ['e-1']);
+
+      // Opening it again reads nothing more.
+      await choose(tester, details);
+      await choose(tester, games);
+
+      expect(remote.nominationReads, ['e-1']);
+    });
+
+    testWidgets('opened while the opening read is out, nominations are read '
+        'once, after it', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final detail = hosted();
+      final remote = serving(
+        detail,
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+      );
+      await show(tester, detail, remote: remote, onBack: (_) {});
+
+      await choose(tester, games);
+
+      expect(remote.nominationReads, isEmpty);
+
+      reads.single.complete(detail.snapshot);
+      await animate(tester);
+
+      expect(remote.nominationReads, ['e-1']);
+    });
+
+    testWidgets("a detail read's end reads nominations again once Games has "
+        'shown', (tester) async {
+      final detail = hosted();
+      final remote = serving(detail);
+      await showTabbed(tester, detail, remote);
+
+      // Before the tab has shown, a read's end reads nothing.
+      await readEvent(tester);
+      expect(remote.nominationReads, isEmpty);
+
+      await choose(tester, games);
+      await readEvent(tester);
+
+      expect(remote.nominationReads, ['e-1', 'e-1']);
+
+      // On Details too, once the tab has shown.
+      await choose(tester, details);
+      await readEvent(tester);
+
+      expect(remote.nominationReads, ['e-1', 'e-1', 'e-1']);
+    });
+
+    testWidgets('nominations are read where the roster is withheld', (
+      tester,
+    ) async {
+      // A roster withheld, and no row of the viewer's: nobody to read the
+      // pool for. The nominations are the event's, and need no roster.
+      final withheld = _detail(occurrences: [_ahead()], attendees: const []);
+      final remote = serving(withheld);
+      await showTabbed(tester, withheld, remote);
+
+      await choose(tester, games);
+
+      expect(remote.poolRequests, isEmpty);
+      expect(remote.nominationReads, ['e-1']);
+
+      await readEvent(tester);
+
+      expect(remote.poolRequests, isEmpty);
+      expect(remote.nominationReads, ['e-1', 'e-1']);
+    });
+
+    testWidgets('a nominations read that finds the event gone reads the '
+        'event again', (tester) async {
+      final detail = hosted();
+      // As a server without the nominations' routes answers, every time.
+      final remote = serving(
+        detail,
+        nominations: (_) =>
+            throw const EventRemoteNotFoundException('gone', statusCode: 404),
+      );
+      await showTabbed(tester, detail, remote);
+      final reads = remote.detailRequests.length;
+
+      await choose(tester, games);
+      await animate(tester);
+      await animate(tester);
+
+      // The event read again, whose end reads the nominations again, which
+      // find nothing again: failed, and no more reads.
+      expect(remote.detailRequests, hasLength(reads + 1));
+      expect(remote.nominationReads, ['e-1', 'e-1']);
+      expect(nominationsOf(tester).state.load, EventNominationsLoad.failed);
+    });
+
+    testWidgets("a vote's outcome is in the footer on either tab and is a "
+        'live region', (tester) async {
+      // Disposed in the body: the framework checks for live handles before
+      // teardowns run.
+      final handle = tester.ensureSemantics();
+      final detail = hosted();
+      final remote = serving(detail);
+      await showTabbed(tester, detail, remote);
+      await choose(tester, games);
+
+      nominationsOf(
+        tester,
+      ).add(NominationVoteCast('e-1', catan, VoteType.forGame));
+      await animate(tester);
+
+      expect(remote.votes, hasLength(1));
+      expectInFooter(tester, nominationsOutcome());
+      expect(inNominationsOutcome(voteDoneCopy), findsOneWidget);
+      expect(
+        tester.widget<BgeInlineBanner>(nominationsOutcome()).tone,
+        BgeBannerTone.success,
+      );
+      expect(liveRegionSaying(voteDoneCopy), findsOne);
+
+      // It stays as the tabs swap.
+      await choose(tester, details);
+
+      expectInFooter(tester, nominationsOutcome());
+      expect(liveRegionSaying(voteDoneCopy), findsOne);
+
+      // Its own Dismiss closes it.
+      await tester.tap(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text('Dismiss'),
+        ),
+      );
+      await tester.pump();
+      expect(nominationsOutcome(), findsNothing);
+
+      // And one that lands on Details is there and heard too.
+      nominationsOf(
+        tester,
+      ).add(NominationVoteCast('e-1', catan, VoteType.against));
+      await animate(tester);
+
+      expect(remote.votes, hasLength(2));
+      expectInFooter(tester, nominationsOutcome());
+      expect(liveRegionSaying(voteDoneCopy), findsOne);
+      handle.dispose();
+    });
+
+    testWidgets("the nominations' outcome follows the pool's, each with its "
+        'own Dismiss', (tester) async {
+      final detail = hosted();
+      await showTabbed(tester, detail, serving(detail));
+      await choose(tester, games);
+      final poolOutcome = find.byKey(EventDetailScreen.poolOutcomeKey);
+
+      tester
+          .element(find.byType(Scaffold).first)
+          .read<EventGamesBloc>()
+          .add(
+            const EventGamesWriteDropped(
+              EventGamesWrite.takeBack,
+              title: 'Azul',
+            ),
+          );
+      nominationsOf(tester).add(
+        const NominationWriteDropped(NominationWrite.vote, title: 'Catan'),
+      );
+      await animate(tester);
+
+      expectInFooter(tester, poolOutcome);
+      expectInFooter(tester, nominationsOutcome());
+      expect(
+        tester.getRect(poolOutcome).top,
+        lessThan(tester.getRect(nominationsOutcome()).top),
+      );
+
+      await tester.tap(
+        find.descendant(of: poolOutcome, matching: find.text('Dismiss')),
+      );
+      await tester.pump();
+
+      expect(poolOutcome, findsNothing);
+      expect(nominationsOutcome(), findsOneWidget);
+    });
+
+    testWidgets('a failed read again keeps the nominations, with a refresh '
+        'banner in the footer on Games only, whose retry reads again', (
+      tester,
+    ) async {
+      var fails = false;
+      final detail = hosted();
+      final remote = serving(
+        detail,
+        nominations: (_) => fails
+            ? throw const EventRemoteTransientException('offline')
+            : [catan],
+      );
+      await showTabbed(tester, detail, remote);
+      await choose(tester, games);
+      expect(stale(), findsNothing);
+
+      fails = true;
+      await readEvent(tester);
+
+      expectInFooter(tester, stale());
+      expect(
+        find.descendant(of: stale(), matching: find.text(staleCopy)),
+        findsOneWidget,
+      );
+      expect(nominationsOf(tester).state.nominations, [catan]);
+
+      // What the games shown may be, so not on Details.
+      await choose(tester, details);
+      expect(stale(), findsNothing);
+      await choose(tester, games);
+      expectInFooter(tester, stale());
+
+      fails = false;
+      await tester.tap(find.byKey(EventDetailScreen.nominationsRetryKey));
+      await animate(tester);
+
+      expect(remote.nominationReads, hasLength(3));
+      expect(stale(), findsNothing);
+    });
+
+    testWidgets("the refresh banner follows the pool's, and keeps its place "
+        "and its retry's focus as the pool's goes", (tester) async {
+      var fails = false;
+      final detail = hosted();
+      final remote = serving(
+        detail,
+        pool: (_) => fails
+            ? throw const EventRemoteTransientException('offline')
+            : const [catanOffered],
+        nominations: (_) => fails
+            ? throw const EventRemoteTransientException('offline')
+            : [catan],
+      );
+      await showTabbed(tester, detail, remote);
+      await choose(tester, games);
+      final poolStale = find.byKey(EventDetailScreen.poolRefreshBannerKey);
+
+      fails = true;
+      await readEvent(tester);
+
+      expectInFooter(tester, poolStale);
+      expectInFooter(tester, stale());
+      expect(
+        tester.getRect(poolStale).top,
+        lessThan(tester.getRect(stale()).top),
+      );
+      FocusNode retryFocus() => tester
+          .widget<ButtonStyleButton>(
+            find.byKey(EventDetailScreen.nominationsRetryKey),
+          )
+          .focusNode!;
+      final retry = retryFocus()..requestFocus();
+      await tester.pump();
+      expect(retry.hasPrimaryFocus, isTrue);
+
+      // The pool's read again goes through, and its banner leaves.
+      fails = false;
+      tester
+          .element(find.byType(Scaffold).first)
+          .read<EventGamesBloc>()
+          .add(const EventGamesRetryRequested('e-1', ['att-me', 'att-2']));
+      await animate(tester);
+
+      expect(poolStale, findsNothing);
+      expectInFooter(tester, stale());
+      expect(retryFocus(), same(retry));
+      expect(retry.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a first read that fails has no refresh banner: nothing shown '
+        'is stale', (tester) async {
+      final detail = hosted();
+      await showTabbed(
+        tester,
+        detail,
+        serving(
+          detail,
+          nominations: (_) =>
+              throw const EventRemoteTransientException('offline'),
+        ),
+      );
+
+      await choose(tester, games);
+
+      expect(nominationsOf(tester).state.load, EventNominationsLoad.failed);
+      expect(stale(), findsNothing);
+    });
+
+    group('each write end has its copy and tone', () {
+      const success = BgeBannerTone.success;
+      const warning = BgeBannerTone.warning;
+      const error = BgeBannerTone.error;
+      const refused = EventWriteRefusedException('no', statusCode: 403);
+      const gone = EventRemoteNotFoundException('gone', statusCode: 404);
+      const offline = EventRemoteTransientException('offline');
+      const notGoing = EventWriteConflictException(
+        'not going',
+        statusCode: 409,
+      );
+      const badRequest = EventWriteConflictException('no', statusCode: 400);
+      const nominate = GameNominated('e-1', catanOffered);
+      final vote = NominationVoteCast('e-1', catan, VoteType.forGame);
+      final withdraw = NominationWithdrawn('e-1', catan);
+
+      final cases =
+          <
+            ({
+              String name,
+              EventNominationsEvent write,
+              EventRemoteException? thrown,
+              NominationStatus answered,
+              String copy,
+              BgeBannerTone tone,
+            })
+          >[
+            (
+              name: 'nominated, voting open',
+              write: nominate,
+              thrown: null,
+              answered: NominationStatus.open,
+              copy: 'Catan is nominated. Voting is open.',
+              tone: success,
+            ),
+            (
+              name: 'nominated, awaiting approval',
+              write: nominate,
+              thrown: null,
+              answered: NominationStatus.awaitingApproval,
+              copy:
+                  "Catan is nominated. It's waiting for a host to approve it.",
+              tone: success,
+            ),
+            (
+              name: 'nominated straight into the lineup',
+              write: nominate,
+              thrown: null,
+              answered: NominationStatus.approved,
+              copy: 'Catan is in the lineup.',
+              tone: success,
+            ),
+            (
+              name: 'nominated, settled any other way',
+              write: nominate,
+              thrown: null,
+              answered: NominationStatus.rejected,
+              copy: 'Catan is nominated.',
+              tone: success,
+            ),
+            (
+              name: 'a nominate refused',
+              write: nominate,
+              thrown: refused,
+              answered: NominationStatus.open,
+              copy: "Catan can't be nominated here.",
+              tone: warning,
+            ),
+            (
+              name: "a nominate whose supplier isn't going",
+              write: nominate,
+              thrown: notGoing,
+              answered: NominationStatus.open,
+              copy: "Catan can't be nominated: whoever brings it isn't going.",
+              tone: warning,
+            ),
+            (
+              name: 'a nominate of a game no longer supplied',
+              write: nominate,
+              thrown: badRequest,
+              answered: NominationStatus.open,
+              copy:
+                  "Catan isn't on their games any more, so it can't be "
+                  'nominated.',
+              tone: warning,
+            ),
+            (
+              name: 'a nominate that finds it gone',
+              write: nominate,
+              thrown: gone,
+              answered: NominationStatus.open,
+              copy: "Catan isn't in the games pool any more.",
+              tone: warning,
+            ),
+            (
+              name: 'a nominate failed',
+              write: nominate,
+              thrown: offline,
+              answered: NominationStatus.open,
+              copy: "Catan wasn't nominated. Try again.",
+              tone: error,
+            ),
+            (
+              name: 'a nominate dropped',
+              write: const NominationWriteDropped(
+                NominationWrite.nominate,
+                title: 'Catan',
+              ),
+              thrown: null,
+              answered: NominationStatus.open,
+              copy:
+                  "Catan wasn't nominated: something changed on this event "
+                  'first.',
+              tone: warning,
+            ),
+            (
+              name: 'a vote done',
+              write: vote,
+              thrown: null,
+              answered: NominationStatus.open,
+              copy: voteDoneCopy,
+              tone: success,
+            ),
+            (
+              name: 'a vote on a closed nomination',
+              write: vote,
+              thrown: badRequest,
+              answered: NominationStatus.open,
+              copy: 'Voting on Catan has closed.',
+              tone: warning,
+            ),
+            (
+              name: 'a vote refused',
+              write: vote,
+              thrown: refused,
+              answered: NominationStatus.open,
+              copy: "You can't vote on Catan.",
+              tone: warning,
+            ),
+            (
+              name: 'a vote that finds it gone',
+              write: vote,
+              thrown: gone,
+              answered: NominationStatus.open,
+              copy: "Catan isn't nominated any more.",
+              tone: warning,
+            ),
+            (
+              name: 'a vote failed',
+              write: vote,
+              thrown: offline,
+              answered: NominationStatus.open,
+              copy: "Your vote on Catan didn't go through. Try again.",
+              tone: error,
+            ),
+            (
+              name: 'a vote dropped',
+              write: const NominationWriteDropped(
+                NominationWrite.vote,
+                title: 'Catan',
+              ),
+              thrown: null,
+              answered: NominationStatus.open,
+              copy:
+                  "Your vote on Catan wasn't sent: something changed on this "
+                  'event first.',
+              tone: warning,
+            ),
+            (
+              name: 'a withdrawal done',
+              write: withdraw,
+              thrown: null,
+              answered: NominationStatus.open,
+              copy: 'You withdrew Catan.',
+              tone: success,
+            ),
+            (
+              name: 'a withdrawal of a decided nomination',
+              write: withdraw,
+              thrown: badRequest,
+              answered: NominationStatus.open,
+              copy: "Catan can't be withdrawn now: it has been decided.",
+              tone: warning,
+            ),
+            (
+              name: 'a withdrawal refused',
+              write: withdraw,
+              thrown: refused,
+              answered: NominationStatus.open,
+              copy: "You can't withdraw Catan.",
+              tone: warning,
+            ),
+            (
+              name: 'a withdrawal that finds it gone',
+              write: withdraw,
+              thrown: gone,
+              answered: NominationStatus.open,
+              copy: "Catan isn't nominated any more.",
+              tone: warning,
+            ),
+            (
+              name: 'a withdrawal failed',
+              write: withdraw,
+              thrown: offline,
+              answered: NominationStatus.open,
+              copy: "Catan wasn't withdrawn. Try again.",
+              tone: error,
+            ),
+            (
+              name: 'a withdrawal dropped',
+              write: const NominationWriteDropped(
+                NominationWrite.withdraw,
+                title: 'Catan',
+              ),
+              thrown: null,
+              answered: NominationStatus.open,
+              copy:
+                  "Catan wasn't withdrawn: something changed on this event "
+                  'first.',
+              tone: warning,
+            ),
+          ];
+
+      for (final (:name, :write, :thrown, :answered, :copy, :tone) in cases) {
+        testWidgets('$name: "$copy"', (tester) async {
+          final detail = hosted();
+          await showTabbed(
+            tester,
+            detail,
+            serving(
+              detail,
+              nominated: (_) => thrown != null
+                  ? throw thrown
+                  : catan.copyWith(status: answered),
+              voteCast: (_) {
+                if (thrown != null) throw thrown;
+              },
+              withdrawn: (_) => thrown != null
+                  ? throw thrown
+                  : catan.copyWith(status: NominationStatus.withdrawn),
+            ),
+          );
+
+          nominationsOf(tester).add(write);
+          await animate(tester);
+
+          expect(inNominationsOutcome(copy), findsOneWidget);
+          expect(
+            tester.widget<BgeInlineBanner>(nominationsOutcome()).tone,
+            tone,
+          );
+        });
+      }
+    });
+  });
+
   group('not found', () {
     FakeEventRemote gone() => FakeEventRemote.detail(
       (_) => throw const EventRemoteNotFoundException('gone'),

@@ -878,6 +878,230 @@
   "@eventsGamesOfferDropped": {
     "description": "Banner at the foot of an event's screen when the games the user picked on the Offer games page were not sent at all, because the event changed while the page was open: for example the user answered Not going, or the event was cancelled."
   },
+  "eventsNominatedOpen": "{title} is nominated. Voting is open.",
+  "@eventsNominatedOpen": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game from the games people offer to bring, and the event's hosts, co-hosts and participants can now vote on whether to play it. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedAwaiting": "{title} is nominated. It's waiting for a host to approve it.",
+  "@eventsNominatedAwaiting": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game, when the event's rules have one of its hosts approve a nomination before anything else happens to it. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedInLineup": "{title} is in the lineup.",
+  "@eventsNominatedInLineup": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game and the event's rules put it straight into the lineup, the games to be played, with no vote. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedSettled": "{title} is nominated.",
+  "@eventsNominatedSettled": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game and the server answered in a way the app doesn't expect of a new nomination: it says only that the nomination went through. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateRefused": "{title} can't be nominated here.",
+  "@eventsNominateRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user nominate a game for the event. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateSupplierNotGoing": "{title} can't be nominated: whoever brings it isn't going.",
+  "@eventsNominateSupplierNotGoing": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it has answered Not going to the event. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateNotSupplied": "{title} isn't on their games any more, so it can't be nominated.",
+  "@eventsNominateNotSupplied": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it no longer offers that game: 'their' is that person. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateGone": "{title} isn't in the games pool any more.",
+  "@eventsNominateGone": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because it is no longer among the games people offer to bring (the games pool), or the date it was nominated for is gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateFailed": "{title} wasn't nominated. Try again.",
+  "@eventsNominateFailed": {
+    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateDropped": "{title} wasn't nominated: something changed on this event first.",
+  "@eventsNominateDropped": {
+    "description": "Banner at the foot of an event's screen when a nomination was not sent at all, because the event changed between the user's press and the moment it would have gone: for example the game left the games pool, or the event was cancelled. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteDone": "Your vote on {title} is in.",
+  "@eventsVoteDone": {
+    "description": "Banner at the foot of an event's screen once the user's vote on a nominated game (for it, against it, or interested) is recorded. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteClosed": "Voting on {title} has closed.",
+  "@eventsVoteClosed": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game wasn't taken, because the nomination is no longer open for votes. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteRefused": "You can't vote on {title}.",
+  "@eventsVoteRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused the user's vote on a nominated game. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteGone": "{title} isn't nominated any more.",
+  "@eventsVoteGone": {
+    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteFailed": "Your vote on {title} didn't go through. Try again.",
+  "@eventsVoteFailed": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game failed for any other reason, such as no connection. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteDropped": "Your vote on {title} wasn't sent: something changed on this event first.",
+  "@eventsVoteDropped": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game was not sent at all, because the event changed between the press and the moment it would have gone. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawDone": "You withdrew {title}.",
+  "@eventsWithdrawDone": {
+    "description": "Banner at the foot of an event's screen once the user withdrew a game they nominated: it is no longer up for a vote, and its votes are lost. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawNotWithdrawable": "{title} can't be withdrawn now: it has been decided.",
+  "@eventsWithdrawNotWithdrawable": {
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a game they nominated after its nomination was decided: by the vote, or by a host approving or rejecting it. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawRefused": "You can't withdraw {title}.",
+  "@eventsWithdrawRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user withdraw a nomination. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawGone": "{title} isn't nominated any more.",
+  "@eventsWithdrawGone": {
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a nomination that is already gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawFailed": "{title} wasn't withdrawn. Try again.",
+  "@eventsWithdrawFailed": {
+    "description": "Banner at the foot of an event's screen when withdrawing a nomination failed for any other reason, such as no connection. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawDropped": "{title} wasn't withdrawn: something changed on this event first.",
+  "@eventsWithdrawDropped": {
+    "description": "Banner at the foot of an event's screen when a withdrawal was not sent at all, because the event changed between the user's press and the moment it would have gone. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominationsRefreshFailed": "Couldn't refresh nominations. They may be out of date.",
+  "@eventsNominationsRefreshFailed": {
+    "description": "Banner at the foot of the Games tab of an event's screen, with a Try again button (eventsRefreshRetry), when reading the nominations again failed: the nominations shown are the ones read before."
+  },
   "eventsOfferTitle": "Offer games",
   "@eventsOfferTitle": {
     "description": "Title of the page, opened from the Games tab of an event's screen, that lists the user's collection so they can pick games to offer to bring to the event."
