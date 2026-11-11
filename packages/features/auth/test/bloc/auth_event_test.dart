@@ -1,6 +1,8 @@
 import 'package:auth/src/bloc/auth_event.dart';
+import 'package:bge_test_support/domain.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:observability/observability.dart';
 
 void main() {
@@ -71,6 +73,32 @@ void main() {
     });
   });
 
+  group('AuthRepositoryStateChanged.toString', () {
+    final session = testAuthResponse();
+    final changed = AuthRepositoryStateChanged(
+      AuthStateAuthenticated(session: session),
+    );
+
+    test('prints only the state type', () {
+      expect(
+        changed.toString(),
+        'AuthRepositoryStateChanged(AuthStateAuthenticated)',
+      );
+    });
+
+    test('never prints the session token or the user', () {
+      final text = changed.toString();
+
+      for (final secret in [
+        session.token,
+        session.user.email,
+        session.user.username,
+      ]) {
+        expect(text, isNot(contains(secret)), reason: secret);
+      }
+    });
+  });
+
   group('string interpolation', () {
     final previous = EquatableConfig.stringify;
     setUp(() => EquatableConfig.stringify = true);
@@ -80,5 +108,16 @@ void main() {
       expect('$signIn', isNot(contains(password)));
       expect('$register', isNot(contains(password)));
     });
+
+    test(
+      'never prints the session token, even with EquatableConfig.stringify',
+      () {
+        final changed = AuthRepositoryStateChanged(
+          AuthStateAuthenticated(session: testAuthResponse()),
+        );
+
+        expect('$changed', isNot(contains(testAuthResponse().token)));
+      },
+    );
   });
 }
