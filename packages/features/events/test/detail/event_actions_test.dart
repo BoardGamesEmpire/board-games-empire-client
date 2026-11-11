@@ -11,12 +11,20 @@ void main() {
   // Spelled out so a change to a set shows up in the diff of this file.
   const rsvp = {EventAction.rsvp};
 
-  // A participant or guest answers for themselves, on the invitation and on
-  // the proposed dates (#507), and manages their own offered games (#516).
-  const participant = {
+  // A guest answers for themselves, on the invitation and on the proposed
+  // dates (#507), and manages their own offered games (#516). Nominating and
+  // voting on games is not theirs (#517).
+  const guest = {
     EventAction.rsvp,
     EventAction.voteAvailability,
     EventAction.offerGame,
+  };
+
+  // A participant holds the guest's set and nominates and votes on games.
+  const participant = {
+    ...guest,
+    EventAction.nominateGame,
+    EventAction.voteGame,
   };
 
   const organizer = {
@@ -74,6 +82,8 @@ void main() {
     EventAction.approveGame,
     EventAction.rejectGame,
     EventAction.resolveNomination,
+    EventAction.nominateGame,
+    EventAction.voteGame,
     EventAction.offerGame,
   };
 
@@ -85,7 +95,7 @@ void main() {
     EventRole.organizer: organizer,
     EventRole.moderator: moderator,
     EventRole.participant: participant,
-    EventRole.guest: participant,
+    EventRole.guest: guest,
     EventRole.spectator: rsvp,
     EventRole.unknown: const {},
   };
@@ -189,6 +199,22 @@ void main() {
         EventRole.participant,
         EventRole.guest,
       ]);
+    });
+
+    test("nominateGame and voteGame are the host's, co-host's and "
+        "participant's, and no guest's (#517)", () {
+      for (final action in [EventAction.nominateGame, EventAction.voteGame]) {
+        final who = [
+          for (final role in EventRole.values)
+            if (eventActionsFor(plain, eventRole: role).contains(action)) role,
+        ];
+
+        expect(who, [
+          EventRole.host,
+          EventRole.coHost,
+          EventRole.participant,
+        ]);
+      }
     });
 
     test(

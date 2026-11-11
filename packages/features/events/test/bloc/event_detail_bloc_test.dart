@@ -1447,6 +1447,8 @@ void main() {
         EventAction.rsvp,
         EventAction.voteAvailability,
         EventAction.offerGame,
+        EventAction.nominateGame,
+        EventAction.voteGame,
       });
       verify(
         () => logger.warn(

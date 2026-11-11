@@ -19,6 +19,17 @@
 /// offering a game from a collection and taking it back (#516), because every
 /// role that may add to an offered-games list may remove from it. Adding a
 /// game directly has no action, because the event's policy decides it (#518).
+/// `nominateGame` covers nominating a game and withdrawing your own
+/// nomination, as `offerGame` covers offering and taking back, and `voteGame`
+/// covers voting on one (#517).
+///
+/// A guest holds neither, though a participant holds both. The catalog gives
+/// `create:event_game_nomination`, `create:event_game_vote` and
+/// `update:event_game_nomination:withdraw` to the host (`:217-226`), the
+/// co-host (the host's list less the host-only slugs, `:490`) and the
+/// participant (`:533-556`), and leaves them off the guest's, so the two roles
+/// no longer share a set. An organizer, moderator, spectator, household owner
+/// and household admin hold none of them either.
 library;
 
 import 'package:models/domain.dart';
@@ -85,6 +96,16 @@ enum EventAction {
   /// admin still needs their own row on the roster to have a list to add to,
   /// which `offerGamesGate` asks for.
   offerGame,
+
+  /// Nominate a game for the event's dates, and withdraw your own nomination
+  /// (#517). One action for both, because every role that may nominate may
+  /// withdraw. Held by the host, co-host and participant only: not by a guest,
+  /// organizer, moderator, spectator, or household owner or admin.
+  nominateGame,
+
+  /// Vote on a nominated game (#517). Held by the roles that hold
+  /// [nominateGame].
+  voteGame,
 }
 
 /// The actions [event] offers a viewer holding [eventRole] on it and, on a
@@ -111,7 +132,8 @@ Set<EventAction> eventActionsFor(
     EventRole.coHost => _coHost,
     EventRole.organizer => _organizer,
     EventRole.moderator => _moderator,
-    EventRole.participant || EventRole.guest => _participantOrGuest,
+    EventRole.participant => _participant,
+    EventRole.guest => _guest,
     EventRole.spectator => _attending,
     EventRole.unknown || null => const <EventAction>{},
   };
@@ -293,6 +315,10 @@ const _host = <EventAction>{
   EventAction.resolveNomination,
   // `create:attendee_game_list` and `delete:attendee_game_list`
   EventAction.offerGame,
+  // `create:event_game_nomination` and `update:event_game_nomination:withdraw`
+  EventAction.nominateGame,
+  // `create:event_game_vote`
+  EventAction.voteGame,
 };
 
 /// `EventCoHost`: every action except `delete`, which the catalog gives the
@@ -315,6 +341,10 @@ const _coHost = <EventAction>{
   EventAction.resolveNomination,
   // `create:attendee_game_list` and `delete:attendee_game_list`
   EventAction.offerGame,
+  // `create:event_game_nomination` and `update:event_game_nomination:withdraw`
+  EventAction.nominateGame,
+  // `create:event_game_vote`
+  EventAction.voteGame,
 };
 
 /// `EventOrganizer`.
@@ -350,9 +380,19 @@ const _moderator = <EventAction>{
   EventAction.offerGame,
 };
 
-/// `EventParticipant` and `EventGuest`: they answer for themselves, to the
-/// invitation and on the proposed dates, and offer games to the event.
-const _participantOrGuest = <EventAction>{
+/// `EventParticipant`: the guest's set, and nominates and votes on games.
+const _participant = <EventAction>{
+  ..._guest,
+  // `create:event_game_nomination` and `update:event_game_nomination:withdraw`
+  EventAction.nominateGame,
+  // `create:event_game_vote`
+  EventAction.voteGame,
+};
+
+/// `EventGuest`: answers for themselves, to the invitation and on the proposed
+/// dates, and offers games to the event. No nominating or voting on games: the
+/// catalog leaves those slugs off the guest's list.
+const _guest = <EventAction>{
   // `update:event_attendee:status:self`
   EventAction.rsvp,
   // `create:event_availability_vote`
