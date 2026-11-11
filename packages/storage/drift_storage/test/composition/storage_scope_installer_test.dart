@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
@@ -142,21 +143,11 @@ class _AlwaysFailingFactory extends EncryptedExecutorFactory {
 ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   id: id,
   displayName: 'Test Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.disconnected,
   bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
-  cachedIdentity: const ServerIdentity(
+  cachedIdentity: testServerIdentity().copyWith(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
-    issuer: 'https://api.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
   ),
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
@@ -17,7 +18,6 @@ import '../support/platform_game_fixture.dart';
 
 const _kUserId = 'user-abc';
 const _kServerId = 'server-uuid-1';
-const _kAuthBase = '/api/auth';
 
 /// Minimal [AuthRepository] whose [currentAuthState] is scriptable; only
 /// that getter is exercised by the lazy user-id provider (#128), so every
@@ -75,47 +75,16 @@ class _FakeAuthRepository implements AuthRepository {
   Stream<AuthState> watchAuthState() => throw UnimplementedError();
 }
 
-AuthResponse _session({String userId = _kUserId}) => AuthResponse(
-  token: 'tok',
-  user: AuthUser(
-    id: userId,
-    username: 'tester',
-    email: 'tester@example.com',
-    emailVerified: true,
-    createdAt: DateTime.utc(2024),
-    updatedAt: DateTime.utc(2024),
-  ),
-  expiresAt: DateTime.utc(2099),
-);
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: _kServerId,
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+AuthResponse _session({String userId = _kUserId}) =>
+    testAuthResponse().copyWith.user(id: userId);
 
 ServerConfig _config() => ServerConfig(
   id: 'local-1',
   displayName: 'My Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.active,
   bgeServerId: _kServerId,
-  cachedIdentity: _identity(),
+  cachedIdentity: testServerIdentity(),
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 

@@ -28,6 +28,10 @@ dependencies:
     path: ../../core/models
 
 dev_dependencies:
+  # Shared ServerIdentity and AuthResponse test builders (#409).
+  bge_test_support:
+    path: ../../testing/support
+
   # Browser suites install into a real container, the same implementation the
   # web bootstrap uses.
   di:
@@ -36,4 +40,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+# `bge_test_support` and its `ui_tokens` declare `uses-material-design: true`;
+# without the same flag here `flutter test` warns on every run.
 flutter:
+  uses-material-design: true

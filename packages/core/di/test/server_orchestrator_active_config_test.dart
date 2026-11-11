@@ -111,7 +111,7 @@ void main() {
       addTearDown(failingOrchestrator.dispose);
       await failingOrchestrator.initialize();
 
-      final identity = testServerIdentity('new');
+      final identity = testIdentityFor('new');
       registerFallbackValue(identity);
       when(
         () => repo.addServer(

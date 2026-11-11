@@ -16,7 +16,7 @@ void main() {
   });
 
   group('ActiveServer', () {
-    final identity = testServerIdentity('a');
+    final identity = testIdentityFor('a');
     final container = DependencyContainerImpl();
 
     ActiveServer build({DependencyContainer? withContainer}) => ActiveServer(
@@ -92,7 +92,7 @@ void main() {
       expect(active, isNotNull);
       expect(active!.serverId, 'a');
       expect(active.displayName, 'Server a');
-      expect(active.identity, testServerIdentity('a'));
+      expect(active.identity, testIdentityFor('a'));
       expect(identical(active.container, container), isTrue);
     });
 

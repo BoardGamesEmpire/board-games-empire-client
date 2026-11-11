@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -24,22 +25,16 @@ ServerConfig testServerConfig({
   serverUrl: 'https://$id.example.com',
   connectionState: state,
   bgeServerId: 'bge-$id',
-  cachedIdentity: testServerIdentity(id),
+  cachedIdentity: testIdentityFor(id),
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );
 
-ServerIdentity testServerIdentity(String id) => ServerIdentity(
+/// The shared identity, given the `bgeServerId` and `serverUrl` that
+/// [testServerConfig] derives from [id], so a config and its cached identity
+/// agree.
+ServerIdentity testIdentityFor(String id) => testServerIdentity().copyWith(
   serverId: 'bge-$id',
   issuer: 'https://$id.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
 );
 
 /// A lifecycle-faithful [ServerContext] mock: state transitions mirror

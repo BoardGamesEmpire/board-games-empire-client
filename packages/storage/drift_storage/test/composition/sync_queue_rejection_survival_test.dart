@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
@@ -46,7 +47,6 @@ import '../support/fixed_clock.dart';
 /// `native_platform/test/native_root_composition_test.dart` does (#435).
 const _kUserA = 'user-a';
 const _kServerId = 'server-uuid-1';
-const _kAuthBase = '/api/auth';
 
 class _FakeAuthRepository implements AuthRepository {
   _FakeAuthRepository(this.authState);
@@ -98,47 +98,24 @@ class _FakeAuthRepository implements AuthRepository {
   Stream<AuthState> watchAuthState() => throw UnimplementedError();
 }
 
-AuthResponse _session(String userId) => AuthResponse(
-  token: 'tok-$userId',
-  user: AuthUser(
-    id: userId,
-    username: 'tester-$userId',
-    email: '$userId@example.com',
-    emailVerified: true,
-    createdAt: DateTime.utc(2024),
-    updatedAt: DateTime.utc(2024),
-  ),
-  expiresAt: DateTime.utc(2099),
-);
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: _kServerId,
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+/// [userId]'s session. Its token, username and email differ per user too, so
+/// nothing keyed on them instead of the user id passes by sharing one value.
+AuthResponse _session(String userId) => testAuthResponse()
+    .copyWith(token: 'tok-$userId')
+    .copyWith
+    .user(
+      id: userId,
+      username: 'tester-$userId',
+      email: '$userId@example.com',
+    );
 
 ServerConfig _config() => ServerConfig(
   id: 'local-1',
   displayName: 'My Server',
-  serverUrl: 'https://api.example.com',
+  serverUrl: testServerUrl,
   connectionState: ConnectionState.active,
   bgeServerId: _kServerId,
-  cachedIdentity: _identity(),
+  cachedIdentity: testServerIdentity(),
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 

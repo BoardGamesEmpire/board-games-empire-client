@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
@@ -8,21 +9,10 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 const _kBgeServerId = 'bge-1';
-const _kServerUrl = 'https://api.example.com';
+const String _kServerUrl = testServerUrl;
 
-ServerIdentity _makeIdentity() => const ServerIdentity(
-  serverId: _kBgeServerId,
-  issuer: _kServerUrl,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+ServerIdentity _makeIdentity() =>
+    testServerIdentity().copyWith(serverId: _kBgeServerId);
 
 /// A time no write made now can equal, so a store that touched `updated_at`
 /// can't pass by landing in the same millisecond as `addServer`.

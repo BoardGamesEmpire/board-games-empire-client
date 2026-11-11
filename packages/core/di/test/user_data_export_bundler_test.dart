@@ -1,3 +1,4 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -33,30 +34,14 @@ const _buildInfo = BuildInfo(
   packageName: 'com.example.bge',
 );
 
-final _session = AuthResponse(
-  token: 'session-token',
-  user: AuthUser(
-    id: 'user-1',
-    username: 'alice',
-    email: 'alice@example.com',
-    emailVerified: true,
-    createdAt: DateTime.utc(2026),
-    updatedAt: DateTime.utc(2026),
-  ),
+final AuthResponse _session = testAuthResponse().copyWith.user(
+  id: 'user-1',
+  username: 'alice',
 );
 
-ServerIdentity _identity() => const ServerIdentity(
-  wellKnownSchemaVersion: 1,
+ServerIdentity _identity() => testServerIdentity().copyWith(
   serverId: _bgeServerId,
   name: _vendedServerName,
-  issuer: 'https://bge.example.com',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
 );
 
 ServerConfig _serverConfig() => ServerConfig(

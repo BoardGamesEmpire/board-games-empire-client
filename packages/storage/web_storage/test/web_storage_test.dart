@@ -36,6 +36,7 @@
 @TestOn('browser')
 library;
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/wasm.dart';
@@ -63,22 +64,10 @@ Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
   );
 }
 
-/// Shaped like `testServerIdentity` in `core/di`'s fixtures; only
-/// [ServerIdentity.serverId] matters here — it is what the database name is
-/// derived from.
-ServerIdentity _identity(String serverId) => ServerIdentity(
-  serverId: serverId,
-  issuer: 'https://origin.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test Origin',
-  deviceAuthorizationEndpoint: '/api/auth/device',
-  authBasePath: '/api/auth',
-  sessionEndpoint: '/api/auth/get-session',
-  signOutEndpoint: '/api/auth/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+/// The shared identity under [serverId]: it is what the database name is
+/// derived from, and nothing else about the identity matters here.
+ServerIdentity _identity(String serverId) =>
+    testServerIdentity().copyWith(serverId: serverId);
 
 void main() {
   group('WebWasmExecutorFactory', () {
