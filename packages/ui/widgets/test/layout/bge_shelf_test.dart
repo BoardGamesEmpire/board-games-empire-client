@@ -1476,22 +1476,23 @@ void main() {
     const tileCount = 12;
     const tileWidth = 200.0;
 
-    Widget hosted({void Function(int index)? onTap}) => Scaffold(
-      body: _shelf(
-        children: [
-          for (var i = 0; i < tileCount; i++)
-            SizedBox(
-              key: _coverKey(i),
-              width: tileWidth,
-              height: 100,
-              child: InkWell(
-                onTap: () => onTap?.call(i),
-                child: Center(child: Text('Tile $i')),
-              ),
-            ),
-        ],
-      ),
-    );
+    Widget hosted({void Function(int index)? onTap, int count = tileCount}) =>
+        Scaffold(
+          body: _shelf(
+            children: [
+              for (var i = 0; i < count; i++)
+                SizedBox(
+                  key: _coverKey(i),
+                  width: tileWidth,
+                  height: 100,
+                  child: InkWell(
+                    onTap: () => onTap?.call(i),
+                    child: Center(child: Text('Tile $i')),
+                  ),
+                ),
+            ],
+          ),
+        );
 
     Finder row() => find.descendant(
       of: find.byType(BgeShelf),
@@ -1522,6 +1523,32 @@ void main() {
         expect(copies, isEmpty);
       },
     );
+
+    testWidgets('a mouse drag across a row that fits selects nothing', (
+      tester,
+    ) async {
+      final copies = captureClipboardCopies();
+      await tester.pumpWidget(
+        hostUnderSelectionRegion(tester, hosted(count: 2)),
+      );
+      await tester.pumpAndSettle();
+
+      // With nothing to scroll the row has no drag recognizer, so only the
+      // shelf's own opt-out keeps the region from selecting the tile labels.
+      expect(_rowOf(tester).maxScrollExtent, 0);
+
+      await mouseDrag(
+        tester,
+        tester.getTopLeft(find.byKey(_coverKey(0))) + const Offset(4, 50),
+        tester.getTopRight(find.byKey(_coverKey(1))) + const Offset(-4, 50),
+      );
+      await tester.pumpAndSettle();
+
+      // The region still answers the copy, with an empty string: the heading
+      // is selectable, and a drag over nothing selectable selects none of it.
+      await sendCopyShortcut(tester);
+      expect(copies.join(), isEmpty);
+    });
 
     for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
       testWidgets('a ${kind.name} tap on a tile still reaches it', (

@@ -37,9 +37,10 @@ import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 /// so a drag the region wins cannot select it. It does not take the region
 /// out of the gesture arena — the region's recognizers sit on one detector
 /// around its whole subtree — so the surface's drag still has to win, which
-/// only the mouse check shows. `BgeShelf`'s widened `dragDevices` win it
-/// (#338). Nothing enforces this rule yet; #857 tracks giving it a
-/// mechanism.
+/// only the mouse check shows. `BgeShelf` does both: its widened
+/// `dragDevices` win the drag, and its wrapper covers the row that fits,
+/// which has no drag to win (#338). Nothing enforces this rule yet; #857
+/// tracks giving it a mechanism.
 class BgeSelectionRegion extends StatelessWidget {
   /// Makes [child] selectable on a pointer platform.
   const BgeSelectionRegion({required this.child, super.key});
