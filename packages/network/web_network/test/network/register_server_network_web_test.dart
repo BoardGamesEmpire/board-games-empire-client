@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
@@ -25,7 +26,6 @@ import 'package:web_network/src/network/web_clock_skew_diagnostic_interceptor.da
 import 'package:web_network/src/network/web_dio_factory.dart';
 
 import '../support/scripted_adapter.dart';
-import '../support/server_identity_fixture.dart';
 
 void main() {
   late DependencyContainerImpl container;

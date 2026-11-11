@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -10,21 +11,8 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
 
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+ServerIdentity _identity() =>
+    testServerIdentity().copyWith(strategies: const []);
 
 Map<String, dynamic> _sessionJson() => {
   'session': {
@@ -76,7 +64,7 @@ void main() {
       Options? sentOptions;
       when(
         () => mockDio.post<String>(
-          '$_kAuthBase/sign-out',
+          '$testAuthBasePath/sign-out',
           options: any(named: 'options'),
         ),
       ).thenAnswer((invocation) async {
@@ -105,7 +93,7 @@ void main() {
         'transitions to unauthenticated', () async {
       when(
         () => mockDio.post<String>(
-          '$_kAuthBase/sign-out',
+          '$testAuthBasePath/sign-out',
           options: any(named: 'options'),
         ),
       ).thenThrow(
@@ -128,7 +116,7 @@ void main() {
       // Reach an authenticated state first via the session endpoint.
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer(
@@ -143,7 +131,7 @@ void main() {
 
       when(
         () => mockDio.post<String>(
-          '$_kAuthBase/sign-out',
+          '$testAuthBasePath/sign-out',
           options: any(named: 'options'),
         ),
       ).thenThrow(
@@ -177,7 +165,7 @@ void main() {
         final gate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gate.future);
@@ -217,7 +205,7 @@ void main() {
         final gate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gate.future);
@@ -251,7 +239,7 @@ void main() {
           'validateStatus resolves it rather than throwing', () async {
         when(
           () => mockDio.post<String>(
-            '$_kAuthBase/sign-out',
+            '$testAuthBasePath/sign-out',
             options: any(named: 'options'),
           ),
         ).thenAnswer(
@@ -270,7 +258,7 @@ void main() {
         () async {
           when(
             () => mockDio.post<String>(
-              '$_kAuthBase/sign-out',
+              '$testAuthBasePath/sign-out',
               options: any(named: 'options'),
             ),
           ).thenThrow(
@@ -295,7 +283,7 @@ void main() {
     setUp(() {
       when(
         () => mockDio.post<String>(
-          '$_kAuthBase/sign-out',
+          '$testAuthBasePath/sign-out',
           options: any(named: 'options'),
         ),
       ).thenAnswer(
@@ -313,7 +301,7 @@ void main() {
         final gate = Completer<Response<String>>();
         when(
           () => mockDio.get<String>(
-            '$_kAuthBase/get-session',
+            '$testAuthBasePath/get-session',
             options: any(named: 'options'),
           ),
         ).thenAnswer((_) => gate.future);
@@ -344,7 +332,7 @@ void main() {
       final gate = Completer<Response<String>>();
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) => gate.future);
@@ -377,7 +365,7 @@ void main() {
       final gate = Completer<Response<String>>();
       when(
         () => mockDio.get<String>(
-          '$_kAuthBase/get-session',
+          '$testAuthBasePath/get-session',
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) => gate.future);

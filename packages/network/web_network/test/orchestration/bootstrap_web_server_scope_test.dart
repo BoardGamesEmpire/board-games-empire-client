@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -13,29 +14,7 @@ import 'package:web_network/src/orchestration/bootstrap_web_server_scope.dart';
 
 class _MockWellKnownClient extends Mock implements WellKnownClient {}
 
-const _kOrigin = 'https://bge.example.com';
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: _kOrigin,
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+const String _kOrigin = testServerUrl;
 
 void main() {
   late _MockWellKnownClient wellKnownClient;
@@ -68,7 +47,7 @@ void main() {
 
   void stubFetchSuccess() =>
       when(() => wellKnownClient.fetchIdentity(any()))
-          .thenAnswer((_) async => _identity());
+          .thenAnswer((_) async => testServerIdentity());
 
   group('bootstrapWebServerScope', () {
     test('fetches the origin identity and returns a scope with a non-null '
@@ -90,7 +69,7 @@ void main() {
       final active = scope!.active!;
       expect(active.serverId, 'server-uuid-1');
       expect(active.displayName, 'Test BGE Server');
-      expect(active.identity, _identity());
+      expect(active.identity, testServerIdentity());
     });
 
     test(
@@ -197,7 +176,7 @@ void main() {
           },
         );
 
-        expect(seenIdentity, _identity());
+        expect(seenIdentity, testServerIdentity());
         expect(resolvedDuringInstall, isNotNull);
         expect(scope!.active!.container.get<Dio>(), resolvedDuringInstall);
       },

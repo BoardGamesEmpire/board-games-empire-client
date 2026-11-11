@@ -1,13 +1,12 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart' show SessionIdentityGuard;
-
 import 'package:web_network/src/auth/session_channel.dart';
 import 'package:web_network/src/auth/web_session_monitor.dart';
 import 'package:web_network/src/network/register_server_network_web.dart';
 
 import '../support/fake_session_channel.dart';
-import '../support/server_identity_fixture.dart';
 
 /// How the network registration composes the session monitor (#432).
 void main() {

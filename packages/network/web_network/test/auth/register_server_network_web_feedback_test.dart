@@ -1,11 +1,9 @@
+import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:dio_network/dio_network.dart' show FeedbackDioTransport;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
-
 import 'package:web_network/src/network/register_server_network_web.dart';
-
-import '../support/server_identity_fixture.dart';
 
 /// #97, web leg: the single-origin container carries the same
 /// `FeedbackTransport` registration as native — the browser attaches the

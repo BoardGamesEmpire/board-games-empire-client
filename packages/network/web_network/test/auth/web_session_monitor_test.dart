@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart' show SessionConfirmation;
@@ -16,22 +17,10 @@ import '../support/fake_session_channel.dart';
 
 class MockDio extends Mock implements Dio {}
 
-const _kAuthBase = '/api/auth';
-const _kSession = '$_kAuthBase/get-session';
+const _kSession = '$testAuthBasePath/get-session';
 
-ServerIdentity _identity() => const ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: _kSession,
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: true,
-  twoFactorSupported: true,
-  anonymousAuthSupported: true,
-);
+ServerIdentity _identity() =>
+    testServerIdentity().copyWith(strategies: const []);
 
 Response<String> _sessionFor(String userId) => Response(
   data: jsonEncode({

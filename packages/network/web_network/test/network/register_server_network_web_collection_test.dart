@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/network.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
@@ -7,10 +8,7 @@ import 'package:dio_network/dio_network.dart'
     show GameCollectionRemoteDataSourceImpl;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:network_interface/network_interface.dart';
-
 import 'package:web_network/src/network/register_server_network_web.dart';
-
-import '../support/server_identity_fixture.dart';
 
 /// A collection row as `GET /api/game-collections` returns it, trimmed to the
 /// fields the mapper requires — the embedded platform game summary among them
