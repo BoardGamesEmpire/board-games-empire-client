@@ -113,6 +113,7 @@ workspace:
   - packages/features/game_filters
   - packages/features/household
   - packages/features/server_onboarding
+  - packages/features/server_settings
   - packages/features/sync
   - packages/features/user_search
   - packages/storage/drift_storage

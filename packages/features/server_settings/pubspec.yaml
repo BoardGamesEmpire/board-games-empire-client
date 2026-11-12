@@ -1,0 +1,45 @@
+name: server_settings
+description: "Server settings admin feature: read the server's settings row and save its mail and sign-in settings one group at a time, and send a test email"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  equatable: ^2.1.0
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  flutter_localizations:
+    sdk: flutter
+  interfaces:
+    path: ../../core/interfaces
+  intl: ^0.20.2
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  reactive_forms: ^18.1.1
+  # Design system (#165). Declared now so the form and screen tasks do not
+  # touch the pubspec again.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
+
+dev_dependencies:
+  # `FakeCallerAccessRepository` (#456), the session's access set by hand.
+  bge_test_support:
+    path: ../../testing/support
+  bloc_test: ^10.0.0
+  fake_async: ^1.3.3
+  flutter_test:
+    sdk: flutter
+  l10n_test_support:
+    path: ../../testing/l10n
+
+flutter:
+  generate: true
+  uses-material-design: true

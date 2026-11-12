@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "serverSettingsTitle": "Server settings",
+  "@serverSettingsTitle": {
+    "description": "Title of the admin screen where an administrator changes the server's own settings, such as how it sends email and how people may sign in."
+  }
+}
