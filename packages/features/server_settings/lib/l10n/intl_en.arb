@@ -4,6 +4,30 @@
   "@serverSettingsTitle": {
     "description": "Title of the admin screen where an administrator changes the server's own settings, such as how it sends email and how people may sign in."
   },
+  "serverSettingsLoading": "Loading the server's settings…",
+  "@serverSettingsLoading": {
+    "description": "Announced on the server settings screen while the server's settings are being read. Not drawn: a spinner shows instead."
+  },
+  "serverSettingsLoadFailed": "Couldn't load the server's settings.",
+  "@serverSettingsLoadFailed": {
+    "description": "Title shown on the server settings screen when the server's settings could not be read, for a reason that says nothing about access."
+  },
+  "serverSettingsLoadFailedBody": "Check your connection and try again.",
+  "@serverSettingsLoadFailedBody": {
+    "description": "Body under the title shown when the server settings screen could not read the server's settings."
+  },
+  "serverSettingsRetry": "Try again",
+  "@serverSettingsRetry": {
+    "description": "Button that reads the server's settings again after the server settings screen failed to read them."
+  },
+  "serverSettingsRefused": "Your role can't view the server's settings.",
+  "@serverSettingsRefused": {
+    "description": "Shown in place of the settings on the server settings screen when the server refused to show them to the signed-in user's role."
+  },
+  "serverSettingsReadOnly": "Your role can view these settings but not change them.",
+  "@serverSettingsReadOnly": {
+    "description": "Shown at the top of the server settings screen when the signed-in user's role may read the server's settings but not change them, so every field is read-only and there is no save button."
+  },
   "mailGroupTitle": "Mail",
   "@mailGroupTitle": {
     "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through, its sender address, and password reset links."
@@ -130,19 +154,55 @@
   "@mailLinkLifetimeLabel": {
     "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
   },
-  "mailLinkLifetimeHelper": "{readout}. From 15 minutes to 7 days.",
+  "mailLinkLifetimeHelper": "{readout}. From {min} to {max}.",
   "@mailLinkLifetimeHelper": {
-    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows.",
+    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows, read the same way.",
     "placeholders": {
       "readout": {
         "type": "String",
         "example": "1 day, 1 hour"
+      },
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
       }
     }
   },
-  "mailLinkLifetimeInvalid": "Enter a whole number of minutes from 15 to 10080 (7 days).",
+  "mailLinkLifetimeRange": "From {min} to {max}.",
+  "@mailLinkLifetimeRange": {
+    "description": "Helper text under the reset link lifetime field while what is entered can't be read as a lifetime: the limits the server allows, read in days, hours and minutes.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "mailLinkLifetimeInvalid": "Enter a whole number of minutes from {minMinutes} to {maxMinutes} ({max}).",
   "@mailLinkLifetimeInvalid": {
-    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range."
+    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range: the limits in minutes, then the upper limit read in days, hours and minutes.",
+    "placeholders": {
+      "minMinutes": {
+        "type": "int",
+        "example": "15"
+      },
+      "maxMinutes": {
+        "type": "int",
+        "example": "10080"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
   },
   "mailLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
   "@mailLifetimeDays": {
@@ -205,6 +265,10 @@
   "settingsFailed": "Couldn't reach the server. Check your connection and try again.",
   "@settingsFailed": {
     "description": "Shown when saving the settings failed because the server could not be reached or did not answer usefully."
+  },
+  "settingsOtherGroupSaving": "Available when the other save finishes.",
+  "@settingsOtherGroupSaving": {
+    "description": "Read by a screen reader with a group's disabled Save button while another group of settings is being saved: why it can't be pressed yet. Not drawn on screen."
   },
   "mailTestSend": "Send test email",
   "@mailTestSend": {
@@ -291,5 +355,49 @@
   "mailTestNotSentFailed": "Couldn't send the test. Check your connection and try again.",
   "@mailTestNotSentFailed": {
     "description": "Shown when asking the server for a test email failed because it could not be reached or did not answer usefully."
+  },
+  "signInGroupTitle": "Sign-in",
+  "@signInGroupTitle": {
+    "description": "Heading of the group of server settings about how people sign in."
+  },
+  "signInLinkingLabel": "Linking a sign-in provider",
+  "@signInLinkingLabel": {
+    "description": "Label of the menu that chooses when the server links an outside sign-in provider (such as Google or GitHub) to an existing account."
+  },
+  "signInLinkingSignedIn": "Only from a signed-in account",
+  "@signInLinkingSignedIn": {
+    "description": "Choice in the linking menu: a person links a sign-in provider to their account themselves, while signed in to it."
+  },
+  "signInLinkingAutomatic": "Automatically, when both have verified the email",
+  "@signInLinkingAutomatic": {
+    "description": "Choice in the linking menu: the server links a sign-in provider to an existing account by itself when the provider and the account have both verified the same email address."
+  },
+  "signInLinkingUnknown": "A setting this app doesn't know",
+  "@signInLinkingUnknown": {
+    "description": "Shown in the linking menu when the server holds a value from a newer version that this app can't show. Saving leaves it as it is unless another choice is picked."
+  },
+  "signInLinkingSignedInDescription": "People link a provider from their sign-in methods while signed in.",
+  "@signInLinkingSignedInDescription": {
+    "description": "Under the linking menu while 'Only from a signed-in account' is chosen: says where and how people link a sign-in provider to their account."
+  },
+  "signInLinkingAutomaticWarning": "Anyone who controls a registered user's verified email at a sign-in provider can sign in as that user, the Owner included.",
+  "@signInLinkingAutomaticWarning": {
+    "description": "Warning under the linking menu while automatic linking is chosen: whoever controls a user's verified email address at a sign-in provider can then sign in as that user, even as the server's Owner (its most powerful role)."
+  },
+  "signInSave": "Save sign-in settings",
+  "@signInSave": {
+    "description": "Button that saves the Sign-in group's settings to the server."
+  },
+  "signInSaving": "Saving…",
+  "@signInSaving": {
+    "description": "Label of the save button while the Sign-in group's settings are being saved."
+  },
+  "signInSaved": "Sign-in settings saved.",
+  "@signInSaved": {
+    "description": "Shown above the save button once the server has stored the Sign-in group's settings, until they are edited again."
+  },
+  "signInNotSavedTitle": "Sign-in settings not saved",
+  "@signInNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Sign-in group's settings failed."
   }
 }

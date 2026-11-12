@@ -187,10 +187,8 @@ void main() {
   });
 
   group('mailPasswordNeeded', () {
-    bool needed(
-      SystemSettings from,
-      MailFormValues values,
-    ) => mailPasswordNeeded(from, mailPatch(from, values), values.passwordEdit);
+    bool needed(SystemSettings from, MailFormValues values) =>
+        mailPasswordNeeded(from, mailPatch(from, values));
 
     test('a port change with a saved password kept needs it', () {
       expect(needed(_stored, _values(_stored, port: 2525)), isTrue);
@@ -227,6 +225,17 @@ void main() {
           _values(_stored, port: 2525, passwordEdit: PasswordEdit.remove),
         ),
         isFalse,
+      );
+    });
+
+    test('an empty new password with a change of server needs it: like the '
+        'server, it reads the patch, which carries no password', () {
+      expect(
+        needed(
+          _stored,
+          _values(_stored, port: 2525, passwordEdit: PasswordEdit.replace),
+        ),
+        isTrue,
       );
     });
 

@@ -97,13 +97,13 @@ SettingValue<String>? _text(String? stored, String typed) {
 /// It refuses a change of host, port or security that keeps a saved
 /// password, so the password never goes to a server it wasn't saved for. A
 /// patch that clears the host is allowed: with no host, nothing is sent.
-bool mailPasswordNeeded(
-  SystemSettings from,
-  SystemSettingsPatch patch,
-  PasswordEdit edit,
-) {
+///
+/// Keyed on what the patch carries, as the server's rule is, not on the
+/// password's edit: an empty new password sends nothing either, and the
+/// field's own check misses it while it ran before a password was saved.
+bool mailPasswordNeeded(SystemSettings from, SystemSettingsPatch patch) {
   if (!from.smtpPasswordSet ||
-      edit != PasswordEdit.keep ||
+      patch.smtpPassword != null ||
       !patch.changesMailServer) {
     return false;
   }

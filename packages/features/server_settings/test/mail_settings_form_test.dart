@@ -256,6 +256,57 @@ void main() {
       );
       expect(find.text('Mail settings not saved'), findsNothing);
     });
+
+    testWidgets('asked by the server, the password entered clears the '
+        'demand and goes with the next save', (tester) async {
+      await pumpForm(tester);
+      await enter(tester, MailSettingsForm.userFieldKey, 'relay');
+      await pumpForm(tester, saving: true, settle: false);
+      await pumpForm(tester, failure: SettingsSaveFailure.passwordRequired);
+      final editsBefore = edits;
+
+      await enter(tester, MailSettingsForm.passwordFieldKey, 's3cret');
+
+      // The edit is what the screen retires the failure on.
+      expect(edits, greaterThan(editsBefore));
+      expect(find.text(_passwordRequiredCopy), findsNothing);
+
+      await pumpForm(tester);
+      expect(textOf(tester, MailSettingsForm.passwordFieldKey), 's3cret');
+      await save(tester);
+
+      expect(saves, [
+        const SystemSettingsPatch(
+          smtpUser: SettingValue.set('relay'),
+          smtpPassword: SettingValue.set('s3cret'),
+        ),
+      ]);
+      expect(find.text(_passwordRequiredCopy), findsNothing);
+      expect(find.text('Mail settings not saved'), findsNothing);
+    });
+
+    testWidgets('a password saved elsewhere while a new host was typed is '
+        'asked for, though the empty field was checked before it was '
+        'saved', (tester) async {
+      await pumpForm(tester, settings: _unset);
+      await enter(tester, MailSettingsForm.hostFieldKey, 'smtp.example.com');
+      // Another group's save lands, carrying a password saved meanwhile;
+      // the host typed is unsaved, so the form keeps it.
+      await pumpForm(
+        tester,
+        settings: _settings(host: null, user: null, from: null),
+        revision: 2,
+      );
+
+      await save(tester);
+
+      expect(saves, isEmpty);
+      expect(find.text(_passwordRequiredCopy), findsOneWidget);
+      expect(
+        focused(),
+        same(editable(tester, MailSettingsForm.passwordFieldKey).focusNode),
+      );
+    });
   });
 
   group('the saved password', () {
@@ -414,6 +465,29 @@ void main() {
       expect(find.text(warning), findsOneWidget);
     });
 
+    testWidgets('the None warning is heard as it appears, and does not '
+        'scroll the page: it answers the pick beside it', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpForm(tester, settings: _unset);
+
+      await pick(tester, 'None');
+
+      final banner = tester.widget<BgeInlineBanner>(
+        find.ancestor(
+          of: find.text(warning),
+          matching: find.byType(BgeInlineBanner),
+        ),
+      );
+      expect(banner.tone, BgeBannerTone.warning);
+      expect(banner.reveal, isFalse);
+      expect(banner.announce, isTrue);
+      expect(
+        tester.getSemantics(find.text(warning)),
+        isSemantics(isLiveRegion: true),
+      );
+      handle.dispose();
+    });
+
     testWidgets('a setting this app does not know shows as such, and a save '
         'leaves it alone', (tester) async {
       await pumpForm(
@@ -458,6 +532,16 @@ void main() {
       );
     });
 
+    testWidgets('the limits still show while what is typed has no reading', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      await enter(tester, MailSettingsForm.lifetimeFieldKey, '1');
+
+      expect(find.text('From 15 minutes to 7 days.'), findsOneWidget);
+    });
+
     testWidgets('a lifetime out of range is refused on the form', (
       tester,
     ) async {
@@ -499,6 +583,29 @@ void main() {
       expect(saves, isEmpty);
       expect(find.text(_tooLongCopy), findsOneWidget);
     });
+
+    for (final (name, key, text) in [
+      ('user name', MailSettingsForm.userFieldKey, 'a' * 256),
+      ('password', MailSettingsForm.passwordFieldKey, 'a' * 256),
+      ('From', MailSettingsForm.fromFieldKey, '${'a' * 244}@example.com'),
+    ]) {
+      testWidgets('a $name of 256 characters is refused', (tester) async {
+        expect(text.length, 256);
+        await pumpForm(tester, settings: _unset);
+
+        await enter(tester, key, text);
+        await save(tester);
+
+        expect(saves, isEmpty);
+        expect(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.text(_tooLongCopy),
+          ),
+          findsOneWidget,
+        );
+      });
+    }
 
     testWidgets('a host of 255 characters is saved', (tester) async {
       await pumpForm(tester, settings: _unset);
@@ -674,6 +781,25 @@ void main() {
       for (final key in fieldKeys) {
         expect(editable(tester, key).readOnly, isTrue, reason: '$key');
       }
+      expect(
+        tester
+            .widget<BgeDropdownField<SmtpSecurity>>(
+              find.byKey(MailSettingsForm.securityFieldKey),
+            )
+            .readOnly,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<BgeSwitchField>(
+              find.ancestor(
+                of: find.byKey(MailSettingsForm.passwordResetsSwitchKey),
+                matching: find.byType(BgeSwitchField),
+              ),
+            )
+            .readOnly,
+        isTrue,
+      );
       expect(find.text('Saving…'), findsOneWidget);
       expect(
         tester
@@ -683,6 +809,31 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+
+    testWidgets('while saving, an open password field goes read-only and '
+        'its buttons are disabled', (tester) async {
+      await pumpForm(tester);
+      await tapKey(tester, MailSettingsForm.changePasswordKey);
+      await enter(tester, MailSettingsForm.passwordFieldKey, 'new');
+
+      await pumpForm(tester, saving: true, settle: false);
+
+      expect(
+        editable(tester, MailSettingsForm.passwordFieldKey).readOnly,
+        isTrue,
+      );
+      expect(textOf(tester, MailSettingsForm.passwordFieldKey), 'new');
+      for (final key in [
+        MailSettingsForm.keepSavedPasswordKey,
+        MailSettingsForm.removePasswordKey,
+      ]) {
+        expect(
+          tester.widget<TextButton>(find.byKey(key)).onPressed,
+          isNull,
+          reason: '$key',
+        );
+      }
     });
 
     testWidgets('Save is disabled while the other group saves', (
