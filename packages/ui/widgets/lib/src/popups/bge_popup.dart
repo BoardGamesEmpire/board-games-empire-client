@@ -41,8 +41,7 @@ Future<T?> showBgePopup<T>(
     child: builder(context),
   );
 
-  final narrow =
-      MediaQuery.sizeOf(context).width < BgeTokens.of(context).breakpointMedium;
+  final narrow = BgeWindowClass.of(context) == BgeWindowClass.compact;
   return navigator.push<T>(
     narrow
         // The barrier as `showModalBottomSheet` gives it.

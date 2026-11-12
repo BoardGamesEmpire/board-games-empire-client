@@ -217,11 +217,12 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// layout should become a different one: a navigation rail, or a list with
   /// its detail beside it.
   ///
-  /// Two things read the breakpoints so far: `showBgePopup`, which opens a
-  /// sheet below [breakpointMedium] and a dialog from there up, and
-  /// `bgeGridColumns` (#707, #710). The home page stopped setting its events
-  /// and stats sections side by side (#669); the next readers are expected to
-  /// be the navigation shell (#414) and the first two-pane layout (#46).
+  /// Read them through `BgeWindowClass`, not by comparing a width yourself.
+  /// Two things do so far: `showBgePopup`, which opens a sheet in the compact
+  /// class and a dialog from medium up, and `bgeGridColumns` (#707, #710). The
+  /// home page stopped setting its events and stats sections side by side
+  /// (#669); the next readers are expected to be the navigation shell (#414),
+  /// the width-aware list rows (#680) and the first two-pane layout (#46).
   final double breakpointExpanded;
 
   // ── Motion durations ───────────────────────────────────────────────

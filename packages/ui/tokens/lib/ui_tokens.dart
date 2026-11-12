@@ -20,3 +20,4 @@ export 'src/bge_status_colors.dart';
 export 'src/bge_theme.dart';
 export 'src/bge_tokens.dart';
 export 'src/bge_typography.dart';
+export 'src/bge_window_class.dart';
