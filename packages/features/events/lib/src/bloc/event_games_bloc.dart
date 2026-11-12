@@ -123,7 +123,7 @@ enum _Sent {
 ///   stillSupplies.
 /// - A 403; refused.
 /// - Anything else, or the session said no or threw (below), when nothing is
-///   sent; failed.
+///   sent, or after a 404; failed.
 ///
 /// The outcome carries the game's title as the event carried it, and the
 /// offered game's id, by which the screen finds the nominations of the copy
@@ -155,6 +155,11 @@ enum _Sent {
 /// session is asked again before the answer is used. A no fails the read the
 /// same way: another user's pool never reaches this screen, nor another
 /// user's refusal.
+///
+/// So is a take-back's 404, which drops the game: to another user the event
+/// itself can be what isn't found. A no ends the take-back as failed, the
+/// game kept and the pool not read. A 2xx needs no asking: whoever sent it,
+/// the game is off the pool.
 ///
 /// ## Closing
 ///
@@ -371,6 +376,10 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
       );
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Take-back found the game already gone', error: error);
+      // It drops the game, so it is used as a read's answer is.
+      if (!await _confirmed('Take-back answer dropped')) {
+        return EventTakeBackResult.failed;
+      }
       return EventTakeBackResult.done;
     } on EventWriteConflictException catch (error) {
       _logger.info('Take-back refused: the game still supplies', error: error);

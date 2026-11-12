@@ -1174,6 +1174,35 @@ void main() {
       );
     });
 
+    test("a 404 answered after the session moved is another user's: failed, "
+        'keeping the game, and reading nothing', () async {
+      final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+      final bloc = build(
+        serving(pool: reads.call, takenBack: (_) => throw _gone),
+        confirmSession: answering([true, true, true, false]),
+      );
+      addTearDown(bloc.close);
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      reads.answer(0, two);
+      await pumpEventQueue();
+      expect(bloc.state, loaded(two));
+      calls.clear();
+      final states = record(bloc);
+
+      bloc.add(_takeBack(_game(2)));
+      await pumpEventQueue();
+
+      expect(calls, ['session', 'takeBack', 'session']);
+      expect(states, [
+        loaded(two).copyWith(takingBack: () => 'g-2'),
+        loaded(
+          two,
+          outcome: _takeBackEnded(EventTakeBackResult.failed, _game(2)),
+        ),
+      ]);
+    });
+
     test('is ignored while an offer run is out', () async {
       final sends = _Held<OfferGameRequest, OfferedGame>();
       final remote = serving(offered: sends.call);
