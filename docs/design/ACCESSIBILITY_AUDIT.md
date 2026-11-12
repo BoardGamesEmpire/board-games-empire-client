@@ -337,8 +337,8 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    you back on the button. Approve and confirm: the footer reads "Catan is
    approved and in the lineup." and the reader lands on the row, which now
    reads "Approved". Close a vote: the footer says how it came out, with the
-   counts ("Azul passed: 2 for, 1 against. 3 of 4 counted, enough for
-   quorum."), and the row reads "Passed" alone. Then as a moderator, and as
+   counts ("Azul passed: 2 for, 1 against. 3 of 4 counted."), and the row
+   reads "Passed" alone. Then as a moderator, and as
    a household owner or admin who isn't on the roster of the household's
    event, check an open nomination has Close vote and one awaiting approval
    has no Approve or Reject. Offline, check each says "Available when
@@ -663,7 +663,7 @@ doesn't count them; they are listed after the audited screens.
 | `DataGatewayListScreen` | `packages/features/data_gateway/test/widgets/data_gateway_list_screen_test.dart` | audited |
 | `EditHouseholdScreen` | `packages/features/household/test/widgets/edit_household_screen_test.dart` | audited |
 | `EventAvailabilityScreen` | `packages/features/events/test/widgets/event_availability_screen_test.dart` | audited |
-| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` (the Nominations section's rows, Filters and Sort among them, #517, and a host's Close vote dialog, #518), `packages/features/events/test/widgets/event_detail_tabs_test.dart`, for the Games tab's rows, controls and *Whose games* (#516), and the dialog that asks before someone else's game is taken back (#518), `packages/features/events/test/widgets/event_games_tab_test.dart` and, for a nomination row and Withdraw at 320dp and 200% text (#517), and a host's Approve, Reject and Close vote with their dialogs (#518), `packages/features/events/test/widgets/event_nominations_section_test.dart` | audited |
+| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` (the Nominations section's rows, Filters and Sort among them, #517, and a host's Close vote dialog, #518), `packages/features/events/test/widgets/event_detail_tabs_test.dart`, for the Games tab's rows, controls and *Whose games* (#516), and the dialog that asks before someone else's game is taken back (#518), `packages/features/events/test/widgets/event_games_tab_test.dart`, for a nomination row and Withdraw at 320dp and 200% text (#517), and a host's Approve, Reject and Close vote with their dialogs (#518), `packages/features/events/test/widgets/event_nominations_section_test.dart`, for the vote control and its note dialog (#517), `packages/features/events/test/widgets/nomination_vote_control_test.dart` and, for who voted (#517), `packages/features/events/test/widgets/nomination_voters_sheet_test.dart` | audited |
 | `EventGroupScreen` | `packages/features/events/test/widgets/event_group_screen_test.dart` | audited |
 | `EventOverviewScreen` | `packages/features/events/test/widgets/event_overview_screen_test.dart` | audited |
 | `FeedbackFlowScreen` | `packages/app_shell/test/screens/feedback_flow_screen_test.dart` | audited |

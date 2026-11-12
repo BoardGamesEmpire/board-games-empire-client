@@ -1860,6 +1860,39 @@ void main() {
       );
     });
 
+    testWidgets('a close of the vote whose Interested rule changed while it '
+        'asked is dropped', (tester) async {
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [_vote('att-nn', VoteType.interested)],
+        ),
+      ];
+      final roster = [host, ada, bo, unnamed];
+      EventDetail weighing(InterestedWeight weight) =>
+          detailOf(viewer: host, roster: roster, policy: _policy(weight));
+
+      await showGames(tester, detail: weighing(InterestedWeight.asFor));
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+      expect(find.textContaining('Interested counts as For'), findsWidgets);
+
+      // The tally is the same, but the rule the dialog stated isn't.
+      cache.add(weighing(InterestedWeight.asAgainst));
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, isEmpty);
+      expect(
+        inOutcome(
+          "Your decision on Catan wasn't sent: something changed on this "
+          'event first.',
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a detail read that starts while it asks holds the button, '
         'and the decision waits for it', (tester) async {
       nominationsAnswer = (_) => [catan()];

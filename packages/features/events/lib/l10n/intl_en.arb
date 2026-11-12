@@ -1576,9 +1576,9 @@
       }
     }
   },
-  "eventsHostDecisionFailed": "Your decision on {title} didn't go through. Try again.",
+  "eventsHostDecisionFailed": "An error occurred while sending your decision on {title}. You may need to try again.",
   "@eventsHostDecisionFailed": {
-    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game failed for any other reason, such as no connection. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when a host's approval, rejection or close of the vote on a nominated game failed for any other reason, such as no connection. The answer can be lost after the server applied it, so it doesn't say the decision wasn't made. The title is the game's.",
     "placeholders": {
       "title": {
         "type": "String",

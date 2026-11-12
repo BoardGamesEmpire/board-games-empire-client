@@ -2259,7 +2259,9 @@ void main() {
                 write: write,
                 thrown: offline,
                 resolution: passed,
-                copy: "Your decision on Catan didn't go through. Try again.",
+                copy:
+                    'An error occurred while sending your decision on Catan. '
+                    'You may need to try again.',
                 tone: error,
               ),
             ],

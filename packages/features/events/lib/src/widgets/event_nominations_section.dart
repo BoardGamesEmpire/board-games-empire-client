@@ -1440,8 +1440,10 @@ Future<bool> _withdraw(
 /// then. Nothing is sent if, by then, the event takes no writes (cancelled
 /// or archived), the viewer's actions no longer hold the decision, or the
 /// nomination is gone or no longer has the status it decides from, or, for a
-/// close of the vote, its tally isn't the one the dialog showed, as a read
-/// while it was open can find: the page already shows that, and the footer
+/// close of the vote, its tally or how the event counts Interested isn't
+/// what the dialog showed, as a read while it was open can find (the request
+/// carries neither, so the server would settle on what it holds then): the
+/// page already shows that, and the footer
 /// says the decision was dropped, or a screen reader would hear nothing
 /// happen. A host closes the vote on the counts they saw, or presses again.
 Future<bool> _decide(
@@ -1494,7 +1496,10 @@ Future<bool> _decide(
       !state.actions.contains(decision.action) ||
       current == null ||
       current.status != decision.from ||
-      (decision == _Decision.resolve && tallyOf(current) != tally)) {
+      (decision == _Decision.resolve &&
+          (tallyOf(current) != tally ||
+              state.detail.snapshot.policy?.interestedWeight !=
+                  interestedWeight))) {
     nominations.add(NominationWriteDropped(decision.write, title: title));
     return false;
   }
