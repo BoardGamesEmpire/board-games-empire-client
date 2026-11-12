@@ -91,23 +91,24 @@ EventGameTakenBack _takeBack(OfferedGame game) =>
 
 /// An offer run's end.
 EventGamesOutcome _offerEnded(
-  EventGamesResult result, {
+  EventOfferResult result, {
   required int offered,
   required int notOffered,
-}) => EventGamesOutcome(
-  write: EventGamesWrite.offer,
+}) => EventOfferOutcome(
   result: result,
   offered: offered,
   notOffered: notOffered,
 );
 
-/// A take-back's end, of the game titled [title].
-EventGamesOutcome _takeBackEnded(EventGamesResult result, String title) =>
-    EventGamesOutcome(
-      write: EventGamesWrite.takeBack,
-      result: result,
-      title: title,
-    );
+/// A take-back's end, of [game]: named by its title, and by its id.
+EventGamesOutcome _takeBackEnded(
+  EventTakeBackResult result,
+  OfferedGame game,
+) => EventTakeBackOutcome(
+  result: result,
+  title: game.title,
+  offeredGameId: game.id,
+);
 
 /// A pool read of the attendees [attendeeIds] of the event [eventId]. A
 /// record compares its list by identity, so the fields are matched instead.
@@ -566,7 +567,7 @@ void main() {
       expect(remote.offers, hasLength(1));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.failed, offered: 1, notOffered: 2),
+        _offerEnded(EventOfferResult.failed, offered: 1, notOffered: 2),
       );
       expect(bloc.state.sending, isNull);
       // The read after the run asks too, and is told no.
@@ -592,7 +593,7 @@ void main() {
         bloc.state,
         failed(
           outcome: _offerEnded(
-            EventGamesResult.failed,
+            EventOfferResult.failed,
             offered: 0,
             notOffered: 2,
           ),
@@ -628,7 +629,7 @@ void main() {
       }
 
       final ended = _offerEnded(
-        EventGamesResult.done,
+        EventOfferResult.done,
         offered: 3,
         notOffered: 0,
       );
@@ -660,7 +661,7 @@ void main() {
       expect(remote.offers, hasLength(3));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.done, offered: 3, notOffered: 0),
+        _offerEnded(EventOfferResult.done, offered: 3, notOffered: 0),
       );
     });
 
@@ -688,7 +689,7 @@ void main() {
         expect(remote.offers, hasLength(3));
         expect(
           bloc.state.outcome,
-          _offerEnded(EventGamesResult.partly, offered: 2, notOffered: 1),
+          _offerEnded(EventOfferResult.partly, offered: 2, notOffered: 1),
         );
         // A skipped pick is settled, and counts as done.
         expect(states.map((state) => state.sending).whereType<Object>(), [
@@ -719,7 +720,7 @@ void main() {
 
         expect(
           bloc.state.outcome,
-          _offerEnded(EventGamesResult.failed, offered: 3, notOffered: 4),
+          _offerEnded(EventOfferResult.failed, offered: 3, notOffered: 4),
         );
         expect(remote.offers, hasLength(4));
         expect(remote.poolRequests, hasLength(1));
@@ -747,7 +748,7 @@ void main() {
 
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.refused, offered: 3, notOffered: 4),
+        _offerEnded(EventOfferResult.refused, offered: 3, notOffered: 4),
       );
       expect(remote.offers, hasLength(4));
       expect(remote.poolRequests, hasLength(1));
@@ -769,7 +770,7 @@ void main() {
       expect(remote.offers, hasLength(3));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.none, offered: 0, notOffered: 3),
+        _offerEnded(EventOfferResult.none, offered: 0, notOffered: 3),
       );
       expect(remote.poolRequests, hasLength(1));
     });
@@ -795,7 +796,7 @@ void main() {
         final bloc = build(remote)..add(_offer(5));
         await pumpEventQueue();
 
-        final outcome = bloc.state.outcome!;
+        final outcome = bloc.state.outcome! as EventOfferOutcome;
         expect(
           outcome.offered + outcome.notOffered,
           5,
@@ -839,7 +840,7 @@ void main() {
       expect(remote.offers, hasLength(1));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.done, offered: 1, notOffered: 0),
+        _offerEnded(EventOfferResult.done, offered: 1, notOffered: 0),
       );
     });
 
@@ -891,7 +892,7 @@ void main() {
       // The run has ended, and its read waits for the one that is out.
       expect(
         bloc.state.outcome,
-        _offerEnded(EventGamesResult.done, offered: 1, notOffered: 0),
+        _offerEnded(EventOfferResult.done, offered: 1, notOffered: 0),
       );
       expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
 
@@ -937,7 +938,14 @@ void main() {
 
       bloc.add(_offer(1));
       await pumpEventQueue();
-      expect(bloc.state.outcome?.result, EventGamesResult.refused);
+      expect(
+        bloc.state.outcome,
+        isA<EventOfferOutcome>().having(
+          (outcome) => outcome.result,
+          'result',
+          EventOfferResult.refused,
+        ),
+      );
       final states = record(bloc);
 
       bloc.add(_offer(2));
@@ -968,7 +976,7 @@ void main() {
       takeBacks.answer(0, null);
       await pumpEventQueue();
 
-      final ended = _takeBackEnded(EventGamesResult.done, 'Game 2');
+      final ended = _takeBackEnded(EventTakeBackResult.done, _game(2));
       expect(states, [
         const EventGamesState(takingBack: 'g-2'),
         EventGamesState(outcome: ended),
@@ -999,14 +1007,14 @@ void main() {
     });
 
     for (final (name, error, result)
-        in <(String, EventRemoteException, EventGamesResult)>[
-          ('not found is done', _gone, EventGamesResult.done),
+        in <(String, EventRemoteException, EventTakeBackResult)>[
+          ('not found is done', _gone, EventTakeBackResult.done),
           (
             'a 409, the game still supplying a nomination, is stillSupplies',
             _stillSupplies,
-            EventGamesResult.stillSupplies,
+            EventTakeBackResult.stillSupplies,
           ),
-          ('refused', _refused, EventGamesResult.refused),
+          ('refused', _refused, EventTakeBackResult.refused),
         ]) {
       test('$name, with the title, and reads the pool', () async {
         final remote = serving(takenBack: (_) => throw error);
@@ -1016,7 +1024,7 @@ void main() {
         bloc.add(_takeBack(_game(2)));
         await pumpEventQueue();
 
-        expect(bloc.state.outcome, _takeBackEnded(result, 'Game 2'));
+        expect(bloc.state.outcome, _takeBackEnded(result, _game(2)));
         expect(bloc.state.takingBack, isNull);
         expect(remote.poolRequests, hasLength(1));
         verifyNoWarnings();
@@ -1059,7 +1067,7 @@ void main() {
         bloc.add(_takeBack(_game(2)));
         await pumpEventQueue();
 
-        final ended = _takeBackEnded(EventGamesResult.done, 'Game 2');
+        final ended = _takeBackEnded(EventTakeBackResult.done, _game(2));
         expect(states.take(2), [
           loaded(two).copyWith(takingBack: () => 'g-2'),
           loaded(one, outcome: ended),
@@ -1089,7 +1097,14 @@ void main() {
         bloc.add(_takeBack(_game(2)));
         await pumpEventQueue();
 
-        expect(bloc.state.outcome?.result, isNot(EventGamesResult.done));
+        expect(
+          bloc.state.outcome,
+          isA<EventTakeBackOutcome>().having(
+            (outcome) => outcome.result,
+            'result',
+            isNot(EventTakeBackResult.done),
+          ),
+        );
         expect(bloc.state.games, two);
       });
     }
@@ -1136,7 +1151,7 @@ void main() {
       expect(states, [
         const EventGamesState(takingBack: 'g-2'),
         EventGamesState(
-          outcome: _takeBackEnded(EventGamesResult.failed, 'Game 2'),
+          outcome: _takeBackEnded(EventTakeBackResult.failed, _game(2)),
         ),
       ]);
       expect(remote.poolRequests, isEmpty);
@@ -1155,8 +1170,37 @@ void main() {
       expect(remote.poolRequests, isEmpty);
       expect(
         bloc.state.outcome,
-        _takeBackEnded(EventGamesResult.failed, 'Game 2'),
+        _takeBackEnded(EventTakeBackResult.failed, _game(2)),
       );
+    });
+
+    test("a 404 answered after the session moved is another user's: failed, "
+        'keeping the game, and reading nothing', () async {
+      final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+      final bloc = build(
+        serving(pool: reads.call, takenBack: (_) => throw _gone),
+        confirmSession: answering([true, true, true, false]),
+      );
+      addTearDown(bloc.close);
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      reads.answer(0, two);
+      await pumpEventQueue();
+      expect(bloc.state, loaded(two));
+      calls.clear();
+      final states = record(bloc);
+
+      bloc.add(_takeBack(_game(2)));
+      await pumpEventQueue();
+
+      expect(calls, ['session', 'takeBack', 'session']);
+      expect(states, [
+        loaded(two).copyWith(takingBack: () => 'g-2'),
+        loaded(
+          two,
+          outcome: _takeBackEnded(EventTakeBackResult.failed, _game(2)),
+        ),
+      ]);
     });
 
     test('is ignored while an offer run is out', () async {
@@ -1204,16 +1248,35 @@ void main() {
         act: (bloc) => bloc.add(EventGamesWriteDropped(write, title: title)),
         expect: () => [
           EventGamesState(
-            outcome: EventGamesOutcome(
-              write: write,
-              result: EventGamesResult.dropped,
-              title: title,
-            ),
+            outcome: switch (write) {
+              EventGamesWrite.offer => const EventOfferOutcome(
+                result: EventOfferResult.dropped,
+              ),
+              EventGamesWrite.takeBack => EventTakeBackOutcome(
+                result: EventTakeBackResult.dropped,
+                title: title,
+              ),
+            },
           ),
         ],
         verify: (_) => expect(calls, isEmpty),
       );
     }
+
+    test('each dropped offer is an outcome of its own', () async {
+      final bloc = build(serving());
+      addTearDown(bloc.close);
+      bloc.add(const EventGamesWriteDropped(EventGamesWrite.offer));
+      await pumpEventQueue();
+      final first = bloc.state.outcome;
+      bloc.add(const EventGamesWriteDropped(EventGamesWrite.offer));
+      await pumpEventQueue();
+
+      // The footer keys its banner on the instance (ObjectKey), so an
+      // identical one would leave the banner as it was, unheard.
+      expect(bloc.state.outcome, first);
+      expect(identical(bloc.state.outcome, first), isFalse);
+    });
 
     blocTest<EventGamesBloc, EventGamesState>(
       'the same drop twice is two outcomes, cleared between',
@@ -1227,17 +1290,15 @@ void main() {
         ),
       expect: () => const [
         EventGamesState(
-          outcome: EventGamesOutcome(
-            write: EventGamesWrite.takeBack,
-            result: EventGamesResult.dropped,
+          outcome: EventTakeBackOutcome(
+            result: EventTakeBackResult.dropped,
             title: 'A',
           ),
         ),
         EventGamesState(),
         EventGamesState(
-          outcome: EventGamesOutcome(
-            write: EventGamesWrite.takeBack,
-            result: EventGamesResult.dropped,
+          outcome: EventTakeBackOutcome(
+            result: EventTakeBackResult.dropped,
             title: 'A',
           ),
         ),
@@ -1267,7 +1328,7 @@ void main() {
       build: () => build(serving()),
       seed: () => loaded(
         one,
-        outcome: _takeBackEnded(EventGamesResult.refused, 'Game 1'),
+        outcome: _takeBackEnded(EventTakeBackResult.refused, _game(1)),
       ),
       act: (bloc) => bloc.add(const EventGamesOutcomeDismissed()),
       expect: () => [loaded(one)],

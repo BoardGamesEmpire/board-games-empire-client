@@ -183,12 +183,13 @@ Map<String, dynamic> _pagination({
   required int total,
   int page = 1,
   int limit = 100,
+  int totalPages = 1,
   bool hasMore = false,
 }) => {
   'page': page,
   'limit': limit,
   'total': total,
-  'totalPages': 1,
+  'totalPages': totalPages,
   'hasMore': hasMore,
 };
 
@@ -229,6 +230,67 @@ String _deadlock() => jsonEncode({
   'code': 'TransactionDeadlockError',
   'retryable': true,
 });
+
+/// A vote as `GET /api/events/:id/nominations` serves it, `eligible` marked.
+Map<String, dynamic> _voteRow({
+  String id = 'v1',
+  String attendeeId = 'att_1',
+  String voteType = 'For',
+  bool eligible = true,
+  String? comment,
+}) => {
+  'id': id,
+  'attendeeId': attendeeId,
+  'voteType': voteType,
+  'priority': 1,
+  'comment': comment,
+  'eligible': eligible,
+};
+
+/// A nomination as the backend serves it: the row's columns and the nested
+/// game, nominator, supplying pool row and votes (#517).
+Map<String, dynamic> _nominationRow({
+  String id = 'n1',
+  String? occurrenceId,
+  String status = 'Open',
+  String? pausedFrom,
+  String? votingDeadline,
+  String? thumbnail = 'https://cdn.example.com/brass.png',
+  bool guest = false,
+  List<Map<String, dynamic>> votes = const [],
+}) => {
+  'id': id,
+  'eventId': 'e1',
+  'occurrenceId': occurrenceId,
+  'platformGameId': 'pg_1',
+  'releaseId': null,
+  'votingDeadline': votingDeadline,
+  'nominatedById': 'att_1',
+  'suppliedFromId': 'og_1',
+  'status': status,
+  'pausedFrom': pausedFrom,
+  'createdAt': '2026-11-01T10:00:00.000Z',
+  'updatedAt': '2026-11-01T10:00:00.000Z',
+  'platformGame': {
+    'id': 'pg_1',
+    'game': {
+      'id': 'game_1',
+      'title': 'Brass: Birmingham',
+      'thumbnail': thumbnail,
+    },
+    'platform': {
+      'id': 'plat_1',
+      'name': 'Tabletop',
+      'platformType': 'Physical',
+    },
+  },
+  'nominatedBy': {
+    'id': 'att_1',
+    'user': guest ? null : {'id': 'u_1', 'username': 'ada'},
+  },
+  'suppliedFrom': {'id': 'og_1'},
+  'votes': votes,
+};
 
 /// An offered game as `GET /api/events/:id/attendees/:aid/games` serves it
 /// (#516): every column of the list row, and the owner's collection row whole,
@@ -3715,6 +3777,548 @@ void main() {
       );
       await expectLater(
         remote.takeBackGame('e1', '', 'og_1'),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
+
+  group('nominations (#517)', () {
+    late _PathAdapter pathAdapter;
+
+    EventRemoteDataSource routed(
+      Future<_Reply> Function(RequestOptions options) answer,
+    ) {
+      pathAdapter = _PathAdapter(answer);
+      final dio = Dio(BaseOptions(validateStatus: (_) => true))
+        ..httpClientAdapter = pathAdapter;
+      return EventRemoteDataSourceImpl(dio);
+    }
+
+    Future<_Reply> reply(String body, {int status = 200}) async =>
+        (body: body, status: status);
+
+    // A page that says there is more counts one page past itself, unless
+    // [totalPages] says otherwise.
+    String page(
+      List<Map<String, dynamic>> rows, {
+      required int page,
+      required bool hasMore,
+      int? totalPages,
+    }) => jsonEncode({
+      'nominations': rows,
+      'pagination': _pagination(
+        page: page,
+        total: rows.length,
+        totalPages: totalPages ?? (hasMore ? page + 1 : page),
+        hasMore: hasMore,
+      ),
+    });
+
+    String one(Map<String, dynamic> row, {bool message = false}) =>
+        jsonEncode({if (message) 'message': 'done', 'nomination': row});
+
+    group('fetchNominations', () {
+      test('follows hasMore across pages', () async {
+        final remote = routed((options) {
+          final pageNumber = options.queryParameters['page'];
+          return reply(
+            pageNumber == 1
+                ? page(
+                    [_nominationRow(), _nominationRow(id: 'n2')],
+                    page: 1,
+                    hasMore: true,
+                  )
+                : page([_nominationRow(id: 'n3')], page: 2, hasMore: false),
+          );
+        });
+
+        final rows = await remote.fetchNominations('e1');
+
+        expect(rows.map((row) => row.id), ['n1', 'n2', 'n3']);
+        expect(pathAdapter.paths, [
+          '/api/events/e1/nominations',
+          '/api/events/e1/nominations',
+        ]);
+      });
+
+      test('keeps the first of a nomination a later page repeats', () async {
+        // A nomination created mid-read shifts the offsets of a newest-first
+        // list, so page 2 can start with page 1's last row.
+        final remote = routed((options) {
+          final pageNumber = options.queryParameters['page'];
+          return reply(
+            pageNumber == 1
+                ? page(
+                    [_nominationRow(), _nominationRow(id: 'n2')],
+                    page: 1,
+                    hasMore: true,
+                  )
+                : page(
+                    [
+                      _nominationRow(id: 'n2', status: 'Paused'),
+                      _nominationRow(id: 'n3'),
+                    ],
+                    page: 2,
+                    hasMore: false,
+                  ),
+          );
+        });
+
+        final rows = await remote.fetchNominations('e1');
+
+        expect(rows.map((row) => row.id), ['n1', 'n2', 'n3']);
+        expect(rows[1].status, NominationStatus.open);
+      });
+
+      test('more past the last page the server counted is a contract break, '
+          'and no later page is sent', () async {
+        var calls = 0;
+        final remote = routed((options) {
+          calls++;
+          return reply(
+            page(
+              [_nominationRow(id: 'n$calls')],
+              page: calls,
+              hasMore: true,
+              totalPages: 1,
+            ),
+          );
+        });
+
+        await expectLater(
+          remote.fetchNominations('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+        expect(calls, 1);
+      });
+
+      test('a page that says there is more but adds nothing new is a '
+          'contract break, and no later page is sent', () async {
+        var calls = 0;
+        final remote = routed((options) {
+          calls++;
+          return reply(
+            page(
+              [_nominationRow()],
+              page: calls,
+              hasMore: true,
+              totalPages: 5,
+            ),
+          );
+        });
+
+        await expectLater(
+          remote.fetchNominations('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+        expect(calls, 2);
+      });
+
+      test('asks for 100 a page, from page 1', () async {
+        final queries = <Map<String, dynamic>>[];
+        final remote = routed((options) {
+          queries.add(Map.of(options.queryParameters));
+          return reply(
+            page(
+              [_nominationRow()],
+              page: queries.length,
+              hasMore: queries.length == 1,
+            ),
+          );
+        });
+
+        await remote.fetchNominations('e1');
+
+        expect(queries, [
+          {'page': 1, 'limit': 100},
+          {'page': 2, 'limit': 100},
+        ]);
+      });
+
+      test('a failure on a later page fails the whole read', () async {
+        var calls = 0;
+        final remote = routed((options) {
+          calls++;
+          return options.queryParameters['page'] == 1
+              ? reply(page([_nominationRow()], page: 1, hasMore: true))
+              : reply(
+                  _envelope(500, 'Internal Server Error', 'Oops'),
+                  status: 500,
+                );
+        });
+
+        await expectLater(
+          remote.fetchNominations('e1'),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+        expect(calls, 2);
+      });
+
+      test('maps a nomination whole', () async {
+        final remote = routed(
+          (_) => reply(
+            page(
+              [
+                _nominationRow(
+                  occurrenceId: 'occ_1',
+                  status: 'Paused',
+                  pausedFrom: 'Open',
+                  votingDeadline: '2026-11-20T18:00:00.000Z',
+                  votes: [
+                    _voteRow(comment: 'Yes!'),
+                    _voteRow(
+                      id: 'v2',
+                      attendeeId: 'att_2',
+                      voteType: 'Against',
+                      eligible: false,
+                    ),
+                  ],
+                ),
+                _nominationRow(id: 'n2', guest: true, thumbnail: ''),
+              ],
+              page: 1,
+              hasMore: false,
+            ),
+          ),
+        );
+
+        final rows = await remote.fetchNominations('e1');
+
+        expect(
+          rows.first,
+          EventNomination(
+            id: 'n1',
+            eventId: 'e1',
+            occurrenceId: 'occ_1',
+            platformGameId: 'pg_1',
+            gameId: 'game_1',
+            title: 'Brass: Birmingham',
+            platformName: 'Tabletop',
+            thumbnail: 'https://cdn.example.com/brass.png',
+            status: NominationStatus.paused,
+            pausedFrom: NominationStatus.open,
+            votingDeadline: DateTime.utc(2026, 11, 20, 18),
+            nominatedById: 'att_1',
+            nominatedByUsername: 'ada',
+            suppliedFromId: 'og_1',
+            createdAt: DateTime.utc(2026, 11, 1, 10),
+            votes: const [
+              EventNominationVote(
+                id: 'v1',
+                attendeeId: 'att_1',
+                voteType: VoteType.forGame,
+                eligible: true,
+                comment: 'Yes!',
+              ),
+              EventNominationVote(
+                id: 'v2',
+                attendeeId: 'att_2',
+                voteType: VoteType.against,
+                eligible: false,
+              ),
+            ],
+          ),
+        );
+        expect(rows.last.nominatedByUsername, isNull);
+        expect(rows.last.thumbnail, isNull);
+        expect(rows.last.pausedFrom, isNull);
+        expect(rows.last.votingDeadline, isNull);
+        expect(rows.last.occurrenceId, isNull);
+      });
+
+      test('a vote without eligible is a contract break', () async {
+        final remote = routed(
+          (_) => reply(
+            page(
+              [
+                _nominationRow(
+                  votes: [_voteRow()..remove('eligible')],
+                ),
+              ],
+              page: 1,
+              hasMore: false,
+            ),
+          ),
+        );
+
+        await expectLater(
+          remote.fetchNominations('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+
+      test('an enveloped 403 and 404 are forbidden and not found', () async {
+        final forbidden = routed(
+          (_) => reply(_envelope(403, 'Forbidden', 'No'), status: 403),
+        );
+        await expectLater(
+          forbidden.fetchNominations('e1'),
+          throwsA(isA<EventRemoteForbiddenException>()),
+        );
+        final gone = routed(
+          (_) => reply(_envelope(404, 'Not Found', 'Gone'), status: 404),
+        );
+        await expectLater(
+          gone.fetchNominations('e1'),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+      });
+    });
+
+    group('fetchNomination', () {
+      test('reads one nomination', () async {
+        final remote = routed((_) => reply(one(_nominationRow(id: 'n 1'))));
+
+        final nomination = await remote.fetchNomination('e1', 'n 1');
+
+        expect(nomination.id, 'n 1');
+        expect(pathAdapter.paths, ['/api/events/e1/nominations/n%201']);
+      });
+    });
+
+    group('nominate', () {
+      Future<EventNomination> nominate(EventRemoteDataSource remote) =>
+          remote.nominate('e1', platformGameId: 'pg_1', suppliedFromId: 'og_1');
+
+      test('sends no occurrenceId for the whole event', () async {
+        final remote = answering(
+          one(_nominationRow(), message: true),
+          status: 201,
+        );
+
+        final nomination = await nominate(remote);
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(adapter.sent.single.path, '/api/events/e1/nominations');
+        expect(adapter.sent.single.body, {
+          'platformGameId': 'pg_1',
+          'suppliedFromId': 'og_1',
+        });
+        expect(nomination.id, 'n1');
+      });
+
+      test('sends the occurrenceId for one date', () async {
+        final remote = answering(
+          one(_nominationRow(occurrenceId: 'occ_1'), message: true),
+          status: 201,
+        );
+
+        await remote.nominate(
+          'e1',
+          platformGameId: 'pg_1',
+          suppliedFromId: 'og_1',
+          occurrenceId: 'occ_1',
+        );
+
+        expect(adapter.sent.single.body, {
+          'platformGameId': 'pg_1',
+          'suppliedFromId': 'og_1',
+          'occurrenceId': 'occ_1',
+        });
+      });
+
+      test('409 is a conflict carrying its status and message', () async {
+        final remote = answering(
+          _envelope(409, 'Conflict', 'Supplier not attending'),
+          status: 409,
+        );
+
+        await expectLater(
+          nominate(remote),
+          throwsA(
+            isA<EventWriteConflictException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having(
+                  (e) => e.apiMessage,
+                  'apiMessage',
+                  'Supplier not attending',
+                ),
+          ),
+        );
+      });
+
+      test('400 with one message is a conflict carrying its status', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Row does not match'),
+          status: 400,
+        );
+
+        await expectLater(
+          nominate(remote),
+          throwsA(
+            isA<EventWriteConflictException>()
+                .having((e) => e.statusCode, 'statusCode', 400)
+                .having(
+                  (e) => e.apiMessage,
+                  'apiMessage',
+                  'Row does not match',
+                ),
+          ),
+        );
+      });
+
+      test('403 is refused', () async {
+        final remote = answering(
+          _envelope(403, 'Forbidden', 'Host only'),
+          status: 403,
+        );
+
+        await expectLater(
+          nominate(remote),
+          throwsA(
+            isA<EventWriteRefusedException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('404 is not found', () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'Gone'),
+          status: 404,
+        );
+
+        await expectLater(
+          nominate(remote),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+      });
+    });
+
+    group('castVote', () {
+      test('sends For as voteType, with no comment when none', () async {
+        final remote = answering(
+          jsonEncode({'message': 'ok', 'vote': <String, dynamic>{}}),
+        );
+
+        await remote.castVote('e1', 'n1', voteType: VoteType.forGame);
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(adapter.sent.single.path, '/api/events/e1/nominations/n1/votes');
+        expect(adapter.sent.single.body, {'voteType': 'For'});
+      });
+
+      test('sends the comment', () async {
+        final remote = answering(jsonEncode({'message': 'ok'}));
+
+        await remote.castVote(
+          'e1',
+          'n1',
+          voteType: VoteType.against,
+          comment: 'Too long',
+        );
+
+        expect(adapter.sent.single.body, {
+          'voteType': 'Against',
+          'comment': 'Too long',
+        });
+      });
+
+      test('of unknown throws before sending', () async {
+        final remote = answering('{}');
+
+        await expectLater(
+          remote.castVote('e1', 'n1', voteType: VoteType.unknown),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('400 is a conflict', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Not open'),
+          status: 400,
+        );
+
+        await expectLater(
+          remote.castVote('e1', 'n1', voteType: VoteType.forGame),
+          throwsA(
+            isA<EventWriteConflictException>()
+                .having((e) => e.statusCode, 'statusCode', 400)
+                .having((e) => e.apiMessage, 'apiMessage', 'Not open'),
+          ),
+        );
+      });
+
+      test('403 is refused and 404 is not found', () async {
+        final refused = answering(
+          _envelope(403, 'Forbidden', 'No'),
+          status: 403,
+        );
+        await expectLater(
+          refused.castVote('e1', 'n1', voteType: VoteType.forGame),
+          throwsA(isA<EventWriteRefusedException>()),
+        );
+        final gone = answering(
+          _envelope(404, 'Not Found', 'Gone'),
+          status: 404,
+        );
+        await expectLater(
+          gone.castVote('e1', 'n1', voteType: VoteType.forGame),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+      });
+    });
+
+    group('withdrawNomination', () {
+      test('maps the answer', () async {
+        final remote = answering(
+          one(_nominationRow(status: 'Withdrawn'), message: true),
+        );
+
+        final nomination = await remote.withdrawNomination('e1', 'n1');
+
+        expect(adapter.sent.single.method, 'PATCH');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/nominations/n1/withdraw',
+        );
+        expect(nomination.status, NominationStatus.withdrawn);
+      });
+
+      test('400 is a conflict', () async {
+        final remote = answering(
+          _envelope(400, 'Bad Request', 'Cannot withdraw'),
+          status: 400,
+        );
+
+        await expectLater(
+          remote.withdrawNomination('e1', 'n1'),
+          throwsA(isA<EventWriteConflictException>()),
+        );
+      });
+    });
+
+    test('an empty id throws ArgumentError', () async {
+      final remote = answering('{}');
+
+      await expectLater(remote.fetchNominations(''), throwsArgumentError);
+      await expectLater(
+        remote.fetchNomination('e1', ''),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.nominate('e1', platformGameId: '', suppliedFromId: 'og_1'),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.nominate('e1', platformGameId: 'pg_1', suppliedFromId: ''),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.castVote('', 'n1', voteType: VoteType.forGame),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.castVote('e1', '', voteType: VoteType.forGame),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.withdrawNomination('e1', ''),
         throwsArgumentError,
       );
       expect(adapter.sent, isEmpty);

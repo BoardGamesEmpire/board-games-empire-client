@@ -14,7 +14,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// reads them, creates one (#499), deletes one (#501), changes an event's
 /// status (#502) and its dates (#506), votes on its dates (#507), answers an
 /// invitation and changes who is on the roster (#508, #510), and reads,
-/// offers and takes back the games its attendees bring (#516).
+/// offers and takes back the games its attendees bring (#516), and reads,
+/// makes, votes on and withdraws the nominations of games for its lineup
+/// (#517).
 ///
 /// The event hydrate pages through [fetchEvents] to cache the user's events,
 /// and [fetchEvent] reads one event whole, roster included, which the list
@@ -31,7 +33,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// [addAttendee] and [removeAttendee] change the roster (#510).
 /// [fetchGamesPool] reads the games an event's attendees have offered to
 /// bring, [offerGame] offers one from an attendee's collection and
-/// [takeBackGame] takes one back (#516).
+/// [takeBackGame] takes one back (#516). [fetchNominations] and
+/// [fetchNomination] read the nominations, [nominate] makes one,
+/// [castVote] votes on one and [withdrawNomination] withdraws one (#517).
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -66,6 +70,11 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [fetchGamesPool] | `GET /api/events/:id/attendees/:aid/games`, once per attendee | `{ games: [...] }` |
 /// | [offerGame] | `POST /api/events/:id/attendees/:aid/games` | `{ message, entry }` |
 /// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
+/// | [fetchNominations] | `GET /api/events/:id/nominations`, paged to the end | `{ nominations, pagination }` |
+/// | [fetchNomination] | `GET /api/events/:id/nominations/:nid` | `{ nomination }` |
+/// | [nominate] | `POST /api/events/:id/nominations` | `{ message, nomination }` |
+/// | [castVote] | `POST /api/events/:id/nominations/:nid/votes` | `{ message, vote }`, not read |
+/// | [withdrawNomination] | `PATCH /api/events/:id/nominations/:nid/withdraw` | `{ message, nomination }` |
 /// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
@@ -135,20 +144,25 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
 ///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent],
-///   [fetchHouseholdEvents] or a write naming a row ([fetchGamesPool] reads
-///   its own 404s, as its doc says). From [fetchEvent] the event is gone, or
+///   [fetchHouseholdEvents], [fetchNominations], [fetchNomination], or a
+///   write naming a row ([fetchGamesPool] reads its own 404s, as its doc
+///   says). From [fetchEvent] the event is gone, or
 ///   the caller may not read it. From [deleteEvent] no live event has the id.
 ///   From [fetchHouseholdEvents] the household is missing or deleted.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   and from [offerGame] and [takeBackGame], which says the API refused that
-///   write to an existing event (below).
+///   and from [offerGame], [takeBackGame], [nominate], [castVote] and
+///   [withdrawNomination], which says the API refused that write to an
+///   existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
 ///   message, from a write to an existing event's dates or a vote on one
-///   (below), or from [offerGame]; and a 409 carrying it from [addAttendee],
-///   [offerGame] or [takeBackGame].
+///   (below), or from [offerGame], [nominate], [castVote] or
+///   [withdrawNomination]; and a 409 carrying it from [addAttendee],
+///   [offerGame], [takeBackGame] or [nominate]. A caller that must tell a
+///   [nominate]'s 409 (the supplier is not attending) from its 400 (the pool
+///   row does not match the game) reads the exception's `statusCode`.
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, a date write's
 ///   included, and any other 409 that is not
@@ -636,6 +650,98 @@ abstract class EventRemoteDataSource {
     String eventId,
     String attendeeId,
     String offeredGameId,
+  );
+
+  /// `GET /api/events/:eventId/nominations?page=n&limit=100`: reads every
+  /// nomination of the event (#517), from page 1 while the page says there is
+  /// more, and returns every page's rows in the server's order, newest first.
+  /// A failure on any page fails the whole read, and no later page is sent.
+  ///
+  /// Each nomination is returned once. A nomination created mid-read shifts
+  /// the pages' offsets, so a later page can repeat a row: the first read is
+  /// kept. A page that says there is more past the page count it gives, or
+  /// that adds no nomination not already read, contradicts itself: that is
+  /// [EventRemotePermanentException], and no later page is sent.
+  ///
+  /// The server serves each nomination's votes, each marked `eligible`, but no
+  /// tally. It names the pool row that supplies a nomination, not the attendee
+  /// who brings it (backend#1213), and embeds every vote of every nomination
+  /// on the page, unbounded (backend#404).
+  ///
+  /// A 403 carrying the envelope is [EventRemoteForbiddenException] and a 404
+  /// carrying it is [EventRemoteNotFoundException]: the event is gone.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<List<EventNomination>> fetchNominations(String eventId);
+
+  /// `GET /api/events/:eventId/nominations/:nominationId`: reads one
+  /// nomination, `{ nomination }` (#517). A 403 carrying the envelope is
+  /// [EventRemoteForbiddenException], as for [fetchNominations]. A 404
+  /// carrying it is [EventRemoteNotFoundException]: the event is gone, or it
+  /// has no such nomination.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventNomination> fetchNomination(
+    String eventId,
+    String nominationId,
+  );
+
+  /// `POST /api/events/:eventId/nominations`: nominates the pool row
+  /// [suppliedFromId], for the game [platformGameId], for the whole event or,
+  /// with [occurrenceId], for one date (#517). Answers 201
+  /// `{ message, nomination }`. [occurrenceId] is left out of the body when
+  /// null.
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]: only the host
+  /// nominates under some modes, or the caller's role holds no grant. A 404
+  /// carrying it is [EventRemoteNotFoundException]: the event, the date or the
+  /// pool row is gone. A 409 carrying it (the supplier is not attending) and a
+  /// 400 carrying it with one message (the pool row does not match the game)
+  /// are [EventWriteConflictException], told apart by `statusCode`.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventNomination> nominate(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedFromId,
+    String? occurrenceId,
+  });
+
+  /// `POST /api/events/:eventId/nominations/:nominationId/votes` with
+  /// `{ voteType, comment? }`: casts the caller's vote, or changes it (#517).
+  /// The body is not read, so any 2xx is a vote that was recorded.
+  ///
+  /// A 400 carrying the envelope with one message is
+  /// [EventWriteConflictException]: the nomination is not open for votes. A 403
+  /// is [EventWriteRefusedException] and a 404 [EventRemoteNotFoundException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id or for
+  /// [VoteType.unknown], which has no wire name, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<void> castVote(
+    String eventId,
+    String nominationId, {
+    required VoteType voteType,
+    String? comment,
+  });
+
+  /// `PATCH /api/events/:eventId/nominations/:nominationId/withdraw`:
+  /// withdraws the caller's nomination (#517), and returns it as the server
+  /// holds it. Answers 200 `{ message, nomination }`.
+  ///
+  /// A 400 carrying the envelope with one message is
+  /// [EventWriteConflictException]: the nomination can't be withdrawn in its
+  /// status now. A 403 is [EventWriteRefusedException] and a 404
+  /// [EventRemoteNotFoundException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventNomination> withdrawNomination(
+    String eventId,
+    String nominationId,
   );
 
   /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where

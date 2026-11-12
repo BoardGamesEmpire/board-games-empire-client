@@ -642,6 +642,184 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<List<EventNomination>> fetchNominations(String eventId) async {
+    _checkId(eventId, name: 'eventId');
+
+    const action = 'Nominations';
+    const failures = _EventFailures(_Route.row);
+    // By id, in the order first read: a nomination created mid-read shifts
+    // the offsets of a newest-first list, so a later page can repeat a row
+    // an earlier one held. The first is kept, and the list's keys stay
+    // unique.
+    final all = <String, EventNomination>{};
+    for (var page = 1; ; page++) {
+      final response = await sendForJson(
+        () => _dio.get<String>(
+          _nominationsPath(eventId),
+          options: _plainBody,
+          queryParameters: {
+            'page': page,
+            'limit': EventRemoteDataSource.maxPageSize,
+          },
+        ),
+        action: action,
+        // The path names one event, so an application 404 is the service
+        // saying it is gone.
+        family: failures,
+      );
+      final result = parseRemote(
+        failures,
+        () => PaginatedResult.fromEnvelope(
+          response.body,
+          key: 'nominations',
+          item: _mapNomination,
+        ),
+        action: action,
+        status: response.status,
+      );
+      final before = all.length;
+      for (final nomination in result.items) {
+        all.putIfAbsent(nomination.id, () => nomination);
+      }
+      if (!result.meta.hasMore) return all.values.toList();
+
+      // More past the last page the server itself counted, or a page that
+      // adds nothing new, is an envelope that contradicts itself, and
+      // nothing else would stop the read until the server refused a page
+      // past its offset ceiling.
+      if (page >= result.meta.totalPages) {
+        throw EventRemotePermanentException(
+          '$action page $page reports another page past its own last page, '
+          '${result.meta.totalPages}',
+          statusCode: response.status,
+        );
+      }
+      if (all.length == before) {
+        throw EventRemotePermanentException(
+          '$action page $page reports another page but adds no nomination '
+          'not already read',
+          statusCode: response.status,
+        );
+      }
+    }
+  }
+
+  @override
+  Future<EventNomination> fetchNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(nominationId, name: 'nominationId');
+
+    const action = 'Nomination';
+    const failures = _EventFailures(_Route.row);
+    final response = await sendForJson(
+      () => _dio.get<String>(
+        _nominationPath(eventId, nominationId),
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapNomination(_nominationObject(response.body)),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<EventNomination> nominate(
+    String eventId, {
+    required String platformGameId,
+    required String suppliedFromId,
+    String? occurrenceId,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(platformGameId, name: 'platformGameId');
+    _checkId(suppliedFromId, name: 'suppliedFromId');
+    if (occurrenceId != null) _checkId(occurrenceId, name: 'occurrenceId');
+
+    const action = 'Nominate game';
+    const failures = _EventFailures(_Route.nominate);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        _nominationsPath(eventId),
+        options: _plainBody,
+        data: {
+          'platformGameId': platformGameId,
+          'suppliedFromId': suppliedFromId,
+          'occurrenceId': ?occurrenceId,
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapNomination(_nominationObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<void> castVote(
+    String eventId,
+    String nominationId, {
+    required VoteType voteType,
+    String? comment,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(nominationId, name: 'nominationId');
+    // Before anything is sent: an unknown vote has no wire name.
+    if (voteType == VoteType.unknown) {
+      throw ArgumentError.value(voteType, 'voteType', 'has no wire name');
+    }
+
+    await sendForJson(
+      () => _dio.post<String>(
+        '${_nominationPath(eventId, nominationId)}/votes',
+        options: _plainBody,
+        data: {'voteType': voteType.toWire(), 'comment': ?comment},
+      ),
+      action: 'Cast vote',
+      family: const _EventFailures(_Route.write),
+      // The answer is `{ message, vote }`, which nothing reads: the bloc
+      // re-reads the nomination.
+      readBody: false,
+    );
+  }
+
+  @override
+  Future<EventNomination> withdrawNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(nominationId, name: 'nominationId');
+
+    const action = 'Withdraw nomination';
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.patch<String>(
+        '${_nominationPath(eventId, nominationId)}/withdraw',
+        options: _plainBody,
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapNomination(_nominationObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
     _checkId(eventId, name: 'eventId');
 
@@ -712,6 +890,12 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   static String _offeredGamesPath(String eventId, String attendeeId) =>
       '${_pathOf(eventId)}/attendees/${Uri.encodeComponent(attendeeId)}/games';
+
+  static String _nominationsPath(String eventId) =>
+      '${_pathOf(eventId)}/nominations';
+
+  static String _nominationPath(String eventId, String nominationId) =>
+      '${_nominationsPath(eventId)}/${Uri.encodeComponent(nominationId)}';
 
   // ── Mapping ─────────────────────────────────────────────────────────
   //
@@ -800,11 +984,75 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static Map<String, dynamic> _entryObject(Map<String, dynamic> body) =>
       _nestedObject(body['entry'], 'entry');
 
+  /// Reads the nomination out of a body, `{ "nomination": { ... } }`.
+  static Map<String, dynamic> _nominationObject(Map<String, dynamic> body) =>
+      _nestedObject(body['nomination'], 'nomination');
+
+  /// One nomination as the server serves it (#517).
+  ///
+  /// The game's title, thumbnail and platform come from the nested
+  /// `platformGame`; the supplying pool row's id is the `suppliedFromId`
+  /// column. A nominator who is a guest has no `user`, so no username. An
+  /// empty thumbnail is none. The `priority` the votes carry is not read. A
+  /// vote with no `eligible` fails its cast, a [TypeError] that [parseRemote]
+  /// turns into a contract break, as it does any field this can't read: the
+  /// server marks every vote, so a missing mark is not a vote that counts.
+  static EventNomination _mapNomination(Map<String, dynamic> json) {
+    final platformGame = _nestedObject(json['platformGame'], 'platformGame');
+    final game = _nestedObject(platformGame['game'], 'platformGame.game');
+    final platform = _nestedObject(
+      platformGame['platform'],
+      'platformGame.platform',
+    );
+    final nominatedBy = json['nominatedBy'];
+    final user = nominatedBy is Map<String, dynamic>
+        ? nominatedBy['user']
+        : null;
+    final username = user is Map<String, dynamic>
+        ? user['username'] as String?
+        : null;
+    final thumbnail = game['thumbnail'] as String?;
+    final pausedFrom = json['pausedFrom'] as String?;
+    return EventNomination(
+      id: json['id'] as String,
+      eventId: json['eventId'] as String,
+      occurrenceId: json['occurrenceId'] as String?,
+      platformGameId: json['platformGameId'] as String,
+      gameId: game['id'] as String,
+      title: game['title'] as String,
+      platformName: platform['name'] as String,
+      thumbnail: thumbnail == null || thumbnail.isEmpty ? null : thumbnail,
+      status: NominationStatus.fromWire(json['status'] as String),
+      pausedFrom: pausedFrom == null
+          ? null
+          : NominationStatus.fromWire(pausedFrom),
+      votingDeadline: _dateOrNull(json['votingDeadline']),
+      nominatedById: json['nominatedById'] as String,
+      nominatedByUsername: username,
+      suppliedFromId: json['suppliedFromId'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      votes: _mapObjects(
+        json['votes'],
+        field: 'votes',
+        item: _mapNominationVote,
+      ),
+    );
+  }
+
+  static EventNominationVote _mapNominationVote(Map<String, dynamic> json) =>
+      EventNominationVote(
+        id: json['id'] as String,
+        attendeeId: json['attendeeId'] as String,
+        voteType: VoteType.fromWire(json['voteType'] as String),
+        eligible: json['eligible'] as bool,
+        comment: json['comment'] as String?,
+      );
+
   /// [raw] as an object, or a [FormatException] naming [field].
   static Map<String, dynamic> _nestedObject(Object? raw, String field) {
     if (raw is! Map<String, dynamic>) {
       throw FormatException(
-        'offered game "$field" is ${raw.runtimeType}, expected an object',
+        '"$field" is ${raw.runtimeType}, expected an object',
       );
     }
     return raw;
@@ -1246,7 +1494,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
   /// refused again. The event delete shares this route, and the server never
   /// answers it 400. The event status writes share it too, and their 400 is a
   /// conflict with the event's status as it stands. An offer's is too, for a
-  /// collection entry removed since (#516).
+  /// collection entry removed since (#516), and a nomination's for a pool row
+  /// that does not match its game (#517). The vote and the withdrawal share
+  /// [_Route.write], and their 400 is the nomination's status as it stands.
   @override
   EventRemoteException? refused(RemoteRefusal refusal) {
     if (!refusal.fromApi) return null;
@@ -1265,7 +1515,8 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameOffer ||
-        _Route.gameTakeBack => EventWriteRefusedException(
+        _Route.gameTakeBack ||
+        _Route.nominate => EventWriteRefusedException(
           message,
           cause: cause,
           statusCode: status,
@@ -1287,7 +1538,8 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.write ||
         _Route.attendeeAdd ||
         _Route.gameOffer ||
-        _Route.gameTakeBack => EventRemoteNotFoundException(
+        _Route.gameTakeBack ||
+        _Route.nominate => EventRemoteNotFoundException(
           message,
           cause: cause,
           statusCode: status,
@@ -1304,9 +1556,11 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     if (status == 409 &&
         (route == _Route.attendeeAdd ||
             route == _Route.gameOffer ||
-            route == _Route.gameTakeBack)) {
-      // The user is already on the event, the game is already offered, or
-      // the game still supplies a nomination or a lineup. A 409 asking for a
+            route == _Route.gameTakeBack ||
+            route == _Route.nominate)) {
+      // The user is already on the event, the game is already offered, the
+      // game still supplies a nomination or a lineup, or a nomination's
+      // supplier is not attending. A 409 asking for a
       // retry never gets here: the shared classifier reads it as transient
       // first.
       return EventWriteConflictException(
@@ -1317,7 +1571,9 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
       );
     }
     if (status == 400 &&
-        (route == _Route.write || route == _Route.gameOffer) &&
+        (route == _Route.write ||
+            route == _Route.gameOffer ||
+            route == _Route.nominate) &&
         apiErrorField(body, 'message') != null) {
       return EventWriteConflictException(
         message,
@@ -1343,7 +1599,8 @@ enum _Route {
 
   /// `GET /api/events/:id` and the poll's summary under it, which name one
   /// event, and `GET /api/events/:id/attendees/:aid/games`, which names one
-  /// attendee of it (#516).
+  /// attendee of it (#516), and `GET /api/events/:id/nominations` with the
+  /// single nomination under it (#517).
   row,
 
   /// `POST /api/events`, whose 403 and 404 refuse that create.
@@ -1376,4 +1633,11 @@ enum _Route {
   /// taken back), and its enveloped 409 a game that still supplies a
   /// nomination or a lineup. The server never answers it 400.
   gameTakeBack,
+
+  /// `POST /api/events/:id/nominations` (#517). Its 403 refuses the
+  /// nomination (the mode allows only the host, or the role holds no grant),
+  /// its 404 is the event, the date or the pool row gone, its enveloped 409 a
+  /// supplier who is not attending, and its enveloped 400 with one message a
+  /// pool row that does not match the game.
+  nominate,
 }

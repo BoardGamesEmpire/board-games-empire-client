@@ -45,6 +45,14 @@ owner is sharing their collection with that household, and it has not been
 individually excluded from it. All three, always.
 _Avoid_: Household collection, household library, shared games, household inventory
 
+**Games pool**:
+The games an event's attendees have offered to bring to it, each one copy from the
+offering attendee's own **collection**. It belongs to one event, not to a household,
+and is unrelated to a household's **pool**: a game joins it only by being offered, and
+leaves when it is taken back. Nominations for the event are made from it. The code calls
+it the pool and its rows offered games.
+_Avoid_: Pool (unqualified, in an event context), event collection, event library
+
 **Excluded game**:
 A single collection entry its owner has withheld from one specific household while
 otherwise sharing with it.

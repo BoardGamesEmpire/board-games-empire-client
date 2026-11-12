@@ -342,11 +342,11 @@
   },
   "eventsAttendeeSomeone": "this person",
   "@eventsAttendeeSomeone": {
-    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows, and on the Games tab in eventsGamesPersonLeftOut. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
+    "description": "Stands in for a person's name, inside another sentence, in the who's-coming section's menus, dialogs and banners on an event's screen, when the person has no name the app can show. It goes in place of {name} in the other eventsAttendee… strings where the name falls mid-sentence, so it is lower case where the language allows, on the Games tab in eventsGamesPersonLeftOut, and in its Nominations section in eventsNominatedBy, eventsNominationFrom and eventsNominationPaused. Where a sentence starts with the person, eventsAttendeeSomeoneStart is used instead."
   },
   "eventsAttendeeSomeoneStart": "This person",
   "@eventsAttendeeSomeoneStart": {
-    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept."
+    "description": "Stands in for a person's name where a sentence on an event's screen starts with them, when the person has no name the app can show: the same as eventsAttendeeSomeone, written as a sentence's first words. It goes in place of {name} in eventsAttendeeRemoveGone, eventsAttendeeAnswerGone, eventsAttendeeAddAlreadyOn, eventsAttendeeAddRefused and eventsAddAttendeeAlreadyOn. On the Games tab it goes in place of {name} in eventsGamesTheirs, and names that person on their chip in the Whose games list (eventsGamesPeopleTitle) and under the search field while their games are kept. In the who-voted list of a nominated game it goes in place of {name} in eventsVoterLine and eventsVoterLineNotCounting."
   },
   "eventsAttendeeActions": "Actions for {name}",
   "@eventsAttendeeActions": {
@@ -762,7 +762,7 @@
   },
   "eventsGamesFailedBody": "Check your connection and try again.",
   "@eventsGamesFailedBody": {
-    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry)."
+    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, in the Nominations section on the same tab."
   },
   "eventsGamesRefreshFailed": "Couldn't update the games. These may be out of date.",
   "@eventsGamesRefreshFailed": {
@@ -781,6 +781,36 @@
   "eventsGamesStillSupplies": "{title} is nominated, or in the lineup for a date still to come, so it can't come off your games yet.",
   "@eventsGamesStillSupplies": {
     "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing: it has been put forward for the event, or is set to be played on a date that hasn't happened.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSuppliesYours": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination first.",
+  "@eventsGamesStillSuppliesYours": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination in the Nominations section above the games).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
+  "@eventsGamesStillSuppliesYoursAndTheirs": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination in the Nominations section above the games), but the game comes off only once the others' nominations are withdrawn too, which only those people can do.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsGamesStillSuppliesTheirs": "{title} is nominated, so it can't come off your games yet. Only whoever nominated it can withdraw it.",
+  "@eventsGamesStillSuppliesTheirs": {
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because someone else put it forward for the event: only that person can withdraw the nomination, and the user can't.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -877,6 +907,858 @@
   "eventsGamesOfferDropped": "Those games weren't offered: the event changed while you were choosing.",
   "@eventsGamesOfferDropped": {
     "description": "Banner at the foot of an event's screen when the games the user picked on the Offer games page were not sent at all, because the event changed while the page was open: for example the user answered Not going, or the event was cancelled."
+  },
+  "eventsNominatedOpen": "{title} is nominated. Voting is open.",
+  "@eventsNominatedOpen": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game from the games people offer to bring, and the event's hosts, co-hosts and participants can now vote on whether to play it. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedAwaiting": "{title} is nominated. It's waiting for a host to approve it.",
+  "@eventsNominatedAwaiting": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game, when the event's rules have one of its hosts approve a nomination before anything else happens to it. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedInLineup": "{title} is in the lineup.",
+  "@eventsNominatedInLineup": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game and the event's rules put it straight into the lineup, the games to be played, with no vote. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominatedSettled": "{title} is nominated.",
+  "@eventsNominatedSettled": {
+    "description": "Banner at the foot of an event's screen once the user nominated a game and the server answered in a way the app doesn't expect of a new nomination: it says only that the nomination went through. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateRefused": "{title} can't be nominated here.",
+  "@eventsNominateRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user nominate a game for the event. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateSupplierNotGoing": "{title} can't be nominated: whoever brings it isn't going.",
+  "@eventsNominateSupplierNotGoing": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it has answered Not going to the event. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateNotSupplied": "{title} isn't on their games any more, so it can't be nominated.",
+  "@eventsNominateNotSupplied": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because the person who offered to bring it no longer offers that game: 'their' is that person. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateGone": "{title} isn't in the games pool any more.",
+  "@eventsNominateGone": {
+    "description": "Banner at the foot of an event's screen when a game couldn't be nominated because it is no longer among the games people offer to bring (the games pool), or the date it was nominated for is gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateFailed": "An error occurred while nominating {title}. Check the nominations above before nominating it again.",
+  "@eventsNominateFailed": {
+    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. It must not say the game wasn't nominated. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateDropped": "{title} wasn't nominated: something changed on this event first.",
+  "@eventsNominateDropped": {
+    "description": "Banner at the foot of an event's screen when a nomination was not sent at all, because the event changed between the user's press and the moment it would have gone: for example the game left the games pool, or the event was cancelled. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominate": "Nominate",
+  "@eventsNominate": {
+    "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it first asks which (eventsNominateTitle). Screen readers hear eventsNominateNamed instead."
+  },
+  "eventsNominateNamed": "Nominate {title}",
+  "@eventsNominateNamed": {
+    "description": "eventsNominate as a screen reader reads it, naming the game, so each game's button says which it nominates.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateSupplierNotGoingHint": "Whoever brings it isn't going",
+  "@eventsNominateSupplierNotGoingHint": {
+    "description": "Under the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, and read to a screen reader as the button's hint: the person who offered to bring the game has answered Not going to the event, so it can't be nominated. Someone else's games only: the user's own say eventsNominateYouNotGoingHint."
+  },
+  "eventsNominateYouNotGoingHint": "You aren't going",
+  "@eventsNominateYouNotGoingHint": {
+    "description": "eventsNominateSupplierNotGoingHint on the user's own games: under the Nominate button (eventsNominate) of a game the user offered to bring, which can't be pressed, and read to a screen reader as the button's hint. The user answered Not going to the event, so their games can't be nominated."
+  },
+  "eventsNominateAlready": "Already nominated",
+  "@eventsNominateAlready": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when that copy of the game is nominated already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the copy is nominated already for the whole event, or for that date."
+  },
+  "eventsNominateInLineup": "Already in the lineup",
+  "@eventsNominateInLineup": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when the game (anyone's copy of it) is in the event's lineup already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the game is in the lineup for the whole event, or for that date."
+  },
+  "eventsNominateAlreadyOrInLineup": "Already nominated or in the lineup",
+  "@eventsNominateAlreadyOrInLineup": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: for each choice it could be nominated for (the whole event, or a date), that copy is nominated already or the game is in the event's lineup already, some one and some the other."
+  },
+  "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again to check.",
+  "@eventsNominateUnsettled": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The banner eventsNominationsRefreshFailed, with its Try again button, is on the same tab."
+  },
+  "eventsNominateTitle": "Nominate {title}",
+  "@eventsNominateTitle": {
+    "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominateCancel": "Cancel",
+  "@eventsNominateCancel": {
+    "description": "Button in the nominate dialog (eventsNominateTitle) that closes it and nominates nothing."
+  },
+  "eventsNominateConfirm": "Nominate",
+  "@eventsNominateConfirm": {
+    "description": "Button in the nominate dialog (eventsNominateTitle) that nominates the game for the choice picked: the whole event or one date."
+  },
+  "eventsPoolNominated": "Nominated",
+  "@eventsPoolNominated": {
+    "description": "Marker on a game in the games pool on the Games tab of an event's screen, the games people offer to bring: that copy of the game is nominated for the event's lineup, and the nomination is still being voted on, waiting for a host, or paused. It fits on one line, and shrinks rather than wraps."
+  },
+  "eventsVoteDone": "Your vote on {title} is in.",
+  "@eventsVoteDone": {
+    "description": "Banner at the foot of an event's screen once the user's vote on a nominated game (for it, against it, or interested) is recorded. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteClosed": "Voting on {title} has closed.",
+  "@eventsVoteClosed": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game wasn't taken, because the nomination is no longer open for votes. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteRefused": "You can't vote on {title}.",
+  "@eventsVoteRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused the user's vote on a nominated game. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteGone": "{title} isn't nominated any more.",
+  "@eventsVoteGone": {
+    "description": "Banner at the foot of an event's screen when the user voted on a nominated game whose nomination is gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteFailed": "An error occurred while sending your vote on {title}. You may need to try again.",
+  "@eventsVoteFailed": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game failed for any other reason, such as no connection. It may have gone through, so the copy must not say it didn't. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteDropped": "Your vote on {title} wasn't sent: something changed on this event first.",
+  "@eventsVoteDropped": {
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game was not sent at all, because the event changed between the press and the moment it would have gone. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdraw": "Withdraw",
+  "@eventsWithdraw": {
+    "description": "Button under a game the user nominated, in the Nominations section of an event's Games tab, while it is still up for a vote, awaiting a host's approval or paused: it takes the nomination back, and asks first (eventsWithdrawConfirmTitle). Screen readers hear eventsWithdrawNamed instead."
+  },
+  "eventsWithdrawNamed": "Withdraw {title}",
+  "@eventsWithdrawNamed": {
+    "description": "eventsWithdraw as a screen reader reads it, naming the game, so each nomination's button says which it withdraws.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawConfirmTitle": "Withdraw {title}?",
+  "@eventsWithdrawConfirmTitle": {
+    "description": "Title of the dialog that asks before the user withdraws a game they nominated (eventsWithdraw). The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawConfirmBody": "Its votes are lost. Nominating it again starts from none.",
+  "@eventsWithdrawConfirmBody": {
+    "description": "Body of the withdraw dialog (eventsWithdrawConfirmTitle): withdrawing throws away every vote cast on the nomination, and if the user nominates the game again, the new nomination starts with no votes."
+  },
+  "eventsWithdrawConfirmKeep": "Keep it",
+  "@eventsWithdrawConfirmKeep": {
+    "description": "Button in the withdraw dialog that closes it and leaves the nomination as it is, votes and all."
+  },
+  "eventsWithdrawConfirm": "Withdraw",
+  "@eventsWithdrawConfirm": {
+    "description": "Confirm button of the withdraw dialog, drawn as a destructive action: it withdraws the nomination, and its votes are lost."
+  },
+  "eventsWithdrawDone": "You withdrew {title}.",
+  "@eventsWithdrawDone": {
+    "description": "Banner at the foot of an event's screen once the user withdrew a game they nominated: it is no longer up for a vote, and its votes are lost. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawNotWithdrawable": "{title} can't be withdrawn now: it has been decided.",
+  "@eventsWithdrawNotWithdrawable": {
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a game they nominated after its nomination was decided: by the vote, or by a host approving or rejecting it. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawRefused": "You can't withdraw {title}.",
+  "@eventsWithdrawRefused": {
+    "description": "Banner at the foot of an event's screen when the server refused to let the user withdraw a nomination. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawGone": "{title} isn't nominated any more.",
+  "@eventsWithdrawGone": {
+    "description": "Banner at the foot of an event's screen when the user tried to withdraw a nomination that is already gone. The title is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawFailed": "An error occurred while withdrawing {title}. You may need to try again.",
+  "@eventsWithdrawFailed": {
+    "description": "Banner at the foot of an event's screen when withdrawing a nomination failed for any other reason, such as no connection. It may have gone through, so the copy must not say it didn't. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsWithdrawDropped": "{title} wasn't withdrawn: something changed on this event first.",
+  "@eventsWithdrawDropped": {
+    "description": "Banner at the foot of an event's screen when a withdrawal was not sent at all, because the event changed between the user's press and the moment it would have gone. The title is the nominated game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsNominationsRefreshFailed": "Couldn't refresh nominations. They may be out of date.",
+  "@eventsNominationsRefreshFailed": {
+    "description": "Banner at the foot of the Games tab of an event's screen, with a Try again button (eventsRefreshRetry), when reading the nominations again failed: the nominations shown are the ones read before."
+  },
+  "eventsNominationsHeading": "Nominations",
+  "@eventsNominationsHeading": {
+    "description": "Heading of the section at the top of the Games tab of an event's screen that lists the games people have nominated for the event's lineup. It sits above the games pool, the games people offer to bring."
+  },
+  "eventsNominationsCount": "{count, plural, =1{1 nomination} other{{count} nominations}}",
+  "@eventsNominationsCount": {
+    "description": "Under the Nominations section's Filters and Sort (eventsNominationsFilters, eventsNominationsSort) on the Games tab of an event's screen, while no filter narrows the list: how many nominations there are. While one does, eventsNominationsShown takes its place.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsNominationsLoading": "Loading nominations",
+  "@eventsNominationsLoading": {
+    "description": "Read by a screen reader, never drawn, while the Nominations section of an event's Games tab waits for the nominations."
+  },
+  "eventsNominationsFailedTitle": "Couldn't load nominations",
+  "@eventsNominationsFailedTitle": {
+    "description": "In the Nominations section of an event's Games tab when the nominations couldn't be read and none were read before. Followed by eventsGamesFailedBody and a Try again button (eventsRefreshRetry). Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
+  },
+  "eventsNominationsHiddenTitle": "Nominations aren't shown to you",
+  "@eventsNominationsHiddenTitle": {
+    "description": "In the Nominations section of an event's Games tab when the server won't show the user the event's nominations. Also read to a screen reader as the hint of a game's Nominate button (eventsNominate) in the games pool, which can't be pressed meanwhile."
+  },
+  "eventsNominationsEmptyTitle": "Nothing nominated yet",
+  "@eventsNominationsEmptyTitle": {
+    "description": "In the Nominations section of an event's Games tab when nobody has nominated a game for the event's lineup."
+  },
+  "eventsNominationsEmptyBody": "Nominate a game from the games pool below.",
+  "@eventsNominationsEmptyBody": {
+    "description": "Under eventsNominationsEmptyTitle, shown only to someone who can nominate a game there. The games pool is the list of games people offer to bring, below the Nominations section on the same tab, and a game is nominated from its row there (eventsNominate)."
+  },
+  "eventsNominationsFilters": "Filters",
+  "@eventsNominationsFilters": {
+    "description": "Button under the Nominations heading on the Games tab of an event's screen that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
+  },
+  "eventsNominationsSort": "Sort: {sort}",
+  "@eventsNominationsSort": {
+    "description": "Button beside eventsNominationsFilters on the Games tab of an event's screen that opens a menu of the orders the nominations can be listed in. {sort} is the order they are in: eventsNominationsSortNewest, eventsNominationsSortSupport or eventsNominationsSortDeadline.",
+    "placeholders": {
+      "sort": {
+        "type": "String",
+        "example": "Newest"
+      }
+    }
+  },
+  "eventsNominationsSortNewest": "Newest",
+  "@eventsNominationsSortNewest": {
+    "description": "In the menu eventsNominationsSort opens, and the order chosen until another is: list the nominations newest first. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsSortSupport": "Most support",
+  "@eventsNominationsSortSupport": {
+    "description": "In the menu eventsNominationsSort opens: list the nominations with the most votes For first, counting only the votes that count. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsSortDeadline": "Soonest deadline",
+  "@eventsNominationsSortDeadline": {
+    "description": "In the menu eventsNominationsSort opens: list the nominations whose voting closes soonest first, and those with no closing time last. Also the {sort} of eventsNominationsSort while chosen."
+  },
+  "eventsNominationsShown": "{shown} of {total, plural, =1{1 nomination} other{{total} nominations}}",
+  "@eventsNominationsShown": {
+    "description": "Under the Nominations section's Filters and Sort on the Games tab of an event's screen while a filter narrows the list, and read out as it changes: how many nominations the filters keep, of all the event's nominations. In place of eventsNominationsCount.",
+    "placeholders": {
+      "shown": {
+        "type": "int",
+        "example": "2"
+      },
+      "total": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
+  "eventsNominationsNoMatches": "No nominations match",
+  "@eventsNominationsNoMatches": {
+    "description": "In the Nominations section of an event's Games tab when games are nominated but the filters (eventsNominationsFilters) leave none of them. Followed by eventsNominationsClearFilters."
+  },
+  "eventsNominationsClearFilters": "Clear filters",
+  "@eventsNominationsClearFilters": {
+    "description": "Button under eventsNominationsNoMatches that stops narrowing the nominations by every filter, so every nomination shows again. The order chosen with eventsNominationsSort stays."
+  },
+  "eventsNominationsStatus": "Status",
+  "@eventsNominationsStatus": {
+    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a chip per status a nomination can be in, to show only the nominations in the statuses chosen."
+  },
+  "eventsNominationsDecided": "Decided",
+  "@eventsNominationsDecided": {
+    "description": "Status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list: nominations whose vote or a host's decision has settled them, whether the game went into the lineup or not (approved, passed, failed, quorum not met or rejected)."
+  },
+  "eventsNominationsDate": "Date",
+  "@eventsNominationsDate": {
+    "description": "Heading in the nominations' filters (eventsNominationsFilters) over a choice of which nominations to show by what they are for: any date (eventsNominationsAnyDate), the whole event (eventsNominationWholeEvent), or one of the event's dates (eventsNominationForDate)."
+  },
+  "eventsNominationsAnyDate": "Any date",
+  "@eventsNominationsAnyDate": {
+    "description": "First choice under eventsNominationsDate in the nominations' filters, chosen until another is: show nominations whatever they are for, the whole event or any one of its dates."
+  },
+  "eventsNominationsDateGone": "For a date no longer on the event",
+  "@eventsNominationsDateGone": {
+    "description": "Chip naming the date the nominations are narrowed to (eventsNominationsDate), when that date has since been taken off the event, so it can't be named."
+  },
+  "eventsNominationsMine": "Mine",
+  "@eventsNominationsMine": {
+    "description": "Switch in the nominations' filters (eventsNominationsFilters), and the chip naming it while it is on: show only the nominations the user made."
+  },
+  "eventsNominationsNotVoted": "Not voted yet",
+  "@eventsNominationsNotVoted": {
+    "description": "Switch in the nominations' filters (eventsNominationsFilters), offered to someone who can vote, and the chip naming it while it is on: show only the nominations still open for votes that the user hasn't voted on."
+  },
+  "eventsNominationsFilterRemove": "Remove {filter}",
+  "@eventsNominationsFilterRemove": {
+    "description": "Accessible name and tooltip of the remove button on a chip under the Nominations section's Filters, which stops narrowing the nominations by that filter. {filter} is the chip's own words, such as 'Voting', 'Mine' or 'For the whole event'.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Voting"
+      }
+    }
+  },
+  "eventsGamesPoolHeading": "Games pool",
+  "@eventsGamesPoolHeading": {
+    "description": "Heading of the games pool on the Games tab of an event's screen: the games people offer to bring, one row per copy, below the Nominations section (eventsNominationsHeading). eventsNominationsEmptyBody calls it the games pool, so the two should match."
+  },
+  "eventsNominatedBy": "Nominated by {name}",
+  "@eventsNominatedBy": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: who nominated it. {name} is their name, or eventsAttendeeSomeone for someone with none. The user's own nominations say eventsNominatedByYou instead.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsNominatedByYou": "Nominated by you",
+  "@eventsNominatedByYou": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the user nominated it. Someone else's say eventsNominatedBy."
+  },
+  "eventsNominationFrom": "From {name}'s games",
+  "@eventsNominationFrom": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: whose copy of the game it is, from the games they offer to bring. {name} is that person's name, or eventsAttendeeSomeone for someone with none. The user's own copies say eventsNominationFromYours, and a copy the app can't find the owner of says eventsNominationFromUnknown.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      }
+    }
+  },
+  "eventsNominationFromYours": "From your games",
+  "@eventsNominationFromYours": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the copy of the game is one the user offers to bring."
+  },
+  "eventsNominationFromUnknown": "From whoever brings it",
+  "@eventsNominationFromUnknown": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab, in place of eventsNominationFrom, when the app can't tell whose copy it is: the copy is no longer among the games offered, as when the person bringing it said they aren't coming."
+  },
+  "eventsNominationWholeEvent": "For the whole event",
+  "@eventsNominationWholeEvent": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
+  },
+  "eventsNominationForDate": "For {date}",
+  "@eventsNominationForDate": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsNominationStatusVoting": "Voting",
+  "@eventsNominationStatusVoting": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: people are voting on it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+  },
+  "eventsNominationStatusAwaitingApproval": "Awaiting approval",
+  "@eventsNominationStatusAwaitingApproval": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: it waits for a host to approve or reject it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+  },
+  "eventsNominationStatusApproved": "Approved",
+  "@eventsNominationStatusApproved": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host approved it, and it is in the event's lineup."
+  },
+  "eventsNominationStatusPassed": "Passed",
+  "@eventsNominationStatusPassed": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it succeeded, and it is in the event's lineup."
+  },
+  "eventsNominationStatusFailed": "Failed",
+  "@eventsNominationStatusFailed": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it didn't succeed. Not an error in the app."
+  },
+  "eventsNominationStatusQuorumNotMet": "Quorum not met",
+  "@eventsNominationStatusQuorumNotMet": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: voting ended without enough votes to decide it."
+  },
+  "eventsNominationStatusRejected": "Rejected",
+  "@eventsNominationStatusRejected": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host rejected it."
+  },
+  "eventsNominationStatusWithdrawn": "Withdrawn",
+  "@eventsNominationStatusWithdrawn": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person who nominated it took it back before it was decided. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+  },
+  "eventsNominationStatusPaused": "Paused",
+  "@eventsNominationStatusPaused": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person bringing it isn't coming, so it is on hold. eventsNominationPaused says more. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+  },
+  "eventsNominationStatusUnknown": "Unknown",
+  "@eventsNominationStatusUnknown": {
+    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the server gave a status this version of the app doesn't know."
+  },
+  "eventsNominationTally": "{forCount} for · {againstCount} against · {interestedCount} interested",
+  "@eventsNominationTally": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab: how many of the votes that count are for it, against it, and interested in it. Votes that don't count, such as those of someone who has left, aren't in the numbers. Screen readers hear eventsNominationTallySpoken instead.",
+    "placeholders": {
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsNominationTallySpoken": "{forCount} for, {againstCount} against, {interestedCount} interested",
+  "@eventsNominationTallySpoken": {
+    "description": "eventsNominationTally as a screen reader reads it, without the symbols between the counts, which would be read out. It should sound like a short pause between them.",
+    "placeholders": {
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsNominationInterestedAsFor": "Interested counts as For",
+  "@eventsNominationInterestedAsFor": {
+    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote for the game."
+  },
+  "eventsNominationInterestedAsAgainst": "Interested counts as Against",
+  "@eventsNominationInterestedAsAgainst": {
+    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote against the game."
+  },
+  "eventsNominationInterestedNotCounted": "Interested isn't counted",
+  "@eventsNominationInterestedNotCounted": {
+    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts neither for nor against the game."
+  },
+  "eventsNominationDeadline": "Voting closes {when}",
+  "@eventsNominationDeadline": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab that people are voting on: when voting is due to close. {when} is the day and time, for example 'Fri, Nov 6 · 7:30 PM'. A fixed time, not a countdown.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsNominationDeadlinePassed": "Was due to close {when}. It stays open until a host closes the vote.",
+  "@eventsNominationDeadlinePassed": {
+    "description": "In place of eventsNominationDeadline once its time has passed. Voting doesn't close by itself when the time passes: the game stays open for votes until a host closes the vote. {when} is the day and time it was due to close.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsNominationPaused": "Paused: {name} isn't coming. It goes back to {status} if they come back.",
+  "@eventsNominationPaused": {
+    "description": "Line of a nominated game in the Nominations section of an event's Games tab that is paused: the person bringing the game said they aren't coming, so the nomination is on hold, and it goes back to where it stood if they say they're coming after all. {name} is that person's name, or eventsAttendeeSomeone for someone with none. {status} is where it stood, one of the eventsNominationStatus… labels, such as 'Voting'. The user's own games say eventsNominationPausedYours, and a game the app can't find the owner of says eventsNominationPausedUnknown.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "status": {
+        "type": "String",
+        "example": "Voting"
+      }
+    }
+  },
+  "eventsNominationPausedYours": "Paused: you aren't coming. It goes back to {status} if you come back.",
+  "@eventsNominationPausedYours": {
+    "description": "eventsNominationPaused for a game the user offers to bring: they said they aren't coming. {status} is where it stood, one of the eventsNominationStatus… labels, such as 'Voting'.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Voting"
+      }
+    }
+  },
+  "eventsNominationPausedUnknown": "Paused: whoever brings it isn't coming. It goes back to {status} if they come back.",
+  "@eventsNominationPausedUnknown": {
+    "description": "eventsNominationPaused when the app can't tell who brings the game: their copy is no longer among the games offered. {status} is where it stood, one of the eventsNominationStatus… labels, such as 'Voting'.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Voting"
+      }
+    }
+  },
+  "eventsVoteFor": "For",
+  "@eventsVoteFor": {
+    "description": "One of the three choices of the control under a nominated game in the Nominations section of an event's Games tab, with which the user votes on it: they want it played. Also names a For vote in the who-voted list (eventsVoterLine). Short: the three choices share the width of a phone's row, and a long word is drawn smaller to fit. Screen readers hear eventsVoteForNamed instead on the control."
+  },
+  "eventsVoteAgainst": "Against",
+  "@eventsVoteAgainst": {
+    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user doesn't want it played. Also names an Against vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteAgainstNamed instead on the control."
+  },
+  "eventsVoteInterested": "Interested",
+  "@eventsVoteInterested": {
+    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user is interested in the game without backing it outright. How it counts depends on the event's rules, which the row says. Also names an Interested vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteInterestedNamed instead on the control."
+  },
+  "eventsVoteUnknown": "Unknown",
+  "@eventsVoteUnknown": {
+    "description": "Names a vote in the who-voted list (eventsVoterLine) of a nominated game when the server gave a kind of vote this version of the app doesn't know."
+  },
+  "eventsNominationYourVote": "Your vote: {vote}",
+  "@eventsNominationYourVote": {
+    "description": "A line on a nominated game's row in the Nominations section of an event's Games tab, where the vote control isn't shown: the nomination is paused or decided, or the user can't vote now. It says how the user voted. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsNominationYourVoteNotCounting": "Your vote: {vote}. It doesn't count.",
+  "@eventsNominationYourVoteNotCounting": {
+    "description": "eventsNominationYourVote for a vote that doesn't count: the user has left the event, or the event doesn't count their vote. The who-voted list (eventsVotersNotCountingNote) gives the reasons.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsVoteForNamed": "For {title}",
+  "@eventsVoteForNamed": {
+    "description": "eventsVoteFor as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteAgainstNamed": "Against {title}",
+  "@eventsVoteAgainstNamed": {
+    "description": "eventsVoteAgainst as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteInterestedNamed": "Interested in {title}",
+  "@eventsVoteInterestedNamed": {
+    "description": "eventsVoteInterested as a screen reader reads it on the vote control, naming the game, since every nominated game has the same three choices. Keep the choice's own word first, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteInProgress": "{vote}, saving your vote…",
+  "@eventsVoteInProgress": {
+    "description": "What a screen reader says for the choice of the vote control the user just pressed, while the vote it sent is being saved. The choice still shows its word alone, with a spinner, and can't be pressed until saving ends. {vote} is eventsVoteForNamed, eventsVoteAgainstNamed or eventsVoteInterestedNamed.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For Catan"
+      }
+    }
+  },
+  "eventsVoteHintAttending": "Your vote counts once you say you're going.",
+  "@eventsVoteHintAttending": {
+    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people who said they are coming, and the user hasn't. They can still vote, but their vote isn't counted until they answer Going (eventsRsvpAttending) to the question on the same screen, \"Are you coming?\" (eventsRsvpQuestion). Use the words that question and its answer use."
+  },
+  "eventsVoteHintOffering": "Your vote counts once you offer a game.",
+  "@eventsVoteHintOffering": {
+    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people bringing a game, and the user isn't bringing any. They can still vote, but their vote isn't counted until they offer a game from their collection on the same tab."
+  },
+  "eventsVoteAddNote": "Add a note",
+  "@eventsVoteAddNote": {
+    "description": "Button under the vote control of a nominated game in the Nominations section of an event's Games tab, once the user has voted on it and left no note with the vote. Opens a dialog to write a short note that goes with the vote, such as 'Only if we have time'. Screen readers hear eventsVoteAddNoteNamed instead."
+  },
+  "eventsVoteEditNote": "Edit note",
+  "@eventsVoteEditNote": {
+    "description": "The same button as eventsVoteAddNote, when the user has already left a note with their vote. Opens the dialog to change or remove it. Screen readers hear eventsVoteEditNoteNamed instead."
+  },
+  "eventsVoteAddNoteNamed": "Add a note to your vote on {title}",
+  "@eventsVoteAddNoteNamed": {
+    "description": "eventsVoteAddNote as a screen reader reads it, naming the game, since every nominated game the user votes on has its own.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteEditNoteNamed": "Edit your note on {title}",
+  "@eventsVoteEditNoteNamed": {
+    "description": "eventsVoteEditNote as a screen reader reads it, naming the game, since every nominated game the user votes on has its own.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteNoteInProgress": "Saving your note…",
+  "@eventsVoteNoteInProgress": {
+    "description": "Shown in place of eventsVoteAddNote or eventsVoteEditNote on the note button under a nominated game, beside a spinner, while the note the user saved is being sent with their vote. The button can't be pressed until saving ends."
+  },
+  "eventsVoteNoteTitle": "Your note on {title}",
+  "@eventsVoteNoteTitle": {
+    "description": "Title of the dialog, opened from eventsVoteAddNote or eventsVoteEditNote, where the user writes, changes or removes the short note that goes with their vote on a nominated game. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoteNoteBody": "Everyone on this event can read it.",
+  "@eventsVoteNoteBody": {
+    "description": "Body of the vote's note dialog (eventsVoteNoteTitle), above its field, so the user knows the note isn't private: it goes to everyone who can read the event's nominated games, including people who aren't shown who voted (eventsVotersTitle)."
+  },
+  "eventsVoteNoteLabel": "Note",
+  "@eventsVoteNoteLabel": {
+    "description": "Label of the text field in the vote's note dialog (eventsVoteNoteTitle). Left empty, saving removes the note."
+  },
+  "eventsVoteNoteKeep": "Cancel",
+  "@eventsVoteNoteKeep": {
+    "description": "Button in the vote's note dialog (eventsVoteNoteTitle) that closes it and leaves the note as it was."
+  },
+  "eventsVoteNoteSave": "Save note",
+  "@eventsVoteNoteSave": {
+    "description": "Button in the vote's note dialog (eventsVoteNoteTitle) that sends the note, with the user's vote as it stands, to the server. An empty field removes the note."
+  },
+  "eventsVotersOpen": "Who voted ({count})",
+  "@eventsVotersOpen": {
+    "description": "Button under a nominated game in the Nominations section of an event's Games tab, once anyone has voted on it. Opens a list of who voted and how (eventsVotersTitle). {count} is how many votes it has, those that don't count included. Screen readers hear eventsVotersOpenNamed instead.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventsVotersOpenNamed": "{count, plural, =1{Who voted on {title}: 1 vote} other{Who voted on {title}: {count} votes}}",
+  "@eventsVotersOpenNamed": {
+    "description": "eventsVotersOpen as a screen reader reads it, naming the game, since every nominated game with votes has its own, and saying the count in words rather than in brackets.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      },
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVotersTitle": "Who voted on {title}",
+  "@eventsVotersTitle": {
+    "description": "Heading of the list, opened from eventsVotersOpen, of each vote on a nominated game: who cast it and how, with the note they left under it. Also the list's name to a screen reader as it opens. {title} is the game's.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsVoterLine": "{name}: {vote}",
+  "@eventsVoterLine": {
+    "description": "One vote in the who-voted list (eventsVotersTitle): who cast it and how. {name} is the voter's name, eventsVoterYou for the user, or eventsAttendeeSomeoneStart for someone with no name the app can show. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown. A vote that doesn't count is drawn crossed out (struck through), and screen readers hear eventsVoterLineNotCounting for it instead.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsVoterLineNotCounting": "{name}: {vote}. Doesn't count.",
+  "@eventsVoterLineNotCounting": {
+    "description": "eventsVoterLine as a screen reader reads it for a vote that doesn't count, which the list draws crossed out (struck through) instead. eventsVotersNotCountingNote gives the reasons a vote doesn't count.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsVoterYou": "You",
+  "@eventsVoterYou": {
+    "description": "Names the user in the who-voted list (eventsVotersTitle), as {name} in eventsVoterLine, in place of their own name."
+  },
+  "eventsVotersNotCountingNote": "Struck-through votes don't count: their voter has left, or this event doesn't count them yet.",
+  "@eventsVotersNotCountingNote": {
+    "description": "One line above the who-voted list (eventsVotersTitle), shown only when it holds a vote that doesn't count, which it draws crossed out (struck through). A vote doesn't count when the person who cast it is no longer on the event, or when the event's rules don't count it yet: for example, until they say they're coming or offer a game. Explains the crossing out to someone who sees it: a screen reader already hears eventsVoterLineNotCounting for each such vote."
+  },
+  "eventsVotersNotCountingCountsOnly": "Some votes don't count: their voter has left, or this event doesn't count them yet.",
+  "@eventsVotersNotCountingCountsOnly": {
+    "description": "eventsVotersNotCountingNote for the who-voted list (eventsVotersTitle) when it shows only how many votes are for, against and interested, because who voted isn't shown to this user (eventsVotersHidden): no vote is drawn, so none is crossed out. Shown only when a vote doesn't count, so that the count on the button that opened the list (eventsVotersOpen), which includes those votes, is explained beside a smaller total. A vote doesn't count when the person who cast it is no longer on the event, or when the event's rules don't count it yet: for example, until they say they're coming or offer a game."
+  },
+  "eventsVotersHidden": "Who voted isn't shown to you.",
+  "@eventsVotersHidden": {
+    "description": "In the who-voted list (eventsVotersTitle) in place of the votes, under how many votes are for, against and interested, when the server won't show this user who is on the event, and so who voted."
   },
   "eventsOfferTitle": "Offer games",
   "@eventsOfferTitle": {

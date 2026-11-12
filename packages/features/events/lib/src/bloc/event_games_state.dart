@@ -31,7 +31,9 @@ enum EventGamesLoad {
   gone,
 }
 
-/// Which write an [EventGamesOutcome] is about.
+/// Which of the pool's writes the screen's re-check stopped, in an
+/// `EventGamesWriteDropped`: it picks the outcome a dropped write ends with,
+/// an [EventOfferOutcome] or an [EventTakeBackOutcome].
 enum EventGamesWrite {
   /// A run of offers: the viewer's picks, sent one at a time.
   offer,
@@ -40,49 +42,63 @@ enum EventGamesWrite {
   takeBack,
 }
 
-/// How a write ended (#516).
-enum EventGamesResult {
-  /// Offers: every pick is on the list, offered now or already. Take-back:
-  /// the game is off the pool, taken now or already.
+/// How a run of offers ended (#516).
+enum EventOfferResult {
+  /// Every pick is on the list, offered now or already.
   done,
 
-  /// Offers: some picks are on the list and some aren't, and the run wasn't
-  /// stopped.
+  /// Some picks are on the list and some aren't, and the run wasn't stopped.
   partly,
 
-  /// Offers: no pick is on the list, and the run wasn't stopped.
+  /// No pick is on the list, and the run wasn't stopped.
   none,
 
-  /// The server refused the write: a 403. An offer run stops there.
+  /// The server refused the write: a 403. The run stops there.
   refused,
 
-  /// Take-back: the game still supplies a nomination or a lineup, so it
-  /// stays on the pool.
-  stillSupplies,
-
   /// Anything else, or the session could not be confirmed as this viewer's
-  /// (#432). An offer run stops there.
+  /// (#432). The run stops there.
   failed,
 
   /// The screen's own re-check stopped the write, and nothing was sent.
   dropped,
 }
 
-/// How a write ended, for the screen to announce. [offered] and [notOffered]
-/// count an offer run's picks, and add up to them; they are zero for a
-/// take-back and a dropped write. [title] names the game a take-back or a
-/// dropped write was about, when there is one.
-final class EventGamesOutcome extends Equatable {
-  const EventGamesOutcome({
-    required this.write,
+/// How a take-back ended (#516).
+enum EventTakeBackResult {
+  /// The game is off the pool, taken now or already.
+  done,
+
+  /// The game still supplies a nomination or a lineup, so it stays on the
+  /// pool.
+  stillSupplies,
+
+  /// The server refused the write: a 403.
+  refused,
+
+  /// Anything else, or the session could not be confirmed as this viewer's
+  /// (#432).
+  failed,
+
+  /// The screen's own re-check stopped the write, and nothing was sent.
+  dropped,
+}
+
+/// How a write ended, for the screen to announce: one case per write.
+sealed class EventGamesOutcome extends Equatable {
+  const EventGamesOutcome();
+}
+
+/// How a run of offers ended. [offered] and [notOffered] count its picks, and
+/// add up to them; they are zero for a dropped write.
+final class EventOfferOutcome extends EventGamesOutcome {
+  const EventOfferOutcome({
     required this.result,
     this.offered = 0,
     this.notOffered = 0,
-    this.title,
   });
 
-  final EventGamesWrite write;
-  final EventGamesResult result;
+  final EventOfferResult result;
 
   /// The picks now on the list: offered by this run, or already there.
   final int offered;
@@ -91,11 +107,31 @@ final class EventGamesOutcome extends Equatable {
   /// after it.
   final int notOffered;
 
+  @override
+  List<Object?> get props => [result, offered, notOffered];
+}
+
+/// How a take-back ended. [title] names the game it was about, as the event
+/// carried it, when there is one, and [offeredGameId] the pool row.
+final class EventTakeBackOutcome extends EventGamesOutcome {
+  const EventTakeBackOutcome({
+    required this.result,
+    this.title,
+    this.offeredGameId,
+  });
+
+  final EventTakeBackResult result;
+
   /// The game's title as the event carried it.
   final String? title;
 
+  /// The pool row it was about (`OfferedGame.id`), which a nomination names
+  /// as the copy it nominates (#517): set on every take-back but a dropped
+  /// one, whose drop names only the title.
+  final String? offeredGameId;
+
   @override
-  List<Object?> get props => [write, result, offered, notOffered, title];
+  List<Object?> get props => [result, title, offeredGameId];
 }
 
 /// The games pool on one event's Games tab, and the viewer's write that is

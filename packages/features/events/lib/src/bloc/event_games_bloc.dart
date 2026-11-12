@@ -103,7 +103,7 @@ enum _Sent {
 ///
 /// The pick that stops a run isn't counted in `done`, and it and every pick
 /// after it are not offered. The outcome counts both,
-/// [EventGamesOutcome.offered] and [EventGamesOutcome.notOffered], which add
+/// [EventOfferOutcome.offered] and [EventOfferOutcome.notOffered], which add
 /// up to the picks. A stopped run keeps its refused or failed, whatever it
 /// offered before it stopped. One that wasn't stopped is done when every
 /// pick is offered, none when none is, and partly otherwise.
@@ -123,14 +123,15 @@ enum _Sent {
 ///   stillSupplies.
 /// - A 403; refused.
 /// - Anything else, or the session said no or threw (below), when nothing is
-///   sent; failed.
+///   sent, or after a 404; failed.
 ///
-/// The outcome carries the game's title as the event carried it. A done
-/// take-back's state also drops the game from [EventGamesState.games], since
-/// the answer already says it is off the pool, and a read that was out as
-/// it ended leaves the game out of its answer, which can predate the
-/// take-back. Then the pool is read again, unless the take-back failed, when
-/// the pool is as it was.
+/// The outcome carries the game's title as the event carried it, and the
+/// offered game's id, by which the screen finds the nominations of the copy
+/// (#517). A done take-back's state also drops the game from
+/// [EventGamesState.games], since the answer already says it is off the
+/// pool, and a read that was out as it ended leaves the game out of its
+/// answer, which can predate the take-back. Then the pool is read again,
+/// unless the take-back failed, when the pool is as it was.
 ///
 /// ## A dropped write
 ///
@@ -154,6 +155,11 @@ enum _Sent {
 /// session is asked again before the answer is used. A no fails the read the
 /// same way: another user's pool never reaches this screen, nor another
 /// user's refusal.
+///
+/// So is a take-back's 404, which drops the game: to another user the event
+/// itself can be what isn't found. A no ends the take-back as failed, the
+/// game kept and the pool not read. A 2xx needs no asking: whoever sent it,
+/// the game is off the pool.
 ///
 /// ## Closing
 ///
@@ -246,7 +252,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
 
     var offered = 0;
     var done = 0;
-    EventGamesResult? stopped;
+    EventOfferResult? stopped;
     for (final pick in event.picks) {
       final sent = await _offer(event, pick);
       if (_closing) return;
@@ -256,9 +262,9 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
         case _Sent.skipped:
           break;
         case _Sent.refused:
-          stopped = EventGamesResult.refused;
+          stopped = EventOfferResult.refused;
         case _Sent.failed:
-          stopped = EventGamesResult.failed;
+          stopped = EventOfferResult.failed;
       }
       if (stopped != null) break;
       done++;
@@ -269,15 +275,14 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     final result =
         stopped ??
         switch ((offered, notOffered)) {
-          (_, 0) => EventGamesResult.done,
-          (0, _) => EventGamesResult.none,
-          _ => EventGamesResult.partly,
+          (_, 0) => EventOfferResult.done,
+          (0, _) => EventOfferResult.none,
+          _ => EventOfferResult.partly,
         };
     emit(
       state.copyWith(
         sending: () => null,
-        outcome: () => EventGamesOutcome(
-          write: EventGamesWrite.offer,
+        outcome: () => EventOfferOutcome(
           result: result,
           offered: offered,
           notOffered: notOffered,
@@ -334,7 +339,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     final result = await _takeBack(event);
     if (_closing) return;
 
-    final done = result == EventGamesResult.done;
+    final done = result == EventTakeBackResult.done;
     if (done) _takenBackSinceRead.add(game.id);
     emit(
       state.copyWith(
@@ -342,26 +347,26 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
         games: done
             ? List.unmodifiable(state.games.where((each) => each.id != game.id))
             : null,
-        outcome: () => EventGamesOutcome(
-          write: EventGamesWrite.takeBack,
+        outcome: () => EventTakeBackOutcome(
           result: result,
           title: game.title,
+          offeredGameId: game.id,
         ),
       ),
     );
 
     // A failed take-back changed nothing the screen can know of.
-    if (result == EventGamesResult.failed) return;
+    if (result == EventTakeBackResult.failed) return;
     await _read(_lastNamed, emit);
   }
 
   /// Takes [event]'s game back once the session says yes, and answers how it
   /// ended. Never throws.
-  Future<EventGamesResult> _takeBack(EventGameTakenBack event) async {
+  Future<EventTakeBackResult> _takeBack(EventGameTakenBack event) async {
     if (!await _confirmed('Take-back not sent')) {
-      return EventGamesResult.failed;
+      return EventTakeBackResult.failed;
     }
-    if (_closing) return EventGamesResult.failed;
+    if (_closing) return EventTakeBackResult.failed;
 
     try {
       await _remote.takeBackGame(
@@ -371,18 +376,22 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
       );
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Take-back found the game already gone', error: error);
-      return EventGamesResult.done;
+      // It drops the game, so it is used as a read's answer is.
+      if (!await _confirmed('Take-back answer dropped')) {
+        return EventTakeBackResult.failed;
+      }
+      return EventTakeBackResult.done;
     } on EventWriteConflictException catch (error) {
       _logger.info('Take-back refused: the game still supplies', error: error);
-      return EventGamesResult.stillSupplies;
+      return EventTakeBackResult.stillSupplies;
     } on EventWriteRefusedException catch (error) {
       _logger.info('Take-back refused', error: error);
-      return EventGamesResult.refused;
+      return EventTakeBackResult.refused;
     } on Object catch (error, stackTrace) {
       _logger.warn('Take-back failed', error: error, stackTrace: stackTrace);
-      return EventGamesResult.failed;
+      return EventTakeBackResult.failed;
     }
-    return EventGamesResult.done;
+    return EventTakeBackResult.done;
   }
 
   void _onWriteDropped(
@@ -396,11 +405,18 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     if (state.outcome != null) emit(state.copyWith(outcome: () => null));
     emit(
       state.copyWith(
-        outcome: () => EventGamesOutcome(
-          write: event.write,
-          result: EventGamesResult.dropped,
-          title: event.title,
-        ),
+        outcome: () => switch (event.write) {
+          // Not const: the footer keys its banner on the instance, so each
+          // drop needs one of its own to be drawn, and heard, anew.
+          // ignore: prefer_const_constructors
+          EventGamesWrite.offer => EventOfferOutcome(
+            result: EventOfferResult.dropped,
+          ),
+          EventGamesWrite.takeBack => EventTakeBackOutcome(
+            result: EventTakeBackResult.dropped,
+            title: event.title,
+          ),
+        },
       ),
     );
   }
