@@ -12,9 +12,10 @@ import '../support/fake_games_remote.dart';
 /// The batch every scripted start queues.
 const _batchId = '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f';
 
-/// A poll's answer whose base game's job is [status].
+/// A poll's answer whose requested game's job is [status].
 ///
-/// [before] lists jobs ahead of the base game's, as an expansion's would be.
+/// [before] lists jobs ahead of the requested game's, which the server
+/// doesn't do but the bloc must not depend on.
 ImportBatch _batch(
   ImportJobStatus status, {
   String? gameId,
@@ -30,7 +31,7 @@ ImportBatch _batch(
     ImportJob(
       jobId: 'job_base',
       status: status,
-      isExpansion: false,
+      origin: ImportJobOrigin.requested,
       externalId: '926',
       gameId: gameId,
       errorCode: errorCode,
@@ -107,7 +108,7 @@ void main() {
   );
 
   blocTest<GameImportBloc, GameImportState>(
-    'the base job decides, not the batch',
+    'the requested job decides, not the batch',
     setUp: () {
       queues();
       polls([
@@ -119,7 +120,7 @@ void main() {
             ImportJob(
               jobId: 'job_expansion',
               status: ImportJobStatus.failed,
-              isExpansion: true,
+              origin: ImportJobOrigin.chosenExpansion,
               externalId: '927',
               errorCode: ImportErrorCode.gatewayError,
             ),
@@ -136,7 +137,37 @@ void main() {
     ],
   );
 
-  group('a failed base job fails by its error code', () {
+  // Pins today's behaviour, which #824 may change on purpose: the dialog
+  // follows only the requested game.
+  blocTest<GameImportBloc, GameImportState>(
+    'an added base game still running does not hold the requested game',
+    setUp: () {
+      queues();
+      polls([
+        _batch(
+          ImportJobStatus.completed,
+          gameId: 'g_seafarers',
+          before: const [
+            ImportJob(
+              jobId: 'job_added',
+              status: ImportJobStatus.running,
+              origin: ImportJobOrigin.addedBaseGame,
+              externalId: '13',
+            ),
+          ],
+        ),
+      ]);
+    },
+    build: build,
+    act: (bloc) => bloc.add(const GameImportRequested()),
+    expect: () => const [
+      GameImportStarting(),
+      GameImportInProgress(running: false),
+      GameImportCompleted(gameId: 'g_seafarers'),
+    ],
+  );
+
+  group('a failed requested job fails by its error code', () {
     for (final (code, failure) in [
       (ImportErrorCode.notFound, GameImportFailure.notOnDataGateway),
       (ImportErrorCode.gatewayError, GameImportFailure.dataGateway),
@@ -168,7 +199,7 @@ void main() {
     }
 
     blocTest<GameImportBloc, GameImportState>(
-      'a cancelled base job is cancelled',
+      'a cancelled requested job is cancelled',
       setUp: () {
         queues();
         polls([
@@ -189,7 +220,7 @@ void main() {
   });
 
   blocTest<GameImportBloc, GameImportState>(
-    'a completed base job without a game id is a server failure',
+    'a completed requested job without a game id is a server failure',
     setUp: () {
       queues();
       polls([
@@ -229,6 +260,41 @@ void main() {
     setUp: () {
       queues();
       polls([for (var i = 0; i < 3; i++) _batch(ImportJobStatus.unknown)]);
+    },
+    build: build,
+    act: (bloc) => bloc.add(const GameImportRequested()),
+    expect: () => const [
+      GameImportStarting(),
+      GameImportInProgress(running: false),
+      GameImportInProgress(running: true),
+      GameImportStillRunning(),
+    ],
+    verify: (_) => expect(remote.calls, [started, polled, polled, polled]),
+  );
+
+  // That a completed game still doesn't end the import shows the bloc never
+  // followed it.
+  blocTest<GameImportBloc, GameImportState>(
+    'a batch with no requested job keeps polling until the deadline',
+    setUp: () {
+      queues();
+      polls([
+        for (var i = 0; i < 3; i++)
+          const ImportBatch(
+            batchId: _batchId,
+            correlationId: 'corr-1',
+            status: ImportBatchStatus.completed,
+            jobs: [
+              ImportJob(
+                jobId: 'job_base',
+                status: ImportJobStatus.completed,
+                origin: ImportJobOrigin.unknown,
+                externalId: '926',
+                gameId: 'g_seafarers',
+              ),
+            ],
+          ),
+      ]);
     },
     build: build,
     act: (bloc) => bloc.add(const GameImportRequested()),

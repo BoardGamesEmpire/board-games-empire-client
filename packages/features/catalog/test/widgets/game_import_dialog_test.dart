@@ -20,7 +20,7 @@ const _seafarers = GameSearchHit(
   contentType: ContentType.expansion,
 );
 
-/// A poll's answer whose base game's job is [status].
+/// A poll's answer whose requested game's job is [status].
 ImportBatch _batch(
   ImportJobStatus status, {
   String? gameId,
@@ -33,7 +33,7 @@ ImportBatch _batch(
     ImportJob(
       jobId: 'job_base',
       status: status,
-      isExpansion: false,
+      origin: ImportJobOrigin.requested,
       externalId: '926',
       gameId: gameId,
       errorCode: errorCode,

@@ -8,7 +8,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 /// Imports one DataGateway result into the server, and follows the import
-/// until its base game's job ends (#43).
+/// until the requested game's job ends (#43, #896).
 ///
 /// ## Starting
 ///
@@ -30,9 +30,11 @@ import 'package:observability/observability.dart';
 /// Once queued, the batch is polled every [pollInterval] until [deadline]
 /// has passed, because the server sets no deadline of its own.
 ///
-/// - **The base game's job decides,** not the batch's rollup.
-/// - **Pending, running, a status this client does not know, or no base job
-///   listed:** keep polling. An unknown status may be one a newer server
+/// - **The requested game's job decides,** not the batch's rollup, nor any
+///   other job in it (an expansion chosen with it, or a base game the server
+///   added).
+/// - **Pending, running, a status this client does not know, or no requested
+///   job listed:** keep polling. An unknown status may be one a newer server
 ///   still runs.
 /// - **Completed** is [GameImportCompleted], with the game's id. A completed
 ///   job without one is a server failure.
@@ -153,7 +155,8 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
     await _poll(batchId, emit);
   }
 
-  /// Polls [batchId] until its base game's job ends, or [deadline] passes.
+  /// Polls [batchId] until its requested game's job ends, or [deadline]
+  /// passes.
   Future<void> _poll(String batchId, Emitter<GameImportState> emit) async {
     var elapsed = Duration.zero;
     while (elapsed < deadline) {
@@ -184,7 +187,7 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
       }
       if (isClosed) return;
 
-      final next = _stateOf(batch.baseJob);
+      final next = _stateOf(batch.requestedJob);
       emit(next);
       if (next is! GameImportInProgress) return;
     }
@@ -192,30 +195,30 @@ class GameImportBloc extends Bloc<GameImportEvent, GameImportState> {
     emit(const GameImportStillRunning());
   }
 
-  /// Where the import stands, by its base game's job: see "Following".
-  static GameImportState _stateOf(ImportJob? baseJob) => switch (baseJob) {
-    null ||
-    ImportJob(
-      status: ImportJobStatus.running || ImportJobStatus.unknown,
-    ) => const GameImportInProgress(running: true),
-    ImportJob(status: ImportJobStatus.pending) => const GameImportInProgress(
-      running: false,
-    ),
-    ImportJob(status: ImportJobStatus.completed, :final gameId?) =>
-      GameImportCompleted(gameId: gameId),
-    ImportJob(status: ImportJobStatus.completed) => const GameImportFailed(
-      failure: GameImportFailure.server,
-    ),
-    ImportJob(status: ImportJobStatus.failed, :final errorCode) =>
-      GameImportFailed(
-        failure: switch (errorCode) {
-          ImportErrorCode.notFound => GameImportFailure.notOnDataGateway,
-          ImportErrorCode.gatewayError => GameImportFailure.dataGateway,
-          _ => GameImportFailure.server,
-        },
-      ),
-    ImportJob(status: ImportJobStatus.cancelled) => const GameImportFailed(
-      failure: GameImportFailure.cancelled,
-    ),
-  };
+  /// Where the import stands, by its requested game's job: see "Following".
+  static GameImportState _stateOf(ImportJob? requestedJob) =>
+      switch (requestedJob) {
+        null ||
+        ImportJob(
+          status: ImportJobStatus.running || ImportJobStatus.unknown,
+        ) => const GameImportInProgress(running: true),
+        ImportJob(status: ImportJobStatus.pending) =>
+          const GameImportInProgress(running: false),
+        ImportJob(status: ImportJobStatus.completed, :final gameId?) =>
+          GameImportCompleted(gameId: gameId),
+        ImportJob(status: ImportJobStatus.completed) => const GameImportFailed(
+          failure: GameImportFailure.server,
+        ),
+        ImportJob(status: ImportJobStatus.failed, :final errorCode) =>
+          GameImportFailed(
+            failure: switch (errorCode) {
+              ImportErrorCode.notFound => GameImportFailure.notOnDataGateway,
+              ImportErrorCode.gatewayError => GameImportFailure.dataGateway,
+              _ => GameImportFailure.server,
+            },
+          ),
+        ImportJob(status: ImportJobStatus.cancelled) => const GameImportFailed(
+          failure: GameImportFailure.cancelled,
+        ),
+      };
 }

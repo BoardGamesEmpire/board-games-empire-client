@@ -54,7 +54,7 @@ final class GameImportStillRunning extends GameImportState {
   const GameImportStillRunning();
 }
 
-/// The base game is on the server, as [gameId].
+/// The requested game is on the server, as [gameId].
 final class GameImportCompleted extends GameImportState {
   const GameImportCompleted({required this.gameId});
 
