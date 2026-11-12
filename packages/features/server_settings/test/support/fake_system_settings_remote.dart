@@ -24,8 +24,24 @@ class FakeSystemSettingsRemote implements SystemSettingsRemoteDataSource {
     return completer.future;
   }
 
+  /// How many times [sendMailTest] was called.
+  int sendMailTestCalls = 0;
+
+  /// What [sendMailTest] throws, when set.
+  Exception? sendMailTestError;
+
+  /// What [sendMailTest] waits on before it answers, when set.
+  Completer<void>? sendMailTestGate;
+
   @override
-  Future<void> sendMailTest() => throw UnimplementedError();
+  Future<void> sendMailTest() async {
+    sendMailTestCalls++;
+    await sendMailTestGate?.future;
+    final error = sendMailTestError;
+    if (error != null) {
+      throw error;
+    }
+  }
 }
 
 /// Settings as the server would first send them.
