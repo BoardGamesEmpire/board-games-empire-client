@@ -80,6 +80,10 @@ jobs:
           RESULT: ${{ steps.agent.outputs.structured_output }}
         run: jq -r '.output' <<<"$RESULT"
 
-      # The same script outside the isolation, for comparison.
+      # The same script outside the isolation, for comparison. It runs
+      # whenever the agent step ran, so a failed agent run still leaves the
+      # baseline. It stays after the agent: its flutter --version could
+      # fill bin/cache and hide what the agent would have hit.
       - name: The same probe outside the isolation
+        if: ${{ !cancelled() && steps.agent.outcome != 'skipped' }}
         run: bash .github/actions/bug-agent-setup/isolation-probe.sh
