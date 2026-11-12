@@ -15,6 +15,8 @@ import 'package:dio_network/src/network/clock_skew_interceptor.dart';
 import 'package:dio_network/src/network/dio_factory.dart';
 import 'package:dio_network/src/network/network_log_interceptor.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
+import 'package:dio_network/src/notification/notification_remote_data_source_impl.dart';
+import 'package:dio_network/src/system_settings/system_settings_remote_data_source_impl.dart';
 import 'package:dio_network/src/user/user_remote_data_source_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -31,6 +33,8 @@ import 'package:network_interface/network_interface.dart'
         HouseholdInviteRemoteDataSource,
         HouseholdMemberRemoteDataSource,
         HouseholdRemoteDataSource,
+        NotificationRemoteDataSource,
+        SystemSettingsRemoteDataSource,
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -185,6 +189,17 @@ void registerServerNetwork({
     // owns the Dio.
     ..registerSingleton<AdminHouseholdRemoteDataSource>(
       AdminHouseholdRemoteDataSourceImpl(dio),
+    )
+    // #807: the per-server system settings and notification remotes, for the
+    // admin server settings section. Same convention and placement as the
+    // staff households remote: the per-server Dio carries the base URL and the
+    // session `/api/system-settings` and `/api/notifications` require. Const
+    // and stateless; the container owns the Dio.
+    ..registerSingleton<SystemSettingsRemoteDataSource>(
+      SystemSettingsRemoteDataSourceImpl(dio),
+    )
+    ..registerSingleton<NotificationRemoteDataSource>(
+      NotificationRemoteDataSourceImpl(dio),
     )
     // #42: the per-server games remote, for browse, search and the game
     // detail. Same convention and placement as the remotes above: the
