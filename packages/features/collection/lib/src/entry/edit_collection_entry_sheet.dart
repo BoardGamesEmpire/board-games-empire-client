@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
@@ -316,17 +315,17 @@ class _EditCollectionEntrySheetState extends State<_EditCollectionEntrySheet> {
             },
           ),
           const BgeGap.sm(),
-          _SwitchRow(
+          BgeSwitchField(
             switchKey: EditCollectionEntrySheet.favoriteKey,
             formControlName: _favorite,
             label: l10n.editCollectionFavorite,
-            busy: busy,
+            readOnly: busy,
           ),
-          _SwitchRow(
+          BgeSwitchField(
             switchKey: EditCollectionEntrySheet.playAgainKey,
             formControlName: _playAgain,
             label: l10n.editCollectionPlayAgain,
-            busy: busy,
+            readOnly: busy,
           ),
           const BgeGap.lg(),
           BgeFormActions(
@@ -348,88 +347,6 @@ class _EditCollectionEntrySheetState extends State<_EditCollectionEntrySheet> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A labelled on/off switch bound to a `FormControl<bool>`.
-///
-/// ## While [busy] it is read-only, not disabled
-///
-/// As the sheet's text fields and its rating dropdown are (STYLE_GUIDE,
-/// "In-flight forms"): drawn enabled, still in the focus order, and its value
-/// still read, while nothing toggles it. A disabled switch would leave the
-/// focus order mid-save, under a keyboard or screen-reader user.
-///
-/// To assistive tech it reads as `BgeDropdownField`'s read-only field does:
-/// enabled and read-only, focusable, with no tap to offer, since a double tap
-/// would toggle nothing. The keyboard's activation reaches the tile and does
-/// nothing; [IgnorePointer] takes the pointer and the semantic tap. It takes
-/// the focus action too, which the node here gives back, as `Focus` has it.
-class _SwitchRow extends StatefulWidget {
-  const _SwitchRow({
-    required this.switchKey,
-    required this.formControlName,
-    required this.label,
-    required this.busy,
-  });
-
-  final Key switchKey;
-  final String formControlName;
-  final String label;
-  final bool busy;
-
-  @override
-  State<_SwitchRow> createState() => _SwitchRowState();
-}
-
-class _SwitchRowState extends State<_SwitchRow> {
-  // Owned here so the node can give back the focus action [IgnorePointer]
-  // takes while busy.
-  final FocusNode _focusNode = FocusNode(debugLabel: 'Collection edit switch');
-
-  static void _ignore(bool _) {}
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final busy = widget.busy;
-
-    return ReactiveValueListenableBuilder<bool>(
-      formControlName: widget.formControlName,
-      // One node: the tile's merges into this one, which adds what read-only
-      // changes.
-      builder: (context, control, _) => MergeSemantics(
-        child: Semantics(
-          readOnly: busy,
-          // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-          onFocus: busy && defaultTargetPlatform != TargetPlatform.iOS
-              ? _focusNode.requestFocus
-              : null,
-          child: IgnorePointer(
-            ignoring: busy,
-            child: SwitchListTile(
-              key: widget.switchKey,
-              focusNode: _focusNode,
-              value: control.value ?? false,
-              title: Text(widget.label),
-              contentPadding: EdgeInsets.zero,
-              // Set while busy too, so the tile stays enabled and focusable;
-              // a toggle then changes nothing.
-              onChanged: busy
-                  ? _ignore
-                  : (value) => control
-                      ..value = value
-                      ..markAsTouched(),
-            ),
-          ),
-        ),
       ),
     );
   }

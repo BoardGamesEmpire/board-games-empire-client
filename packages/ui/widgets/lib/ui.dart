@@ -53,6 +53,9 @@
 /// call site, because #516's two lists, an event's Games tab and its Offer
 /// games page, were designed with it to filter the same way as the user types.
 /// Those two are its second and third.
+/// `BgeSwitchField` moved here from the collection entry sheet, which has two
+/// of them, for the server settings' reset-password switch, which #807 adds
+/// in the same change: its third call site.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -74,6 +77,7 @@ export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_search_field.dart';
+export 'src/forms/bge_switch_field.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';
