@@ -45,6 +45,7 @@ void main() {
     EventAction.manageAttendees,
     EventAction.resolveNomination,
     EventAction.offerGame,
+    EventAction.manageOfferedGames,
   };
 
   const household = {
@@ -58,6 +59,7 @@ void main() {
     EventAction.manageAttendees,
     EventAction.resolveNomination,
     EventAction.offerGame,
+    EventAction.manageOfferedGames,
   };
 
   /// The host holds every action, so a new [EventAction] fails the host and
@@ -85,6 +87,7 @@ void main() {
     EventAction.nominateGame,
     EventAction.voteGame,
     EventAction.offerGame,
+    EventAction.manageOfferedGames,
   };
 
   /// Every event role's set. A role missing from here fails the test below,
@@ -216,6 +219,22 @@ void main() {
         ]);
       }
     });
+
+    test(
+      "manageOfferedGames is the host's, co-host's and moderator's (#518)",
+      () {
+        final who = [
+          for (final role in EventRole.values)
+            if (eventActionsFor(
+              plain,
+              eventRole: role,
+            ).contains(EventAction.manageOfferedGames))
+              role,
+        ];
+
+        expect(who, [EventRole.host, EventRole.coHost, EventRole.moderator]);
+      },
+    );
 
     test(
       "offerGame is every attending role's but the spectator's (#516)",

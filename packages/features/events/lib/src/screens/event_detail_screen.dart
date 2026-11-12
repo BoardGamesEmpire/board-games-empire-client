@@ -136,12 +136,13 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The page's footer holds what answers the lists: how far a run of offers
 /// has got while it is out, or how the pool's last write went, a run of
 /// offers or a take-back, then how the viewer's last nominations write went,
-/// a nominate, a vote or a withdrawal, each with its own Dismiss, on either
-/// tab, since a run can outlast the stay on Games; then, while Games is
-/// selected, the stale-data banners, the pool's and the nominations', while
-/// what each shows may be out of date. There each is on screen and heard
-/// however far down the list the user is; what answers the whole screen
-/// stays in the header.
+/// a nominate, a vote or a withdrawal, or a host's approval, rejection or
+/// close of a vote (#518), each with its own Dismiss, on either tab, since a
+/// run can outlast the stay on Games; then, while Games is selected, the
+/// stale-data banners, the pool's and the nominations', while what each
+/// shows may be out of date. There each is on screen and heard however far
+/// down the list the user is; what answers the whole screen stays in the
+/// header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -465,6 +466,17 @@ class EventDetailScreen extends StatelessWidget {
   static Key poolTakeBackKey(String offeredGameId) =>
       Key('event_detail.pool_take_back_$offeredGameId');
 
+  /// Key on the Take back button of the dialog that asks before someone
+  /// else's game is taken back (#518).
+  static const Key poolTakeBackConfirmKey = Key(
+    'event_detail.take_back_theirs_confirm',
+  );
+
+  /// Key on that dialog's Keep it button (#518).
+  static const Key poolTakeBackKeepKey = Key(
+    'event_detail.take_back_theirs_keep',
+  );
+
   /// Key on a row's Nominate (#517), by the offered game's id.
   static Key poolNominateKey(String offeredGameId) =>
       Key('event_detail.pool_nominate_$offeredGameId');
@@ -508,7 +520,8 @@ class EventDetailScreen extends StatelessWidget {
   );
 
   /// Key on the banner in the footer saying how the viewer's last
-  /// nominations write went (#517): a nominate, a vote or a withdrawal.
+  /// nominations write went (#517): a nominate, a vote or a withdrawal, or a
+  /// host's approval, rejection or close of a vote (#518).
   static const Key nominationsOutcomeKey = Key(
     'event_detail.nominations_outcome',
   );
@@ -566,6 +579,33 @@ class EventDetailScreen extends StatelessWidget {
 
   /// Key on the withdraw dialog's Keep it button (#517).
   static const Key withdrawKeepKey = Key('event_detail.withdraw_keep');
+
+  /// Key on a host's Approve on a nomination awaiting approval (#518), by
+  /// the nomination's id.
+  static Key nominationApproveKey(String nominationId) =>
+      Key('event_detail.nomination_approve_$nominationId');
+
+  /// Key on a host's Reject on a nomination awaiting approval (#518), by the
+  /// nomination's id.
+  static Key nominationRejectKey(String nominationId) =>
+      Key('event_detail.nomination_reject_$nominationId');
+
+  /// Key on a host's Close vote on an open nomination (#518), by the
+  /// nomination's id.
+  static Key nominationCloseVoteKey(String nominationId) =>
+      Key('event_detail.nomination_close_vote_$nominationId');
+
+  /// Key on the confirming button of the dialog that asks before a host's
+  /// approval, rejection or close of a vote (#518): Approve, Reject or Close
+  /// vote.
+  static const Key hostDecisionConfirmKey = Key(
+    'event_detail.host_decision_confirm',
+  );
+
+  /// Key on that dialog's Not yet button (#518).
+  static const Key hostDecisionKeepKey = Key(
+    'event_detail.host_decision_keep',
+  );
 
   /// Key on the Nominations section's Filters button (#517), which opens
   /// the nominations' filters.
@@ -1403,6 +1443,9 @@ class _ReadyPage extends StatelessWidget {
               state: gamesState,
               nominations: nominationsState,
               viewerId: state.detail.attendance?.id,
+              // Whose games a take-back of someone else's was about (#518),
+              // named as the pool's rows name them.
+              names: poolNames(state.detail),
               showStale: tab == EventDetailTab.games,
             ),
       // Above the tabs, and in the semantics tree however far down the page
@@ -2322,6 +2365,7 @@ class _Dates extends StatelessWidget {
       case EventAction.offerGame:
       case EventAction.nominateGame:
       case EventAction.voteGame:
+      case EventAction.manageOfferedGames:
         return null;
     }
   }
@@ -2738,6 +2782,9 @@ class _ActionOutcomeBanner extends StatelessWidget {
     // Nor does a nomination or a vote (#517): the nominations' bloc owns
     // theirs.
     EventAction.nominateGame || EventAction.voteGame => null,
+    // Nor does a take-back of someone else's game (#518): the games pool's
+    // bloc sends it, as it does an offer.
+    EventAction.manageOfferedGames => null,
     // Delete is the only other action whose outcome reaches here: a status
     // write's and a roster write's take the arms above. The event's edit
     // (#500) is offered nowhere on this screen, so none reaches here.

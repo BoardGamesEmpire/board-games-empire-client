@@ -434,6 +434,46 @@ void main() {
       expect(voteHintFor(ready(pol: pol), pool: const []), isNull);
     });
 
+    test('says countsWhenAttending to one not attending under every rule, '
+        'before countsWhenOffering', () {
+      for (final eligibility in [
+        VoteEligibility.allAttendees,
+        VoteEligibility.confirmedOnly,
+        VoteEligibility.poolParticipants,
+      ]) {
+        final state = ready(
+          pol: policy(eligibility: eligibility),
+          status: EventParticipationStatus.notAttending,
+        );
+        for (final pool in [
+          const <OfferedGame>[],
+          [offered('o1', 'att-me')],
+        ]) {
+          expect(
+            voteHintFor(state, pool: pool),
+            VoteHint.countsWhenAttending,
+            reason: '${eligibility.name}, ${pool.length} offered',
+          );
+        }
+      }
+    });
+
+    test('is null under AllAttendees for one invited or maybe', () {
+      for (final status in [
+        EventParticipationStatus.invited,
+        EventParticipationStatus.maybe,
+      ]) {
+        expect(
+          voteHintFor(
+            ready(pol: policy(), status: status),
+            pool: const [],
+          ),
+          isNull,
+          reason: status.name,
+        );
+      }
+    });
+
     test('is null with no policy or no attendance', () {
       expect(voteHintFor(ready(), pool: const []), isNull);
       expect(

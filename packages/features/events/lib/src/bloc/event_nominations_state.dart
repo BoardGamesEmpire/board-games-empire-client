@@ -40,11 +40,22 @@ enum NominationWrite {
 
   /// Withdrawing the viewer's own nomination.
   withdraw,
+
+  /// The host approving a nomination awaiting approval, so its game joins
+  /// the lineup (#518).
+  approve,
+
+  /// The host rejecting a nomination awaiting approval (#518).
+  reject,
+
+  /// The host closing the vote on an open nomination, which the server
+  /// counts and settles (#518).
+  resolve,
 }
 
 /// The write that is out: which [NominationWrite], and the id it is about.
 /// That is the pool row's id (`OfferedGame.id`) for a nominate, and the
-/// nomination's id for a vote or a withdrawal.
+/// nomination's id for every other write.
 typedef NominationWriting = ({NominationWrite write, String id});
 
 /// How a nominate ended (#517). The first four say what the server made of
@@ -128,13 +139,58 @@ enum WithdrawResult {
   dropped,
 }
 
-/// How a write ended, for the screen to announce: one case per write.
-/// [title] names the game it was about.
+/// How a host's approval or rejection ended (#518).
+enum HostDecisionResult {
+  /// The nomination is approved, or rejected.
+  done,
+
+  /// The nomination isn't awaiting approval now: a 400. It is read again.
+  changed,
+
+  /// The server refused the write: a 403.
+  refused,
+
+  /// The nomination or its event is gone: a 404. Its row is dropped.
+  gone,
+
+  /// Anything else, a 429 among them, or the session could not be confirmed
+  /// as this viewer's (#432).
+  failed,
+
+  /// The screen's own re-check stopped the write, and nothing was sent.
+  dropped,
+}
+
+/// How a host's close of a vote ended (#518).
+enum ResolveResult {
+  /// The server counted the votes and settled the nomination.
+  decided,
+
+  /// The nomination isn't open for votes now: a 400. It is read again.
+  changed,
+
+  /// The server refused the write: a 403.
+  refused,
+
+  /// The nomination or its event is gone: a 404. Its row is dropped.
+  gone,
+
+  /// Anything else, a 429 among them, or the session could not be confirmed
+  /// as this viewer's (#432).
+  failed,
+
+  /// The screen's own re-check stopped the write, and nothing was sent.
+  dropped,
+}
+
+/// How a write ended, for the screen to announce: one case per write, the
+/// host's approval and rejection sharing one. [title] names the game it was
+/// about.
 sealed class EventNominationsOutcome extends Equatable {
   const EventNominationsOutcome({required this.title});
 
   /// The game's title: the pool row's for a nominate, and the nomination's
-  /// for a vote or a withdrawal, as the event carried it.
+  /// for every other write, as the event carried it.
   final String title;
 }
 
@@ -172,8 +228,51 @@ final class WithdrawOutcome extends EventNominationsOutcome {
   List<Object?> get props => [result, title];
 }
 
+/// How a host's approval or rejection ended (#518). [write] says which:
+/// [NominationWrite.approve] or [NominationWrite.reject].
+final class HostDecisionOutcome extends EventNominationsOutcome {
+  const HostDecisionOutcome(
+    this.result, {
+    required this.write,
+    required super.title,
+  }) : assert(
+         write == NominationWrite.approve || write == NominationWrite.reject,
+         'a host decision is an approval or a rejection',
+       );
+
+  final HostDecisionResult result;
+
+  /// Which decision it was: [NominationWrite.approve] or
+  /// [NominationWrite.reject].
+  final NominationWrite write;
+
+  @override
+  List<Object?> get props => [result, write, title];
+}
+
+/// How a host's close of a vote ended (#518). [resolution] is the server's
+/// count on a decided, and null otherwise.
+final class ResolveOutcome extends EventNominationsOutcome {
+  const ResolveOutcome(this.result, {required super.title, this.resolution})
+    : assert(
+        resolution == null || result == ResolveResult.decided,
+        'only a decided resolve carries a resolution',
+      );
+
+  final ResolveResult result;
+
+  /// How the vote came out, as the resolve answered it, when [result] is
+  /// decided. The server stores none of it, so a later read of the
+  /// nomination carries its status alone: this outcome is the only place
+  /// the count shows.
+  final NominationResolution? resolution;
+
+  @override
+  List<Object?> get props => [result, title, resolution];
+}
+
 /// The nominations on one event's Games tab, and the viewer's write that is
-/// out (#517).
+/// out (#517), a host's decision among them (#518).
 ///
 /// [refreshFailed] and [refreshing] are the detail's own, as
 /// `EventDetailReady` has them: with them a screen keeps its failed banner,

@@ -15,6 +15,7 @@ import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
@@ -103,10 +104,7 @@ final class _GamesBody {
       nominations: nominations == null
           ? null
           : _nominationsOf(detail, nominations, controller),
-      names: {
-        for (final row in detail.detail.snapshot.attendees ?? <EventAttendee>[])
-          row.id: row.name,
-      },
+      names: poolNames(detail.detail),
     );
   }
 
@@ -228,7 +226,9 @@ final class _GamesBody {
 /// games, a title search, a filter by person and "Not mine". A row that
 /// supplies a live nomination says "Nominated" (#517). Each row ends with
 /// Nominate where the viewer is offered it ([nominateGate]), and the
-/// viewer's own rows with Take back.
+/// viewer's own rows with Take back ([offerGamesGate]); every other row too
+/// where the viewer may take back anyone's game ([canTakeBackAnyGame],
+/// #518).
 ///
 /// Its slivers, as one group under the tab bar: the Nominations section,
 /// where there is a nominations' state; then the pool's heading, "Games
@@ -264,11 +264,14 @@ final class _GamesBody {
 /// event is deleted ([acting]), and while another of the pool's writes is
 /// out. The pool's own reads hold nothing back.
 ///
-/// Take back is held, inert, while its own request is out, so it keeps
-/// focus. Its press waits for any running detail read to end
-/// ([readEnded]), then sends only if the viewer may still take games back
-/// and the game is still in the pool; otherwise nothing is sent, and the
-/// footer says so. When the row leaves, focus is handed on as
+/// Take back is held, inert, from its press until its take-back is over,
+/// wherever it would otherwise be unavailable, so it keeps focus
+/// ([_TakeBackButton]). On the viewer's own row it sends at once; on
+/// someone else's it asks first, naming the game and whose it is, since
+/// only they can offer it again (#518). Then it waits for any running
+/// detail read to end ([readEnded]), and sends only if the viewer may still
+/// take that game back and it is still in the pool; otherwise nothing is
+/// sent, and the footer says so. When the row leaves, focus is handed on as
 /// [EventGamesTabScope] says.
 ///
 /// Offer games opens the Offer games page ([onOfferGames]), and sends what
@@ -362,6 +365,9 @@ class EventGamesTab extends StatelessWidget {
     final rows = _body.poolRows;
     final names = _body.names;
     final gate = offerGamesGate(detail);
+    // Take back on someone else's row (#518), where the viewer may take
+    // back anyone's game.
+    final anyGame = canTakeBackAnyGame(detail);
     final viewerId = detail.detail.attendance?.id;
     // As the roster's controls are (#589): not while a detail read runs, the
     // screen's own request is out or the event is deleted, nor while another
@@ -444,6 +450,7 @@ class EventGamesTab extends StatelessWidget {
               controller: controller,
               games: games,
               gate: gate,
+              anyGame: anyGame,
               viewerId: viewerId,
               names: names,
               writable: writable,
@@ -522,13 +529,13 @@ class EventGamesTab extends StatelessWidget {
                   : own
                   ? l10n.eventsNominateYouNotGoingHint
                   : l10n.eventsNominateSupplierNotGoingHint;
+              final name = names[game.attendeeId];
               return _PoolRow(
                 game: game,
                 who: own
                     ? l10n.eventsGamesYours
                     : l10n.eventsGamesTheirs(
-                        names[game.attendeeId] ??
-                            l10n.eventsAttendeeSomeoneStart,
+                        name ?? l10n.eventsAttendeeSomeoneStart,
                       ),
                 nominated: suppliesLive(game, nominated),
                 note: notGoing,
@@ -547,16 +554,23 @@ class EventGamesTab extends StatelessWidget {
                             _nominate(context, game, clock: this.now),
                       )
                     : null,
-                takeBack: own && gate != OfferGamesGate.hidden
+                takeBack: (own ? gate != OfferGamesGate.hidden : anyGame)
                     ? _TakeBackButton(
                         game: game,
                         area: controller.takeBackArea(game.id),
                         inert: games.takingBack == game.id,
                         enabled: writable,
+                        runOver: !games.busy,
                         onPressed: () {
                           // Armed by the press itself, however it came.
                           controller.armTakeBack(game.id);
-                          unawaited(_takeBack(context, controller, game));
+                          return _takeBack(
+                            context,
+                            controller,
+                            game,
+                            viewerId: viewerId,
+                            names: names,
+                          );
                         },
                       )
                     : null,
@@ -571,53 +585,91 @@ class EventGamesTab extends StatelessWidget {
 
 /// Takes [game] back once any running detail read has ended (#516), for the
 /// event, the viewer's row and the roster as the detail shows them then,
-/// whose ids a reconcile can have moved (#499).
+/// whose ids a reconcile can have moved (#499). Completes true when the
+/// take-back was sent, and false when nothing was: Keep it, or as below.
 ///
-/// Nothing is sent if, by then, the viewer may no longer take games back,
-/// the game isn't theirs, or it has left the pool: the page already shows
-/// that, and the footer says the take-back was dropped, or a screen reader
-/// would hear nothing happen. Whatever sends nothing disarms [controller]'s
-/// hand-off from its Take back.
-Future<void> _takeBack(
+/// Whose game it is comes from the row's attendee: the viewer's own, where
+/// it is their row [viewerId], goes at once. Someone else's asks first, as a
+/// destructive action, naming whoever offered it from [names], the roster's
+/// names, as the row does: only they can offer it again (#518). It then goes
+/// for the row's attendee as the pool holds it then.
+///
+/// Nothing is sent if, by then, the viewer may no longer take that game
+/// back (their own: [offerGamesGate]; anyone else's: [canTakeBackAnyGame]),
+/// their own game is no longer theirs, or it has left the pool: the page
+/// already shows that, and the footer says the take-back was dropped, or a
+/// screen reader would hear nothing happen. Whatever sends nothing disarms
+/// [controller]'s hand-off from its Take back.
+Future<bool> _takeBack(
   BuildContext context,
   EventGamesTabController controller,
-  OfferedGame game,
-) async {
+  OfferedGame game, {
+  required String? viewerId,
+  required Map<String, String?> names,
+}) async {
   // Read before anything is awaited: the row can leave meanwhile, and take
-  // the context with it.
+  // the context with it, and the dialog covers it.
+  final l10n = EventsLocalizations.of(context);
   final detail = context.read<EventDetailBloc>();
   final games = context.read<EventGamesBloc>();
+  final own = viewerId != null && game.attendeeId == viewerId;
+  if (!own) {
+    final offeredBy = names[game.attendeeId] ?? l10n.eventsAttendeeSomeone;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.eventsTakeBackTheirsConfirmTitle(game.title, offeredBy),
+      body: l10n.eventsTakeBackTheirsConfirmBody,
+      keepLabel: l10n.eventsTakeBackTheirsConfirmKeep,
+      confirmLabel: l10n.eventsTakeBackTheirsConfirm,
+      destructive: true,
+      keepKey: EventDetailScreen.poolTakeBackKeepKey,
+      confirmKey: EventDetailScreen.poolTakeBackConfirmKey,
+    );
+    if (!confirmed || games.isClosed) {
+      controller.disarmTakeBack(game.id);
+      return false;
+    }
+  }
   final state = await readEnded(detail);
   if (state is! EventDetailReady || games.isClosed) {
     controller.disarmTakeBack(game.id);
-    return;
+    return false;
   }
 
   final viewer = state.detail.attendance;
-  final inPool = games.state.games.any((shown) => shown.id == game.id);
-  if (offerGamesGate(state) == OfferGamesGate.hidden ||
-      viewer == null ||
-      viewer.id != game.attendeeId ||
-      !inPool) {
+  final shown = games.state.games
+      .where((each) => each.id == game.id)
+      .firstOrNull;
+  // Pressed as the viewer's own, it goes only while it is theirs: it never
+  // asked.
+  final attendeeId = own
+      ? (offerGamesGate(state) != OfferGamesGate.hidden &&
+                viewer != null &&
+                viewer.id == shown?.attendeeId
+            ? viewer.id
+            : null)
+      : (canTakeBackAnyGame(state) ? shown?.attendeeId : null);
+  if (attendeeId == null) {
     controller.disarmTakeBack(game.id);
     games.add(
       EventGamesWriteDropped(EventGamesWrite.takeBack, title: game.title),
     );
-    return;
+    return false;
   }
   // One write at a time; the bloc would ignore this one.
   if (games.state.busy) {
     controller.disarmTakeBack(game.id);
-    return;
+    return false;
   }
   games.add(
     EventGameTakenBack(
       state.detail.snapshot.event.id,
-      viewer.id,
+      attendeeId,
       game,
       attendeeIds: poolAttendeeIds(state.detail),
     ),
   );
+  return true;
 }
 
 /// One choice Nominate offers (#517): the scope it nominates for, and the
@@ -820,6 +872,7 @@ class _PoolHeader extends StatelessWidget {
     required this.controller,
     required this.games,
     required this.gate,
+    required this.anyGame,
     required this.viewerId,
     required this.names,
     required this.writable,
@@ -830,6 +883,10 @@ class _PoolHeader extends StatelessWidget {
   final EventGamesTabController controller;
   final EventGamesState games;
   final OfferGamesGate gate;
+
+  /// Whether the viewer may take back anyone's game (#518), so Take back
+  /// is built on other people's rows too.
+  final bool anyGame;
   final String? viewerId;
   final Map<String, String?> names;
 
@@ -871,8 +928,9 @@ class _PoolHeader extends StatelessWidget {
           const BgeGap.md(),
         ],
         // Once for the tab, after Offer games where it is built: it, each
-        // Nominate and each Take back carry it as their hint.
-        if (offline && gate != OfferGamesGate.hidden) ...[
+        // Nominate and each Take back carry it as their hint. Take back can
+        // be built where Offer games isn't, on other people's rows (#518).
+        if (offline && (gate != OfferGamesGate.hidden || anyGame)) ...[
           const BgeOnlineOnlyNote(),
           const BgeGap.md(),
         ],
@@ -1458,17 +1516,27 @@ class _NominateButtonState extends State<_NominateButton>
   }
 }
 
-/// Take back on one of the viewer's rows (#516): a direct write, so
-/// disabled offline through [BgeOnlineOnly], saying why as its hint. Inert
-/// while its own request is out, so it keeps focus (#607); disabled while
-/// another write is out or a detail read runs ([enabled]). Named for its
-/// game to a screen reader.
-class _TakeBackButton extends StatelessWidget {
+/// Take back on one of the viewer's rows (#516), or, for whoever may take
+/// back anyone's game, on someone else's (#518): a direct write, so
+/// disabled offline through [BgeOnlineOnly], saying why as its hint.
+/// Disabled while another write is out or a detail read runs ([enabled]).
+/// Named for its game to a screen reader.
+///
+/// It keeps focus through its own take-back (#607). On someone else's row
+/// its press opens a dialog first, which hands focus back to it as it
+/// closes, just before the take-back goes out, and a disabled button can't
+/// hold focus. So, as Withdraw is, it is held through [HeldPress] from its
+/// press until its take-back is over ([runOver]): enabled, ignoring presses
+/// and showing a spinner, wherever it would otherwise be unavailable. It is
+/// inert, too, while its row's take-back is out ([inert]), however that
+/// began.
+class _TakeBackButton extends StatefulWidget {
   const _TakeBackButton({
     required this.game,
     required this.area,
     required this.inert,
     required this.enabled,
+    required this.runOver,
     required this.onPressed,
   });
 
@@ -1482,24 +1550,46 @@ class _TakeBackButton extends StatelessWidget {
 
   /// Whether it may be pressed now, connection aside.
   final bool enabled;
-  final VoidCallback onPressed;
+
+  /// Whether none of the pool's writes is out: once its own take-back went
+  /// out, that is over.
+  final bool runOver;
+
+  /// Asks first where it asks, and sends the take-back. Completes true when
+  /// it was sent, and false when nothing was.
+  final Future<bool> Function() onPressed;
+
+  @override
+  State<_TakeBackButton> createState() => _TakeBackButtonState();
+}
+
+class _TakeBackButtonState extends State<_TakeBackButton>
+    with HeldPress<_TakeBackButton> {
+  @override
+  bool get heldActionOver => widget.runOver;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
+    final game = widget.game;
+    final available = widget.enabled && !offline;
     // Offline it is disabled, pressed or not: no press made it so (#49).
-    final inert = this.inert && !offline;
+    final inert =
+        heldInert(available: available, disabled: offline) ||
+        (widget.inert && !offline);
 
     return Focus(
-      focusNode: area,
+      focusNode: widget.area,
       includeSemantics: false,
       child: BgeOnlineOnly(
         showNote: false,
         child: BgeInertButton(
           inert: inert,
           label: l10n.eventsGamesTakeBackNamed(game.title),
-          onPressed: (enabled && !offline) || inert ? onPressed : null,
+          onPressed: available || inert
+              ? () => unawaited(holdPress(widget.onPressed))
+              : null,
           builder: (context, focusNode, onPressed) => TextButton.icon(
             key: EventDetailScreen.poolTakeBackKey(game.id),
             focusNode: focusNode,

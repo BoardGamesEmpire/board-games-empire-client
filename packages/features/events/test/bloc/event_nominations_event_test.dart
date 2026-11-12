@@ -2,8 +2,8 @@ import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
-/// The nominations' input (#517) is equal by what it names, so a test can
-/// say which request reached the bloc.
+/// The nominations' input (#517, #518) is equal by what it names, so a test
+/// can say which request reached the bloc.
 void main() {
   const game = OfferedGame(
     id: 'g-1',
@@ -121,6 +121,32 @@ void main() {
     expect(withdrawal, NominationWithdrawn('e-1', nomination));
     expect(withdrawal, isNot(NominationWithdrawn('e-2', nomination)));
     expect(withdrawal, isNot(NominationWithdrawn('e-1', otherNomination)));
+  });
+
+  test('a host decision is equal by its event and nomination, and by which '
+      'decision it is', () {
+    for (final decide
+        in <EventNominationsEvent Function(String, EventNomination)>[
+          NominationApproved.new,
+          NominationRejected.new,
+          NominationResolved.new,
+        ]) {
+      expect(decide('e-1', nomination), decide('e-1', nomination));
+      expect(decide('e-1', nomination), isNot(decide('e-2', nomination)));
+      expect(decide('e-1', nomination), isNot(decide('e-1', otherNomination)));
+    }
+    expect(
+      NominationApproved('e-1', nomination),
+      isNot(NominationRejected('e-1', nomination)),
+    );
+    expect(
+      NominationApproved('e-1', nomination),
+      isNot(NominationResolved('e-1', nomination)),
+    );
+    expect(
+      NominationRejected('e-1', nomination),
+      isNot(NominationResolved('e-1', nomination)),
+    );
   });
 
   test('a dropped write is equal by its write and title', () {

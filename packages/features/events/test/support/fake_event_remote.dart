@@ -93,6 +93,15 @@ typedef CastVoteRequest = ({
 /// What a withdrawal sent (#517).
 typedef WithdrawRequest = ({String eventId, String nominationId});
 
+/// What an approval, rejection or resolve sent (#518).
+typedef NominationDecisionRequest = ({String eventId, String nominationId});
+
+/// What a resolve answered (#518).
+typedef ResolveAnswer = ({
+  EventNomination nomination,
+  NominationResolution resolution,
+});
+
 /// One whole page of [rows], as a browse read answers (#613).
 PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     PaginatedResult(
@@ -132,6 +141,9 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
     this.withdrawn = _noWithdraw,
+    this.approved = _noApprove,
+    this.rejected = _noReject,
+    this.resolved = _noResolve,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -157,6 +169,9 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
     this.withdrawn = _noWithdraw,
+    this.approved = _noApprove,
+    this.rejected = _noReject,
+    this.resolved = _noResolve,
   }) : respond = ((request) {
          // The fake throws what a test hands it: an Exception or an Error.
          // ignore: only_throw_errors
@@ -186,6 +201,9 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.nominated = _noNominate,
     this.voteCast = _noVoteCast,
     this.withdrawn = _noWithdraw,
+    this.approved = _noApprove,
+    this.rejected = _noReject,
+    this.resolved = _noResolve,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -232,6 +250,15 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noWithdraw(WithdrawRequest request) =>
       throw UnimplementedError('withdrawNomination is not faked');
+
+  static Never _noApprove(NominationDecisionRequest request) =>
+      throw UnimplementedError('approveNomination is not faked');
+
+  static Never _noReject(NominationDecisionRequest request) =>
+      throw UnimplementedError('rejectNomination is not faked');
+
+  static Never _noResolve(NominationDecisionRequest request) =>
+      throw UnimplementedError('resolveNomination is not faked');
 
   static Never _noVote(EventVoteRequest request) =>
       throw UnimplementedError('submitAvailability is not faked');
@@ -350,6 +377,27 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each withdrawal, in order, recorded before it is answered.
   final List<WithdrawRequest> withdrawals = [];
+
+  /// Answers each approval with the nomination as the server holds it (#518).
+  final FutureOr<EventNomination> Function(NominationDecisionRequest request)
+  approved;
+
+  /// Each approval, in order, recorded before it is answered.
+  final List<NominationDecisionRequest> approvals = [];
+
+  /// Answers each rejection with the nomination as the server holds it (#518).
+  final FutureOr<EventNomination> Function(NominationDecisionRequest request)
+  rejected;
+
+  /// Each rejection, in order, recorded before it is answered.
+  final List<NominationDecisionRequest> rejections = [];
+
+  /// Answers each resolve with the nomination and its resolution (#518).
+  final FutureOr<ResolveAnswer> Function(NominationDecisionRequest request)
+  resolved;
+
+  /// Each resolve, in order, recorded before it is answered.
+  final List<NominationDecisionRequest> resolutions = [];
 
   final List<EventListRequest> requests = [];
 
@@ -731,6 +779,36 @@ class FakeEventRemote implements EventRemoteDataSource {
     final request = (eventId: eventId, nominationId: nominationId);
     withdrawals.add(request);
     return withdrawn(request);
+  }
+
+  @override
+  Future<EventNomination> approveNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    final request = (eventId: eventId, nominationId: nominationId);
+    approvals.add(request);
+    return approved(request);
+  }
+
+  @override
+  Future<EventNomination> rejectNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    final request = (eventId: eventId, nominationId: nominationId);
+    rejections.add(request);
+    return rejected(request);
+  }
+
+  @override
+  Future<ResolveAnswer> resolveNomination(
+    String eventId,
+    String nominationId,
+  ) async {
+    final request = (eventId: eventId, nominationId: nominationId);
+    resolutions.add(request);
+    return resolved(request);
   }
 
   @override

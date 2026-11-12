@@ -390,7 +390,8 @@ enum VoteHint {
 /// What to tell the viewer about whether their vote will count, from the
 /// event's [EventPolicy.voteEligibility] and their row, or null when nothing
 /// needs saying, as when the event has no readable policy or the viewer has no
-/// row. [pool] is the event's offered games.
+/// row. [pool] is the event's offered games. A viewer who is not attending
+/// counts under no rule ([VoteEligibility]), so is told to go under each.
 VoteHint? voteHintFor(
   EventDetailReady state, {
   required List<OfferedGame> pool,
@@ -399,6 +400,11 @@ VoteHint? voteHintFor(
   final me = state.detail.attendance;
 
   if (policy == null || me == null) return null;
+  // Under every rule, one not attending doesn't count, and offering a game
+  // wouldn't change that, so going is what they're told first.
+  if (me.status == EventParticipationStatus.notAttending) {
+    return VoteHint.countsWhenAttending;
+  }
 
   return switch (policy.voteEligibility) {
     VoteEligibility.confirmedOnly

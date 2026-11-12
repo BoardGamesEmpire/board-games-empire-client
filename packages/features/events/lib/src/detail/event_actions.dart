@@ -106,6 +106,12 @@ enum EventAction {
   /// Vote on a nominated game (#517). Held by the roles that hold
   /// [nominateGame].
   voteGame,
+
+  /// Take back anyone's offered game, not only your own (#518). Held by the
+  /// host, co-host and moderator, and by a household owner or admin on a
+  /// household event: the roles whose grant is `manage:attendee_game_list`
+  /// rather than the create and delete slugs [offerGame] stands for.
+  manageOfferedGames,
 }
 
 /// The actions [event] offers a viewer holding [eventRole] on it and, on a
@@ -315,6 +321,8 @@ const _host = <EventAction>{
   EventAction.resolveNomination,
   // `create:attendee_game_list` and `delete:attendee_game_list`
   EventAction.offerGame,
+  // `manage:attendee_game_list`
+  EventAction.manageOfferedGames,
   // `create:event_game_nomination` and `update:event_game_nomination:withdraw`
   EventAction.nominateGame,
   // `create:event_game_vote`
@@ -341,6 +349,8 @@ const _coHost = <EventAction>{
   EventAction.resolveNomination,
   // `create:attendee_game_list` and `delete:attendee_game_list`
   EventAction.offerGame,
+  // `manage:attendee_game_list`
+  EventAction.manageOfferedGames,
   // `create:event_game_nomination` and `update:event_game_nomination:withdraw`
   EventAction.nominateGame,
   // `create:event_game_vote`
@@ -376,8 +386,10 @@ const _moderator = <EventAction>{
   EventAction.rsvp,
   // `update:event_game_nomination:resolve`
   EventAction.resolveNomination,
-  // `manage:attendee_game_list`
+  // `manage:attendee_game_list`: covers offering to and taking back from
+  // any list, so it gives both actions.
   EventAction.offerGame,
+  EventAction.manageOfferedGames,
 };
 
 /// `EventParticipant`: the guest's set, and nominates and votes on games.
@@ -436,6 +448,8 @@ const _householdOwnerOrAdmin = <EventAction>{
   // `update:event_game_nomination:resolve:household`. Approving and rejecting
   // a nomination have no household variant.
   EventAction.resolveNomination,
-  // `manage:attendee_game_list:household`
+  // `manage:attendee_game_list:household`: covers offering to and taking back
+  // from any list on the household's event, so it gives both actions.
   EventAction.offerGame,
+  EventAction.manageOfferedGames,
 };

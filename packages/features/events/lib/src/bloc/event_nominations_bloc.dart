@@ -8,10 +8,6 @@ import 'package:observability/observability.dart';
 /// What a write's answer does to a list of nominations.
 typedef _Change = List<EventNomination> Function(List<EventNomination> rows);
 
-/// How a withdrawal ended, with the server's answer when it is to be used,
-/// and whether it was sent.
-typedef _Answered<R> = ({R result, EventNomination? answer, bool sent});
-
 /// Puts [row] at the head, in place of any row with its id.
 _Change _atHead(EventNomination row) =>
     (rows) => [row, ...rows.where((each) => each.id != row.id)];
@@ -36,8 +32,42 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
   _ => NominateResult.settled,
 };
 
+/// How a withdrawal or a host's decision ended at the server, before it is
+/// named for its outcome: a withdrawal's [WithdrawResult], an approval's or
+/// a rejection's [HostDecisionResult], or a resolve's [ResolveResult].
+enum _Decided { done, changed, refused, gone, failed }
+
+/// A withdrawal that ended as [decided]: a changed is a status that doesn't
+/// allow it now.
+WithdrawResult _withdrawn(_Decided decided) => switch (decided) {
+  _Decided.done => WithdrawResult.done,
+  _Decided.changed => WithdrawResult.notWithdrawable,
+  _Decided.refused => WithdrawResult.refused,
+  _Decided.gone => WithdrawResult.gone,
+  _Decided.failed => WithdrawResult.failed,
+};
+
+/// An approval or a rejection that ended as [decided].
+HostDecisionResult _hostDecision(_Decided decided) => switch (decided) {
+  _Decided.done => HostDecisionResult.done,
+  _Decided.changed => HostDecisionResult.changed,
+  _Decided.refused => HostDecisionResult.refused,
+  _Decided.gone => HostDecisionResult.gone,
+  _Decided.failed => HostDecisionResult.failed,
+};
+
+/// A resolve that ended as [decided].
+ResolveResult _resolved(_Decided decided) => switch (decided) {
+  _Decided.done => ResolveResult.decided,
+  _Decided.changed => ResolveResult.changed,
+  _Decided.refused => ResolveResult.refused,
+  _Decided.gone => ResolveResult.gone,
+  _Decided.failed => ResolveResult.failed,
+};
+
 /// Reads every nomination on an event's Games tab, and sends the viewer's
-/// nominate, vote and withdrawal (#517).
+/// nominate, vote and withdrawal (#517), and the host's approval, rejection
+/// and close of a vote (#518).
 ///
 /// Writes go straight to the server, never through the sync queue, and
 /// nothing is re-sent. The nominations are never cached: they live in
@@ -89,13 +119,13 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 ///
 /// ## Writes
 ///
-/// One write is out at a time: a nominate, a vote or a withdrawal is ignored
-/// while another is out ([EventNominationsState.busy]). As each starts it
-/// clears the last outcome, and [EventNominationsState.writing] names it
-/// until its outcome comes in, in the same state as any row its answer
-/// changes. So the outcome never lands beside the row as it was. The outcome
-/// carries the game's title: the pool row's for a nominate, and the
-/// nomination's for a vote or a withdrawal.
+/// One write is out at a time: a nominate, a vote, a withdrawal or a host's
+/// decision is ignored while another is out ([EventNominationsState.busy]).
+/// As each starts it clears the last outcome, and
+/// [EventNominationsState.writing] names it until its outcome comes in, in
+/// the same state as any row its answer changes. So the outcome never lands
+/// beside the row as it was. The outcome carries the game's title: the pool
+/// row's for a nominate, and the nomination's for every other write.
 ///
 /// A row's change is kept over a read that was out as the write ended, whose
 /// answer can predate the write: the change is made again on that answer. A
@@ -152,6 +182,25 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// - A 404: gone, and the row is dropped.
 /// - Anything else, a 429 among them: failed.
 ///
+/// ### A host's decision
+///
+/// [NominationApproved] and [NominationRejected] decide a nomination awaiting
+/// approval, and [NominationResolved] closes the vote on an open one (#518).
+/// An approval's or a rejection's outcome is a [HostDecisionOutcome] naming
+/// which it was, and a resolve's a [ResolveOutcome]. Each answers as a
+/// withdrawal does:
+///
+/// - 2xx: done for an approval or a rejection, and decided for a resolve.
+///   The answer replaces the row. A resolve's outcome
+///   carries the resolution it answered with, the server's count, which it
+///   stores nowhere: a later read shows the status alone.
+/// - A 400: changed: the nomination isn't awaiting approval, or open for
+///   votes, now. The nomination is read again as after a vote, the write
+///   staying out until it answers.
+/// - A 403: refused.
+/// - A 404: gone, and the row is dropped.
+/// - Anything else, a 429 among them: failed.
+///
 /// ## A dropped write
 ///
 /// [NominationWriteDropped] is a write the screen's own re-check stopped. It
@@ -170,11 +219,12 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// throw, sends nothing: a write ends as failed, and a read as above.
 ///
 /// An answer is about whoever the session was as it went out, so the session
-/// is asked again before an answer is used: a read's, a nominate's and a
-/// withdrawal's, and a vote's or a withdrawal's 404, which drops a row. A no
-/// fails the read as above, and ends the write as failed, its answer unused,
-/// since it could be another user's. A vote's 2xx carries nothing to use, so
-/// its check is the one before the nomination's own read.
+/// is asked again before an answer is used: a read's, a nominate's, a
+/// withdrawal's and a host decision's, and a 404 that drops a row: a vote's,
+/// a withdrawal's or a host decision's. A no fails the read as above, and
+/// ends the write as failed, its answer unused, since it could be another
+/// user's. A resolve's resolution goes unused with it. A vote's 2xx carries
+/// nothing to use, so its check is the one before the nomination's own read.
 ///
 /// ## Closing
 ///
@@ -199,6 +249,9 @@ class EventNominationsBloc
     on<GameNominated>(_onNominated);
     on<NominationVoteCast>(_onVoteCast);
     on<NominationWithdrawn>(_onWithdrawn);
+    on<NominationApproved>(_onApproved);
+    on<NominationRejected>(_onRejected);
+    on<NominationResolved>(_onResolved);
     on<NominationWriteDropped>(_onWriteDropped);
     on<EventNominationsOutcomeDismissed>(_onOutcomeDismissed);
   }
@@ -398,55 +451,169 @@ class EventNominationsBloc
     final nomination = event.nomination;
     _started((write: NominationWrite.withdraw, id: nomination.id), emit);
 
-    final (:result, :answer, :sent) = await _withdraw(event);
+    // Sent and ended as a host's decision is: the same answers, and the
+    // same change to the rows for each.
+    final (:result, :answer, :sent) = await _decide(
+      'Withdrawal',
+      () => _remote.withdrawNomination(event.eventId, nomination.id),
+    );
     if (_closing) return;
 
-    final outcome = WithdrawOutcome(result, title: nomination.title);
+    await _endedDeciding(
+      nomination.id,
+      result,
+      WithdrawOutcome(_withdrawn(result), title: nomination.title),
+      emit,
+      answer: answer,
+      sent: sent,
+    );
+  }
+
+  Future<void> _onApproved(
+    NominationApproved event,
+    Emitter<EventNominationsState> emit,
+  ) => _approveOrReject(
+    NominationWrite.approve,
+    event.eventId,
+    event.nomination,
+    emit,
+    send: () => _remote.approveNomination(event.eventId, event.nomination.id),
+  );
+
+  Future<void> _onRejected(
+    NominationRejected event,
+    Emitter<EventNominationsState> emit,
+  ) => _approveOrReject(
+    NominationWrite.reject,
+    event.eventId,
+    event.nomination,
+    emit,
+    send: () => _remote.rejectNomination(event.eventId, event.nomination.id),
+  );
+
+  /// Sends the host's approval or rejection, [write], of [nomination] of the
+  /// event [eventId] through [send], and ends it.
+  Future<void> _approveOrReject(
+    NominationWrite write,
+    String eventId,
+    EventNomination nomination,
+    Emitter<EventNominationsState> emit, {
+    required Future<EventNomination> Function() send,
+  }) async {
+    if (_closing || state.busy) return;
+
+    _named(eventId);
+    _started((write: write, id: nomination.id), emit);
+
+    final (:result, :answer, :sent) = await _decide(
+      write == NominationWrite.approve ? 'Approval' : 'Rejection',
+      send,
+    );
+    if (_closing) return;
+
+    await _endedDeciding(
+      nomination.id,
+      result,
+      HostDecisionOutcome(
+        _hostDecision(result),
+        write: write,
+        title: nomination.title,
+      ),
+      emit,
+      answer: answer,
+      sent: sent,
+    );
+  }
+
+  Future<void> _onResolved(
+    NominationResolved event,
+    Emitter<EventNominationsState> emit,
+  ) async {
+    if (_closing || state.busy) return;
+
+    _named(event.eventId);
+    final nomination = event.nomination;
+    _started((write: NominationWrite.resolve, id: nomination.id), emit);
+
+    final (:result, :answer, :sent) = await _decide(
+      'Resolve',
+      () => _remote.resolveNomination(event.eventId, nomination.id),
+    );
+    if (_closing) return;
+
+    await _endedDeciding(
+      nomination.id,
+      result,
+      // Only a done has an answer, so only a decided carries a resolution.
+      ResolveOutcome(
+        _resolved(result),
+        title: nomination.title,
+        resolution: answer?.resolution,
+      ),
+      emit,
+      answer: answer?.nomination,
+      sent: sent,
+    );
+  }
+
+  /// Sends a withdrawal or a host's decision through [send] once the session
+  /// says yes, and answers how it ended, with the answer to use on a done,
+  /// and whether it was sent. [name] names the write in the log. Never
+  /// throws.
+  Future<({_Decided result, A? answer, bool sent})> _decide<A extends Object>(
+    String name,
+    Future<A> Function() send,
+  ) async {
+    const notSent = (result: _Decided.failed, answer: null, sent: false);
+    const failed = (result: _Decided.failed, answer: null, sent: true);
+    if (!await _confirmed('$name not sent')) return notSent;
+    if (_closing) return notSent;
+
+    final A answer;
+    try {
+      answer = await send();
+    } on EventWriteConflictException catch (error) {
+      _logger.info('$name refused for the status now', error: error);
+      return (result: _Decided.changed, answer: null, sent: true);
+    } on EventRemoteNotFoundException catch (error) {
+      _logger.info('$name found the nomination gone', error: error);
+      // It drops the row, so it is used as an answer is.
+      if (!await _confirmed('$name answer dropped')) return failed;
+      return (result: _Decided.gone, answer: null, sent: true);
+    } on EventWriteRefusedException catch (error) {
+      _logger.info('$name refused', error: error);
+      return (result: _Decided.refused, answer: null, sent: true);
+    } on Object catch (error, stackTrace) {
+      _logger.warn('$name failed', error: error, stackTrace: stackTrace);
+      return failed;
+    }
+    if (!await _confirmed('$name answer dropped')) return failed;
+    return (result: _Decided.done, answer: answer, sent: true);
+  }
+
+  /// Ends a withdrawal or a host's decision on the nomination [id], which
+  /// ended as [result], with [outcome]: [answer] in the row's place on a
+  /// done, the row read again on a changed, and the row dropped on a gone.
+  /// The whole list is read after it when it was [sent].
+  Future<void> _endedDeciding(
+    String id,
+    _Decided result,
+    EventNominationsOutcome outcome,
+    Emitter<EventNominationsState> emit, {
+    required bool sent,
+    EventNomination? answer,
+  }) async {
     switch ((result, answer)) {
-      case (WithdrawResult.done, final EventNomination answer):
+      case (_Decided.done, final EventNomination answer):
         _ended(outcome, emit, change: _replacing(answer));
-      case (WithdrawResult.notWithdrawable, _):
-        await _endedReadingOne(nomination.id, outcome, emit);
-      case (WithdrawResult.gone, _):
-        _ended(outcome, emit, change: _dropping(nomination.id));
+      case (_Decided.changed, _):
+        await _endedReadingOne(id, outcome, emit);
+      case (_Decided.gone, _):
+        _ended(outcome, emit, change: _dropping(id));
       case _:
         _ended(outcome, emit);
     }
     if (sent) await _read(_lastNamed, emit);
-  }
-
-  /// Withdraws [event]'s nomination once the session says yes, and answers
-  /// how it ended, with the answer to use on a 2xx, and whether it was sent.
-  /// Never throws.
-  Future<_Answered<WithdrawResult>> _withdraw(NominationWithdrawn event) async {
-    const notSent = (result: WithdrawResult.failed, answer: null, sent: false);
-    const failed = (result: WithdrawResult.failed, answer: null, sent: true);
-    if (!await _confirmed('Withdrawal not sent')) return notSent;
-    if (_closing) return notSent;
-
-    final EventNomination answer;
-    try {
-      answer = await _remote.withdrawNomination(
-        event.eventId,
-        event.nomination.id,
-      );
-    } on EventWriteConflictException catch (error) {
-      _logger.info('Withdrawal refused for the status now', error: error);
-      return (result: WithdrawResult.notWithdrawable, answer: null, sent: true);
-    } on EventRemoteNotFoundException catch (error) {
-      _logger.info('Withdrawal found the nomination gone', error: error);
-      // It drops the row, so it is used as an answer is.
-      if (!await _confirmed('Withdrawal answer dropped')) return failed;
-      return (result: WithdrawResult.gone, answer: null, sent: true);
-    } on EventWriteRefusedException catch (error) {
-      _logger.info('Withdrawal refused', error: error);
-      return (result: WithdrawResult.refused, answer: null, sent: true);
-    } on Object catch (error, stackTrace) {
-      _logger.warn('Withdrawal failed', error: error, stackTrace: stackTrace);
-      return failed;
-    }
-    if (!await _confirmed('Withdrawal answer dropped')) return failed;
-    return (result: WithdrawResult.done, answer: answer, sent: true);
   }
 
   /// Emits [writing] as the write that is out, clearing the last outcome.
@@ -537,9 +704,10 @@ class EventNominationsBloc
     // one: Bloc emits a state equal to the initial one if it is the first.
     if (state.outcome != null) emit(state.copyWith(outcome: () => null));
     final title = event.title;
+    final write = event.write;
     emit(
       state.copyWith(
-        outcome: () => switch (event.write) {
+        outcome: () => switch (write) {
           NominationWrite.nominate => NominateOutcome(
             NominateResult.dropped,
             title: title,
@@ -547,6 +715,16 @@ class EventNominationsBloc
           NominationWrite.vote => VoteOutcome(VoteResult.dropped, title: title),
           NominationWrite.withdraw => WithdrawOutcome(
             WithdrawResult.dropped,
+            title: title,
+          ),
+          NominationWrite.approve ||
+          NominationWrite.reject => HostDecisionOutcome(
+            HostDecisionResult.dropped,
+            write: write,
+            title: title,
+          ),
+          NominationWrite.resolve => ResolveOutcome(
+            ResolveResult.dropped,
             title: title,
           ),
         },

@@ -310,6 +310,39 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    the Filters pop-up scrolls to its last switch with the keyboard up.
    Offline, check each vote choice and Withdraw say "Available when
    you're online", while Filters and Sort still work.
+   Then, as host, the pool again (#518): every row has Take back, each
+   naming its game ("Take back Azul"), and your own still goes without
+   asking. On someone else's row it asks first: check the dialog reads
+   "Take Azul off Ada's games?" and "Only they can offer it again.", that
+   Take back is drawn as a destructive action, and that Keep it sends
+   nothing and puts you back on Take back. Take back again and confirm:
+   the row leaves, the footer reads "Azul is off Ada's games.", and the
+   reader lands on the next row's Take back. On someone else's game that
+   is nominated, check the footer names whose games it can't come off
+   ("… so it can't come off Ada's games yet. …"). Then, as a household
+   owner or admin who isn't on the roster of the household's event, check
+   each row has Take back, with no Offer games, and that its dialog names
+   the person whose game it is. Offline, check the Take back on someone
+   else's row says "Available when you're online".
+   Then, still as host, the Nominations section again (#518): a nomination
+   awaiting approval has Approve and Reject, an open one Close vote, and a
+   paused one neither, each naming its game ("Approve Catan", "Close the
+   vote on Azul"). Each asks first. Check the Approve dialog reads "Approve
+   Catan?" and "It goes into the lineup. Nothing can take it out yet.", the
+   Reject dialog "Reject Catan?" and "This can't be undone." with Reject
+   drawn as a destructive action, and the Close vote dialog "Close the vote
+   on Azul?" with the row's tally, and the row's Interested line where it
+   shows one ("2 for, 1 against, 0 interested so far. Interested counts as
+   For. The result can't be undone."). Check Not yet sends nothing and puts
+   you back on the button. Approve and confirm: the footer reads "Catan is
+   approved and in the lineup." and the reader lands on the row, which now
+   reads "Approved". Close a vote: the footer says how it came out, with the
+   counts ("Azul passed: 2 for, 1 against. 3 of 4 counted."), and the row
+   reads "Passed" alone. Then as a moderator, and as
+   a household owner or admin who isn't on the roster of the household's
+   event, check an open nomination has Close vote and one awaiting approval
+   has no Approve or Reject. Offline, check each says "Available when
+   you're online", and that the reason is drawn once under the row.
 8. Game detail from Games, and a cover's quick look from a home row.
 9. Collection: the list in both layouts, a stack's picker, and an entry with
    its edit sheet and remove dialog. Then the header: type in the search and
@@ -473,9 +506,10 @@ first, and then the hand-off moves it as expected:
 The hand-offs:
 
 - Take back, its row gone as the server answers that the game is off the
-  pool, whether or not the read after it works: the next of your rows'
-  Take back, else the one before it, else Offer games, else the search
-  field. Nothing moves if focus went elsewhere while it was out, or if the
+  pool, whether or not the read after it works: the next row's Take back,
+  else the nearest one before it, else Offer games, else the search field.
+  Only your own rows have one, unless you may take back anyone's game
+  (#518). Nothing moves if focus went elsewhere while it was out, or if the
   take-back was refused and the row stays. If the games become hidden,
   nothing of the tab is left to take it, and it stays on the page.
 - A person's chip under the search, removed: the chip that takes its
@@ -517,6 +551,33 @@ it came arms it, the reader's double-tap included.
 - Nominate, through its dialog and its nomination: Nominate, which keeps
   focus, read as unavailable once the row is nominated for everything it
   could be, until focus moves on.
+
+### Focus hand-offs from #518
+
+The same check, for Take back on someone else's row in the Games tab's
+pool, as host, co-host or moderator, or as a household's owner or admin
+on its event.
+
+- Its dialog, closed by Keep it or by Back: Take back, which sends
+  nothing.
+- Its dialog's Take back: Take back, which keeps focus while the
+  take-back is out, read as unavailable; then, its row gone, the next
+  row's Take back, as #516's hand-off says.
+
+And for a host's Approve, Reject and Close vote on a nomination's row,
+each moving focus only if focus is then free, as #517's do:
+
+- Its dialog, closed by Not yet or by Back: the button, which sends
+  nothing.
+- Its dialog's Approve, Reject or Close vote: the button, which keeps
+  focus while the decision is out, read as unavailable; then, the row
+  staying as decided and its buttons gone, the row itself, read as one
+  item with its new status, as after a withdrawal. A decision refused or
+  failed leaves focus on the button.
+- A decision that takes its row out of the filter, as an approval under
+  Awaiting approval does, or that finds the nomination gone: the first
+  control of the next row shown, else of the row before it, else Filters,
+  however it was pressed, the reader's double-tap included.
 
 ### #850's list from #517
 
@@ -602,7 +663,7 @@ doesn't count them; they are listed after the audited screens.
 | `DataGatewayListScreen` | `packages/features/data_gateway/test/widgets/data_gateway_list_screen_test.dart` | audited |
 | `EditHouseholdScreen` | `packages/features/household/test/widgets/edit_household_screen_test.dart` | audited |
 | `EventAvailabilityScreen` | `packages/features/events/test/widgets/event_availability_screen_test.dart` | audited |
-| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` (the Nominations section's rows, Filters and Sort among them, #517), `packages/features/events/test/widgets/event_detail_tabs_test.dart`, for the Games tab's rows, controls and *Whose games* (#516), `packages/features/events/test/widgets/event_games_tab_test.dart` and, for a nomination row and Withdraw at 320dp and 200% text (#517), `packages/features/events/test/widgets/event_nominations_section_test.dart` | audited |
+| `EventDetailScreen` | `packages/features/events/test/widgets/event_detail_screen_test.dart` (the Nominations section's rows, Filters and Sort among them, #517, and a host's Close vote dialog, #518), `packages/features/events/test/widgets/event_detail_tabs_test.dart`, for the Games tab's rows, controls and *Whose games* (#516), and the dialog that asks before someone else's game is taken back (#518), `packages/features/events/test/widgets/event_games_tab_test.dart`, for a nomination row and Withdraw at 320dp and 200% text (#517), and a host's Approve, Reject and Close vote with their dialogs (#518), `packages/features/events/test/widgets/event_nominations_section_test.dart`, for the vote control and its note dialog (#517), `packages/features/events/test/widgets/nomination_vote_control_test.dart` and, for who voted (#517), `packages/features/events/test/widgets/nomination_voters_sheet_test.dart` | audited |
 | `EventGroupScreen` | `packages/features/events/test/widgets/event_group_screen_test.dart` | audited |
 | `EventOverviewScreen` | `packages/features/events/test/widgets/event_overview_screen_test.dart` | audited |
 | `FeedbackFlowScreen` | `packages/app_shell/test/screens/feedback_flow_screen_test.dart` | audited |

@@ -112,12 +112,14 @@ final class EventOfferOutcome extends EventGamesOutcome {
 }
 
 /// How a take-back ended. [title] names the game it was about, as the event
-/// carried it, when there is one, and [offeredGameId] the pool row.
+/// carried it, when there is one, [offeredGameId] the pool row, and
+/// [attendeeId] whose row it was.
 final class EventTakeBackOutcome extends EventGamesOutcome {
   const EventTakeBackOutcome({
     required this.result,
     this.title,
     this.offeredGameId,
+    this.attendeeId,
   });
 
   final EventTakeBackResult result;
@@ -130,8 +132,13 @@ final class EventTakeBackOutcome extends EventGamesOutcome {
   /// one, whose drop names only the title.
   final String? offeredGameId;
 
+  /// The roster row whose games the take-back was sent for, which says
+  /// whether it was the viewer's own or someone else's (#518): set where
+  /// [offeredGameId] is.
+  final String? attendeeId;
+
   @override
-  List<Object?> get props => [result, title, offeredGameId];
+  List<Object?> get props => [result, title, offeredGameId, attendeeId];
 }
 
 /// The games pool on one event's Games tab, and the viewer's write that is

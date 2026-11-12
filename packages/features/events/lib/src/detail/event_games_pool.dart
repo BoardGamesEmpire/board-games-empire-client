@@ -73,6 +73,15 @@ List<OfferedGame> filterPool(List<OfferedGame> games, PoolFilter filter) {
   ];
 }
 
+/// The roster's names by row id, which name whoever offered a pool row, on
+/// the row and wherever else the screen says whose games they are (#518):
+/// empty where the roster is withheld or not read. A row with no name maps
+/// to null, which each caller names as it says "someone".
+Map<String, String?> poolNames(EventDetail detail) => {
+  for (final row in detail.snapshot.attendees ?? const <EventAttendee>[])
+    row.id: row.name,
+};
+
 /// The ids to read the pool for: the cached roster's, or the viewer's own
 /// where the roster is withheld, or none.
 ///

@@ -23,11 +23,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// then the nominations' (#517). First the pool's last write, as the line
 /// saying how far a run of offers has got while one is out, then as the
 /// banner saying how it went; then the viewer's last nominations write, a
-/// nominate, a vote or a withdrawal, as the banner saying how it went; then,
-/// with [showStale], the stale-data banners: the pool's while the games shown
-/// may be out of date, then the nominations' while those shown may be. Each
-/// when there is one; nothing otherwise. Passed on every build, on either
-/// tab, so the page keeps one shape.
+/// nominate, a vote or a withdrawal, or a host's approval, rejection or close
+/// of a vote (#518), as the banner saying how it went; then, with
+/// [showStale], the stale-data banners: the pool's while the games shown may
+/// be out of date, then the nominations' while those shown may be. Each when
+/// there is one; nothing otherwise. Passed on every build, on either tab, so
+/// the page keeps one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
@@ -46,6 +47,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Each outcome is a banner of its own, built anew, so one that says what
 /// the last said is still heard as it lands.
 ///
+/// A host's close of a vote (#518) says how it came out with the counts the
+/// server gave as it settled it, which it stores nowhere: this banner is the
+/// only place they show, and a later read of the row carries its status
+/// alone.
+///
 /// A take-back the server refuses because the game still supplies a
 /// nomination or a lineup (a 409) says what to do where the nominations
 /// held can tell (#517): withdraw your nomination first, where only the
@@ -55,14 +61,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// did; and otherwise that it is nominated or in the lineup, as before,
 /// since the lineup is #520's. The row is found by the outcome's offered
 /// game id, which is all a nomination names it by, whether or not the pool
-/// still holds it. The pool's banner keeps the words it landed with: the
+/// still holds it. A take-back of someone else's
+/// game (#518) says whose games it is off, or can't come off yet, naming
+/// them as the pool's row does, from the roster ([names]); the viewer's own
+/// says "your games". The pool's banner keeps the words it landed with: the
 /// nominations can change under it, as the viewer withdraws the one it
-/// names, and words that changed would be read out
+/// names, and so can the roster, and words that changed would be read out
 /// again, saying what no longer holds.
 class EventGamesFooter extends StatelessWidget {
   const EventGamesFooter({
     required this.state,
     required this.showStale,
+    required this.names,
     this.nominations,
     this.viewerId,
     super.key,
@@ -78,6 +88,12 @@ class EventGamesFooter extends StatelessWidget {
   /// The viewer's roster row id, which says which nominations are theirs, or
   /// null where they have none.
   final String? viewerId;
+
+  /// The roster's names, by row id, which name whose games a take-back of
+  /// someone else's game was about (#518): empty where the roster is
+  /// withheld or not read. Given by every caller, since an empty map names
+  /// everyone "this person".
+  final Map<String, String?> names;
 
   /// Whether the Games tab is selected, so the stale-data banners may show.
   final bool showStale;
@@ -213,7 +229,7 @@ class EventGamesFooter extends StatelessWidget {
 
   /// The banner's copy, by the write it answers, or null for none. A
   /// take-back's 409 names what to do by [supplied] (#517).
-  static String? _message(
+  String? _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
     StillSuppliedBy supplied,
@@ -267,23 +283,50 @@ class EventGamesFooter extends StatelessWidget {
   /// with no title has none. A 409 says what to do by [supplied] (#517):
   /// where nobody holds a live nomination of the row, it is in the lineup,
   /// or nominated in a way the nominations held don't show.
-  static String? _takeBackMessage(
+  ///
+  /// Whose games it was about comes from the roster row the outcome names
+  /// (#518): someone else's where that isn't the viewer's [viewerId], and
+  /// they are then named in place of "your games", from [names] as the
+  /// pool's row names them, or "this person" where the roster gives no
+  /// name. A refusal, a failure and a drop say no one's, and a drop names no
+  /// row.
+  String? _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
     StillSuppliedBy supplied,
   ) {
     final title = outcome.title;
     if (title == null) return null;
+    final id = outcome.attendeeId;
+    final theirs = id != null && id != viewerId;
+    String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;
     return switch (outcome.result) {
-      EventTakeBackResult.done => l10n.eventsGamesTakenBack(title),
-      EventTakeBackResult.stillSupplies => switch (supplied) {
-        StillSuppliedBy.viewer => l10n.eventsGamesStillSuppliesYours(title),
-        StillSuppliedBy.someoneElse => l10n.eventsGamesStillSuppliesTheirs(
+      EventTakeBackResult.done =>
+        theirs
+            ? l10n.eventsGamesTheirsTakenBack(title, offeredBy())
+            : l10n.eventsGamesTakenBack(title),
+      EventTakeBackResult.stillSupplies => switch ((supplied, theirs)) {
+        (StillSuppliedBy.viewer, false) => l10n.eventsGamesStillSuppliesYours(
           title,
         ),
-        StillSuppliedBy.viewerAndSomeoneElse =>
+        (StillSuppliedBy.viewer, true) =>
+          l10n.eventsGamesTheirsStillSuppliesYours(title, offeredBy()),
+        (StillSuppliedBy.viewerAndSomeoneElse, false) =>
           l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
-        StillSuppliedBy.none => l10n.eventsGamesStillSupplies(title),
+        (StillSuppliedBy.viewerAndSomeoneElse, true) =>
+          l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(
+            title,
+            offeredBy(),
+          ),
+        (StillSuppliedBy.someoneElse, false) =>
+          l10n.eventsGamesStillSuppliesTheirs(title),
+        (StillSuppliedBy.someoneElse, true) =>
+          l10n.eventsGamesTheirsStillSuppliesTheirs(title, offeredBy()),
+        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(title),
+        (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
+          title,
+          offeredBy(),
+        ),
       },
       EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
@@ -324,10 +367,28 @@ class EventGamesFooter extends StatelessWidget {
           WithdrawResult.dropped => BgeBannerTone.warning,
           WithdrawResult.failed => BgeBannerTone.error,
         },
+        HostDecisionOutcome(:final result) => switch (result) {
+          HostDecisionResult.done => BgeBannerTone.success,
+          HostDecisionResult.changed ||
+          HostDecisionResult.refused ||
+          HostDecisionResult.gone ||
+          HostDecisionResult.dropped => BgeBannerTone.warning,
+          HostDecisionResult.failed => BgeBannerTone.error,
+        },
+        // A vote that didn't pass is still a close that went through.
+        ResolveOutcome(:final result) => switch (result) {
+          ResolveResult.decided => BgeBannerTone.success,
+          ResolveResult.changed ||
+          ResolveResult.refused ||
+          ResolveResult.gone ||
+          ResolveResult.dropped => BgeBannerTone.warning,
+          ResolveResult.failed => BgeBannerTone.error,
+        },
       };
 
   /// A nominations write's copy (#517), naming its game. A nominate that
-  /// went through says what the server made of it.
+  /// went through says what the server made of it, and a host's close of a
+  /// vote how the vote came out (#518).
   static String _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
@@ -366,8 +427,80 @@ class EventGamesFooter extends StatelessWidget {
         WithdrawResult.failed => l10n.eventsWithdrawFailed(title),
         WithdrawResult.dropped => l10n.eventsWithdrawDropped(title),
       },
+      HostDecisionOutcome(:final result, :final write) => switch (result) {
+        HostDecisionResult.done =>
+          write == NominationWrite.approve
+              ? l10n.eventsApproved(title)
+              : l10n.eventsRejected(title),
+        HostDecisionResult.changed => l10n.eventsHostDecisionChanged(title),
+        HostDecisionResult.refused => l10n.eventsHostDecisionRefused(title),
+        HostDecisionResult.gone => l10n.eventsVoteGone(title),
+        HostDecisionResult.failed => l10n.eventsHostDecisionFailed(title),
+        HostDecisionResult.dropped => l10n.eventsHostDecisionDropped(title),
+      },
+      ResolveOutcome(:final result, :final resolution) => switch (result) {
+        ResolveResult.decided => _resolvedMessage(l10n, title, resolution),
+        ResolveResult.changed => l10n.eventsHostDecisionChanged(title),
+        ResolveResult.refused => l10n.eventsHostDecisionRefused(title),
+        ResolveResult.gone => l10n.eventsVoteGone(title),
+        ResolveResult.failed => l10n.eventsHostDecisionFailed(title),
+        ResolveResult.dropped => l10n.eventsHostDecisionDropped(title),
+      },
     };
   }
+
+  /// How a host's close of the vote on [title] came out (#518), with the
+  /// counts the server gave in [resolution], which are its own, never worked
+  /// out here. A result this client can't name, or none, says only that the
+  /// vote is closed.
+  ///
+  /// Its total is the votes the server counted, not those cast: it folds
+  /// Interested into For or Against by the event's rules, or leaves it out
+  /// (backend `vote-resolver.ts`). So the banner says how many counted. It
+  /// says nothing of quorum on a pass or a fail: the server reaches either
+  /// only once quorum is met, and an event with no quorum rule meets it
+  /// always, so its `quorumMet` is true on both and says nothing.
+  static String _resolvedMessage(
+    EventsLocalizations l10n,
+    String title,
+    NominationResolution? resolution,
+  ) => switch (resolution) {
+    NominationResolution(
+      status: NominationStatus.passed,
+      :final forCount,
+      :final againstCount,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedPassed(
+        title,
+        forCount,
+        againstCount,
+        totalVotes,
+        eligibleVoterCount,
+      ),
+    NominationResolution(
+      status: NominationStatus.failed,
+      :final forCount,
+      :final againstCount,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedFailed(
+        title,
+        forCount,
+        againstCount,
+        totalVotes,
+        eligibleVoterCount,
+      ),
+    NominationResolution(
+      status: NominationStatus.quorumNotMet,
+      :final totalVotes,
+      :final eligibleVoterCount,
+    ) =>
+      l10n.eventsResolvedQuorumNotMet(title, totalVotes, eligibleVoterCount),
+    _ => l10n.eventsResolvedSettled(title),
+  };
 }
 
 /// Builds [builder] with the first [message] it is given, whatever later
