@@ -6,18 +6,25 @@
 # read-only, though sandbox-check.sh passed.
 #
 # Prints one line per probe and never fails, so the whole picture comes
-# back in one run. Everything it creates is removed again.
+# back in one run. Everything it creates is removed again, and nothing
+# that was already there is changed.
 set -u
 
 sdk=.bug-agent-env/flutter
 
+# Opens the target for appending and writes nothing, so a file that is
+# already there, like engine.stamp, keeps its contents and its mtime, and
+# only a file the probe created is removed. A refusal prints the system's
+# reason, which tells a read-only mount from a permission or a missing
+# directory.
 probe() {
-  local label=$1 target=$2
-  if (touch "$target") 2>/dev/null; then
+  local label=$1 target=$2 existed=false err
+  [ -e "$target" ] && existed=true
+  if err=$( (: >>"$target") 2>&1); then
     echo "writable  $label ($target)"
-    rm -f "$target"
+    $existed || rm -f "$target"
   else
-    echo "READ-ONLY $label ($target)"
+    echo "REFUSED   $label ($target): ${err##*: }"
   fi
 }
 
@@ -48,14 +55,17 @@ probe '/tmp' /tmp/.isolation-probe
 # A nested repository made here: if this is read-only while the checkout
 # root is writable, the isolation treats nested git repos specially.
 echo "== nested git repository"
-nested=.isolation-probe-nested
-if mkdir -p "$nested/sub" 2>/dev/null && git -C "$nested" init -q 2>/dev/null; then
-  probe 'nested repo root' "$nested/.isolation-probe"
-  probe 'nested repo subdir' "$nested/sub/.isolation-probe"
+if nested=$(mktemp -d ./.isolation-probe-nested.XXXXXX 2>/dev/null); then
+  if mkdir "$nested/sub" && git -C "$nested" init -q 2>/dev/null; then
+    probe 'nested repo root' "$nested/.isolation-probe"
+    probe 'nested repo subdir' "$nested/sub/.isolation-probe"
+  else
+    echo "could not set up a repository in $nested"
+  fi
+  rm -rf "$nested"
 else
-  echo "could not create $nested"
+  echo "could not create a directory in the checkout"
 fi
-rm -rf "$nested"
 
 echo "== mounts covering the checkout"
 grep -F "$PWD" /proc/self/mountinfo || echo "no mount entry names $PWD"
