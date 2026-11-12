@@ -296,6 +296,48 @@ bool suppliesLive(
       (scope == null || _inScope(n, scope)),
 );
 
+/// Why a pool row can't be nominated for a choice (#517).
+enum NominateTaken {
+  /// It can be.
+  no,
+
+  /// The row supplies a live nomination for it ([suppliesLive]).
+  nominated,
+
+  /// Its game is in the lineup for it ([inLineupFor]).
+  inLineup,
+}
+
+/// Whether [game] can be nominated for [scope] given [all]: not while the row
+/// supplies a live nomination for it, nor while its game is in the lineup
+/// for it. Live comes first, as the row's own.
+NominateTaken nominateTaken(
+  OfferedGame game,
+  List<EventNomination> all, {
+  required NominationScope scope,
+}) {
+  if (suppliesLive(game, all, scope: scope)) return NominateTaken.nominated;
+  if (inLineupFor(game, all, scope: scope)) return NominateTaken.inLineup;
+  return NominateTaken.no;
+}
+
+/// Whether [game]'s game is in the lineup for [scope], by the nominations in
+/// [all] that put it there (approved or passed), whoever's copy they named:
+/// the lineup holds the game, and a second copy of it isn't nominated until
+/// it leaves the lineup. One in the lineup for the whole event is in it for
+/// every date. A game a host added directly has no nomination, so it isn't
+/// seen here (#518).
+bool inLineupFor(
+  OfferedGame game,
+  List<EventNomination> all, {
+  required NominationScope scope,
+}) => all.any(
+  (n) =>
+      n.status.inLineup &&
+      n.platformGameId == game.platformGameId &&
+      (n.occurrenceId == null || _inScope(n, scope)),
+);
+
 /// Who holds the live nominations a pool row still supplies.
 enum StillSuppliedBy {
   /// Only the viewer nominated it, and withdrawing frees it.

@@ -187,6 +187,7 @@ final class EventNominationsState extends Equatable {
     this.outcome,
     this.refreshFailed = false,
     this.refreshing = false,
+    this.settling = false,
   });
 
   final EventNominationsLoad load;
@@ -215,6 +216,12 @@ final class EventNominationsState extends Equatable {
   /// not narrated.
   final bool refreshing;
 
+  /// Whether a nominate's answer was lost, as on a timeout, and no read that
+  /// started after it has loaded. The server may have saved it, and it takes
+  /// the same row twice for one choice (backend#1214), so [nominations]
+  /// can't say what a pool row supplies, and a nominate meanwhile is ignored.
+  final bool settling;
+
   /// Whether a write is out. A write or a dropped write that arrives
   /// meanwhile is ignored.
   bool get busy => writing != null;
@@ -228,6 +235,7 @@ final class EventNominationsState extends Equatable {
     EventNominationsOutcome? Function()? outcome,
     bool? refreshFailed,
     bool? refreshing,
+    bool? settling,
   }) => EventNominationsState(
     load: load ?? this.load,
     nominations: nominations ?? this.nominations,
@@ -235,6 +243,7 @@ final class EventNominationsState extends Equatable {
     outcome: outcome == null ? this.outcome : outcome(),
     refreshFailed: refreshFailed ?? this.refreshFailed,
     refreshing: refreshing ?? this.refreshing,
+    settling: settling ?? this.settling,
   );
 
   @override
@@ -245,5 +254,6 @@ final class EventNominationsState extends Equatable {
     outcome,
     refreshFailed,
     refreshing,
+    settling,
   ];
 }

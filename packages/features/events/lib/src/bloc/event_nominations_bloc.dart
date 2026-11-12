@@ -8,9 +8,9 @@ import 'package:observability/observability.dart';
 /// What a write's answer does to a list of nominations.
 typedef _Change = List<EventNomination> Function(List<EventNomination> rows);
 
-/// How a nominate or a withdrawal ended, with the server's answer when it is
-/// to be used.
-typedef _Answered<R> = ({R result, EventNomination? answer});
+/// How a withdrawal ended, with the server's answer when it is to be used,
+/// and whether it was sent.
+typedef _Answered<R> = ({R result, EventNomination? answer, bool sent});
 
 /// Puts [row] at the head, in place of any row with its id.
 _Change _atHead(EventNomination row) =>
@@ -43,9 +43,11 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// nothing is re-sent. The nominations are never cached: they live in
 /// [EventNominationsState.nominations]. The screen asks for a read the first
 /// time the Games tab shows, after each detail read from then on, and when
-/// the user retries a failed read. The viewer's own writes are read back
-/// through their answers, below, rather than by reading the whole list again.
-/// A write the screen's re-check dropped reads nothing. The event's id travels
+/// the user retries a failed read, and after each of the viewer's own writes
+/// that was sent, whatever it answered: its answer changes its own row at
+/// once, below, and the read brings what else changed, as others' votes and
+/// a status the server moved. A write the session stopped before it went, or
+/// the screen's re-check dropped, reads nothing. The event's id travels
 /// with each request rather than with the bloc, since a reconcile can move it
 /// while the screen is open (#499).
 ///
@@ -106,7 +108,7 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// one was picked. Each answer:
 ///
 /// - 2xx: the answer goes in at the head of the nominations, in place of any
-///   row with its id, and nothing is read. The result follows the answer's
+///   row with its id. The result follows the answer's
 ///   status: open, awaitingApproval, inLineup for an approved or a passed one
 ///   (as under `GameAdditionMode.direct`), and settled for any other. So the
 ///   outcome says what the server did with it, whatever rules the date has
@@ -114,20 +116,20 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// - A 403: refused.
 /// - A 409: supplierNotGoing: the pool row's supplier isn't attending.
 /// - A 400: notSupplied: the pool row doesn't supply the game.
-/// - A 404: gone: the event, the date or the pool row is gone. The
-///   nominations are read again.
-/// - Anything else, a 429 among them: failed. The nominations are read
-///   again, as they are after an answer the session drops (below): the
-///   server may have saved it, and it takes the same row twice for one
-///   choice, so the read shows a nomination that landed before the user
-///   nominates it again.
+/// - A 404: gone: the event, the date or the pool row is gone.
+/// - Anything else, a 429 among them: failed. So is an answer the session
+///   drops (below). The server may have saved it, and it takes the same row
+///   twice for one choice (backend#1214), so the state is
+///   [EventNominationsState.settling] until a read that starts after it
+///   loads, and a nominate meanwhile is ignored. The read that follows the
+///   write is one; a failed one leaves it settling until a retry loads.
 ///
 /// ### A vote
 ///
 /// [NominationVoteCast] sends the vote, and the note when there is one. Its
 /// 2xx carries no row, so after a done or a closed the nomination is read
-/// again by itself, and the write stays out until that read answers. No
-/// other answer reads anything:
+/// again by itself, and the write stays out until that read answers. The
+/// whole list is read after it, as after any write:
 ///
 /// - 2xx: done, carrying the vote cast. The row read replaces the one held.
 /// - A 400: closed: the nomination isn't open for votes now. The row read
@@ -137,13 +139,13 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// - Anything else, a 429 among them: failed.
 ///
 /// When the nomination's own read fails, or the session stops it, the
-/// outcome comes in at once and the whole list is read instead.
+/// outcome comes in at once.
 ///
 /// ### Withdrawing
 ///
 /// [NominationWithdrawn] withdraws the viewer's nomination. Each answer:
 ///
-/// - 2xx: done. The answer replaces the row, and nothing is read.
+/// - 2xx: done. The answer replaces the row.
 /// - A 400: notWithdrawable: its status doesn't allow it now. The nomination
 ///   is read again as after a vote, the write staying out until it answers.
 /// - A 403: refused.
@@ -251,7 +253,7 @@ class EventNominationsBloc
     GameNominated event,
     Emitter<EventNominationsState> emit,
   ) async {
-    if (_closing || state.busy) return;
+    if (_closing || state.busy || state.settling) return;
 
     _named(event.eventId);
     final game = event.game;
@@ -264,11 +266,9 @@ class EventNominationsBloc
       NominateOutcome(result, title: game.title),
       emit,
       change: answer == null ? null : _atHead(answer),
+      settling: sent && result == NominateResult.failed,
     );
-    if (result == NominateResult.gone ||
-        (sent && result == NominateResult.failed)) {
-      await _read(_lastNamed, emit);
-    }
+    if (sent) await _read(_lastNamed, emit);
   }
 
   /// Nominates [event]'s game once the session says yes, and answers how it
@@ -333,7 +333,7 @@ class EventNominationsBloc
     final nomination = event.nomination;
     _started((write: NominationWrite.vote, id: nomination.id), emit);
 
-    final result = await _vote(event);
+    final (:result, :sent) = await _vote(event);
     if (_closing) return;
 
     final outcome = VoteOutcome(
@@ -349,13 +349,17 @@ class EventNominationsBloc
       case VoteResult.refused || VoteResult.failed || VoteResult.dropped:
         _ended(outcome, emit);
     }
+    if (sent) await _read(_lastNamed, emit);
   }
 
   /// Casts [event]'s vote once the session says yes, and answers how it
-  /// ended. Never throws.
-  Future<VoteResult> _vote(NominationVoteCast event) async {
-    if (!await _confirmed('Vote not sent')) return VoteResult.failed;
-    if (_closing) return VoteResult.failed;
+  /// ended, and whether it was sent. Never throws.
+  Future<({VoteResult result, bool sent})> _vote(
+    NominationVoteCast event,
+  ) async {
+    const notSent = (result: VoteResult.failed, sent: false);
+    if (!await _confirmed('Vote not sent')) return notSent;
+    if (_closing) return notSent;
 
     try {
       await _remote.castVote(
@@ -366,20 +370,22 @@ class EventNominationsBloc
       );
     } on EventWriteConflictException catch (error) {
       _logger.info('Vote refused: voting is closed', error: error);
-      return VoteResult.closed;
+      return (result: VoteResult.closed, sent: true);
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Vote found the nomination gone', error: error);
       // It drops the row, so it is used as an answer is.
-      if (!await _confirmed('Vote answer dropped')) return VoteResult.failed;
-      return VoteResult.gone;
+      if (!await _confirmed('Vote answer dropped')) {
+        return (result: VoteResult.failed, sent: true);
+      }
+      return (result: VoteResult.gone, sent: true);
     } on EventWriteRefusedException catch (error) {
       _logger.info('Vote refused', error: error);
-      return VoteResult.refused;
+      return (result: VoteResult.refused, sent: true);
     } on Object catch (error, stackTrace) {
       _logger.warn('Vote failed', error: error, stackTrace: stackTrace);
-      return VoteResult.failed;
+      return (result: VoteResult.failed, sent: true);
     }
-    return VoteResult.done;
+    return (result: VoteResult.done, sent: true);
   }
 
   Future<void> _onWithdrawn(
@@ -392,7 +398,7 @@ class EventNominationsBloc
     final nomination = event.nomination;
     _started((write: NominationWrite.withdraw, id: nomination.id), emit);
 
-    final (:result, :answer) = await _withdraw(event);
+    final (:result, :answer, :sent) = await _withdraw(event);
     if (_closing) return;
 
     final outcome = WithdrawOutcome(result, title: nomination.title);
@@ -406,14 +412,17 @@ class EventNominationsBloc
       case _:
         _ended(outcome, emit);
     }
+    if (sent) await _read(_lastNamed, emit);
   }
 
   /// Withdraws [event]'s nomination once the session says yes, and answers
-  /// how it ended, with the answer to use on a 2xx. Never throws.
+  /// how it ended, with the answer to use on a 2xx, and whether it was sent.
+  /// Never throws.
   Future<_Answered<WithdrawResult>> _withdraw(NominationWithdrawn event) async {
-    const failed = (result: WithdrawResult.failed, answer: null);
-    if (!await _confirmed('Withdrawal not sent')) return failed;
-    if (_closing) return failed;
+    const notSent = (result: WithdrawResult.failed, answer: null, sent: false);
+    const failed = (result: WithdrawResult.failed, answer: null, sent: true);
+    if (!await _confirmed('Withdrawal not sent')) return notSent;
+    if (_closing) return notSent;
 
     final EventNomination answer;
     try {
@@ -423,21 +432,21 @@ class EventNominationsBloc
       );
     } on EventWriteConflictException catch (error) {
       _logger.info('Withdrawal refused for the status now', error: error);
-      return (result: WithdrawResult.notWithdrawable, answer: null);
+      return (result: WithdrawResult.notWithdrawable, answer: null, sent: true);
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Withdrawal found the nomination gone', error: error);
       // It drops the row, so it is used as an answer is.
       if (!await _confirmed('Withdrawal answer dropped')) return failed;
-      return (result: WithdrawResult.gone, answer: null);
+      return (result: WithdrawResult.gone, answer: null, sent: true);
     } on EventWriteRefusedException catch (error) {
       _logger.info('Withdrawal refused', error: error);
-      return (result: WithdrawResult.refused, answer: null);
+      return (result: WithdrawResult.refused, answer: null, sent: true);
     } on Object catch (error, stackTrace) {
       _logger.warn('Withdrawal failed', error: error, stackTrace: stackTrace);
       return failed;
     }
     if (!await _confirmed('Withdrawal answer dropped')) return failed;
-    return (result: WithdrawResult.done, answer: answer);
+    return (result: WithdrawResult.done, answer: answer, sent: true);
   }
 
   /// Emits [writing] as the write that is out, clearing the last outcome.
@@ -449,11 +458,14 @@ class EventNominationsBloc
   /// Ends the write that is out with [outcome], in one state with [change]
   /// made to the rows when there is one. A change is noted for a read that
   /// is out, whose answer can predate it. A hidden or a gone shows no rows,
-  /// so a change isn't made to them; the next read's answer takes it.
+  /// so a change isn't made to them; the next read's answer takes it. With
+  /// [settling], the state says the rows can't be trusted until a read that
+  /// starts after it loads.
   void _ended(
     EventNominationsOutcome outcome,
     Emitter<EventNominationsState> emit, {
     _Change? change,
+    bool settling = false,
   }) {
     if (_closing) return;
     if (change != null) _changedSinceRead.add(change);
@@ -468,13 +480,14 @@ class EventNominationsBloc
             ? List.unmodifiable(change(state.nominations))
             : null,
         outcome: () => outcome,
+        settling: settling ? true : null,
       ),
     );
   }
 
   /// Reads the nomination [id] again, then ends the write that is out with
   /// [outcome] and the row read in its place. When that read fails, ends it
-  /// at once and reads the whole list instead.
+  /// at once; the whole list is read after it either way.
   Future<void> _endedReadingOne(
     String id,
     EventNominationsOutcome outcome,
@@ -483,12 +496,7 @@ class EventNominationsBloc
     final row = await _readOne(_lastNamed, id);
     if (_closing) return;
 
-    if (row != null) {
-      _ended(outcome, emit, change: _replacing(row));
-      return;
-    }
-    _ended(outcome, emit);
-    await _read(_lastNamed, emit);
+    _ended(outcome, emit, change: row == null ? null : _replacing(row));
   }
 
   /// Reads the nomination [nominationId] of the event [eventId] once the
@@ -582,6 +590,9 @@ class EventNominationsBloc
     // Only reads change the load, and one is out at a time, so this is the
     // load the read started in.
     final startedGone = state.load == EventNominationsLoad.gone;
+    // A read that started once a nominate's answer was lost is after it, so
+    // its answer says whether the server saved it.
+    final settles = state.settling;
     if (!await _confirmed('Nominations not read')) {
       _readEnded(EventNominationsLoad.failed, state.nominations, emit);
       return;
@@ -641,6 +652,7 @@ class EventNominationsBloc
         ),
         refreshFailed: false,
         refreshing: _stillRefreshing,
+        settling: settles ? false : null,
       ),
     );
   }

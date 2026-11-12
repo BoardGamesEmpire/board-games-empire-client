@@ -19,30 +19,30 @@ void main() {
 
   /// The choices an event of two dates offers, none taken unless a test
   /// says otherwise.
-  List<({NominationScope scope, String label, bool taken})> choicesOf({
-    Set<NominationScope> taken = const {},
+  List<NominateScopeChoice> choicesOf({
+    Map<NominationScope, NominateTaken> taken = const {},
   }) => [
     (
       scope: whole,
       label: 'For the whole event',
-      taken: taken.contains(whole),
+      taken: taken[whole] ?? NominateTaken.no,
     ),
     (
       scope: friday,
       label: 'For Fri, Nov 6 · 7:00 PM',
-      taken: taken.contains(friday),
+      taken: taken[friday] ?? NominateTaken.no,
     ),
     (
       scope: saturday,
       label: 'For Sat, Nov 7 · 7:00 PM',
-      taken: taken.contains(saturday),
+      taken: taken[saturday] ?? NominateTaken.no,
     ),
   ];
 
   Future<void> open(
     WidgetTester tester, {
     String title = 'Catan',
-    Set<NominationScope> taken = const {},
+    Map<NominationScope, NominateTaken> taken = const {},
   }) async {
     done = false;
     value = null;
@@ -124,7 +124,13 @@ void main() {
       'chosen', (tester) async {
     useViewSize(tester, const Size(400, 800));
     final handle = tester.ensureSemantics();
-    await open(tester, taken: {whole, saturday});
+    await open(
+      tester,
+      taken: {
+        whole: NominateTaken.nominated,
+        saturday: NominateTaken.nominated,
+      },
+    );
 
     expect(chosen(tester), friday);
     for (final (id, taken) in [(null, true), ('d-1', false), ('d-2', true)]) {
@@ -154,6 +160,26 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a choice whose game is in the lineup is disabled and says '
+      'so', (tester) async {
+    useViewSize(tester, const Size(400, 800));
+    await open(
+      tester,
+      taken: {
+        whole: NominateTaken.inLineup,
+        friday: NominateTaken.inLineup,
+      },
+    );
+
+    expect(chosen(tester), saturday);
+    expect(
+      tester.widget<RadioListTile<NominationScope>>(scope(null)).enabled,
+      isFalse,
+    );
+    expect(find.text('Already in the lineup'), findsNWidgets(2));
+    expect(find.text('Already nominated'), findsNothing);
+  });
+
   testWidgets('the dialog is named by its title, as iOS and macOS need '
       '(#762)', (tester) async {
     useViewSize(tester, const Size(400, 800));
@@ -168,7 +194,7 @@ void main() {
   testWidgets('the guidelines pass, with a choice taken', (tester) async {
     useViewSize(tester, const Size(400, 800));
     final handle = tester.ensureSemantics();
-    await open(tester, taken: {whole});
+    await open(tester, taken: {whole: NominateTaken.inLineup});
 
     await expectMeetsAccessibilityGuidelines(tester);
     handle.dispose();
@@ -213,7 +239,7 @@ void main() {
       title:
           'Twilight Imperium: Fourth Edition, Prophecy of Kings and the Codex '
           'Volumes',
-      taken: {whole},
+      taken: {whole: NominateTaken.nominated},
     );
 
     expect(tester.takeException(), isNull);

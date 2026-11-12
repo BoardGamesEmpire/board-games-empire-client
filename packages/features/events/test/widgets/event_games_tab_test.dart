@@ -18,6 +18,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
 import '../support/fake_event_remote.dart';
+import '../support/kept_nominations.dart';
 
 class _MockEventRepository extends Mock implements EventRepository {}
 
@@ -119,6 +120,10 @@ void main() {
   /// A detail read held until a test completes it, while set.
   Completer<EventSnapshot>? heldRead;
   late FakeEventRemote remote;
+
+  /// What the fake server answered writes and single reads with, which its
+  /// list reads serve.
+  final kept = KeptNominations();
 
   // The viewer, Ada and Bo, in the roster's order.
   final me = _row('att-me', name: 'Me');
@@ -251,10 +256,12 @@ void main() {
       pool: (request) => poolAnswer(request),
       offered: (request) => offerAnswer(request),
       takenBack: (request) => takeBackAnswer(request),
-      nominations: (eventId) => nominationsAnswer(eventId),
-      nominated: (request) => nominateAnswer(request),
-      withdrawn: (request) => withdrawAnswer(request),
+      nominations: (eventId) async =>
+          kept.over(await nominationsAnswer(eventId)),
+      nominated: (request) async => kept.keep(await nominateAnswer(request)),
+      withdrawn: (request) async => kept.keep(await withdrawAnswer(request)),
     );
+    addTearDown(kept.clear);
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
       locale: const Locale('en', 'US'),
@@ -3447,6 +3454,129 @@ void main() {
       // A nomination for one date of a single-date event leaves the whole
       // event to nominate for.
       expect(onPressed(tester, root.id), isNotNull);
+      handle.dispose();
+    });
+
+    testWidgets('a game in the lineup is not nominated again, whoever brings '
+        'it, and Nominate says so', (tester) async {
+      final handle = tester.ensureSemantics();
+      // Bo's copy of Azul: the same game as Ada's.
+      final azulBos = azul.copyWith(id: 'o-9', attendeeId: 'att-bo');
+      served = [catanMine, azul, azulBos, root];
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azulBos, status: NominationStatus.approved),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      for (final game in [azul, azulBos]) {
+        await tester.ensureVisible(nominate(game.id));
+        await tester.pump();
+        expect(onPressed(tester, game.id), isNull, reason: game.id);
+        expect(
+          tester.getSemantics(nominate(game.id)),
+          matchesSemantics(
+            label: 'Nominate Azul',
+            hint: 'Already in the lineup',
+            isButton: true,
+            hasEnabledState: true,
+          ),
+          reason: game.id,
+        );
+        // Not live: no "Nominated" marker.
+        expect(nominated(game.id), findsNothing, reason: game.id);
+      }
+      for (final game in [catanMine, root]) {
+        expect(onPressed(tester, game.id), isNotNull, reason: game.title);
+      }
+      handle.dispose();
+    });
+
+    testWidgets('a game in the lineup for one date leaves the others in the '
+        'dialog', (tester) async {
+      nominationsAnswer = (_) => [
+        nominationOf(
+          'n-1',
+          azul,
+          occurrenceId: 'd-1',
+          status: NominationStatus.passed,
+        ),
+      ];
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(
+        tester.widget<RadioListTile<NominationScope>>(scope('d-1')).enabled,
+        isFalse,
+      );
+      expect(
+        find.descendant(
+          of: scope('d-1'),
+          matching: find.text('Already in the lineup'),
+        ),
+        findsOneWidget,
+      );
+      for (final id in [null, 'd-2']) {
+        expect(
+          tester.widget<RadioListTile<NominationScope>>(scope(id)).enabled,
+          isTrue,
+          reason: '$id',
+        );
+      }
+    });
+
+    testWidgets('a nominate whose answer was lost holds Nominate until a read '
+        "says whether it landed, and says why while that read can't", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      var reads = 0;
+      nominationsAnswer = (_) {
+        reads++;
+        // The first read, then the one after the lost nominate, fails.
+        if (reads == 2) throw _offline;
+        return const [];
+      };
+      nominateAnswer = (_) => throw _offline;
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await press(tester, nominate(azul.id));
+      await animate(tester);
+
+      expect(remote.nominates, hasLength(1));
+      expect(reads, 2);
+      for (final game in [azul, root]) {
+        await tester.ensureVisible(nominate(game.id));
+        await tester.pump();
+        expect(onPressed(tester, game.id), isNull, reason: game.title);
+        expect(
+          tester.getSemantics(nominate(game.id)),
+          matchesSemantics(
+            label: 'Nominate ${game.title}',
+            hint:
+                'Your last nomination may have gone through. Load the '
+                'nominations again to check.',
+            isButton: true,
+            hasEnabledState: true,
+          ),
+          reason: game.title,
+        );
+      }
+
+      // A retry that loads settles it.
+      await tester.ensureVisible(
+        find.byKey(EventDetailScreen.nominationsRetryKey),
+      );
+      await press(tester, find.byKey(EventDetailScreen.nominationsRetryKey));
+      await animate(tester);
+
+      expect(reads, 3);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(onPressed(tester, azul.id), isNotNull);
       handle.dispose();
     });
 

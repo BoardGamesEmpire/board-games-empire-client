@@ -293,6 +293,78 @@ void main() {
     });
   });
 
+  group('nominateTaken', () {
+    final game = offered('o1', 'att-me');
+    const whole = WholeEventScope();
+    const d1 = DateScope('d1');
+    const d2 = DateScope('d2');
+
+    test('a game approved or passed into the lineup is taken, whoever '
+        "brought it, until it isn't", () {
+      for (final status in [
+        NominationStatus.approved,
+        NominationStatus.passed,
+      ]) {
+        // Another copy of the same game, from someone else.
+        final all = [nom('a', status: status, supplied: 'o2')];
+        expect(
+          nominateTaken(game, all, scope: whole),
+          NominateTaken.inLineup,
+          reason: '$status',
+        );
+      }
+      for (final status in [
+        NominationStatus.failed,
+        NominationStatus.rejected,
+        NominationStatus.quorumNotMet,
+        NominationStatus.withdrawn,
+      ]) {
+        final all = [nom('a', status: status, supplied: 'o2')];
+        expect(
+          nominateTaken(game, all, scope: whole),
+          NominateTaken.no,
+          reason: '$status',
+        );
+      }
+    });
+
+    test('a whole-event lineup covers every date; a date one only its '
+        'own', () {
+      final wholeLineup = [nom('a', status: NominationStatus.approved)];
+      expect(
+        nominateTaken(game, wholeLineup, scope: d1),
+        NominateTaken.inLineup,
+      );
+
+      final dateLineup = [
+        nom('a', status: NominationStatus.passed, occurrenceId: 'd1'),
+      ];
+      expect(
+        nominateTaken(game, dateLineup, scope: d1),
+        NominateTaken.inLineup,
+      );
+      expect(nominateTaken(game, dateLineup, scope: d2), NominateTaken.no);
+      expect(nominateTaken(game, dateLineup, scope: whole), NominateTaken.no);
+    });
+
+    test('another game in the lineup takes nothing', () {
+      final all = [
+        nom('a', status: NominationStatus.approved).copyWith(
+          platformGameId: 'pg-other',
+        ),
+      ];
+      expect(nominateTaken(game, all, scope: whole), NominateTaken.no);
+    });
+
+    test("the row's own live nomination comes first", () {
+      final all = [
+        nom('a'),
+        nom('b', status: NominationStatus.approved, supplied: 'o2'),
+      ];
+      expect(nominateTaken(game, all, scope: whole), NominateTaken.nominated);
+    });
+  });
+
   group('stillSuppliedBy', () {
     const game = 'o1';
 

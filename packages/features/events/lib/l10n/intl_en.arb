@@ -1034,6 +1034,18 @@
   "@eventsNominateAlready": {
     "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when that copy of the game is nominated already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the copy is nominated already for the whole event, or for that date."
   },
+  "eventsNominateInLineup": "Already in the lineup",
+  "@eventsNominateInLineup": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed, when the game (anyone's copy of it) is in the event's lineup already for everything it could be nominated for. Also under a choice in the nominate dialog (eventsNominateTitle) that can't be picked: the game is in the lineup for the whole event, or for that date."
+  },
+  "eventsNominateAlreadyOrInLineup": "Already nominated or in the lineup",
+  "@eventsNominateAlreadyOrInLineup": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: for each choice it could be nominated for (the whole event, or a date), that copy is nominated already or the game is in the event's lineup already, some one and some the other."
+  },
+  "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again to check.",
+  "@eventsNominateUnsettled": {
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The banner eventsNominationsRefreshFailed, with its Try again button, is on the same tab."
+  },
   "eventsNominateTitle": "Nominate {title}",
   "@eventsNominateTitle": {
     "description": "Title of the dialog opened by the Nominate button (eventsNominate) on an event of more than one date. It asks whether the game is nominated for the whole event (eventsNominationWholeEvent) or for one of its dates still to come (eventsNominationForDate), one choice each. {title} is the game's.",

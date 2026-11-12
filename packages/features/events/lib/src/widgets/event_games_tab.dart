@@ -280,11 +280,13 @@ final class _GamesBody {
 ///
 /// Nominate (#517) is a direct write to the nominations, disabled offline
 /// the same way. It is disabled, saying why, where the nominations' first
-/// read failed or they aren't shown to the viewer, where whoever brings the
-/// game isn't going, or where the row is nominated already for everything it
-/// could be; and with nothing to say while a detail read runs, the screen's
-/// own request is out, a nominations write is out, or the nominations'
-/// first read is out, before which nothing says what a row supplies. On an
+/// read failed or they aren't shown to the viewer, where a nominate's lost
+/// answer couldn't be checked, where whoever brings the game isn't going, or
+/// where the row is nominated already, or its game in the lineup, for
+/// everything it could be; and with nothing to say while a detail read runs,
+/// the screen's own request is out, a nominations write is out, or the
+/// nominations' first read is out, before which nothing says what a row
+/// supplies. On an
 /// event of more than one date it asks first whether the nomination is for
 /// the whole event or for one date still to come; otherwise it is for the
 /// whole event. It sends as Take back does, once any running detail read
@@ -384,17 +386,26 @@ class EventGamesTab extends StatelessWidget {
         !nominations.busy &&
         _nominationsKnown(nominations, controller);
     // Why Nominate waits with no nominations to go on, where the wait won't
-    // end by itself (#517): a first read that failed, or nominations this
-    // viewer isn't shown. A read that is still out says nothing.
-    final unread = nominations == null || nominations.nominations.isNotEmpty
+    // end by itself (#517): a first read that failed, nominations this
+    // viewer isn't shown, or a nominate's lost answer whose read failed. A
+    // read that is still out says nothing.
+    final drawn = nominations == null
         ? null
-        : switch (controller.drawnNominationsLoad(nominations)) {
+        : controller.drawnNominationsLoad(nominations);
+    final unread = nominations == null
+        ? null
+        : nominations.settling
+        ? switch (drawn) {
+            EventNominationsLoad.failed => l10n.eventsNominateUnsettled,
+            EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
+            _ => null,
+          }
+        : nominations.nominations.isNotEmpty
+        ? null
+        : switch (drawn) {
             EventNominationsLoad.failed => l10n.eventsNominationsFailedTitle,
             EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
-            EventNominationsLoad.idle ||
-            EventNominationsLoad.loading ||
-            EventNominationsLoad.loaded ||
-            EventNominationsLoad.gone => null,
+            _ => null,
           };
 
     return SliverMainAxisGroup(
@@ -526,10 +537,10 @@ class EventGamesTab extends StatelessWidget {
                         game: game,
                         unread: unread,
                         notGoing: notGoing,
-                        already: scopes.every(
-                          (each) =>
-                              suppliesLive(game, nominated, scope: each.scope),
-                        ),
+                        already: _alreadyTaken(l10n, [
+                          for (final each in scopes)
+                            nominateTaken(game, nominated, scope: each.scope),
+                        ]),
                         enabled: mayNominate,
                         runOver: !nominations.busy,
                         onPressed: () =>
@@ -645,27 +656,49 @@ bool _supplierNotGoing(EventDetail detail, OfferedGame game) {
 /// Whether the nominations [state] holds say what a pool row supplies
 /// (#517): there are some, or the last read to end, as [controller] draws
 /// it, found none. None held otherwise says nothing: before a read has
-/// ended, or once one is failed, hidden or gone. Nominate waits until then,
-/// as its press does when it comes to send ([_nominate]).
+/// ended, or once one is failed, hidden or gone. Nor do any while a
+/// nominate's answer was lost and no read since has loaded
+/// ([EventNominationsState.settling]): the server may have saved it, and it
+/// takes the same row twice for one choice (backend#1214). Nominate waits
+/// until then, as its press does when it comes to send ([_nominate]).
 bool _nominationsKnown(
   EventNominationsState state,
   EventGamesTabController controller,
 ) =>
-    state.nominations.isNotEmpty ||
-    controller.drawnNominationsLoad(state) == EventNominationsLoad.loaded;
+    !state.settling &&
+    (state.nominations.isNotEmpty ||
+        controller.drawnNominationsLoad(state) == EventNominationsLoad.loaded);
+
+/// Why a pool row can't be nominated for any choice, from what [taken] says
+/// of each, or null while one is left.
+String? _alreadyTaken(
+  EventsLocalizations l10n,
+  List<NominateTaken> taken,
+) {
+  if (taken.isEmpty || taken.contains(NominateTaken.no)) return null;
+  if (taken.every((each) => each == NominateTaken.nominated)) {
+    return l10n.eventsNominateAlready;
+  }
+  if (taken.every((each) => each == NominateTaken.inLineup)) {
+    return l10n.eventsNominateInLineup;
+  }
+  return l10n.eventsNominateAlreadyOrInLineup;
+}
 
 /// Nominates [game] (#517): for the whole event, or where there is more
 /// than one choice ([_nominateScopes]), for the one chosen in
 /// [showNominateScopeDialog], where a choice the row already supplies a
-/// live nomination for can't be chosen. Completes true when the nomination
-/// was sent, and false when nothing was: the dialog cancelled, or as below.
+/// live nomination for, or its game is in the lineup for, can't be chosen.
+/// Completes true when the nomination was sent, and false when nothing was:
+/// the dialog cancelled, or as below.
 ///
 /// It goes once any running detail read has ended ([readEnded]), for the
 /// event as the detail shows it then, whose id a reconcile can have moved
 /// (#499). Nothing is sent if, by then, the viewer isn't offered Nominate,
 /// the game has left the pool, the choice is no longer offered, as a date
 /// cancelled meanwhile isn't, or one that started meanwhile isn't, or the
-/// row supplies a live nomination for it: the page already shows that, and
+/// row supplies a live nomination for it, or its game is in the lineup for
+/// it: the page already shows that, and
 /// the footer says the nomination was dropped, or a screen reader would hear
 /// nothing happen. So [clock] is read as it is pressed and again then: the
 /// server takes a nomination for a date that has started.
@@ -703,7 +736,7 @@ Future<bool> _nominate(
                 eventDateName(context, date, now: now),
               ),
             },
-            taken: suppliesLive(
+            taken: nominateTaken(
               game,
               nominations.state.nominations,
               scope: choice.scope,
@@ -726,7 +759,8 @@ Future<bool> _nominate(
       !_nominationsKnown(nominations.state, controller) ||
       !inPool ||
       !offered ||
-      suppliesLive(game, nominations.state.nominations, scope: scope)) {
+      nominateTaken(game, nominations.state.nominations, scope: scope) !=
+          NominateTaken.no) {
     nominations.add(
       NominationWriteDropped(NominationWrite.nominate, title: game.title),
     );
@@ -1253,7 +1287,8 @@ class _PoolRow extends StatelessWidget {
 /// Online it is disabled, with the reason as its hint, while the nominations
 /// couldn't be read or aren't shown to the viewer ([unread]), else while
 /// whoever brings the game isn't going ([notGoing]), else while the row is
-/// nominated already for everything Nominate offers ([already]): a hint says
+/// nominated already, or its game in the lineup, for everything Nominate
+/// offers ([already]): a hint says
 /// one thing, and those come in that order. It is disabled with no hint
 /// while it may not be pressed for a while ([enabled]).
 ///
@@ -1289,9 +1324,9 @@ class _NominateButton extends StatefulWidget {
   /// going: the viewer, or someone else. Null where they haven't.
   final String? notGoing;
 
-  /// Whether the row supplies a live nomination for every choice Nominate
-  /// offers.
-  final bool already;
+  /// Why the row can't be nominated for any choice Nominate offers, each
+  /// taken already ([nominateTaken]). Null while one is left.
+  final String? already;
 
   /// Whether it may be pressed now, connection and reasons aside: false
   /// while a detail read runs, the screen's own request is out, a
@@ -1348,7 +1383,7 @@ class _NominateButtonState extends State<_NominateButton>
         !offline &&
         unread == null &&
         notGoing == null &&
-        !already;
+        already == null;
     if (available) _nominated = false;
     // Offline, with no nominations to go on, or not going, it is disabled,
     // pressed or not: no press made it so (#49).
@@ -1363,16 +1398,14 @@ class _NominateButtonState extends State<_NominateButton>
         !held &&
         _nominated &&
         _focused &&
-        already &&
+        already != null &&
         widget.enabled &&
         !offline &&
         unread == null &&
         notGoing == null;
     final inert = held || kept;
     // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline
-        ? null
-        : unread ?? notGoing ?? (already ? l10n.eventsNominateAlready : null);
+    final reason = offline ? null : unread ?? notGoing ?? already;
 
     return Focus(
       canRequestFocus: false,

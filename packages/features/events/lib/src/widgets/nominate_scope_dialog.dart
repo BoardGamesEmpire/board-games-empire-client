@@ -4,11 +4,11 @@ import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:flutter/material.dart';
 
 /// One choice the nominate dialog offers: what it nominates for, how it is
-/// named, and whether the game is nominated for it already.
+/// named, and whether, and why, it can't be chosen.
 typedef NominateScopeChoice = ({
   NominationScope scope,
   String label,
-  bool taken,
+  NominateTaken taken,
 });
 
 /// Asks whether a nomination of the game titled [title] is for the whole
@@ -16,10 +16,11 @@ typedef NominateScopeChoice = ({
 /// null when cancelled.
 ///
 /// Each of [choices] is a radio button, in order. One taken already is
-/// disabled and says so under its name: the server doesn't stop a second
-/// nomination of one copy for one choice (backend#1214), so the client
-/// doesn't offer it. The first choice not taken is chosen as the dialog
-/// opens; the caller opens it only while one is left.
+/// disabled and says why under its name: nominated already, which the server
+/// doesn't stop for one copy and one choice (backend#1214), or its game in
+/// the lineup for it. So the client doesn't offer it. The first choice not
+/// taken is chosen as the dialog opens; the caller opens it only while one is
+/// left.
 ///
 /// Scrollable, since at 2.0 text a long title and the dates can outgrow a
 /// phone's height. Nominating takes nothing away, so Nominate is drawn as an
@@ -50,7 +51,7 @@ class _NominateScopeDialogState extends State<_NominateScopeDialog> {
   void initState() {
     super.initState();
     _chosen = widget.choices
-        .where((choice) => !choice.taken)
+        .where((choice) => choice.taken == NominateTaken.no)
         .firstOrNull
         ?.scope;
   }
@@ -81,12 +82,14 @@ class _NominateScopeDialogState extends State<_NominateScopeDialog> {
                   DateScope(:final occurrenceId) => occurrenceId,
                 }),
                 value: choice.scope,
-                enabled: !choice.taken,
+                enabled: choice.taken == NominateTaken.no,
                 contentPadding: EdgeInsets.zero,
                 title: Text(choice.label),
-                subtitle: choice.taken
-                    ? Text(l10n.eventsNominateAlready)
-                    : null,
+                subtitle: switch (choice.taken) {
+                  NominateTaken.no => null,
+                  NominateTaken.nominated => Text(l10n.eventsNominateAlready),
+                  NominateTaken.inLineup => Text(l10n.eventsNominateInLineup),
+                },
               ),
           ],
         ),

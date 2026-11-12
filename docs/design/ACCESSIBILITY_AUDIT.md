@@ -287,9 +287,11 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    the footer reads "You withdrew Azul." and the reader lands on the row,
    which now reads "Withdrawn". On a pool row, Nominate reads "Nominate
    Catan"; on an event with more than one date it asks which, a date
-   nominated already reading "Already nominated" and unavailable; after
+   nominated already reading "Already nominated" and unavailable, and one
+   the game is in the lineup for reading "Already in the lineup"; after
    it, the footer reads "Catan is nominated. Voting is open." and the
-   pool row reads "Nominated".
+   pool row reads "Nominated". Nominate on any copy of a game in the
+   lineup for every choice reads "Already in the lineup" as its hint.
    Then the header: open Filters, check the pop-up is read as "Filters",
    with "Status" and "Date" as headings, each status chip saying whether
    it is selected, the dates as radio buttons with "Any date" chosen, and

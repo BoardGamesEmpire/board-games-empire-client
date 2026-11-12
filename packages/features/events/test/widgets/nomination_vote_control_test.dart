@@ -17,6 +17,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
 import '../support/fake_event_remote.dart';
+import '../support/kept_nominations.dart';
 
 class _MockEventRepository extends Mock implements EventRepository {}
 
@@ -119,6 +120,10 @@ void main() {
   late StreamController<EventDetail?> cache;
   late FakeEventRemote remote;
 
+  /// What the fake server answered writes and single reads with, which its
+  /// list reads serve.
+  final kept = KeptNominations();
+
   /// What each nominations list read answers.
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
@@ -191,10 +196,12 @@ void main() {
     remote = FakeEventRemote.detail(
       (_) => heldRead?.future ?? detail.snapshot,
       pool: (request) => poolAnswer(request),
-      nominations: (eventId) => nominationsAnswer(eventId),
-      nomination: (request) => nominationAnswer(request),
+      nominations: (eventId) async =>
+          kept.over(await nominationsAnswer(eventId)),
+      nomination: (request) async => kept.keep(await nominationAnswer(request)),
       voteCast: (request) => voteAnswer(request),
     );
+    addTearDown(kept.clear);
     return MaterialApp(
       theme: BgeTheme.light(),
       locale: const Locale('en', 'US'),
