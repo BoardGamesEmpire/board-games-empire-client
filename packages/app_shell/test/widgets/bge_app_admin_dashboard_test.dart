@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/domain.dart';
@@ -10,6 +12,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:server_settings/server_settings.dart';
 
 import '../support/active_server_fakes.dart';
 
@@ -20,6 +23,23 @@ class _MockStorage extends Mock implements Storage {}
 
 /// Registered so the DataGateway section is offered; nothing here reads it.
 class _DataGateways implements DataGatewayRemoteDataSource {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// Registered so the Server settings section is offered. Its reads never
+/// answer: the tests here only look at which screen opens.
+class _SystemSettings implements SystemSettingsRemoteDataSource {
+  @override
+  Future<SystemSettings> fetch() => Completer<SystemSettings>().future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+class _Notifications implements NotificationRemoteDataSource {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
@@ -106,18 +126,26 @@ void main() {
     access = FakeCallerAccessRepository();
   });
 
-  /// Home on a server whose access reads DataGateways and households as
-  /// given, with both sections' clients unless one is left out.
+  /// Home on a server whose access reads DataGateways, households and
+  /// system settings as given, or answers [answer] when given, with every
+  /// section's clients unless one is left out.
   Future<void> pumpHome(
     WidgetTester tester, {
     AccessExtent gateways = AccessExtent.none,
     AccessExtent householdsRead = AccessExtent.none,
+    AccessExtent settingsRead = AccessExtent.none,
+    CallerAccess? answer,
     bool withHouseholdsClient = true,
+    bool withSystemSettingsClient = true,
+    bool withNotificationsClient = true,
   }) async {
-    access.current = FakeCallerAccessRepository.of({
-      ResourceType.dataGateway: gateways,
-      ResourceType.household: householdsRead,
-    });
+    access.current =
+        answer ??
+        FakeCallerAccessRepository.of({
+          ResourceType.dataGateway: gateways,
+          ResourceType.household: householdsRead,
+          ResourceType.systemSetting: settingsRead,
+        });
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
@@ -125,6 +153,12 @@ void main() {
           dataGatewayRemoteDataSource: _DataGateways(),
           adminHouseholdRemoteDataSource: withHouseholdsClient
               ? households
+              : null,
+          systemSettingsRemoteDataSource: withSystemSettingsClient
+              ? _SystemSettings()
+              : null,
+          notificationRemoteDataSource: withNotificationsClient
+              ? _Notifications()
               : null,
           callerAccess: access,
         ),
@@ -150,6 +184,10 @@ void main() {
   );
   final householdsSection = find.byKey(
     AdminDashboardScreen.entryKey('households'),
+  );
+
+  final settingsSection = find.byKey(
+    AdminDashboardScreen.entryKey('server_settings'),
   );
 
   Future<void> openDashboard(WidgetTester tester) async {
@@ -287,6 +325,199 @@ void main() {
     // Nor is the section's own route built.
     GoRouter.of(tester.element(find.byType(AdminDashboardScreen)))
         .go(AppRoutes.adminHouseholds);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+  });
+
+  testWidgets('system settings read all alone shows the entry, and the '
+      'dashboard lists only Server settings', (tester) async {
+    await pumpHome(tester, settingsRead: AccessExtent.all);
+
+    await openDashboard(tester);
+
+    expect(settingsSection, findsOneWidget);
+    expect(
+      find.descendant(
+        of: settingsSection,
+        matching: find.text('Server settings'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: settingsSection,
+        matching: find.text('Mail, and how people sign in'),
+      ),
+      findsOneWidget,
+    );
+    expect(gatewaysSection, findsNothing);
+    expect(householdsSection, findsNothing);
+  });
+
+  testWidgets('system settings read some, a read the server checks per '
+      'setting, lists no Server settings', (tester) async {
+    await pumpHome(
+      tester,
+      householdsRead: AccessExtent.all,
+      settingsRead: AccessExtent.some,
+    );
+    await openDashboard(tester);
+
+    expect(settingsSection, findsNothing);
+    expect(householdsSection, findsOneWidget);
+  });
+
+  testWidgets('system settings read none lists no Server settings', (
+    tester,
+  ) async {
+    await pumpHome(tester, householdsRead: AccessExtent.all);
+    await openDashboard(tester);
+
+    expect(settingsSection, findsNothing);
+    expect(householdsSection, findsOneWidget);
+  });
+
+  testWidgets('system settings read none lists no Server settings, even with '
+      'every other action on settings', (tester) async {
+    await pumpHome(
+      tester,
+      answer: const CallerAccess.known({
+        ResourceType.household: ResourceAccess(
+          create: AccessExtent.none,
+          read: AccessExtent.all,
+          update: AccessExtent.none,
+          delete: AccessExtent.none,
+          manage: AccessExtent.none,
+        ),
+        ResourceType.systemSetting: ResourceAccess(
+          create: AccessExtent.all,
+          read: AccessExtent.none,
+          update: AccessExtent.all,
+          delete: AccessExtent.all,
+          manage: AccessExtent.all,
+        ),
+      }),
+    );
+    await openDashboard(tester);
+
+    expect(settingsSection, findsNothing);
+    expect(householdsSection, findsOneWidget);
+  });
+
+  testWidgets('a Moderator, who reads every setting and changes none, is '
+      'listed Server settings', (tester) async {
+    await pumpHome(
+      tester,
+      answer: const CallerAccess.known({
+        ResourceType.systemSetting: ResourceAccess(
+          create: AccessExtent.none,
+          read: AccessExtent.all,
+          update: AccessExtent.none,
+          delete: AccessExtent.none,
+          manage: AccessExtent.none,
+        ),
+      }),
+    );
+    await openDrawer(tester);
+    expect(adminEntry, findsOneWidget);
+    await tester.tap(adminEntry);
+    await tester.pumpAndSettle();
+
+    expect(settingsSection, findsOneWidget);
+  });
+
+  testWidgets('the Server settings entry opens the screen over the '
+      'dashboard, and a pop returns to it', (tester) async {
+    await pumpHome(tester, settingsRead: AccessExtent.all);
+    await openDashboard(tester);
+
+    // The screen's read never answers, so its spinner never settles: pump
+    // past the route's transition instead.
+    await tester.tap(settingsSection);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    final screen = find.byType(ServerSettingsScreen);
+    expect(screen, findsOneWidget);
+    expect(
+      tester.widget<ServerSettingsScreen>(screen).access,
+      same(access),
+    );
+
+    GoRouter.of(tester.element(screen)).pop();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byType(ServerSettingsScreen), findsNothing);
+    expect(find.byType(AdminDashboardScreen), findsOneWidget);
+  });
+
+  testWidgets('a session with the settings client but no notifications '
+      'client leaves the section out, as its route is unbuilt', (
+    tester,
+  ) async {
+    await pumpHome(
+      tester,
+      gateways: AccessExtent.all,
+      settingsRead: AccessExtent.all,
+      withNotificationsClient: false,
+    );
+
+    await openDashboard(tester);
+
+    expect(gatewaysSection, findsOneWidget);
+    expect(settingsSection, findsNothing);
+
+    GoRouter.of(tester.element(find.byType(AdminDashboardScreen)))
+        .go(AppRoutes.adminSettings);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    expect(find.byType(ServerSettingsScreen), findsNothing);
+  });
+
+  testWidgets('a session with the notifications client but no settings '
+      'client leaves the section out, as its route is unbuilt', (
+    tester,
+  ) async {
+    await pumpHome(
+      tester,
+      gateways: AccessExtent.all,
+      settingsRead: AccessExtent.all,
+      withSystemSettingsClient: false,
+    );
+
+    await openDashboard(tester);
+
+    expect(gatewaysSection, findsOneWidget);
+    expect(settingsSection, findsNothing);
+
+    GoRouter.of(tester.element(find.byType(AdminDashboardScreen)))
+        .go(AppRoutes.adminSettings);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    expect(find.byType(ServerSettingsScreen), findsNothing);
+  });
+
+  testWidgets('a session without the settings clients leaves the section '
+      'out, and its route unbuilt', (tester) async {
+    await pumpHome(
+      tester,
+      gateways: AccessExtent.all,
+      settingsRead: AccessExtent.all,
+      withSystemSettingsClient: false,
+      withNotificationsClient: false,
+    );
+
+    await openDashboard(tester);
+
+    expect(gatewaysSection, findsOneWidget);
+    expect(settingsSection, findsNothing);
+
+    GoRouter.of(tester.element(find.byType(AdminDashboardScreen)))
+        .go(AppRoutes.adminSettings);
     await tester.pumpAndSettle();
 
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);

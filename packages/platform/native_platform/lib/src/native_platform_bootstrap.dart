@@ -23,6 +23,8 @@ import 'package:native_platform/src/logging/rotating_file_log_sink.dart';
 import 'package:native_platform/src/native_root_module.dart';
 import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:server_settings/server_settings.dart'
+    show serverSettingsResourceTypes;
 import 'package:storage_interface/storage_interface.dart';
 import 'package:sync_queue/sync_queue.dart';
 
@@ -125,6 +127,7 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
     resourceTypes: {
       ...dataGatewayResourceTypes,
       ...householdAdminResourceTypes,
+      ...serverSettingsResourceTypes,
     },
   ),
   SyncSenderInstaller(),

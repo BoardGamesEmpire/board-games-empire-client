@@ -48,6 +48,8 @@ dependencies:
     path: ../../core/observability
   package_info_plus: ^10.2.1
   path_provider: ^2.1.3
+  server_settings:
+    path: ../../features/server_settings
   storage_interface:
     path: ../../storage/storage_interface
   # The sync queue's sender and drain (#121). Both platforms compose both;

@@ -485,6 +485,14 @@ const _someAccess = {
       'delete': 'none',
       'manage': 'none',
     },
+    // And the server settings (#807), for the same reason.
+    'SystemSetting': {
+      'create': 'none',
+      'read': 'none',
+      'update': 'none',
+      'delete': 'none',
+      'manage': 'none',
+    },
   },
 };
 

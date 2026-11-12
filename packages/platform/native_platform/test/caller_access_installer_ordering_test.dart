@@ -14,14 +14,19 @@ import 'package:native_platform/native_platform.dart';
 /// list has its own equivalent in
 /// `packages/platform/web/test/web_user_scope_installers_test.dart`.
 void main() {
-  test('has one CallerAccessInstaller, asking for the DataGateway types', () {
+  test('has one CallerAccessInstaller, asking for the DataGateway, '
+      'household and system setting types (#807)', () {
     final callerAccess = buildNativeUserScopeInstallers()
         .whereType<CallerAccessInstaller>();
 
     expect(callerAccess, hasLength(1));
     expect(
       callerAccess.single.resourceTypes,
-      contains(ResourceType.dataGateway),
+      containsAll([
+        ResourceType.dataGateway,
+        ResourceType.household,
+        ResourceType.systemSetting,
+      ]),
     );
   });
 

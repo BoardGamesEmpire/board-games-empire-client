@@ -54,6 +54,7 @@ import 'package:models/dto.dart' show AuthUser;
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
+import 'package:server_settings/server_settings.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
 import 'package:ui/ui.dart'
@@ -417,6 +418,7 @@ class _BgeAppState extends State<BgeApp> {
       dataGatewayDetailBuilder: _buildDataGatewayDetailRoute,
       adminDashboardBuilder: _buildAdminDashboardRoute,
       adminHouseholdListBuilder: _buildAdminHouseholdListRoute,
+      serverSettingsBuilder: _buildServerSettingsRoute,
       adminHouseholdDetailBuilder: _buildAdminHouseholdDetailRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -2368,6 +2370,17 @@ class _BgeAppState extends State<BgeApp> {
           resourceType: ResourceType.household,
           onOpen: (ctx) => unawaited(ctx.push<void>(AppRoutes.adminHouseholds)),
         ),
+      // Both clients, as its route needs them.
+      if (container.isRegistered<SystemSettingsRemoteDataSource>() &&
+          container.isRegistered<NotificationRemoteDataSource>())
+        AdminSection(
+          id: 'server_settings',
+          icon: Icons.settings_outlined,
+          title: ServerSettingsLocalizations.of(context).serverSettingsTitle,
+          summary: shellL10n.adminSectionServerSettingsSummary,
+          resourceType: ResourceType.systemSetting,
+          onOpen: (ctx) => unawaited(ctx.push<void>(AppRoutes.adminSettings)),
+        ),
     ];
   }
 
@@ -2412,6 +2425,32 @@ class _BgeAppState extends State<BgeApp> {
       access: _callerAccess(container),
       onOpen: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.adminHouseholdDetailOf(id))),
+    );
+  }
+
+  /// The #807 server settings: the per-server
+  /// [SystemSettingsRemoteDataSource] and [NotificationRemoteDataSource], and
+  /// the session's [CallerAccessRepository], from the active server's
+  /// container. Null (→ `NotYetAvailableScreen`) when no active server is
+  /// resolvable or it has no client for either.
+  ///
+  /// Guarded on the clients alone, not on access, as the households list is:
+  /// a deep link by a user the server refuses reaches the screen, which says
+  /// so.
+  Widget? _buildServerSettingsRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<SystemSettingsRemoteDataSource>() ||
+        !container.isRegistered<NotificationRemoteDataSource>()) {
+      return null;
+    }
+
+    return ServerSettingsScreen(
+      remote: container.get<SystemSettingsRemoteDataSource>(),
+      notifications: container.get<NotificationRemoteDataSource>(),
+      access: _callerAccess(container),
     );
   }
 
@@ -2992,6 +3031,7 @@ class _BgeAppState extends State<BgeApp> {
         EventsLocalizations.delegate,
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
+        ServerSettingsLocalizations.delegate,
         UserSearchLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],

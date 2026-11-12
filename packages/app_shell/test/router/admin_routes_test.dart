@@ -9,6 +9,7 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 
 const _dashboardMarkerKey = Key('admin_dashboard_route_marker');
 const _householdListMarkerKey = Key('admin_household_list_route_marker');
+const _settingsMarkerKey = Key('admin_settings_route_marker');
 
 /// The admin dashboard at `/admin` (#684), with the staff households list
 /// and one household's detail beneath it (#685). The DataGateway routes
@@ -25,6 +26,7 @@ void main() {
     AdminDashboardScreenBuilder? adminDashboardBuilder,
     AdminHouseholdListScreenBuilder? adminHouseholdListBuilder,
     AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
+    ServerSettingsScreenBuilder? serverSettingsBuilder,
   }) async {
     whenListen(
       cubit,
@@ -38,6 +40,7 @@ void main() {
       adminDashboardBuilder: adminDashboardBuilder,
       adminHouseholdListBuilder: adminHouseholdListBuilder,
       adminHouseholdDetailBuilder: adminHouseholdDetailBuilder,
+      serverSettingsBuilder: serverSettingsBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -65,6 +68,7 @@ void main() {
       expect(AppRoutes.admin, '/admin');
       expect(AppRoutes.adminDataGateways, '/admin/data-gateways');
       expect(AppRoutes.adminHouseholds, '/admin/households');
+      expect(AppRoutes.adminSettings, '/admin/settings');
     });
 
     testWidgets('/admin builds the dashboard', (tester) async {
@@ -95,6 +99,51 @@ void main() {
       );
 
       router.go(AppRoutes.admin);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+  });
+
+  Widget settings(BuildContext _) =>
+      const Scaffold(body: SizedBox(key: _settingsMarkerKey));
+
+  group('buildAppRouter: the server settings route (#807)', () {
+    testWidgets('/admin/settings builds the screen, with the dashboard '
+        'beneath it', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        adminDashboardBuilder: dashboard,
+        serverSettingsBuilder: settings,
+      );
+
+      router.go(AppRoutes.adminSettings);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_settingsMarkerKey), findsOneWidget);
+      // A deep link builds the dashboard beneath, so leaving is a plain pop.
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_dashboardMarkerKey), findsOneWidget);
+      expect(find.byKey(_settingsMarkerKey), findsNothing);
+    });
+
+    testWidgets('falls back to NotYetAvailableScreen with no builder, or '
+        'when it answers null', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.adminSettings);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+
+      final nullRouter = await pumpRouter(
+        tester,
+        serverSettingsBuilder: (_) => null,
+      );
+      nullRouter.go(AppRoutes.adminSettings);
       await tester.pumpAndSettle();
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);

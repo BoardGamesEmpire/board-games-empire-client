@@ -56,6 +56,8 @@ dependencies:
     path: ../../core/observability
   # Web-specific
   package_info_plus: ^10.2.1
+  server_settings:
+    path: ../../features/server_settings
   # The sync queue feature, for the shared `SyncSenderInstaller` the create
   # screen sends through (#121) and the `SyncQueueDrainInstaller` over it
   # (#447), on the same rule.
