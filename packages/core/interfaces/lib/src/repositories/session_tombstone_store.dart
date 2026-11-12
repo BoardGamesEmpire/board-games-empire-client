@@ -5,7 +5,7 @@
 /// the next cold start reads back. This is the record that survives the
 /// restart: written before the delete, read before the payload is returned.
 ///
-/// Not the glossary's sync Tombstone (CONTEXT.md): that is a deleted record
+/// Not the glossary's sync Tombstone (GLOSSARY.md): that is a deleted record
 /// the app retains; this is a marker a new sign-in removes.
 ///
 /// ## Keyed by the server's own id

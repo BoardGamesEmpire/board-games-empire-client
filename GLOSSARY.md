@@ -3,7 +3,8 @@
 The Flutter client for self-hosted BGE servers. This glossary defines the terms the
 domain uses, so the same word means the same thing in code, issues and conversation.
 
-Glossary only. Architecture lives in `docs/ROADMAP.md`; decisions live on their issues.
+Glossary only. Architecture lives in `docs/ROADMAP.md`. Decisions live on their issues,
+or as ADRs in `docs/adr/` when they bind beyond one issue (see `docs/agents/domain.md`).
 
 ## Language
 
