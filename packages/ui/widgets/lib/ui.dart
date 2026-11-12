@@ -89,6 +89,7 @@ export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_keyed_sliver_grid.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_layout_toggle.dart';
+export 'src/layout/bge_navigation_menu.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/layout/bge_unfolding_cover_grid.dart';
