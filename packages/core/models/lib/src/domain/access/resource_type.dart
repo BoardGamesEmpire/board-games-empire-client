@@ -5,7 +5,8 @@
 /// added once the server knows it.
 enum ResourceType {
   dataGateway('DataGateway'),
-  household('Household');
+  household('Household'),
+  systemSetting('SystemSetting');
 
   const ResourceType(this.wireName);
 
