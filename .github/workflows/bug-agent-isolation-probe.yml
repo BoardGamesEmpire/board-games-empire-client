@@ -1,0 +1,85 @@
+name: Bug agent isolation probe
+
+# Runs .github/actions/bug-agent-setup/isolation-probe.sh as a command the
+# bug agent runs, through the Agent SDK with the fix job's options, and
+# prints what it found. sandbox-check.sh imitates the isolation with its
+# own bubblewrap, and the imitation passed while a real fix run on #847
+# found the moved SDK's bin/cache read-only. This shows the real one.
+#
+# Manual only: it spends API credit, and it diagnoses rather than gates.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: BoardGamesEmpire/automation
+          ref: master
+          path: .bug-agent-shared
+          sparse-checkout: bug-agent
+          persist-credentials: false
+
+      # In the fix job's order: setup, then the shared runner moved out of
+      # the checkout, the SDK installed, and the isolation installed.
+      - uses: ./.github/actions/bug-agent-setup
+
+      - name: Move the shared runner out of the checkout
+        run: |
+          cp -R .bug-agent-shared/bug-agent "$RUNNER_TEMP/bug-agent"
+          rm -rf .bug-agent-shared
+
+      - name: Install the Agent SDK
+        working-directory: ${{ runner.temp }}/bug-agent
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install subprocess isolation
+        timeout-minutes: 10
+        run: bash "$RUNNER_TEMP/bug-agent/install-isolation.sh"
+
+      - name: Write the prompt
+        run: |
+          cat > "$RUNNER_TEMP/prompt.md" <<'EOF'
+          Run exactly this command once, from the current directory, with no
+          changes and without asking to run outside the sandbox:
+
+              bash .github/actions/bug-agent-setup/isolation-probe.sh
+
+          Then return its complete output, unedited, as `output`. Run
+          nothing else.
+          EOF
+
+      # run-agent.mjs with the fix job's isolation (the env scrub) and a
+      # single allowed command.
+      - name: Run the probe as the agent
+        id: agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.BGE_AGENT_ANTHROPIC_API_KEY }}
+          PROMPT_FILE: ${{ runner.temp }}/prompt.md
+          AGENT_MODEL: claude-haiku-5-5
+          AGENT_EFFORT: low
+          AGENT_MAX_TURNS: '4'
+          AGENT_ALLOWED_TOOLS: Bash(bash .github/actions/bug-agent-setup/isolation-probe.sh)
+          AGENT_SCHEMA: '{"type":"object","properties":{"output":{"type":"string"}},"required":["output"],"additionalProperties":false}'
+        run: node "$RUNNER_TEMP/bug-agent/run-agent.mjs"
+
+      # The probe's output holds paths and mount entries, nothing from the
+      # repository's contents, so it is safe to print in a public log.
+      - name: Show what the probe found
+        env:
+          RESULT: ${{ steps.agent.outputs.structured_output }}
+        run: jq -r '.output' <<<"$RESULT"
+
+      # The same script outside the isolation, for comparison.
+      - name: The same probe outside the isolation
+        run: bash .github/actions/bug-agent-setup/isolation-probe.sh
