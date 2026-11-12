@@ -3,5 +3,293 @@
   "serverSettingsTitle": "Server settings",
   "@serverSettingsTitle": {
     "description": "Title of the admin screen where an administrator changes the server's own settings, such as how it sends email and how people may sign in."
+  },
+  "mailGroupTitle": "Mail",
+  "@mailGroupTitle": {
+    "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through, its sender address, and password reset links."
+  },
+  "mailGroupIntro": "The server sends password reset links and test emails through this mail server. Mail is off until a host and a From address are saved.",
+  "@mailGroupIntro": {
+    "description": "Introduction under the Mail heading. Says what the server uses its mail settings for, and that no mail goes out until both the host and the sender (From) address are saved."
+  },
+  "mailHostLabel": "SMTP host",
+  "@mailHostLabel": {
+    "description": "Label of the field for the host name of the SMTP (outgoing mail) server the server sends email through, such as smtp.example.com."
+  },
+  "mailHostHelper": "Leave empty to turn outgoing mail off.",
+  "@mailHostHelper": {
+    "description": "Helper text under the SMTP host field: an empty host stops the server sending any email."
+  },
+  "mailPortLabel": "Port",
+  "@mailPortLabel": {
+    "description": "Label of the field for the network port of the SMTP server, a whole number such as 587."
+  },
+  "mailPortInvalid": "Enter a port from 1 to 65535.",
+  "@mailPortInvalid": {
+    "description": "Validation message when the SMTP port field is blank, not a whole number, or out of range."
+  },
+  "mailSecurityLabel": "Connection security",
+  "@mailSecurityLabel": {
+    "description": "Label of the menu that chooses how the server secures its connection to the SMTP server."
+  },
+  "mailSecurityStartTls": "STARTTLS (a plain connection upgraded to TLS)",
+  "@mailSecurityStartTls": {
+    "description": "Connection security choice: the server connects in plain text, then upgrades the connection to TLS encryption with the STARTTLS command. STARTTLS and TLS are technical names; keep them as they are."
+  },
+  "mailSecurityImplicitTls": "TLS from the start",
+  "@mailSecurityImplicitTls": {
+    "description": "Connection security choice: the connection to the SMTP server is encrypted with TLS from its first byte. TLS is a technical name; keep it as it is."
+  },
+  "mailSecurityNone": "None",
+  "@mailSecurityNone": {
+    "description": "Connection security choice: no encryption at all on the connection to the SMTP server."
+  },
+  "mailSecurityUnknown": "A setting this app doesn't know",
+  "@mailSecurityUnknown": {
+    "description": "Shown in the connection security menu when the server holds a value from a newer version that this app can't show. Saving leaves it as it is unless another choice is picked."
+  },
+  "mailSecurityNoneWarning": "With no TLS, the password and every email cross the network unencrypted. Use it only for a mail relay on a network you trust.",
+  "@mailSecurityNoneWarning": {
+    "description": "Warning shown under the connection security menu while None is chosen. TLS is a technical name; keep it as it is."
+  },
+  "mailUserLabel": "User name",
+  "@mailUserLabel": {
+    "description": "Label of the field for the user name the server signs in to the SMTP server with."
+  },
+  "mailUserHelper": "Leave empty if the mail server asks for none.",
+  "@mailUserHelper": {
+    "description": "Helper text under the SMTP user name field: some mail servers, such as a local relay, need no sign-in."
+  },
+  "mailPasswordLabel": "Password",
+  "@mailPasswordLabel": {
+    "description": "Label of the SMTP password: the password the server signs in to the mail server with. Also heads the password's line while a saved password is kept or about to be removed."
+  },
+  "mailPasswordSaved": "A password is saved.",
+  "@mailPasswordSaved": {
+    "description": "Under the Password label when the server holds a saved SMTP password. The password itself is never shown."
+  },
+  "mailPasswordChange": "Change password",
+  "@mailPasswordChange": {
+    "description": "Button that opens a field to enter a new SMTP password in place of the saved one."
+  },
+  "mailPasswordRemove": "Remove password",
+  "@mailPasswordRemove": {
+    "description": "Button that marks the saved SMTP password to be removed by the next save."
+  },
+  "mailPasswordRemoving": "The saved password will be removed when you save.",
+  "@mailPasswordRemoving": {
+    "description": "Under the Password label after Remove password was pressed, until the mail settings are saved or the password kept."
+  },
+  "mailPasswordKeep": "Keep password",
+  "@mailPasswordKeep": {
+    "description": "Button that cancels Remove password, so the saved SMTP password stays."
+  },
+  "mailPasswordKeepSaved": "Keep saved password",
+  "@mailPasswordKeepSaved": {
+    "description": "Button under the new password field that closes it and keeps the saved SMTP password instead."
+  },
+  "mailPasswordShow": "Show password",
+  "@mailPasswordShow": {
+    "description": "Tooltip and screen-reader name of the button that shows the typed SMTP password in plain text."
+  },
+  "mailPasswordHide": "Hide password",
+  "@mailPasswordHide": {
+    "description": "Tooltip and screen-reader name of the button that hides the typed SMTP password again."
+  },
+  "mailPasswordRequired": "The connection changed, so enter the password again or remove it.",
+  "@mailPasswordRequired": {
+    "description": "Error on the SMTP password field when the host, port or connection security changed while a password is saved. The server won't send a saved password to a different mail server, so it has to be entered again or removed."
+  },
+  "mailPasswordEmpty": "Enter the new password, or keep the saved one.",
+  "@mailPasswordEmpty": {
+    "description": "Error on the new SMTP password field when it is left empty while a password is saved."
+  },
+  "mailFromLabel": "From address",
+  "@mailFromLabel": {
+    "description": "Label of the field for the email address the server's emails are sent from."
+  },
+  "mailFromInvalid": "Enter an email address.",
+  "@mailFromInvalid": {
+    "description": "Validation message when the From address field holds something that isn't an email address."
+  },
+  "mailFieldTooLong": "Use at most {max} characters.",
+  "@mailFieldTooLong": {
+    "description": "Validation message when a mail setting (host, user name, password or From address) is longer than the server accepts.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "255"
+      }
+    }
+  },
+  "mailPasswordResetsLabel": "Let people reset a forgotten password",
+  "@mailPasswordResetsLabel": {
+    "description": "Label of the switch that lets people ask for a password reset link by email."
+  },
+  "mailLinkLifetimeLabel": "Reset link lifetime, in minutes",
+  "@mailLinkLifetimeLabel": {
+    "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
+  },
+  "mailLinkLifetimeHelper": "{readout}. From 15 minutes to 7 days.",
+  "@mailLinkLifetimeHelper": {
+    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows.",
+    "placeholders": {
+      "readout": {
+        "type": "String",
+        "example": "1 day, 1 hour"
+      }
+    }
+  },
+  "mailLinkLifetimeInvalid": "Enter a whole number of minutes from 15 to 10080 (7 days).",
+  "@mailLinkLifetimeInvalid": {
+    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range."
+  },
+  "mailLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@mailLifetimeDays": {
+    "description": "A number of days, one part of the reset link lifetime's reading, such as '1 day' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "mailLifetimeHours": "{count, plural, =1{1 hour} other{{count} hours}}",
+  "@mailLifetimeHours": {
+    "description": "A number of hours, one part of the reset link lifetime's reading, such as '1 hour' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "mailLifetimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
+  "@mailLifetimeMinutes": {
+    "description": "A number of minutes, one part of the reset link lifetime's reading, such as '30 minutes' in '1 hour, 30 minutes'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "mailSave": "Save mail settings",
+  "@mailSave": {
+    "description": "Button that saves the Mail group's settings to the server."
+  },
+  "mailSaving": "Saving…",
+  "@mailSaving": {
+    "description": "Label of the save button while the Mail group's settings are being saved."
+  },
+  "mailSaved": "Mail settings saved.",
+  "@mailSaved": {
+    "description": "Shown above the save button once the server has stored the Mail group's settings, until they are edited again."
+  },
+  "mailNotSavedTitle": "Mail settings not saved",
+  "@mailNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Mail group's settings failed."
+  },
+  "settingsNothingChanged": "No setting changed.",
+  "@settingsNothingChanged": {
+    "description": "Shown when save was pressed for a group of server settings with nothing changed, so nothing was sent."
+  },
+  "settingsRefused": "Your role can't change the server's settings.",
+  "@settingsRefused": {
+    "description": "Shown when the server refused to save the settings because the signed-in user's role may not change them."
+  },
+  "settingsRejected": "The server refused one of these values. Check them and try again.",
+  "@settingsRejected": {
+    "description": "Shown when the server refused to save the settings because it did not accept one of the values."
+  },
+  "settingsFailed": "Couldn't reach the server. Check your connection and try again.",
+  "@settingsFailed": {
+    "description": "Shown when saving the settings failed because the server could not be reached or did not answer usefully."
+  },
+  "mailTestSend": "Send test email",
+  "@mailTestSend": {
+    "description": "Button that asks the server to send a test email to the signed-in admin through the saved mail settings."
+  },
+  "mailTestUnsaved": "Save your changes first: the test uses the saved settings.",
+  "@mailTestUnsaved": {
+    "description": "Under the disabled Send test email button while the Mail group has changes that aren't saved yet."
+  },
+  "mailTestNotConfigured": "Save a host and a From address first.",
+  "@mailTestNotConfigured": {
+    "description": "Under the disabled Send test email button while the server has no saved mail host or From address, so there is nothing to test."
+  },
+  "mailTestWaiting": "Test email queued for your address. Waiting for the mail server's answer…",
+  "@mailTestWaiting": {
+    "description": "Shown after the server queued the test email, while the app waits to hear whether the mail server took it."
+  },
+  "mailTestSent": "The test email was sent. Check your inbox.",
+  "@mailTestSent": {
+    "description": "Shown when the mail server took the test email."
+  },
+  "mailTestMayAnswerEarlier": "{outcome} An earlier test was still waiting for its answer, so this may be that one's. Send another test to be sure.",
+  "@mailTestMayAnswerEarlier": {
+    "description": "A test email's outcome, followed by a caution: an earlier test ran out of time without an answer, and the server's results don't say which test they answer, so this outcome may belong to the earlier test.",
+    "placeholders": {
+      "outcome": {
+        "type": "String",
+        "example": "The test email was sent. Check your inbox."
+      }
+    }
+  },
+  "mailTestNoResult": "No answer from the mail server yet. Send another test to try again.",
+  "@mailTestNoResult": {
+    "description": "Shown when no result for the test email arrived within a couple of minutes."
+  },
+  "mailTestFailedTitle": "Test email failed",
+  "@mailTestFailedTitle": {
+    "description": "Heading of the message that gives the mail server's reason a test email was not delivered."
+  },
+  "mailTestFailedNotConfigured": "Mail isn't set up yet.",
+  "@mailTestFailedNotConfigured": {
+    "description": "Result of a test email: the server had no mail settings to send it with."
+  },
+  "mailTestFailedSettingsUnreadable": "The server couldn't read its mail settings. Save the password again.",
+  "@mailTestFailedSettingsUnreadable": {
+    "description": "Result of a test email: the server could not decrypt its saved mail password, so the password has to be entered and saved again."
+  },
+  "mailTestFailedAuthFailed": "The mail server refused the user name or password.",
+  "@mailTestFailedAuthFailed": {
+    "description": "Result of a test email: the mail server did not accept the saved user name or password."
+  },
+  "mailTestFailedHostUnreachable": "Couldn't reach the mail server. Check the host and port.",
+  "@mailTestFailedHostUnreachable": {
+    "description": "Result of a test email: the server could not connect to the mail server."
+  },
+  "mailTestFailedTlsFailed": "The secure connection to the mail server failed. Check the connection security and the server's certificate.",
+  "@mailTestFailedTlsFailed": {
+    "description": "Result of a test email: the encrypted (TLS) connection to the mail server could not be set up."
+  },
+  "mailTestFailedRejected": "The mail server refused the message. Check the From address.",
+  "@mailTestFailedRejected": {
+    "description": "Result of a test email: the mail server connected but would not take the message, often because of the sender address."
+  },
+  "mailTestFailedSendFailed": "The mail server didn't take the message.",
+  "@mailTestFailedSendFailed": {
+    "description": "Result of a test email: sending failed for another reason."
+  },
+  "mailTestNotSentTitle": "Test email not sent",
+  "@mailTestNotSentTitle": {
+    "description": "Heading of the message that says why the server did not send a test email when asked."
+  },
+  "mailTestNotSentNotConfigured": "Save a host and a From address first.",
+  "@mailTestNotSentNotConfigured": {
+    "description": "Shown when the server refused to send a test email because no mail host or From address is saved."
+  },
+  "mailTestNotSentQueueUnavailable": "The server's mail queue is down. Try again later.",
+  "@mailTestNotSentQueueUnavailable": {
+    "description": "Shown when the server could not queue the test email because its mail queue is not running."
+  },
+  "mailTestNotSentRefused": "Your role can't send a test email.",
+  "@mailTestNotSentRefused": {
+    "description": "Shown when the server refused the test email because the signed-in user's role may not send one."
+  },
+  "mailTestNotSentFailed": "Couldn't send the test. Check your connection and try again.",
+  "@mailTestNotSentFailed": {
+    "description": "Shown when asking the server for a test email failed because it could not be reached or did not answer usefully."
   }
 }
