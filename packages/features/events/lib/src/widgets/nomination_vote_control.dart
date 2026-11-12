@@ -421,13 +421,16 @@ class _NoteDialogState extends State<_NoteDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    final title = l10n.eventsVoteNoteTitle(widget.title);
 
     return ReactiveForm(
       formGroup: _form,
       child: AlertDialog(
         // At 2.0 text the body and a long note can outgrow a phone's height.
         scrollable: true,
-        title: Text(l10n.eventsVoteNoteTitle(widget.title)),
+        // Without it the dialog has no name on iOS and macOS (#762).
+        semanticLabel: title,
+        title: Text(title),
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,

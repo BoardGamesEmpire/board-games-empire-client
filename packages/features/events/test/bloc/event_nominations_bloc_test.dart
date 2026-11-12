@@ -532,8 +532,8 @@ void main() {
     }
 
     blocTest<EventNominationsBloc, EventNominationsState>(
-      'a nominate answered after the session moved is failed, and its answer '
-      'unused',
+      'a nominate answered after the session moved is failed, its answer '
+      'unused, and the read after it fails too',
       build: () => build(
         serving(nominated: (_) => n2),
         confirmSession: answering([true, false]),
@@ -541,16 +541,59 @@ void main() {
       seed: () => loaded(one),
       act: (bloc) => bloc.add(_nominate(2)),
       skip: 1,
+      expect: () {
+        const failedOutcome = NominateOutcome(
+          NominateResult.failed,
+          title: 'Game 2',
+        );
+        return [
+          loaded(one, outcome: failedOutcome),
+          failed(nominations: one, outcome: failedOutcome),
+        ];
+      },
+      verify: (_) =>
+          expect(calls, ['session', 'nominate', 'session', 'session']),
+    );
+
+    blocTest<EventNominationsBloc, EventNominationsState>(
+      "a vote's 404 answered after the session moved is failed, and the row "
+      'kept',
+      build: () => build(
+        serving(voteCast: (_) => throw _gone),
+        confirmSession: answering([true, false]),
+      ),
+      seed: () => loaded(two),
+      act: (bloc) => bloc.add(_vote(n2)),
+      skip: 1,
       expect: () => [
         loaded(
-          one,
-          outcome: const NominateOutcome(
-            NominateResult.failed,
+          two,
+          outcome: const VoteOutcome(VoteResult.failed, title: 'Game 2'),
+        ),
+      ],
+      verify: (_) => expect(calls, ['session', 'vote', 'session']),
+    );
+
+    blocTest<EventNominationsBloc, EventNominationsState>(
+      "a withdrawal's 404 answered after the session moved is failed, and the "
+      'row kept',
+      build: () => build(
+        serving(withdrawn: (_) => throw _gone),
+        confirmSession: answering([true, false]),
+      ),
+      seed: () => loaded(two),
+      act: (bloc) => bloc.add(_withdraw(n2)),
+      skip: 1,
+      expect: () => [
+        loaded(
+          two,
+          outcome: const WithdrawOutcome(
+            WithdrawResult.failed,
             title: 'Game 2',
           ),
         ),
       ],
-      verify: (_) => expect(calls, ['session', 'nominate', 'session']),
+      verify: (_) => expect(calls, ['session', 'withdraw', 'session']),
     );
 
     blocTest<EventNominationsBloc, EventNominationsState>(
@@ -744,8 +787,6 @@ void main() {
         0,
       ),
       ('a 403 is refused', _refused, NominateResult.refused, 0),
-      ('a 429 is failed', _tooMany, NominateResult.failed, 1),
-      ('anything else is failed', _offline, NominateResult.failed, 1),
     ]) {
       blocTest<EventNominationsBloc, EventNominationsState>(
         '$name, and reads nothing',
@@ -763,6 +804,43 @@ void main() {
           } else {
             verifyWarnings(warnings);
           }
+        },
+      );
+    }
+
+    // The server may have saved it, and takes the same row twice for one
+    // choice, so the read shows a nomination that landed before the user
+    // nominates it again.
+    for (final (name, error) in [
+      ('a 429 is failed', _tooMany),
+      ('anything else is failed', _offline),
+    ]) {
+      blocTest<EventNominationsBloc, EventNominationsState>(
+        '$name, and reads the nominations',
+        build: () => build(
+          serving(nominated: (_) => throw error, nominations: (_) => two),
+        ),
+        seed: () => loaded(one),
+        act: (bloc) => bloc.add(_nominate(2)),
+        skip: 1,
+        expect: () {
+          const failedOutcome = NominateOutcome(
+            NominateResult.failed,
+            title: 'Game 2',
+          );
+          return [
+            loaded(one, outcome: failedOutcome),
+            EventNominationsState(
+              load: EventNominationsLoad.loading,
+              nominations: one,
+              outcome: failedOutcome,
+            ),
+            loaded(two, outcome: failedOutcome),
+          ];
+        },
+        verify: (_) {
+          expect(calls, ['nominate', 'read']);
+          verifyWarnings(1);
         },
       );
     }

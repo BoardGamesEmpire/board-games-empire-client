@@ -158,11 +158,13 @@ EventDetail _detail({
   List<EventOccurrence> occurrences = const [],
   List<EventAttendee>? attendees,
   EventAttendee? attendance,
+  EventPolicy? policy,
 }) => EventDetail(
   snapshot: EventSnapshot(
     event: event ?? _event(),
     occurrences: occurrences,
     attendees: attendees,
+    policy: policy,
   ),
   attendance: attendance,
 );
@@ -1267,14 +1269,35 @@ void main() {
     Finder stale() => find.byKey(EventDetailScreen.nominationsRefreshBannerKey);
 
     /// The host's view of `e-1`, with a date ahead and someone on the
-    /// roster.
-    EventDetail hosted() => _detail(
+    /// roster, under [policy] when there is one.
+    EventDetail hosted({EventPolicy? policy}) => _detail(
       occurrences: [_ahead()],
       attendees: [
         _attending(EventRole.host),
         _member('att-2', displayName: 'Ada'),
       ],
       attendance: _attending(EventRole.host),
+      policy: policy,
+    );
+
+    /// `e-1`'s policy, counting the votes of [eligibility].
+    EventPolicy policyCounting(VoteEligibility eligibility) => EventPolicy(
+      id: 'p-1',
+      eventId: 'e-1',
+      allowMemberInvites: true,
+      allowGuestInvites: false,
+      restrictToGameCategories: false,
+      requireHostApprovalToJoin: false,
+      allowSpectators: false,
+      strictCapacity: false,
+      gameAdditionMode: GameAdditionMode.requiresVote,
+      restrictToAttendeePool: false,
+      voteThresholdType: VoteThresholdType.unknown,
+      voteQuorumType: VoteQuorumType.unknown,
+      voteEligibility: eligibility,
+      interestedWeight: InterestedWeight.asAbstain,
+      createdAt: kItemInstant,
+      updatedAt: kItemInstant,
     );
 
     /// Ada's Catan, the pool row `o-1`.
@@ -1319,6 +1342,8 @@ void main() {
     }) => FakeEventRemote.detail(
       read ?? (_) => detail.snapshot,
       pool: pool ?? (_) => const [],
+      offered: (_) => catanOffered,
+      takenBack: (_) {},
       nominations: nominations ?? (_) => [catan],
       nomination: (_) => catan,
       nominated: nominated ?? (_) => catan,
@@ -1430,6 +1455,84 @@ void main() {
       await readEvent(tester);
 
       expect(remote.nominationReads, ['e-1', 'e-1', 'e-1']);
+    });
+
+    /// The viewer offers Catan.
+    const offerCatan = EventGamesOffered(
+      'e-1',
+      'att-me',
+      [OfferPick(collectionId: 'col-1', title: 'Catan')],
+      attendeeIds: ['att-me', 'att-2'],
+    );
+
+    /// The viewer takes Catan back.
+    const takeBackCatan = EventGameTakenBack(
+      'e-1',
+      'att-me',
+      catanOffered,
+      attendeeIds: ['att-me', 'att-2'],
+    );
+
+    // The server works out whose votes count as it answers a read, so after
+    // a pool write the votes read before it still count the pool as it was,
+    // while the vote hint, worked out from the pool, already doesn't.
+    for (final (eligibility, readsAfterEach) in [
+      (VoteEligibility.poolParticipants, 1),
+      (VoteEligibility.confirmedOnly, 0),
+    ]) {
+      testWidgets(
+        'an offer and a take-back that land read nominations '
+        '$readsAfterEach more time(s) under ${eligibility.name}',
+        (tester) async {
+          final detail = hosted(policy: policyCounting(eligibility));
+          final remote = serving(detail);
+          await showTabbed(tester, detail, remote);
+          await choose(tester, games);
+          expect(remote.nominationReads, ['e-1']);
+          final pool =
+              tester.element(find.byType(Scaffold).first).read<EventGamesBloc>()
+                ..add(offerCatan);
+          await animate(tester);
+
+          expect(remote.offers, hasLength(1));
+          expect(remote.nominationReads, hasLength(1 + readsAfterEach));
+
+          pool.add(takeBackCatan);
+          await animate(tester);
+
+          expect(remote.takeBacks, hasLength(1));
+          expect(remote.nominationReads, hasLength(1 + 2 * readsAfterEach));
+        },
+      );
+    }
+
+    testWidgets('a pool write that changes nothing reads no nominations', (
+      tester,
+    ) async {
+      final detail = hosted(
+        policy: policyCounting(VoteEligibility.poolParticipants),
+      );
+      final remote = FakeEventRemote.detail(
+        (_) => detail.snapshot,
+        pool: (_) => const [],
+        offered: (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403),
+        takenBack: (_) =>
+            throw const EventWriteConflictException('held', statusCode: 409),
+        nominations: (_) => [catan],
+      );
+      await showTabbed(tester, detail, remote);
+      await choose(tester, games);
+      final pool =
+          tester.element(find.byType(Scaffold).first).read<EventGamesBloc>()
+            ..add(offerCatan);
+      await animate(tester);
+      pool.add(takeBackCatan);
+      await animate(tester);
+
+      expect(remote.offers, hasLength(1));
+      expect(remote.takeBacks, hasLength(1));
+      expect(remote.nominationReads, ['e-1']);
     });
 
     testWidgets("an idle screen's deadline line turns as the clock passes "
@@ -1815,7 +1918,9 @@ void main() {
               write: nominate,
               thrown: offline,
               answered: NominationStatus.open,
-              copy: "Catan wasn't nominated. Try again.",
+              copy:
+                  'An error occurred while nominating Catan. Check the '
+                  'nominations above before nominating it again.',
               tone: error,
             ),
             (
@@ -1868,7 +1973,9 @@ void main() {
               write: vote,
               thrown: offline,
               answered: NominationStatus.open,
-              copy: "Your vote on Catan didn't go through. Try again.",
+              copy:
+                  'An error occurred while sending your vote on Catan. You '
+                  'may need to try again.',
               tone: error,
             ),
             (
@@ -1921,7 +2028,9 @@ void main() {
               write: withdraw,
               thrown: offline,
               answered: NominationStatus.open,
-              copy: "Catan wasn't withdrawn. Try again.",
+              copy:
+                  'An error occurred while withdrawing Catan. You may need '
+                  'to try again.',
               tone: error,
             ),
             (

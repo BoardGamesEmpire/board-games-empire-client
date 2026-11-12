@@ -116,7 +116,11 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 /// - A 400: notSupplied: the pool row doesn't supply the game.
 /// - A 404: gone: the event, the date or the pool row is gone. The
 ///   nominations are read again.
-/// - Anything else, a 429 among them: failed.
+/// - Anything else, a 429 among them: failed. The nominations are read
+///   again, as they are after an answer the session drops (below): the
+///   server may have saved it, and it takes the same row twice for one
+///   choice, so the read shows a nomination that landed before the user
+///   nominates it again.
 ///
 /// ### A vote
 ///
@@ -165,9 +169,10 @@ NominateResult _nominated(NominationStatus status) => switch (status) {
 ///
 /// An answer is about whoever the session was as it went out, so the session
 /// is asked again before an answer is used: a read's, a nominate's and a
-/// withdrawal's. A no fails the read as above, and ends the write as failed,
-/// its answer unused, since it could be another user's. A vote's 2xx carries
-/// nothing to use, so its check is the one before the nomination's own read.
+/// withdrawal's, and a vote's or a withdrawal's 404, which drops a row. A no
+/// fails the read as above, and ends the write as failed, its answer unused,
+/// since it could be another user's. A vote's 2xx carries nothing to use, so
+/// its check is the one before the nomination's own read.
 ///
 /// ## Closing
 ///
@@ -252,7 +257,7 @@ class EventNominationsBloc
     final game = event.game;
     _started((write: NominationWrite.nominate, id: game.id), emit);
 
-    final (:result, :answer) = await _nominate(event);
+    final (:result, :answer, :sent) = await _nominate(event);
     if (_closing) return;
 
     _ended(
@@ -260,15 +265,21 @@ class EventNominationsBloc
       emit,
       change: answer == null ? null : _atHead(answer),
     );
-    if (result == NominateResult.gone) await _read(_lastNamed, emit);
+    if (result == NominateResult.gone ||
+        (sent && result == NominateResult.failed)) {
+      await _read(_lastNamed, emit);
+    }
   }
 
   /// Nominates [event]'s game once the session says yes, and answers how it
-  /// ended, with the answer to use on a 2xx. Never throws.
-  Future<_Answered<NominateResult>> _nominate(GameNominated event) async {
-    const failed = (result: NominateResult.failed, answer: null);
-    if (!await _confirmed('Nominate not sent')) return failed;
-    if (_closing) return failed;
+  /// ended, with the answer to use on a 2xx, and whether it was sent. Never
+  /// throws.
+  Future<({NominateResult result, EventNomination? answer, bool sent})>
+  _nominate(GameNominated event) async {
+    const notSent = (result: NominateResult.failed, answer: null, sent: false);
+    const failed = (result: NominateResult.failed, answer: null, sent: true);
+    if (!await _confirmed('Nominate not sent')) return notSent;
+    if (_closing) return notSent;
 
     final EventNomination answer;
     try {
@@ -284,28 +295,32 @@ class EventNominationsBloc
           'Nominate refused: the supplier is not going',
           error: error,
         );
-        return (result: NominateResult.supplierNotGoing, answer: null);
+        return (
+          result: NominateResult.supplierNotGoing,
+          answer: null,
+          sent: true,
+        );
       }
       _logger.info(
         'Nominate refused: the pool row does not supply the game',
         error: error,
       );
-      return (result: NominateResult.notSupplied, answer: null);
+      return (result: NominateResult.notSupplied, answer: null, sent: true);
     } on EventRemoteNotFoundException catch (error) {
       _logger.info(
         'Nominate found the event or the pool row gone',
         error: error,
       );
-      return (result: NominateResult.gone, answer: null);
+      return (result: NominateResult.gone, answer: null, sent: true);
     } on EventWriteRefusedException catch (error) {
       _logger.info('Nominate refused', error: error);
-      return (result: NominateResult.refused, answer: null);
+      return (result: NominateResult.refused, answer: null, sent: true);
     } on Object catch (error, stackTrace) {
       _logger.warn('Nominate failed', error: error, stackTrace: stackTrace);
       return failed;
     }
     if (!await _confirmed('Nominate answer dropped')) return failed;
-    return (result: _nominated(answer.status), answer: answer);
+    return (result: _nominated(answer.status), answer: answer, sent: true);
   }
 
   Future<void> _onVoteCast(
@@ -354,6 +369,8 @@ class EventNominationsBloc
       return VoteResult.closed;
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Vote found the nomination gone', error: error);
+      // It drops the row, so it is used as an answer is.
+      if (!await _confirmed('Vote answer dropped')) return VoteResult.failed;
       return VoteResult.gone;
     } on EventWriteRefusedException catch (error) {
       _logger.info('Vote refused', error: error);
@@ -409,6 +426,8 @@ class EventNominationsBloc
       return (result: WithdrawResult.notWithdrawable, answer: null);
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Withdrawal found the nomination gone', error: error);
+      // It drops the row, so it is used as an answer is.
+      if (!await _confirmed('Withdrawal answer dropped')) return failed;
       return (result: WithdrawResult.gone, answer: null);
     } on EventWriteRefusedException catch (error) {
       _logger.info('Withdrawal refused', error: error);

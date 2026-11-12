@@ -154,6 +154,17 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('the dialog is named by its title, as iOS and macOS need '
+      '(#762)', (tester) async {
+    useViewSize(tester, const Size(400, 800));
+    await open(tester);
+
+    expect(
+      tester.widget<AlertDialog>(find.byType(AlertDialog)).semanticLabel,
+      'Nominate Catan',
+    );
+  });
+
   testWidgets('the guidelines pass, with a choice taken', (tester) async {
     useViewSize(tester, const Size(400, 800));
     final handle = tester.ensureSemantics();

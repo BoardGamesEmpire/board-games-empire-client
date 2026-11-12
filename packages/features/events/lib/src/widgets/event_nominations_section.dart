@@ -101,8 +101,10 @@ enum EventNominationsBody {
 /// A row says, top to bottom: the game and its platform; who nominated it;
 /// whose copy it is; whether it is for the whole event or one date; where
 /// it stands; its tally of the votes that count, with how this event counts
-/// Interested where its policy says; when voting closes, while it is open
-/// and has a deadline; and why it is paused, while it is. Read as one node.
+/// Interested where its policy says; the viewer's vote, and whether it
+/// counts, where no vote control shows it; when voting closes, while it is
+/// open and has a deadline; and why it is paused, while it is. Read as one
+/// node.
 /// The row's controls come after that node, outside it, so each is a node of
 /// its own: the viewer's vote ([NominationVoteControl]), and *Who voted*.
 ///
@@ -912,6 +914,16 @@ class _NominationRowState extends State<_NominationRow>
             onEditNote: () =>
                 _editNote(context, nomination, note: vote?.comment),
           );
+    // Where there's no control to show it chosen, the viewer's vote is still
+    // theirs to see (#517): on a paused or decided nomination, or once they
+    // can't vote.
+    final yours = control != null || vote == null
+        ? null
+        : vote.eligible
+        ? l10n.eventsNominationYourVote(voteTypeLabel(l10n, vote.voteType))
+        : l10n.eventsNominationYourVoteNotCounting(
+            voteTypeLabel(l10n, vote.voteType),
+          );
     final withdraw = withdrawing == null || !widget.offersWithdraw
         ? null
         : _WithdrawButton(
@@ -966,6 +978,7 @@ class _NominationRowState extends State<_NominationRow>
           style: quiet,
         ),
         if (interested != null) Text(interested, style: quiet),
+        if (yours != null) Text(yours, style: quiet),
         if (closes != null) Text(closes, style: quiet),
         if (paused != null) Text(paused, style: quiet),
       ],

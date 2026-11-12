@@ -569,6 +569,58 @@ void main() {
       );
     });
 
+    testWidgets("where voting is off, the row still says the viewer's vote, "
+        "and when it doesn't count", (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination(
+          'n-1',
+          status: NominationStatus.paused,
+          pausedFrom: NominationStatus.open,
+          votes: [_vote('att-me', VoteType.forGame)],
+        ),
+        _nomination(
+          'n-2',
+          title: 'Azul',
+          status: NominationStatus.passed,
+          votes: [_vote('att-me', VoteType.against, eligible: false)],
+        ),
+        _nomination(
+          'n-3',
+          title: 'Root',
+          status: NominationStatus.failed,
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+        _nomination(
+          'n-4',
+          title: 'Ark Nova',
+          votes: [_vote('att-me', VoteType.interested)],
+        ),
+      ];
+
+      await showGames(tester);
+
+      expect(inRow('n-1', 'Your vote: For'), findsOneWidget);
+      expect(inRow('n-2', "Your vote: Against. It doesn't count."), findsOne);
+      // No vote of the viewer's, nothing to say.
+      expect(
+        find.descendant(
+          of: row('n-3'),
+          matching: find.textContaining('Your vote', skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
+      // Open: the control says it, chosen, and the line would say it twice.
+      expect(
+        find.descendant(
+          of: row('n-4'),
+          matching: find.textContaining('Your vote:', skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('a paused nomination whose supplier left names whoever '
         'brings it', (tester) async {
       // Their games left the pool with them.

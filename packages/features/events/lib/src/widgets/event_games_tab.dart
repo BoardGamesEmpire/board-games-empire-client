@@ -382,9 +382,7 @@ class EventGamesTab extends StatelessWidget {
         !detail.reading &&
         !acting &&
         !nominations.busy &&
-        (nominations.nominations.isNotEmpty ||
-            controller.drawnNominationsLoad(nominations) ==
-                EventNominationsLoad.loaded);
+        _nominationsKnown(nominations, controller);
     // Why Nominate waits with no nominations to go on, where the wait won't
     // end by itself (#517): a first read that failed, or nominations this
     // viewer isn't shown. A read that is still out says nothing.
@@ -644,6 +642,18 @@ bool _supplierNotGoing(EventDetail detail, OfferedGame game) {
   return supplier?.status == EventParticipationStatus.notAttending;
 }
 
+/// Whether the nominations [state] holds say what a pool row supplies
+/// (#517): there are some, or the last read to end, as [controller] draws
+/// it, found none. None held otherwise says nothing: before a read has
+/// ended, or once one is failed, hidden or gone. Nominate waits until then,
+/// as its press does when it comes to send ([_nominate]).
+bool _nominationsKnown(
+  EventNominationsState state,
+  EventGamesTabController controller,
+) =>
+    state.nominations.isNotEmpty ||
+    controller.drawnNominationsLoad(state) == EventNominationsLoad.loaded;
+
 /// Nominates [game] (#517): for the whole event, or where there is more
 /// than one choice ([_nominateScopes]), for the one chosen in
 /// [showNominateScopeDialog], where a choice the row already supplies a
@@ -670,6 +680,7 @@ Future<bool> _nominate(
   final detail = context.read<EventDetailBloc>();
   final pool = context.read<EventGamesBloc>();
   final nominations = context.read<EventNominationsBloc>();
+  final controller = EventGamesTabScope.of(context);
   final shown = detail.state;
   if (shown is! EventDetailReady) return false;
 
@@ -712,6 +723,7 @@ Future<bool> _nominate(
     now: clock(),
   ).any((each) => each.scope == scope);
   if (nominateGate(state) != NominateGate.open ||
+      !_nominationsKnown(nominations.state, controller) ||
       !inPool ||
       !offered ||
       suppliesLive(game, nominations.state.nominations, scope: scope)) {

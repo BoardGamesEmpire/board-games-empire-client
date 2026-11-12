@@ -910,7 +910,8 @@ class _EventDetailView extends StatelessWidget {
 
   /// [page] under the listeners that answer the actions' and the poll's
   /// ends, read the poll, the games pool and the nominations as the detail
-  /// calls for them, and answer a pool read or a nominations read that
+  /// calls for them, read the nominations after a pool write that can change
+  /// whose votes count, and answer a pool read or a nominations read that
   /// finds the event gone.
   Widget _listeners(Widget page) {
     return MultiBlocListener(
@@ -959,6 +960,13 @@ class _EventDetailView extends StatelessWidget {
               previous.load != EventGamesLoad.gone &&
               current.load == EventGamesLoad.gone,
           listener: (context, _) => unawaited(_rereadEvent(context)),
+        ),
+        BlocListener<EventGamesBloc, EventGamesState>(
+          // Only a write's end emits an outcome, and a dismissal clears it.
+          listenWhen: (previous, current) =>
+              current.outcome != previous.outcome &&
+              _poolChanged(current.outcome),
+          listener: _readNominationsAfterPoolWrite,
         ),
         BlocListener<EventNominationsBloc, EventNominationsState>(
           // As the pool's: on the way into gone only, and the read after the
@@ -1175,6 +1183,28 @@ void _readPool(
   }
   controller.requestedIds = ids;
   context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
+}
+
+/// Whether [outcome] ends a pool write that changed the pool: a run of
+/// offers that left a pick on it, or a take-back that took a game off.
+bool _poolChanged(EventGamesOutcome? outcome) => switch (outcome) {
+  EventOfferOutcome(:final offered) => offered > 0,
+  EventTakeBackOutcome(result: EventTakeBackResult.done) => true,
+  _ => false,
+};
+
+/// Reads the nominations again after a pool write that changed the pool
+/// ([_poolChanged]), where the event counts only the votes of those offering
+/// games (#517). The server works out whose votes count as it answers a
+/// read, so the votes read before the write count the pool as it was, while
+/// the vote's hint, worked out from the pool, doesn't: the tally and the
+/// hint would disagree until the next read.
+void _readNominationsAfterPoolWrite(BuildContext context, EventGamesState _) {
+  final state = context.read<EventDetailBloc>().state;
+  if (state is! EventDetailReady) return;
+  final eligibility = state.detail.snapshot.policy?.voteEligibility;
+  if (eligibility != VoteEligibility.poolParticipants) return;
+  _readNominations(context, state);
 }
 
 /// Reads the nominations of the event [state] shows (#517), by the id it

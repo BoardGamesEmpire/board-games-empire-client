@@ -59,10 +59,13 @@ class _NominateScopeDialogState extends State<_NominateScopeDialog> {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final chosen = _chosen;
+    final title = l10n.eventsNominateTitle(widget.title);
 
     return AlertDialog(
       scrollable: true,
-      title: Text(l10n.eventsNominateTitle(widget.title)),
+      // Without it the dialog has no name on iOS and macOS (#762).
+      semanticLabel: title,
+      title: Text(title),
       content: RadioGroup<NominationScope>(
         groupValue: chosen,
         onChanged: (scope) {

@@ -3962,6 +3962,47 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('a nominate whose nominations were hidden meanwhile is '
+        'dropped', (tester) async {
+      await showGames(tester);
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      heldRead = Completer<EventSnapshot>();
+
+      blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await tester.tap(nominate(azul.id));
+
+      // Meanwhile a read is refused, which clears the nominations: none held
+      // then says nothing of what a row supplies.
+      nominationsAnswer = (_) =>
+          throw const EventRemoteForbiddenException('hidden', statusCode: 403);
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      expect(
+        blocOf<EventNominationsBloc>(tester).state.load,
+        EventNominationsLoad.hidden,
+      );
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect(remote.nominates, isEmpty);
+      expect(
+        find.descendant(
+          of: nominationsOutcome(),
+          matching: find.text(
+            "Azul wasn't nominated: something changed on this event first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
   });
 
   group('accessibility audit', () {

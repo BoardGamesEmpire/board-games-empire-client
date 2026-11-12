@@ -988,9 +988,9 @@
       }
     }
   },
-  "eventsNominateFailed": "{title} wasn't nominated. Try again.",
+  "eventsNominateFailed": "An error occurred while nominating {title}. Check the nominations above before nominating it again.",
   "@eventsNominateFailed": {
-    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. It must not say the game wasn't nominated. The title is the game's.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1096,9 +1096,9 @@
       }
     }
   },
-  "eventsVoteFailed": "Your vote on {title} didn't go through. Try again.",
+  "eventsVoteFailed": "An error occurred while sending your vote on {title}. You may need to try again.",
   "@eventsVoteFailed": {
-    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game failed for any other reason, such as no connection. The title is the nominated game's.",
+    "description": "Banner at the foot of an event's screen when the user's vote on a nominated game failed for any other reason, such as no connection. It may have gone through, so the copy must not say it didn't. The title is the nominated game's.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1192,9 +1192,9 @@
       }
     }
   },
-  "eventsWithdrawFailed": "{title} wasn't withdrawn. Try again.",
+  "eventsWithdrawFailed": "An error occurred while withdrawing {title}. You may need to try again.",
   "@eventsWithdrawFailed": {
-    "description": "Banner at the foot of an event's screen when withdrawing a nomination failed for any other reason, such as no connection. The title is the nominated game's.",
+    "description": "Banner at the foot of an event's screen when withdrawing a nomination failed for any other reason, such as no connection. It may have gone through, so the copy must not say it didn't. The title is the nominated game's.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1543,6 +1543,26 @@
   "eventsVoteUnknown": "Unknown",
   "@eventsVoteUnknown": {
     "description": "Names a vote in the who-voted list (eventsVoterLine) of a nominated game when the server gave a kind of vote this version of the app doesn't know."
+  },
+  "eventsNominationYourVote": "Your vote: {vote}",
+  "@eventsNominationYourVote": {
+    "description": "A line on a nominated game's row in the Nominations section of an event's Games tab, where the vote control isn't shown: the nomination is paused or decided, or the user can't vote now. It says how the user voted. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
+  },
+  "eventsNominationYourVoteNotCounting": "Your vote: {vote}. It doesn't count.",
+  "@eventsNominationYourVoteNotCounting": {
+    "description": "eventsNominationYourVote for a vote that doesn't count: the user has left the event, or the event doesn't count their vote. The who-voted list (eventsVotersNotCountingNote) gives the reasons.",
+    "placeholders": {
+      "vote": {
+        "type": "String",
+        "example": "For"
+      }
+    }
   },
   "eventsVoteForNamed": "For {title}",
   "@eventsVoteForNamed": {

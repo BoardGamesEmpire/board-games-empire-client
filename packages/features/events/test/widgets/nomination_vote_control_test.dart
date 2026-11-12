@@ -734,6 +734,21 @@ void main() {
       expect(remote.votes, isEmpty);
       expect(outcome(), findsNothing);
     });
+
+    testWidgets('the note dialog is named by its title, as iOS and macOS '
+        'need (#762)', (tester) async {
+      nominationsAnswer = (_) => [
+        _nomination('n-1', votes: [_vote('att-me', VoteType.forGame)]),
+      ];
+
+      await showGames(tester);
+      await press(tester, note('n-1'));
+      await animate(tester);
+
+      final dialog = tester.widget<AlertDialog>(find.byType(AlertDialog));
+      expect(dialog.semanticLabel, isNotNull);
+      expect(dialog.semanticLabel, (dialog.title! as Text).data);
+    });
   });
 
   group('the hint', () {
