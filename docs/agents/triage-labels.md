@@ -12,6 +12,6 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-Only `wontfix` exists in the tracker so far. `gh issue edit --add-label` refuses a label that doesn't exist, so create a missing one first: `gh label create needs-triage`.
+All five labels exist in the tracker. `gh issue edit --add-label` refuses a label that doesn't exist, so if you rename one in the right-hand column, create the new label first: `gh label create <name>`.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
