@@ -517,12 +517,12 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// until the job has a result reads as absent.
   ///
   /// Not read: `parentJobId` and `requestedExpansions`, which only matter to
-  /// a batch with expansions, and the `thumbnail`, `error` message and times,
-  /// which nothing shows.
+  /// drawing the batch's graph (#824), and the `thumbnail`, `error` message
+  /// and times, which nothing shows.
   static ImportJob _mapImportJob(Map<String, dynamic> json) => ImportJob(
     jobId: json['jobId'] as String,
     status: ImportJobStatus.fromWire(json['status'] as String),
-    isExpansion: json['isExpansion'] as bool,
+    origin: _origin(json['origin']),
     externalId: json['externalId'] as String,
     gameId: json['gameId'] as String?,
     gameTitle: json['gameTitle'] as String?,
@@ -540,6 +540,11 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       null => null,
     },
   );
+
+  /// A job written before backend#971 has no origin, and the server leaves
+  /// the key out.
+  static ImportJobOrigin _origin(Object? wire) =>
+      wire is String ? ImportJobOrigin.fromWire(wire) : ImportJobOrigin.unknown;
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
