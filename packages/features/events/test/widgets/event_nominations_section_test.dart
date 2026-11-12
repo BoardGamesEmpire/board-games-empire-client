@@ -1860,6 +1860,84 @@ void main() {
       );
     });
 
+    testWidgets('a close of the vote waits for a nominations read that is '
+        'out, and is dropped when it finds the tally changed', (tester) async {
+      nominationsAnswer = (_) => [
+        catan(
+          status: NominationStatus.open,
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+
+      await showGames(tester, detail: as(host));
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+
+      // A read starts while the dialog is open, and is still out at the
+      // confirm: the rows still hold the tally the dialog showed.
+      final held = Completer<List<EventNomination>>();
+      nominationsAnswer = (_) => held.future;
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+
+      expect(remote.resolutions, isEmpty);
+
+      held.complete([
+        catan(
+          status: NominationStatus.open,
+          votes: [
+            _vote('att-ada', VoteType.forGame),
+            _vote('att-bo', VoteType.against),
+          ],
+        ),
+      ]);
+      await animate(tester);
+
+      expect(remote.resolutions, isEmpty);
+      expect(
+        inOutcome(
+          "Your decision on Catan wasn't sent: something changed on this "
+          'event first.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a close of the vote that waited for a nominations read is '
+        'sent when the read finds the same tally', (tester) async {
+      List<EventNomination> rows() => [
+        catan(
+          status: NominationStatus.open,
+          votes: [_vote('att-ada', VoteType.forGame)],
+        ),
+      ];
+      nominationsAnswer = (_) => rows();
+
+      await showGames(tester, detail: as(host));
+      await press(tester, closeVote('n-1'));
+      await animate(tester);
+
+      final held = Completer<List<EventNomination>>();
+      nominationsAnswer = (_) => held.future;
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await settle(tester);
+      await tester.tap(confirmDecision());
+      await animate(tester);
+      expect(remote.resolutions, isEmpty);
+
+      nominationsAnswer = (_) => rows();
+      held.complete(rows());
+      await animate(tester);
+
+      expect(remote.resolutions, hasLength(1));
+    });
+
     testWidgets('a close of the vote whose Interested rule changed while it '
         'asked is dropped', (tester) async {
       nominationsAnswer = (_) => [

@@ -1427,8 +1427,9 @@ Future<bool> _withdraw(
 }
 
 /// Sends a host's [decision] on [nomination] once they confirm it, and once
-/// any running detail read has ended (#518). Completes true when it was
-/// sent, and false when nothing was: Not yet, or as below.
+/// any running detail read has ended, and for a close of the vote any
+/// running nominations read too ([_nominationsReadEnded]) (#518). Completes
+/// true when it was sent, and false when nothing was: Not yet, or as below.
 ///
 /// None of the three can be undone while nothing takes a game out of the
 /// lineup (#520), so each asks first: a rejection as a destructive action,
@@ -1487,7 +1488,12 @@ Future<bool> _decide(
   );
   if (!confirmed || nominations.isClosed) return false;
 
-  final state = await readEnded(detail);
+  var state = await readEnded(detail);
+  if (decision == _Decision.resolve) {
+    await _nominationsReadEnded(nominations);
+    // The detail can have read again while the nominations did.
+    state = await readEnded(detail);
+  }
   if (state is! EventDetailReady || nominations.isClosed) return false;
   final current = nominations.state.nominations
       .where((shown) => shown.id == nomination.id)
@@ -1512,6 +1518,21 @@ Future<bool> _decide(
     _Decision.resolve => NominationResolved(eventId, current),
   });
   return true;
+}
+
+/// Completes once no read of [nominations] is out, or at once when none
+/// is. A close of the vote waits on it (#518): a read out at the confirm
+/// can be bringing a tally the host never saw, and its answer landing after
+/// the resolve went would come too late to stop it. It narrows the gap but
+/// can't close it: a vote the server takes after the last read is seen by no
+/// read, and the request carries no tally for the server to check. The
+/// footer then says the counts the server settled on.
+Future<void> _nominationsReadEnded(EventNominationsBloc nominations) {
+  bool ended(EventNominationsState state) =>
+      state.load != EventNominationsLoad.loading;
+
+  if (ended(nominations.state)) return Future.value();
+  return nominations.stream.firstWhere(ended, orElse: () => nominations.state);
 }
 
 /// How the event counts an Interested vote, as a row says it under its
