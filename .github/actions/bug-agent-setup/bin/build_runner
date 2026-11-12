@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Runs build_runner offline, from the workspace root: `build_runner build
+# --workspace`.
+#
+# `dart run build_runner` goes through pub first, and when pub decides the
+# workspace needs resolving again (a pubspec.lock newer than the package
+# config is enough) it needs pub.dev, so it fails inside the bug agent's
+# sandbox, which has no network (#849). Launching build_runner's entry point
+# through the VM with the workspace's package config never runs pub.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+config=$root/.dart_tool/package_config.json
+
+if [ ! -f "$config" ]; then
+  echo "::error::$config is missing; run \`flutter pub get\` first."
+  exit 1
+fi
+
+dir=$(jq -r '.packages[] | select(.name == "build_runner") | .rootUri' "$config")
+dir=${dir#file://}
+
+if [ -z "$dir" ] || [ ! -f "$dir/bin/build_runner.dart" ]; then
+  echo "::error::build_runner isn't resolved in $config."
+  exit 1
+fi
+
+exec dart --packages="$config" "$dir/bin/build_runner.dart" "$@"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
-    "Keeps the action pins current (#326), in the workflows and in the composite actions under .github/actions: each action stays pinned to a commit SHA, with its release as a trailing comment.",
+    "Keeps the action pins current (#326), in the workflows and in the composite actions under .github/actions: each action stays pinned to a commit SHA, with its release as a trailing comment. The one exception is the bug agent's shared workflow, which a rule below leaves at automation's `master` (#849).",
     "Also keeps the npm packages the `release` job installs from tool/release/package.json (#419) current, and its lockfile with them, as one group so semantic-release and its plugins move together.",
     "That job runs these packages with a token that can push to master, so an npm update waits until its release is three days old: a hijacked release is usually caught and pulled within that window. tool/release/.npmrc holds transitive versions to the same age when the lockfile is regenerated.",
     "Only the github-actions and npm managers are enabled, and only .github and tool/release are read. Nothing else in this repository is updated by Renovate."
@@ -16,6 +16,12 @@
       "rangeStrategy": "pin",
       "minimumReleaseAge": "3 days",
       "internalChecksFilter": "strict"
+    },
+    {
+      "description": "The bug agent's shared workflow is called at automation's `master`, unpinned (#849). A pin would freeze the workflow's jobs, their permissions and which steps receive the secrets, but not the prompts and scripts it reads from `master` whatever ref the caller names, which receive the API key and the app's short-lived token.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["BoardGamesEmpire/automation"],
+      "enabled": false
     }
   ]
 }

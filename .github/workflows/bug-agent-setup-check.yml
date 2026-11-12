@@ -1,0 +1,98 @@
+name: Bug agent setup
+
+# The bug agent's fix job (.github/workflows/bug-agent.yml) runs
+# .github/actions/bug-agent-setup, then the agent, whose commands run
+# under bubblewrap: the root file system read-only, the checkout and /tmp
+# writable, and no network. This job reproduces that shape, so a
+# toolchain or setup change that breaks the agent fails here and not on a
+# live issue (#849). It's path-filtered, so it is not a required check.
+# The filters cover the setup, the toolchain, codegen's and the analyzer's
+# configuration, every pubspec, and the files sandbox-check.sh names.
+# Every pubspec, because the setup's pub get enforces the lockfile and
+# CI's doesn't, so a pubspec that drifts from the lock fails only here; the
+# root one also carries the build hooks' user_defines, which `flutter test`
+# runs offline in the sandbox.
+on:
+  pull_request:
+    paths:
+      - .github/actions/bug-agent-setup/**
+      - .github/actions/setup-flutter/**
+      - .github/workflows/bug-agent-setup-check.yml
+      - .github/workflows/bug-agent.yml
+      - tool/flutter_sdk.sha256
+      - tool/install_flutter.sh
+      - tool/format_workspace.dart
+      - tool/check_test_files.dart
+      - tool/generate_l10n.sh
+      - pubspec.lock
+      - .gitignore
+      - '**/pubspec.yaml'
+      - '**/analysis_options.yaml'
+      - '**/l10n.yaml'
+      - '**/build.yaml'
+      # What sandbox-check.sh runs on by name. A rename moves the package's
+      # pubspec, which the pattern above catches.
+      - packages/features/auth/test/widgets/auth_screen_test.dart
+      - packages/core/models/lib/src/dto/auth/auth_user.dart
+  push:
+    branches: [master]
+    paths:
+      - .github/actions/bug-agent-setup/**
+      - .github/actions/setup-flutter/**
+      - .github/workflows/bug-agent-setup-check.yml
+      - .github/workflows/bug-agent.yml
+      - tool/flutter_sdk.sha256
+      - tool/install_flutter.sh
+      - tool/format_workspace.dart
+      - tool/check_test_files.dart
+      - tool/generate_l10n.sh
+      - pubspec.lock
+      - .gitignore
+      - '**/pubspec.yaml'
+      - '**/analysis_options.yaml'
+      - '**/l10n.yaml'
+      - '**/build.yaml'
+      # What sandbox-check.sh runs on by name. A rename moves the package's
+      # pubspec, which the pattern above catches.
+      - packages/features/auth/test/widgets/auth_screen_test.dart
+      - packages/core/models/lib/src/dto/auth/auth_user.dart
+
+concurrency:
+  group: bug-agent-setup-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    name: Agent commands pass in the sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # In the fix job's order: setup first, then the isolation install.
+      - uses: ./.github/actions/bug-agent-setup
+
+      # The shared install script, as the fix job runs it, so the two can't
+      # drift. The checkout is removed afterwards, as the fix job removes
+      # its own before the agent starts.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: BoardGamesEmpire/automation
+          ref: master
+          path: .bug-agent-shared
+          sparse-checkout: bug-agent
+          persist-credentials: false
+
+      - name: Install subprocess isolation
+        timeout-minutes: 10
+        run: |
+          bash .bug-agent-shared/bug-agent/install-isolation.sh
+          rm -rf .bug-agent-shared
+
+      - name: Run the agent's commands in the sandbox
+        run: .github/actions/bug-agent-setup/sandbox-check.sh

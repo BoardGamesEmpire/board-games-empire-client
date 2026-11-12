@@ -1,0 +1,100 @@
+name: Bug agent
+
+# When someone with write access labels an issue `bug`, the bug agent triages
+# it and, for a small fix that needs no decision, opens a draft PR (#849).
+# The workflow itself, its prompts and its rules live in
+# BoardGamesEmpire/automation and are shared with the other repositories; this
+# file only sets this repository's limits and notes. The shared workflow
+# checks the sender can push, so a bug report opened from the issue template,
+# which applies `bug` itself, starts a run only when its author has write
+# access. The fix job installs
+# through .github/actions/bug-agent-setup, which restores caches but never
+# saves them.
+#
+# Only `labeled`, not `opened`: an issue created with a label fires both
+# events, which would start two runs.
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  bug-agent:
+    if: github.event.label.name == 'bug' && github.event.sender.type == 'User'
+    # One run per issue at a time, and on the job, not the workflow: every
+    # label added to the issue starts this workflow, the agent's own labels
+    # included, and a run that joined the group would cancel a `bug` run
+    # waiting in it. A skipped job never joins. `queue: max` keeps a second
+    # `bug` run waiting instead of replacing the one already waiting.
+    concurrency:
+      group: bug-agent-${{ github.event.issue.number }}
+      cancel-in-progress: false
+      queue: max
+    # At `master`, unpinned, so a change to the shared workflow applies here
+    # without a PR in this repository. A pin would freeze the workflow
+    # itself: its jobs, their permissions, and which steps receive the
+    # secrets. It would not freeze its prompts and scripts, which it reads
+    # from automation's `master` whatever ref this names, and which receive
+    # the API key and the app's short-lived token.
+    uses: BoardGamesEmpire/automation/.github/workflows/bug-agent.yml@master
+    with:
+      bge-agent-client-id: ${{ vars.BGE_AGENT_CLIENT_ID }}
+      # The agent's commands run with no network, so `flutter test` and
+      # `flutter analyze` only pass with --no-pub, and codegen goes through
+      # bug-agent-setup's offline `build_runner`. A rule for the bare
+      # commands would let the agent run forms that fail.
+      fix-tools: >-
+        Bash(flutter test --no-pub:*),Bash(flutter analyze --no-pub:*),Bash(dart analyze:*),Bash(dart format:*),Bash(dart run tool/format_workspace.dart:*),Bash(dart run tool/check_test_files.dart:*),Bash(build_runner build:*),Bash(flutter gen-l10n:*)
+      # Dependencies, lint rules, codegen configuration, the toolchain and
+      # CI's own scripts under tool/, what git ignores, schema snapshots and
+      # golden baselines each need a person. A glob's `*` spans `/`.
+      protected-paths: |
+        pubspec.yaml
+        */pubspec.yaml
+        pubspec.lock
+        analysis_options.yaml
+        */analysis_options.yaml
+        */build.yaml
+        */l10n.yaml
+        tool/*
+        .gitignore
+        */.gitignore
+        */drift_schemas/*
+        */test/goldens/goldens/*
+      test-paths: |
+        *_test.dart
+        */test/*
+      # A module is a top-level group, such as apps/mobile or
+      # packages/features.
+      module-pattern: '^((apps|packages)/[^/]+)/'
+      # One top-level group per fix for now; raise it after testing.
+      max-modules: 1
+      notes: |
+        There is no AGENTS.md. Use the vocabulary in `CONTEXT.md`, follow
+        `CONTRIBUTING.md`, and for any UI change follow
+        `docs/design/STYLE_GUIDE.md`.
+
+        Your commands run with no network. Use exactly these forms:
+
+        - Tests: `cd <package> && flutter test --no-pub <test file>`, then the
+          whole package with `flutter test --no-pub --exclude-tags golden`.
+        - Analysis, from the root: `dart analyze --fatal-infos <package>`.
+        - Formatting: `dart format <each file you changed or added>`, then
+          `dart run tool/format_workspace.dart --check` from the root. The
+          latter only reads files git tracks, so it misses a new file.
+        - New test files: `dart run tool/check_test_files.dart`.
+        - After changing a freezed or json_serializable model, or anything
+          else with a `part` file, run `build_runner build --workspace` from the
+          root. Not `dart run build_runner`, which can need the network.
+        - After changing an `.arb` file, run `cd <package> && flutter gen-l10n`.
+
+        You cannot render goldens; that needs Docker. If your fix changes
+        `packages/ui/tokens` or `packages/ui/widgets` in a way that could
+        change how their golden tests paint, report `ready-for-human`.
+    secrets:
+      bge-agent-private-key: ${{ secrets.BGE_AGENT_PRIVATE_KEY }}
+      # The agent runs through the Claude Agent SDK on this key.
+      anthropic-api-key: ${{ secrets.BGE_AGENT_ANTHROPIC_API_KEY }}
