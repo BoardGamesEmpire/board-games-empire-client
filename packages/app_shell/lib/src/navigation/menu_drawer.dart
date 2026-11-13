@@ -95,16 +95,7 @@ class _MenuDrawerState extends State<MenuDrawer> {
   void _keepDrawerFocus(MenuDrawer previous) {
     final before = _displayed(previous);
     final after = _displayed(widget);
-    if (listEquals(
-          before.map((e) => e.id).toList(),
-          after.map((e) => e.id).toList(),
-        ) &&
-        listEquals(
-          before.map((e) => e.group).toList(),
-          after.map((e) => e.group).toList(),
-        )) {
-      return;
-    }
+    if (listEquals(before, after)) return;
 
     final focused = FocusManager.instance.primaryFocus;
     final scope = focused?.enclosingScope;
@@ -240,7 +231,10 @@ class _MenuDrawerState extends State<MenuDrawer> {
                 child: Text(destination.label, overflow: TextOverflow.ellipsis),
               ),
             ),
-          if (destinations.isNotEmpty) divider(),
+          // One divider between two groups, never two in a row: with no
+          // entries, the actions' own divider parts them from the
+          // destinations.
+          if (destinations.isNotEmpty && entries.isNotEmpty) divider(),
           for (final entry in entries)
             _MenuEntryTile(
               entry: entry,

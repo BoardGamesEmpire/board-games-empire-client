@@ -92,7 +92,21 @@ class BgePopupCoverObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
-    for (final popup in _popups) {
+    _covered(route);
+  }
+
+  /// A page that replaces another arrives as a pushed one does, as with
+  /// [NavigatorState.pushReplacement].
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    if (newRoute != null) _covered(newRoute);
+  }
+
+  void _covered(Route<dynamic> route) {
+    // A copy: a pop-up leaves the set as it is disposed, and nothing here
+    // should depend on that never happening mid-loop.
+    for (final popup in [..._popups]) {
       popup._pushedBeneath(route);
     }
   }

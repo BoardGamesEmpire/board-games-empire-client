@@ -120,6 +120,20 @@ void main() {
       expect(find.byType(IconButton), findsNothing);
     });
 
+    testWidgets('a title-less first route under a menu has no app bar, so no '
+        'menu button', (tester) async {
+      // The menu button rides in the app bar, and a page with no title has
+      // none. Such a page reaches the menu through the rail, or the drawer's
+      // edge drag.
+      await tester.pumpWidget(
+        _host(home: const BgePage(child: Text('Untitled'))),
+      );
+
+      expect(find.text('Untitled'), findsOneWidget);
+      expect(find.byType(AppBar), findsNothing);
+      expect(_menuButton, findsNothing);
+    });
+
     testWidgets('with no menu above, nothing changes', (tester) async {
       await tester.pumpWidget(_host(home: _page('Home'), withMenu: false));
       expect(_menuButton, findsNothing);

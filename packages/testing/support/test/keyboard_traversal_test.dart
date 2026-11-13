@@ -152,6 +152,26 @@ void main() {
     });
   });
 
+  group('tabStops', () {
+    testWidgets("gives tabOrder's names with each stop's focus node", (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(_host(_three()));
+
+      final stops = await tabStops(tester);
+
+      expect([for (final stop in stops) stop.name], ['A', 'B', 'C']);
+      for (final (index, label) in ['A', 'B', 'C'].indexed) {
+        expect(
+          stops[index].node,
+          same(Focus.of(tester.element(find.text(label)))),
+        );
+      }
+      semantics.dispose();
+    });
+  });
+
   group('expectTraversable', () {
     testWidgets('passes for a plain column and checks expectedOrder', (
       tester,

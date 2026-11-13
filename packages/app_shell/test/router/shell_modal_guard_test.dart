@@ -173,6 +173,27 @@ void main() {
     expect(notYetAvailable, findsOneWidget);
   });
 
+  testWidgets('a dialog that replaces another on the root navigator still '
+      'goes with the page', (tester) async {
+    final router = await pumpRouter(tester);
+    await openDialog(tester, home);
+    Navigator.of(tester.element(dialog), rootNavigator: true).pushReplacement(
+      DialogRoute<void>(
+        context: tester.element(home),
+        builder: (_) => const AlertDialog(content: Text('Replacement')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+    expect(find.text('Replacement'), findsOneWidget);
+
+    router.go(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Replacement'), findsNothing);
+    expect(notYetAvailable, findsOneWidget);
+  });
+
   // #707's hand-off: the pop-up waits for the page it opened to arrive.
   testWidgets('a pop-up stays when a page is pushed over its opener, and goes '
       'once it has arrived', (tester) async {

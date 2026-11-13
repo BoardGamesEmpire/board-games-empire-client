@@ -179,6 +179,8 @@ Page<void> _material(GoRouterState state) => MaterialPage<void>(
 /// above the router and a pointer platform in the theme, as `BgeApp` has
 /// them on desktop and web (#338). [platform] goes in the theme, where the
 /// shell and the page transitions read it.
+/// [inOuterShell] puts the shell's route inside another `ShellRoute`, as
+/// the app's auth shell holds it.
 Future<_Harness> _pump(
   WidgetTester tester, {
   Size size = const Size(400, 800),
@@ -191,54 +193,59 @@ Future<_Harness> _pump(
   bool Function()? deferBack,
   ThemeData? themeData,
   GlobalKey? boundary,
+  bool inOuterShell = false,
 }) async {
   final theme =
       themeData ?? (underRegion ? pointerPlatformTheme() : BgeTheme.light());
   useViewSize(tester, size);
   final runs = <String>[];
   final entries = _entries(runs);
-  final router = GoRouter(
-    initialLocation: at,
+  final RouteBase shell = ShellRoute(
+    builder: (context, state, child) => NavigationShell(
+      destinations: destinations,
+      entries: entries,
+      activeServerName: 'Test server',
+      location: state.uri.path,
+      deferBack: deferBack,
+      child: child,
+    ),
     routes: [
-      ShellRoute(
-        builder: (context, state, child) => NavigationShell(
-          destinations: destinations,
-          entries: entries,
-          activeServerName: 'Test server',
-          location: state.uri.path,
-          deferBack: deferBack,
-          child: child,
+      GoRoute(
+        path: '/home',
+        pageBuilder: (_, state) => NoTransitionPage<void>(
+          key: state.pageKey,
+          child: _Page(state.uri.path),
         ),
+      ),
+      GoRoute(
+        path: '/collection',
+        pageBuilder: (_, state) => _material(state),
         routes: [
           GoRoute(
-            path: '/home',
-            pageBuilder: (_, state) => NoTransitionPage<void>(
-              key: state.pageKey,
-              child: _Page(state.uri.path),
-            ),
-          ),
-          GoRoute(
-            path: '/collection',
-            pageBuilder: (_, state) => _material(state),
-            routes: [
-              GoRoute(
-                path: ':id',
-                pageBuilder: (_, state) => _material(state),
-              ),
-            ],
-          ),
-          GoRoute(path: '/games', pageBuilder: (_, state) => _material(state)),
-          GoRoute(path: '/events', pageBuilder: (_, state) => _material(state)),
-          GoRoute(
-            path: '/settings',
-            pageBuilder: (_, state) => _material(state),
-          ),
-          GoRoute(
-            path: '/feedback',
+            path: ':id',
             pageBuilder: (_, state) => _material(state),
           ),
         ],
       ),
+      GoRoute(path: '/games', pageBuilder: (_, state) => _material(state)),
+      GoRoute(path: '/events', pageBuilder: (_, state) => _material(state)),
+      GoRoute(
+        path: '/settings',
+        pageBuilder: (_, state) => _material(state),
+      ),
+      GoRoute(
+        path: '/feedback',
+        pageBuilder: (_, state) => _material(state),
+      ),
+    ],
+  );
+  final router = GoRouter(
+    initialLocation: at,
+    routes: [
+      if (inOuterShell)
+        ShellRoute(builder: (_, _, child) => child, routes: [shell])
+      else
+        shell,
     ],
   );
   addTearDown(router.dispose);
@@ -690,6 +697,40 @@ void main() {
       expect(shell.location, '/home');
     });
 
+    // Inside another shell, as the app's auth shell holds it, the shell's
+    // own route stays current on its navigator under a root dialog.
+    for (final inOuterShell in [false, true]) {
+      testWidgets(
+        'Back with a dialog over the open drawer closes the dialog, '
+        'and leaves the drawer${inOuterShell ? ' (in an outer shell)' : ''}',
+        (
+          tester,
+        ) async {
+          final shell = await _pump(
+            tester,
+            at: '/collection',
+            inOuterShell: inOuterShell,
+          );
+          await shell.openMenu();
+          unawaited(
+            showDialog<void>(
+              context: tester.element(find.byType(MenuDrawer)),
+              builder: (_) => const AlertDialog(content: Text('A dialog')),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(await shell.back(), isTrue);
+          expect(find.text('A dialog'), findsNothing);
+          expect(shell.scaffold.isDrawerOpen, isTrue);
+
+          expect(await shell.back(), isTrue);
+          expect(shell.scaffold.isDrawerOpen, isFalse);
+          expect(shell.location, '/collection');
+        },
+      );
+    }
+
     // Something over the app that takes Back through a handler of its own,
     // such as the recovery notice (#428), may have come up before the shell.
     testWidgets('Back passes while the app defers it', (tester) async {
@@ -1012,6 +1053,29 @@ void main() {
       expect(_inside(FocusManager.instance.primaryFocus, _bar), isTrue);
     });
 
+    testWidgets('a resize from medium to expanded keeps focus on the rail '
+        'destination', (tester) async {
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        size: const Size(700, 800),
+      );
+      final node = _destinationNode(tester, 'collection')..requestFocus();
+      await tester.pump();
+
+      await shell.resize(const Size(1000, 800));
+
+      expect(
+        tester.widget<NavigationRail>(_rail).labelType,
+        NavigationRailLabelType.all,
+      );
+      expect(FocusManager.instance.primaryFocus, same(node));
+
+      await shell.resize(const Size(700, 800));
+
+      expect(FocusManager.instance.primaryFocus, same(node));
+    });
+
     testWidgets('a resize leaves focus off the chrome alone', (tester) async {
       final shell = await _pump(tester, at: '/collection');
       final fab = Focus.of(
@@ -1024,16 +1088,31 @@ void main() {
       expect(FocusManager.instance.primaryFocus, fab);
     });
 
-    testWidgets('the drawer stays open across a resize', (tester) async {
+    testWidgets('the drawer stays open across a resize, with focus on its '
+        'entry', (tester) async {
       final shell = await _pump(tester);
       await shell.openMenu();
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: _entry('settings'),
+            matching: find.text('Settings'),
+          ),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      bool onSettings() =>
+          _inside(FocusManager.instance.primaryFocus, _entry('settings'));
+      expect(onSettings(), isTrue);
 
       await shell.resize(const Size(700, 800));
       expect(shell.scaffold.isDrawerOpen, isTrue);
       expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+      expect(onSettings(), isTrue);
 
       await shell.resize(const Size(400, 800));
       expect(shell.scaffold.isDrawerOpen, isTrue);
+      expect(onSettings(), isTrue);
     });
 
     for (final size in [const Size(400, 800), const Size(700, 800)]) {
@@ -1064,13 +1143,14 @@ void main() {
       bool reverse = false,
     }) async {
       await _pump(tester, size: size);
-      final names = await tabOrder(tester, reverse: reverse);
-      // The page's own stops: its Add button, and at compact its menu
-      // button.
-      return names
-          .where((name) => name != 'Add')
-          .where((name) => size.width >= 600 || name != 'Open navigation menu')
-          .toList();
+      final stops = await tabStops(tester, reverse: reverse);
+      // The bar's or the rail's own stops. The page's, its Add button and
+      // at compact its menu button, are left out by where they are.
+      final chrome = size.width >= 600 ? _rail : _bar;
+      return [
+        for (final stop in stops)
+          if (_inside(stop.node, chrome)) stop.name,
+      ];
     }
 
     testWidgets('Tab walks the rail in order: menu, Home, Collection, Games, '

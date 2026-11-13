@@ -43,8 +43,11 @@ enum BgeWindowClass {
     return BgeWindowClass.compact;
   }
 
-  /// The class of the window [context] is in, against the nearest
-  /// [BgeTokens]. Rebuilds when the window's width changes.
+  /// The class of the window [context] is in, against the theme's
+  /// [BgeTokens] ([BgeTokens.of]). Rebuilds when the window's width changes.
+  ///
+  /// Needs a [MediaQuery] above [context], as an app provides:
+  /// [MediaQuery.sizeOf] asserts with none.
   static BgeWindowClass of(BuildContext context) =>
       fromWidth(MediaQuery.sizeOf(context).width, BgeTokens.of(context));
 }

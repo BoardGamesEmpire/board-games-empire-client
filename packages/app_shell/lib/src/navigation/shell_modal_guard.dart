@@ -58,6 +58,12 @@ class ShellModalGuard {
 
   void _closed(Route<dynamic> modal) => _openers.remove(modal);
 
+  /// [modal] took [old]'s place, so it belongs to [old]'s page.
+  void _replaced(Route<dynamic> old, Route<dynamic> modal) {
+    final page = _openers.remove(old);
+    if (page != null) _openers[modal] = page;
+  }
+
   void _pageLeft(Route<dynamic> route) {
     if (route.settings case Page(:final key?)) {
       _removeWhere((page) => page.key == key);
@@ -135,11 +141,26 @@ class _RootObserver extends NavigatorObserver {
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
       _guard._closed(route);
+
+  /// A modal that replaces one the guard owns, as with
+  /// [NavigatorState.pushReplacement], takes over its page.
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute == null) return;
+    if (newRoute != null &&
+        identical(newRoute.navigator, navigator) &&
+        newRoute.settings is! Page) {
+      _guard._replaced(oldRoute, newRoute);
+    } else {
+      _guard._closed(oldRoute);
+    }
+  }
 }
 
 /// Hears a shell page leave: popped (browser Back to a pushed page's
 /// entry), or completed and removed (a `go`, a replacement, browser Back to
-/// an entry the router builds afresh). go_router reports no replace.
+/// an entry the router builds afresh). go_router reports no replace for the
+/// pages it builds, but a route replaced on the navigator itself leaves too.
 class _ShellObserver extends NavigatorObserver {
   _ShellObserver(this._guard);
 
@@ -152,6 +173,11 @@ class _ShellObserver extends NavigatorObserver {
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
       _guard._pageLeft(route);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute != null) _guard._pageLeft(oldRoute);
+  }
 }
 
 class _ShellLifetime extends StatefulWidget {

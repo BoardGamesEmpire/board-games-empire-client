@@ -49,5 +49,48 @@ void main() {
       );
       expect(seen, BgeWindowClass.medium);
     });
+
+    testWidgets('rebuilds when the window width changes', (tester) async {
+      final seen = <BgeWindowClass>[];
+      Widget at(double width) => MediaQuery(
+        data: MediaQueryData(size: Size(width, 800)),
+        child: Builder(
+          builder: (context) {
+            seen.add(BgeWindowClass.of(context));
+            return const SizedBox.shrink();
+          },
+        ),
+      );
+
+      await tester.pumpWidget(at(400));
+      await tester.pumpWidget(at(900));
+
+      expect(seen, [BgeWindowClass.compact, BgeWindowClass.expanded]);
+    });
+
+    testWidgets("reads the theme's tokens, not the standard set", (
+      tester,
+    ) async {
+      BgeWindowClass? seen;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(size: Size(550, 800)),
+          child: Theme(
+            data: ThemeData(
+              extensions: [tokens.copyWith(breakpointMedium: 500)],
+            ),
+            child: Builder(
+              builder: (context) {
+                seen = BgeWindowClass.of(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      // 550 is compact against the standard 600.
+      expect(seen, BgeWindowClass.medium);
+    });
   });
 }

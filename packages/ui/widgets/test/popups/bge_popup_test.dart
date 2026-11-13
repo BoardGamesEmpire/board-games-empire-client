@@ -143,6 +143,7 @@ class _App {
 const _pushKey = Key('push a page');
 const _pushInstantKey = Key('push a page with no transition');
 const _nestedDialogKey = Key('open a dialog on the nested navigator');
+const _replaceKey = Key('replace the opener with a page');
 
 /// #414's navigation shell, cut down: every page on a navigator nested in
 /// the root one's home, with a [BgePopupCoverObserver] on it unless
@@ -223,6 +224,13 @@ class _NestedApp {
           ),
         ),
         child: const Text('open a page at once'),
+      ),
+      TextButton(
+        key: _replaceKey,
+        onPressed: () => nested.pushReplacement(
+          page = MaterialPageRoute<void>(builder: (_) => _page()),
+        ),
+        child: const Text('open a page in place of this one'),
       ),
       TextButton(
         key: _nestedDialogKey,
@@ -662,6 +670,22 @@ void main() {
           expect(find.byKey(_pageKey), findsOneWidget);
           expect(app.closed, isTrue);
           expect(app.closedWith, isNull);
+        }, variant: _platforms);
+
+        testWidgets('a page that replaces the opener on the nested '
+            'navigator removes it too', (tester) async {
+          final app = _NestedApp();
+          await app.pump(tester, size);
+          final popup = await app.open(tester);
+
+          await tester.tap(find.byKey(_replaceKey));
+          await tester.pumpAndSettle();
+
+          expect(app.page!.animation!.isCompleted, isTrue);
+          expect(popup.isActive, isFalse);
+          expect(_anyPopup, findsNothing);
+          expect(find.byKey(_pageKey), findsOneWidget);
+          expect(app.closed, isTrue);
         }, variant: _platforms);
 
         testWidgets('a page popped before it arrives leaves the pop-up', (

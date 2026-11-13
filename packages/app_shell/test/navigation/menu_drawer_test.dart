@@ -385,6 +385,23 @@ void main() {
       // And one more after the destinations.
       expect(find.byType(Divider), findsNWidgets(2));
     });
+
+    testWidgets('destinations and only destructive entries: one divider', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        entries: [
+          for (final entry in _entries())
+            if (entry.isDestructive) entry,
+        ],
+        destinations: _destinations,
+      );
+      await _openDrawer(tester);
+
+      // The actions' own, not a second one straight after it.
+      expect(find.byType(Divider), findsOneWidget);
+    });
   });
 
   testWidgets('drawer header, destinations, and actions share one start '
@@ -486,8 +503,16 @@ void main() {
       return found;
     }
 
-    Future<void> openWithFocusOn(WidgetTester tester, String id) async {
-      await _pump(tester, entries: withAdmin(admin: true));
+    Future<void> openWithFocusOn(
+      WidgetTester tester,
+      String id, {
+      List<NavDestination> destinations = const [],
+    }) async {
+      await _pump(
+        tester,
+        entries: withAdmin(admin: true),
+        destinations: destinations,
+      );
       await _openDrawer(tester);
       focusEntry(tester, id);
       await tester.pump();
@@ -548,6 +573,38 @@ void main() {
       final focused = FocusManager.instance.primaryFocus;
 
       await _pump(tester, entries: withAdmin(admin: false));
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, same(focused));
+    });
+
+    // Destinations sit above the entries in a group of their own, so the
+    // drawer's positions all shift by them.
+    testWidgets('with destinations listed, an entry that goes with focus '
+        'hands it to the one that takes its place', (tester) async {
+      await openWithFocusOn(tester, 'admin', destinations: _destinations);
+
+      await _pump(
+        tester,
+        entries: withAdmin(admin: false),
+        destinations: _destinations,
+      );
+      await tester.pumpAndSettle();
+
+      expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
+      expect(focusedEntry(), 'settings');
+    });
+
+    testWidgets('with destinations listed, focus on a destination is left '
+        'alone', (tester) async {
+      await openWithFocusOn(tester, 'collection', destinations: _destinations);
+      final focused = FocusManager.instance.primaryFocus;
+
+      await _pump(
+        tester,
+        entries: withAdmin(admin: false),
+        destinations: _destinations,
+      );
       await tester.pumpAndSettle();
 
       expect(FocusManager.instance.primaryFocus, same(focused));

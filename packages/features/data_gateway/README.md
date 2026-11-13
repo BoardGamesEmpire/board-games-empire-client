@@ -33,8 +33,8 @@ Each control needs one action:
   Interview again and the capability switches on the detail page, and the
   worklist's Link, Ignore and Add this language.
 - **delete**: delete on the list.
-- **read**: the Admin entry in the home drawer, and the DataGateway names on
-  the game search's results.
+- **read**: the Admin entry in the navigation menu, and the DataGateway names
+  on the game search's results.
 
 While the answer is unknown, every action is hidden, and nothing is said about
 the role. A list row with neither update nor delete has no menu. Without

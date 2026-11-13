@@ -170,7 +170,10 @@ void main() {
       router.go(location);
       await tester.pumpAndSettle();
 
-      // The reserved deep links stay top-level, outside both shells.
+      // The reserved deep links stay top-level, outside both shells. They
+      // are told apart by their `/server/` prefix, the one the router
+      // reserves for them: a new deep link under another prefix needs
+      // adding here.
       final pages = location.startsWith('/server/')
           ? rootPages(router)
           : innermostPages(tester);

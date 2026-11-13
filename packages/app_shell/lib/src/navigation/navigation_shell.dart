@@ -32,9 +32,11 @@ enum _Chrome { none, bar, rail }
 /// Picking a destination is a `go` to its location, which replaces the
 /// stack, unless that destination's own screen is already the only page.
 ///
-/// System Back closes an open drawer first, and drops a pick still waiting
-/// for the drawer to go. On a destination's own screen, other than Home,
-/// with nothing beneath it, it goes home. Anything else is the router's.
+/// System Back closes a dialog or pop-up over the shell first: the shell
+/// passes it to the router. Then it closes an open drawer, and drops a
+/// pick still waiting for the drawer to go. On a destination's own screen,
+/// other than Home, with nothing beneath it, it goes home. Anything else is
+/// the router's.
 /// While [deferBack] says so, every press passes the shell by, to the
 /// handler registered before it, then the router.
 class NavigationShell extends StatefulWidget {
@@ -127,7 +129,7 @@ class _NavigationShellState extends State<NavigationShell> {
   /// Goes to [destination], unless its own screen is already the only page.
   ///
   /// A pushed copy of it, as home's See all pushes Games, still goes: the
-  /// pick replaces the stack beneath it (#414).
+  /// `go` replaces the whole stack with the destination's own screen (#414).
   void _go(NavDestination destination) {
     final router = GoRouter.of(context);
     if (widget.location == destination.location && !router.canPop()) return;
@@ -183,6 +185,9 @@ class _NavigationShellState extends State<NavigationShell> {
 
   Future<bool> _back() async {
     if (widget.deferBack?.call() ?? false) return false;
+    // A dialog or pop-up on a navigator above the shell's is what Back
+    // closes, even with the drawer open beneath it.
+    if (_underModal()) return false;
     // The pick has closed the drawer already, so Back while it closes reads
     // as "never mind": the pick is dropped, and Back does nothing else.
     if (_afterClose != null) {
@@ -203,6 +208,23 @@ class _NavigationShellState extends State<NavigationShell> {
         !router.canPop()) {
       router.go(AppRoutes.home);
       return true;
+    }
+    return false;
+  }
+
+  /// Whether a route is over the shell on a navigator above it, such as a
+  /// dialog on the root navigator.
+  ///
+  /// The shell's own route is the current one on its navigator whatever the
+  /// root navigator holds, as that navigator may be another shell's, so each
+  /// enclosing route is asked in turn, up to the root.
+  bool _underModal() {
+    BuildContext? at = context;
+    while (at != null && at.mounted) {
+      final route = ModalRoute.of(at);
+      if (route == null) return false;
+      if (!route.isCurrent) return true;
+      at = route.navigator?.context;
     }
     return false;
   }

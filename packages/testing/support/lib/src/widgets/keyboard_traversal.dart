@@ -23,6 +23,21 @@ Future<List<String>> tabOrder(
   bool reverse = false,
 }) async => (await _walk(tester, maxSteps, reverse)).names;
 
+/// [tabOrder]'s walk, with each stop's [FocusNode] beside its name, for a
+/// test that keeps only the stops in one part of the screen, chosen by
+/// where the node is rather than by what it is called.
+Future<List<({String name, FocusNode node})>> tabStops(
+  WidgetTester tester, {
+  int maxSteps = 60,
+  bool reverse = false,
+}) async {
+  final walk = await _walk(tester, maxSteps, reverse);
+  return [
+    for (var i = 0; i < walk.nodes.length; i++)
+      (name: walk.names[i], node: walk.nodes[i]),
+  ];
+}
+
 /// One Tab walk: the stops by name, the same stops by `FocusNode`, whether
 /// focus wrapped back to the first stop, the node that repeated, if any, and
 /// whether focus left the page's controls instead.

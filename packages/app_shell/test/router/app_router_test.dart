@@ -284,6 +284,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Open entry'), findsOneWidget);
 
+      // No collectionEntryBuilder: the entry's route builds the
+      // NotYetAvailableScreen, which is page enough for the hand-off.
       await tester.tap(find.text('Open entry'));
       await tester.pumpAndSettle();
 

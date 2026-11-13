@@ -11,12 +11,13 @@ import 'package:interfaces/orchestration.dart';
 ///
 /// Everything that consumes a user-scoped service resolves it from
 /// `ActiveServer.container`: the household list, detail and create routes,
-/// the home drawer's gate, and the re-hydrate triggers. Native satisfies them
-/// because its `ActiveServer.container` is `ServerContextImpl`'s swappable
-/// facade, which already resolves child-first. Web's was the raw origin
-/// container, so a user scope could be opened, installed and torn down
-/// correctly and *no consumer would ever see into it* — the acceptance test
-/// for the scope would pass over an app that still showed nothing.
+/// the navigation menu's Admin gate, and the re-hydrate triggers. Native
+/// satisfies them because its `ActiveServer.container` is
+/// `ServerContextImpl`'s swappable facade, which already resolves
+/// child-first. Web's was the raw origin container, so a user scope could be
+/// opened, installed and torn down correctly and *no consumer would ever see
+/// into it* — the acceptance test for the scope would pass over an app that
+/// still showed nothing.
 ///
 /// The child-first lookup itself lives on [UserScopeHost]
 /// ([UserScopeHost.maybeGet] / [UserScopeHost.scopeHasRegistration]), shared

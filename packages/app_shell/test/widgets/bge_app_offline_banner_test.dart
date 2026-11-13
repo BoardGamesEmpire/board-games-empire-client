@@ -7,11 +7,9 @@ import 'package:flutter/rendering.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
-import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart' show FeedbackService;
 import 'package:ui/ui.dart' show BgeOfflineStrip;
@@ -20,9 +18,8 @@ import '../support/active_server_fakes.dart';
 import '../support/fake_connectivity.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/navigation.dart';
+import '../support/settings_storage.dart';
 import '../support/stub_feedback_service.dart';
-
-class _MockStorage extends Mock implements Storage {}
 
 /// A household cache holding nothing, for the list beneath the create form.
 class _Households implements HouseholdRepository {
@@ -40,16 +37,6 @@ class _Sender implements SyncOperationSender {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
-}
-
-/// Settings builds once the app-level settings controllers exist, and those
-/// need hydrated storage.
-void _useSettingsStorage() {
-  final storage = _MockStorage();
-  when(() => storage.read(any())).thenReturn(null);
-  when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
-  HydratedBloc.storage = storage;
-  addTearDown(() => HydratedBloc.storage = null);
 }
 
 /// Every label a screen reader can reach, merged nodes included.
@@ -346,7 +333,7 @@ void main() {
 
     testWidgets('the unverified banner shows on settings, feedback and '
         'create-household', (tester) async {
-      _useSettingsStorage();
+      useSettingsStorage();
       await pumpApp(
         tester,
         unverified(),
@@ -380,7 +367,7 @@ void main() {
     // screen the menu opened stays as it is.
     testWidgets('on settings, a confirming revalidation clears the banner '
         'without a remount', (tester) async {
-      _useSettingsStorage();
+      useSettingsStorage();
       final repo = unverified();
       await pumpApp(tester, repo);
       await openMenuEntry(tester, 'settings');
@@ -398,7 +385,7 @@ void main() {
     testWidgets('dismissed on home, it stays dismissed on settings', (
       tester,
     ) async {
-      _useSettingsStorage();
+      useSettingsStorage();
       await pumpApp(tester, unverified());
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
@@ -412,7 +399,7 @@ void main() {
   });
 
   testWidgets('the strip shows on a screen the menu opens', (tester) async {
-    _useSettingsStorage();
+    useSettingsStorage();
     final connectivity = FakeConnectivity();
     addTearDown(connectivity.close);
 

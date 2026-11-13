@@ -157,6 +157,26 @@ void main() {
     return colourAt;
   }
 
+  /// The points of [rect], one per pixel, each at the pixel's centre.
+  Iterable<Offset> pixelsOf(Rect rect) sync* {
+    for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
+      for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
+        yield Offset(x + 0.5, y + 0.5);
+      }
+    }
+  }
+
+  /// The most any pixel of [rect] stands out between [a] and [b], as a
+  /// contrast ratio: 1 where the two draw it alike.
+  double strongestContrast(
+    Rect rect,
+    Color Function(Offset) a,
+    Color Function(Offset) b,
+  ) =>
+      pixelsOf(rect)
+          .map((p) => Wcag.contrastRatio(a(p), b(p)))
+          .fold<double>(1, (most, ratio) => ratio > most ? ratio : most);
+
   // Within a little of the ring's colour: the ring's edge is a curve, so a
   // pixel on it can be a shade off at the tangent.
   final isRingColour = predicate<Color>(
@@ -773,29 +793,19 @@ void main() {
         final focused = await capture(tester);
 
         // Anywhere the focus shows: a fill, a ring, an edge.
-        var strongest = 1.0;
-        for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
-          for (var x = area.left.ceil(); x < area.right.floor(); x++) {
-            final point = Offset(x + 0.5, y + 0.5);
-            final ratio = Wcag.contrastRatio(atRest(point), focused(point));
-            if (ratio > strongest) strongest = ratio;
-          }
-        }
-        expect(strongest, greaterThanOrEqualTo(3.0), reason: 'the fill');
+        expect(
+          strongestContrast(area, atRest, focused),
+          greaterThanOrEqualTo(3.0),
+          reason: 'the fill',
+        );
 
         // The icon against the fill beside it.
         final fill = focused(Offset(icon.left - 4, icon.center.dy));
-        var iconRatio = 1.0;
-        for (var y = icon.top.ceil(); y < icon.bottom.floor(); y++) {
-          for (var x = icon.left.ceil(); x < icon.right.floor(); x++) {
-            final ratio = Wcag.contrastRatio(
-              focused(Offset(x + 0.5, y + 0.5)),
-              fill,
-            );
-            if (ratio > iconRatio) iconRatio = ratio;
-          }
-        }
-        expect(iconRatio, greaterThanOrEqualTo(3.0), reason: 'the icon');
+        expect(
+          strongestContrast(icon, focused, (_) => fill),
+          greaterThanOrEqualTo(3.0),
+          reason: 'the icon',
+        );
       });
     }
   });
@@ -811,15 +821,6 @@ void main() {
         (c.r - target.r).abs() < 0.05 &&
         (c.g - target.g).abs() < 0.05 &&
         (c.b - target.b).abs() < 0.05;
-
-    /// The points of [rect], one per pixel.
-    Iterable<Offset> pixelsOf(Rect rect) sync* {
-      for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
-        for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
-          yield Offset(x + 0.5, y + 0.5);
-        }
-      }
-    }
 
     final schemes = {
       'light': BgeTheme.light,
@@ -851,12 +852,10 @@ void main() {
               final focused = await capture(tester);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
-              var strongest = 1.0;
-              for (final point in pixelsOf(rect)) {
-                final ratio = Wcag.contrastRatio(atRest(point), focused(point));
-                if (ratio > strongest) strongest = ratio;
-              }
-              expect(strongest, greaterThanOrEqualTo(3.0));
+              expect(
+                strongestContrast(rect, atRest, focused),
+                greaterThanOrEqualTo(3.0),
+              );
             },
           );
         }
@@ -1057,10 +1056,10 @@ void main() {
               final focused = await capture(tester);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
-              final strongest = pixelsOf(rect)
-                  .map((p) => Wcag.contrastRatio(atRest(p), focused(p)))
-                  .fold<double>(1, (a, b) => a > b ? a : b);
-              expect(strongest, greaterThanOrEqualTo(3.0));
+              expect(
+                strongestContrast(rect, atRest, focused),
+                greaterThanOrEqualTo(3.0),
+              );
             });
           }
         }

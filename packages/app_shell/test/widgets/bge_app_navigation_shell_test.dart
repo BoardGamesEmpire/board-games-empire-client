@@ -11,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
-import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
@@ -24,6 +23,7 @@ import 'package:ui/ui.dart' show BgePage;
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/navigation.dart';
+import '../support/settings_storage.dart';
 import '../support/stub_feedback_service.dart';
 
 /// A collection cache holding nothing, whose watch stays open, as Drift's
@@ -98,18 +98,6 @@ class _Sender implements SyncOperationSender {
 }
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
-
-class _MockStorage extends Mock implements Storage {}
-
-/// Settings builds once the app-level settings controllers exist, and those
-/// need hydrated storage.
-void _useSettingsStorage() {
-  final storage = _MockStorage();
-  when(() => storage.read(any())).thenReturn(null);
-  when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
-  HydratedBloc.storage = storage;
-  addTearDown(() => HydratedBloc.storage = null);
-}
 
 class _MockUserRemote extends Mock implements UserRemoteDataSource {}
 
@@ -269,7 +257,7 @@ void main() {
   testWidgets('settings shows no rail, and its menu lists the destinations', (
     tester,
   ) async {
-    _useSettingsStorage();
+    useSettingsStorage();
     await pumpApp(tester, session());
     await openMenuEntry(tester, 'settings');
 
