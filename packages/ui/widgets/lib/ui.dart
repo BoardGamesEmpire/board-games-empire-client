@@ -31,7 +31,8 @@
 /// quick look (#573, #607), `BgeInertButton` by buttons that keep focus
 /// while they can do nothing, at 16 call sites in `lib/` (#607, #807),
 /// `BgeFabLabel` by the 5 extended floating buttons, which it keeps on screen
-/// at large text (#50), and
+/// at large text (#50), `replaceSnackBar` by every SnackBar, at 12 uses in
+/// `lib/` (#343), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
 /// empty and denied surfaces of the feature screens, at 28, 38 and 60 call
 /// sites in `lib/` (#49, #807). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
@@ -43,6 +44,8 @@
 /// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
 /// `BgeMenuButton` is both of the navigation shell's menu buttons, a first
 /// page's and the rail's (#414).
+/// `replaceSnackBar`'s 12 uses are 11 method calls and the filter sheet's
+/// one tear-off, all outside this package.
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -69,6 +72,7 @@ library;
 export 'src/banners/bge_inline_banner.dart';
 export 'src/banners/bge_offline_strip.dart';
 export 'src/banners/bge_refresh_banner.dart';
+export 'src/banners/bge_snack_bars.dart';
 export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_fab_label.dart';
 export 'src/buttons/bge_inert_button.dart';

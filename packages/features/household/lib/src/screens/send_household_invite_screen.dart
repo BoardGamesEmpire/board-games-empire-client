@@ -136,14 +136,10 @@ class SendHouseholdInviteScreen extends StatelessWidget {
         listenWhen: (_, state) => state is SendHouseholdInviteSent,
         listener: (context, state) {
           final status = (state as SendHouseholdInviteSent).invite.status;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                status == HouseholdInviteStatus.awaitingApproval
-                    ? l10n.inviteSendDoneAwaitingApproval
-                    : l10n.inviteSendDone,
-              ),
-            ),
+          ScaffoldMessenger.of(context).replaceSnackBar(
+            status == HouseholdInviteStatus.awaitingApproval
+                ? l10n.inviteSendDoneAwaitingApproval
+                : l10n.inviteSendDone,
           );
           if (manages) {
             onSent(context);

@@ -64,6 +64,7 @@ import 'package:ui/ui.dart'
         BgeConnectivityScope,
         BgeLoadingState,
         BgePage,
+        BgeSnackBars,
         UnverifiedSessionBanner;
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/l10n/user_search_localizations.dart';
@@ -3711,7 +3712,7 @@ class _AuthScopeState extends State<_AuthScope> {
     if (messenger == null) return null;
     final message = ShellLocalizations.of(context)
         .shellSessionSwitchedNotice(user.username);
-    return () => messenger.showSnackBar(SnackBar(content: Text(message)));
+    return () => messenger.replaceSnackBar(message);
   }
 
   /// Pops the user-session scope after the gate has routed away (#135):

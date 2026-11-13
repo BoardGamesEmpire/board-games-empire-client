@@ -185,7 +185,7 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
           // form, because the save happened either way.
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(_savedMessage(l10n, state))));
+          ).replaceSnackBar(_savedMessage(l10n, state));
         },
         builder: (context, state) => switch (state) {
           DataGatewayFormLoading() => BgePage(

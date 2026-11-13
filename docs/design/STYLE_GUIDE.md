@@ -249,6 +249,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeDropdownField` | reactive_forms' `ReactiveDropdownField` in 4 form menus, whose menu covered the field (#649, #648) | Visible label; the menu opens under the field, as wide as it, and above it near the bottom of the screen; a long choice wraps, closed and open; a button with an expanded state that Enter or Space opens, the arrows move through and Escape closes, with focus back on the field after; read-only stays focusable; live-region error announcement |
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
+| `replaceSnackBar` on a `ScaffoldMessengerState` | `showSnackBar`, which queued each bar behind the one showing, so a stale outcome replayed for its full window (#341, #343) | The newest outcome shows within a second and nothing replays: the whole queue is cleared, not just the current bar, which would only promote the next stale one; one live region, Flutter's own, with no `Semantics(liveRegion:)` and no announce added (#191) |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
 | `BgeInertButton` | a busy control's own semantics node, focus node and press guard, copied per control with the copies drifting (#607) | Enabled while inert, so it keeps focus; a press does nothing; one semantics node, the same inert or not, that reads as not enabled and offers no tap while inert; a held Enter or Space presses once; a null `onPressed` disables it in place, taking no focus, so a control that is inert after its own press and disabled after another's keeps one node; `selected` keeps a choice's selected state through all three (#508) |
 | `BgeFabLabel` | a `FloatingActionButton.extended`'s plain `Text` label, which at 200% text on a narrow window made the button wider than the window and pushed its start edge off screen (#50) | Held to what the window leaves it after the button's margins, padding and icon, and scaled down to fit on one line, never cut; a label with room keeps its size |
@@ -517,7 +518,7 @@ question it turns on is **does the screen survive the outcome?**
 | Situation | Surface |
 | --- | --- |
 | Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit, in `BgePage.footer` when it answers an action on a long list |
-| Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
+| Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar`, through `replaceSnackBar` |
 
 A failure that leaves the screen nothing else to show — the app could not
 start, the session could not be checked — is not an outcome either. It *is* the
@@ -632,6 +633,21 @@ opt-out. Adding another nests a live region inside a live region, which makes
 assistive tech announce twice; the same stutter `BgeTextField` documents. This
 was verified in the SDK, not assumed — the two screens that disagreed about it
 could not both be right.
+
+**A new SnackBar replaces the one showing.** Every bar goes through
+`messenger.replaceSnackBar(message)`. A queued bar replays an outcome that is
+no longer news, for its full display window (the copy button stacked three for
+over fifteen seconds, #341). A refused write is never lost this way, because
+its copy sends the user to the home screen's review list (#190). One narrow
+loss is accepted: a failure whose bar is its only word is lost if another
+outcome replaces it within its display window. Today that is a save or a
+removal that fails after its sheet or screen was left mid-way (adding to the
+collection, editing or removing a collection entry), and a range the game
+filter sheet drops as it closes. Failures that arrive together must share one
+bar, as the filter sheet's dropped ranges do, or each replaces the last. A new
+failure that can't afford the loss needs a lasting home, as refused writes
+have, rather than the bar. The enforcement test rejects a raw `showSnackBar`,
+called or torn off (#343).
 
 **Fields that are not prose** — URLs, hostnames, emails, IDs, codes — must set
 `autocorrect: false` and `enableSuggestions: false`. An autocorrected server
@@ -769,7 +785,7 @@ legible body text on every surface role.
       `BgeFormActions`, with its `title` decided by the rule above
 - [ ] A rejected submit calls `rejectSubmit()`
 - [ ] Outcomes follow the surface rule above — banner if the screen stays,
-      SnackBar if it pops, and never a SnackBar inside a live region
+      `replaceSnackBar` if it pops, and never a SnackBar inside a live region
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)
 - [ ] Arriving outcome banners are left to reveal themselves; `reveal: false`
       only for a persistent one

@@ -153,16 +153,14 @@ class _CreateEventView extends StatelessWidget {
         if (state case CreateEventSuccess(:final eventId, :final sync)) {
           // A SnackBar, which outlives the route `onCreated` takes the user
           // off, and is already a live region (#191).
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(switch (sync) {
-                CreateEventSync.synced => l10n.eventCreateSynced,
-                // Also a refused create another tab retried or discarded
-                // since. After a discard its local id names nothing, and
-                // the detail says so (see CreateEventSuccess).
-                CreateEventSync.queued => l10n.eventCreateQueued,
-              }),
-            ),
+          ScaffoldMessenger.of(context).replaceSnackBar(
+            switch (sync) {
+              CreateEventSync.synced => l10n.eventCreateSynced,
+              // Also a refused create another tab retried or discarded
+              // since. After a discard its local id names nothing, and
+              // the detail says so (see CreateEventSuccess).
+              CreateEventSync.queued => l10n.eventCreateQueued,
+            },
           );
           // Shown first, then handed on, while this route's context is
           // still current. No `maybePop`: where the event is shown is the
