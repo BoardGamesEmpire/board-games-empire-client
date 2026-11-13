@@ -14,6 +14,8 @@ import 'package:dio_network/dio_network.dart'
         HouseholdMemberRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
         NetworkLogInterceptor,
+        NotificationRemoteDataSourceImpl,
+        SystemSettingsRemoteDataSourceImpl,
         UserRemoteDataSourceImpl;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -29,6 +31,8 @@ import 'package:network_interface/network_interface.dart'
         HouseholdInviteRemoteDataSource,
         HouseholdMemberRemoteDataSource,
         HouseholdRemoteDataSource,
+        NotificationRemoteDataSource,
+        SystemSettingsRemoteDataSource,
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -221,6 +225,15 @@ void registerServerNetworkWeb({
     // over this origin's Dio.
     ..registerSingleton<AdminHouseholdRemoteDataSource>(
       AdminHouseholdRemoteDataSourceImpl(dio),
+    )
+    // #807: the per-origin system settings and notification remotes. Same
+    // convention, placement and reuse argument as the staff households remote:
+    // native's implementations over this origin's Dio.
+    ..registerSingleton<SystemSettingsRemoteDataSource>(
+      SystemSettingsRemoteDataSourceImpl(dio),
+    )
+    ..registerSingleton<NotificationRemoteDataSource>(
+      NotificationRemoteDataSourceImpl(dio),
     )
     // #42: the per-origin games remote. Same convention, placement and reuse
     // argument as the remotes above: native's implementation over this

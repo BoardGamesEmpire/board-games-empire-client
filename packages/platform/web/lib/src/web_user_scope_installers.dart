@@ -9,6 +9,8 @@ import 'package:game_collection/game_collection.dart'
 import 'package:household/household.dart'
     show HouseholdHydrateInstaller, householdAdminResourceTypes;
 import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
+import 'package:server_settings/server_settings.dart'
+    show serverSettingsResourceTypes;
 import 'package:sync_queue/sync_queue.dart'
     show SyncQueueDrainInstaller, SyncSenderInstaller;
 
@@ -89,6 +91,7 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
     resourceTypes: {
       ...dataGatewayResourceTypes,
       ...householdAdminResourceTypes,
+      ...serverSettingsResourceTypes,
     },
   ),
   SyncSenderInstaller(),

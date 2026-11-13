@@ -272,6 +272,7 @@ abstract final class AppRoutes {
   // declares them, as with the household children (#308).
   static const _adminDataGatewaysSegment = 'data-gateways';
   static const _adminHouseholdsSegment = 'households';
+  static const _adminSettingsSegment = 'settings';
 
   /// The add form, beneath the list.
   static const dataGatewayAdd = '$adminDataGateways/$_dataGatewayAddSegment';
@@ -308,6 +309,10 @@ abstract final class AppRoutes {
   /// Every household on the server, deleted ones too (#685), a section
   /// beneath [admin] (#684). Not [household], which lists the caller's own.
   static const adminHouseholds = '$admin/$_adminHouseholdsSegment';
+
+  /// The server's own settings (#807): its mail, and how people sign in. A
+  /// section beneath [admin] (#684). Not the user's own settings screen.
+  static const adminSettings = '$admin/$_adminSettingsSegment';
 
   /// The id segment of one household's staff detail, beneath
   /// [adminHouseholds]. Build a concrete location with
@@ -718,6 +723,15 @@ typedef AdminHouseholdListScreenBuilder = Widget? Function(
   BuildContext context,
 );
 
+/// Builds the server settings screen (#807) for the [AppRoutes.adminSettings]
+/// route. Supplied by `BgeApp`; returns null when no active server is
+/// resolvable or its container carries no `SystemSettingsRemoteDataSource` or
+/// `NotificationRemoteDataSource`, in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// Not gated on the user's access: the screen says when the server refuses it.
+typedef ServerSettingsScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds one household's staff detail (#685) for [householdId]. Same null
 /// contract as [AdminHouseholdListScreenBuilder].
 typedef AdminHouseholdDetailScreenBuilder = Widget? Function(
@@ -793,6 +807,7 @@ GoRouter buildAppRouter({
   AdminDashboardScreenBuilder? adminDashboardBuilder,
   AdminHouseholdListScreenBuilder? adminHouseholdListBuilder,
   AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
+  ServerSettingsScreenBuilder? serverSettingsBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -1324,6 +1339,15 @@ GoRouter buildAppRouter({
                 },
               ),
             ],
+          ),
+          // #807: the server's own settings, a screen with nothing beneath it.
+          GoRoute(
+            path: AppRoutes._adminSettingsSegment,
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              serverSettingsBuilder?.call(context) ??
+                  const NotYetAvailableScreen(),
+            ),
           ),
         ],
       ),

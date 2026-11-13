@@ -49,6 +49,8 @@ dependencies:
     path: ../core/observability
   server_onboarding:
     path: ../features/server_onboarding
+  server_settings:
+    path: ../features/server_settings
   sync_queue:
     path: ../features/sync
   ui:

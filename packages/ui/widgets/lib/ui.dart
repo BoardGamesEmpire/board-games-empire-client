@@ -28,16 +28,19 @@
 /// lists and grids, whose games change form (#769, #711),
 /// `BgeRefreshBanner` by the 7 stale-data banners, on 3 lists, 2 detail
 /// screens, the home events section and the catalog's from-cache screens and
-/// quick look (#573, #607), `BgeInertButton` by the 7 buttons that
-/// keep focus while they can do nothing (#607), `BgeFabLabel` by the 5
-/// extended floating buttons, which it keeps on screen at large text (#50),
-/// and
+/// quick look (#573, #607), `BgeInertButton` by buttons that keep focus
+/// while they can do nothing, at 16 call sites in `lib/` (#607, #807),
+/// `BgeFabLabel` by the 5 extended floating buttons, which it keeps on screen
+/// at large text (#50), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
-/// empty and denied surfaces of the feature screens, at 23, 23 and 39 call
-/// sites in `lib/` (#49). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
+/// empty and denied surfaces of the feature screens, at 28, 38 and 60 call
+/// sites in `lib/` (#49, #807). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
 /// `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu` and `BgeOnlineOnlyPopupMenuItem`
-/// are on the controls that write straight to the server, at 16, 6, 5, 3 and
-/// 4 call sites in `lib/` (#49).
+/// are on the controls that write straight to the server, at 27, 12, 10, 4
+/// and 4 call sites in `lib/` (#49, #807). Each `lib/` count is of
+/// constructor calls in every package, this one included: 2 of
+/// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of
+/// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -53,6 +56,9 @@
 /// call site, because #516's two lists, an event's Games tab and its Offer
 /// games page, were designed with it to filter the same way as the user types.
 /// Those two are its second and third.
+/// `BgeSwitchField` moved here from the collection entry sheet, which has two
+/// of them, for the server settings' reset-password switch, which #807 adds
+/// in the same change: its third call site.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -74,6 +80,7 @@ export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_search_field.dart';
+export 'src/forms/bge_switch_field.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';

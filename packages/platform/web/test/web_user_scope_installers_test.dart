@@ -35,7 +35,7 @@ void main() {
     });
 
     test('has one CallerAccessInstaller, after the rehydrator, asking for the '
-        'DataGateway and household types (#456, #684)', () {
+        'DataGateway, household and settings types (#456, #684, #807)', () {
       final installers = buildWebUserScopeInstallers();
 
       final callerAccess = installers.whereType<CallerAccessInstaller>();
@@ -50,6 +50,7 @@ void main() {
       expect(callerAccess.single.resourceTypes, {
         ResourceType.dataGateway,
         ResourceType.household,
+        ResourceType.systemSetting,
       });
     });
 
