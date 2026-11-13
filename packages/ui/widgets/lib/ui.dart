@@ -52,6 +52,9 @@
 /// here with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
 /// same way. That picker, the collection entry picker, is now its second.
+/// `BgePopupCoverObserver` is part of it: the navigation shell installs one
+/// on its nested navigator, so a pop-up opened from a page there hears of
+/// the pages it opens (#414).
 /// `BgeSearchField` came here with #715, whose Collection list was its one
 /// call site, because #516's two lists, an event's Games tab and its Offer
 /// games page, were designed with it to filter the same way as the user types.
