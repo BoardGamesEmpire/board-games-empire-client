@@ -225,6 +225,68 @@ void main() {
       handle.dispose();
     });
 
+    // Shift+Tab from the page enters at the page's last stop. A reverse walk
+    // that goes round the same circle from any other stop on it, here X
+    // outside the page, fails (#414).
+    testWidgets("fails when Shift+Tab enters anywhere but the page's last "
+        'stop', (tester) async {
+      final handle = tester.ensureSemantics();
+      final x = FocusNode();
+      addTearDown(x.dispose);
+      await tester.pumpWidget(
+        _host(
+          Column(
+            children: [
+              Expanded(
+                // Takes the first Shift+Tab from the page, while the page's
+                // scope has focus, and puts focus on X instead of C.
+                child: Focus(
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  onKeyEvent: (node, event) {
+                    if (event is! KeyDownEvent ||
+                        event.logicalKey != LogicalKeyboardKey.tab ||
+                        !HardwareKeyboard.instance.isShiftPressed ||
+                        FocusManager.instance.primaryFocus is! FocusScopeNode) {
+                      return KeyEventResult.ignored;
+                    }
+                    x.requestFocus();
+                    return KeyEventResult.handled;
+                  },
+                  child: Navigator(
+                    onGenerateRoute: (_) => MaterialPageRoute<void>(
+                      builder: (_) => Material(child: _three()),
+                    ),
+                  ),
+                ),
+              ),
+              TextButton(
+                focusNode: x,
+                onPressed: () {},
+                child: const Text('X'),
+              ),
+              TextButton(onPressed: () {}, child: const Text('Y')),
+            ],
+          ),
+        ),
+      );
+      expect(await tabOrder(tester), ['A', 'B', 'C', 'X', 'Y']);
+      // From the page again: the reverse walk is the right circle, entered
+      // at X.
+      FocusManager.instance.primaryFocus!.unfocus();
+      await tester.pump();
+      expect(await tabOrder(tester, reverse: true), ['X', 'C', 'B', 'A', 'Y']);
+
+      final failure = await _failureOf(
+        () => expectTraversable(
+          tester,
+          expectedOrder: ['A', 'B', 'C', 'X', 'Y'],
+        ),
+      );
+      expect(failure?.message, contains("page's last stop"));
+      handle.dispose();
+    });
+
     testWidgets('starts from the page when a control has focus', (
       tester,
     ) async {

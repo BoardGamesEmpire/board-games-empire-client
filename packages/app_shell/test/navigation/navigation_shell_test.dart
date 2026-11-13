@@ -452,6 +452,24 @@ void main() {
       expect(shell.location, '/collection');
     });
 
+    // Home's See all and Collection's Browse push Games over the page they
+    // are on. Picking Games there is still a go: it replaces the stack, and
+    // the pushed copy's query goes with it.
+    testWidgets('picking a destination from a pushed copy of its own screen '
+        'replaces the stack', (tester) async {
+      final shell = await _pump(tester);
+      await shell.push('/games?sort=newest');
+      expect(shell.router.canPop(), isTrue);
+      expect(find.byType(BackButton), findsOneWidget);
+
+      await tester.tap(_destination('games'));
+      await tester.pumpAndSettle();
+
+      expect(shell.router.state.uri.toString(), '/games');
+      expect(shell.router.canPop(), isFalse);
+      expect(find.byType(BackButton), findsNothing);
+    });
+
     testWidgets('a destination picked in the drawer goes there once the '
         'drawer has closed', (tester) async {
       final shell = await _pump(tester, at: '/settings');
@@ -553,6 +571,32 @@ void main() {
       // With the drawer closed, Back pops the page.
       expect(await shell.back(), isTrue);
       expect(shell.location, '/collection');
+    });
+
+    // The pick has closed the drawer already, so Back while it closes reads
+    // as "never mind": the pick is dropped, and Back does nothing else.
+    testWidgets('Back while a pick waits for the drawer to go cancels the '
+        'pick', (tester) async {
+      final shell = await _pump(tester, at: '/collection');
+      await shell.push('/collection/1');
+      await shell.openMenu();
+
+      await tester.tap(_entry('settings'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+
+      expect(await shell.back(), isTrue);
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.location, '/collection/1');
+      expect(shell.runs, isEmpty);
+
+      // The next pick is taken.
+      await shell.openMenu();
+      await tester.tap(_entry('settings'));
+      await tester.pumpAndSettle();
+      expect(shell.runs, ['settings']);
+      expect(shell.location, '/settings');
     });
 
     testWidgets("Back on a destination's own screen goes home", (

@@ -26,11 +26,12 @@ enum _Chrome { none, bar, rail }
 /// plays in full (#643). A destructive entry, sign out, runs at once.
 ///
 /// Picking a destination is a `go` to its location, which replaces the
-/// stack, unless the location already is that destination's own.
+/// stack, unless that destination's own screen is already the only page.
 ///
-/// System Back closes an open drawer first. On a destination's own screen,
-/// other than Home, with nothing beneath it, it goes home. Anything else is
-/// the router's, and so is everything while [deferBack] says so.
+/// System Back closes an open drawer first, and drops a pick still waiting
+/// for the drawer to go. On a destination's own screen, other than Home,
+/// with nothing beneath it, it goes home. Anything else is the router's,
+/// and so is everything while [deferBack] says so.
 class NavigationShell extends StatefulWidget {
   const NavigationShell({
     required this.destinations,
@@ -118,10 +119,14 @@ class _NavigationShellState extends State<NavigationShell> {
 
   void _openDrawer() => _scaffold.currentState?.openDrawer();
 
-  /// Goes to [destination], unless the location already is its own.
+  /// Goes to [destination], unless its own screen is already the only page.
+  ///
+  /// A pushed copy of it, as home's See all pushes Games, still goes: the
+  /// pick replaces the stack beneath it (#414).
   void _go(NavDestination destination) {
-    if (widget.location == destination.location) return;
-    GoRouter.of(context).go(destination.location);
+    final router = GoRouter.of(context);
+    if (widget.location == destination.location && !router.canPop()) return;
+    router.go(destination.location);
   }
 
   /// Closes the drawer for a pick, and runs [run] once it has gone, or at
@@ -162,6 +167,12 @@ class _NavigationShellState extends State<NavigationShell> {
 
   Future<bool> _back() async {
     if (widget.deferBack?.call() ?? false) return false;
+    // The pick has closed the drawer already, so Back while it closes reads
+    // as "never mind": the pick is dropped, and Back does nothing else.
+    if (_afterClose != null) {
+      _afterClose = null;
+      return true;
+    }
     final scaffold = _scaffold.currentState;
     if (scaffold != null && scaffold.isDrawerOpen) {
       scaffold.closeDrawer();
