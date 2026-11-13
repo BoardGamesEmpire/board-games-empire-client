@@ -629,6 +629,60 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
+  Future<List<GameOfferResult>> offerGames(
+    String eventId,
+    String attendeeId, {
+    required List<String> collectionIds,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+    _checkId(attendeeId, name: 'attendeeId');
+    const most = EventRemoteDataSource.maxOfferBatch;
+    if (collectionIds.isEmpty || collectionIds.length > most) {
+      throw ArgumentError.value(
+        collectionIds.length,
+        'collectionIds',
+        'must hold 1 to $most ids',
+      );
+    }
+    for (final id in collectionIds) {
+      _checkId(id, name: 'collectionIds');
+    }
+    if (collectionIds.toSet().length != collectionIds.length) {
+      throw ArgumentError.value(
+        collectionIds,
+        'collectionIds',
+        'must not repeat an id',
+      );
+    }
+
+    const action = 'Offer games';
+    const failures = _EventFailures(_Route.write);
+    final result = await sendForJson(
+      () => _dio.post<String>(
+        '${_offeredGamesPath(eventId, attendeeId)}/batch',
+        options: _plainBody,
+        data: {
+          'items': [
+            for (final id in collectionIds) {'collectionId': id},
+          ],
+        },
+      ),
+      action: action,
+      family: failures,
+    );
+    return parseRemote(
+      failures,
+      () => _mapObjects(
+        result.body['results'],
+        field: 'results',
+        item: _mapGameOfferResult,
+      ),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
   Future<void> takeBackGame(
     String eventId,
     String attendeeId,
@@ -1186,6 +1240,34 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static List<EventOccurrence> _mapOccurrences(Object? raw) =>
       _mapObjects(raw, field: 'occurrences', item: _mapOccurrence);
 
+  /// Maps one result of a batch offer (#851).
+  ///
+  /// `added` and `alreadyOffered` are offered. Their `entry` row goes unread:
+  /// the caller reads the pool again after a run, and a row this client
+  /// can't read would otherwise fail a batch the server has written. Any
+  /// other outcome is a refusal, so an outcome a newer server adds is not a
+  /// failure of the whole answer. Its reason is [GameOfferRefusal.unknown]
+  /// when missing or not known, and its message is empty when missing.
+  static GameOfferResult _mapGameOfferResult(Map<String, dynamic> json) {
+    final collectionId = json['collectionId'] as String;
+    final outcome = json['outcome'];
+    if (outcome == 'added' || outcome == 'alreadyOffered') {
+      return GameOfferResult.offered(
+        collectionId: collectionId,
+        alreadyOffered: outcome == 'alreadyOffered',
+      );
+    }
+    final reason = json['reason'];
+    final message = json['message'];
+    return GameOfferResult.refused(
+      collectionId: collectionId,
+      reason: reason is String
+          ? GameOfferRefusal.fromWire(reason)
+          : GameOfferRefusal.unknown,
+      message: message is String ? message : '',
+    );
+  }
+
   static EventOccurrence _mapOccurrence(Map<String, dynamic> json) =>
       EventOccurrence(
         id: json['id'] as String,
@@ -1466,9 +1548,9 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   /// Maps each object in the list [raw]. A list that is missing or of the
-  /// wrong type throws, because reading it as empty would pass a payload this
-  /// client failed to read off as an event with none of them. [field] names it
-  /// in the error.
+  /// wrong type throws, because reading it as empty would pass off a payload
+  /// this client failed to read as one with none of them. [field] names it in
+  /// the error.
   static List<T> _mapObjects<T>(
     Object? raw, {
     required String field,
@@ -1477,8 +1559,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     if (raw is! List) {
       throw FormatException(
         raw == null
-            ? 'event is missing its "$field" list'
-            : 'event "$field" is ${raw.runtimeType}, expected a list',
+            ? '"$field" is missing, expected a list'
+            : '"$field" is ${raw.runtimeType}, expected a list',
       );
     }
     return raw
@@ -1751,11 +1833,13 @@ enum _Route {
   /// `DELETE /api/events/:id`, the event status writes (`cancel`, `reopen`,
   /// `archive`, `unarchive`), the date routes under it, a vote included, and
   /// the nomination writes (vote, withdraw, approve, reject and resolve, #517
-  /// and #518). Its 403 refuses that write, its 404 says the event, date or
+  /// and #518), and the batch offer, `POST /api/events/:id/attendees/:aid/games/batch`
+  /// (#851). Its 403 refuses that write, its 404 says the event, date or
   /// nomination is gone, and its enveloped 400 with one message is a conflict
   /// with the row as it stands (#506), for a status write the event's status
   /// and for a nomination write the nomination's. The event delete is never
-  /// answered 400.
+  /// answered 400. The batch offer's 400 is always the validation pipe's, with
+  /// a list of messages, so it is permanent (#851).
   write,
 
   /// `POST /api/events/:id/attendees` (#510). It maps as [write] does, and

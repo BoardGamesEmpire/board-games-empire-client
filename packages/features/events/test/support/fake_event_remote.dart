@@ -61,6 +61,14 @@ typedef OfferGameRequest = ({
   String collectionId,
 });
 
+/// What a batch offer sent (#851): the event, the attendee and the collection
+/// entries, in order.
+typedef OfferGamesRequest = ({
+  String eventId,
+  String attendeeId,
+  List<String> collectionIds,
+});
+
 /// What a take-back sent (#516): the event, the attendee and the offered game.
 typedef TakeBackGameRequest = ({
   String eventId,
@@ -135,6 +143,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.removed = _noRemove,
     this.pool = _noPool,
     this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -163,6 +172,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.removed = _noRemove,
     this.pool = _noPool,
     this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -195,6 +205,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.removed = _noRemove,
     this.pool = _noPool,
     this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -232,6 +243,9 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noOffer(OfferGameRequest request) =>
       throw UnimplementedError('offerGame is not faked');
+
+  static Never _noOfferBatch(OfferGamesRequest request) =>
+      throw UnimplementedError('offerGames is not faked');
 
   static Never _noTakeBack(TakeBackGameRequest request) =>
       throw UnimplementedError('takeBackGame is not faked');
@@ -342,6 +356,14 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each offer, in order, recorded before it is answered.
   final List<OfferGameRequest> offers = [];
+
+  /// Answers each batch offer with its results, which throws unless a test
+  /// supplies one (#851).
+  final FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)
+  offeredBatch;
+
+  /// Each batch offer, in order, recorded before it is answered.
+  final List<OfferGamesRequest> offerBatches = [];
 
   /// Answers each take-back, which throws unless a test supplies one (#516).
   final FutureOr<void> Function(TakeBackGameRequest request) takenBack;
@@ -713,6 +735,21 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     offers.add(request);
     return offered(request);
+  }
+
+  @override
+  Future<List<GameOfferResult>> offerGames(
+    String eventId,
+    String attendeeId, {
+    required List<String> collectionIds,
+  }) async {
+    final request = (
+      eventId: eventId,
+      attendeeId: attendeeId,
+      collectionIds: collectionIds,
+    );
+    offerBatches.add(request);
+    return offeredBatch(request);
   }
 
   @override

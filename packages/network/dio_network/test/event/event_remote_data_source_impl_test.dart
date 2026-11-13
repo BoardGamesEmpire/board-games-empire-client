@@ -3827,6 +3827,247 @@ void main() {
       });
     });
 
+    group('offerGames', () {
+      Future<List<GameOfferResult>> offer(
+        EventRemoteDataSource remote, [
+        List<String> ids = const ['c1', 'c2', 'c3'],
+      ]) => remote.offerGames('e1', 'a 1', collectionIds: ids);
+
+      String results(List<Map<String, dynamic>> results) =>
+          jsonEncode({'results': results});
+
+      test('sends one item per id and reads both result shapes', () async {
+        final remote = answering(
+          results([
+            {
+              'collectionId': 'c1',
+              'outcome': 'added',
+              'entry': _offeredRow(collectionId: 'c1'),
+            },
+            {
+              'collectionId': 'c2',
+              'outcome': 'alreadyOffered',
+              'entry': _offeredRow(collectionId: 'c2'),
+            },
+            {
+              'collectionId': 'c3',
+              'outcome': 'refused',
+              'reason': 'removedFromCollection',
+              'message': 'No longer in the collection',
+            },
+          ]),
+        );
+
+        final answer = await offer(remote);
+
+        expect(adapter.sent.single.method, 'POST');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/attendees/a%201/games/batch',
+        );
+        expect(adapter.sent.single.body, {
+          'items': [
+            {'collectionId': 'c1'},
+            {'collectionId': 'c2'},
+            {'collectionId': 'c3'},
+          ],
+        });
+        expect(answer, [
+          const GameOfferResult.offered(
+            collectionId: 'c1',
+            alreadyOffered: false,
+          ),
+          const GameOfferResult.offered(
+            collectionId: 'c2',
+            alreadyOffered: true,
+          ),
+          const GameOfferResult.refused(
+            collectionId: 'c3',
+            reason: GameOfferRefusal.removedFromCollection,
+            message: 'No longer in the collection',
+          ),
+        ]);
+      });
+
+      test('an unknown outcome or reason is a refusal', () async {
+        final remote = answering(
+          results([
+            {
+              'collectionId': 'c1',
+              'outcome': 'refused',
+              'reason': 'somethingNew',
+              'message': 'New rule',
+            },
+            {'collectionId': 'c2', 'outcome': 'teleported', 'message': 'Hm'},
+            {'collectionId': 'c3', 'outcome': 'teleported'},
+          ]),
+        );
+
+        final answer = await offer(remote);
+
+        expect(answer, const [
+          GameOfferResult.refused(
+            collectionId: 'c1',
+            reason: GameOfferRefusal.unknown,
+            message: 'New rule',
+          ),
+          GameOfferResult.refused(
+            collectionId: 'c2',
+            reason: GameOfferRefusal.unknown,
+            message: 'Hm',
+          ),
+          GameOfferResult.refused(
+            collectionId: 'c3',
+            reason: GameOfferRefusal.unknown,
+            message: '',
+          ),
+        ]);
+      });
+
+      test(
+        'an offered result reads without its entry, readable or not',
+        () async {
+          final remote = answering(
+            results([
+              {'collectionId': 'c1', 'outcome': 'added'},
+              {
+                'collectionId': 'c2',
+                'outcome': 'alreadyOffered',
+                'entry': {'id': 7},
+              },
+            ]),
+          );
+
+          expect(await offer(remote, ['c1', 'c2']), const [
+            GameOfferResult.offered(collectionId: 'c1', alreadyOffered: false),
+            GameOfferResult.offered(collectionId: 'c2', alreadyOffered: true),
+          ]);
+        },
+      );
+
+      test('a 200 with no results list is permanent, and says what it is '
+          'missing', () async {
+        for (final body in [
+          jsonEncode({'other': <Object?>[]}),
+          jsonEncode({'results': 'none'}),
+        ]) {
+          final remote = answering(body);
+
+          await expectLater(
+            offer(remote, ['c1']),
+            throwsA(
+              isA<EventRemotePermanentException>().having(
+                (e) => e.message,
+                'message',
+                allOf(contains('"results"'), isNot(contains('event'))),
+              ),
+            ),
+            reason: body,
+          );
+        }
+      });
+
+      test('101 ids throw before any request', () async {
+        final remote = answering(results([]));
+
+        expect(
+          () => offer(remote, [for (var i = 0; i < 101; i++) 'c$i']),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('a repeated id throws', () async {
+        final remote = answering(results([]));
+
+        expect(() => offer(remote, ['c1', 'c1']), throwsArgumentError);
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('an empty id throws', () async {
+        final remote = answering(results([]));
+
+        expect(() => offer(remote, ['c1', '']), throwsArgumentError);
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('no ids throws', () async {
+        final remote = answering(results([]));
+
+        expect(() => offer(remote, const []), throwsArgumentError);
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('403 is refused', () async {
+        final remote = answering(
+          _envelope(403, 'Forbidden', 'Not your attendee'),
+          status: 403,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventWriteRefusedException>()),
+        );
+      });
+
+      test('404 is not found', () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'No such attendee'),
+          status: 404,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+      });
+
+      test('400 is permanent', () async {
+        final remote = answering(
+          jsonEncode({
+            'statusCode': 400,
+            'error': 'Bad Request',
+            'message': ['items must contain no more than 100 elements'],
+          }),
+          status: 400,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+
+      test('a retryable 409 is transient', () async {
+        final remote = answering(_deadlock(), status: 409);
+
+        await expectLater(
+          offer(remote),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+      });
+
+      test('an enveloped 409 with one message is permanent', () async {
+        // The batch offer shares the write route, which claims no 409 of its
+        // own, so the shared default reads it.
+        final remote = answering(
+          _envelope(409, 'Conflict', 'Something collided'),
+          status: 409,
+        );
+
+        await expectLater(
+          offer(remote),
+          throwsA(
+            isA<EventRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+    });
+
     group('takeBackGame', () {
       Future<void> takeBack(EventRemoteDataSource remote) =>
           remote.takeBackGame('e1', 'a1', 'og 1');

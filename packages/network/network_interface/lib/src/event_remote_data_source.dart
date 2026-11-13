@@ -32,8 +32,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// (#507). [updateAttendeeStatus] answers an invitation (#508), and
 /// [addAttendee] and [removeAttendee] change the roster (#510).
 /// [fetchGamesPool] reads the games an event's attendees have offered to
-/// bring, [offerGame] offers one from an attendee's collection and
-/// [takeBackGame] takes one back (#516). [fetchNominations] and
+/// bring, [offerGame] offers one from an attendee's collection,
+/// [offerGames] offers up to [maxOfferBatch] at once and [takeBackGame] takes
+/// one back (#516, #851). [fetchNominations] and
 /// [fetchNomination] read the nominations, [nominate] makes one,
 /// [castVote] votes on one and [withdrawNomination] withdraws one (#517).
 /// [approveNomination], [rejectNomination] and [resolveNomination] are the
@@ -71,6 +72,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [removeAttendee] | `DELETE /api/events/:id/attendees/:aid` | `{ message, attendee }` |
 /// | [fetchGamesPool] | `GET /api/events/:id/offered-games`, paged to the end | `{ offeredGames, pagination }` |
 /// | [offerGame] | `POST /api/events/:id/attendees/:aid/games` | `{ message, entry }` |
+/// | [offerGames] | `POST /api/events/:id/attendees/:aid/games/batch` | `{ results }` |
 /// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
 /// | [fetchNominations] | `GET /api/events/:id/nominations`, paged to the end | `{ nominations, pagination }` |
 /// | [fetchNomination] | `GET /api/events/:id/nominations/:nid` | `{ nomination }` |
@@ -158,10 +160,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   and from [offerGame], [takeBackGame], [nominate], [castVote],
-///   [withdrawNomination], [approveNomination], [rejectNomination] and
-///   [resolveNomination], which says the API refused that write to an
-///   existing event (below).
+///   and from [offerGame], [offerGames], [takeBackGame], [nominate],
+///   [castVote], [withdrawNomination], [approveNomination],
+///   [rejectNomination] and [resolveNomination], which says the API refused
+///   that write to an existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
 ///   message, from a write to an existing event's dates or a vote on one
 ///   (below), or from [offerGame], [nominate], [castVote],
@@ -264,8 +266,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// unwrapped: an out-of-range page or limit, an empty id, an update that
 /// changes nothing, a cancel reason past [maxCancelReasonLength], a vote of
 /// [AvailabilityResponse.unknown], a pool read narrowed to more than
-/// [maxPoolAttendeeIds] attendees, or a create that could not be sent (what
-/// [createEvent] never sends).
+/// [maxPoolAttendeeIds] attendees, an offer of no games, of more than
+/// [maxOfferBatch] or of one entry twice, or a create that could not be sent
+/// (what [createEvent] never sends).
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
   /// a 400, not clamped.
@@ -283,6 +286,10 @@ abstract class EventRemoteDataSource {
   /// The server's ceiling on the attendee ids [fetchGamesPool] narrows to. A
   /// longer list is a 400, which is permanent.
   static const int maxPoolAttendeeIds = 100;
+
+  /// The server's ceiling on the collection entries [offerGames] sends in one
+  /// request. A longer list is a 400, which is permanent.
+  static const int maxOfferBatch = 100;
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
@@ -665,6 +672,43 @@ abstract class EventRemoteDataSource {
     String eventId,
     String attendeeId, {
     required String collectionId,
+  });
+
+  /// `POST /api/events/:eventId/attendees/:attendeeId/games/batch` with
+  /// `{ items: [{ collectionId }, ...] }`: offers the games in the attendee's
+  /// collection entries [collectionIds] for the event in one request (#851).
+  /// Answers 200 `{ results }`, one item per id and in the order sent, and an
+  /// entry's own refusal is a result, not a failure of the request.
+  ///
+  /// A result is [GameOffered] for an entry now on the pool, with
+  /// `alreadyOffered` set when it already was, and [GameOfferRefused] for one
+  /// the server did not offer, with its reason and its message. An outcome or
+  /// a reason this client does not know reads as a [GameOfferRefused] with
+  /// [GameOfferRefusal.unknown]. An offered result's `entry` row is not read,
+  /// so one this client can't read doesn't fail a batch the server has
+  /// written: read the pool again for the rows. Expansions are not offered
+  /// along with their base, so the answer holds no item the caller did not
+  /// name.
+  ///
+  /// A caller must not assume the answer matches what it sent: match each
+  /// result to its [GameOfferResult.collectionId], and treat an id with no
+  /// result as not offered.
+  ///
+  /// A 403 carrying the envelope is [EventWriteRefusedException]: the caller
+  /// may not offer for this attendee. A 404 carrying it is
+  /// [EventRemoteNotFoundException]: the event or the attendee is gone. A 400
+  /// is [EventRemotePermanentException]: the server's limits on the body
+  /// (empty, too long, a repeated id) are checked by the validation pipe,
+  /// whose message lists each value it refused, and this client never sends
+  /// a body it would refuse.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, an empty
+  /// [collectionIds], more than [maxOfferBatch] of them, or a repeated one,
+  /// and otherwise [EventRemoteException] per the class doc.
+  Future<List<GameOfferResult>> offerGames(
+    String eventId,
+    String attendeeId, {
+    required List<String> collectionIds,
   });
 
   /// `DELETE /api/events/:eventId/attendees/:attendeeId/games/:offeredGameId`:
