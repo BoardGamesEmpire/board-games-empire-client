@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
+import 'package:bge_test_support/session.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,7 +122,8 @@ void main() {
   /// Pumps home with a cache holding one entry. [withRepository] false is a
   /// signed-out session, where the user tier is gone. [failedPass] publishes
   /// a status whose last pass failed, which is where the banner and its
-  /// retry live.
+  /// retry live. [lease] is registered as the user session's lease, as
+  /// `UserScopeHost` registers one in every user-session scope (#694).
   Future<void> pumpHome(
     WidgetTester tester, {
     bool withRepository = true,
@@ -132,6 +134,8 @@ void main() {
     GamesRemoteDataSource? games,
     bool withSender = false,
     ListLayoutRepository? layouts,
+    SessionLease? lease,
+    UserSessionScope? userSessionScope,
   }) async {
     final repository = _MockGameCollectionRepository();
     when(repository.watchCollectionListItems).thenAnswer(
@@ -152,20 +156,23 @@ void main() {
       addTearDown(status.close);
     }
 
-    when(() => cubit.activeServerScope).thenReturn(
-      FakeActiveServerScope(
-        buildActiveServer(
-          FakeAuthRepository(initialSession: testAuthResponse()),
-          gameCollectionRepository: withRepository ? repository : null,
-          syncOperationSender: withSender ? _MockSyncOperationSender() : null,
-          gameCollectionHydrationStatus: status,
-          gameCollectionRefresher: refresher,
-          sessionRehydrator: rehydrator,
-          gamesRemoteDataSource: games,
-          listLayoutRepository: layouts,
-        ),
-      ),
+    final active = buildActiveServer(
+      FakeAuthRepository(initialSession: testAuthResponse()),
+      gameCollectionRepository: withRepository ? repository : null,
+      syncOperationSender: withSender ? _MockSyncOperationSender() : null,
+      gameCollectionHydrationStatus: status,
+      gameCollectionRefresher: refresher,
+      sessionRehydrator: rehydrator,
+      gamesRemoteDataSource: games,
+      listLayoutRepository: layouts,
+      userSessionScope: userSessionScope,
     );
+    if (lease != null) {
+      active.container.registerSingleton<SessionLease>(lease);
+    }
+    when(
+      () => cubit.activeServerScope,
+    ).thenReturn(FakeActiveServerScope(active));
     whenListen(
       cubit,
       const Stream<AppBootstrapState>.empty(),
@@ -433,6 +440,56 @@ void main() {
       expect(screen.hydration, isNull);
     });
 
+    // #694: a late outcome asks the lease of the session the screen's
+    // repository came from. Every feature test hands the screen a lease
+    // directly, so only this file can see the shell pass the registered one.
+    testWidgets("the entry gets the user session's lease", (tester) async {
+      final lease = FakeSessionLease();
+      await pumpHome(tester, withSender: true, lease: lease);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.session, same(lease));
+    });
+
+    testWidgets('a container with no lease gives the entry the unscoped one', (
+      tester,
+    ) async {
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.session, isA<UnscopedSessionLease>());
+    });
+
+    // A composition that hosts user sessions but has no lease registered
+    // has no session open: a wiring gap must silence late outcomes, never
+    // read as live and say them to the next account.
+    testWidgets('a container that hosts sessions but has no lease gives the '
+        'entry an ended one', (tester) async {
+      await pumpHome(
+        tester,
+        withSender: true,
+        userSessionScope: _NoOpUserSessionScope(),
+      );
+      await openTheList(tester);
+      await tester.tap(find.byKey(GameCollectionListScreen.rowKey('e-1')));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CollectionEntryScreen>(
+        find.byType(CollectionEntryScreen),
+      );
+      expect(screen.session.isLive, isFalse);
+    });
+
     testWidgets('without a sender rows stay inert', (tester) async {
       await pumpHome(tester);
       await openTheList(tester);
@@ -560,4 +617,16 @@ void main() {
       }
     });
   });
+}
+
+/// A user-session scope that installs nothing and registers no lease.
+class _NoOpUserSessionScope implements UserSessionScope {
+  @override
+  String? activeUserId;
+
+  @override
+  Future<void> activate(String userId) async => activeUserId = userId;
+
+  @override
+  Future<void> deactivate() async => activeUserId = null;
 }

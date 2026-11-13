@@ -1733,6 +1733,7 @@ class _BgeAppState extends State<BgeApp> {
       key: ValueKey<String>(entryId),
       repository: container.get<GameCollectionRepository>(),
       sender: container.get<SyncOperationSender>(),
+      session: _sessionLease(container),
       entryId: entryId,
       hydration: container.isRegistered<GameCollectionHydrationStatus>()
           ? container.get<GameCollectionHydrationStatus>().watch()
@@ -1793,6 +1794,7 @@ class _BgeAppState extends State<BgeApp> {
             context,
             repository: current.get<GameCollectionRepository>(),
             sender: current.get<SyncOperationSender>(),
+            session: _sessionLease(current),
             game: game,
             options: options,
             platformGameId: platformGameId,
@@ -1830,6 +1832,25 @@ class _BgeAppState extends State<BgeApp> {
   static bool _canWriteCollection(DependencyContainer container) =>
       container.isRegistered<GameCollectionRepository>() &&
       container.isRegistered<SyncOperationSender>();
+
+  /// The lease of [container]'s user session (#694): what a late outcome asks
+  /// before it speaks.
+  ///
+  /// The registered [SessionLease]. Without one, a composition that hosts
+  /// user sessions (it registers a [UserSessionScope]) has no session open,
+  /// so the lease is already ended. Reading that as live would let a late
+  /// outcome reach the next account, and a wiring gap that drops the lease
+  /// should silence a screen's bars, where a test sees it, not leak them.
+  /// Only a composition with no user-session scope at all (shell tests) gets
+  /// [UnscopedSessionLease]: there is no session there to end.
+  static SessionLease _sessionLease(DependencyContainer container) {
+    if (container.isRegistered<SessionLease>()) {
+      return container.get<SessionLease>();
+    }
+    return container.isRegistered<UserSessionScope>()
+        ? const _NoSessionLease()
+        : const UnscopedSessionLease();
+  }
 
   /// The games cache (#42): the user-session [GameRepository], or null where
   /// no user session is active. The catalog screens read the server without
@@ -3733,6 +3754,16 @@ class _AuthScopeState extends State<_AuthScope> {
       );
     }
   }
+}
+
+/// The lease `_BgeAppState._sessionLease` hands a screen built while no user
+/// session is open in a composition that hosts them: ended from the start
+/// (#694).
+final class _NoSessionLease implements SessionLease {
+  const _NoSessionLease();
+
+  @override
+  bool get isLive => false;
 }
 
 /// Whose session home is built for, and whether a switch to another user is

@@ -12,6 +12,7 @@ import 'package:game_collection/src/entry/remove_from_collection_dialog.dart';
 import 'package:game_collection/src/medium_label.dart';
 import 'package:game_collection/src/sync/collection_sync.dart';
 import 'package:hydration/hydration.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
@@ -45,8 +46,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## What it says
 ///
 /// Every outcome of an edit or a removal is said here, in a SnackBar on the
-/// app's messenger, since the edit sheet can be dismissed while its save is
-/// under way:
+/// messenger above the route, since the edit sheet can be dismissed while
+/// its save is under way:
 ///
 /// - A save says whether the server has it, it waits to sync, or the server
 ///   refused it. A save that changed nothing says nothing.
@@ -62,8 +63,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The screen holds its bloc, not a `BlocProvider`. One left while a save or
 /// a removal is under way keeps the bloc until it settles, says the outcome
 /// over the page the user went to (a failure too), and then closes it, as
-/// #45's dismissed add does. A removal that settles after the user left
-/// closes nothing.
+/// #45's dismissed add does, through `closeWhenSettled`. One that settles
+/// while the route is still on its way out is said the same way, and
+/// nothing else is done. No outcome is said once [session] has ended,
+/// whether the screen is gone or still leaving: it is no news to whoever
+/// signs in next (#694). The bloc closes either way. A removal that settles
+/// after the user left closes nothing.
 ///
 /// ## Removed elsewhere
 ///
@@ -76,6 +81,7 @@ class CollectionEntryScreen extends StatefulWidget {
   const CollectionEntryScreen({
     required this.repository,
     required this.sender,
+    required this.session,
     required this.entryId,
     this.hydration,
     this.onOpenGame,
@@ -113,6 +119,11 @@ class CollectionEntryScreen extends StatefulWidget {
   /// Sends an edit or a removal at once, as every write that queues one does.
   final SyncOperationSender sender;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [repository] and [sender]. An outcome that settles after the screen is
+  /// gone is said only while it is live (#694).
+  final SessionLease session;
+
   /// The entry shown.
   final String entryId;
 
@@ -133,10 +144,17 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
   /// it ended. See [dispose].
   late final CollectionEntryBloc _bloc;
 
-  /// The app's messenger and this screen's strings, captured while the
-  /// screen is mounted: an outcome that settles after it is gone is said
-  /// with them, and [dispose] can't look them up.
-  late ScaffoldMessengerState _messenger;
+  /// The lease [widget] had when the bloc was made, beside the repository it
+  /// came from: [dispose] can't trust a later build's.
+  late final SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the screen is mounted: an
+  /// outcome that settles after it is gone is said with them, and [dispose]
+  /// can't look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
   late GameCollectionLocalizations _l10n;
 
   /// Whether this screen's edit sheet is open: from its opening until it
@@ -147,6 +165,7 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
   @override
   void initState() {
     super.initState();
+    _session = widget.session;
     _bloc = CollectionEntryBloc(
       repository: widget.repository,
       sender: widget.sender,
@@ -158,46 +177,31 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _messenger = ScaffoldMessenger.of(context);
+    _messenger.attach(context);
     _l10n = GameCollectionLocalizations.of(context);
   }
 
   @override
   void dispose() {
-    // Left with a save or a removal under way: it settles, is said, and the
-    // bloc closes then. Otherwise there is nothing left to say.
-    if (_underWay(_bloc.state.action)) {
-      unawaited(_sayWhenSettled(_bloc));
-    } else {
-      unawaited(_bloc.close());
-    }
+    // Left with a save or a removal under way: it settles, is said while the
+    // session lives, and the bloc closes then. Otherwise there is nothing
+    // left to say.
+    unawaited(
+      closeWhenSettled<CollectionEntryState>(
+        current: _bloc.state,
+        states: _bloc.stream,
+        underWay: (state) => _underWay(state.action),
+        outcomeOf: _outcomeOf,
+        say: _messenger.say,
+        close: _bloc.close,
+      ),
+    );
     super.dispose();
   }
 
   static bool _underWay(CollectionEntryAction action) =>
       action == CollectionEntryAction.saving ||
       action == CollectionEntryAction.removing;
-
-  /// Waits for the save or removal under way, says how it ended over
-  /// whatever page is showing now, and closes [bloc]. Pops nothing: the
-  /// screen is already gone.
-  Future<void> _sayWhenSettled(CollectionEntryBloc bloc) async {
-    try {
-      _say(await bloc.stream.firstWhere((state) => !_underWay(state.action)));
-    } finally {
-      await bloc.close();
-    }
-  }
-
-  /// Says [state]'s outcome in a SnackBar on the app's messenger, if it has
-  /// one to say. The messenger is the app's, so what it shows outlives this
-  /// route and lands on the page beneath. Both the listener and [dispose]'s
-  /// late outcome say it here.
-  void _say(CollectionEntryState state) {
-    final message = _outcomeOf(state);
-    if (message == null || !_messenger.mounted) return;
-    _messenger.replaceSnackBar(message);
-  }
 
   String? _outcomeOf(CollectionEntryState state) {
     final l10n = _l10n;
@@ -255,6 +259,14 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
   }
 
   void _onAction(BuildContext context, CollectionEntryState state) {
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so what settles now is said as it would be once the screen had gone,
+    // and nothing else is done (#464). By [dispose] it has settled, so
+    // `closeWhenSettled` says nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      _messenger.say(_outcomeOf(state));
+      return;
+    }
     switch (state.action) {
       case CollectionEntryAction.idle ||
           CollectionEntryAction.saving ||
@@ -264,22 +276,21 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
         // The open sheet shows it, and clears it when it next opens.
         return;
       case CollectionEntryAction.removed:
-        // Only from the top. The route stays mounted through its exit, and
-        // a pop takes whichever route is on top, so a screen already leaving
-        // or covered would pop another.
+        // Only from the top. A pop takes whichever route is on top, so a
+        // covered screen would pop another.
         if (ModalRoute.isCurrentOf(context) ?? true) {
           Navigator.of(context).pop();
-          _say(state);
+          _messenger.say(_outcomeOf(state));
           return;
         }
-        _say(state);
-        // Covered, or already leaving: it stays, so nothing may stay held. The
-        // bloc shows the entry gone once its row is.
+        _messenger.say(_outcomeOf(state));
+        // Covered: it stays, so nothing may stay held. The bloc shows the
+        // entry gone once its row is.
         _bloc.add(const CollectionEntryActionCleared());
       case CollectionEntryAction.saved ||
           CollectionEntryAction.saveFailed ||
           CollectionEntryAction.removeFailed:
-        _say(state);
+        _messenger.say(_outcomeOf(state));
         // Each outcome is said once. Cleared, the next one is a change the
         // listener sees, even when it equals this one.
         _bloc.add(const CollectionEntryActionCleared());
