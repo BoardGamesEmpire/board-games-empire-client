@@ -114,11 +114,15 @@ void main() {
 
   /// A screen with a button that opens the sheet, over a bloc whose row is
   /// already in.
+  ///
+  /// With [nested], that screen is on a navigator nested in the root one,
+  /// as a page under the navigation shell is (#414).
   Future<void> open(
     WidgetTester tester, {
     GameCollectionListItem? item,
     TextScaler textScaler = TextScaler.noScaling,
     bool reopen = false,
+    bool nested = false,
   }) async {
     if (!reopen) {
       bloc = CollectionEntryBloc(
@@ -132,6 +136,15 @@ void main() {
       await tester.pump();
       await tester.pump();
     }
+    final opener = Scaffold(
+      body: Builder(
+        builder: (context) => TextButton(
+          key: _openKey,
+          onPressed: () => showEditCollectionEntrySheet(context, bloc: bloc),
+          child: const Text('Open'),
+        ),
+      ),
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
@@ -142,16 +155,12 @@ void main() {
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
           child: child!,
         ),
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              key: _openKey,
-              onPressed: () =>
-                  showEditCollectionEntrySheet(context, bloc: bloc),
-              child: const Text('Open'),
-            ),
-          ),
-        ),
+        home: nested
+            ? Navigator(
+                onGenerateRoute: (_) =>
+                    MaterialPageRoute<void>(builder: (_) => opener),
+              )
+            : opener,
       ),
     );
     await tester.tap(find.byKey(_openKey));
@@ -332,6 +341,29 @@ void main() {
     verify(() => repository.updateCollectionEntry(id: 'gc_1', quantity: 3))
         .called(1);
     expect(find.byKey(EditCollectionEntrySheet.sheetKey), findsNothing);
+  });
+
+  // #414: a page under the navigation shell is on a nested navigator. The
+  // sheet goes on the root one, so its barrier covers the shell's bar too.
+  testWidgets('opened from a nested navigator, it goes on the root one and '
+      'still saves through the bloc it was given', (tester) async {
+    await open(tester, nested: true);
+
+    final sheet = tester.element(find.byKey(EditCollectionEntrySheet.sheetKey));
+    final opener = tester.element(find.byKey(_openKey));
+    expect(
+      Navigator.of(sheet),
+      same(Navigator.of(opener, rootNavigator: true)),
+    );
+    expect(Navigator.of(sheet), isNot(same(Navigator.of(opener))));
+
+    await type(tester, EditCollectionEntrySheet.quantityKey, '3');
+    await submit(tester);
+
+    verify(() => repository.updateCollectionEntry(id: 'gc_1', quantity: 3))
+        .called(1);
+    expect(find.byKey(EditCollectionEntrySheet.sheetKey), findsNothing);
+    expect(find.byKey(_openKey), findsOneWidget);
   });
 
   testWidgets('save with nothing changed calls no update and closes', (
