@@ -156,20 +156,20 @@ void main() {
     });
   });
 
+  final me = attendance(EventParticipationStatus.attending);
+  EventAttendee member(String id) => me.copyWith(id: id, userId: 'u-$id');
+
+  EventDetail detail({List<EventAttendee>? roster, EventAttendee? viewer}) =>
+      EventDetail(
+        snapshot: EventSnapshot(
+          event: item('e').event,
+          occurrences: const [],
+          attendees: roster,
+        ),
+        attendance: viewer,
+      );
+
   group('poolAttendeeIds', () {
-    final me = attendance(EventParticipationStatus.attending);
-    EventAttendee member(String id) => me.copyWith(id: id, userId: 'u-$id');
-
-    EventDetail detail({List<EventAttendee>? roster, EventAttendee? viewer}) =>
-        EventDetail(
-          snapshot: EventSnapshot(
-            event: item('e').event,
-            occurrences: const [],
-            attendees: roster,
-          ),
-          attendance: viewer,
-        );
-
     test("a roster is read whole, in the roster's order", () {
       expect(
         poolAttendeeIds(
@@ -207,6 +207,28 @@ void main() {
       });
       expect(poolNames(detail(viewer: me)), isEmpty);
       expect(poolNames(detail(roster: const [], viewer: me)), isEmpty);
+    });
+  });
+
+  // The ids a read sends (#851): none for everyone's games, unless the
+  // roster says otherwise.
+  group('poolReadIds', () {
+    test('a roster read gives null', () {
+      expect(
+        poolReadIds(detail(roster: [member('att-b'), me], viewer: me)),
+        isNull,
+      );
+    });
+
+    test("a withheld roster gives the viewer's row", () {
+      expect(poolReadIds(detail(roster: const [], viewer: me)), ['att-me']);
+      // Not read yet, as for an event cached from the list.
+      expect(poolReadIds(detail(viewer: me)), ['att-me']);
+    });
+
+    test('neither gives none', () {
+      expect(poolReadIds(detail()), isEmpty);
+      expect(poolReadIds(detail(roster: const [])), isEmpty);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
 import 'package:events/src/detail/event_game_offers.dart';
@@ -6,8 +8,9 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-/// The event and the attendees a read of the pool names.
-typedef _PoolRead = ({String eventId, List<String> attendeeIds});
+/// The event and the attendees a read of the pool names: null for every
+/// attendee's games.
+typedef _PoolRead = ({String eventId, List<String>? attendeeIds});
 
 /// How one pick of an offer run ended.
 enum _Sent {
@@ -31,26 +34,30 @@ enum _Sent {
 /// queue, and nothing is re-sent. The pool is never cached: it lives in
 /// [EventGamesState.games]. The screen asks for a read the first time the
 /// Games tab shows, after each detail read from then on, whenever the
-/// roster's ids it would read for change from those it last asked for, and
-/// when the user retries a failed read. The bloc reads again as a run of
-/// offers ends, however it ended, and as a take-back ends, unless the
-/// take-back failed, which changed nothing the screen can know of. A write
-/// the screen's re-check dropped reads nothing. The event's id and the
-/// roster's attendee ids travel with each request rather than with the
-/// bloc, since a reconcile can move the id while the screen is open (#499).
+/// roster's ids change from those it last asked with, and when the user
+/// retries a failed read. The bloc reads again as a run of offers ends,
+/// however it ended, and as a take-back ends, unless the take-back failed,
+/// which changed nothing the screen can know of. A write the screen's
+/// re-check dropped reads nothing. The event's id and the attendees to read
+/// for travel with each request rather than with the bloc, since a
+/// reconcile can move the id while the screen is open (#499).
 ///
 /// Reads and writes are independent: a read asked for while a write is out
 /// goes ahead under the rules below, and doesn't wait for it.
 ///
 /// ## Reads
 ///
+/// A read is of the event's offered games, every page of them (#851): every
+/// attendee's when the request names no attendees, and otherwise only those
+/// of the attendees it names, as the viewer's own where the roster is
+/// withheld or not read yet.
+///
 /// Each answer to the read, with the load and the games it leaves:
 ///
 /// - 2xx; load: loaded; games: the ones read.
-/// - A 403 on any attendee's games; load: hidden: not shown to this viewer;
-///   games: cleared.
-/// - A 404: the event is gone, or everyone named left it; load: gone: the
-///   screen reads the event, which settles it; games: cleared.
+/// - A 403; load: hidden: not shown to this viewer; games: cleared.
+/// - A 404: the event is gone; load: gone: the screen reads the event, which
+///   settles it; games: cleared.
 /// - A 404 again, on a read that started in gone: the event's read since
 ///   didn't settle it, as on a server without these routes; load: failed;
 ///   games: none. So the screen can offer a retry, and the bloc never
@@ -72,6 +79,12 @@ enum _Sent {
 /// other, for the event and the attendees named last: the write's own, or a
 /// request's that came in while it was out, as when someone joined then. So
 /// a write never reads over a newer roster with the one it started with.
+///
+/// A read that ends gone drops the one marked after it for the same event,
+/// whatever attendees it names. The screen reads the event on a gone and
+/// asks again once that read has ended, and a read before then would start
+/// in gone and, on its own 404, end failed. One marked for another event,
+/// as when a reconcile moved the id (#499), still runs.
 ///
 /// A failed read's [EventGamesState.refreshFailed] stays while the next read
 /// runs, and only a read that ends some other way clears it, as the detail's
@@ -163,11 +176,15 @@ enum _Sent {
 ///
 /// ## Closing
 ///
-/// What closing stops is what the bloc emits, the sends a run has left, and
-/// the read a write would start. A send that is out ends at the server.
-/// Bloc runs a request added in the same turn as [close], and a handler's
-/// emits can come after close has started, so a flag set first in [close]
-/// guards each emit and each send.
+/// Closing cancels the read that is out (#851), so no later page of it goes
+/// out, and a read that throws then is logged as stopped, not failed. A
+/// send that is out ends at the server. Closing also stops what the bloc
+/// emits, the sends a run has left, and the read a write would start.
+///
+/// A read can still answer after close, as when its last page landed before
+/// the cancel, and a handler's emits can come after close has started.
+/// Bloc also runs a request added in the same turn as [close]. So a flag
+/// set first in [close] guards each emit, each send and each read.
 class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   EventGamesBloc({
     required this._remote,
@@ -194,11 +211,17 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   /// and emits nothing then.
   bool _closing = false;
 
+  /// The read that is out's cancel signal, which [close] completes (#851).
+  /// One per read, dropped as the read ends, so a read that has ended leaves
+  /// nothing listening for the bloc's close.
+  Completer<void>? _cancelRead;
+
   /// Whether a read is out, or asking the session before it goes.
   bool _reading = false;
 
   /// What to read once the read that is out ends: what the latest request
-  /// while it was out named.
+  /// while it was out named. A read that ends gone drops it when it names the
+  /// same event (#851).
   _PoolRead? _readAgain;
 
   /// The event and attendees named last, by a request to read or a write
@@ -232,7 +255,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
 
   /// Notes [eventId] and [attendeeIds] as the ones named last, and answers
   /// them as a read.
-  _PoolRead _named(String eventId, List<String> attendeeIds) =>
+  _PoolRead _named(String eventId, List<String>? attendeeIds) =>
       _lastNamed = (eventId: eventId, attendeeIds: attendeeIds);
 
   Future<void> _onOffered(
@@ -424,7 +447,8 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
 
   /// Reads the pool [read] names, then again for the latest request that
   /// came in meanwhile, once each run. While a read is out, this marks one
-  /// more and returns. Never throws.
+  /// more and returns. A read that ends gone drops the one marked for the
+  /// same event (#851). Never throws.
   Future<void> _read(_PoolRead read, Emitter<EventGamesState> emit) async {
     if (_reading) {
       _readAgain = read;
@@ -468,29 +492,39 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
       ),
     );
 
+    final cancel = _cancelRead = Completer<void>();
     final List<OfferedGame> games;
     try {
       games = await _remote.fetchGamesPool(
         read.eventId,
         attendeeIds: read.attendeeIds,
+        cancelled: cancel.future,
       );
     } on EventRemoteForbiddenException catch (error) {
       _logger.info('Pool not shown to this viewer', error: error);
-      await _readRefused(EventGamesLoad.hidden, emit);
+      await _readRefused(read, EventGamesLoad.hidden, emit);
       return;
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Pool read found the event gone', error: error);
       // The event's read since then didn't settle it, so this is a pool
       // the server won't serve, not an event that went.
       await _readRefused(
+        read,
         startedGone ? EventGamesLoad.failed : EventGamesLoad.gone,
         emit,
       );
       return;
     } on Object catch (error, stackTrace) {
+      // Closing cancels the read that is out, which then throws: no failure.
+      if (_closing) {
+        _logger.info('Pool read stopped as the screen closed', error: error);
+        return;
+      }
       _logger.warn('Pool read failed', error: error, stackTrace: stackTrace);
       _readEnded(EventGamesLoad.failed, state.games, emit);
       return;
+    } finally {
+      _cancelRead = null;
     }
     if (!await _confirmed('Pool answer dropped')) {
       _readEnded(EventGamesLoad.failed, state.games, emit);
@@ -510,17 +544,26 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
     );
   }
 
-  /// Ends a read the server refused as [load], or as failed if the session
-  /// has moved since, when the refusal was another user's.
+  /// Ends [read], which the server refused, as [load], or as failed if the
+  /// session has moved since, when the refusal was another user's.
+  ///
+  /// One that ends gone drops the read marked after it for the same event:
+  /// the screen reads the event on a gone and asks again once that has
+  /// ended, and a read before then would start in gone and fail on its own
+  /// 404.
   Future<void> _readRefused(
+    _PoolRead read,
     EventGamesLoad load,
     Emitter<EventGamesState> emit,
   ) async {
-    if (await _confirmed('Pool answer dropped')) {
-      _readEnded(load, const [], emit);
-    } else {
+    if (!await _confirmed('Pool answer dropped')) {
       _readEnded(EventGamesLoad.failed, state.games, emit);
+      return;
     }
+    if (load == EventGamesLoad.gone && _readAgain?.eventId == read.eventId) {
+      _readAgain = null;
+    }
+    _readEnded(load, const [], emit);
   }
 
   /// Emits a read that ended without games as [load], showing [games].
@@ -581,6 +624,8 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
   @override
   Future<void> close() {
     _closing = true;
+    final cancel = _cancelRead;
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
     return super.close();
   }
 }

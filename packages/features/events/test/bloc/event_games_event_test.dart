@@ -50,6 +50,26 @@ void main() {
     );
   });
 
+  // No ids reads everyone's games (#851), which no list of ids is.
+  test('a request for everyone is not a request for some', () {
+    expect(
+      const EventGamesRequested('e-1', null),
+      isNot(const EventGamesRequested('e-1', ids)),
+    );
+    expect(
+      const EventGamesRetryRequested('e-1', null),
+      isNot(const EventGamesRetryRequested('e-1', ids)),
+    );
+    expect(
+      const EventGamesOffered('e-1', 'a-1', [pick], attendeeIds: null),
+      isNot(const EventGamesOffered('e-1', 'a-1', [pick], attendeeIds: ids)),
+    );
+    expect(
+      const EventGameTakenBack('e-1', 'a-1', game, attendeeIds: null),
+      isNot(const EventGameTakenBack('e-1', 'a-1', game, attendeeIds: ids)),
+    );
+  });
+
   test('an offer is equal by its event, attendee, picks and roster', () {
     const offer = EventGamesOffered('e-1', 'a-1', [pick], attendeeIds: ids);
 

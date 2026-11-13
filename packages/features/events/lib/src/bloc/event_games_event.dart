@@ -7,8 +7,10 @@ import 'package:models/domain.dart';
 ///
 /// Each names the event by the id the screen shows, which a reconcile can
 /// move while it is open (#499), so the id travels with the request rather
-/// than with the bloc. So do the roster's attendee ids, whose offered games
-/// make up the pool: the server reads it one attendee at a time.
+/// than with the bloc. So do the attendees whose offered games a read of the
+/// pool is for (#851): null for every attendee's, and otherwise a list that
+/// narrows the read to those attendees, as the viewer's own row where the
+/// roster is withheld or not read yet.
 sealed class EventGamesEvent extends Equatable {
   const EventGamesEvent();
 
@@ -16,16 +18,16 @@ sealed class EventGamesEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// Read the games the attendees [attendeeIds] of the event [eventId] have
-/// offered: when the tab opens, and after each detail read. The bloc reads it
-/// again itself once an offer run ends, and once a take-back ends unless it
-/// failed; a dropped write reads nothing. A retry is
-/// [EventGamesRetryRequested].
+/// Read the games offered for the event [eventId], every attendee's or, when
+/// [attendeeIds] is a list, those attendees': when the tab opens, and after
+/// each detail read. The bloc reads it again itself once an offer run ends,
+/// and once a take-back ends unless it failed; a dropped write reads
+/// nothing. A retry is [EventGamesRetryRequested].
 final class EventGamesRequested extends EventGamesEvent {
   const EventGamesRequested(this.eventId, this.attendeeIds);
 
   final String eventId;
-  final List<String> attendeeIds;
+  final List<String>? attendeeIds;
 
   @override
   List<Object?> get props => [eventId, attendeeIds];
@@ -38,7 +40,7 @@ final class EventGamesRetryRequested extends EventGamesEvent {
   const EventGamesRetryRequested(this.eventId, this.attendeeIds);
 
   final String eventId;
-  final List<String> attendeeIds;
+  final List<String>? attendeeIds;
 
   @override
   List<Object?> get props => [eventId, attendeeIds];
@@ -59,7 +61,7 @@ final class EventGamesOffered extends EventGamesEvent {
   final String eventId;
   final String attendeeId;
   final List<OfferPick> picks;
-  final List<String> attendeeIds;
+  final List<String>? attendeeIds;
 
   @override
   List<Object?> get props => [eventId, attendeeId, picks, attendeeIds];
@@ -80,7 +82,7 @@ final class EventGameTakenBack extends EventGamesEvent {
   final String eventId;
   final String attendeeId;
   final OfferedGame game;
-  final List<String> attendeeIds;
+  final List<String>? attendeeIds;
 
   @override
   List<Object?> get props => [eventId, attendeeId, game, attendeeIds];

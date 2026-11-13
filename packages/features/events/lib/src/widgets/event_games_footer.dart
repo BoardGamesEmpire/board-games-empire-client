@@ -616,17 +616,23 @@ class _OfferProgressState extends State<_OfferProgress> {
   }
 }
 
-/// Reads the pool again, as the person asked (#516), for the event and the
-/// roster the detail shows now, and notes those ids as the ones last asked
-/// for, as the screen's own reads do. Nothing with nobody to read it for.
+/// Reads the pool again, as the person asked (#516), for the event the
+/// detail shows now and the attendees [poolReadIds] names (#851), and notes
+/// the roster's ids ([poolAttendeeIds]) and that read's scope as the ones
+/// last asked with, as the screen's own reads do. Nothing with nobody to
+/// read it for.
 void retryEventGamesPool(BuildContext context) {
   final state = context.read<EventDetailBloc>().state;
   if (state is! EventDetailReady) return;
   final ids = poolAttendeeIds(state.detail);
   if (ids.isEmpty) return;
-  EventGamesTabScope.of(context).requestedIds = ids;
+  final readIds = poolReadIds(state.detail);
+  EventGamesTabScope.of(context).requested = (
+    ids: ids,
+    wholeEvent: readIds == null,
+  );
   context.read<EventGamesBloc>().add(
-    EventGamesRetryRequested(state.detail.snapshot.event.id, ids),
+    EventGamesRetryRequested(state.detail.snapshot.event.id, readIds),
   );
 }
 

@@ -39,7 +39,7 @@ import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -106,10 +106,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// each time a read of the event ends once the tab has shown, for the event
 /// and the roster the detail shows then ([poolAttendeeIds]); and, once the
 /// tab has shown, whenever those ids come to differ from the ids it was last
-/// read for, as when the roster a read wrote reaches the screen after the
+/// asked with, as when the roster a read wrote reaches the screen after the
 /// read has ended. Never before the tab is opened, and never for ids that
-/// are the same or for none. The viewer's own writes read it as they end: a
-/// run of offers, however it ended, and a take-back unless it failed, which
+/// are the same or for none. Each read is for every attendee's games where
+/// the roster is a non-empty list, and otherwise the viewer's own
+/// ([poolReadIds], #851). The viewer's own writes read it as they end: a run
+/// of offers, however it ended, and a take-back unless it failed, which
 /// changed nothing. A write the screen's re-check dropped reads nothing, and
 /// Try again, on the failed state and on the stale-data banner, reads it as
 /// the user asks. With nobody to read it for, nothing is read: where the roster
@@ -1182,31 +1184,43 @@ bool _poolIdsMayHaveChanged(
     !current.reading &&
     !_detailReadEnded(previous, current);
 
-/// Reads the games pool where the Games tab has shown and the ids to read
-/// it for differ, by value and order, from the ids it was last asked for
-/// (#516): as when a read of the event has ended and the roster it wrote
-/// reaches the screen after it. Ids that are the same read nothing, and so
-/// do none, which forgets the ids last asked for ([_readPool]).
+/// Reads the games pool where the Games tab has shown and the roster's ids
+/// ([poolAttendeeIds]) differ, as a set, from the ids it was last asked with
+/// (#516), or the read they make ([poolReadIds]) changes between the whole
+/// event's and the viewer's own (#851): as when a read of the event has
+/// ended and the roster it wrote reaches the screen after it. The same ids
+/// in another order read nothing, as the read doesn't depend on their order
+/// (#851), and nor do none, which forgets the ids last asked with
+/// ([_readPool]).
 ///
-/// A read of the pool changes no detail, and each request is for ids that
-/// differ from the last asked, so this sends one request per change of the
-/// ids and can't loop. A read already out for the old ids is followed by
-/// one for these, as the bloc runs one more read for the latest request.
+/// A read of the pool changes no detail, and each request comes of ids that
+/// differ from the last asked with, so this sends one request per change of
+/// the ids and can't loop. A read already out for the old roster is
+/// followed by one for this, as the bloc runs one more read for the latest
+/// request, unless the one out ends gone: then the event's read asks again.
 void _readPoolForNewIds(BuildContext context, EventDetailState state) {
   if (state is! EventDetailReady) return;
   final scope = EventGamesTabScope.of(context);
   if (!scope.shown) return;
   final ids = poolAttendeeIds(state.detail);
-  if (ids.isNotEmpty && listEquals(ids, scope.requestedIds)) return;
+  final requested = scope.requested;
+  if (ids.isNotEmpty &&
+      requested != null &&
+      requested.wholeEvent == (poolReadIds(state.detail) == null) &&
+      setEquals(ids.toSet(), requested.ids.toSet())) {
+    return;
+  }
   _readPool(context, state, scope);
 }
 
-/// Reads the games pool of the event [state] shows, for the roster it shows
-/// then, by the ids it shows then, which a reconcile can move (#499), and
-/// notes those ids on [controller]. Not at all with nobody to read it
-/// for, or for an event the server doesn't know.
+/// Reads the games pool of the event [state] shows, by the id it shows then,
+/// which a reconcile can move (#499), for the attendees [poolReadIds] names
+/// (#851), and notes the roster's ids ([poolAttendeeIds]) and that read's
+/// scope on [controller].
+/// Not at all with nobody to read it for, or for an event the server
+/// doesn't know.
 ///
-/// Nobody to read it for forgets the ids last asked for. The tab shows no
+/// Nobody to read it for forgets the ids last asked with. The tab shows no
 /// games then, so a roster that comes back, the same one included, is read
 /// for again, and the games shown are never as old as its absence.
 void _readPool(
@@ -1218,11 +1232,12 @@ void _readPool(
   if (event.isLocalOnly) return;
   final ids = poolAttendeeIds(state.detail);
   if (ids.isEmpty) {
-    controller.requestedIds = null;
+    controller.requested = null;
     return;
   }
-  controller.requestedIds = ids;
-  context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
+  final readIds = poolReadIds(state.detail);
+  controller.requested = (ids: ids, wholeEvent: readIds == null);
+  context.read<EventGamesBloc>().add(EventGamesRequested(event.id, readIds));
 }
 
 /// Whether [outcome] ends a pool write that changed the pool: a run of

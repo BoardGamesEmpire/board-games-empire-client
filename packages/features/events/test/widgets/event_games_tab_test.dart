@@ -516,7 +516,8 @@ void main() {
 
       expect(poolReads(), hasLength(1));
       expect(poolReads().single.$1, 'e-1');
-      expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+      // Everyone's games, with no ids, where the roster is read (#851).
+      expect(poolReads().single.$2, isNull);
       expect(row(azul.id), findsOneWidget);
     });
 
@@ -561,7 +562,7 @@ void main() {
 
       expect(poolReads(), hasLength(1));
       expect(poolReads().single.$1, 'e-1');
-      expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+      expect(poolReads().single.$2, isNull);
       expect(row(azul.id), findsOneWidget);
     });
 
@@ -590,7 +591,7 @@ void main() {
         await animate(tester);
 
         expect(poolReads(), hasLength(1));
-        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().single.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
 
@@ -607,8 +608,9 @@ void main() {
         cache.add(detailOf(roster: [me, ada, bo, cy]));
         await animate(tester);
 
+        // The roster says when to read again, and the read is everyone's.
         expect(remote.poolRequests, hasLength(3));
-        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo', 'att-cy']);
+        expect(poolReads().last.$2, isNull);
       });
 
       testWidgets('the same roster, arriving after a read, is not read for '
@@ -621,6 +623,51 @@ void main() {
         await animate(tester);
 
         expect(remote.poolRequests, hasLength(2));
+      });
+
+      // The read names nobody where the roster is read, so the order of its
+      // rows changes nothing it reads (#851).
+      testWidgets('the same roster in another order is not read for again', (
+        tester,
+      ) async {
+        await showGames(tester);
+        expect(remote.poolRequests, hasLength(1));
+
+        cache.add(detailOf(roster: [bo, ada, me]));
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(1));
+      });
+
+      // A roster of the viewer alone reads the whole event, and one
+      // withheld reads the viewer's own games: the same ids, read for
+      // differently, so the games read for the one aren't the other's.
+      testWidgets("the viewer's roster withheld is read for again, for their "
+          'own games', (tester) async {
+        await showGames(tester, detail: detailOf(roster: [me]));
+        expect(poolReads().single.$2, isNull);
+        expect(row(azul.id), findsOneWidget);
+
+        poolAnswer = (_) => [catanMine];
+        cache.add(detailOf(roster: const []));
+        await animate(tester);
+
+        expect(poolReads(), hasLength(2));
+        expect(poolReads().last.$2, ['att-me']);
+        expect(row(azul.id), findsNothing);
+        expect(row(catanMine.id), findsOneWidget);
+      });
+
+      testWidgets("a withheld roster given back as the viewer's alone is read "
+          "for again, for everyone's", (tester) async {
+        await showGames(tester, detail: detailOf(roster: const []));
+        expect(poolReads().single.$2, ['att-me']);
+
+        cache.add(detailOf(roster: [me]));
+        await animate(tester);
+
+        expect(poolReads(), hasLength(2));
+        expect(poolReads().last.$2, isNull);
       });
 
       // Through the screen's own detail bloc: the read answers a roster
@@ -672,7 +719,7 @@ void main() {
         await animate(tester);
 
         expect(remote.poolRequests, hasLength(2));
-        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().last.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
     });
@@ -758,7 +805,7 @@ void main() {
         await animate(tester);
 
         expect(poolReads(), hasLength(1));
-        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().single.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
 
@@ -3251,10 +3298,10 @@ void main() {
       ]);
       expectOutcome('2 games offered.');
       expectInFooter(tester, outcome());
-      // The pool is read again once the run ends, for the roster.
+      // The pool is read again once the run ends, for everyone's games.
       expect(remote.poolRequests, hasLength(reads + 1));
       expect(poolReads().last.$1, 'e-1');
-      expect(poolReads().last.$2, roster);
+      expect(poolReads().last.$2, isNull);
     });
 
     testWidgets('no picks, or Back, send nothing and say nothing', (

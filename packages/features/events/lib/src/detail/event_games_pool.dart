@@ -1,5 +1,5 @@
-/// The games pool on an event's Games tab (#516): what its filter keeps, and
-/// whose games a read of it names.
+/// The games pool on an event's Games tab (#516): what its filter keeps,
+/// whose games it holds, and whose a read of it names.
 library;
 
 import 'package:equatable/equatable.dart';
@@ -82,8 +82,9 @@ Map<String, String?> poolNames(EventDetail detail) => {
     row.id: row.name,
 };
 
-/// The ids to read the pool for: the cached roster's, or the viewer's own
-/// where the roster is withheld, or none.
+/// The attendees whose games the pool holds: the cached roster's, or the
+/// viewer's own where the roster is withheld, or none. The screen reads the
+/// pool again when these change, and a read sends [poolReadIds].
 ///
 /// A roster that is a non-empty list gives every row's id, in its order.
 /// A roster that is null, or withheld (an empty list), gives the viewer's
@@ -98,4 +99,17 @@ List<String> poolAttendeeIds(EventDetail detail) {
   }
   final viewer = detail.attendance;
   return viewer == null ? const [] : [viewer.id];
+}
+
+/// The attendees a read of the pool names (#851): null, for every
+/// attendee's games, where the roster is a non-empty list, and otherwise
+/// [poolAttendeeIds], the viewer's own row or none.
+///
+/// The read serves the whole event's games in one go, and caps the ids it
+/// takes at 100, so a read the roster allows names nobody. Where the roster
+/// is withheld or not read, it narrows to the viewer's own games.
+List<String>? poolReadIds(EventDetail detail) {
+  final roster = detail.snapshot.attendees;
+  if (roster != null && roster.isNotEmpty) return null;
+  return poolAttendeeIds(detail);
 }

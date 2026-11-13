@@ -15,7 +15,7 @@ import 'package:models/domain.dart' show EventNomination;
 import 'package:ui/ui.dart';
 
 /// What the Games tab keeps across the screen's rebuilds (#516): its filter,
-/// whether it has been shown, the ids the pool was last asked for, how the
+/// whether it has been shown, the ids the pool was last asked with, how the
 /// pool's last read ended and how the nominations' did (#517), the
 /// nominations' own filter and order (#517), and the focus nodes a control
 /// that leaves hands focus on to.
@@ -117,10 +117,14 @@ class EventGamesTabController extends ChangeNotifier {
   /// Remembers that the Games tab has shown on a ready detail.
   void markShown() => _shown = true;
 
-  /// The attendee ids the pool was last asked to be read for, by the screen
-  /// or by Try again, or null before it has been asked, and again once the
-  /// detail shows nobody to read it for. Each sets it as it asks.
-  List<String>? requestedIds;
+  /// The roster's ids ([poolAttendeeIds]) the pool was last asked to be read
+  /// with, by the screen or by Try again, and whether that read was the
+  /// whole event's ([poolReadIds] null, #851); or null before it has been
+  /// asked, and again once the detail shows nobody to read it for. Each sets
+  /// it as it asks. The viewer's id alone is read for either way, so the
+  /// ids without the scope can't tell a roster of the viewer from one
+  /// withheld.
+  ({List<String> ids, bool wholeEvent})? requested;
 
   /// Holds Offer games, whose own node its held button keeps.
   final FocusNode offerArea = FocusNode(

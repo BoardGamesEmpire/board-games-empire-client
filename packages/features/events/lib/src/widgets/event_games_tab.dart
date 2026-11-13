@@ -666,7 +666,7 @@ Future<bool> _takeBack(
       state.detail.snapshot.event.id,
       attendeeId,
       game,
-      attendeeIds: poolAttendeeIds(state.detail),
+      attendeeIds: poolReadIds(state.detail),
     ),
   );
   return true;
@@ -1075,7 +1075,7 @@ class _PoolHeader extends StatelessWidget {
         state.detail.snapshot.event.id,
         viewer.id,
         picks,
-        attendeeIds: poolAttendeeIds(state.detail),
+        attendeeIds: poolReadIds(state.detail),
       ),
     );
     return true;

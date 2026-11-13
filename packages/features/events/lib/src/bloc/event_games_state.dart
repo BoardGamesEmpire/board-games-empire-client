@@ -21,13 +21,13 @@ enum EventGamesLoad {
   /// it.
   failed,
 
-  /// The server won't show this viewer the pool: a 403 on any attendee's
-  /// games.
+  /// The server won't show this viewer the pool: a 403 refuses them the
+  /// event's games.
   hidden,
 
-  /// The server has no such event, or everyone named has left it: a 404. A
-  /// screen that shows the event reads it again, which finds out for the
-  /// whole screen, and then reads the pool again.
+  /// The server has no such event: a 404. A screen that shows the event
+  /// reads it again, which finds out for the whole screen, and then reads the
+  /// pool again.
   gone,
 }
 
