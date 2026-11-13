@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
@@ -316,6 +317,7 @@ void main() {
       home: EventDetailScreen(
         eventId: 'e-1',
         repository: repository,
+        session: FakeSessionLease(),
         remote: remote,
         confirmSession: guarded ? confirmSession : null,
         householdRole: householdRole,

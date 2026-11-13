@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/create_event_bloc.dart';
 import 'package:events/src/bloc/create_event_event.dart';
@@ -6,6 +8,7 @@ import 'package:events/src/create/create_event_form.dart';
 import 'package:events/src/create/event_create_households.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
@@ -20,7 +23,7 @@ import 'package:user_search/user_search.dart';
 /// Decoupled from DI like the other screens: the caller resolves the
 /// [repository], [sender] and [users] from the active server's scope, and
 /// passes the households an event may join where it has them. The screen
-/// provides the [CreateEventBloc] and the [UserSearchBloc] itself.
+/// makes the [CreateEventBloc] and provides the [UserSearchBloc] itself.
 ///
 /// The outcomes use different surfaces, as the household create's do
 /// (#191):
@@ -34,13 +37,25 @@ import 'package:user_search/user_search.dart';
 ///   which, or the household, when the create was in one and invited no
 ///   one. The refused create stays parked until the next submit discards it.
 ///
+/// The screen holds its create's bloc, not a `BlocProvider`, so a create the
+/// user walks away from still ends (#464). Left while one is on its way, the
+/// bloc is kept until it settles, its outcome is said in a SnackBar over the
+/// page the user went to (a failure too, in its banner's heading, since the
+/// banner went with the form, and a refusal by where to review it), and then
+/// it closes, through `closeWhenSettled`. One that settles while the route is
+/// still on its way out is said the same way. That late outcome never calls
+/// [onCreated]: the user has already gone somewhere. No outcome is said once
+/// [session] has ended, whether the screen is gone or still leaving: it is
+/// no news to whoever signs in next (#694). The bloc closes either way.
+///
 /// The invitee search is the shared user search, so the caller registers
 /// `UserSearchLocalizations`' delegate beside this package's.
-class CreateEventScreen extends StatelessWidget {
+class CreateEventScreen extends StatefulWidget {
   const CreateEventScreen({
     required this.repository,
     required this.sender,
     required this.users,
+    required this.session,
     required this.onCreated,
     this.households,
     this.householdId,
@@ -74,12 +89,18 @@ class CreateEventScreen extends StatelessWidget {
   /// What *Who's invited* searches for people through.
   final UserRemoteDataSource users;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [repository] and [sender]. A create that settles after the screen is
+  /// gone is said only while it is live (#694).
+  final SessionLease session;
+
   /// Where the created event is shown. Called once, with the event's id:
   /// the server's when the send was delivered, the local one when it stayed
   /// queued.
   ///
   /// Required, as the household create's is: a create with nowhere to go
-  /// leaves the user on the spent form (#162).
+  /// leaves the user on the spent form (#162). Not called for a create that
+  /// lands once the user has left (#464).
   final void Function(BuildContext context, String eventId) onCreated;
 
   /// The households an event may join, as [eventCreateHouseholds] filters
@@ -107,37 +128,139 @@ class CreateEventScreen extends StatelessWidget {
   final DateTime Function()? now;
 
   @override
+  State<CreateEventScreen> createState() => _CreateEventScreenState();
+}
+
+class _CreateEventScreenState extends State<CreateEventScreen> {
+  /// Held here rather than by a `BlocProvider`, which would close it with
+  /// the route: a create still on its way then would never say how it ended.
+  /// See [dispose].
+  late final CreateEventBloc _bloc;
+
+  /// The lease [widget] had when the bloc was made, beside the repository it
+  /// came from: [dispose] can't trust a later build's.
+  late final SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the screen is mounted: a
+  /// create that settles after it is gone is said with them, and [dispose]
+  /// can't look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late EventsLocalizations _l10n;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.session;
+    _bloc = CreateEventBloc(
+      repository: widget.repository,
+      sender: widget.sender,
+      onRefresh: widget.onRefresh,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = EventsLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Left with a create on its way: it settles, is said while the session
+    // lives, and the bloc closes then. Otherwise the screen has already
+    // shown whatever there was, and the bloc closes now.
+    unawaited(
+      closeWhenSettled<CreateEventState>(
+        current: _bloc.state,
+        states: _bloc.stream,
+        underWay: (state) => state is CreateEventSubmitting,
+        outcomeOf: _lateOutcome,
+        say: _messenger.say,
+        close: _bloc.close,
+      ),
+    );
+    super.dispose();
+  }
+
+  /// What is said of a create that settled after the screen went, or while
+  /// it was going (#464): a success as the listener says it, and a failure
+  /// in its banner's heading, since the banner went with the form.
+  ///
+  /// A refusal says more than the heading. Its create stays parked with its
+  /// local-only event, and with the form gone no next submit will discard
+  /// them, so it sends the user to the home screen's review list (#190).
+  String? _lateOutcome(CreateEventState state) => switch (state) {
+    CreateEventSuccess(:final sync) => _createdMessage(_l10n, sync),
+    CreateEventRefused() => _l10n.eventCreateRefusedLate,
+    CreateEventFailure() => _l10n.eventCreateFailedTitle,
+    CreateEventInitial() || CreateEventSubmitting() => null,
+  };
+
+  /// Answers a create that has just ended.
+  void _onEnded(BuildContext context, CreateEventState state) {
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so the outcome is said as it would be once the form had gone, a
+    // refusal or a failure too, and [CreateEventScreen.onCreated] is not
+    // called (#464). By [dispose] it has settled, so `closeWhenSettled` says
+    // nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      _messenger.say(_lateOutcome(state));
+      return;
+    }
+    // A refusal or a failure stays: the form draws it as a banner.
+    if (state case CreateEventSuccess(:final eventId, :final sync)) {
+      // A SnackBar, which outlives the route `onCreated` takes the user off,
+      // and is already a live region (#191).
+      _messenger.say(_createdMessage(_l10n, sync));
+      // Shown first, then handed on, while this route's context is still
+      // current. No `maybePop`: where the event is shown is the caller's to
+      // decide (#162).
+      widget.onCreated(context, eventId);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (_) => CreateEventBloc(
-            repository: repository,
-            sender: sender,
-            onRefresh: onRefresh,
-          ),
-        ),
-        BlocProvider(create: (_) => UserSearchBloc(remote: users)),
+        BlocProvider<CreateEventBloc>.value(value: _bloc),
+        BlocProvider(create: (_) => UserSearchBloc(remote: widget.users)),
       ],
-      child: _CreateEventView(
-        onCreated: onCreated,
-        households: households,
-        householdId: householdId,
-        now: now,
+      child: BlocListener<CreateEventBloc, CreateEventState>(
+        listenWhen: (_, state) =>
+            state is CreateEventSuccess ||
+            state is CreateEventRefused ||
+            state is CreateEventFailure,
+        listener: _onEnded,
+        child: _CreateEventView(
+          households: widget.households,
+          householdId: widget.householdId,
+          now: widget.now,
+        ),
       ),
     );
   }
 }
 
-class _CreateEventView extends StatelessWidget {
-  const _CreateEventView({
-    required this.onCreated,
-    this.households,
-    this.householdId,
-    this.now,
-  });
+/// What the SnackBar says once a create has succeeded: whether the server
+/// has the event. Said by the listener as the form goes, or as a late
+/// outcome for a create that lands once the user has left (#464).
+String _createdMessage(EventsLocalizations l10n, CreateEventSync sync) =>
+    switch (sync) {
+      CreateEventSync.synced => l10n.eventCreateSynced,
+      // Also a refused create another tab retried or discarded since. After
+      // a discard its local id names nothing, and the detail says so (see
+      // CreateEventSuccess).
+      CreateEventSync.queued => l10n.eventCreateQueued,
+    };
 
-  final void Function(BuildContext context, String eventId) onCreated;
+class _CreateEventView extends StatelessWidget {
+  const _CreateEventView({this.households, this.householdId, this.now});
+
   final Stream<List<Household>>? households;
   final String? householdId;
   final DateTime Function()? now;
@@ -146,28 +269,7 @@ class _CreateEventView extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
 
-    return BlocConsumer<CreateEventBloc, CreateEventState>(
-      // Success only: a refusal or a failure is a banner the form draws.
-      listenWhen: (_, state) => state is CreateEventSuccess,
-      listener: (context, state) {
-        if (state case CreateEventSuccess(:final eventId, :final sync)) {
-          // A SnackBar, which outlives the route `onCreated` takes the user
-          // off, and is already a live region (#191).
-          ScaffoldMessenger.of(context).replaceSnackBar(
-            switch (sync) {
-              CreateEventSync.synced => l10n.eventCreateSynced,
-              // Also a refused create another tab retried or discarded
-              // since. After a discard its local id names nothing, and
-              // the detail says so (see CreateEventSuccess).
-              CreateEventSync.queued => l10n.eventCreateQueued,
-            },
-          );
-          // Shown first, then handed on, while this route's context is
-          // still current. No `maybePop`: where the event is shown is the
-          // caller's to decide (#162).
-          onCreated(context, eventId);
-        }
-      },
+    return BlocBuilder<CreateEventBloc, CreateEventState>(
       builder: (context, state) => BgePage(
         title: Text(l10n.eventCreateTitle),
         child: CreateEventForm(

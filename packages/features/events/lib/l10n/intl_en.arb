@@ -2306,23 +2306,23 @@
   },
   "eventsDeleted": "Event deleted",
   "@eventsDeleted": {
-    "description": "Brief message at the foot of the screen once the server has deleted an event, as the app leaves that event's screen."
+    "description": "Brief message at the foot of the screen once the server has deleted an event, as the app leaves that event's screen. Also shown over whatever page the user went to, when they left the event's screen while the delete was out and it then went through (#464)."
   },
   "eventsDeleteGone": "This event was already deleted.",
   "@eventsDeleteGone": {
-    "description": "Banner on an event's screen after trying to delete it, when the server has no live event by that id: perhaps an earlier delete went through and its answer was lost on the way back. Either way the event is gone, so this is not an error."
+    "description": "Banner on an event's screen after trying to delete it, when the server has no live event by that id: perhaps an earlier delete went through and its answer was lost on the way back. Either way the event is gone, so this is not an error. Also a brief message at the foot of whatever page the user went to, when they left the event's screen while the delete was out (#464): there it is read away from the event it names."
   },
   "eventsDeleteRefused": "You can't delete this event.",
   "@eventsDeleteRefused": {
-    "description": "Banner on an event's screen when the server refused to delete it: the user is not allowed to, for example because they are no longer its host after a change made on another device."
+    "description": "Banner on an event's screen when the server refused to delete it: the user is not allowed to, for example because they are no longer its host after a change made on another device. Also a brief message at the foot of whatever page the user went to, when they left the event's screen while the delete was out (#464): there it is read away from the event it names."
   },
   "eventsDeleteFailed": "An error occurred while deleting this event. You may need to try again.",
   "@eventsDeleteFailed": {
-    "description": "Banner on an event's screen when deleting it ended without an answer that says what happened, most often because there was no connection. The delete may or may not have gone through, so the copy must not say the event wasn't deleted. Trying again is safe: if the first delete did go through, the second finds the event already deleted."
+    "description": "Banner on an event's screen when deleting it ended without an answer that says what happened, most often because there was no connection. The delete may or may not have gone through, so the copy must not say the event wasn't deleted. Trying again is safe: if the first delete did go through, the second finds the event already deleted. Also a brief message at the foot of whatever page the user went to, when they left the event's screen while the delete was out (#464): there it is read away from the event it names."
   },
   "eventsDeleteFailedUnexpected": "Something went wrong, and the event wasn't deleted.",
   "@eventsDeleteFailedUnexpected": {
-    "description": "Banner on an event's screen when deleting it failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. The event is still there. Unlike the connection failure it does not suggest trying again, since the same press would most likely fail the same way."
+    "description": "Banner on an event's screen when deleting it failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. The event is still there. Unlike the connection failure it does not suggest trying again, since the same press would most likely fail the same way. Also a brief message at the foot of whatever page the user went to, when they left the event's screen while the delete was out (#464): there it is read away from the event it names."
   },
   "eventsDeleteCancelInstead": "Cancel event instead",
   "@eventsDeleteCancelInstead": {
@@ -3029,15 +3029,19 @@
   },
   "eventCreateSynced": "Event created.",
   "@eventCreateSynced": {
-    "description": "Brief message at the bottom of the screen once a new event is created and the server has it."
+    "description": "Brief message at the bottom of the screen once a new event is created and the server has it. Also shown over whatever page the user went to, when they left the create form while the create was on its way (#464)."
   },
   "eventCreateQueued": "Event saved. It'll be sent when you're back online.",
   "@eventCreateQueued": {
-    "description": "Brief message at the bottom of the screen once a new event is saved on this device but couldn't reach the server yet: it is sent once the device is online again."
+    "description": "Brief message at the bottom of the screen once a new event is saved on this device but couldn't reach the server yet: it is sent once the device is online again. Also shown over whatever page the user went to, when they left the create form while the create was on its way (#464)."
   },
   "eventCreateFailedTitle": "Couldn't create the event",
   "@eventCreateFailedTitle": {
-    "description": "Heading of the error above the Create event button when the event wasn't created: the server refused it, or it couldn't be saved on this device. Names what failed, because the messages under it give only the reason, such as a person who can't be invited. Must be true of each of them."
+    "description": "Heading of the error above the Create event button when the event wasn't created: the server refused it, or it couldn't be saved on this device. Names what failed, because the messages under it give only the reason, such as a person who can't be invited. Must be true of each of them. Also a brief message on its own, without the messages under it, over whatever page the user went to, when they left the create form while the create was on its way and it couldn't be saved on this device (#464)."
+  },
+  "eventCreateRefusedLate": "The server didn't accept this event. It's saved on this device: review it from the home screen to try again or discard it.",
+  "@eventCreateRefusedLate": {
+    "description": "Brief message over whatever page the user went to, when they left the create form while the create was on its way and the server refused it (#464). The refused event stays on this device until it is retried or discarded, so this points the user at the notice on the home screen, which opens the screen where changes that couldn't sync can be retried or discarded (#190). Must not promise that it will sync later."
   },
   "eventCreateRefused": "Someone you invited may not accept invites from you. Change who's invited and try again.",
   "@eventCreateRefused": {

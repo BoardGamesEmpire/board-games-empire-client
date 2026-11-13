@@ -2171,6 +2171,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       sender: container.get<SyncOperationSender>(),
       users: container.get<UserRemoteDataSource>(),
+      session: _sessionLease(container),
       households: households == null || roleOf == null
           ? null
           : eventCreateHouseholds(households, roleOf),
@@ -2212,6 +2213,7 @@ class _BgeAppState extends State<BgeApp> {
     return EventDetailScreen(
       eventId: eventId,
       repository: container.get<EventRepository>(),
+      session: _sessionLease(container),
       remote: _eventRemote(container),
       confirmSession: _confirmEventSession(container),
       households: _eventHouseholds(container),
