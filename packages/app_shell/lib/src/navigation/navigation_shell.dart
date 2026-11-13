@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/src/navigation/menu_drawer.dart';
 import 'package:app_shell/src/navigation/nav_destination.dart';
 import 'package:app_shell/src/router/app_router.dart' show AppRoutes;
@@ -23,7 +25,9 @@ enum _Chrome { none, bar, rail }
 ///
 /// The menu is a [MenuDrawer] holding [entries]. A pick in it closes the
 /// drawer and runs once the drawer has gone, so a pushed page's transition
-/// plays in full (#643). A destructive entry, sign out, runs at once.
+/// plays in full (#643). A destructive entry, sign out, runs at once. An
+/// entry that opens a screen pushes it, unless that screen is already the
+/// page on top.
 ///
 /// Picking a destination is a `go` to its location, which replaces the
 /// stack, unless that destination's own screen is already the only page.
@@ -128,6 +132,17 @@ class _NavigationShellState extends State<NavigationShell> {
     final router = GoRouter.of(context);
     if (widget.location == destination.location && !router.canPop()) return;
     router.go(destination.location);
+  }
+
+  /// Pushes the screen [entry] opens, unless it is already the page on top,
+  /// or runs the entry's own action.
+  void _runEntry(HomeMenuEntry entry) {
+    final location = entry.location;
+    if (location == null) {
+      entry.onSelected!(context);
+    } else if (location != widget.location) {
+      unawaited(GoRouter.of(context).push<void>(location));
+    }
   }
 
   /// Closes the drawer for a pick, and runs [run] once it has gone, or at
@@ -287,10 +302,8 @@ class _NavigationShellState extends State<NavigationShell> {
               entries: widget.entries,
               activeServerName: widget.activeServerName,
               onDestination: (destination) => _pick(() => _go(destination)),
-              onEntry: (entry) => _pick(
-                () => entry.onSelected(context),
-                now: entry.isDestructive,
-              ),
+              onEntry: (entry) =>
+                  _pick(() => _runEntry(entry), now: entry.isDestructive),
             ),
           ),
         ),

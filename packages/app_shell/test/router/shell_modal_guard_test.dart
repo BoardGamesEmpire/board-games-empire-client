@@ -134,6 +134,24 @@ void main() {
     expect(notYetAvailable, findsOneWidget);
   });
 
+  // go_router keys a page it builds from the location by its route's
+  // pattern, so a go between two ids of one route keeps the page and only
+  // rebuilds it: the shell's navigator reports no pop and no remove.
+  testWidgets('a go to another id of the same route removes a dialog opened '
+      'over the first', (tester) async {
+    final router = await pumpRouter(tester);
+    router.go(AppRoutes.householdDetailOf('a'));
+    await tester.pumpAndSettle();
+    await openDialog(tester, notYetAvailable);
+
+    router.go(AppRoutes.householdDetailOf('b'));
+    await tester.pumpAndSettle();
+
+    expect(router.state.uri.path, AppRoutes.householdDetailOf('b'));
+    expect(dialog, findsNothing);
+    expect(notYetAvailable, findsOneWidget);
+  });
+
   testWidgets('a go elsewhere removes every modal opened over the page: a '
       'dialog over a sheet too', (tester) async {
     final router = await pumpRouter(tester);

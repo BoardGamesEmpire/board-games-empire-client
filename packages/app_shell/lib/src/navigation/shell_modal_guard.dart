@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -15,14 +16,18 @@ import 'package:flutter/widgets.dart';
 ///
 /// So the guard notes the shell's top page as each root modal opens, and
 /// removes the modal once that page leaves the shell's navigator, or the
-/// shell itself leaves. It removes it at once, with
-/// [NavigatorState.removeRoute], where Flutter would have popped the top one
-/// with its exit animation: the page has left on another navigator, so a
-/// modal fading out on this one would linger over the page that took its
-/// place. A page pushed over that page is not a leave: a pop-up that opened
-/// it waits for it to arrive and removes itself (#707). A modal opened while
-/// there is no shell page, such as over the sign-in screen, is left to
-/// Flutter.
+/// shell itself leaves. A page go_router builds from the location is keyed
+/// by its route's pattern, so a `go` between two ids of one route, such as
+/// from one household to another, keeps the page and only rebuilds it, and
+/// the navigator reports nothing. The guard reads that as a leave too: the
+/// opener's key now carries other arguments. Either way the guard removes
+/// the modal at once, with [NavigatorState.removeRoute], where Flutter
+/// would have popped the top one with its exit animation: the page has left
+/// on another navigator, so a modal fading out on this one would linger
+/// over the page that took its place. A page pushed over that page is not
+/// a leave: a pop-up that opened it waits for it to arrive and removes
+/// itself (#707). A modal opened while there is no shell page, such as over
+/// the sign-in screen, is left to Flutter.
 ///
 /// An observer attaches to one navigator, so there are two: [rootObserver]
 /// for the router's own observers, and [shellObserver] for the navigation
@@ -36,16 +41,18 @@ class ShellModalGuard {
   /// are on.
   late final NavigatorObserver shellObserver = _ShellObserver(this);
 
-  /// Each open modal the guard owns, with the key of the shell page it was
-  /// opened over: the navigator matches a page to its route by key too.
-  final Map<Route<dynamic>, LocalKey> _openers = {};
+  /// Each open modal the guard owns, with the shell page it was opened
+  /// over.
+  final Map<Route<dynamic>, Page<Object?>> _openers = {};
 
   /// Wraps [shell], what the navigation shell's `ShellRoute` builds, so the
-  /// guard hears it leave: it is disposed exactly when that route leaves.
+  /// guard hears it leave, as it is disposed exactly when that route leaves,
+  /// and hears each change to the shell's pages, as the route builds it
+  /// again for each.
   Widget wrapShell(Widget shell) => _ShellLifetime(guard: this, child: shell);
 
   void _opened(Route<dynamic> modal) {
-    final page = shellObserver.navigator?.widget.pages.lastOrNull?.key;
+    final page = shellObserver.navigator?.widget.pages.lastOrNull;
     if (page != null) _openers[modal] = page;
   }
 
@@ -53,11 +60,34 @@ class ShellModalGuard {
 
   void _pageLeft(Route<dynamic> route) {
     if (route.settings case Page(:final key?)) {
-      _removeWhere((page) => page == key);
+      _removeWhere((page) => page.key == key);
     }
   }
 
   void _shellLeft() => _removeWhere((_) => true);
+
+  /// The shell's pages may have changed: after the frame, by when its
+  /// navigator holds them, removes the modals whose opener has no page left
+  /// with its key and its arguments. A page that left is the observer's,
+  /// so this finds the ones go_router rebuilt in place for another location.
+  void _shellRebuilt() {
+    if (_openers.isEmpty) return;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      final pages = shellObserver.navigator?.widget.pages;
+      if (pages == null) return;
+      _removeWhere(
+        (opener) => !pages.any(
+          (page) =>
+              page.key == opener.key &&
+              _sameArguments(page.arguments, opener.arguments),
+        ),
+      );
+    }, debugLabel: 'ShellModalGuard.shellRebuilt');
+  }
+
+  /// The app's pages carry their path and query parameters as a map.
+  static bool _sameArguments(Object? a, Object? b) =>
+      a is Map && b is Map ? mapEquals(a, b) : a == b;
 
   /// Removes the modals opened over a page that [test] accepts, after the
   /// current frame.
@@ -65,7 +95,7 @@ class ShellModalGuard {
   /// [NavigatorState.removeRoute] can't run while a navigator is updating
   /// its history, which is where an observer is called from, nor while the
   /// tree is being finalised, which is where the shell is disposed.
-  void _removeWhere(bool Function(LocalKey page) test) {
+  void _removeWhere(bool Function(Page<Object?> opener) test) {
     final modals = [
       for (final MapEntry(key: modal, value: page) in _openers.entries)
         if (test(page)) modal,
@@ -135,6 +165,12 @@ class _ShellLifetime extends StatefulWidget {
 }
 
 class _ShellLifetimeState extends State<_ShellLifetime> {
+  @override
+  void didUpdateWidget(_ShellLifetime oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    widget.guard._shellRebuilt();
+  }
+
   @override
   void dispose() {
     widget.guard._shellLeft();

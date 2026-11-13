@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -44,4 +45,33 @@ void main() {
       });
     });
   }
+
+  // A user palette (#644) can put onSurface just past the ratio from the
+  // surface, so that only the last step, full strength, stands clear.
+  test('the fill goes to full strength where no weaker one stands the ratio '
+      'clear', () {
+    const onSurface = Color(0xFF8E8E8E);
+    // White, `ColorScheme.light`'s own surface.
+    const scheme = ColorScheme.light(onSurface: onSurface);
+    final surface = scheme.surface;
+    final weaker = Color.alphaBlend(
+      onSurface.withValues(alpha: 0.95),
+      surface,
+    );
+    expect(
+      Wcag.contrastRatio(onSurface, surface),
+      greaterThanOrEqualTo(BgeNavigationFocus.ratio),
+    );
+    expect(
+      Wcag.contrastRatio(weaker, surface),
+      lessThan(BgeNavigationFocus.ratio),
+    );
+
+    final fill = BgeNavigationFocus.railFill(scheme);
+
+    expect(
+      Wcag.contrastRatio(fill, surface),
+      greaterThanOrEqualTo(BgeNavigationFocus.ratio),
+    );
+  });
 }

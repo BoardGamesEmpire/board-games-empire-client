@@ -56,7 +56,8 @@ void main() {
             '  colors   -> Theme.of(context).colorScheme.<role>\n'
             '  radii    -> BgeTokens.of(context).radiusMd\n'
             '  type     -> Theme.of(context).textTheme.<role>\n'
-            '  widths   -> BgeTokens.of(context).contentMaxWidth\n\n'
+            '  widths   -> BgeTokens.of(context).contentMaxWidth\n'
+            '  sheets   -> showModalBottomSheet(useRootNavigator: true, …)\n\n'
             'If a literal is genuinely correct, add it to _allowlist in\n'
             'test/design_system_enforcement_test.dart WITH A REASON.\n',
       );
@@ -103,6 +104,12 @@ void main() {
         // radius / width
         'BorderRadius.circular(12)': 'radius',
         'BoxConstraints(maxWidth: 480)': 'width',
+        // A sheet on the nearest navigator opens beside the navigation
+        // shell's bar or rail, which stay live under it (#414).
+        'showModalBottomSheet(context: context, builder: build)': 'root-modal',
+        'showModalBottomSheet<void>(context: context, '
+                'useRootNavigator: false, builder: (_) => f(x))':
+            'root-modal',
       };
 
       const shouldNotFire = <String>[
@@ -130,6 +137,8 @@ void main() {
         // The one sanctioned type override: a token reference, not a literal.
         'copyWith(fontFamily: BgeTypography.monospaceFamily)',
         'TextStyle(fontSize: size, height: height)',
+        // The flag after a builder whose nested call ends in a `)`.
+        'showModalBottomSheet(builder: (_) => f(x), useRootNavigator: true)',
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -283,6 +292,13 @@ final List<_Rule> _rules = [
     // impossible to write.
     RegExp(r'''\bfontSize:\s*\d|\bfontFamily:\s*['"]'''),
     'literal type (font size or family)',
+  ),
+  // Reached only via `_scanRootModals`: the flag is an argument anywhere in
+  // a call whose builder nests calls of its own.
+  const _Rule(
+    'root-modal',
+    null,
+    'bottom sheet off the root navigator (pass useRootNavigator: true)',
   ),
 ];
 
@@ -440,21 +456,7 @@ List<_Violation> _scanDimensionalConstructors(String source) {
     final ruleId = _dimensionalConstructors[m.group(1)]!;
     final rule = _rules.firstWhere((r) => r.id == ruleId);
 
-    // Walk to the matching close paren, so nested calls cannot truncate us.
-    var depth = 0;
-    var end = -1;
-    for (var i = m.end - 1; i < source.length; i++) {
-      final c = source[i];
-      if (c == '(') {
-        depth++;
-      } else if (c == ')') {
-        depth--;
-        if (depth == 0) {
-          end = i;
-          break;
-        }
-      }
-    }
+    final end = _closingParen(source, m.end - 1);
     if (end == -1) continue;
 
     for (final arg in _topLevelArgs(source.substring(m.end, end))) {
@@ -475,6 +477,47 @@ List<_Violation> _scanDimensionalConstructors(String source) {
         break;
       }
     }
+  }
+  return found;
+}
+
+/// The index of the `)` that closes the `(` at [open], or -1. Walking to it,
+/// rather than to the first `)`, means nested calls cannot truncate a scan.
+int _closingParen(String source, int open) {
+  var depth = 0;
+  for (var i = open; i < source.length; i++) {
+    final c = source[i];
+    if (c == '(') {
+      depth++;
+    } else if (c == ')') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+/// Finds bottom sheets opened off the root navigator (#414).
+///
+/// Every signed-in page sits in the navigation shell's nested navigator, so
+/// a sheet on the nearest navigator opens in the page area alone, and the
+/// bar or rail beside it stays live, tappable and read out, while the sheet
+/// is up. `showDialog` and `showBgePopup` go on the root navigator by
+/// default; `showModalBottomSheet` has to be told.
+List<_Violation> _scanRootModals(String source) {
+  final found = <_Violation>[];
+  final rule = _rules.firstWhere((r) => r.id == 'root-modal');
+  final opener = RegExp(r'\bshowModalBottomSheet\s*(?:<[^(]*>)?\s*\(');
+  final onRoot = RegExp(r'^\s*useRootNavigator\s*:\s*true\s*$');
+
+  for (final m in opener.allMatches(source)) {
+    final end = _closingParen(source, m.end - 1);
+    if (end == -1) continue;
+    if (_topLevelArgs(source.substring(m.end, end)).any(onRoot.hasMatch)) {
+      continue;
+    }
+    final line = '\n'.allMatches(source.substring(0, m.start)).length + 1;
+    found.add(_Violation('', line, rule, m.group(0)!));
   }
   return found;
 }
@@ -512,7 +555,10 @@ List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
       .join('\n');
 
   final found = <_Violation>[
-    for (final v in _scanDimensionalConstructors(stripped))
+    for (final v in [
+      ..._scanDimensionalConstructors(stripped),
+      ..._scanRootModals(stripped),
+    ])
       if (!exempt.contains(v.rule.id)) v,
   ];
   for (final rule in _rules) {

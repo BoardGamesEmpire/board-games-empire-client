@@ -759,10 +759,11 @@ class _BgeAppState extends State<BgeApp> {
     final sections = access == null
         ? const <AdminSection>[]
         : _adminSections(context, container);
-    final entries = _menuEntries(context, active, admin: false);
-    final withAdmin = sections.isEmpty
-        ? entries
-        : _menuEntries(context, active, admin: true);
+    final entries = _menuEntries(context, active);
+    final withoutAdmin = [
+      for (final entry in entries)
+        if (entry.id != _adminEntryId) entry,
+    ];
 
     // One shape with an access to ask or without, so the shell keeps its
     // state whichever a session has.
@@ -774,7 +775,7 @@ class _BgeAppState extends State<BgeApp> {
             visibleAdminSections(access.current, sections).isNotEmpty;
         return NavigationShell(
           destinations: destinations,
-          entries: admin ? withAdmin : entries,
+          entries: admin ? entries : withoutAdmin,
           activeServerName: active.displayName,
           location: location,
           deferBack: _backHeldAbove,
@@ -790,14 +791,18 @@ class _BgeAppState extends State<BgeApp> {
   /// after either came up, would otherwise hear it first.
   bool _backHeldAbove() => _recoveryNoticeUp || _crashFlowUp;
 
+  /// The Admin entry's id among [_menuEntries].
+  static const _adminEntryId = 'admin';
+
   /// The navigation menu's entries (#129, #414), in display order. The
   /// destinations are not among them: the shell lists those
   /// ([_navigationFor]).
   ///
-  /// [admin] is whether the Admin entry shows. #274, #684: the entry opens the
-  /// admin dashboard, and shows while the session's access shows any of its
-  /// sections, that is, while the caller reads every resource of some
-  /// section's type ([visibleAdminSections]). Reading some is not enough: a
+  /// They include the Admin entry, which [_navigationFor] takes out while
+  /// it is hidden. #274, #684: the entry opens the admin dashboard, and
+  /// shows while the session's access shows any of its sections, that is,
+  /// while the caller reads every resource of some section's type
+  /// ([visibleAdminSections]). Reading some is not enough: a
   /// plain member reads some households, their own. For DataGateways this
   /// agrees with the rule the entry had before the dashboard (#41), since a
   /// plain user reads none. A section is offered only where the server
@@ -812,16 +817,13 @@ class _BgeAppState extends State<BgeApp> {
   /// No access registered (no user session, or no user client to ask
   /// through) is no entry.
   ///
-  /// [_navigationFor] computes [admin]; see it for how, and for why the
-  /// sections are resolved outside the access builder (#456).
+  /// [_navigationFor] decides whether it shows; see it for how, and for why
+  /// the sections are resolved outside the access builder (#456).
   ///
-  /// Each entry runs with the shell's own context, under the auth scope and
-  /// the router, so `context.push` and `context.read` resolve.
-  List<HomeMenuEntry> _menuEntries(
-    BuildContext context,
-    ActiveServer active, {
-    required bool admin,
-  }) {
+  /// An entry that opens a screen names its location, and the shell pushes
+  /// it; sign out runs with the shell's own context, under the auth scope,
+  /// so `context.read` resolves.
+  List<HomeMenuEntry> _menuEntries(BuildContext context, ActiveServer active) {
     final authL10n = AuthLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
@@ -875,33 +877,32 @@ class _BgeAppState extends State<BgeApp> {
           id: 'households',
           icon: Icons.groups_outlined,
           label: householdL10n.householdListTitle,
-          onSelected: (ctx) => ctx.push(AppRoutes.household),
+          location: AppRoutes.household,
         ),
       if (canReadInvites)
         HomeMenuEntry(
           id: 'invites',
           icon: Icons.mail_outline,
           label: householdL10n.inviteInboxTitle,
-          onSelected: (ctx) => ctx.push(AppRoutes.invites),
+          location: AppRoutes.invites,
         ),
       HomeMenuEntry(
         id: 'send_feedback',
         icon: Icons.feedback_outlined,
         label: feedbackL10n.feedbackComposeTitle,
-        onSelected: (ctx) => ctx.push(AppRoutes.feedback),
+        location: AppRoutes.feedback,
       ),
-      if (admin)
-        HomeMenuEntry(
-          id: 'admin',
-          icon: Icons.admin_panel_settings_outlined,
-          label: shellL10n.homeMenuAdmin,
-          onSelected: (ctx) => ctx.push(AppRoutes.admin),
-        ),
+      HomeMenuEntry(
+        id: _adminEntryId,
+        icon: Icons.admin_panel_settings_outlined,
+        label: shellL10n.homeMenuAdmin,
+        location: AppRoutes.admin,
+      ),
       HomeMenuEntry(
         id: 'settings',
         icon: Icons.settings_outlined,
         label: shellL10n.settingsTitle,
-        onSelected: (ctx) => ctx.push(AppRoutes.settings),
+        location: AppRoutes.settings,
       ),
       HomeMenuEntry(
         id: 'sign_out',

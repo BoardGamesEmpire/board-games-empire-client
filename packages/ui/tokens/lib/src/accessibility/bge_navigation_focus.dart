@@ -33,11 +33,17 @@ abstract final class BgeNavigationFocus {
   /// from the fill while the destination is focused.
   static Color iconColor(ColorScheme scheme) => scheme.onSurface;
 
+  /// How many steps the fill's strength climbs in, the last one full.
+  static const _steps = 20;
+
+  /// `onSurface` over [background] at the first step that stands [ratio]
+  /// clear of it, or at full strength, the most there is, where none does.
   static Color _fill(ColorScheme scheme, Color background) {
     var fill = background;
-    for (var alpha = 0.05; alpha <= 1; alpha += 0.05) {
+    // Counted in whole steps: a sum of 0.05s overshoots 1 on the last.
+    for (var step = 1; step <= _steps; step++) {
       fill = Color.alphaBlend(
-        scheme.onSurface.withValues(alpha: alpha),
+        scheme.onSurface.withValues(alpha: step / _steps),
         background,
       );
       if (Wcag.contrastRatio(fill, background) >= ratio) break;

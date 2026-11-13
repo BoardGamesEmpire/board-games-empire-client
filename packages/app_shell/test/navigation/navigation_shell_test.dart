@@ -134,6 +134,13 @@ class _Harness {
 }
 
 List<HomeMenuEntry> _entries(List<String> runs) => [
+  // Opens its screen by location: the shell pushes it.
+  const HomeMenuEntry(
+    id: 'feedback',
+    icon: Icons.feedback_outlined,
+    label: 'Feedback',
+    location: '/feedback',
+  ),
   HomeMenuEntry(
     id: 'households',
     icon: Icons.groups_outlined,
@@ -224,6 +231,10 @@ Future<_Harness> _pump(
           GoRoute(path: '/events', pageBuilder: (_, state) => _material(state)),
           GoRoute(
             path: '/settings',
+            pageBuilder: (_, state) => _material(state),
+          ),
+          GoRoute(
+            path: '/feedback',
             pageBuilder: (_, state) => _material(state),
           ),
         ],
@@ -533,6 +544,45 @@ void main() {
         expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
       });
     }
+
+    testWidgets('an entry with a location pushes its screen once the drawer '
+        'has closed', (tester) async {
+      final shell = await _pump(tester);
+      await shell.openMenu();
+
+      await tester.tap(_entry('feedback'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(shell.location, '/home');
+
+      await tester.pumpAndSettle();
+      expect(shell.location, '/feedback');
+      expect(shell.router.canPop(), isTrue);
+    });
+
+    // The menu is on every page now, not home's alone, so the screen an
+    // entry opens can be the one on top: a second copy would only add a
+    // step to Back.
+    testWidgets('picking the entry for the screen on top does nothing', (
+      tester,
+    ) async {
+      final shell = await _pump(tester, platform: TargetPlatform.android);
+      await shell.push('/feedback');
+      final page = shell.page('/feedback');
+      var navigations = 0;
+      shell.router.routeInformationProvider.addListener(() => navigations++);
+      await shell.openMenu();
+
+      await tester.tap(_entry('feedback'));
+      await tester.pumpAndSettle();
+
+      expect(navigations, 0);
+      expect(shell.location, '/feedback');
+      expect(shell.page('/feedback'), same(page));
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(await shell.back(), isTrue);
+      expect(shell.location, '/home');
+    });
 
     testWidgets('sign out runs at once', (tester) async {
       final shell = await _pump(tester);

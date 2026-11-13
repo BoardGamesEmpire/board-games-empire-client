@@ -8,19 +8,22 @@ import 'package:flutter/widgets.dart';
 /// without the menu learning its internals. A top-level section is a
 /// destination instead (`NavDestination`).
 ///
-/// [onSelected] receives the navigation shell's own [BuildContext], rooted
-/// under the auth scope + router, so navigation (`context.push`) and provider
-/// reads (`context.read<AuthBloc>()`) resolve. The shell runs it after the
-/// drawer has closed, except for a destructive entry, which it runs at once.
+/// An entry opens a screen, at [location], or runs [onSelected]: one of the
+/// two. The shell acts on a pick after the drawer has closed, except for a
+/// destructive entry, which it runs at once.
 @immutable
 class HomeMenuEntry {
   const HomeMenuEntry({
     required this.id,
     required this.icon,
     required this.label,
-    required this.onSelected,
+    this.location,
+    this.onSelected,
     this.isDestructive = false,
-  });
+  }) : assert(
+         (location == null) != (onSelected == null),
+         'An entry opens a location or runs onSelected, not both.',
+       );
 
   /// Stable identifier; also used to key the rendered tile in tests.
   final String id;
@@ -32,9 +35,18 @@ class HomeMenuEntry {
   /// l10n and passes the finished string in.
   final String label;
 
-  /// Invoked with the shell's context, once the drawer has closed. A
-  /// destructive entry runs at once.
-  final void Function(BuildContext context) onSelected;
+  /// The location of the screen the entry opens, which the shell pushes,
+  /// or null where the entry runs [onSelected] instead.
+  ///
+  /// Picked while that screen is the page on top, the entry only closes the
+  /// menu: the menu shows over every signed-in page (#414), and a second
+  /// copy of the page would only add a step to Back.
+  final String? location;
+
+  /// The entry's action, where it opens no [location]. Invoked with the
+  /// navigation shell's own [BuildContext], under the auth scope and the
+  /// router, so provider reads (`context.read<AuthBloc>()`) resolve.
+  final void Function(BuildContext context)? onSelected;
 
   /// Destructive/terminal actions (e.g. sign out) render apart from the
   /// other entries, below a divider and in the error color.
