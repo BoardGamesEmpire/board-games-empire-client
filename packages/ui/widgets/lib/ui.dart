@@ -41,6 +41,8 @@
 /// constructor calls in every package, this one included: 2 of
 /// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of
 /// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
+/// `BgeMenuButton` is both of the navigation shell's menu buttons, a first
+/// page's and the rail's (#414).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their

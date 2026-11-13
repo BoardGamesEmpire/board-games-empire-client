@@ -144,8 +144,9 @@ class BgePopupCoverObserver extends NavigatorObserver {
 /// It watches the page's own [TransitionRoute.animation], not this route's
 /// `secondaryAnimation`: a page never transitions from a pop-up, so that
 /// animation never runs under a pushed page. Nor the opener's: probed for
-/// #414, it missed a page with no transition pushed over an opener that is a
-/// page itself.
+/// #414, it caught a page with no transition pushed over Home, a page with
+/// no transition either, and missed the same page pushed over a
+/// `MaterialPage` opener, one with a transition of its own.
 mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   /// The observer on the nested navigator this pop-up was opened from, for
   /// a page pushed there; null when there is none.

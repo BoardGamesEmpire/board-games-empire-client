@@ -812,13 +812,8 @@ class _BgeAppState extends State<BgeApp> {
   /// No access registered (no user session, or no user client to ask
   /// through) is no entry.
   ///
-  /// [_navigationFor] computes [admin] so: it resolves `_adminSections(context,
-  /// container)` outside the access builder, with the rest of what the menu
-  /// shows (#456: the session's access closes its changes while the shell is
-  /// on its way out, and a builder that resolved the user's services then
-  /// threw). Inside the builder it is
-  /// `visibleAdminSections(access.current, sections).isNotEmpty`, and it is
-  /// false when `_callerAccess(container)` is null.
+  /// [_navigationFor] computes [admin]; see it for how, and for why the
+  /// sections are resolved outside the access builder (#456).
   ///
   /// Each entry runs with the shell's own context, under the auth scope and
   /// the router, so `context.push` and `context.read` resolve.
@@ -2601,8 +2596,8 @@ class _BgeAppState extends State<BgeApp> {
   /// composition without feedback wiring).
   ///
   /// Not logged, unlike [_buildServerAddRoute]: this route is *pushed*
-  /// from the home menu rather than pinned by a bootstrap redirect, so the
-  /// fallback is a screen the user chose to open and the app is still
+  /// from the navigation menu rather than pinned by a bootstrap redirect, so
+  /// the fallback is a screen the user chose to open and the app is still
   /// working — and `NotYetAvailableScreen`'s app bar gives it the same back
   /// button as the real flow (#308).
   Widget? _buildFeedbackRoute(BuildContext context) {
@@ -3648,8 +3643,9 @@ class _AuthScopeState extends State<_AuthScope> {
   ///
   /// Screens opened under the departing user are closed first, for the
   /// reason the sign-out arm routes first: they hold repositories the scope
-  /// pop is about to dispose. Going home does that, since every such screen
-  /// is pushed above it, and [_closePopUps] closes what is open over home.
+  /// pop is about to dispose. Going home does that: the `go` leaves home
+  /// alone on the navigation shell's stack, whatever was pushed or gone to
+  /// before, and [_closePopUps] closes the modals open over it.
   /// Home itself shows the splash until the new user's scope is live, and is
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
@@ -3660,24 +3656,24 @@ class _AuthScopeState extends State<_AuthScope> {
     unawaited(_deactivateSessionScope(active));
   }
 
-  /// Closes the pop-ups open on the root navigator as a session ends, such
-  /// as a game's quick look over home (#707).
+  /// Closes the pop-ups and dialogs open on the root navigator as a session
+  /// ends, such as a game's quick look over home (#707).
   ///
-  /// A pop-up is a route with no page of its own, so it goes when the page
-  /// it was opened over goes. The routing a session's end does takes down
-  /// every page pushed above home, and theirs with them, but home and the
-  /// sign-in screen share the auth shell's page, which stays. One over home
-  /// would outlive the session: over the sign-in screen, or over the next
-  /// user's home, still showing the departing user's game, and reading
-  /// through repositories the scope pop is about to dispose.
+  /// Every modal goes on the root navigator, above the navigation shell, and
+  /// `ShellModalGuard` takes one down once the shell page it was opened over
+  /// leaves, or the shell does (#414). A user switched in place goes home
+  /// ([_endSessionInPlace]), and home's page stays, so one over home would
+  /// outlive the session: over the next user's home, still showing the
+  /// departing user's game, and reading through repositories the scope pop
+  /// is about to dispose. Sign-out closes them here too, at once, where the
+  /// guard would wait for the frame to end.
   ///
-  /// Closed twice. Now, for one on top. And again after the next frame,
-  /// once the routing has taken down the pages above home, for one that was
-  /// under a page: View full details's page, while it is still arriving,
-  /// covers the quick look it removes only once it has arrived. Popping
-  /// stops at the first page, so that one is out of reach until the page has
-  /// gone. The routing lands by then: `go` and the bootstrap redirect are
-  /// synchronous, and the router builds its new pages in that frame.
+  /// Closed twice. Now, and again after the next frame, once the routing
+  /// has landed: `go` and the bootstrap redirect are synchronous, and the
+  /// router builds its new pages in that frame. Popping stops at the first
+  /// page, so the second pass is for a modal under a page on the root
+  /// navigator itself. A page opened from a pop-up arrives beneath it, on
+  /// the shell's navigator, so it never hides one from the first pass.
   static void _closePopUps(BuildContext context) {
     final navigator = Navigator.maybeOf(context, rootNavigator: true);
     if (navigator == null) return;

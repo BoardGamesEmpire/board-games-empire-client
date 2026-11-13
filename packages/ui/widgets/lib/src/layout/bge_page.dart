@@ -224,7 +224,8 @@ class BgePage extends StatelessWidget {
   /// False also turns off the menu button a [BgeNavigationMenu] asks for.
   final bool automaticallyImplyLeading;
 
-  /// Key on the menu button a [BgeNavigationMenu] puts on a first route (#414).
+  /// Key on the [BgeMenuButton] a [BgeNavigationMenu] puts on a first route
+  /// (#414).
   static const Key menuButtonKey = Key('bge_page_menu_button');
 
   /// Optional [Scaffold.floatingActionButton].
@@ -408,12 +409,7 @@ class BgePage extends StatelessWidget {
     if (menu == null || !menu.offersPageButton) {
       return leading;
     }
-    return IconButton(
-      key: menuButtonKey,
-      icon: const Icon(Icons.menu),
-      tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
-      onPressed: menu.onOpen,
-    );
+    return BgeMenuButton(key: menuButtonKey, onPressed: menu.onOpen);
   }
 
   /// False when a shell takes the leading control away: the rail carries the

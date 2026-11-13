@@ -965,8 +965,8 @@ GoRouter buildAppRouter({
               // `go` to either therefore builds the list beneath it, so there
               // is always something to go back to — which is what lets the
               // detail screen's way back be a plain pop. A `push` still adds
-              // only the leaf page, so the drawer path keeps home beneath the
-              // list.
+              // only the leaf page, so the menu's Households entry pushes the
+              // list over whatever page is current.
               //
               // Order among the children is the part that cannot change.
               // `create` is a perfectly legal `:householdId`, so
@@ -976,7 +976,7 @@ GoRouter buildAppRouter({
               // can have.
               //
               // The detail screen also answers a literal `create` id with its
-              // not-found state (#270 D6). That is the belt to this ordering's
+              // not-found state (#270). That is the belt to this ordering's
               // braces — cheap, and it keeps the failure legible if these are
               // ever reordered.
               GoRoute(
@@ -1080,8 +1080,8 @@ GoRouter buildAppRouter({
                   ),
                 ],
               ),
-              // #455: the invites sent to the current user, from the home
-              // drawer.
+              // #455: the invites sent to the current user, pushed from the
+              // navigation menu.
               GoRoute(
                 path: AppRoutes.invites,
                 pageBuilder: (context, state) => _materialPage(
@@ -1580,12 +1580,12 @@ Page<void> _page(
   child: child,
 );
 
-/// Builds the real home screen subtree for the [AppRoutes.home] route —
-/// the navigation-drawer menu (#129). Always supplied by `BgeApp` so the
-/// menu's sign-out entry can reach the active server's auth bloc; returns
-/// null at navigation time when no active server backs the bloc (a
-/// transient pre-active state), in which case the route falls back to
-/// [NotYetAvailableScreen], like the other optional-builder routes.
+/// Builds the home screen for the [AppRoutes.home] route: the sections the
+/// session can show (#129, #613). The menu is not home's: the navigation
+/// shell holds it, above every signed-in page (#414). Always supplied by
+/// `BgeApp`; returns null at navigation time when no active server is
+/// resolvable (a transient pre-active state), in which case the route falls
+/// back to [NotYetAvailableScreen], like the other optional-builder routes.
 typedef HomeScreenBuilder = Widget? Function(BuildContext context);
 
 /// Wraps the auth [ShellRoute] child (the auth route and the navigation

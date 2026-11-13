@@ -268,27 +268,57 @@ void main() {
       handle.dispose();
     });
 
-    for (final id in ['settings', 'sign_out']) {
-      testWidgets('$id reads as a button with its label alone, and keeps '
-          'focus and tap', (tester) async {
-        final handle = tester.ensureSemantics();
-        await _pump(tester, entries: _entries());
-        await _openDrawer(tester);
+    for (final listed in [false, true]) {
+      final where = listed ? 'beside destinations' : 'alone';
+      for (final id in ['settings', 'sign_out']) {
+        testWidgets('$id reads as a button with its label alone, and keeps '
+            'focus and tap ($where)', (tester) async {
+          final handle = tester.ensureSemantics();
+          await _pump(
+            tester,
+            entries: _entries(),
+            destinations: listed ? _destinations : const [],
+            selectedId: listed ? 'home' : null,
+          );
+          await _openDrawer(tester);
 
-        final label = id == 'settings' ? 'Settings' : 'Sign out';
-        final data = find.semantics
-            .byLabel(RegExp('^$label\$'))
-            .evaluate()
-            .single
-            .getSemanticsData();
-        expect(data.flagsCollection.isButton, isTrue);
-        expect(data.flagsCollection.isFocused, isNot(Tristate.none));
-        expect(data.hasAction(SemanticsAction.tap), isTrue);
-        expect(data.hasAction(SemanticsAction.focus), isTrue);
+          final label = id == 'settings' ? 'Settings' : 'Sign out';
+          final data = find.semantics
+              .byLabel(RegExp('^$label\$'))
+              .evaluate()
+              .single
+              .getSemanticsData();
+          expect(data.flagsCollection.isButton, isTrue);
+          expect(data.flagsCollection.isFocused, isNot(Tristate.none));
+          expect(data.hasAction(SemanticsAction.tap), isTrue);
+          expect(data.hasAction(SemanticsAction.focus), isTrue);
 
-        handle.dispose();
-      });
+          handle.dispose();
+        });
+      }
     }
+
+    // Where the drawer lists destinations, they are its tabs, counted among
+    // themselves; the entries below them are not (#414).
+    testWidgets('beside destinations, only the destinations read "Tab n of '
+        'm", m the number of destinations', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(
+        tester,
+        entries: _entries(),
+        destinations: _destinations,
+        selectedId: 'home',
+      );
+      await _openDrawer(tester);
+
+      final tabs = find.semantics.byLabel(RegExp(r'Tab \d+ of \d+'));
+      expect(
+        [for (final node in tabs.evaluate()) node.label],
+        ['Home\nTab 1 of 2', 'Collection\nTab 2 of 2'],
+      );
+
+      handle.dispose();
+    });
   });
 
   group('destinations', () {
@@ -304,39 +334,42 @@ void main() {
       );
       await _openDrawer(tester);
 
-      bool selected(String id) =>
-          tester
-              .getSemantics(
-                find.descendant(
-                  of: find.byKey(MenuDrawer.entryKey(id)),
-                  matching: find.text(id == 'home' ? 'Home' : 'Collection'),
-                ),
-              )
-              .getSemanticsData()
-              .flagsCollection
-              .isSelected ==
-          Tristate.isTrue;
+      // Selectable: a selected state to say, true or false, not none.
+      Tristate selected(String id) => tester
+          .getSemantics(
+            find.descendant(
+              of: find.byKey(MenuDrawer.entryKey(id)),
+              matching: find.text(id == 'home' ? 'Home' : 'Collection'),
+            ),
+          )
+          .getSemanticsData()
+          .flagsCollection
+          .isSelected;
 
-      expect(selected('collection'), isTrue);
-      expect(selected('home'), isFalse);
+      expect(selected('collection'), Tristate.isTrue);
+      expect(selected('home'), Tristate.isFalse);
 
       handle.dispose();
     });
 
-    testWidgets('none selected when selectedId names none of them', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        entries: _entries(),
-        destinations: _destinations,
-      );
-      await _openDrawer(tester);
+    testWidgets('none selected when selectedId names none of them, or is '
+        'null', (tester) async {
+      for (final id in ['events', null]) {
+        // A fresh drawer each time, closed until the menu button opens it.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await _pump(
+          tester,
+          entries: _entries(),
+          destinations: _destinations,
+          selectedId: id,
+        );
+        await _openDrawer(tester);
 
-      final drawer = tester.widget<NavigationDrawer>(
-        find.byKey(MenuDrawer.drawerKey),
-      );
-      expect(drawer.selectedIndex, isNull);
+        final drawer = tester.widget<NavigationDrawer>(
+          find.byKey(MenuDrawer.drawerKey),
+        );
+        expect(drawer.selectedIndex, isNull, reason: '$id');
+      }
     });
 
     testWidgets('no destinations, no destination divider', (tester) async {

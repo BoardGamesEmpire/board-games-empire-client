@@ -36,9 +36,10 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 /// mirrors the repository, so a new user reaches the shell, which switches
 /// sessions; nothing here touches the UI.
 ///
-/// Below the widget tree on purpose. A widget above the router would tie
-/// this to route placement, and routes outside the auth shell already miss
-/// the resume revalidation for that reason (#145).
+/// Below the widget tree on purpose, so no route's placement can leave a
+/// tab out. The resume revalidation is a widget in the auth shell, and
+/// missed the routes outside it until every signed-in route moved inside
+/// (#145, #414).
 ///
 /// ## What [confirm] leaves open
 ///

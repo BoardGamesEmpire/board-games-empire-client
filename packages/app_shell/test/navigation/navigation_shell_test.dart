@@ -315,7 +315,11 @@ void main() {
       final rail = tester.widget<NavigationRail>(_rail);
       expect(rail.labelType, NavigationRailLabelType.selected);
       expect(rail.selectedIndex, 0);
-      final menu = rail.leading! as IconButton;
+      // The page's own control, so the two read the same.
+      expect(rail.leading, isA<BgeMenuButton>());
+      final menu = tester.widget<IconButton>(
+        find.descendant(of: _rail, matching: find.byType(IconButton)),
+      );
       expect((menu.icon as Icon).icon, Icons.menu);
       expect(menu.tooltip, 'Open navigation menu');
       // The rail carries the menu, so the page shows none, and no back
@@ -656,9 +660,12 @@ void main() {
   });
 
   group('the selection region (#625)', () {
-    testWidgets('a press-drag on a drawer entry starts no selection', (
-      tester,
-    ) async {
+    // A drag the length of the entry: the app-wide region's drag recognizer,
+    // an ancestor no wrap reaches, takes the gesture from ~2.5px on and the
+    // tap is cancelled, as on every button under that region (#322). What
+    // the wrap holds is that the drag selects nothing.
+    testWidgets('a press-drag across a drawer entry selects nothing, and '
+        'runs nothing', (tester) async {
       final copies = captureClipboardCopies();
       // A screen the menu opens: the drawer lists destinations too.
       final shell = await _pump(
@@ -684,6 +691,32 @@ void main() {
       expect(shell.scaffold.isDrawerOpen, isTrue);
       expect(shell.runs, isEmpty);
       expect(shell.location, '/settings');
+    });
+
+    // A hand on a mouse moves a little as it clicks.
+    testWidgets('a press that moves 2px on a drawer entry runs it', (
+      tester,
+    ) async {
+      final copies = captureClipboardCopies();
+      final shell = await _pump(
+        tester,
+        size: const Size(1280, 800),
+        at: '/settings',
+        underRegion: true,
+      );
+
+      for (final id in ['households', 'games']) {
+        await tester.tap(find.byKey(BgePage.menuButtonKey));
+        await tester.pumpAndSettle();
+        final entry = tester.getCenter(_entry(id));
+        await mouseDrag(tester, entry, entry + const Offset(2, 0), steps: 2);
+        await tester.pumpAndSettle();
+        await sendCopyShortcut(tester);
+      }
+
+      expect(copies.join(), isEmpty);
+      expect(shell.runs, ['households']);
+      expect(shell.location, '/games');
     });
 
     testWidgets('a press-drag across the bar or the rail starts no '

@@ -4,8 +4,9 @@ import 'package:flutter/widgets.dart';
 ///
 /// Presentation-agnostic: `MenuDrawer` renders these into the navigation
 /// drawer in declaration order, the same contribution shape as
-/// `SettingsSection`, so future top-level sections slot in as extra entries
-/// without the menu learning their internals.
+/// `SettingsSection`, so a new screen the menu opens slots in as an entry
+/// without the menu learning its internals. A top-level section is a
+/// destination instead (`NavDestination`).
 ///
 /// [onSelected] receives the navigation shell's own [BuildContext], rooted
 /// under the auth scope + router, so navigation (`context.push`) and provider

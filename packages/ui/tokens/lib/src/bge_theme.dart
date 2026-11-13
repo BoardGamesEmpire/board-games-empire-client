@@ -215,9 +215,12 @@ abstract final class BgeTheme {
           ),
         ),
       ),
+      // The rail takes this in place of its default rather than merged with
+      // it, so the size the default carries is set here too.
       navigationRailTheme: NavigationRailThemeData(
         unselectedIconTheme: IconThemeData(
           color: BgeNavigationFocus.iconColor(scheme),
+          size: 24,
         ),
       ),
       extensions: [tokens, BgeStatusColors.forScheme(scheme)],

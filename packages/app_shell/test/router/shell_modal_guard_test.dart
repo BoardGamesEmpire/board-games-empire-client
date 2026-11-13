@@ -193,6 +193,61 @@ void main() {
     expect(find.text('Open settings'), findsNothing);
   });
 
+  // The modal is its opener's, not any page's: a page it opened leaving
+  // before it arrived takes nothing with it.
+  testWidgets('browser Back to the opener while a page a pop-up opened is '
+      'arriving leaves the pop-up over its opener', (tester) async {
+    final history = FakeBrowserHistory.install(tester);
+    final router = await pumpRouter(tester);
+    unawaited(
+      showBgePopup<void>(
+        tester.element(home),
+        semanticLabel: 'Probe pop-up',
+        builder: (context) => Center(
+          child: TextButton(
+            onPressed: () => unawaited(
+              GoRouter.of(context).push<void>(AppRoutes.settings),
+            ),
+            child: const Text('Open settings'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open settings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(history.locations.last, AppRoutes.settings);
+
+    await history.back();
+
+    expect(router.state.uri.path, AppRoutes.home);
+    expect(notYetAvailable, findsNothing);
+    expect(home, findsOneWidget);
+    expect(find.text('Open settings'), findsOneWidget);
+  });
+
+  testWidgets('over a pushed page, Back closes the dialog first, then pops '
+      'the page', (tester) async {
+    final router = await pumpRouter(tester);
+    await push(tester, router, AppRoutes.settings);
+    await openDialog(tester, notYetAvailable);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(dialog, findsNothing);
+    expect(notYetAvailable, findsOneWidget);
+    expect(router.state.uri.path, AppRoutes.settings);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(home, findsOneWidget);
+    expect(router.state.uri.path, AppRoutes.home);
+  });
+
   testWidgets('a dialog opened over a page stays while that page stays, and '
       'Back closes the dialog first', (tester) async {
     final router = await pumpRouter(tester);

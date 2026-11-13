@@ -218,11 +218,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// its detail beside it.
   ///
   /// Read them through `BgeWindowClass`, not by comparing a width yourself.
-  /// Two things do so far: `showBgePopup`, which opens a sheet in the compact
-  /// class and a dialog from medium up, and `bgeGridColumns` (#707, #710). The
-  /// home page stopped setting its events and stats sections side by side
-  /// (#669); the next readers are expected to be the navigation shell (#414),
-  /// the width-aware list rows (#680) and the first two-pane layout (#46).
+  /// `docs/design/STYLE_GUIDE.md` §3 *Layout* lists what reads it.
   final double breakpointExpanded;
 
   // ── Motion durations ───────────────────────────────────────────────

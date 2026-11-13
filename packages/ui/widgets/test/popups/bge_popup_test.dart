@@ -724,4 +724,64 @@ void main() {
       });
     }
   });
+
+  group('BgeRemoveWhenCovered', () {
+    // Mixed into a route of another kind, with no nested navigator to watch:
+    // it hears of a page over it on its own navigator alone (#707).
+    testWidgets('with no cover observer, a route goes once a page pushed '
+        'over it has arrived', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Text('Home'))),
+      );
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      final route = _PlainPopupRoute(const Text('Pop-up'));
+      expect(route.coverObserver, isNull);
+      navigator.push(route);
+      await tester.pumpAndSettle();
+      expect(find.text('Pop-up'), findsOneWidget);
+
+      navigator.push(
+        MaterialPageRoute<void>(builder: (_) => const Text('Page')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(route.isActive, isTrue, reason: 'the page is still arriving');
+
+      await tester.pumpAndSettle();
+      expect(route.isActive, isFalse);
+
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Pop-up'), findsNothing);
+    });
+  });
+}
+
+/// A route that mixes [BgeRemoveWhenCovered] in and leaves its
+/// `coverObserver` as the mixin has it.
+class _PlainPopupRoute extends PopupRoute<void>
+    with BgeRemoveWhenCovered<void> {
+  _PlainPopupRoute(this.child);
+
+  final Widget child;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 200);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => child;
 }

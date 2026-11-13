@@ -38,6 +38,48 @@ Widget _host({
 
 Finder get _menuButton => find.byKey(BgePage.menuButtonKey);
 
+/// The menu's fields in state, so a change rebuilds the menu and leaves the
+/// navigator beneath it alone, as a shell's build does: the pages' navigator
+/// is the same widget across it.
+class _MenuHost extends StatefulWidget {
+  const _MenuHost({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_MenuHost> createState() => _MenuHostState();
+}
+
+class _MenuHostState extends State<_MenuHost> {
+  VoidCallback _onOpen = () {};
+  bool _offersPageButton = true;
+  bool _present = true;
+
+  void change({
+    VoidCallback? onOpen,
+    bool? offersPageButton,
+    bool? present,
+  }) => setState(() {
+    _onOpen = onOpen ?? _onOpen;
+    _offersPageButton = offersPageButton ?? _offersPageButton;
+    _present = present ?? _present;
+  });
+
+  @override
+  Widget build(BuildContext context) => _present
+      ? BgeNavigationMenu(
+          onOpen: _onOpen,
+          offersPageButton: _offersPageButton,
+          child: widget.child,
+        )
+      : widget.child;
+}
+
+Widget _hostWithState(GlobalKey<_MenuHostState> host) => MaterialApp(
+  home: _page('Home'),
+  builder: (context, child) => _MenuHost(key: host, child: child!),
+);
+
 void main() {
   group('BgeNavigationMenu and BgePage', () {
     testWidgets('the first route under a menu shows the menu button, and it '
@@ -115,10 +157,88 @@ void main() {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(_host(home: _page('Home')));
 
+      expect(tester.widget(_menuButton), isA<BgeMenuButton>());
       expect(
         tester.getSemantics(_menuButton).tooltip,
         const DefaultMaterialLocalizations().openAppDrawerTooltip,
       );
+      handle.dispose();
+    });
+
+    // A change that rebuilds the menu and not the pages beneath it, as a
+    // shell's does: only the menu's notice reaches the page.
+    testWidgets('a change to offersPageButton rebuilds the page', (
+      tester,
+    ) async {
+      final host = GlobalKey<_MenuHostState>();
+      await tester.pumpWidget(_hostWithState(host));
+      expect(_menuButton, findsOneWidget);
+
+      host.currentState!.change(offersPageButton: false);
+      await tester.pump();
+      expect(_menuButton, findsNothing);
+      expect(find.byType(BackButton), findsNothing);
+
+      host.currentState!.change(offersPageButton: true);
+      await tester.pump();
+      expect(_menuButton, findsOneWidget);
+    });
+
+    testWidgets('the menu going from above the page takes its button, and '
+        'coming back brings it back', (tester) async {
+      final host = GlobalKey<_MenuHostState>();
+      await tester.pumpWidget(_hostWithState(host));
+      expect(_menuButton, findsOneWidget);
+
+      host.currentState!.change(present: false);
+      await tester.pump();
+      expect(_menuButton, findsNothing);
+
+      host.currentState!.change(present: true);
+      await tester.pump();
+      expect(_menuButton, findsOneWidget);
+    });
+
+    testWidgets('a change to onOpen reaches the page button', (tester) async {
+      final host = GlobalKey<_MenuHostState>();
+      final opened = <String>[];
+      await tester.pumpWidget(_hostWithState(host));
+      host.currentState!.change(onOpen: () => opened.add('first'));
+      await tester.pump();
+      host.currentState!.change(onOpen: () => opened.add('second'));
+      await tester.pump();
+
+      await tester.tap(_menuButton);
+      expect(opened, ['second']);
+    });
+  });
+
+  group('BgeMenuButton', () {
+    testWidgets('shows the menu icon, is named by openAppDrawerTooltip, and '
+        'calls onPressed', (tester) async {
+      final handle = tester.ensureSemantics();
+      var pressed = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: BgeMenuButton(onPressed: () => pressed++)),
+        ),
+      );
+
+      expect(find.byIcon(Icons.menu), findsOneWidget);
+      expect(
+        tester.getSemantics(find.byType(BgeMenuButton)),
+        matchesSemantics(
+          tooltip: const DefaultMaterialLocalizations().openAppDrawerTooltip,
+          isButton: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+        ),
+      );
+      await tester.tap(find.byType(BgeMenuButton));
+      expect(pressed, 1);
       handle.dispose();
     });
   });

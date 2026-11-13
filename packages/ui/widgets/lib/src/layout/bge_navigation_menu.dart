@@ -1,14 +1,15 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 /// What a navigation shell tells the pages beneath it about its menu (#414).
 ///
 /// A shell puts this above its pages. A `BgePage` on a route with nothing
-/// beneath it reads it to swap its implied back arrow for a menu button that
-/// calls [onOpen]; a page does not otherwise know the shell exists.
+/// beneath it reads it to swap its implied back arrow for a [BgeMenuButton]
+/// that calls [onOpen]; a page does not otherwise know the shell exists.
 ///
-/// Nothing rebuilds a page when the menu goes away, because a shell that is
-/// there is there for good; [updateShouldNotify] covers the two fields that
-/// can change under it, [onOpen] and [offersPageButton].
+/// A page that reads it rebuilds when [onOpen] or [offersPageButton]
+/// changes ([updateShouldNotify]), and when the menu comes or goes above it,
+/// as for any inherited widget: a shell that steps aside for a while takes
+/// the page's button with it, and brings it back on its return.
 class BgeNavigationMenu extends InheritedWidget {
   /// Creates the menu hook for the pages in [child].
   const BgeNavigationMenu({
@@ -35,4 +36,25 @@ class BgeNavigationMenu extends InheritedWidget {
   bool updateShouldNotify(BgeNavigationMenu oldWidget) =>
       onOpen != oldWidget.onOpen ||
       offersPageButton != oldWidget.offersPageButton;
+}
+
+/// The button that opens a navigation shell's menu (#414): the menu icon,
+/// named by Material's `openAppDrawerTooltip`.
+///
+/// The one control for both places the menu opens from, a first page's app
+/// bar and a navigation rail's top, so a screen reader names it the same in
+/// each.
+class BgeMenuButton extends StatelessWidget {
+  /// Creates a button that calls [onPressed] to open the menu.
+  const BgeMenuButton({required this.onPressed, super.key});
+
+  /// Opens the menu.
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    icon: const Icon(Icons.menu),
+    tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+    onPressed: onPressed,
+  );
 }

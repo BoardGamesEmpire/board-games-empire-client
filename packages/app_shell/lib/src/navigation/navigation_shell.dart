@@ -4,7 +4,7 @@ import 'package:app_shell/src/router/app_router.dart' show AppRoutes;
 import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ui/ui.dart' show BgeNavigationMenu;
+import 'package:ui/ui.dart' show BgeMenuButton, BgeNavigationMenu;
 import 'package:ui_tokens/ui_tokens.dart'
     show BgeNavigationFocus, BgeWindowClass;
 
@@ -30,8 +30,9 @@ enum _Chrome { none, bar, rail }
 ///
 /// System Back closes an open drawer first, and drops a pick still waiting
 /// for the drawer to go. On a destination's own screen, other than Home,
-/// with nothing beneath it, it goes home. Anything else is the router's,
-/// and so is everything while [deferBack] says so.
+/// with nothing beneath it, it goes home. Anything else is the router's.
+/// While [deferBack] says so, every press passes the shell by, to the
+/// handler registered before it, then the router.
 class NavigationShell extends StatefulWidget {
   const NavigationShell({
     required this.destinations,
@@ -348,13 +349,7 @@ class _NavigationShellState extends State<NavigationShell> {
                         // A landscape phone, or large text, is shorter than the
                         // destinations.
                         scrollable: true,
-                        leading: IconButton(
-                          icon: const Icon(Icons.menu),
-                          tooltip: MaterialLocalizations.of(
-                            context,
-                          ).openAppDrawerTooltip,
-                          onPressed: _openDrawer,
-                        ),
+                        leading: BgeMenuButton(onPressed: _openDrawer),
                         onDestinationSelected: (index) =>
                             _go(destinations[index]),
                         destinations: [

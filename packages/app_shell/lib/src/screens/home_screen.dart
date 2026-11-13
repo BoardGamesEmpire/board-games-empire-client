@@ -8,8 +8,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// temporary `HomePlaceholderScreen` (#37).
 ///
 /// Presentation-only. The navigation menu is not the page's: the navigation
-/// shell hosts it above every signed-in page (#414), and this page's app bar
-/// shows the button that opens it.
+/// shell hosts it above every signed-in page (#414). The button that opens
+/// it is this page's, in its app bar, at a compact window, and the
+/// navigation rail's at medium and up.
 ///
 /// The page's content is the sections (#613), each built in its own feature
 /// package and handed in through a slot. [HomeSections] decides their order

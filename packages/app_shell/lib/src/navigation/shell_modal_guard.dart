@@ -15,11 +15,14 @@ import 'package:flutter/widgets.dart';
 ///
 /// So the guard notes the shell's top page as each root modal opens, and
 /// removes the modal once that page leaves the shell's navigator, or the
-/// shell itself leaves. It removes it as Flutter would have, with
-/// [NavigatorState.removeRoute] and no exit. A page pushed over that page
-/// is not a leave: a pop-up that opened it waits for it to arrive and
-/// removes itself (#707). A modal opened while there is no shell page, such
-/// as over the sign-in screen, is left to Flutter.
+/// shell itself leaves. It removes it at once, with
+/// [NavigatorState.removeRoute], where Flutter would have popped the top one
+/// with its exit animation: the page has left on another navigator, so a
+/// modal fading out on this one would linger over the page that took its
+/// place. A page pushed over that page is not a leave: a pop-up that opened
+/// it waits for it to arrive and removes itself (#707). A modal opened while
+/// there is no shell page, such as over the sign-in screen, is left to
+/// Flutter.
 ///
 /// An observer attaches to one navigator, so there are two: [rootObserver]
 /// for the router's own observers, and [shellObserver] for the navigation

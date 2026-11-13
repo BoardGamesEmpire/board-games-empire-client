@@ -197,13 +197,14 @@ two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
 the other.
 
-**The window class is the one way to read a breakpoint.** `BgeWindowClass.of(context)`
-says which form a layout takes at the window's width, and nothing compares a
-width to `breakpointMedium` or `breakpointExpanded` by hand. It reads the
-window (`MediaQuery.sizeOf`), never a `LayoutBuilder`'s constraints: under the
-page's padding, or beside a rail, a `LayoutBuilder` reaches 840 only at a
-window of 888, and the layout would flip at the wrong width. A
-threshold belongs to the wider class: 600 is medium, 840 is expanded.
+**The window class is the one way to read a breakpoint.**
+`BgeWindowClass.of(context)` says which form a layout takes at the window's
+width, and nothing compares a width to `breakpointMedium` or
+`breakpointExpanded` by hand. It reads the window (`MediaQuery.sizeOf`), never a
+`LayoutBuilder`'s constraints: under the page's padding, or beside a rail, a
+`LayoutBuilder` reaches 840 only at a window of 888, and the layout would flip
+at the wrong width. A threshold belongs to the wider class: 600 is medium, 840
+is expanded.
 
 | Class | Window width | Navigation |
 | --- | --- | --- |
@@ -211,14 +212,14 @@ threshold belongs to the wider class: 600 is medium, 840 is expanded.
 | `medium` | 600 to 839 | A `NavigationRail`, labelling the selected destination only |
 | `expanded` | 840 and up | A `NavigationRail`, labelling every destination |
 
-The bar or rail shows only when there are two or more destinations and the
-page on screen is inside one of them. Everywhere else, and for whatever is not a
-destination, the menu drawer is the way in (#414). Three things read the window class so far:
-`showBgePopup` (a sheet in `compact`, a dialog from `medium` up), `bgeGridColumns`
-(the column count of a cover grid) (#707, #710), and the navigation shell. The
-home page stopped setting its events and stats sections side by side (#669);
-the next readers are expected to be the width-aware list rows (#680) and the
-first two-pane layout (#46).
+The bar or rail shows only when there are two or more destinations and the page
+on screen is inside one of them. Everywhere else, and for whatever is not a
+destination, the menu drawer is the way in (#414). Three things read the window
+class so far: `showBgePopup` (a sheet in `compact`, a dialog from `medium` up),
+`bgeGridColumns` (the column count of a cover grid) (#707, #710), and the
+navigation shell. The home page stopped setting its events and stats sections
+side by side (#669); the next readers are expected to be the width-aware list
+rows (#680) and the first two-pane layout (#46).
 
 ---
 
@@ -240,7 +241,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `showBgePopup` | `showModalBottomSheet` at every width, a wide strip along the bottom edge from 840dp up | A bottom sheet in the `compact` window class, a dialog from `medium` up, on the root navigator, so its barrier covers the navigation bar or rail; a page opened from it removes it once the page has arrived, so back lands where the pop-up was opened from. A page pushed inside the navigation shell arrives beneath the pop-up, which hears of it through the shell navigator's `BgePopupCoverObserver`; the pop-up goes once the page has arrived (#707, #414) |
 | `BgeWindowClass` | a `MediaQuery` width compared to `breakpointMedium` or `breakpointExpanded` at each call site, or read from a `LayoutBuilder`, which sees the width under the page's padding (#414) | `compact`, `medium` or `expanded` for the window the layout is in, each threshold belonging to the wider class; resolved against the theme's `BgeTokens`; rebuilds only when the width changes |
 | `NavigationShell` (with `NavDestination` and `MenuDrawer`) | each page keeping its own drawer, with the app's sections reachable only through Home's menu (#414) | The bar or rail above every signed-in page: a `NavigationBar` at `compact`, a `NavigationRail` from `medium` up, shown only with two or more destinations and the page inside one of them. The drawer lists the destinations exactly when no bar or rail does, then the menu entries, a destructive one (sign out) set apart; a pick closes the drawer and runs once it has gone, so a pushed page's transition plays in full (#643). Its chrome is a `SelectionContainer.disabled`, so a drag across it selects no text (#625). The page area has its own `ScaffoldMessenger`, so a page's SnackBar shows in that page's `Scaffold` and moves its floating action button. On iOS the drawer's edge drag is off, to keep the back swipe. Picking a destination `go`es to it; System Back closes an open drawer first, then goes home from another destination's own screen. A modal opened over a shell page on the root navigator is closed when that page leaves (`ShellModalGuard`) |
-| `BgeNavigationMenu` | a page deciding for itself whether to draw a menu button or a back arrow | An inherited hook the shell puts above its pages: a `BgePage` on a route with nothing beneath it swaps its implied back arrow for a menu button that opens the shell's menu, and shows no leading control while a rail carries the button. A page does not otherwise know the shell is there; with no shell above, it behaves as before |
+| `BgeNavigationMenu` (with `BgeMenuButton`) | a page deciding for itself whether to draw a menu button or a back arrow | An inherited hook the shell puts above its pages: a `BgePage` on a route with nothing beneath it swaps its implied back arrow for a `BgeMenuButton`, the control the rail's top shows too, that opens the shell's menu, and shows no leading control while a rail carries the button. A page does not otherwise know the shell is there; with no shell above, it behaves as before |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
@@ -738,7 +739,7 @@ legible body text on every surface role.
       through `BgeWindowClass`, never a `LayoutBuilder` or a width compared by
       hand
 - [ ] A top-level screen is a destination of the navigation shell or an entry
-      of its menu; it does not reach the user by a button on another page
+      of its menu, not only a button on another page
 - [ ] A bottom sheet passes `useRootNavigator: true`, so its barrier covers
       the bar or rail
 - [ ] A list surface passes `semanticChildCount` — the count it currently

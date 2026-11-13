@@ -376,6 +376,25 @@ void main() {
       expect(find.text(bannerMessage), findsOneWidget);
     });
 
+    // As on home: the verification-only change reaches the banner, and the
+    // screen the menu opened stays as it is.
+    testWidgets('on settings, a confirming revalidation clears the banner '
+        'without a remount', (tester) async {
+      _useSettingsStorage();
+      final repo = unverified();
+      await pumpApp(tester, repo);
+      await openMenuEntry(tester, 'settings');
+      expect(find.text(bannerMessage), findsOneWidget);
+      final settings = tester.element(find.byType(SettingsScreen));
+
+      repo.emitAuthState(AuthStateAuthenticated(session: testAuthResponse()));
+      await tester.pumpAndSettle();
+
+      expect(find.text(bannerMessage), findsNothing);
+      expect(tester.element(find.byType(SettingsScreen)), same(settings));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('dismissed on home, it stays dismissed on settings', (
       tester,
     ) async {

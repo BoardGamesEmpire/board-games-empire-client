@@ -759,7 +759,8 @@ void main() {
         // The second destination: the first is selected, and its indicator
         // would mask the focus fill.
         final icon = tester.getRect(find.byIcon(Icons.search));
-        final rect = tester.getRect(find.text('Entry')).inflate(8);
+        // Round the icon, where the indicator's pill shows the fill.
+        final area = icon.inflate(8);
         final atRest = await capture(tester);
 
         await tab(tester);
@@ -773,8 +774,8 @@ void main() {
 
         // Anywhere the focus shows: a fill, a ring, an edge.
         var strongest = 1.0;
-        for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
-          for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
+        for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
+          for (var x = area.left.ceil(); x < area.right.floor(); x++) {
             final point = Offset(x + 0.5, y + 0.5);
             final ratio = Wcag.contrastRatio(atRest(point), focused(point));
             if (ratio > strongest) strongest = ratio;

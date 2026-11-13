@@ -427,20 +427,21 @@ void main() {
     expect(find.byType(HouseholdListScreen), findsOneWidget);
   });
 
-  testWidgets('home at a medium window: Tab meets the rail in the order it is '
-      'drawn, then the page, with no trap', (tester) async {
+  testWidgets('home at a medium window: Tab meets the page, then the rail in '
+      'the order it is drawn, with no trap', (tester) async {
     // The default 800x600 window: a rail at the start, its menu button at
     // the top, and the page without one (#414).
     await _pumpHome(tester);
     expect(find.byKey(NavigationShell.railKey), findsOneWidget);
     expect(find.byKey(NavigationShell.barKey), findsNothing);
 
-    // The page first, top to bottom, then the rail as it is drawn: the menu
-    // button, then Home to Events. The bar at a phone's width is met after
-    // the page the same way, so the chrome sits last at every width. The
-    // rail is a traversal group of its own, so the walk takes its stops
-    // together and not scattered among the page's. Material reads each
-    // destination with "Tab n of m".
+    // The page's content first, top to bottom, then the rail as it is
+    // drawn: the menu button, then Home to Events. At a phone's width the
+    // bar comes after the content the same way, but the menu button there
+    // is the page's own, in its app bar, and leads (see the compact walk
+    // above). The rail is a traversal group of its own, so the walk takes
+    // its stops together and not scattered among the page's. Material reads
+    // each destination with "Tab n of m".
     await expectTraversable(
       tester,
       expectedOrder: [

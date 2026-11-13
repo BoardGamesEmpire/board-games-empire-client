@@ -22,7 +22,8 @@ Future<void> openMenuEntry(WidgetTester tester, String id) async {
 
 /// Opens the navigation shell's menu: by its button, on the rail or on a
 /// first page, or, on a screen the menu opened, which shows a back arrow
-/// instead, the way an edge drag would.
+/// instead, through the shell's Scaffold. That opens it whether or not the
+/// edge drag is on, which it is not on iOS.
 Future<void> openMenu(WidgetTester tester) async {
   final button = find.byIcon(Icons.menu);
   if (button.evaluate().isNotEmpty) {

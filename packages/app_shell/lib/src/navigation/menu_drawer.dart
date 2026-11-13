@@ -10,8 +10,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// Presentation-only, and it only reports a pick. [onDestination] and
 /// [onEntry] are called on a tap; the drawer neither closes itself nor runs
-/// an entry's `onSelected`. The navigation shell does both, in that order,
-/// once the drawer has closed (#643).
+/// an entry's `onSelected`. The navigation shell closes it, and runs the
+/// pick once it has gone (#643), or at once for a destructive entry such as
+/// sign out.
 ///
 /// [destinations] are [NavigationDrawerDestination]s, with [selectedId]'s
 /// the selected one, so that a screen reader's tab role and position are true.
