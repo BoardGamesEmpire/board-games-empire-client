@@ -69,7 +69,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [updateAttendeeStatus] | `PATCH /api/events/:id/attendees/:aid/status` | `{ message, attendee }` |
 /// | [addAttendee] | `POST /api/events/:id/attendees` | `{ message, attendee }` |
 /// | [removeAttendee] | `DELETE /api/events/:id/attendees/:aid` | `{ message, attendee }` |
-/// | [fetchGamesPool] | `GET /api/events/:id/attendees/:aid/games`, once per attendee | `{ games: [...] }` |
+/// | [fetchGamesPool] | `GET /api/events/:id/offered-games`, paged to the end | `{ offeredGames, pagination }` |
 /// | [offerGame] | `POST /api/events/:id/attendees/:aid/games` | `{ message, entry }` |
 /// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
 /// | [fetchNominations] | `GET /api/events/:id/nominations`, paged to the end | `{ nominations, pagination }` |
@@ -149,11 +149,11 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
 ///   [fetchEvent], [fetchAvailabilitySummary], [deleteEvent],
-///   [fetchHouseholdEvents], [fetchNominations], [fetchNomination], or a
-///   write naming a row ([fetchGamesPool] reads its own 404s, as its doc
-///   says). From [fetchEvent] the event is gone, or
-///   the caller may not read it. From [deleteEvent] no live event has the id.
-///   From [fetchHouseholdEvents] the household is missing or deleted.
+///   [fetchHouseholdEvents], [fetchGamesPool], [fetchNominations],
+///   [fetchNomination], or a write naming a row. From [fetchEvent] the event
+///   is gone, or the caller may not read it. From [deleteEvent] no live event
+///   has the id. From [fetchHouseholdEvents] the household is missing or
+///   deleted.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
@@ -263,7 +263,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: an out-of-range page or limit, an empty id, an update that
 /// changes nothing, a cancel reason past [maxCancelReasonLength], a vote of
-/// [AvailabilityResponse.unknown], or a create that could not be sent (what
+/// [AvailabilityResponse.unknown], a pool read narrowed to more than
+/// [maxPoolAttendeeIds] attendees, or a create that could not be sent (what
 /// [createEvent] never sends).
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
@@ -278,6 +279,10 @@ abstract class EventRemoteDataSource {
   /// `reason`, in code points, as its `MaxLength` counts them. A longer one is
   /// a 400, which is permanent.
   static const int maxCancelReasonLength = 1000;
+
+  /// The server's ceiling on the attendee ids [fetchGamesPool] narrows to. A
+  /// longer list is a 400, which is permanent.
+  static const int maxPoolAttendeeIds = 100;
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
@@ -592,38 +597,59 @@ abstract class EventRemoteDataSource {
   /// or already removed) and a 403 is [EventWriteRefusedException].
   Future<EventAttendee> removeAttendee(String eventId, String attendeeId);
 
-  /// The event's games pool: every game the attendees in [attendeeIds] have
-  /// offered for it (#516), in [attendeeIds] order and then the server's
-  /// order for each attendee.
+  /// `GET /api/events/:eventId/offered-games?page=n&limit=100`: reads the
+  /// event's games pool, every game its attendees have offered for it (#516,
+  /// #851), from page 1 while the page says there is more, and returns every
+  /// page's rows in the server's order: game title, then the offered entry's
+  /// id. A failure on any page fails the whole read, and no later page is
+  /// sent.
   ///
-  /// The server has no read for a whole event's pool, so this sends
-  /// `GET /api/events/:eventId/attendees/:attendeeId/games` once per id, at
-  /// most four at a time, each answering `{ games: [...] }`. Each game
-  /// carries the owner's collection row whole, and only what [OfferedGame]
-  /// holds is read from it.
+  /// A row is one offered entry, so two attendees offering the same game give
+  /// two rows. Each row is returned once. A game offered mid-read before a
+  /// page boundary pushes a row already read onto the next page, which
+  /// repeats it: the first read is kept. One taken back before a boundary
+  /// pulls a row onto a page already read, so a row still on offer can be
+  /// missing until the next read. A page that says there is more past the page
+  /// count it gives, or that adds no row not already read, contradicts
+  /// itself: that is [EventRemotePermanentException], and no later page is
+  /// sent.
   ///
-  /// An attendee whose read is a 404 carrying the envelope is left out: they
-  /// left the event since the roster was read, or the event is gone. When
-  /// every read is one, and there was at least one id, it throws
-  /// [EventRemoteNotFoundException]: the event is gone, or everyone named left
-  /// it. A 403 carrying the envelope on any one read is
-  /// [EventRemoteForbiddenException] for the whole pool, and any other failure
-  /// of any one read fails the whole pool with that read's
-  /// [EventRemoteException]. When two reads fail, the failure that lands first
-  /// is the one thrown, so a 403 does not outrank an earlier one. Reads not
-  /// yet started when one fails are not sent. An empty [attendeeIds] answers
-  /// `[]` with no request, and an empty id throws [ArgumentError] before any
-  /// is sent.
+  /// Each row carries its attendee and the game's base games, which are not
+  /// read, and what the entry supplies, which is (see [OfferedGame]).
+  ///
+  /// A null [attendeeIds] reads every attendee's games. A list narrows the
+  /// read to those attendees, sent comma-joined as `attendeeIds`. An empty
+  /// list answers `[]` with no request: the server refuses an empty one, and
+  /// no attendees offer no games. More than [maxPoolAttendeeIds] ids, or an
+  /// empty id, throws [ArgumentError] before any request.
+  ///
+  /// When [cancelled] completes, the request that is out is cancelled and no
+  /// later page is sent. The read then throws [EventRemoteTransientException],
+  /// as for a request nothing answered, unless the last page has already
+  /// landed, when it returns normally. A page that landed before the cancel
+  /// and contradicts itself throws [EventRemotePermanentException], as it
+  /// would uncancelled. The read leaves a listener on [cancelled] that only
+  /// its completion releases, so a caller that reads more than once passes
+  /// each read a future of its own, and drops it as the read ends.
+  ///
+  /// A 403 carrying the envelope is [EventRemoteForbiddenException] and a 404
+  /// carrying it is [EventRemoteNotFoundException]: the event is gone. An
+  /// attendee named who is not on the event narrows the read to nothing of
+  /// theirs, and is not a 404.
+  ///
+  /// Throws [ArgumentError] before the request for an empty [eventId], and
+  /// otherwise [EventRemoteException] per the class doc.
   Future<List<OfferedGame>> fetchGamesPool(
     String eventId, {
-    required List<String> attendeeIds,
+    List<String>? attendeeIds,
+    Future<void>? cancelled,
   });
 
   /// `POST /api/events/:eventId/attendees/:attendeeId/games` with
   /// `{ collectionId }`: offers the game in the attendee's collection entry
   /// [collectionId] for the event (#516), and returns it as the server
-  /// holds it. Answers 201 `{ message, entry }`. The entry carries no
-  /// players or play time, so those are null on the returned game.
+  /// holds it. Answers 201 `{ message, entry }`, and the entry is a row of
+  /// [fetchGamesPool]'s read without its attendee.
   ///
   /// A 403 carrying the envelope is [EventWriteRefusedException]: the entry
   /// is someone else's, or the caller may not offer for this attendee. A 404

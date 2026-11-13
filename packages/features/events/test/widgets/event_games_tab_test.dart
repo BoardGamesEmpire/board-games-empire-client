@@ -391,7 +391,7 @@ void main() {
       find.byKey(EventDetailScreen.poolTakeBackKey(id), skipOffstage: false);
 
   /// The pool reads made, as event id and attendee ids.
-  List<(String, List<String>)> poolReads() => [
+  List<(String, List<String>?)> poolReads() => [
     for (final (:eventId, :attendeeIds) in remote.poolRequests)
       (eventId, attendeeIds),
   ];

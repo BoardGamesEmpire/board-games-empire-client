@@ -49,9 +49,9 @@ typedef AddAttendeeRequest = ({String eventId, String userId, EventRole role});
 /// What a remove sent (#510): the event and the attendee.
 typedef RemoveAttendeeRequest = ({String eventId, String attendeeId});
 
-/// What a games pool read asked for (#516): the event and the attendees whose
-/// offered games it reads, in order.
-typedef GamesPoolRequest = ({String eventId, List<String> attendeeIds});
+/// What a games pool read asked for (#516): the event, and the attendees whose
+/// offered games it reads, in order, or null for everyone's (#851).
+typedef GamesPoolRequest = ({String eventId, List<String>? attendeeIds});
 
 /// What an offer sent (#516): the event, the attendee and the collection
 /// entry.
@@ -330,6 +330,11 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each games pool read, in order, recorded before it is answered.
   final List<GamesPoolRequest> poolRequests = [];
+
+  /// The cancel future the latest games pool read was given, or null when it
+  /// was given none (#851). Kept out of [GamesPoolRequest], so a test that
+  /// compares the requests compares what was asked for.
+  Future<void>? poolCancelled;
 
   /// Answers each offer with the offered game as the server holds it, which
   /// throws unless a test supplies one (#516).
@@ -681,13 +686,17 @@ class FakeEventRemote implements EventRemoteDataSource {
   @override
   Future<List<OfferedGame>> fetchGamesPool(
     String eventId, {
-    required List<String> attendeeIds,
+    List<String>? attendeeIds,
+    Future<void>? cancelled,
   }) async {
     final request = (
       eventId: eventId,
-      attendeeIds: List<String>.unmodifiable(attendeeIds),
+      attendeeIds: attendeeIds == null
+          ? null
+          : List<String>.unmodifiable(attendeeIds),
     );
     poolRequests.add(request);
+    poolCancelled = cancelled;
     return pool(request);
   }
 

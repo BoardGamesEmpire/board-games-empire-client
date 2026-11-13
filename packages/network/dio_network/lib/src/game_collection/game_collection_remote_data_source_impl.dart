@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -307,8 +308,8 @@ class GameCollectionRemoteDataSourceImpl
       id: platformGame['id'] as String,
       platformId: platform['id'] as String,
       platformName: platform['name'] as String,
-      image: _nonEmpty(platformGame['image']),
-      thumbnail: _nonEmpty(platformGame['thumbnail']),
+      image: nonEmptyString(platformGame['image']),
+      thumbnail: nonEmptyString(platformGame['thumbnail']),
       // Present exactly when the platform carries `platformType`: an older
       // server sends none of the facts, and null tells the cache to leave
       // its values alone (#715).
@@ -327,8 +328,8 @@ class GameCollectionRemoteDataSourceImpl
         id: game['id'] as String,
         title: game['title'] as String,
         subtitle: game['subtitle'] as String?,
-        image: _nonEmpty(game['image']),
-        thumbnail: _nonEmpty(game['thumbnail']),
+        image: nonEmptyString(game['image']),
+        thumbnail: nonEmptyString(game['thumbnail']),
         contentType: game['contentType'] is String
             ? ContentType.fromWire(game['contentType'] as String)
             : null,
@@ -346,9 +347,6 @@ class GameCollectionRemoteDataSourceImpl
       ),
     );
   }
-
-  static String? _nonEmpty(Object? wire) =>
-      wire is String && wire.isNotEmpty ? wire : null;
 
   /// Maps a server collection payload to the domain [GameCollection].
   ///

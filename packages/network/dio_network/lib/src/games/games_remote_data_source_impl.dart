@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -308,8 +309,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     description: json['description'] as String?,
     // The column can hold an empty string: the server's own search reads
     // one as no thumbnail.
-    image: _nonEmpty(json['image']),
-    thumbnail: _nonEmpty(json['thumbnail']),
+    image: nonEmptyString(json['image']),
+    thumbnail: nonEmptyString(json['thumbnail']),
     publishYear: json['publishYear'] as int?,
     minPlayers: json['minPlayers'] as int?,
     maxPlayers: json['maxPlayers'] as int?,
@@ -387,8 +388,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
               minPlayTime: entry['minPlayTime'] as int?,
               maxPlayTime: entry['maxPlayTime'] as int?,
               // Empty strings read as none, as the game's do.
-              image: _nonEmpty(entry['image']),
-              thumbnail: _nonEmpty(entry['thumbnail']),
+              image: nonEmptyString(entry['image']),
+              thumbnail: nonEmptyString(entry['thumbnail']),
               supportsSolo: entry['supportsSolo'] as bool? ?? false,
               supportsLocal: entry['supportsLocal'] as bool? ?? false,
               supportsOnline: entry['supportsOnline'] as bool? ?? false,
@@ -448,21 +449,18 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     minPlayers: json['minPlayers'] as int?,
     maxPlayers: json['maxPlayers'] as int?,
     // A DataGateway's unset proto string arrives as "", not absent.
-    thumbnailUrl: _nonEmpty(json['thumbnailUrl']),
+    thumbnailUrl: nonEmptyString(json['thumbnailUrl']),
     platforms: [
       for (final p
           in (json['platforms'] as List? ?? const [])
               .cast<Map<String, dynamic>>())
         GameSearchPlatform(
           name: p['name'] as String,
-          abbreviation: _nonEmpty(p['abbreviation']),
+          abbreviation: nonEmptyString(p['abbreviation']),
           platformType: _searchPlatformType(p['platformType'] as String),
         ),
     ],
   );
-
-  static String? _nonEmpty(Object? wire) =>
-      wire is String && wire.isNotEmpty ? wire : null;
 
   /// The proto name of each content type a DataGateway result may carry
   /// (`bge.gateway.v1.ContentType`), with its stored name.

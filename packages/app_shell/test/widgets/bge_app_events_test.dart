@@ -1551,6 +1551,7 @@ void main() {
           () => remote.fetchGamesPool(
             any(),
             attendeeIds: any(named: 'attendeeIds'),
+            cancelled: any(named: 'cancelled'),
           ),
         ).thenAnswer((_) async => const []);
         when(

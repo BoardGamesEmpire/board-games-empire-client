@@ -292,64 +292,99 @@ Map<String, dynamic> _nominationRow({
   'votes': votes,
 };
 
-/// An offered game as `GET /api/events/:id/attendees/:aid/games` serves it
-/// (#516): every column of the list row, and the owner's collection row whole,
-/// their rating, comment and play count included, which the client must not
-/// read. [withPlayers] false is the add's `entry`, whose game carries no
-/// players or play time.
+/// An offered game as `GET /api/events/:id/offered-games` serves it (#851):
+/// the entry, its collection entry's id and medium and nothing else of the
+/// owner's row, the platform game with its own players and play time, the
+/// game with its base games, what the entry supplies, and its attendee. The
+/// add's `entry` is the same row without the attendee.
+///
+/// The platform game's own pictures, players and play time are null unless
+/// given, so the game's stand.
 Map<String, dynamic> _offeredRow({
   String id = 'og_1',
   String attendeeId = 'att_1',
   String collectionId = 'col_1',
   String title = 'Brass: Birmingham',
+  Object? subtitle = 'Deluxe Edition',
   Object? thumbnail = 'https://cdn.example.com/brass.png',
+  Object? image,
+  Object? platformThumbnail,
+  Object? platformImage,
   Object? medium = 'Physical',
-  bool withPlayers = true,
+  Object? contentType = 'BaseGame',
+  Object? platformType = 'Tabletop',
+  int? platformMinPlayers,
+  int? platformMaxPlayers,
+  int? platformMinPlayTime,
+  int? platformMaxPlayTime,
+  Object? supplies = const {'nominations': 2, 'lineup': 1},
 }) => {
   'id': id,
   'attendeeId': attendeeId,
-  'collectionId': collectionId,
-  'removedAt': null,
   'createdAt': '2026-11-01T10:00:00.000Z',
-  'updatedAt': '2026-11-01T10:00:00.000Z',
   'collection': {
     'id': collectionId,
-    'userId': 'user_ada',
-    'platformGameId': 'pg_1',
-    'releaseId': null,
     'medium': medium,
-    'quantity': 1,
-    'reach': 'Private',
-    'rating': 9,
-    'playCount': 4,
-    'playAgain': true,
-    'favorite': true,
-    'comment': 'mine',
-    'lastPlayed': '2026-10-30T20:00:00.000Z',
-    'lastUpdated': '2026-10-30T20:00:00.000Z',
-    'deletedAt': null,
     'platformGame': {
       'id': 'pg_1',
+      'image': platformImage,
+      'thumbnail': platformThumbnail,
+      'minPlayers': platformMinPlayers,
+      'maxPlayers': platformMaxPlayers,
+      'minPlayTime': platformMinPlayTime,
+      'maxPlayTime': platformMaxPlayTime,
+      'platform': {
+        'id': 'plat_1',
+        'name': 'Tabletop',
+        'slug': 'tabletop',
+        'platformType': platformType,
+      },
       'game': {
         'id': 'game_1',
         'title': title,
+        'subtitle': subtitle,
         'thumbnail': thumbnail,
-        if (withPlayers) ...{
-          'minPlayers': 2,
-          'maxPlayers': 4,
-          'minPlayTime': 60,
-          'maxPlayTime': 120,
-          'complexity': 3.9,
-        },
+        'image': image,
+        'contentType': contentType,
+        'publishYear': 2018,
+        'complexity': 3.9,
+        'minPlayers': 2,
+        'maxPlayers': 4,
+        'minPlayTime': 60,
+        'maxPlayTime': 120,
+        'baseGames': <Object?>[],
       },
-      'platform': {'id': 'plat_1', 'name': 'Tabletop'},
+    },
+  },
+  'supplies': supplies,
+  'attendee': {
+    'id': attendeeId,
+    'status': 'Attending',
+    'guestName': null,
+    'user': {
+      'id': 'user_ada',
+      'username': 'ada',
+      'profile': {'displayName': 'Ada', 'avatarUrl': null},
     },
   },
 };
 
-/// A `GET /api/events/:id/attendees/:aid/games` body.
-String _gamesBody(List<Map<String, dynamic>> games) =>
-    jsonEncode({'games': games});
+/// A `GET /api/events/:id/offered-games` page. A page that says there is
+/// more counts one page past itself, unless [totalPages] says otherwise.
+String _offeredGamesBody(
+  List<Map<String, dynamic>> rows, {
+  int page = 1,
+  bool hasMore = false,
+  int? totalPages,
+}) => jsonEncode({
+  'offeredGames': rows,
+  'pagination': _pagination(
+    page: page,
+    total: rows.length,
+    totalPages: totalPages ?? (hasMore ? page + 1 : page),
+    hasMore: hasMore,
+  ),
+});
 
 /// One request as the transport received it.
 typedef _Sent = ({
@@ -401,9 +436,8 @@ class _RecordingAdapter implements HttpClientAdapter {
 /// One answer a [_PathAdapter] gives.
 typedef _Reply = ({String body, int status});
 
-/// Answers each request from [answer], which may wait or throw, records each
-/// path, and counts the requests in flight at once: for the games pool's
-/// per-attendee reads (#516).
+/// Answers each request from [answer], which may wait or throw, and records
+/// each path: for the reads that page (#517, #851).
 class _PathAdapter implements HttpClientAdapter {
   _PathAdapter(this.answer);
 
@@ -412,11 +446,6 @@ class _PathAdapter implements HttpClientAdapter {
   /// Each path, in the order its request started.
   final List<String> paths = [];
 
-  int _inFlight = 0;
-
-  /// The most requests that were in flight at one time.
-  int mostInFlight = 0;
-
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -424,29 +453,19 @@ class _PathAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     paths.add(options.path);
-    _inFlight++;
-    if (_inFlight > mostInFlight) mostInFlight = _inFlight;
-    try {
-      final reply = await answer(options);
-      return ResponseBody.fromString(
-        reply.body,
-        reply.status,
-        headers: {
-          Headers.contentTypeHeader: [Headers.jsonContentType],
-        },
-      );
-    } finally {
-      _inFlight--;
-    }
+    final reply = await answer(options);
+    return ResponseBody.fromString(
+      reply.body,
+      reply.status,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
   }
 
   @override
   void close({bool force = false}) {}
 }
-
-/// The attendee id a games pool read names, from its
-/// `/api/events/:id/attendees/:aid/games` path.
-String _attendeeOf(RequestOptions options) => options.path.split('/')[5];
 
 void main() {
   late _RecordingAdapter adapter;
@@ -3254,17 +3273,25 @@ void main() {
       return EventRemoteDataSourceImpl(dio);
     }
 
-    /// [reply], after [ms] milliseconds.
-    Future<_Reply> after(int ms, _Reply reply) =>
-        Future.delayed(Duration(milliseconds: ms), () => reply);
-
-    _Reply games(List<Map<String, dynamic>> rows) =>
-        (body: _gamesBody(rows), status: 200);
-
-    final notFound = (
-      body: _envelope(404, 'Not Found', 'Attendee not found'),
-      status: 404,
+    /// A 200 answering [games] as one pool page.
+    Future<_Reply> rows(
+      List<Map<String, dynamic>> games, {
+      int page = 1,
+      bool hasMore = false,
+      int? totalPages,
+    }) async => (
+      body: _offeredGamesBody(
+        games,
+        page: page,
+        hasMore: hasMore,
+        totalPages: totalPages,
+      ),
+      status: 200,
     );
+
+    /// The page a pool read asks for.
+    int pageOf(RequestOptions options) =>
+        options.queryParameters['page'] as int;
 
     const expected = OfferedGame(
       id: 'og_1',
@@ -3273,135 +3300,368 @@ void main() {
       platformGameId: 'pg_1',
       gameId: 'game_1',
       title: 'Brass: Birmingham',
+      subtitle: 'Deluxe Edition',
       platformName: 'Tabletop',
+      platformType: PlatformType.tabletop,
       thumbnail: 'https://cdn.example.com/brass.png',
       medium: GameMedium.physical,
+      contentType: ContentType.baseGame,
+      publishYear: 2018,
       minPlayers: 2,
       maxPlayers: 4,
       minPlayTime: 60,
       maxPlayTime: 120,
+      suppliedNominations: 2,
+      suppliedLineup: 1,
     );
 
     group('fetchGamesPool', () {
-      test('the pool reads each attendee and keeps their order', () async {
+      test('the pool is one paged read of the event', () async {
+        final remote = answering(_offeredGamesBody([_offeredRow()]));
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(adapter.sent.single.method, 'GET');
+        expect(adapter.sent.single.path, '/api/events/e1/offered-games');
+        expect(adapter.sent.single.query, {'page': 1, 'limit': 100});
+        expect(pool, [expected]);
+      });
+
+      test('reads every page in order', () async {
+        final queries = <Map<String, dynamic>>[];
+        final remote = routed((options) {
+          queries.add(Map.of(options.queryParameters));
+          return pageOf(options) == 1
+              ? rows(
+                  [_offeredRow(), _offeredRow(id: 'og_2')],
+                  hasMore: true,
+                  totalPages: 2,
+                )
+              : rows([_offeredRow(id: 'og_3')], page: 2);
+        });
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(pathAdapter.paths, [
+          '/api/events/e1/offered-games',
+          '/api/events/e1/offered-games',
+        ]);
+        expect(queries, [
+          {'page': 1, 'limit': 100},
+          {'page': 2, 'limit': 100},
+        ]);
+        expect(pool.map((game) => game.id), ['og_1', 'og_2', 'og_3']);
+      });
+
+      test('a row repeated across pages is kept once', () async {
+        // A game offered mid-read shifts the offsets of the title order, so
+        // page 2 can start with page 1's last row.
         final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            // The first attendee answers last, so the order is not the
-            // order the answers came in.
-            'a1' => after(
-              20,
-              games([
-                // The default id, og_1.
-                _offeredRow(attendeeId: 'a1'),
-                _offeredRow(id: 'og_2', attendeeId: 'a1'),
-              ]),
-            ),
-            'a2' => after(10, games([])),
-            _ => after(0, games([_offeredRow(id: 'og_3', attendeeId: 'a3')])),
-          },
+          (options) => pageOf(options) == 1
+              ? rows([_offeredRow(), _offeredRow(id: 'og_2')], hasMore: true)
+              : rows(
+                  [
+                    _offeredRow(id: 'og_2', title: 'Brass: Lancashire'),
+                    _offeredRow(id: 'og_3'),
+                  ],
+                  page: 2,
+                ),
         );
 
-        final pool = await remote.fetchGamesPool(
-          'e1',
-          attendeeIds: ['a1', 'a2', 'a3'],
-        );
+        final pool = await remote.fetchGamesPool('e1');
 
         expect(pool.map((game) => game.id), ['og_1', 'og_2', 'og_3']);
-        expect(pathAdapter.paths, [
-          '/api/events/e1/attendees/a1/games',
-          '/api/events/e1/attendees/a2/games',
-          '/api/events/e1/attendees/a3/games',
-        ]);
+        expect(pool[1].title, 'Brass: Birmingham');
       });
 
-      test('the pool reads at most four at a time', () async {
-        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
-        final remote = routed((options) {
-          final id = _attendeeOf(options);
-          final index = ids.indexOf(id);
-          // Later ids answer sooner, so the slots free up out of order.
-          return after(
-            (9 - index) * 3,
-            games([_offeredRow(id: 'og_$index', attendeeId: id)]),
-          );
-        });
-
-        final pool = await remote.fetchGamesPool('e1', attendeeIds: ids);
-
-        expect(pathAdapter.mostInFlight, 4);
-        expect(pathAdapter.paths, hasLength(9));
-        expect(pool.map((game) => game.id), [
-          for (var i = 0; i < 9; i++) 'og_$i',
-        ]);
-      });
-
-      test('a slow read holds up only its own slot', () async {
-        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
-        // The first read answers only once the ninth has started, so the
-        // read can finish only if the other three slots took every
-        // remaining id while it was out. Waiting for a batch of four to
-        // finish would never start the ninth, and the test would time out.
-        final ninthStarted = Completer<void>();
-        int? startedWhileSlow;
-        final remote = routed((options) {
-          if (pathAdapter.paths.length == ids.length) ninthStarted.complete();
-          if (_attendeeOf(options) != 'a0') return Future.value(games([]));
-          return ninthStarted.future.then((_) {
-            startedWhileSlow = pathAdapter.paths.length;
-            return games([]);
-          });
-        });
-
-        await remote.fetchGamesPool('e1', attendeeIds: ids);
-
-        expect(startedWhileSlow, 9);
-      });
-
-      test('an attendee who answers 404 is left out', () async {
+      test('a page past its own last page is permanent', () async {
         final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            'a2' => after(0, notFound),
-            final id => after(0, games([_offeredRow(id: 'og_$id')])),
-          },
+          (options) => rows(
+            [_offeredRow(id: 'og_${pageOf(options)}')],
+            page: pageOf(options),
+            hasMore: true,
+            totalPages: 1,
+          ),
         );
-
-        final pool = await remote.fetchGamesPool(
-          'e1',
-          attendeeIds: ['a1', 'a2', 'a3'],
-        );
-
-        expect(pool.map((game) => game.id), ['og_a1', 'og_a3']);
-      });
-
-      test('every attendee answering 404 is not found', () async {
-        final remote = routed((_) => after(0, notFound));
 
         await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2']),
-          throwsA(
-            isA<EventRemoteNotFoundException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              404,
-            ),
+          remote.fetchGamesPool('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+        expect(pathAdapter.paths, hasLength(1));
+      });
+
+      test('a page that adds nothing new is permanent', () async {
+        final remote = routed(
+          (options) => rows(
+            [_offeredRow()],
+            page: pageOf(options),
+            hasMore: true,
+            totalPages: 5,
           ),
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
         );
         expect(pathAdapter.paths, hasLength(2));
       });
 
-      test('a 403 on one is forbidden for all', () async {
+      test('narrows to the attendee ids given', () async {
+        final remote = answering(_offeredGamesBody([_offeredRow()]));
+
+        await remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2']);
+
+        expect(adapter.sent.single.query, {
+          'page': 1,
+          'limit': 100,
+          'attendeeIds': 'a1,a2',
+        });
+      });
+
+      test('an empty list reads nothing', () async {
+        final remote = answering(_offeredGamesBody([_offeredRow()]));
+
+        final pool = await remote.fetchGamesPool('e1', attendeeIds: []);
+
+        expect(pool, isEmpty);
+        expect(adapter.sent, isEmpty);
+      });
+
+      test('more than 100 ids throws before any request', () async {
+        final remote = answering(_offeredGamesBody([]));
+        final ids = [for (var i = 0; i < 101; i++) 'a$i'];
+
+        await expectLater(
+          remote.fetchGamesPool('e1', attendeeIds: ids),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, isEmpty);
+
+        // 100 is the server's cap, and goes out.
+        await remote.fetchGamesPool('e1', attendeeIds: ids.sublist(1));
+        expect(adapter.sent, hasLength(1));
+      });
+
+      test('a cancel stops the read', () async {
+        final cancel = Completer<void>();
+        // Page 1 is not answered while the read runs, so the read can end
+        // only by cancelling the request that is out.
+        final answered = Completer<void>();
+        final remote = routed((options) async {
+          if (!cancel.isCompleted) cancel.complete();
+          await answered.future;
+          return rows(
+            [_offeredRow(id: 'og_${pageOf(options)}')],
+            page: pageOf(options),
+            hasMore: true,
+            totalPages: 3,
+          );
+        });
+
+        await expectLater(
+          remote
+              .fetchGamesPool('e1', cancelled: cancel.future)
+              // Bounded, so a request the cancel doesn't reach fails here
+              // rather than waiting out the test's own timeout.
+              .timeout(const Duration(seconds: 2)),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+        expect(pathAdapter.paths, hasLength(1));
+        answered.complete();
+      });
+
+      test('a cancel as a page lands sends no later page', () async {
+        final cancel = Completer<void>();
+        final remote = routed((options) {
+          if (!cancel.isCompleted) cancel.complete();
+          return rows(
+            [_offeredRow(id: 'og_${pageOf(options)}')],
+            page: pageOf(options),
+            hasMore: true,
+            totalPages: 3,
+          );
+        });
+
+        await expectLater(
+          remote.fetchGamesPool('e1', cancelled: cancel.future),
+          throwsA(isA<EventRemoteTransientException>()),
+        );
+        expect(pathAdapter.paths, hasLength(1));
+      });
+
+      test("reads the platform game's players before the game's", () async {
         final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            'a2' => after(0, (
-              body: _envelope(403, 'Forbidden', 'Not allowed'),
-              status: 403,
-            )),
-            _ => after(0, games([_offeredRow()])),
-          },
+          (_) => rows([
+            _offeredRow(
+              platformMinPlayers: 3,
+              platformMaxPlayers: 5,
+              platformMinPlayTime: 45,
+              platformMaxPlayTime: 90,
+            ),
+            _offeredRow(id: 'og_2'),
+            // One of the platform game's two is set, so its pair stands, as
+            // a collection row's does (#715).
+            _offeredRow(
+              id: 'og_3',
+              platformMinPlayers: 3,
+              platformMaxPlayTime: 90,
+            ),
+          ]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(
+          [
+            for (final game in pool)
+              (
+                game.minPlayers,
+                game.maxPlayers,
+                game.minPlayTime,
+                game.maxPlayTime,
+              ),
+          ],
+          [(3, 5, 45, 90), (2, 4, 60, 120), (3, null, null, 90)],
+        );
+      });
+
+      test('supplies null stays null', () async {
+        final remote = routed(
+          (_) => rows([
+            _offeredRow(supplies: {'nominations': null, 'lineup': null}),
+            // None the viewer can see is a count, not null.
+            _offeredRow(
+              id: 'og_2',
+              supplies: {'nominations': 0, 'lineup': null},
+            ),
+            _offeredRow(id: 'og_3')..remove('supplies'),
+          ]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(
+          [
+            for (final game in pool)
+              (game.suppliedNominations, game.suppliedLineup),
+          ],
+          [(null, null), (0, null), (null, null)],
+        );
+      });
+
+      test('an empty thumbnail and no medium are none', () async {
+        final remote = routed(
+          (_) => rows([_offeredRow(thumbnail: '', medium: null)]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(pool.single.thumbnail, isNull);
+        expect(pool.single.medium, isNull);
+      });
+
+      test("the platform game's picture comes before the game's", () async {
+        // As a collection row's does (#709): each one's thumbnail, else its
+        // full image, and an empty string is none.
+        final remote = routed(
+          (_) => rows([
+            _offeredRow(platformThumbnail: 'https://cdn.example.com/pg.png'),
+            _offeredRow(id: 'og_2', platformThumbnail: ''),
+            _offeredRow(
+              id: 'og_3',
+              platformThumbnail: '',
+              platformImage: 'https://cdn.example.com/pg-full.png',
+            ),
+            _offeredRow(
+              id: 'og_4',
+              thumbnail: '',
+              image: 'https://cdn.example.com/brass-full.png',
+            ),
+          ]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(pool.map((game) => game.thumbnail), [
+          'https://cdn.example.com/pg.png',
+          'https://cdn.example.com/brass.png',
+          'https://cdn.example.com/pg-full.png',
+          'https://cdn.example.com/brass-full.png',
+        ]);
+      });
+
+      test('a medium this client does not know is none', () async {
+        final remote = routed(
+          (_) => rows([
+            _offeredRow(id: 'og_new', medium: 'PrintAndPlay'),
+            _offeredRow(id: 'og_known'),
+          ]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(pool.map((game) => game.id), ['og_new', 'og_known']);
+        expect(pool.first.medium, isNull);
+        expect(pool.first.title, 'Brass: Birmingham');
+        expect(pool.last.medium, GameMedium.physical);
+      });
+
+      test('no content type or platform type is none, and one this client '
+          'does not know is unknown', () async {
+        final remote = routed(
+          (_) => rows([
+            _offeredRow(contentType: null, platformType: null),
+            _offeredRow(
+              id: 'og_2',
+              contentType: 'Boxed',
+              platformType: 'Hologram',
+            ),
+          ]),
+        );
+
+        final pool = await remote.fetchGamesPool('e1');
+
+        expect(pool.first.contentType, isNull);
+        expect(pool.first.platformType, isNull);
+        expect(pool.last.contentType, ContentType.unknown);
+        expect(pool.last.platformType, PlatformType.unknown);
+      });
+
+      test('an offered games list that is missing is permanent', () async {
+        final remote = answering(
+          jsonEncode({
+            'other': <Object?>[],
+            'pagination': _pagination(total: 0),
+          }),
         );
 
         await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2', 'a3']),
+          remote.fetchGamesPool('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+
+      test('a game whose collection is not an object is permanent', () async {
+        final remote = answering(
+          _offeredGamesBody([_offeredRow()..['collection'] = null]),
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1'),
+          throwsA(isA<EventRemotePermanentException>()),
+        );
+      });
+
+      test('a 403 is forbidden', () async {
+        final remote = answering(
+          _envelope(403, 'Forbidden', 'Not allowed'),
+          status: 403,
+        );
+
+        await expectLater(
+          remote.fetchGamesPool('e1'),
           throwsA(
             isA<EventRemoteForbiddenException>().having(
               (e) => e.statusCode,
@@ -3412,126 +3672,23 @@ void main() {
         );
       });
 
-      test('a dropped connection on one fails the read', () async {
-        final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            'a2' => throw DioException(
-              type: DioExceptionType.connectionError,
-              requestOptions: options,
-            ),
-            _ => after(0, games([_offeredRow()])),
-          },
+      test('a 404 is not found: the event is gone', () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'Event not found'),
+          status: 404,
         );
 
         await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ['a1', 'a2', 'a3']),
+          remote.fetchGamesPool('e1', attendeeIds: ['a1']),
           throwsA(
-            isA<EventRemoteTransientException>().having(
+            isA<EventRemoteNotFoundException>().having(
               (e) => e.statusCode,
               'statusCode',
-              isNull,
+              404,
             ),
           ),
         );
-      });
-
-      test('a failure starts none of the reads still waiting', () async {
-        final ids = [for (var i = 0; i < 9; i++) 'a$i'];
-        final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            'a0' => after(0, (
-              body: _envelope(403, 'Forbidden', 'Not allowed'),
-              status: 403,
-            )),
-            // A second failure, in flight when the first lands, is ignored.
-            'a1' => after(10, (
-              body: _envelope(500, 'Internal Server Error', 'Oops'),
-              status: 500,
-            )),
-            _ => after(10, games([_offeredRow()])),
-          },
-        );
-
-        await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ids),
-          throwsA(isA<EventRemoteForbiddenException>()),
-        );
-        expect(pathAdapter.paths, [
-          for (var i = 0; i < 4; i++) '/api/events/e1/attendees/a$i/games',
-        ]);
-      });
-
-      test('no ids sends nothing', () async {
-        final remote = routed((_) => after(0, games([])));
-
-        final pool = await remote.fetchGamesPool('e1', attendeeIds: []);
-
-        expect(pool, isEmpty);
-        expect(pathAdapter.paths, isEmpty);
-      });
-
-      test('a game parses to what it shows', () async {
-        final remote = routed((_) => after(0, games([_offeredRow()])));
-
-        final pool = await remote.fetchGamesPool('e1', attendeeIds: ['att_1']);
-
-        expect(pool, [expected]);
-      });
-
-      test('an empty thumbnail and no medium are none', () async {
-        final remote = routed(
-          (_) => after(0, games([_offeredRow(thumbnail: '', medium: null)])),
-        );
-
-        final pool = await remote.fetchGamesPool('e1', attendeeIds: ['att_1']);
-
-        expect(pool.single.thumbnail, isNull);
-        expect(pool.single.medium, isNull);
-      });
-
-      test('a medium this client does not know is none', () async {
-        final remote = routed(
-          (options) => switch (_attendeeOf(options)) {
-            'a1' => after(
-              0,
-              games([_offeredRow(id: 'og_new', medium: 'PrintAndPlay')]),
-            ),
-            _ => after(0, games([_offeredRow(id: 'og_known')])),
-          },
-        );
-
-        final pool = await remote.fetchGamesPool(
-          'e1',
-          attendeeIds: ['a1', 'a2'],
-        );
-
-        expect(pool.map((game) => game.id), ['og_new', 'og_known']);
-        expect(pool.first.medium, isNull);
-        expect(pool.first.title, 'Brass: Birmingham');
-        expect(pool.last.medium, GameMedium.physical);
-      });
-
-      test('a games list that is missing is permanent', () async {
-        final remote = routed(
-          (_) =>
-              after(0, (body: jsonEncode({'other': <Object?>[]}), status: 200)),
-        );
-
-        await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ['att_1']),
-          throwsA(isA<EventRemotePermanentException>()),
-        );
-      });
-
-      test('a game whose collection is not an object is permanent', () async {
-        final remote = routed(
-          (_) => after(0, games([_offeredRow()..['collection'] = null])),
-        );
-
-        await expectLater(
-          remote.fetchGamesPool('e1', attendeeIds: ['att_1']),
-          throwsA(isA<EventRemotePermanentException>()),
-        );
+        expect(adapter.sent.single.path, '/api/events/e1/offered-games');
       });
     });
 
@@ -3543,7 +3700,8 @@ void main() {
         final remote = answering(
           jsonEncode({
             'message': 'Game added',
-            'entry': _offeredRow(withPlayers: false),
+            // The read's row, without the attendee.
+            'entry': _offeredRow()..remove('attendee'),
           }),
           status: 201,
         );
@@ -3556,15 +3714,7 @@ void main() {
           '/api/events/e1/attendees/a%201/games',
         );
         expect(adapter.sent.single.body, {'collectionId': 'col_1'});
-        expect(
-          game,
-          expected.copyWith(
-            minPlayers: null,
-            maxPlayers: null,
-            minPlayTime: null,
-            maxPlayTime: null,
-          ),
-        );
+        expect(game, expected);
       });
 
       test('an offer whose entry is not an object is permanent', () async {
@@ -3761,7 +3911,7 @@ void main() {
     });
 
     test('an empty id is refused before anything is sent', () async {
-      final remote = answering(_gamesBody([]));
+      final remote = answering(_offeredGamesBody([]));
 
       await expectLater(
         remote.fetchGamesPool('', attendeeIds: ['a1']),
