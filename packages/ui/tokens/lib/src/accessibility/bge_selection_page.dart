@@ -24,13 +24,25 @@ import 'package:ui_tokens/src/accessibility/bge_selection_region.dart';
 /// [TickerMode] is what tells a hidden page here. A hidden page also has
 /// nothing anyone could select, so leaving the region costs nothing.
 ///
-/// The tree has the same shape either way: a [SelectionRegistrarScope]
-/// whose registrar changes. A shape change would build the page afresh
-/// each time it was covered, and lose its state.
+/// **Until it has shown, a page hands its text no registrar at all.** A
+/// scroll view puts a selection container of its own under any registrar
+/// it finds, and that container sorts its own text the same way, whatever
+/// the registrar above it does with the container. Most pages scroll. With
+/// no registrar the scroll view makes no container, and the text
+/// registers nowhere. Once the page shows, the scroll view makes its
+/// container, and builds what is beneath it afresh, which nobody has seen
+/// yet. The page itself is kept, by a [GlobalKey].
+///
+/// **After that, the registrar changes and the shape doesn't.** A page
+/// that has shown and is covered was laid out, and its text has a
+/// position. It keeps a [SelectionRegistrarScope] whose registrar changes,
+/// so the scroll view keeps its container. Taking the registrar away there
+/// too would build everything beneath each scroll view afresh every time
+/// the page was covered, and lose what the user had done in it.
 ///
 /// With no region above (a touch platform, or the frame before the
 /// region mounts), this is [child] and nothing else.
-class BgeSelectionPage extends StatelessWidget {
+class BgeSelectionPage extends StatefulWidget {
   /// Keeps [child] out of the region while it is hidden.
   const BgeSelectionPage({required this.child, super.key});
 
@@ -38,14 +50,27 @@ class BgeSelectionPage extends StatelessWidget {
   final Widget child;
 
   @override
+  State<BgeSelectionPage> createState() => _BgeSelectionPageState();
+}
+
+class _BgeSelectionPageState extends State<BgeSelectionPage> {
+  /// Keeps the page across a change of what is above it.
+  final GlobalKey _page = GlobalKey(debugLabel: 'BgeSelectionPage');
+
+  /// Whether the page has shown, and so been laid out.
+  bool _shown = false;
+
+  @override
   Widget build(BuildContext context) {
+    final page = KeyedSubtree(key: _page, child: widget.child);
     final region = SelectionContainer.maybeOf(context);
-    if (region == null) return child;
+    if (region == null) return page;
+    final showing = TickerMode.valuesOf(context).enabled;
+    _shown |= showing;
+    if (!_shown) return SelectionContainer.disabled(child: page);
     return SelectionRegistrarScope(
-      registrar: TickerMode.valuesOf(context).enabled
-          ? region
-          : const _NoRegion(),
-      child: child,
+      registrar: showing ? region : const _NoRegion(),
+      child: page,
     );
   }
 }

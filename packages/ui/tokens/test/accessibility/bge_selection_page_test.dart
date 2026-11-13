@@ -18,10 +18,39 @@ class _PageState extends State<_Page> {
   Widget build(BuildContext context) => Text(widget.label);
 }
 
+/// A page whose body scrolls, as most of the app's do: a [Scrollable]
+/// puts a selection container of its own under the page's scope.
+class _ScrollingPage extends StatefulWidget {
+  const _ScrollingPage(this.label);
+
+  final String label;
+
+  @override
+  State<_ScrollingPage> createState() => _ScrollingPageState();
+}
+
+class _ScrollingPageState extends State<_ScrollingPage> {
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    child: Column(
+      children: [
+        Text('${widget.label} one'),
+        Text('${widget.label} two'),
+        Text('${widget.label} three'),
+      ],
+    ),
+  );
+}
+
 void main() {
   Page<void> page(String label) => MaterialPage<void>(
     key: ValueKey(label),
     child: BgeSelectionPage(child: _Page(label)),
+  );
+
+  Page<void> scrolling(String label) => MaterialPage<void>(
+    key: ValueKey(label),
+    child: BgeSelectionPage(child: _ScrollingPage(label)),
   );
 
   /// Hosts a Navigator under the app-wide region, where `BgeApp` puts it,
@@ -77,7 +106,53 @@ void main() {
         expect(find.text('C'), findsOneWidget);
         expect(registrarOf(tester, 'B'), isNot(regionOf(tester)));
       });
+
+      // The scroll view's own container sorted the hidden page's text
+      // whatever registrar the page handed it, so until it has shown the
+      // page hands none, and the scroll view makes no container.
+      testWidgets('$platform: a page with a scrolling body added beneath the '
+          'top one breaks nothing, and joins the region once it shows', (
+        tester,
+      ) async {
+        final show = ValueNotifier([page('A')]);
+        addTearDown(show.dispose);
+        await pumpPages(tester, platform, show);
+
+        show.value = [scrolling('B'), page('C')];
+        await tester.pumpAndSettle();
+        expect(find.text('C'), findsOneWidget);
+        final hidden = tester.state(
+          find.byType(_ScrollingPage, skipOffstage: false),
+        );
+
+        show.value = [scrolling('B')];
+        await tester.pumpAndSettle();
+
+        expect(find.text('B two'), findsOneWidget);
+        // The page itself is kept: only what is beneath its scroll view is
+        // built again, and nobody had seen it.
+        expect(tester.state(find.byType(_ScrollingPage)), same(hidden));
+        expect(
+          SelectionContainer.maybeOf(tester.element(find.text('B two'))),
+          isNotNull,
+        );
+      });
     }
+
+    testWidgets('a page that has shown keeps its scroll view whole when '
+        'covered and shown again', (tester) async {
+      final show = ValueNotifier([scrolling('A')]);
+      addTearDown(show.dispose);
+      await pumpPages(tester, TargetPlatform.macOS, show);
+      final beneath = tester.element(find.text('A two'));
+
+      show.value = [scrolling('A'), page('B')];
+      await tester.pumpAndSettle();
+      show.value = [scrolling('A')];
+      await tester.pumpAndSettle();
+
+      expect(tester.element(find.text('A two')), same(beneath));
+    });
 
     testWidgets('a hidden page rejoins the region once it shows, and is not '
         'rebuilt from scratch', (tester) async {
