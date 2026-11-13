@@ -182,7 +182,7 @@ void main() {
 
   Future<void> openTheList(WidgetTester tester) async {
     await openDrawer(tester);
-    await tester.tap(find.byKey(HomeScreen.entryKey('collection')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('collection')));
     await tester.pumpAndSettle();
   }
 
@@ -193,7 +193,7 @@ void main() {
       await pumpHome(tester);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('collection')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('collection')), findsOneWidget);
       expect(find.text('Collection'), findsOneWidget);
     });
 
@@ -202,8 +202,8 @@ void main() {
       await pumpHome(tester, withRepository: false);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('collection')), findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('collection')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
     });
 
     testWidgets('opens the list', (tester) async {

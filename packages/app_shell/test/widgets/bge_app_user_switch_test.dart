@@ -206,7 +206,7 @@ void main() {
     await tester.pumpAndSettle();
     // Any screen pushed above home will do. Settings renders its placeholder
     // here, since this app was built without the settings cubits.
-    await tester.tap(find.byKey(HomeScreen.entryKey('settings')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('settings')));
     await tester.pumpAndSettle();
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);
 
@@ -240,7 +240,7 @@ void main() {
         }
       },
     );
-    final adminEntry = find.byKey(HomeScreen.entryKey('admin'));
+    final adminEntry = find.byKey(MenuDrawer.entryKey('admin'));
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
     expect(adminEntry, findsNothing);

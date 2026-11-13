@@ -260,7 +260,7 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
       await tester.pumpAndSettle();
@@ -430,7 +430,7 @@ void main() {
       await pumpApp(tester, hydrationStatus: status);
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
       await tester.pumpAndSettle();
@@ -448,7 +448,7 @@ void main() {
       await pumpApp(tester, hydrationStatus: status);
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
       await tester.pumpAndSettle();
@@ -468,7 +468,7 @@ void main() {
       await pumpApp(tester);
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
       await tester.pumpAndSettle();

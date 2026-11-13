@@ -153,7 +153,7 @@ void main() {
   Future<void> openDetailFromTheList(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(HouseholdListScreen.rowKey(_id)));
     await tester.pumpAndSettle();

@@ -675,11 +675,43 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  Widget _buildHome(BuildContext context, ActiveServer active) {
+  /// The home menu's entries (#129), in display order, for the navigation
+  /// shell's menu (#414). The destinations (collection, games, events) are
+  /// not among them.
+  ///
+  /// [admin] is whether the Admin entry shows. #274, #684: the entry opens the
+  /// admin dashboard, and shows while the session's access shows any of its
+  /// sections, that is, while the caller reads every resource of some
+  /// section's type ([visibleAdminSections]). Reading some is not enough: a
+  /// plain member reads some households, their own. For DataGateways this
+  /// agrees with the rule the entry had before the dashboard (#41), since a
+  /// plain user reads none. A section is offered only where the server
+  /// registers the client its screens read through ([_adminSections]).
+  ///
+  /// #456: hidden while the answer is unknown. It comes and goes as the
+  /// answer changes: a sign-up's first answer lands after home is up, and a
+  /// refusal on any section's screen asks again. Moderators may read
+  /// DataGateways too, so the entry says nothing about changing anything:
+  /// each screen offers what the answer allows.
+  ///
+  /// No access registered (no user session, or no user client to ask
+  /// through) is no entry.
+  ///
+  /// The caller computes [admin] so: resolve `_adminSections(context,
+  /// container)` outside the access builder, with the rest of what the menu
+  /// shows (#456: the session's access closes its changes while the page is
+  /// on its way out, and a builder that resolved the user's services then
+  /// threw). Inside the builder it is
+  /// `visibleAdminSections(access.current, sections).isNotEmpty`, and it is
+  /// false when `_callerAccess(container)` is null.
+  // The navigation shell (#414) takes this over.
+  // ignore: unused_element
+  List<HomeMenuEntry> _menuEntries(
+    BuildContext context,
+    ActiveServer active, {
+    required bool admin,
+  }) {
     final authL10n = AuthLocalizations.of(context);
-    final catalogL10n = GameCatalogLocalizations.of(context);
-    final collectionL10n = GameCollectionLocalizations.of(context);
-    final eventsL10n = EventsLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
@@ -718,27 +750,77 @@ class _BgeAppState extends State<BgeApp> {
     // right if a composition without a client ever ships again.
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
-    // #44: the collection list's gate is the household list's — the
-    // repository alone, which the user tier registers, so the entry shows
-    // exactly while a session is active. A drawer entry rather than a
-    // top-level destination until #414 decides those.
-    final canReadCollection = container
-        .isRegistered<GameCollectionRepository>();
-    // #42: browse reads the server, so its gate is the games remote, which
-    // the network installer registers per server. A drawer entry, like the
-    // collection's (#44): navigation is #414's.
-    final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
-    // #497: the events overview's gate is the collection's — the repository
-    // alone, which the user tier registers, so the entry shows exactly
-    // while a session is active. A drawer entry until #414 makes every one
-    // a destination.
-    final canReadEvents = container.isRegistered<EventRepository>();
+
     // #455: the inbox needs the invite client as well, since it reads the
     // server rather than the cache; the household gate keeps it to a live
     // user session, as the households entry is.
     final canReadInvites =
         canReadHouseholds &&
         container.isRegistered<HouseholdInviteRemoteDataSource>();
+
+    return [
+      if (canReadHouseholds)
+        HomeMenuEntry(
+          id: 'households',
+          icon: Icons.groups_outlined,
+          label: householdL10n.householdListTitle,
+          onSelected: (ctx) => ctx.push(AppRoutes.household),
+        ),
+      if (canReadInvites)
+        HomeMenuEntry(
+          id: 'invites',
+          icon: Icons.mail_outline,
+          label: householdL10n.inviteInboxTitle,
+          onSelected: (ctx) => ctx.push(AppRoutes.invites),
+        ),
+      HomeMenuEntry(
+        id: 'send_feedback',
+        icon: Icons.feedback_outlined,
+        label: feedbackL10n.feedbackComposeTitle,
+        onSelected: (ctx) => ctx.push(AppRoutes.feedback),
+      ),
+      if (admin)
+        HomeMenuEntry(
+          id: 'admin',
+          icon: Icons.admin_panel_settings_outlined,
+          label: shellL10n.homeMenuAdmin,
+          onSelected: (ctx) => ctx.push(AppRoutes.admin),
+        ),
+      HomeMenuEntry(
+        id: 'settings',
+        icon: Icons.settings_outlined,
+        label: shellL10n.settingsTitle,
+        onSelected: (ctx) => ctx.push(AppRoutes.settings),
+      ),
+      HomeMenuEntry(
+        id: 'sign_out',
+        icon: Icons.logout,
+        label: authL10n.authSignOutButton,
+        isDestructive: true,
+        onSelected: (ctx) =>
+            ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
+      ),
+    ];
+  }
+
+  Widget _buildHome(BuildContext context, ActiveServer active) {
+    final container = active.container;
+
+    // #44: the collection list's gate is the household list's — the
+    // repository alone, which the user tier registers, so the entry shows
+    // exactly while a session is active. Also the gate of the Collection
+    // destination the navigation shell lists (#414).
+    final canReadCollection = container
+        .isRegistered<GameCollectionRepository>();
+    // #42: browse reads the server, so its gate is the games remote, which
+    // the network installer registers per server. Also the gate of the Games
+    // destination (#414).
+    final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
+    // #497: the events overview's gate is the collection's — the repository
+    // alone, which the user tier registers, so the entry shows exactly
+    // while a session is active. Also the gate of the Events destination
+    // (#414).
+    final canReadEvents = container.isRegistered<EventRepository>();
 
     // Everything home shows is resolved here, once, and not in the access
     // builder below (#456). The session's access closes its changes when the
@@ -765,101 +847,15 @@ class _BgeAppState extends State<BgeApp> {
     final somethingToPlay = canBrowseGames
         ? _buildSomethingToPlay(container)
         : null;
-    final adminSections = _adminSections(context, container);
 
-    HomeScreen home({required bool admin, bool canConnect = false}) =>
-        HomeScreen(
-          activeServerName: active.displayName,
-          notice: notice,
-          upcomingEvents: upcomingEvents,
-          stats: stats,
-          newestGames: newestGames?.call(canConnect: canConnect),
-          somethingToPlay: somethingToPlay,
-          entries: [
-            if (canReadCollection)
-              HomeMenuEntry(
-                id: 'collection',
-                icon: Icons.casino_outlined,
-                label: collectionL10n.collectionListTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.collection),
-              ),
-            if (canBrowseGames)
-              HomeMenuEntry(
-                id: 'games',
-                icon: Icons.explore_outlined,
-                label: catalogL10n.catalogBrowseTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.games),
-              ),
-            if (canReadEvents)
-              HomeMenuEntry(
-                id: 'events',
-                icon: Icons.event_outlined,
-                label: eventsL10n.eventsTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.events),
-              ),
-            if (canReadHouseholds)
-              HomeMenuEntry(
-                id: 'households',
-                icon: Icons.groups_outlined,
-                label: householdL10n.householdListTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.household),
-              ),
-            if (canReadInvites)
-              HomeMenuEntry(
-                id: 'invites',
-                icon: Icons.mail_outline,
-                label: householdL10n.inviteInboxTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.invites),
-              ),
-            HomeMenuEntry(
-              id: 'send_feedback',
-              icon: Icons.feedback_outlined,
-              label: feedbackL10n.feedbackComposeTitle,
-              onSelected: (ctx) => ctx.push(AppRoutes.feedback),
-            ),
-            if (admin)
-              HomeMenuEntry(
-                id: 'admin',
-                icon: Icons.admin_panel_settings_outlined,
-                label: shellL10n.homeMenuAdmin,
-                onSelected: (ctx) => ctx.push(AppRoutes.admin),
-              ),
-            HomeMenuEntry(
-              id: 'settings',
-              icon: Icons.settings_outlined,
-              label: shellL10n.settingsTitle,
-              onSelected: (ctx) => ctx.push(AppRoutes.settings),
-            ),
-            HomeMenuEntry(
-              id: 'sign_out',
-              icon: Icons.logout,
-              label: authL10n.authSignOutButton,
-              isDestructive: true,
-              onSelected: (ctx) =>
-                  ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
-            ),
-          ],
-        );
+    HomeScreen home({bool canConnect = false}) => HomeScreen(
+      notice: notice,
+      upcomingEvents: upcomingEvents,
+      stats: stats,
+      newestGames: newestGames?.call(canConnect: canConnect),
+      somethingToPlay: somethingToPlay,
+    );
 
-    // #274, #684: the Admin entry opens the admin dashboard, and shows while
-    // the session's access shows any of its sections, that is, while the
-    // caller reads every resource of some section's type
-    // ([visibleAdminSections]). Reading some is not enough: a plain member
-    // reads some households, their own. For DataGateways this agrees with the
-    // rule the entry had before the dashboard (#41), since a plain user reads
-    // none. A section is offered only where the server registers the client
-    // its screens read through ([_adminSections]), resolved above with the
-    // rest of home.
-    //
-    // #456: hidden while the answer is unknown. It comes and goes as the
-    // answer changes: a sign-up's first answer lands after home is up, and a
-    // refusal on any section's screen asks again. Moderators may read
-    // DataGateways too, so the entry says nothing about changing anything:
-    // each screen offers what the answer allows.
-    //
-    // No access registered (no user session, or no user client to ask
-    // through) is no entry.
-    //
     // #617: a server with no games offers the connect card while the access
     // allows read and create: the card opens the DataGateway list, which
     // needs read, to add one there, which needs create. A failed ask
@@ -875,7 +871,7 @@ class _BgeAppState extends State<BgeApp> {
     // arriving user's may never replace. Reading the repository holds either
     // way.
     final access = _callerAccess(container);
-    if (access == null) return home(admin: false);
+    if (access == null) return home();
     return StreamBuilder<CallerAccess>(
       stream: access.changes,
       builder: (_, _) {
@@ -885,7 +881,6 @@ class _BgeAppState extends State<BgeApp> {
           AccessAction.read,
         );
         return home(
-          admin: visibleAdminSections(current, adminSections).isNotEmpty,
           canConnect:
               mayRead &&
               current.allows(ResourceType.dataGateway, AccessAction.create),

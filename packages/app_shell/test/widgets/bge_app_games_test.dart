@@ -384,7 +384,7 @@ void main() {
   Future<void> openGames(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(HomeScreen.entryKey('games')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('games')));
     await tester.pumpAndSettle();
   }
 
@@ -651,7 +651,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(HomeScreen.entryKey('games')), findsNothing);
+    expect(find.byKey(MenuDrawer.entryKey('games')), findsNothing);
   });
 
   testWidgets('search names a DataGateway for a user who may read them', (

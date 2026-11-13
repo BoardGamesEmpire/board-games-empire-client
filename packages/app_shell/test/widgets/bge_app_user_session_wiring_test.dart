@@ -889,7 +889,7 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
       expect(find.byType(HouseholdListScreen), findsOneWidget);
 

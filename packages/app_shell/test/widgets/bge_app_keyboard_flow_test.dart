@@ -348,7 +348,7 @@ void main() {
     final menu = find.byIcon(Icons.menu);
     final menuNode = Focus.of(tester.element(menu));
     await activateByKeyboard(tester, menu);
-    expect(find.byKey(HomeScreen.drawerKey), findsOneWidget);
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
     await expectTraversable(
       tester,
       expectedOrder: [
@@ -365,16 +365,16 @@ void main() {
     // Escape closes it, and focus goes back to the menu button.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(HomeScreen.drawerKey), findsNothing);
+    expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
     expect(FocusManager.instance.primaryFocus, same(menuNode));
 
     // Open again, then the households entry.
     await activateByKeyboard(tester, menu);
-    expect(find.byKey(HomeScreen.drawerKey), findsOneWidget);
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
     await activateByKeyboard(
       tester,
       find.descendant(
-        of: find.byKey(HomeScreen.entryKey('households')),
+        of: find.byKey(MenuDrawer.entryKey('households')),
         matching: find.text('Households'),
       ),
     );

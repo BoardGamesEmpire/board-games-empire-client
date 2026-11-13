@@ -30,6 +30,8 @@ export 'src/deep_links/deep_link_source.dart';
 export 'src/deep_links/known_server_lookup.dart';
 export 'src/deep_links/pending_deep_link_holder.dart';
 export 'src/i18n/active_locale.dart';
+export 'src/navigation/menu_drawer.dart';
+export 'src/navigation/nav_destination.dart';
 export 'src/observability/feedback_uncaught_error_reporter.dart';
 export 'src/observability/global_error_hooks.dart';
 export 'src/observability/shell_observability.dart';

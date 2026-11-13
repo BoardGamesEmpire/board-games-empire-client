@@ -348,7 +348,7 @@ void main() {
 
   Future<void> openTheOverview(WidgetTester tester) async {
     await openDrawer(tester);
-    await tester.tap(find.byKey(HomeScreen.entryKey('events')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('events')));
     await tester.pumpAndSettle();
   }
 
@@ -359,7 +359,7 @@ void main() {
       await pumpHome(tester);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('events')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('events')), findsOneWidget);
       expect(find.text('Events'), findsOneWidget);
     });
 
@@ -368,8 +368,8 @@ void main() {
       await pumpHome(tester, withRepository: false);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('events')), findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('events')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
     });
 
     testWidgets('opens the overview', (tester) async {

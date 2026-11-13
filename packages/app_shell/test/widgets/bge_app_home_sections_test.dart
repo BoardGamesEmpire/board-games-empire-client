@@ -1013,7 +1013,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(HomeScreen.entryKey('sign_out')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('sign_out')));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);

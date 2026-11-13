@@ -224,7 +224,7 @@ void main() {
       await pumpApp(tester);
       await openDrawer(tester);
 
-      await tester.tap(find.byKey(HomeScreen.entryKey('invites')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('invites')));
       await tester.pumpAndSettle();
 
       expect(find.byType(InviteInboxScreen), findsOneWidget);
@@ -235,8 +235,8 @@ void main() {
       await pumpApp(tester, withInvites: false);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('invites')), findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('invites')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('households')), findsOneWidget);
     });
 
     testWidgets('does not need a user search client, which only the send '
@@ -244,7 +244,7 @@ void main() {
       await pumpApp(tester, withUsers: false);
       await openDrawer(tester);
 
-      expect(find.byKey(HomeScreen.entryKey('invites')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('invites')), findsOneWidget);
     });
   });
 
@@ -262,7 +262,7 @@ void main() {
     );
     await pumpApp(tester);
     await openDrawer(tester);
-    await tester.tap(find.byKey(HomeScreen.entryKey('invites')));
+    await tester.tap(find.byKey(MenuDrawer.entryKey('invites')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(InviteInboxScreen.sentKey));
