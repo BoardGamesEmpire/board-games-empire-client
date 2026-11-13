@@ -42,6 +42,10 @@ void main() {
       expect(bgeWebPlatformBootstrap().supportsReset, isFalse);
     });
 
+    test("leaves Back to the browser's own (#611)", () {
+      expect(bgeWebPlatformBootstrap().browserOwnsBack, isTrue);
+    });
+
     test('initialize() builds the scope with web storage, the per-user tier '
         "and the origin's remotes (#325)", () async {
       // Until this test, dropping `serverScopeBuilder` from

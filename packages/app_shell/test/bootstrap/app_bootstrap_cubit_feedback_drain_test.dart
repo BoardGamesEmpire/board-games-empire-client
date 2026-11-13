@@ -126,6 +126,9 @@ class _UnusedPlatformBootstrap implements PlatformBootstrap {
   Future<BootstrapResult> initialize() => throw UnimplementedError();
 
   @override
+  bool get browserOwnsBack => false;
+
+  @override
   bool get supportsReset => false;
 
   @override

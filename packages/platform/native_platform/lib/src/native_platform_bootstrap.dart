@@ -274,6 +274,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   Future<void>? _operationEnded;
 
   @override
+  bool get browserOwnsBack => false;
+
+  @override
   bool get supportsReset => true;
 
   /// Builds the native root container (#72): a fresh, isolated

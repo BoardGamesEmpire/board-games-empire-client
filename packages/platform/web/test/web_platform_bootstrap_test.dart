@@ -67,6 +67,10 @@ void main() {
       expect(bootstrap.supportsReset, isFalse);
     });
 
+    test("the browser's own Back is the way back (#611)", () {
+      expect(bootstrap.browserOwnsBack, isTrue);
+    });
+
     test('reset() throws UnsupportedError', () async {
       await expectLater(bootstrap.reset(), throwsUnsupportedError);
     });

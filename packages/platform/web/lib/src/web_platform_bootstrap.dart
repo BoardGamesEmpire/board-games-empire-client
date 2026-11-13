@@ -197,6 +197,9 @@ class WebPlatformBootstrap implements PlatformBootstrap {
       StateError('WebPlatformBootstrap has been disposed.');
 
   @override
+  bool get browserOwnsBack => true;
+
+  @override
   bool get supportsReset => false;
 
   @override
