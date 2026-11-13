@@ -1299,10 +1299,14 @@ void main() {
         await tester.pumpAndSettle();
         final focused = await capture();
 
+        // Around the icon only, so a change of icon colour can't stand in
+        // for the fill. A medium rail labels its selected destination alone,
+        // so no label sits there.
         var strongest = 1.0;
         for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
           for (var x = area.left.ceil(); x < area.right.floor(); x++) {
             final point = Offset(x + 0.5, y + 0.5);
+            if (icon.contains(point)) continue;
             final ratio = Wcag.contrastRatio(atRest(point), focused(point));
             if (ratio > strongest) strongest = ratio;
           }

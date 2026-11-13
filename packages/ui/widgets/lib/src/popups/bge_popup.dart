@@ -169,8 +169,10 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   /// The page above this route on its own navigator.
   _Entrance? _over;
 
-  /// The page last pushed on [coverObserver]'s navigator.
-  _Entrance? _beneath;
+  /// The pages pushed on [coverObserver]'s navigator. A later one leaves
+  /// the earlier ones watched: it can be popped before it arrives, and the
+  /// page under it still covers the pop-up once that page arrives.
+  final List<_Entrance> _beneath = [];
 
   @override
   void install() {
@@ -196,7 +198,9 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
   void dispose() {
     coverObserver?._popups.remove(this);
     _over?.cancel();
-    _beneath?.cancel();
+    for (final entrance in _beneath) {
+      entrance.cancel();
+    }
     super.dispose();
   }
 
@@ -206,9 +210,7 @@ mixin BgeRemoveWhenCovered<T> on TransitionRoute<T> {
     // navigator is [didChangeNext]'s.
     if (!isActive || identical(route.navigator, navigator)) return;
     final entrance = _watch(route);
-    if (entrance == null) return;
-    _beneath?.cancel();
-    _beneath = entrance;
+    if (entrance != null) _beneath.add(entrance);
   }
 
   /// Watches [route]'s entrance, if it is a route that covers this one.

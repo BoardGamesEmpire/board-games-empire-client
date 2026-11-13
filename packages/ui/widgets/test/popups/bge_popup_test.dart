@@ -708,6 +708,34 @@ void main() {
           expect(app.closed, isFalse);
         }, variant: _platforms);
 
+        testWidgets('a page pushed over one still arriving, and popped before '
+            'it arrives, leaves the first to remove it', (tester) async {
+          final app = _NestedApp();
+          await app.pump(tester, size);
+          final popup = await app.open(tester);
+
+          await tester.tap(find.byKey(_pushKey));
+          final first = app.page!;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 40));
+          expect(first.animation!.status, AnimationStatus.forward);
+
+          final second = MaterialPageRoute<void>(builder: (_) => app._page());
+          app.nested.push(second);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 40));
+          expect(second.animation!.status, AnimationStatus.forward);
+          app.nested.pop();
+          await tester.pumpAndSettle();
+
+          expect(second.isActive, isFalse);
+          expect(first.isActive, isTrue);
+          expect(first.animation!.isCompleted, isTrue);
+          expect(popup.isActive, isFalse);
+          expect(_anyPopup, findsNothing);
+          expect(app.closed, isTrue);
+        }, variant: _platforms);
+
         testWidgets('a dialog opened from the pop-up on the nested navigator '
             'does not remove it', (tester) async {
           final app = _NestedApp();
