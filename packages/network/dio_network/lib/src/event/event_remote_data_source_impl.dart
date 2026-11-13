@@ -600,35 +600,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   @override
-  Future<OfferedGame> offerGame(
-    String eventId,
-    String attendeeId, {
-    required String collectionId,
-  }) async {
-    _checkId(eventId, name: 'eventId');
-    _checkId(attendeeId, name: 'attendeeId');
-    _checkId(collectionId, name: 'collectionId');
-
-    const action = 'Offer game';
-    const failures = _EventFailures(_Route.gameOffer);
-    final result = await sendForJson(
-      () => _dio.post<String>(
-        _offeredGamesPath(eventId, attendeeId),
-        options: _plainBody,
-        data: {'collectionId': collectionId},
-      ),
-      action: action,
-      family: failures,
-    );
-    return parseRemote(
-      failures,
-      () => _mapOfferedGame(_entryObject(result.body)),
-      action: action,
-      status: result.status,
-    );
-  }
-
-  @override
   Future<List<GameOfferResult>> offerGames(
     String eventId,
     String attendeeId, {
@@ -1120,10 +1091,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     }
     return summary;
   }
-
-  /// Reads the offered game out of an offer's body, `{ "entry": { ... } }`.
-  static Map<String, dynamic> _entryObject(Map<String, dynamic> body) =>
-      _nestedObject(body['entry'], 'entry');
 
   /// Reads the nomination out of a body, `{ "nomination": { ... } }`.
   static Map<String, dynamic> _nominationObject(Map<String, dynamic> body) =>
@@ -1716,10 +1683,11 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
   /// per value it refused, and falls to permanent: the same request is
   /// refused again. The event delete shares this route, and the server never
   /// answers it 400. The event status writes share it too, and their 400 is a
-  /// conflict with the event's status as it stands. An offer's is too, for a
-  /// collection entry removed since (#516), and a nomination's for a pool row
-  /// that does not match its game (#517). The vote and the withdrawal share
-  /// [_Route.write], and their 400 is the nomination's status as it stands.
+  /// conflict with the event's status as it stands. A nomination's is too,
+  /// for a pool row that does not match its game (#517). The vote and the
+  /// withdrawal share [_Route.write], and their 400 is the nomination's
+  /// status as it stands. The batch offer shares it as well, and its 400 is
+  /// only ever the validation pipe's (#851).
   @override
   EventRemoteException? refused(RemoteRefusal refusal) {
     if (!refusal.fromApi) return null;
@@ -1737,7 +1705,6 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         ),
         _Route.write ||
         _Route.attendeeAdd ||
-        _Route.gameOffer ||
         _Route.gameTakeBack ||
         _Route.nominate => EventWriteRefusedException(
           message,
@@ -1760,7 +1727,6 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
         _Route.householdList ||
         _Route.write ||
         _Route.attendeeAdd ||
-        _Route.gameOffer ||
         _Route.gameTakeBack ||
         _Route.nominate => EventRemoteNotFoundException(
           message,
@@ -1778,14 +1744,12 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
     }
     if (status == 409 &&
         (route == _Route.attendeeAdd ||
-            route == _Route.gameOffer ||
             route == _Route.gameTakeBack ||
             route == _Route.nominate)) {
-      // The user is already on the event, the game is already offered, the
-      // game still supplies a nomination or a lineup, or a nomination's
-      // supplier is not attending. A 409 asking for a
-      // retry never gets here: the shared classifier reads it as transient
-      // first.
+      // The user is already on the event, the game still supplies a
+      // nomination or a lineup, or a nomination's supplier is not attending.
+      // A 409 asking for a retry never gets here: the shared classifier reads
+      // it as transient first.
       return EventWriteConflictException(
         message,
         cause: cause,
@@ -1794,9 +1758,7 @@ final class _EventFailures extends RemoteFailureFamily<EventRemoteException> {
       );
     }
     if (status == 400 &&
-        (route == _Route.write ||
-            route == _Route.gameOffer ||
-            route == _Route.nominate) &&
+        (route == _Route.write || route == _Route.nominate) &&
         apiErrorField(body, 'message') != null) {
       return EventWriteConflictException(
         message,
@@ -1833,13 +1795,15 @@ enum _Route {
   /// `DELETE /api/events/:id`, the event status writes (`cancel`, `reopen`,
   /// `archive`, `unarchive`), the date routes under it, a vote included, and
   /// the nomination writes (vote, withdraw, approve, reject and resolve, #517
-  /// and #518), and the batch offer, `POST /api/events/:id/attendees/:aid/games/batch`
-  /// (#851). Its 403 refuses that write, its 404 says the event, date or
-  /// nomination is gone, and its enveloped 400 with one message is a conflict
-  /// with the row as it stands (#506), for a status write the event's status
-  /// and for a nomination write the nomination's. The event delete is never
-  /// answered 400. The batch offer's 400 is always the validation pipe's, with
-  /// a list of messages, so it is permanent (#851).
+  /// and #518), and the batch offer,
+  /// `POST /api/events/:id/attendees/:aid/games/batch` (#851). Its 403
+  /// refuses that write, its 404 says the event, date or nomination is gone,
+  /// or for the batch offer the event or the attendee, and its enveloped 400
+  /// with one message is a conflict with the row as it stands (#506), for a
+  /// status write the event's status and for a nomination write the
+  /// nomination's. The event delete is never answered 400. The batch offer's
+  /// 400 is always the validation pipe's, with a list of messages, so it is
+  /// permanent, and so is its 409 unless it asks for a retry (#851).
   write,
 
   /// `POST /api/events/:id/attendees` (#510). It maps as [write] does, and
@@ -1847,14 +1811,6 @@ enum _Route {
   /// user), its 403 a missing right or the invitee's block or preference, and
   /// its enveloped 409 a user already on the event.
   attendeeAdd,
-
-  /// `POST /api/events/:id/attendees/:aid/games` (#516). Its 403 refuses the
-  /// offer (the collection entry is someone else's, or the caller may not
-  /// offer for this attendee), its 404 is the event, the attendee or the
-  /// collection entry missing, its enveloped 409 a game already offered, and
-  /// its enveloped 400 with one message an entry removed from the collection
-  /// since.
-  gameOffer,
 
   /// `DELETE /api/events/:id/attendees/:aid/games/:gid` (#516). Its 403
   /// refuses the take-back, its 404 is no such offered game (or one already

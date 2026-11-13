@@ -395,10 +395,10 @@ The pages that pin, and this list is where a new one is added:
   Offer button counts the picks (#516);
 - the banners that answer actions on a DataGateway's page: on the DataGateway
   itself, and on its language worklist (#457);
-- an event's screen, whose footer holds how far a run of offers has got and
-  how the Games tab's last writes went, to the pool and to the nominations,
-  on either tab, and the Games tab's stale-data banners for the pool and the
-  nominations (#516, #517).
+- an event's screen, whose footer holds the line saying how many games a run
+  of offers is offering and how the Games tab's last writes went, to the
+  pool and to the nominations, on either tab, and the Games tab's stale-data
+  banners for the pool and the nominations (#516, #517, #851).
 
 The reasoning, and the measurements behind it, are on `BgePage.footer`:
 

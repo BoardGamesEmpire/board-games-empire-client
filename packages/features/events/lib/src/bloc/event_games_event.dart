@@ -21,8 +21,9 @@ sealed class EventGamesEvent extends Equatable {
 /// Read the games offered for the event [eventId], every attendee's or, when
 /// [attendeeIds] is a list, those attendees': when the tab opens, and after
 /// each detail read. The bloc reads it again itself once an offer run ends,
-/// and once a take-back ends unless it failed; a dropped write reads
-/// nothing. A retry is [EventGamesRetryRequested].
+/// and once a take-back ends unless it failed, but not while the event is
+/// gone and no read is out; a dropped write reads nothing. A retry is
+/// [EventGamesRetryRequested].
 final class EventGamesRequested extends EventGamesEvent {
   const EventGamesRequested(this.eventId, this.attendeeIds);
 
@@ -47,9 +48,10 @@ final class EventGamesRetryRequested extends EventGamesEvent {
 }
 
 /// The viewer, the attendee [attendeeId] of the event [eventId], offers the
-/// games [picks] from their collection, sent one at a time in order. The pool
-/// is read again once the run ends, for [attendeeIds] or for the attendees a
-/// request named since.
+/// games [picks] from their collection, sent in order in batches of up to
+/// 100 (#851). The pool is read again once the run ends, for [attendeeIds]
+/// or for the attendees a request named since, unless the event is gone and
+/// no read is out.
 final class EventGamesOffered extends EventGamesEvent {
   const EventGamesOffered(
     this.eventId,
@@ -69,8 +71,8 @@ final class EventGamesOffered extends EventGamesEvent {
 
 /// The attendee [attendeeId] of the event [eventId] takes [game] back off the
 /// pool. The pool is read again once the server answers, unless the
-/// take-back failed, for [attendeeIds] or for the attendees a request named
-/// since.
+/// take-back failed or the event is gone and no read is out, for
+/// [attendeeIds] or for the attendees a request named since.
 final class EventGameTakenBack extends EventGamesEvent {
   const EventGameTakenBack(
     this.eventId,

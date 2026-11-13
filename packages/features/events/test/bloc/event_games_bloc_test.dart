@@ -32,10 +32,6 @@ final class _Held<R, T> {
   void fail(int index, Object error) => _replies[index].completeError(error);
 }
 
-const _alreadyOffered = EventWriteConflictException(
-  'already',
-  statusCode: 409,
-);
 const _leftCollection = EventWriteConflictException('left', statusCode: 400);
 const _stillSupplies = EventWriteConflictException(
   'supplies',
@@ -46,6 +42,15 @@ const _refused = EventWriteRefusedException('no', statusCode: 403);
 const _gone = EventRemoteNotFoundException('gone', statusCode: 404);
 const _forbidden = EventRemoteForbiddenException('hidden', statusCode: 403);
 const _offline = EventRemoteTransientException('offline');
+
+/// The validation pipe's 400 on a batch offer, which lists what it refused.
+const _invalid = EventRemotePermanentException(
+  'invalid',
+  statusCode: 400,
+);
+
+/// A batch answer this client could not read.
+const _malformed = EventRemotePermanentException('malformed');
 
 const _ids = ['a-1', 'a-2'];
 const _laterIds = ['a-1', 'a-2', 'a-3'];
@@ -64,21 +69,38 @@ OfferedGame _game(int n) => OfferedGame(
   platformName: 'Tabletop',
 );
 
-/// The offered game a send of [request] answers with.
-OfferedGame _offeredFor(OfferGameRequest request) => OfferedGame(
-  id: 'g-${request.collectionId}',
-  attendeeId: request.attendeeId,
-  collectionId: request.collectionId,
-  platformGameId: 'pg',
-  gameId: 'game',
-  title: 'Game',
-  platformName: 'Tabletop',
+/// The result of a batch offer of [request] for its entry [collectionId]:
+/// offered, now or [already].
+GameOfferResult _offeredOne(
+  OfferGamesRequest request,
+  String collectionId, {
+  bool already = false,
+}) => GameOfferResult.offered(
+  collectionId: collectionId,
+  alreadyOffered: already,
 );
+
+/// The result of a batch offer for its entry [collectionId]: refused.
+GameOfferResult _refusedOne(String collectionId) => GameOfferResult.refused(
+  collectionId: collectionId,
+  reason: GameOfferRefusal.removedFromCollection,
+  message: 'No longer in the collection',
+);
+
+/// A batch offer's answer that offers every entry of [request].
+List<GameOfferResult> _offeredAll(OfferGamesRequest request) => [
+  for (final id in request.collectionIds) _offeredOne(request, id),
+];
 
 /// Picks of the entries `c-1` to `c-[count]`.
 List<OfferPick> _picks(int count) => [
   for (var n = 1; n <= count; n++)
     OfferPick(collectionId: 'c-$n', title: 'Game $n'),
+];
+
+/// The entries `c-[from]` to `c-[to]`, as a batch sends them.
+List<String> _entries(int from, int to) => [
+  for (var n = from; n <= to; n++) 'c-$n',
 ];
 
 /// An offer by `a-1` on the event `e-1` of [count] picks.
@@ -123,8 +145,8 @@ Matcher _poolRead(String eventId, List<String>? attendeeIds) =>
         .having((request) => request.attendeeIds, 'attendeeIds', attendeeIds);
 
 /// The games pool on an event's Games tab (#516). The pool is read whole and
-/// never cached. The viewer's offers go one at a time, and a take-back is one
-/// request.
+/// never cached. The viewer's offers go in batches of up to 100, one batch
+/// at a time (#851), and a take-back is one request.
 void main() {
   late _MockBgeLogger logger;
 
@@ -136,14 +158,15 @@ void main() {
     calls = [];
   });
 
-  /// A server whose pool reads, offers and take-backs answer as [pool],
-  /// [offered] and [takenBack] do, each recorded in [calls]. A read answers
-  /// an empty pool, an offer the offered game and a take-back done, unless a
-  /// test says otherwise.
+  /// A server whose pool reads, batch offers and take-backs answer as
+  /// [pool], [offered] and [takenBack] do, each recorded in [calls]. A read
+  /// answers an empty pool, a batch offer every entry it sent as offered and
+  /// a take-back done, unless a test says otherwise.
   FakeEventRemote serving({
     FutureOr<List<OfferedGame>> Function(GamesPoolRequest request)? pool,
-    FutureOr<OfferedGame> Function(OfferGameRequest request) offered =
-        _offeredFor,
+    FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)
+        offered =
+        _offeredAll,
     FutureOr<void> Function(TakeBackGameRequest request)? takenBack,
   }) => FakeEventRemote.detail(
     (_) => throw UnimplementedError('the pool reads no event'),
@@ -151,7 +174,7 @@ void main() {
       calls.add('pool');
       return pool == null ? const <OfferedGame>[] : pool(request);
     },
-    offered: (request) {
+    offeredBatch: (request) {
       calls.add('offer');
       return offered(request);
     },
@@ -658,11 +681,11 @@ void main() {
       },
     );
 
-    test('is asked before each send and before and after the read', () async {
+    test('is asked before each batch and before and after the read', () async {
       final bloc = build(serving(), confirmSession: answering([true]));
       addTearDown(bloc.close);
 
-      bloc.add(_offer(2));
+      bloc.add(_offer(101));
       await pumpEventQueue();
 
       expect(calls, [
@@ -676,19 +699,19 @@ void main() {
       ]);
     });
 
-    test('a session that says no before a send stops the run as failed, and '
-        'sends nothing more', () async {
+    test('the session is asked before each batch: a no to the second stops '
+        'the run as failed, and sends nothing more', () async {
       final remote = serving();
       final bloc = build(remote, confirmSession: answering([true, false]));
       addTearDown(bloc.close);
 
-      bloc.add(_offer(3));
+      bloc.add(_offer(101));
       await pumpEventQueue();
 
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventOfferResult.failed, offered: 1, notOffered: 2),
+        _offerEnded(EventOfferResult.failed, offered: 100, notOffered: 1),
       );
       expect(bloc.state.sending, isNull);
       // The read after the run asks too, and is told no.
@@ -708,7 +731,7 @@ void main() {
       bloc.add(_offer(2));
       await pumpEventQueue();
 
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(remote.poolRequests, isEmpty);
       expect(
         bloc.state,
@@ -726,8 +749,9 @@ void main() {
   });
 
   group('an offer run', () {
-    test('forty picks go one at a time and count up', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+    test('a run of three is one request, and says three are going while it '
+        'is out', () async {
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call, pool: (_) => one);
       final bloc = build(remote);
       addTearDown(bloc.close);
@@ -736,18 +760,14 @@ void main() {
       bloc.add(_offer(3));
       await pumpEventQueue();
 
-      expect(bloc.state.sending, (done: 0, total: 3));
-      for (var k = 0; k < 3; k++) {
-        // Never two requests out at once.
-        expect(remote.offers, hasLength(k + 1));
-        expect(remote.offers[k], (
-          eventId: 'e-1',
-          attendeeId: 'a-1',
-          collectionId: 'c-${k + 1}',
-        ));
-        sends.answer(k, _offeredFor(sends.requests[k]));
-        await pumpEventQueue();
-      }
+      final sent = remote.offerBatches.single;
+      expect(sent.eventId, 'e-1');
+      expect(sent.attendeeId, 'a-1');
+      expect(sent.collectionIds, ['c-1', 'c-2', 'c-3']);
+      expect(bloc.state.sending, 3);
+
+      sends.answer(0, _offeredAll(sends.requests[0]));
+      await pumpEventQueue();
 
       final ended = _offerEnded(
         EventOfferResult.done,
@@ -755,23 +775,56 @@ void main() {
         notOffered: 0,
       );
       expect(states, [
-        const EventGamesState(sending: (done: 0, total: 3)),
-        const EventGamesState(sending: (done: 1, total: 3)),
-        const EventGamesState(sending: (done: 2, total: 3)),
-        const EventGamesState(sending: (done: 3, total: 3)),
+        const EventGamesState(sending: 3),
         EventGamesState(outcome: ended),
         // Then the pool is read again, for the ids the offer carried.
         EventGamesState(load: EventGamesLoad.loading, outcome: ended),
         loaded(one, outcome: ended),
       ]);
+      expect(bloc.state.sending, isNull);
       expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
     });
 
-    test('already offered counts as offered', () async {
+    test('101 picks are two requests in order, of 100 then 1, and the '
+        'count going holds through both', () async {
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
+      final remote = serving(offered: sends.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+
+      // Never two requests out at once.
+      expect(remote.offerBatches, hasLength(1));
+      sends.answer(0, _offeredAll(sends.requests[0]));
+      await pumpEventQueue();
+      expect(remote.offerBatches, hasLength(2));
+      expect(bloc.state.sending, 101);
+      sends.answer(1, _offeredAll(sends.requests[1]));
+      await pumpEventQueue();
+
+      expect(
+        remote.offerBatches.map((batch) => batch.collectionIds.length),
+        [100, 1],
+      );
+      expect(remote.offerBatches[0].collectionIds, _entries(1, 100));
+      expect(remote.offerBatches[1].collectionIds, ['c-101']);
+      expect(states.map((state) => state.sending).whereType<int>(), [101]);
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.done, offered: 101, notOffered: 0),
+      );
+    });
+
+    test("added and alreadyOffered count, refused doesn't", () async {
       final remote = serving(
-        offered: (request) => request.collectionId == 'c-2'
-            ? throw _alreadyOffered
-            : _offeredFor(request),
+        offered: (request) => [
+          _offeredOne(request, 'c-1'),
+          _offeredOne(request, 'c-2', already: true),
+          _refusedOne('c-3'),
+        ],
       );
       final bloc = build(remote);
       addTearDown(bloc.close);
@@ -779,108 +832,41 @@ void main() {
       bloc.add(_offer(3));
       await pumpEventQueue();
 
-      expect(remote.offers, hasLength(3));
+      expect(remote.offerBatches, hasLength(1));
       expect(
         bloc.state.outcome,
-        _offerEnded(EventOfferResult.done, offered: 3, notOffered: 0),
+        _offerEnded(EventOfferResult.partly, offered: 2, notOffered: 1),
       );
-    });
-
-    for (final (name, error) in <(String, EventRemoteException)>[
-      (
-        'a game gone from the collection is skipped and the run goes on',
-        _leftCollection,
-      ),
-      ('a pick whose id the server no longer knows is skipped', _gone),
-      ('a conflict with an unexpected status code is skipped', _oddConflict),
-    ]) {
-      test(name, () async {
-        final remote = serving(
-          offered: (request) => request.collectionId == 'c-2'
-              ? throw error
-              : _offeredFor(request),
-        );
-        final bloc = build(remote);
-        addTearDown(bloc.close);
-        final states = record(bloc);
-
-        bloc.add(_offer(3));
-        await pumpEventQueue();
-
-        expect(remote.offers, hasLength(3));
-        expect(
-          bloc.state.outcome,
-          _offerEnded(EventOfferResult.partly, offered: 2, notOffered: 1),
-        );
-        // A skipped pick is settled, and counts as done.
-        expect(states.map((state) => state.sending).whereType<Object>(), [
-          (done: 0, total: 3),
-          (done: 1, total: 3),
-          (done: 2, total: 3),
-          (done: 3, total: 3),
-        ]);
-        expect(remote.poolRequests, hasLength(1));
-        verifyNoWarnings();
-      });
-    }
-
-    test(
-      'a dropped connection stops the run and says how far it got',
-      () async {
-        final remote = serving(
-          offered: (request) => request.collectionId == 'c-4'
-              ? throw _offline
-              : _offeredFor(request),
-        );
-        final bloc = build(remote);
-        addTearDown(bloc.close);
-        final states = record(bloc);
-
-        bloc.add(_offer(7));
-        await pumpEventQueue();
-
-        expect(
-          bloc.state.outcome,
-          _offerEnded(EventOfferResult.failed, offered: 3, notOffered: 4),
-        );
-        expect(remote.offers, hasLength(4));
-        expect(remote.poolRequests, hasLength(1));
-        // The pick that stopped it isn't counted as done.
-        expect(
-          states.map((state) => state.sending).whereType<Object>().last,
-          (done: 3, total: 7),
-        );
-        expect(bloc.state.sending, isNull);
-        verifyWarnings(1);
-      },
-    );
-
-    test('a refusal stops the run', () async {
-      final remote = serving(
-        offered: (request) => request.collectionId == 'c-4'
-            ? throw _refused
-            : _offeredFor(request),
-      );
-      final bloc = build(remote);
-      addTearDown(bloc.close);
-
-      bloc.add(_offer(7));
-      await pumpEventQueue();
-
-      expect(
-        bloc.state.outcome,
-        _offerEnded(EventOfferResult.refused, offered: 3, notOffered: 4),
-      );
-      expect(remote.offers, hasLength(4));
       expect(remote.poolRequests, hasLength(1));
       verifyNoWarnings();
     });
 
-    test('every pick refused by rule ends none', () async {
-      // Each answer skips its pick, and none stops the run.
+    test('a refusal in one batch lets the next go', () async {
       final remote = serving(
-        offered: (request) =>
-            throw request.collectionId == 'c-2' ? _gone : _leftCollection,
+        offered: (request) => [
+          for (final id in request.collectionIds)
+            if (id == 'c-7') _refusedOne(id) else _offeredOne(request, id),
+        ],
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+
+      expect(remote.offerBatches, hasLength(2));
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.partly, offered: 100, notOffered: 1),
+      );
+    });
+
+    test('a pick with no result is not offered', () async {
+      final remote = serving(
+        offered: (request) => [
+          _offeredOne(request, 'c-1'),
+          _offeredOne(request, 'c-3'),
+        ],
       );
       final bloc = build(remote);
       addTearDown(bloc.close);
@@ -888,7 +874,68 @@ void main() {
       bloc.add(_offer(3));
       await pumpEventQueue();
 
-      expect(remote.offers, hasLength(3));
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.partly, offered: 2, notOffered: 1),
+      );
+    });
+
+    test('a result for an id not sent is ignored', () async {
+      final remote = serving(
+        offered: (request) => [
+          _offeredOne(request, 'c-1'),
+          // Not sent: not counted, whatever it says.
+          _offeredOne(request, 'c-9'),
+          _offeredOne(request, 'c-2'),
+          _refusedOne('c-8'),
+        ],
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(3));
+      await pumpEventQueue();
+
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.partly, offered: 2, notOffered: 1),
+      );
+    });
+
+    test('a result for an id of another batch is ignored', () async {
+      final remote = serving(
+        offered: (request) => [
+          // The second batch answers for an entry of the first, too.
+          if (request.collectionIds.first == 'c-101')
+            _offeredOne(request, 'c-1'),
+          for (final id in request.collectionIds)
+            if (id == 'c-1') _refusedOne(id) else _offeredOne(request, id),
+        ],
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.partly, offered: 100, notOffered: 1),
+      );
+    });
+
+    test('every pick refused ends none', () async {
+      final remote = serving(
+        offered: (request) => [
+          for (final id in request.collectionIds) _refusedOne(id),
+        ],
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(3));
+      await pumpEventQueue();
+
       expect(
         bloc.state.outcome,
         _offerEnded(EventOfferResult.none, offered: 0, notOffered: 3),
@@ -896,33 +943,203 @@ void main() {
       expect(remote.poolRequests, hasLength(1));
     });
 
+    test('a 403 stops the run as refused', () async {
+      final remote = serving(offered: (_) => throw _refused);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+
+      // The second request is never sent.
+      expect(remote.offerBatches, hasLength(1));
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.refused, offered: 0, notOffered: 101),
+      );
+      expect(remote.poolRequests, hasLength(1));
+      verifyNoWarnings();
+    });
+
+    test('a 403 after a good batch stops as refused, keeping what it '
+        'offered', () async {
+      final remote = serving(
+        offered: (request) => request.collectionIds.first == 'c-101'
+            ? throw _refused
+            : _offeredAll(request),
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(201));
+      await pumpEventQueue();
+
+      expect(remote.offerBatches, hasLength(2));
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.refused, offered: 100, notOffered: 101),
+      );
+    });
+
+    test('a failure after a good batch stops as failed', () async {
+      final remote = serving(
+        offered: (request) => request.collectionIds.first == 'c-101'
+            ? throw _offline
+            : _offeredAll(request),
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+
+      expect(remote.offerBatches, hasLength(2));
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.failed, offered: 100, notOffered: 1),
+      );
+      expect(remote.poolRequests, hasLength(1));
+      expect(states.map((state) => state.sending).whereType<int>(), [101]);
+      expect(bloc.state.sending, isNull);
+      verifyWarnings(1);
+    });
+
+    // Whatever the failure but a 403, that batch's picks and every later
+    // batch's are not offered.
+    for (final (name, error) in <(String, Object)>[
+      ('a 404: the event or the attendee is gone', _gone),
+      ("a 400: the validation pipe's", _invalid),
+      ('a 400 with one message', _leftCollection),
+      ('a conflict with an unexpected status code', _oddConflict),
+      ('an answer that could not be read', _malformed),
+      ('an argument the remote refuses', ArgumentError('collectionIds')),
+    ]) {
+      test('$name stops as failed', () async {
+        final remote = serving(
+          offered: (request) => request.collectionIds.first == 'c-101'
+              // An Exception or an Error, as the remote throws.
+              // ignore: only_throw_errors
+              ? throw error
+              : _offeredAll(request),
+        );
+        final bloc = build(remote);
+        addTearDown(bloc.close);
+        final errors = <Object>[];
+        final watching = bloc.stream.listen(null, onError: errors.add);
+        addTearDown(watching.cancel);
+
+        bloc.add(_offer(201));
+        await pumpEventQueue();
+
+        // The third batch is never sent.
+        expect(remote.offerBatches, hasLength(2));
+        expect(
+          bloc.state.outcome,
+          _offerEnded(EventOfferResult.failed, offered: 100, notOffered: 101),
+        );
+        expect(remote.poolRequests, hasLength(1));
+        expect(errors, isEmpty);
+      });
+    }
+
+    test('a repeated or empty pick is sent once, or not at all, and counts '
+        'as the entry it names', () async {
+      final remote = serving();
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(
+        EventGamesOffered('e-1', 'a-1', [
+          ..._picks(100),
+          const OfferPick(collectionId: 'c-1', title: 'Game 1'),
+          const OfferPick(collectionId: '', title: 'No entry'),
+        ], attendeeIds: _ids),
+      );
+      await pumpEventQueue();
+
+      // One request of 100: the repeat isn't a 101st entry.
+      expect(remote.offerBatches.single.collectionIds, _entries(1, 100));
+      expect(bloc.state.sending, isNull);
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.partly, offered: 101, notOffered: 1),
+      );
+    });
+
+    test('picks that name no entry send nothing, and end none', () async {
+      final remote = serving();
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(
+        const EventGamesOffered('e-1', 'a-1', [
+          OfferPick(collectionId: '', title: 'No entry'),
+        ], attendeeIds: _ids),
+      );
+      await pumpEventQueue();
+
+      expect(remote.offerBatches, isEmpty);
+      expect(
+        bloc.state.outcome,
+        _offerEnded(EventOfferResult.none, offered: 0, notOffered: 1),
+      );
+      expect(remote.poolRequests, hasLength(1));
+    });
+
     test('offered and not offered always add up to the picks', () async {
       final runs = <(String, EventRemoteException?)>[
-        ('c-9', null),
-        ('c-2', _alreadyOffered),
-        ('c-2', _leftCollection),
-        ('c-1', _gone),
-        ('c-3', _oddConflict),
+        ('c-999', null),
         ('c-1', _refused),
-        ('c-3', _refused),
-        ('c-1', _offline),
-        ('c-5', _offline),
+        ('c-101', _refused),
+        ('c-201', _offline),
+        ('c-101', _gone),
+        ('c-1', _invalid),
       ];
       for (final (failing, error) in runs) {
         final remote = serving(
-          offered: (request) => request.collectionId == failing && error != null
+          offered: (request) =>
+              request.collectionIds.first == failing && error != null
               ? throw error
-              : _offeredFor(request),
+              : [
+                  for (final id in request.collectionIds)
+                    if (id.endsWith('3'))
+                      _refusedOne(id)
+                    else
+                      _offeredOne(request, id),
+                ],
         );
-        final bloc = build(remote)..add(_offer(5));
+        final bloc = build(remote)..add(_offer(250));
         await pumpEventQueue();
 
         final outcome = bloc.state.outcome! as EventOfferOutcome;
         expect(
           outcome.offered + outcome.notOffered,
-          5,
+          250,
           reason: '$failing $error',
         );
+        await bloc.close();
+      }
+    });
+
+    test('the pool is read once after the run, however it ended', () async {
+      for (final failing in <EventRemoteException?>[
+        null,
+        _refused,
+        _offline,
+      ]) {
+        calls.clear();
+        final remote = serving(
+          offered: (request) =>
+              request.collectionIds.first == 'c-101' && failing != null
+              ? throw failing
+              : _offeredAll(request),
+        );
+        final bloc = build(remote)..add(_offer(201));
+        await pumpEventQueue();
+
+        expect(remote.poolRequests, hasLength(1), reason: '$failing');
+        expect(calls.last, 'pool', reason: '$failing');
         await bloc.close();
       }
     });
@@ -937,12 +1154,12 @@ void main() {
       await pumpEventQueue();
 
       expect(states, isEmpty);
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(remote.poolRequests, isEmpty);
     });
 
     test('an offer while one is out is ignored', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call);
       final bloc = build(remote);
       addTearDown(bloc.close);
@@ -952,13 +1169,13 @@ void main() {
       bloc.add(_offer(3));
       await pumpEventQueue();
 
-      expect(remote.offers, hasLength(1));
-      expect(bloc.state.sending, (done: 0, total: 1));
+      expect(remote.offerBatches, hasLength(1));
+      expect(bloc.state.sending, 1);
 
-      sends.answer(0, _offeredFor(sends.requests[0]));
+      sends.answer(0, _offeredAll(sends.requests[0]));
       await pumpEventQueue();
 
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(
         bloc.state.outcome,
         _offerEnded(EventOfferResult.done, offered: 1, notOffered: 0),
@@ -966,12 +1183,12 @@ void main() {
     });
 
     test('a read asked for during a run goes ahead', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call, pool: (_) => one);
       final bloc = build(remote);
       addTearDown(bloc.close);
 
-      bloc.add(_offer(2));
+      bloc.add(_offer(101));
       await pumpEventQueue();
       bloc.add(const EventGamesRequested('e-1', _ids));
       await pumpEventQueue();
@@ -983,13 +1200,13 @@ void main() {
         EventGamesState(
           load: EventGamesLoad.loaded,
           games: one,
-          sending: const (done: 0, total: 2),
+          sending: 101,
         ),
       );
 
-      sends.answer(0, _offeredFor(sends.requests[0]));
+      sends.answer(0, _offeredAll(sends.requests[0]));
       await pumpEventQueue();
-      sends.answer(1, _offeredFor(sends.requests[1]));
+      sends.answer(1, _offeredAll(sends.requests[1]));
       await pumpEventQueue();
 
       // And the run's own read follows it.
@@ -1032,19 +1249,88 @@ void main() {
       expect(bloc.state.games, two);
     });
 
+    // The screen reads the event on a gone, and asks again once that read
+    // has ended. A closing read before then would start in gone and, on its
+    // own 404, end failed while the event's read is still out.
+    test(
+      'a run that ends after a read ended gone sends no closing read',
+      () async {
+        final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
+        final remote = serving(offered: sends.call, pool: (_) => throw _gone);
+        final bloc = build(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(_offer(1));
+        await pumpEventQueue();
+        bloc.add(const EventGamesRequested('e-1', _ids));
+        await pumpEventQueue();
+        expect(bloc.state.load, EventGamesLoad.gone);
+
+        sends.answer(0, _offeredAll(sends.requests[0]));
+        await pumpEventQueue();
+
+        expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
+        expect(
+          bloc.state,
+          EventGamesState(
+            load: EventGamesLoad.gone,
+            outcome: _offerEnded(
+              EventOfferResult.done,
+              offered: 1,
+              notOffered: 0,
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a run that ends in gone while a read is out has its closing read '
+        'run after that one', () async {
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
+      final reads = _Held<GamesPoolRequest, List<OfferedGame>>();
+      final remote = serving(offered: sends.call, pool: reads.call);
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_offer(1));
+      await pumpEventQueue();
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      reads.fail(0, _gone);
+      await pumpEventQueue();
+      // The screen's read after the event's: out, and still gone until it
+      // answers.
+      bloc.add(const EventGamesRequested('e-1', _laterIds));
+      await pumpEventQueue();
+      expect(bloc.state.load, EventGamesLoad.gone);
+
+      sends.answer(0, _offeredAll(sends.requests[0]));
+      await pumpEventQueue();
+      expect(remote.poolRequests, hasLength(2));
+
+      reads.answer(1, one);
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, [
+        _poolRead('e-1', _ids),
+        _poolRead('e-1', _laterIds),
+        _poolRead('e-1', _laterIds),
+      ]);
+    });
+
     test('a run whose roster changed while it ran has its closing read for '
         'the roster asked for since', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call, pool: (_) => one);
       final bloc = build(remote);
       addTearDown(bloc.close);
 
       bloc.add(_offer(1));
       await pumpEventQueue();
-      // Someone joins while the send is out, and the screen reads for them.
+      // Someone joins while the batch is out, and the screen reads for them.
       bloc.add(const EventGamesRequested('e-1', _laterIds));
       await pumpEventQueue();
-      sends.answer(0, _offeredFor(sends.requests[0]));
+      sends.answer(0, _offeredAll(sends.requests[0]));
       await pumpEventQueue();
 
       expect(remote.poolRequests, [
@@ -1073,7 +1359,7 @@ void main() {
       await pumpEventQueue();
 
       expect(states.first.outcome, isNull);
-      expect(states.first.sending, (done: 0, total: 2));
+      expect(states.first.sending, 2);
     });
   });
 
@@ -1301,6 +1587,35 @@ void main() {
       verifyWarnings(1);
     });
 
+    test('a take-back that ends after a read ended gone sends no closing '
+        'read', () async {
+      final takeBacks = _Held<TakeBackGameRequest, void>();
+      final remote = serving(
+        takenBack: takeBacks.call,
+        pool: (_) => throw _gone,
+      );
+      final bloc = build(remote);
+      addTearDown(bloc.close);
+
+      bloc.add(_takeBack(_game(2)));
+      await pumpEventQueue();
+      bloc.add(const EventGamesRequested('e-1', _ids));
+      await pumpEventQueue();
+      expect(bloc.state.load, EventGamesLoad.gone);
+
+      takeBacks.answer(0, null);
+      await pumpEventQueue();
+
+      expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
+      expect(
+        bloc.state,
+        EventGamesState(
+          load: EventGamesLoad.gone,
+          outcome: _takeBackEnded(EventTakeBackResult.done, _game(2)),
+        ),
+      );
+    });
+
     test('a session that says no sends nothing, and is failed', () async {
       final remote = serving();
       final bloc = build(remote, confirmSession: answering([false]));
@@ -1347,7 +1662,7 @@ void main() {
     });
 
     test('is ignored while an offer run is out', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call);
       final bloc = build(remote);
       addTearDown(bloc.close);
@@ -1375,7 +1690,7 @@ void main() {
       await pumpEventQueue();
 
       expect(remote.takeBacks, hasLength(1));
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(bloc.state, const EventGamesState(takingBack: 'g-2'));
     });
   });
@@ -1450,7 +1765,7 @@ void main() {
     );
 
     test('is ignored while a run is out', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final bloc = build(serving(offered: sends.call));
       addTearDown(bloc.close);
 
@@ -1487,8 +1802,8 @@ void main() {
   });
 
   group('closing', () {
-    test('nothing is emitted after close with a send still out', () async {
-      final sends = _Held<OfferGameRequest, OfferedGame>();
+    test('nothing is emitted after close with a batch still out', () async {
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
       final remote = serving(offered: sends.call);
       final bloc = build(remote);
       final states = record(bloc);
@@ -1498,15 +1813,76 @@ void main() {
 
       bloc.add(_offer(2));
       await pumpEventQueue();
-      // The screen leaves while the first send is out.
+      // The screen leaves while the batch is out.
       await bloc.close();
-      sends.answer(0, _offeredFor(sends.requests[0]));
+      sends.answer(0, _offeredAll(sends.requests[0]));
       await pumpEventQueue();
 
-      expect(states, [const EventGamesState(sending: (done: 0, total: 2))]);
+      expect(states, [const EventGamesState(sending: 2)]);
       expect(errors, isEmpty);
+      // The run reads nothing.
+      expect(remote.offerBatches, hasLength(1));
+      expect(remote.poolRequests, isEmpty);
+    });
+
+    test('close between batches sends no more', () async {
+      final sends = _Held<OfferGamesRequest, List<GameOfferResult>>();
+      final remote = serving(offered: sends.call);
+      final bloc = build(remote);
+      final states = record(bloc);
+
+      bloc.add(_offer(201));
+      await pumpEventQueue();
+      // The screen leaves while the first batch is out.
+      await bloc.close();
+      sends.answer(0, _offeredAll(sends.requests[0]));
+      await pumpEventQueue();
+
+      expect(states, [const EventGamesState(sending: 201)]);
       // The run stops sending, and reads nothing.
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
+      expect(remote.poolRequests, isEmpty);
+    });
+
+    test('close while a later batch asks the session sends no more, and '
+        'emits nothing', () async {
+      final sessions = _Held<String, bool>();
+      final remote = serving();
+      final bloc = build(
+        remote,
+        confirmSession: () => sessions.call('session'),
+      );
+      final states = record(bloc);
+
+      bloc.add(_offer(101));
+      await pumpEventQueue();
+      sessions.answer(0, true);
+      await pumpEventQueue();
+      // The first batch has gone, and the second is asking the session.
+      expect(remote.offerBatches, hasLength(1));
+      expect(sessions.requests, hasLength(2));
+
+      // The screen leaves while the session is asked.
+      await bloc.close();
+      sessions.answer(1, true);
+      await pumpEventQueue();
+
+      expect(states, [const EventGamesState(sending: 101)]);
+      expect(remote.offerBatches, hasLength(1));
+      expect(remote.poolRequests, isEmpty);
+    });
+
+    test('a batch added in the same turn as close sends nothing', () async {
+      final remote = serving();
+      final bloc = build(remote);
+      final states = record(bloc);
+
+      bloc.add(_offer(2));
+      await bloc.close();
+      await pumpEventQueue();
+
+      expect(states, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(remote.poolRequests, isEmpty);
     });
 

@@ -3692,141 +3692,6 @@ void main() {
       });
     });
 
-    group('offerGame', () {
-      Future<OfferedGame> offer(EventRemoteDataSource remote) =>
-          remote.offerGame('e1', 'a 1', collectionId: 'col_1');
-
-      test('offering sends the collection id and parses the entry', () async {
-        final remote = answering(
-          jsonEncode({
-            'message': 'Game added',
-            // The read's row, without the attendee.
-            'entry': _offeredRow()..remove('attendee'),
-          }),
-          status: 201,
-        );
-
-        final game = await offer(remote);
-
-        expect(adapter.sent.single.method, 'POST');
-        expect(
-          adapter.sent.single.path,
-          '/api/events/e1/attendees/a%201/games',
-        );
-        expect(adapter.sent.single.body, {'collectionId': 'col_1'});
-        expect(game, expected);
-      });
-
-      test('an offer whose entry is not an object is permanent', () async {
-        final remote = answering(
-          jsonEncode({'message': 'Game added', 'entry': 'og_1'}),
-          status: 201,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(isA<EventRemotePermanentException>()),
-        );
-      });
-
-      test('an offer answered 403 is refused', () async {
-        final remote = answering(
-          _envelope(403, 'Forbidden', 'Not your collection'),
-          status: 403,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(
-            isA<EventWriteRefusedException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              403,
-            ),
-          ),
-        );
-      });
-
-      test('an offer answered 404 is not found', () async {
-        final remote = answering(
-          _envelope(404, 'Not Found', 'No such collection entry'),
-          status: 404,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(
-            isA<EventRemoteNotFoundException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              404,
-            ),
-          ),
-        );
-      });
-
-      test('an offer answered 409 is a conflict', () async {
-        final remote = answering(
-          _envelope(409, 'Conflict', 'Already on the list'),
-          status: 409,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(
-            isA<EventWriteConflictException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              409,
-            ),
-          ),
-        );
-      });
-
-      test('an offer answered an enveloped 400 is a conflict', () async {
-        final remote = answering(
-          _envelope(400, 'Bad Request', 'Removed from the collection'),
-          status: 400,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(
-            isA<EventWriteConflictException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              400,
-            ),
-          ),
-        );
-      });
-
-      test("the validation pipe's 400 on an offer is permanent", () async {
-        final remote = answering(
-          jsonEncode({
-            'statusCode': 400,
-            'error': 'Bad Request',
-            'message': ['collectionId must be a string'],
-          }),
-          status: 400,
-        );
-
-        await expectLater(
-          offer(remote),
-          throwsA(isA<EventRemotePermanentException>()),
-        );
-      });
-
-      test('an offer answered retryable 409 is transient', () async {
-        final remote = answering(_deadlock(), status: 409);
-
-        await expectLater(
-          offer(remote),
-          throwsA(isA<EventRemoteTransientException>()),
-        );
-      });
-    });
-
     group('offerGames', () {
       Future<List<GameOfferResult>> offer(
         EventRemoteDataSource remote, [
@@ -4163,7 +4028,11 @@ void main() {
         throwsArgumentError,
       );
       await expectLater(
-        remote.offerGame('e1', 'a1', collectionId: ''),
+        remote.offerGames('', 'a1', collectionIds: ['c1']),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.offerGames('e1', '', collectionIds: ['c1']),
         throwsArgumentError,
       );
       await expectLater(

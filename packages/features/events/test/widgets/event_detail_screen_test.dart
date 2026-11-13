@@ -1362,7 +1362,13 @@ void main() {
     }) => FakeEventRemote.detail(
       read ?? (_) => detail.snapshot,
       pool: pool ?? (_) => const [],
-      offered: (_) => catanOffered,
+      offeredBatch: (request) => [
+        for (final id in request.collectionIds)
+          GameOfferResult.offered(
+            collectionId: id,
+            alreadyOffered: false,
+          ),
+      ],
       takenBack: (_) {},
       nominations: nominations ?? (_) => [catan],
       nomination: (_) => catan,
@@ -1524,7 +1530,7 @@ void main() {
                 ..add(offerCatan);
           await animate(tester);
 
-          expect(remote.offers, hasLength(1));
+          expect(remote.offerBatches, hasLength(1));
           expect(remote.nominationReads, hasLength(1 + readsAfterEach));
 
           pool.add(takeBackCatan);
@@ -1545,7 +1551,7 @@ void main() {
       final remote = FakeEventRemote.detail(
         (_) => detail.snapshot,
         pool: (_) => const [],
-        offered: (_) =>
+        offeredBatch: (_) =>
             throw const EventWriteRefusedException('no', statusCode: 403),
         takenBack: (_) =>
             throw const EventWriteConflictException('held', statusCode: 409),
@@ -1560,7 +1566,7 @@ void main() {
       pool.add(takeBackCatan);
       await animate(tester);
 
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(remote.takeBacks, hasLength(1));
       expect(remote.nominationReads, ['e-1']);
     });

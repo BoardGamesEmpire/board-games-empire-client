@@ -119,7 +119,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// hasn't been read, as for an event cached from the list, the tab waits for
 /// the event's read to bring it, and says it couldn't load the games if that
 /// read fails, with Try again reading the event. A read that finds the
-/// event gone reads the event again, as the poll's does.
+/// event gone reads the event again, as the poll's does, and a write that
+/// ends while it does reads nothing.
 ///
 /// The nominations (#517) aren't cached either: the [EventNominationsBloc]
 /// holds what was read last. They are read when the pool is: the first time
@@ -135,16 +136,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// says so there, with Try again, and one that fails over nominations read
 /// before leaves them, for the footer's stale-data banner to say.
 ///
-/// The page's footer holds what answers the lists: how far a run of offers
-/// has got while it is out, or how the pool's last write went, a run of
-/// offers or a take-back, then how the viewer's last nominations write went,
-/// a nominate, a vote or a withdrawal, or a host's approval, rejection or
-/// close of a vote (#518), each with its own Dismiss, on either tab, since a
-/// run can outlast the stay on Games; then, while Games is selected, the
-/// stale-data banners, the pool's and the nominations', while what each
-/// shows may be out of date. There each is on screen and heard however far
-/// down the list the user is; what answers the whole screen stays in the
-/// header.
+/// The page's footer holds what answers the lists: how many games a run of
+/// offers is offering while it is out, or how the pool's last write went, a run
+/// of offers or a take-back, then how the viewer's last nominations write went,
+/// a nominate, a vote or a withdrawal, or a host's approval, rejection or close
+/// of a vote (#518), each with its own Dismiss, on either tab, since a run can
+/// outlast the stay on Games; then, while Games is selected, the stale-data
+/// banners, the pool's and the nominations', while what each shows may be out
+/// of date. There each is on screen and heard however far down the list the
+/// user is; what answers the whole screen stays in the header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -159,15 +159,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// going still has it, and it needs no [onOfferGames].
 ///
 /// Offer games opens the page of the viewer's collection through
-/// [onOfferGames], which shows the games the viewer already offers as
-/// checked and disabled, so none is picked twice, and sends the games picked
-/// there once it closes, one at a time, as Add people sends its add: once a
-/// running read of the event has ended, for the event, the viewer's row and
-/// the roster as the detail shows them then, and not at all if the viewer
-/// may no longer offer games, or has answered Not going meanwhile, which the
-/// footer says. Take back is sent once a running read of the event has
-/// ended too, and only if the viewer may still take games back and the game
-/// is still theirs and in the pool; answering Not going doesn't stop it.
+/// [onOfferGames], which shows the games the viewer already offers as checked
+/// and disabled, so none is picked twice, and sends the games picked there once
+/// it closes, in batches (#851), as Add people sends its add: once a running
+/// read of the event has ended, for the event, the viewer's row and the roster
+/// as the detail shows them then, and not at all if the viewer may no longer
+/// offer games, or has answered Not going meanwhile, which the footer says.
+/// Take back is sent once a running read of the event has ended too, and only
+/// if the viewer may still take games back and the game is still theirs and in
+/// the pool; answering Not going doesn't stop it.
 ///
 /// The Offer games button keeps its focus through the run it sent, which the
 /// page hands it back as it closes (#607). While the run is out it stays
@@ -503,7 +503,8 @@ class EventDetailScreen extends StatelessWidget {
   /// a run of offers, or a take-back.
   static const Key poolOutcomeKey = Key('event_detail.pool_outcome');
 
-  /// Key on the line in the footer saying how far a run of offers has got.
+  /// Key on the line in the footer saying how many games a run of offers is
+  /// offering.
   static const Key poolProgressKey = Key('event_detail.pool_progress');
 
   /// Key on the footer's banner saying the games shown may be out of date,
@@ -1444,14 +1445,14 @@ class _ReadyPage extends StatelessWidget {
       // nominations' and the pool's, and none of either while it shows a
       // state (#516, #517).
       semanticChildCount: gamesTab?.rowCount,
-      // How far a run of offers has got or how the pool's last write went
-      // (#516), then how the viewer's last nominations write went (#517), on
-      // either tab, then, on the Games tab, the stale-data banners: answers
-      // on a long list, so on screen and heard wherever the list is
-      // scrolled. A run can outlast the stay on Games, and a footer left out
-      // on Details would silence its live region. Passed on every build
-      // where there is a games bloc, so the page keeps one shape as the tabs
-      // swap.
+      // How many games a run of offers is offering (#851) or how the pool's
+      // last write went (#516), then how the viewer's last nominations write
+      // went (#517), on either tab, then, on the Games tab, the stale-data
+      // banners: answers on a long list, so on screen and heard wherever the
+      // list is scrolled. A run can outlast the stay on Games, and a footer
+      // left out on Details would silence its live region. Passed on every
+      // build where there is a games bloc, so the page keeps one shape as the
+      // tabs swap.
       footer: gamesState == null
           ? null
           : EventGamesFooter(

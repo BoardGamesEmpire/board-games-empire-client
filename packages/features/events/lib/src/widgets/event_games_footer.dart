@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
@@ -21,14 +19,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// What the page's footer holds for the Games tab: the games pool's (#516),
 /// then the nominations' (#517). First the pool's last write, as the line
-/// saying how far a run of offers has got while one is out, then as the
-/// banner saying how it went; then the viewer's last nominations write, a
+/// saying how many games a run of offers is offering while one is out, then as
+/// the banner saying how it went; then the viewer's last nominations write, a
 /// nominate, a vote or a withdrawal, or a host's approval, rejection or close
-/// of a vote (#518), as the banner saying how it went; then, with
-/// [showStale], the stale-data banners: the pool's while the games shown may
-/// be out of date, then the nominations' while those shown may be. Each when
-/// there is one; nothing otherwise. Passed on every build, on either tab, so
-/// the page keeps one shape.
+/// of a vote (#518), as the banner saying how it went; then, with [showStale],
+/// the stale-data banners: the pool's while the games shown may be out of date,
+/// then the nominations' while those shown may be. Each when there is one;
+/// nothing otherwise. Passed on every build, on either tab, so the page keeps
+/// one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
@@ -37,8 +35,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// pool's before the nominations', and the stale-data banners under them,
 /// in the same order. Each write's banner has its own Dismiss.
 ///
-/// The writes' lines and banners show on either tab: a run of forty sends
-/// can outlast the stay on Games, and its line is a live region that a footer
+/// The writes' lines and banners show on either tab: a run of offers can
+/// outlast the stay on Games, and its line is a live region that a footer
 /// left out on Details would silence. The stale-data banners are about what
 /// the tab shows, so they show only while Games is selected ([showStale]),
 /// and only over something read before: a first read that fails has nothing
@@ -129,7 +127,7 @@ class EventGamesFooter extends StatelessWidget {
             padding: EdgeInsets.only(top: gap),
             child: _OfferProgress(
               key: EventDetailScreen.poolProgressKey,
-              text: l10n.eventsGamesOffering(sending.done, sending.total),
+              text: l10n.eventsGamesOffering(sending),
             ),
           )
         else if (outcome != null && message != null)
@@ -528,64 +526,17 @@ class _LandedState extends State<_Landed> {
   Widget build(BuildContext context) => widget.builder(context, _message);
 }
 
-/// How far a run of offers has got (#516): a spinner and [text], drawn as
-/// each pick is settled.
+/// A run of offers out (#516): a spinner and [text], which says how many
+/// games it is offering (#851).
 ///
-/// One live region, the same node for the whole run, so a screen reader
-/// hears it as it appears and as it changes, never once for the line and
-/// again for something around it. What it says keeps pace with what it
-/// draws only so far: a pick can settle many times a second, and a live
-/// region speaks every change of its words, queued, so a forty-game run
-/// would be read out step by step long after it ended. So each step said
-/// stays said for [_held] at least, and the latest step is said once that
-/// is up; a run's end is the outcome banner's to say.
-class _OfferProgress extends StatefulWidget {
+/// One live region, the same node for the whole run, saying the same, so a
+/// screen reader hears it once, as it appears, never once for the line and
+/// again for something around it. A run's end is the outcome banner's to
+/// say.
+class _OfferProgress extends StatelessWidget {
   const _OfferProgress({required this.text, super.key});
 
   final String text;
-
-  /// The least a step said stays before the next is said: longer than a
-  /// screen reader takes to read the line out.
-  static const _held = Duration(seconds: 2);
-
-  @override
-  State<_OfferProgress> createState() => _OfferProgressState();
-}
-
-class _OfferProgressState extends State<_OfferProgress> {
-  /// What the live region says.
-  late String _said;
-
-  /// Runs while the step said last is held; at its end, the latest step is
-  /// said if it differs.
-  Timer? _hold;
-
-  @override
-  void initState() {
-    super.initState();
-    _say();
-  }
-
-  @override
-  void didUpdateWidget(_OfferProgress oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // While a step is held, the latest waits for the hold's end.
-    if (widget.text != _said && _hold == null) _say();
-  }
-
-  void _say() {
-    _said = widget.text;
-    _hold = Timer(_OfferProgress._held, () {
-      _hold = null;
-      if (mounted && widget.text != _said) setState(_say);
-    });
-  }
-
-  @override
-  void dispose() {
-    _hold?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +546,7 @@ class _OfferProgressState extends State<_OfferProgress> {
     return Semantics(
       container: true,
       liveRegion: true,
-      label: _said,
+      label: text,
       child: ExcludeSemantics(
         child: Row(
           children: [
@@ -606,9 +557,7 @@ class _OfferProgressState extends State<_OfferProgress> {
               child: const CircularProgressIndicator(strokeWidth: 2),
             ),
             const BgeGap.sm(axis: Axis.horizontal),
-            Expanded(
-              child: Text(widget.text, style: theme.textTheme.bodyMedium),
-            ),
+            Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
           ],
         ),
       ),

@@ -32,11 +32,11 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// (#507). [updateAttendeeStatus] answers an invitation (#508), and
 /// [addAttendee] and [removeAttendee] change the roster (#510).
 /// [fetchGamesPool] reads the games an event's attendees have offered to
-/// bring, [offerGame] offers one from an attendee's collection,
-/// [offerGames] offers up to [maxOfferBatch] at once and [takeBackGame] takes
-/// one back (#516, #851). [fetchNominations] and
-/// [fetchNomination] read the nominations, [nominate] makes one,
-/// [castVote] votes on one and [withdrawNomination] withdraws one (#517).
+/// bring, [offerGames] offers up to [maxOfferBatch] from an attendee's
+/// collection at once and [takeBackGame] takes one back (#516, #851).
+/// [fetchNominations] and [fetchNomination] read the nominations, [nominate]
+/// makes one, [castVote] votes on one and [withdrawNomination] withdraws one
+/// (#517).
 /// [approveNomination], [rejectNomination] and [resolveNomination] are the
 /// host's decisions on one (#518).
 ///
@@ -71,7 +71,6 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [addAttendee] | `POST /api/events/:id/attendees` | `{ message, attendee }` |
 /// | [removeAttendee] | `DELETE /api/events/:id/attendees/:aid` | `{ message, attendee }` |
 /// | [fetchGamesPool] | `GET /api/events/:id/offered-games`, paged to the end | `{ offeredGames, pagination }` |
-/// | [offerGame] | `POST /api/events/:id/attendees/:aid/games` | `{ message, entry }` |
 /// | [offerGames] | `POST /api/events/:id/attendees/:aid/games/batch` | `{ results }` |
 /// | [takeBackGame] | `DELETE /api/events/:id/attendees/:aid/games/:gid` | `{ message, entry }`, not read |
 /// | [fetchNominations] | `GET /api/events/:id/nominations`, paged to the end | `{ nominations, pagination }` |
@@ -160,18 +159,18 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
 ///   [deleteEvent] and from each date write and [submitAvailability] below,
-///   and from [offerGame], [offerGames], [takeBackGame], [nominate],
-///   [castVote], [withdrawNomination], [approveNomination],
-///   [rejectNomination] and [resolveNomination], which says the API refused
-///   that write to an existing event (below).
+///   and from [offerGames], [takeBackGame], [nominate], [castVote],
+///   [withdrawNomination], [approveNomination], [rejectNomination] and
+///   [resolveNomination], which says the API refused that write to an
+///   existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
 ///   message, from a write to an existing event's dates or a vote on one
-///   (below), or from [offerGame], [nominate], [castVote],
-///   [withdrawNomination], [approveNomination], [rejectNomination] or
-///   [resolveNomination]; and a 409 carrying it from [addAttendee],
-///   [offerGame], [takeBackGame] or [nominate]. A caller that must tell a
-///   [nominate]'s 409 (the supplier is not attending) from its 400 (the pool
-///   row does not match the game) reads the exception's `statusCode`.
+///   (below), or from [nominate], [castVote], [withdrawNomination],
+///   [approveNomination], [rejectNomination] or [resolveNomination]; and a
+///   409 carrying it from [addAttendee], [takeBackGame] or [nominate]. A
+///   caller that must tell a [nominate]'s 409 (the supplier is not
+///   attending) from its 400 (the pool row does not match the game) reads
+///   the exception's `statusCode`.
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, a date write's
 ///   included, and any other 409 that is not
@@ -650,28 +649,6 @@ abstract class EventRemoteDataSource {
     String eventId, {
     List<String>? attendeeIds,
     Future<void>? cancelled,
-  });
-
-  /// `POST /api/events/:eventId/attendees/:attendeeId/games` with
-  /// `{ collectionId }`: offers the game in the attendee's collection entry
-  /// [collectionId] for the event (#516), and returns it as the server
-  /// holds it. Answers 201 `{ message, entry }`, and the entry is a row of
-  /// [fetchGamesPool]'s read without its attendee.
-  ///
-  /// A 403 carrying the envelope is [EventWriteRefusedException]: the entry
-  /// is someone else's, or the caller may not offer for this attendee. A 404
-  /// carrying it is [EventRemoteNotFoundException]: the event, the attendee
-  /// or the collection entry is missing. A 409 carrying it, the game already
-  /// offered, and a 400 carrying it with one message, the entry removed from
-  /// the collection since, are [EventWriteConflictException]; a 409 marked
-  /// retryable stays transient.
-  ///
-  /// Throws [ArgumentError] before the request for an empty id, and otherwise
-  /// [EventRemoteException] per the class doc.
-  Future<OfferedGame> offerGame(
-    String eventId,
-    String attendeeId, {
-    required String collectionId,
   });
 
   /// `POST /api/events/:eventId/attendees/:attendeeId/games/batch` with

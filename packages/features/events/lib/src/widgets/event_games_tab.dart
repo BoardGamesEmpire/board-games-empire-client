@@ -248,10 +248,11 @@ final class _GamesBody {
 /// both states and the [controller] (#517). The page's `semanticChildCount`
 /// is [rowCount], from that same value: the nominations' rows and the
 /// pool's, the pool's counted on from the nominations' so a screen reader
-/// numbers them as one list. How far a run of offers has got and how the
-/// pool's last write went are [EventGamesFooter]'s, in the page's footer on
-/// either tab; so is the stale-data banner after a failed read of games
-/// still shown, while this tab is selected, and the nominations' own.
+/// numbers them as one list. The line saying how many games a run of offers
+/// is offering and how the pool's last write went are [EventGamesFooter]'s,
+/// in the page's footer on either tab; so is the stale-data banner after a
+/// failed read of games still shown, while this tab is selected, and the
+/// nominations' own.
 ///
 /// ## Writes
 ///

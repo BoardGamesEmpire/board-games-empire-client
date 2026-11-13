@@ -35,7 +35,7 @@ enum EventGamesLoad {
 /// `EventGamesWriteDropped`: it picks the outcome a dropped write ends with,
 /// an [EventOfferOutcome] or an [EventTakeBackOutcome].
 enum EventGamesWrite {
-  /// A run of offers: the viewer's picks, sent one at a time.
+  /// A run of offers: the viewer's picks, sent in batches (#851).
   offer,
 
   /// Taking one offered game back off the pool.
@@ -103,8 +103,9 @@ final class EventOfferOutcome extends EventGamesOutcome {
   /// The picks now on the list: offered by this run, or already there.
   final int offered;
 
-  /// Every other pick: skipped, the one that stopped the run, and every pick
-  /// after it.
+  /// Every other pick: one naming no entry, one refused by the server or
+  /// missing from its answer, and every pick of the batch that stopped the
+  /// run and of each batch after it.
   final int notOffered;
 
   @override
@@ -165,10 +166,9 @@ final class EventGamesState extends Equatable {
   /// a hidden or a gone. A game taken back leaves it as the take-back ends.
   final List<OfferedGame> games;
 
-  /// While an offer run is out: how many of its `total` picks have been
-  /// settled, offered or not, as `done`. The pick that stops a run isn't
-  /// counted.
-  final ({int done, int total})? sending;
+  /// While an offer run is out: how many picks it holds, which the screen
+  /// says are being offered (#851). Null otherwise.
+  final int? sending;
 
   /// While a take-back is out: the id of the offered game being taken back.
   final String? takingBack;
@@ -197,7 +197,7 @@ final class EventGamesState extends Equatable {
   EventGamesState copyWith({
     EventGamesLoad? load,
     List<OfferedGame>? games,
-    ({int done, int total})? Function()? sending,
+    int? Function()? sending,
     String? Function()? takingBack,
     EventGamesOutcome? Function()? outcome,
     bool? refreshFailed,

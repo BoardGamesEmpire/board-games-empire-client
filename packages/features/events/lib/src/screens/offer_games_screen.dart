@@ -22,9 +22,9 @@ const _filterOptions = GameFilterOptions(medium: true, exclusion: true);
 ///
 /// The page sends nothing. The event's Games tab opened it with [args], and
 /// sends the picks once it is back on top, checked against the event as it
-/// shows it then; its footer says how far the run has got, and then how it
-/// went. So the footer's button is a choice made, not a request in flight,
-/// and needs no connection: Offer games, which opened the page, did.
+/// shows it then; its footer says the run is out, and then how it went. So
+/// the footer's button is a choice made, not a request in flight, and needs
+/// no connection: Offer games, which opened the page, did.
 ///
 /// Read through [collection]'s `watchCollectionListItems`, in title order,
 /// and kept up to date while the page is open.

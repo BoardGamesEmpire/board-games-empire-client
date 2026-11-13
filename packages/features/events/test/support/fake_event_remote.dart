@@ -53,14 +53,6 @@ typedef RemoveAttendeeRequest = ({String eventId, String attendeeId});
 /// offered games it reads, in order, or null for everyone's (#851).
 typedef GamesPoolRequest = ({String eventId, List<String>? attendeeIds});
 
-/// What an offer sent (#516): the event, the attendee and the collection
-/// entry.
-typedef OfferGameRequest = ({
-  String eventId,
-  String attendeeId,
-  String collectionId,
-});
-
 /// What a batch offer sent (#851): the event, the attendee and the collection
 /// entries, in order.
 typedef OfferGamesRequest = ({
@@ -142,7 +134,6 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
@@ -171,7 +162,6 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
@@ -204,7 +194,6 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
     this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
@@ -240,9 +229,6 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noPool(GamesPoolRequest request) =>
       throw UnimplementedError('fetchGamesPool is not faked');
-
-  static Never _noOffer(OfferGameRequest request) =>
-      throw UnimplementedError('offerGame is not faked');
 
   static Never _noOfferBatch(OfferGamesRequest request) =>
       throw UnimplementedError('offerGames is not faked');
@@ -349,13 +335,6 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// was given none (#851). Kept out of [GamesPoolRequest], so a test that
   /// compares the requests compares what was asked for.
   Future<void>? poolCancelled;
-
-  /// Answers each offer with the offered game as the server holds it, which
-  /// throws unless a test supplies one (#516).
-  final FutureOr<OfferedGame> Function(OfferGameRequest request) offered;
-
-  /// Each offer, in order, recorded before it is answered.
-  final List<OfferGameRequest> offers = [];
 
   /// Answers each batch offer with its results, which throws unless a test
   /// supplies one (#851).
@@ -723,21 +702,6 @@ class FakeEventRemote implements EventRemoteDataSource {
   }
 
   @override
-  Future<OfferedGame> offerGame(
-    String eventId,
-    String attendeeId, {
-    required String collectionId,
-  }) async {
-    final request = (
-      eventId: eventId,
-      attendeeId: attendeeId,
-      collectionId: collectionId,
-    );
-    offers.add(request);
-    return offered(request);
-  }
-
-  @override
   Future<List<GameOfferResult>> offerGames(
     String eventId,
     String attendeeId, {
@@ -746,7 +710,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     final request = (
       eventId: eventId,
       attendeeId: attendeeId,
-      collectionIds: collectionIds,
+      collectionIds: List<String>.unmodifiable(collectionIds),
     );
     offerBatches.add(request);
     return offeredBatch(request);

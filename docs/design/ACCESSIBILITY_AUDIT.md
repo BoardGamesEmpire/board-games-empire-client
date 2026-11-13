@@ -252,11 +252,11 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    a platform, close it, and press Select all shown: it reads "Clear
    selection" and keeps focus. Search for something no game has, check "No
    games match" is read, and that Clear filters puts you on Filters, with
-   no on-screen keyboard. Pick two games and press "Offer 2 games": back on the
-   event, focus is on Offer games, which reads "Offering…" while the
-   footer reads "Offering 1 of 2…", and then "2 games offered.". With ten
-   or more picked, check the footer's line is not read at every step and
-   doesn't run on after the run has ended.
+   no on-screen keyboard. Pick two games and press "Offer 2 games": back on
+   the event, focus is on Offer games, which reads "Offering…" while the
+   footer reads "Offering 2 games…", and then "2 games offered.". With ten
+   or more picked, check the footer reads "Offering 10 games…" once, as the
+   line appears, and nothing more until the outcome banner.
    With a banner showing above the tabs (stop the server and change your
    answer on Details: the change and the read of the event after it fail,
    and their banners show above the tabs), open Games, scroll the pool

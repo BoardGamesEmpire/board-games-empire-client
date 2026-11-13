@@ -948,15 +948,11 @@
   "@eventsGamesOfferInProgress": {
     "description": "Shown in place of eventsGamesOffer on the Offer games button, beside a spinner, while the games the user picked on the Offer games page are being sent. The button can't be pressed until they have all gone, and a banner then says how it went."
   },
-  "eventsGamesOffering": "Offering {done} of {total}…",
+  "eventsGamesOffering": "Offering {count, plural, =1{1 game} other{{count} games}}…",
   "@eventsGamesOffering": {
-    "description": "At the foot of an event's screen while the games the user picked on the Offer games page are sent, one at a time: how many have been dealt with so far, of all those picked. Read by a screen reader as it changes, though not at every step of a long run.",
+    "description": "At the foot of an event's screen beside a spinner, shown while the games the user picked on the Offer games page are sent: {count} is how many were picked. Read once by a screen reader as it appears.",
     "placeholders": {
-      "done": {
-        "type": "int",
-        "example": "3"
-      },
-      "total": {
+      "count": {
         "type": "int",
         "example": "8"
       }
@@ -998,7 +994,7 @@
   },
   "eventsGamesOfferRefused": "You can't offer games to this event any more.",
   "@eventsGamesOfferRefused": {
-    "description": "Banner at the foot of an event's screen when the server refused the first of the games the user picked on the Offer games page, so none of them was offered: the user isn't allowed to offer games to the event."
+    "description": "Banner at the foot of an event's screen when the server refused the user before any of the games they picked on the Offer games page was offered, so none of them was: the user isn't allowed to offer games to the event."
   },
   "eventsGamesOfferDropped": "Those games weren't offered: the event changed while you were choosing.",
   "@eventsGamesOfferDropped": {

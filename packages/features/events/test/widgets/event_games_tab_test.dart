@@ -75,6 +75,26 @@ OfferedGame _game(
   medium: medium,
 );
 
+/// A batch offer's answer that offers every entry of [request], each as a
+/// game of its own.
+List<GameOfferResult> _offeredAll(OfferGamesRequest request) => [
+  for (final id in request.collectionIds)
+    GameOfferResult.offered(
+      collectionId: id,
+      alreadyOffered: false,
+    ),
+];
+
+/// A batch offer's answer that refuses every entry of [request].
+List<GameOfferResult> _refusedAll(OfferGamesRequest request) => [
+  for (final id in request.collectionIds)
+    GameOfferResult.refused(
+      collectionId: id,
+      reason: GameOfferRefusal.removedFromCollection,
+      message: 'No longer in the collection',
+    ),
+];
+
 /// The Games tab of an event's screen (#516): when the pool is read, what
 /// it shows in each state, its rows, the filter and the people sheet, Take
 /// back and its outcomes in the page's footer, Take back on someone else's
@@ -96,9 +116,10 @@ void main() {
   poolAnswer;
   late FutureOr<void> Function(TakeBackGameRequest request) takeBackAnswer;
 
-  /// What each offer answers: the game as the server holds it, unless a
+  /// What each batch offer answers: every entry it sent offered, unless a
   /// test says otherwise.
-  late FutureOr<OfferedGame> Function(OfferGameRequest request) offerAnswer;
+  late FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)
+  offerAnswer;
 
   /// What the Offer games page answers with, once opened.
   late Future<List<OfferPick>?> Function(BuildContext context) pageAnswer;
@@ -198,11 +219,7 @@ void main() {
     served = [catanMine, azul, catanAdas, root];
     poolAnswer = (_) => served;
     takeBackAnswer = (_) {};
-    offerAnswer = (request) => _game(
-      'o-${request.collectionId}',
-      request.attendeeId,
-      request.collectionId,
-    );
+    offerAnswer = _offeredAll;
     pageAnswer = (_) async => null;
     nominationsAnswer = (_) => const [];
     nominateAnswer = (request) => EventNomination(
@@ -261,7 +278,7 @@ void main() {
     remote = FakeEventRemote.detail(
       (_) => heldRead?.future ?? detail.snapshot,
       pool: (request) => poolAnswer(request),
-      offered: (request) => offerAnswer(request),
+      offeredBatch: (request) => offerAnswer(request),
       takenBack: (request) => takeBackAnswer(request),
       nominations: (eventId) async =>
           kept.over(await nominationsAnswer(eventId)),
@@ -2080,7 +2097,7 @@ void main() {
       final send = Completer<void>();
       offerAnswer = (request) async {
         await send.future;
-        return _game('o-new', request.attendeeId, request.collectionId);
+        return _offeredAll(request);
       };
       await showGames(tester);
       // On screen before the read starts, so the press needs no frame.
@@ -3292,10 +3309,11 @@ void main() {
 
       await offer(tester);
 
-      expect(remote.offers, [
-        (eventId: 'e-1', attendeeId: 'att-me', collectionId: 'c-azul'),
-        (eventId: 'e-1', attendeeId: 'att-me', collectionId: 'c-root'),
-      ]);
+      // One request for the run.
+      final batch = remote.offerBatches.single;
+      expect(batch.eventId, 'e-1');
+      expect(batch.attendeeId, 'att-me');
+      expect(batch.collectionIds, ['c-azul', 'c-root']);
       expectOutcome('2 games offered.');
       expectInFooter(tester, outcome());
       // The pool is read again once the run ends, for everyone's games.
@@ -3314,19 +3332,23 @@ void main() {
       await offer(tester);
 
       expect(offerArgs, hasLength(2));
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(outcome(), findsNothing);
       expect(progress(), findsNothing);
     });
 
-    testWidgets('progress shows in the footer while they go', (tester) async {
-      final answers = [Completer<void>(), Completer<void>()];
-      var sent = 0;
+    testWidgets('progress shows in the footer while they go, saying how many', (
+      tester,
+    ) async {
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
-      pageAnswer = (_) async => picks;
+      pageAnswer = (_) async => [
+        ...picks,
+        const OfferPick(collectionId: 'c-wingspan', title: 'Wingspan'),
+      ];
       await showGames(tester);
 
       await offer(tester);
@@ -3335,42 +3357,41 @@ void main() {
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 0 of 2…'),
+          matching: find.text('Offering 3 games…'),
         ),
         findsOneWidget,
       );
       expect(outcome(), findsNothing);
 
-      answers[0].complete();
-      await settle(tester);
+      // It says the same however long the run is out.
+      await tester.pump(const Duration(seconds: 5));
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 1 of 2…'),
+          matching: find.text('Offering 3 games…'),
         ),
         findsOneWidget,
       );
 
-      answers[1].complete();
+      held.complete();
       await animate(tester);
       // The outcome takes its place.
       expect(progress(), findsNothing);
-      expectOutcome('2 games offered.');
+      expectOutcome('3 games offered.');
     });
 
     testWidgets('the progress line and the outcome stay in the footer on '
         'Details; the stale-data banner does not', (tester) async {
-      final answers = [Completer<void>(), Completer<void>()];
-      var sent = 0;
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
       await offer(tester);
 
-      // A run of forty can outlast the stay on Games.
+      // A run can outlast the stay on Games.
       Future<void> choose(EventDetailTab which) async {
         await tester.ensureVisible(
           find.byKey(EventDetailScreen.tabKey(which), skipOffstage: false),
@@ -3382,20 +3403,17 @@ void main() {
 
       await choose(EventDetailTab.details);
       expectInFooter(tester, progress());
-
-      answers[0].complete();
-      await settle(tester);
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 1 of 2…'),
+          matching: find.text('Offering 2 games…'),
         ),
         findsOneWidget,
       );
 
       // The read after the run fails, over the games shown.
       poolAnswer = (_) => throw _offline;
-      answers[1].complete();
+      held.complete();
       await animate(tester);
 
       expect(progress(), findsNothing);
@@ -3408,19 +3426,15 @@ void main() {
       expectInFooter(tester, stale());
     });
 
-    testWidgets('the progress line is one live region, which says a step at '
-        'most every two seconds, and the latest', (tester) async {
+    testWidgets('the progress line is one live region, said as it appears and '
+        'not again while the run is out', (tester) async {
       final handle = tester.ensureSemantics();
-      final answers = [for (var n = 0; n < 6; n++) Completer<void>()];
-      var sent = 0;
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new-$sent', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
-      pageAnswer = (_) async => [
-        for (var n = 0; n < 6; n++)
-          OfferPick(collectionId: 'c-$n', title: 'Game $n'),
-      ];
+      pageAnswer = (_) async => [picks.first];
       await showGames(tester);
       await offer(tester);
 
@@ -3428,48 +3442,21 @@ void main() {
       final id = line().id;
       expect(
         line(),
-        isSemantics(label: 'Offering 0 of 6…', isLiveRegion: true),
+        isSemantics(label: 'Offering 1 game…', isLiveRegion: true),
       );
 
-      // The first answer, more than two seconds on: said at once.
-      answers[0].complete();
-      await settle(tester);
-      expect(line().label, 'Offering 1 of 6…');
-
-      // Two more in quick succession: drawn at once, said once the two
-      // seconds since the last are up, as the latest.
-      for (var n = 1; n < 3; n++) {
-        answers[n].complete();
-        await settle(tester);
-        await tester.pump(const Duration(milliseconds: 200));
-      }
-      expect(
-        find.descendant(
-          of: progress(),
-          matching: find.text('Offering 3 of 6…'),
-        ),
-        findsOneWidget,
-      );
-      expect(line().label, 'Offering 1 of 6…');
-      await tester.pump(const Duration(seconds: 2));
+      // The same node, saying the same, for as long as the run is out.
+      await tester.pump(const Duration(seconds: 3));
       expect(
         line(),
-        isSemantics(label: 'Offering 3 of 6…', isLiveRegion: true),
+        isSemantics(label: 'Offering 1 game…', isLiveRegion: true),
       );
       expect(line().id, id);
 
-      // One more, after a pause: said at once.
-      await tester.pump(const Duration(seconds: 2));
-      answers[3].complete();
-      await settle(tester);
-      expect(line().label, 'Offering 4 of 6…');
-      expect(line().id, id);
-
-      answers[4].complete();
-      answers[5].complete();
+      held.complete();
       await animate(tester);
       expect(progress(), findsNothing);
-      expectOutcome('6 games offered.');
+      expectOutcome('1 game offered.');
       handle.dispose();
     });
 
@@ -3494,7 +3481,7 @@ void main() {
       page.complete(picks);
       await animate(tester);
 
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expectOutcome(
         "Those games weren't offered: the event changed while you were "
         'choosing.',
@@ -3513,67 +3500,88 @@ void main() {
       await settle(tester);
       page.complete(picks);
       await animate(tester);
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
 
       heldRead!.complete(detailOf().snapshot);
       heldRead = null;
       await animate(tester);
       await animate(tester);
 
-      expect(remote.offers, hasLength(2));
+      expect(remote.offerBatches.single.collectionIds, ['c-azul', 'c-root']);
       expectOutcome('2 games offered.');
     });
 
     group('each end of a run says how it went', () {
-      const conflict = EventWriteConflictException('gone', statusCode: 400);
       const refused = EventWriteRefusedException('no', statusCode: 403);
+
+      /// Picks of the entries `c-1` to `c-[count]`.
+      List<OfferPick> many(int count) => [
+        for (var n = 1; n <= count; n++)
+          OfferPick(collectionId: 'c-$n', title: 'Game $n'),
+      ];
+
+      /// An answer that offers each batch of a run but the one that sends
+      /// [id], which throws [error].
+      List<GameOfferResult> Function(OfferGamesRequest) throwingFor(
+        String id,
+        EventRemoteException error,
+      ) =>
+          (request) => request.collectionIds.contains(id)
+          ? throw error
+          : _offeredAll(request);
+
       final rows = [
         (
           name: 'done',
-          answers: <EventRemoteException?>[null, null],
+          picked: picks,
+          answer: _offeredAll,
           copy: '2 games offered.',
         ),
         (
           name: 'partly',
-          answers: <EventRemoteException?>[null, conflict],
+          picked: picks,
+          answer: (OfferGamesRequest request) => [
+            ..._offeredAll(request).take(1),
+            ..._refusedAll(request).skip(1),
+          ],
           copy: "1 game offered. 1 couldn't be offered.",
         ),
         (
           name: 'none',
-          answers: <EventRemoteException?>[conflict, conflict],
+          picked: picks,
+          answer: _refusedAll,
           copy: 'None of those 2 games could be offered.',
         ),
         (
           name: 'refused, with some offered',
-          answers: <EventRemoteException?>[null, refused],
-          copy: "1 game offered. 1 couldn't be offered.",
+          picked: many(101),
+          answer: throwingFor('c-101', refused),
+          copy: "100 games offered. 1 couldn't be offered.",
         ),
         (
           name: 'refused, with none offered',
-          answers: <EventRemoteException?>[refused],
+          picked: picks,
+          answer: throwingFor('c-azul', refused),
           copy: "You can't offer games to this event any more.",
         ),
         (
           name: 'failed, with some offered',
-          answers: <EventRemoteException?>[null, _offline],
-          copy: "1 game offered. 1 couldn't be offered.",
+          picked: many(101),
+          answer: throwingFor('c-101', _offline),
+          copy: "100 games offered. 1 couldn't be offered.",
         ),
         (
           name: 'failed, with none offered',
-          answers: <EventRemoteException?>[_offline],
+          picked: picks,
+          answer: throwingFor('c-azul', _offline),
           copy: 'None of those 2 games could be offered.',
         ),
       ];
 
-      for (final (:name, :answers, :copy) in rows) {
+      for (final (:name, :picked, :answer, :copy) in rows) {
         testWidgets('$name: "$copy"', (tester) async {
-          var sent = 0;
-          offerAnswer = (request) {
-            final thrown = answers[sent++];
-            if (thrown != null) throw thrown;
-            return _game('o-new-$sent', request.attendeeId, 'x');
-          };
-          pageAnswer = (_) async => picks;
+          offerAnswer = answer;
+          pageAnswer = (_) async => picked;
           await showGames(tester);
 
           await offer(tester);
@@ -3586,7 +3594,7 @@ void main() {
       testWidgets("none, of one: \"That game couldn't be offered.\"", (
         tester,
       ) async {
-        offerAnswer = (_) => throw conflict;
+        offerAnswer = _refusedAll;
         pageAnswer = (_) async => [picks.first];
         await showGames(tester);
 
@@ -3617,7 +3625,7 @@ void main() {
       final held = Completer<void>();
       offerAnswer = (request) async {
         await held.future;
-        return _game('o-new', request.attendeeId, 'x');
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
@@ -3644,10 +3652,9 @@ void main() {
         'after it have ended: a detail read running then disables it, and '
         "it doesn't say it is offering", (tester) async {
       final last = Completer<void>();
-      var sent = 0;
       offerAnswer = (request) async {
-        if (sent++ == 1) await last.future;
-        return _game('o-new-$sent', request.attendeeId, 'x');
+        await last.future;
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
@@ -3741,7 +3748,7 @@ void main() {
       final held = Completer<void>();
       offerAnswer = (request) async {
         await held.future;
-        return _game('o-new', request.attendeeId, 'x');
+        return _offeredAll(request);
       };
       // A page of its own, which pops with the picks.
       pageAnswer = (context) => Navigator.of(context).push<List<OfferPick>>(
@@ -3769,7 +3776,7 @@ void main() {
 
       // Back on the tab, with the run out.
       expect(find.text('Send them'), findsNothing);
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(focus.hasPrimaryFocus, isTrue);
       expect(
         find.descendant(of: offerGames(), matching: find.text('Offering…')),
@@ -3788,7 +3795,7 @@ void main() {
       await animate(tester);
       await animate(tester);
 
-      expect(remote.offers, hasLength(2));
+      expect(remote.offerBatches, hasLength(1));
       expect(focus.hasPrimaryFocus, isTrue);
       expect(
         find.descendant(of: offerGames(), matching: find.text('Offer games')),
