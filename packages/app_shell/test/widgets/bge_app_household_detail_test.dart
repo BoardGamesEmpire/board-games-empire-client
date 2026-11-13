@@ -84,9 +84,9 @@ void main() {
     HydratedBloc.storage = storage;
   });
 
-  /// Pumps the app at the home drawer with a household cache holding one
-  /// household. [withRepository] false is the signed-out native state and
-  /// web until its user tier lands (#137).
+  /// Pumps the app at home with a household cache holding one household.
+  /// [withRepository] false is the signed-out native state and web until its
+  /// user tier lands (#137).
   ///
   /// [laterCache] carries what the cache says after that first answer, to
   /// every subscriber — for a household that disappears under an open
@@ -149,7 +149,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Walks the real path: drawer → list → tap the row.
+  /// Walks the real path: menu → list → tap the row.
   Future<void> openDetailFromTheList(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();

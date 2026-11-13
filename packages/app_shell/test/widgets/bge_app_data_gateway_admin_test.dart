@@ -101,7 +101,8 @@ PaginatedResult<DataGateway> _listing(List<DataGateway> rows) =>
 
 const _forbidden = DataGatewayForbiddenException('refused', statusCode: 403);
 
-/// The Admin entry in the home drawer, and the deep link past it (#41).
+/// The Admin entry in the navigation menu (#414), and the deep link past it
+/// (#41).
 ///
 /// With only the DataGateway section to show, the entry shows while the
 /// session's access reads every DataGateway (#456, #684), and opens the admin

@@ -1,7 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -17,6 +16,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/navigation.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -98,10 +98,10 @@ GameCollectionListItem _item(
   platformName: 'Board game',
 );
 
-/// The #44 shell wiring through the real composition: the drawer entry and
-/// its gate, the route resolving the session's repository and status,
-/// the retry reaching the collection's own refresher, and the entry trigger
-/// reaching the session's rehydrator.
+/// The #44 shell wiring through the real composition: the Collection
+/// destination (#414) and its gate, the route resolving the session's
+/// repository and status, the retry reaching the collection's own refresher,
+/// and the entry trigger reaching the session's rehydrator.
 ///
 /// The screen's own behaviour is pinned in `game_collection`. What only this
 /// file can check is that the screen is handed what the session registered,
@@ -175,32 +175,37 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> openDrawer(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-  }
+  Future<void> openTheList(WidgetTester tester) =>
+      goToDestination(tester, 'collection');
 
-  Future<void> openTheList(WidgetTester tester) async {
-    await openDrawer(tester);
-    await tester.tap(find.byKey(MenuDrawer.entryKey('collection')));
-    await tester.pumpAndSettle();
-  }
-
-  group('the drawer entry (#44)', () {
+  group('the destination (#44, #414)', () {
     testWidgets('shows when the session has a collection repository', (
       tester,
     ) async {
       await pumpHome(tester);
-      await openDrawer(tester);
 
-      expect(find.byKey(MenuDrawer.entryKey('collection')), findsOneWidget);
-      expect(find.text('Collection'), findsOneWidget);
+      expect(
+        find.byKey(NavigationShell.destinationKey('collection')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(NavigationShell.railKey),
+          matching: find.text('Collection'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides when there is no user session', (tester) async {
       // The repository lives in the user tier, which sign-out tears down.
       await pumpHome(tester, withRepository: false);
-      await openDrawer(tester);
+      expect(
+        find.byKey(NavigationShell.destinationKey('collection')),
+        findsNothing,
+      );
+      // Home alone: no rail, so the menu lists the destinations.
+      await openMenu(tester);
 
       expect(find.byKey(MenuDrawer.entryKey('collection')), findsNothing);
       expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
@@ -282,8 +287,8 @@ void main() {
       await pumpHome(tester, rehydrator: rehydrator);
       await openTheList(tester);
 
-      await tester.pageBack();
-      await tester.pumpAndSettle();
+      // A destination is a `go`, so leaving is another destination (#414).
+      await goToDestination(tester, 'home');
       await openTheList(tester);
 
       expect(rehydrator.passes, 2);
@@ -352,8 +357,8 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    // A destination is a `go`, so leaving is another destination (#414).
+    await goToDestination(tester, 'home');
     expect(find.byType(GameCollectionListScreen), findsNothing);
     await openTheList(tester);
 

@@ -5,7 +5,8 @@ import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/ui.dart' show BgeNavigationMenu;
-import 'package:ui_tokens/ui_tokens.dart' show BgeWindowClass;
+import 'package:ui_tokens/ui_tokens.dart'
+    show BgeNavigationFocus, BgeWindowClass;
 
 /// What carries the destinations on screen.
 enum _Chrome { none, bar, rail }
@@ -29,7 +30,7 @@ enum _Chrome { none, bar, rail }
 ///
 /// System Back closes an open drawer first. On a destination's own screen,
 /// other than Home, with nothing beneath it, it goes home. Anything else is
-/// the router's.
+/// the router's, and so is everything while [deferBack] says so.
 class NavigationShell extends StatefulWidget {
   const NavigationShell({
     required this.destinations,
@@ -37,6 +38,7 @@ class NavigationShell extends StatefulWidget {
     required this.activeServerName,
     required this.location,
     required this.child,
+    this.deferBack,
     super.key,
   });
 
@@ -55,6 +57,16 @@ class NavigationShell extends StatefulWidget {
 
   /// The pages: the navigation route's nested navigator.
   final Widget child;
+
+  /// Whether System Back belongs, for now, to something over the app that
+  /// takes it through a handler of its own, such as a notice the user must
+  /// acknowledge. Asked on each press; while it says so the shell lets every
+  /// press pass.
+  ///
+  /// The shell's handler takes priority over every one registered before
+  /// it, so one that came up before the shell would otherwise never hear
+  /// Back while the shell is there.
+  final bool Function()? deferBack;
 
   /// Key on the [NavigationBar], for tests.
   static const Key barKey = Key('nav_bar');
@@ -149,6 +161,7 @@ class _NavigationShellState extends State<NavigationShell> {
   }
 
   Future<bool> _back() async {
+    if (widget.deferBack?.call() ?? false) return false;
     final scaffold = _scaffold.currentState;
     if (scaffold != null && scaffold.isDrawerOpen) {
       scaffold.closeDrawer();
@@ -299,37 +312,52 @@ class _NavigationShellState extends State<NavigationShell> {
               if (chrome == _Chrome.rail)
                 _chrome(
                   _railFocus,
-                  NavigationRail(
-                    key: NavigationShell.railKey,
-                    selectedIndex: current,
-                    labelType: windowClass == BgeWindowClass.expanded
-                        ? NavigationRailLabelType.all
-                        : NavigationRailLabelType.selected,
-                    // A landscape phone, or large text, is shorter than the
-                    // destinations.
-                    scrollable: true,
-                    leading: IconButton(
-                      icon: const Icon(Icons.menu),
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).openAppDrawerTooltip,
-                      onPressed: _openDrawer,
+                  // A rail has no focus overlay of its own and reads the
+                  // theme's `focusColor`, which the app's theme leaves
+                  // alone: set here, it reaches the rail only (#644).
+                  Theme(
+                    data: Theme.of(context).copyWith(
+                      focusColor: BgeNavigationFocus.railFill(
+                        Theme.of(context).colorScheme,
+                      ),
                     ),
-                    onDestinationSelected: (index) => _go(destinations[index]),
-                    destinations: [
-                      for (final destination in destinations)
-                        NavigationRailDestination(
-                          icon: KeyedSubtree(
-                            key: NavigationShell.destinationKey(destination.id),
-                            child: Icon(destination.icon),
+                    child: NavigationRail(
+                      key: NavigationShell.railKey,
+                      selectedIndex: current,
+                      labelType: windowClass == BgeWindowClass.expanded
+                          ? NavigationRailLabelType.all
+                          : NavigationRailLabelType.selected,
+                      // A landscape phone, or large text, is shorter than the
+                      // destinations.
+                      scrollable: true,
+                      leading: IconButton(
+                        icon: const Icon(Icons.menu),
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).openAppDrawerTooltip,
+                        onPressed: _openDrawer,
+                      ),
+                      onDestinationSelected: (index) =>
+                          _go(destinations[index]),
+                      destinations: [
+                        for (final destination in destinations)
+                          NavigationRailDestination(
+                            icon: KeyedSubtree(
+                              key: NavigationShell.destinationKey(
+                                destination.id,
+                              ),
+                              child: Icon(destination.icon),
+                            ),
+                            selectedIcon: KeyedSubtree(
+                              key: NavigationShell.destinationKey(
+                                destination.id,
+                              ),
+                              child: Icon(destination.selectedIcon),
+                            ),
+                            label: Text(destination.label),
                           ),
-                          selectedIcon: KeyedSubtree(
-                            key: NavigationShell.destinationKey(destination.id),
-                            child: Icon(destination.selectedIcon),
-                          ),
-                          label: Text(destination.label),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               Expanded(

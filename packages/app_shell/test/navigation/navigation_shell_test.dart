@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/ui.dart';
@@ -180,8 +181,12 @@ Future<_Harness> _pump(
   bool underRegion = false,
   TargetPlatform? platform,
   TextDirection textDirection = TextDirection.ltr,
+  bool Function()? deferBack,
+  ThemeData? themeData,
+  GlobalKey? boundary,
 }) async {
-  final theme = underRegion ? pointerPlatformTheme() : BgeTheme.light();
+  final theme =
+      themeData ?? (underRegion ? pointerPlatformTheme() : BgeTheme.light());
   useViewSize(tester, size);
   final runs = <String>[];
   final entries = _entries(runs);
@@ -194,6 +199,7 @@ Future<_Harness> _pump(
           entries: entries,
           activeServerName: 'Test server',
           location: state.uri.path,
+          deferBack: deferBack,
           child: child,
         ),
         routes: [
@@ -241,6 +247,7 @@ Future<_Harness> _pump(
           child: Directionality(textDirection: textDirection, child: child!),
         );
         if (underRegion) app = underSelectionRegion(context, app);
+        if (boundary != null) app = RepaintBoundary(key: boundary, child: app);
         return app;
       },
     ),
@@ -584,6 +591,24 @@ void main() {
       expect(await shell.back(), isTrue);
       expect(shell.location, '/home');
     });
+
+    // Something over the app that takes Back through a handler of its own,
+    // such as the recovery notice (#428), may have come up before the shell.
+    testWidgets('Back passes while the app defers it', (tester) async {
+      var deferred = true;
+      final shell = await _pump(
+        tester,
+        at: '/games',
+        deferBack: () => deferred,
+      );
+
+      expect(await shell.back(), isFalse);
+      expect(shell.location, '/games');
+
+      deferred = false;
+      expect(await shell.back(), isTrue);
+      expect(shell.location, '/home');
+    });
   });
 
   group('the selection region (#625)', () {
@@ -899,6 +924,94 @@ void main() {
           expect(names, contains('Open navigation menu'));
         }
         semantics.dispose();
+      });
+    }
+  });
+
+  // #644: a rail shows focus as a fill alone, and its fill is the shell's
+  // to set, around the rail only. The bar's is the theme's, tested in
+  // ui_tokens.
+  group("a rail's focused destination differs from rest by 3:1 (#644)", () {
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets(name, (tester) async {
+        // A focus fill shows in keyboard mode only.
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTraditional;
+        addTearDown(
+          () => FocusManager.instance.highlightStrategy =
+              FocusHighlightStrategy.automatic,
+        );
+        final boundary = GlobalKey();
+        await _pump(
+          tester,
+          size: const Size(700, 800),
+          themeData: build(),
+          boundary: boundary,
+        );
+
+        Future<Color Function(Offset)> capture() async {
+          final render =
+              boundary.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary;
+          final (width, bytes) = (await tester.runAsync(() async {
+            final image = await render.toImage();
+            final bytes = (await image.toByteData())!;
+            final width = image.width;
+            image.dispose();
+            return (width, bytes);
+          }))!;
+          Color colourAt(Offset point) {
+            final at = (point.dy.floor() * width + point.dx.floor()) * 4;
+            return Color.fromARGB(
+              bytes.getUint8(at + 3),
+              bytes.getUint8(at),
+              bytes.getUint8(at + 1),
+              bytes.getUint8(at + 2),
+            );
+          }
+
+          return colourAt;
+        }
+
+        // The second destination: the first is selected.
+        final icon = tester.getRect(_destination('collection'));
+        final area = icon.inflate(8);
+        final atRest = await capture();
+
+        _destinationNode(tester, 'collection').requestFocus();
+        await tester.pumpAndSettle();
+        final focused = await capture();
+
+        var strongest = 1.0;
+        for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
+          for (var x = area.left.ceil(); x < area.right.floor(); x++) {
+            final point = Offset(x + 0.5, y + 0.5);
+            final ratio = Wcag.contrastRatio(atRest(point), focused(point));
+            if (ratio > strongest) strongest = ratio;
+          }
+        }
+        expect(strongest, greaterThanOrEqualTo(3.0), reason: 'the fill');
+
+        // The icon against the fill beside it.
+        final fill = focused(Offset(icon.left - 4, icon.center.dy));
+        var iconRatio = 1.0;
+        for (var y = icon.top.ceil(); y < icon.bottom.floor(); y++) {
+          for (var x = icon.left.ceil(); x < icon.right.floor(); x++) {
+            final ratio = Wcag.contrastRatio(
+              focused(Offset(x + 0.5, y + 0.5)),
+              fill,
+            );
+            if (ratio > iconRatio) iconRatio = ratio;
+          }
+        }
+        expect(iconRatio, greaterThanOrEqualTo(3.0), reason: 'the icon');
       });
     }
   });

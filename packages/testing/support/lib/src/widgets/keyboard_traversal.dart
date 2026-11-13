@@ -85,6 +85,11 @@ Future<_Walk> _walk(WidgetTester tester, int maxSteps, bool reverse) async {
 /// control that had focus is unfocused first; a route's scope that had it
 /// keeps it.
 ///
+/// Where the walk runs on past the page, through stops outside its route
+/// such as a navigation bar's or rail's (#414), the two walks go round the
+/// same circle from different places on it. So the reverse walk is held to
+/// the forward one reversed, read from where the reverse walk starts.
+///
 /// A repeat is the same `FocusNode` coming round twice, not the same label:
 /// several rows may each carry a "Delete" button.
 Future<void> expectTraversable(
@@ -104,9 +109,16 @@ Future<void> expectTraversable(
   await _focusPage(tester);
   final backward = await _walk(tester, maxSteps, true);
   _expectWrapped(backward, maxSteps, 'Shift+Tab');
+  final reversed = forward.names.reversed.toList();
+  // By node, not by name: several rows may each carry a "Delete" button.
+  final from = backward.nodes.isEmpty
+      ? -1
+      : forward.nodes.reversed.toList().indexOf(backward.nodes.first);
   expect(
     backward.names,
-    forward.names.reversed.toList(),
+    from <= 0
+        ? reversed
+        : [...reversed.sublist(from), ...reversed.sublist(0, from)],
     reason: 'Shift+Tab must walk Tab order backwards',
   );
 }

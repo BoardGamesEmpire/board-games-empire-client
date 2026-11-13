@@ -20,6 +20,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_browser_history.dart';
+import '../support/navigation.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -166,10 +167,11 @@ EventAttendee _hosting(String id) => EventAttendee(
   updatedAt: DateTime.utc(2026),
 );
 
-/// The #497 shell wiring through the real composition: the drawer entry and
-/// its gate, the overview and group routes resolving the session's
-/// repository, households and status, the retry reaching the events' own
-/// refresher, and the entry trigger reaching the session's rehydrator.
+/// The #497 shell wiring through the real composition: the Events
+/// destination (#414) and its gate, the overview and group routes resolving
+/// the session's repository, households and status, the retry reaching the
+/// events' own refresher, and the entry trigger reaching the session's
+/// rehydrator.
 ///
 /// The screens' own behaviour is pinned in `events`. What only this file can
 /// check is that they are handed what the session registered, and that a
@@ -341,32 +343,37 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> openDrawer(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-  }
+  Future<void> openTheOverview(WidgetTester tester) =>
+      goToDestination(tester, 'events');
 
-  Future<void> openTheOverview(WidgetTester tester) async {
-    await openDrawer(tester);
-    await tester.tap(find.byKey(MenuDrawer.entryKey('events')));
-    await tester.pumpAndSettle();
-  }
-
-  group('the drawer entry', () {
+  group('the destination (#414)', () {
     testWidgets('shows when the session has an event repository', (
       tester,
     ) async {
       await pumpHome(tester);
-      await openDrawer(tester);
 
-      expect(find.byKey(MenuDrawer.entryKey('events')), findsOneWidget);
-      expect(find.text('Events'), findsOneWidget);
+      expect(
+        find.byKey(NavigationShell.destinationKey('events')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(NavigationShell.railKey),
+          matching: find.text('Events'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides when there is no user session', (tester) async {
       // The repository lives in the user tier, which sign-out tears down.
       await pumpHome(tester, withRepository: false);
-      await openDrawer(tester);
+      expect(
+        find.byKey(NavigationShell.destinationKey('events')),
+        findsNothing,
+      );
+      // Home alone: no rail, so the menu lists the destinations.
+      await openMenu(tester);
 
       expect(find.byKey(MenuDrawer.entryKey('events')), findsNothing);
       expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
@@ -802,9 +809,9 @@ void main() {
     testWidgets('the not-found way back returns to the list, with home still '
         'beneath it', (tester) async {
       // The screen's `onBack` is used on this surface alone. A `go` to the
-      // events would replace the stack with the overview: no back button, no
-      // drawer, and on desktop no way out (#308's household bug, which this
-      // is the events' guard against).
+      // events would replace the stack with the overview, dropping what the
+      // user came from (#308's household bug, which this is the events'
+      // guard against).
       final remote = _MockEventRemote();
       when(() => remote.fetchEvent(any())).thenAnswer(
         (_) async => throw const EventRemoteNotFoundException('gone'),
@@ -814,7 +821,10 @@ void main() {
       final cache = StreamController<EventDetail?>()..add(null);
       addTearDown(() => unawaited(cache.close()));
       await pumpHome(tester, remote: remote, detailCache: cache.stream);
-      await openTheOverview(tester);
+      // From home's See all, a push, so home is beneath the overview. The
+      // Events destination is a `go` (#414), which leaves nothing beneath.
+      await tester.tap(find.byKey(UpcomingEventsSection.linkKey));
+      await tester.pumpAndSettle();
 
       await openRow(tester, 'e-0');
 

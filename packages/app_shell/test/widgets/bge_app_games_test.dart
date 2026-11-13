@@ -19,6 +19,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/navigation.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -301,7 +302,7 @@ final CallerAccess _mayRead = FakeCallerAccessRepository.dataGateway(
   read: AccessExtent.all,
 );
 
-/// The Games entry in the home drawer and the screens behind it (#42).
+/// The Games destination (#414) and the screens behind it (#42).
 void main() {
   late _MockAppBootstrapCubit cubit;
   late _DataGatewayRemote dataGateways;
@@ -381,12 +382,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> openGames(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(MenuDrawer.entryKey('games')));
-    await tester.pumpAndSettle();
-  }
+  Future<void> openGames(WidgetTester tester) =>
+      goToDestination(tester, 'games');
 
   Future<void> searchFor(WidgetTester tester, String text) async {
     await tester.tap(find.byKey(GameBrowseScreen.searchKey));
@@ -405,7 +402,7 @@ void main() {
     await openGames(tester);
 
     expect(find.byType(GameBrowseScreen), findsOneWidget);
-    // The drawer's entry lists by title, whatever was chosen the last time.
+    // The destination lists by title, whatever was chosen the last time.
     expect(games.sorts, [GameSort.title]);
 
     await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
@@ -646,10 +643,10 @@ void main() {
     expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsOneWidget);
   });
 
-  testWidgets('no games remote is no entry', (tester) async {
+  testWidgets('no games remote is no destination', (tester) async {
     await pumpHome(tester, withGames: false);
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
+    expect(find.byKey(NavigationShell.destinationKey('games')), findsNothing);
+    await openMenu(tester);
 
     expect(find.byKey(MenuDrawer.entryKey('games')), findsNothing);
   });

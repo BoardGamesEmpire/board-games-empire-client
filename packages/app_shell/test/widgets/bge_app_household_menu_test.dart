@@ -22,7 +22,8 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
-/// Exercises the household menu gate in `_buildHomeRoute`.
+/// Exercises the household menu gate in `_menuEntries`, the navigation
+/// menu's (#414).
 ///
 /// The entry is the **household list** (#269), replacing #129's
 /// create-household entry — create moved to the list's own FAB. That
@@ -62,7 +63,7 @@ void main() {
     HydratedBloc.storage = storage;
   });
 
-  /// Pumps the home drawer with each household dependency independently
+  /// Pumps home with the menu open, each household dependency independently
   /// present or absent, so a regression that drops either half of the gate
   /// fails a test.
   Future<void> pumpHomeDrawer(

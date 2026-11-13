@@ -856,13 +856,11 @@ void main() {
       expect(rehydrator.passes, equals(1));
     });
 
-    testWidgets('keeps triggering after the app navigates to a route outside '
-        'the auth shell', (tester) async {
-      // The household routes sit outside the auth ShellRoute, NOT inside it
-      // — and the list is the screen showing "couldn't refresh". A trigger
-      // mounted inside that shell would be unmounted here, so the one
-      // screen that needs the re-hydrate would never get one. It lives
-      // above the router for this reason.
+    testWidgets('keeps triggering after the app navigates to a screen the '
+        'menu opens', (tester) async {
+      // The household list is the screen showing "couldn't refresh", and the
+      // menu pushes it inside the navigation shell (#414). The trigger lives
+      // above the router, so no route change unmounts it.
       final repo = FakeAuthRepository(initialSession: testAuthResponse());
       final rehydrator = _SpyRehydrator();
       final households = _MockHouseholdRepository();
@@ -910,7 +908,7 @@ void main() {
       // A delta rather than a total: this test walks to the household list,
       // and entering it is itself a trigger now (#300 D13). What is being
       // pinned here is that the *resume* still reaches the rehydrator from
-      // outside the auth shell, which the absolute count would conflate.
+      // the list, which the absolute count would conflate.
       final before = rehydrator.passes;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);

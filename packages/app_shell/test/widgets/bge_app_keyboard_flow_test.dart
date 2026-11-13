@@ -217,6 +217,9 @@ void main() {
   testWidgets('home → create household: Tab follows reading order with no '
       'trap on each, Escape closes the drawer back to its opener, and back '
       'returns focus to the opener', (tester) async {
+    // A phone's window: home carries the menu button in its app bar, and the
+    // destinations go on the bar along the bottom (#414).
+    useViewSize(tester, const Size(400, 800));
     final repository = _MockHouseholdRepository();
     // A household in the cache, so the list shows rows and the floating
     // Create is the only create control.
@@ -326,7 +329,10 @@ void main() {
     // and when. The stats card has no stop: its heading and count are text,
     // and its households link shows only to someone in no household. Each row
     // of games: the link or button in its heading row, then its cover. One
-    // cover fits, so neither row shows its previous and next buttons.
+    // cover fits, so neither row shows its previous and next buttons. Then
+    // the bar's destinations (#414): Collection, Games and Events are there
+    // because the collection repository, the games remote and the event
+    // repository are registered. Material reads each with "Tab n of m".
     await expectTraversable(
       tester,
       expectedOrder: [
@@ -337,13 +343,16 @@ void main() {
         'Cascadia',
         'Reshuffle',
         'Azul',
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
       ],
     );
 
-    // The drawer, from the menu button. Its destinations (Collection, Games
-    // and Events are there because the collection repository, the games
-    // remote and the event repository are registered), then its action under
-    // the divider. Material reads each destination with "Tab n of m"
+    // The drawer, from the menu button: its entries, then its action under
+    // the divider. The bar carries the destinations, so the drawer lists
+    // none (#414), and each entry is a button, read without "Tab n of m"
     // (#763).
     final menu = find.byIcon(Icons.menu);
     final menuNode = Focus.of(tester.element(menu));
@@ -351,15 +360,7 @@ void main() {
     expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
     await expectTraversable(
       tester,
-      expectedOrder: [
-        'Collection\nTab 1 of 6',
-        'Games\nTab 2 of 6',
-        'Events\nTab 3 of 6',
-        'Households\nTab 4 of 6',
-        'Send feedback\nTab 5 of 6',
-        'Settings\nTab 6 of 6',
-        'Sign Out',
-      ],
+      expectedOrder: ['Households', 'Send feedback', 'Settings', 'Sign Out'],
     );
 
     // Escape closes it, and focus goes back to the menu button.

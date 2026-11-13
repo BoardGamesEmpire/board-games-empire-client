@@ -6,18 +6,51 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
+import 'package:observability/observability.dart' show FeedbackService;
 import 'package:ui/ui.dart' show BgeOfflineStrip;
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_connectivity.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/navigation.dart';
 import '../support/stub_feedback_service.dart';
 
 class _MockStorage extends Mock implements Storage {}
+
+/// A household cache holding nothing, for the list beneath the create form.
+class _Households implements HouseholdRepository {
+  @override
+  Stream<List<Household>> watchHouseholds() =>
+      Stream.multi((stream) => stream.add(const []));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// What a create sends through. Nothing here sends.
+class _Sender implements SyncOperationSender {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// Settings builds once the app-level settings controllers exist, and those
+/// need hydrated storage.
+void _useSettingsStorage() {
+  final storage = _MockStorage();
+  when(() => storage.read(any())).thenReturn(null);
+  when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
+  HydratedBloc.storage = storage;
+  addTearDown(() => HydratedBloc.storage = null);
+}
 
 /// Every label a screen reader can reach, merged nodes included.
 List<String> _semanticsLabels(WidgetTester tester) {
@@ -44,9 +77,19 @@ List<String> _semanticsLabels(WidgetTester tester) {
 void main() {
   Future<void> noopHydrated(PlatformBootstrap _) async {}
 
-  AppBootstrapCubit buildCubit(FakeAuthRepository repo) => AppBootstrapCubit(
+  AppBootstrapCubit buildCubit(
+    FakeAuthRepository repo, {
+    HouseholdRepository? households,
+    SyncOperationSender? sender,
+  }) => AppBootstrapCubit(
     platformBootstrap: FakePlatformBootstrap(
-      activeServerScope: FakeActiveServerScope(buildActiveServer(repo)),
+      activeServerScope: FakeActiveServerScope(
+        buildActiveServer(
+          repo,
+          householdRepository: households,
+          syncOperationSender: sender,
+        ),
+      ),
     ),
     hydratedStorageInitializer: noopHydrated,
   );
@@ -59,23 +102,29 @@ void main() {
       "You're offline. Changes will sync when you reconnect.";
   const backOnlineMessage = 'Back online';
 
-  /// Pumps the app signed in through [repo]. With [connectivity], the root
-  /// container carries it, as both platforms register it.
+  /// Pumps the app signed in through [repo]. With [connectivity] or
+  /// [feedback], the root container carries it, as both platforms register
+  /// them. [households] and [sender] go in the session's container.
   Future<AppBootstrapCubit> pumpApp(
     WidgetTester tester,
     FakeAuthRepository repo, {
     FakeConnectivity? connectivity,
+    FeedbackService? feedback,
     FeedbackUncaughtErrorReporter? feedbackReporter,
+    HouseholdRepository? households,
+    SyncOperationSender? sender,
   }) async {
-    final cubit = buildCubit(repo);
+    final cubit = buildCubit(repo, households: households, sender: sender);
     addTearDown(cubit.close);
+    final root = DependencyContainerImpl();
+    if (connectivity != null) {
+      root.registerSingleton<ConnectivityService>(connectivity);
+    }
+    if (feedback != null) root.registerSingleton<FeedbackService>(feedback);
     await tester.pumpWidget(
       BgeApp(
         bootstrapCubit: cubit,
-        rootContainer: connectivity == null
-            ? null
-            : (DependencyContainerImpl()
-                ..registerSingleton<ConnectivityService>(connectivity)),
+        rootContainer: connectivity == null && feedback == null ? null : root,
         feedbackReporter: feedbackReporter,
       ),
     );
@@ -287,16 +336,64 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the strip shows on a route outside the auth shell', (
-    tester,
-  ) async {
-    // Settings builds once the app-level settings controllers exist, and
-    // those need hydrated storage.
-    final storage = _MockStorage();
-    when(() => storage.read(any())).thenReturn(null);
-    when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
-    HydratedBloc.storage = storage;
-    addTearDown(() => HydratedBloc.storage = null);
+  // #145: every signed-in route sits in the navigation shell, inside the
+  // auth scope (#414), so the banner reaches the screens the menu opens.
+  group('the unverified banner on every signed-in screen (#145)', () {
+    FakeAuthRepository unverified() => FakeAuthRepository(
+      sessionCheckError: const AuthNetworkException(message: 'offline'),
+      restorableSession: testAuthResponse(),
+    );
+
+    testWidgets('the unverified banner shows on settings, feedback and '
+        'create-household', (tester) async {
+      _useSettingsStorage();
+      await pumpApp(
+        tester,
+        unverified(),
+        feedback: StubFeedbackService(),
+        households: _Households(),
+        sender: _Sender(),
+      );
+      expect(find.text(bannerMessage), findsOneWidget);
+
+      await openMenuEntry(tester, 'settings');
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.text(bannerMessage), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await openMenuEntry(tester, 'send_feedback');
+      expect(find.byType(FeedbackFlowScreen), findsOneWidget);
+      expect(find.text(bannerMessage), findsOneWidget);
+
+      // Pushed from the household list's FAB (#269); a `go` builds the list
+      // beneath it.
+      (tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter)
+          .go(AppRoutes.householdCreate);
+      await tester.pumpAndSettle();
+      expect(find.byType(CreateHouseholdScreen), findsOneWidget);
+      expect(find.text(bannerMessage), findsOneWidget);
+    });
+
+    testWidgets('dismissed on home, it stays dismissed on settings', (
+      tester,
+    ) async {
+      _useSettingsStorage();
+      await pumpApp(tester, unverified());
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+      expect(find.text(bannerMessage), findsNothing);
+
+      await openMenuEntry(tester, 'settings');
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.text(bannerMessage), findsNothing);
+    });
+  });
+
+  testWidgets('the strip shows on a screen the menu opens', (tester) async {
+    _useSettingsStorage();
     final connectivity = FakeConnectivity();
     addTearDown(connectivity.close);
 

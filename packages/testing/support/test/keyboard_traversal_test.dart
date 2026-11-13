@@ -193,6 +193,38 @@ void main() {
       handle.dispose();
     });
 
+    // A navigation bar outside the page's route (#414): Tab goes round the
+    // page from its first stop and on through the bar, and Shift+Tab goes
+    // the other way from the page's last stop.
+    testWidgets('walks a circle that runs on past the page', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          Column(
+            children: [
+              Expanded(
+                child: Navigator(
+                  onGenerateRoute: (_) => MaterialPageRoute<void>(
+                    builder: (_) => Material(child: _three()),
+                  ),
+                ),
+              ),
+              TextButton(onPressed: () {}, child: const Text('X')),
+              TextButton(onPressed: () {}, child: const Text('Y')),
+            ],
+          ),
+        ),
+      );
+      expect(await tabOrder(tester), ['A', 'B', 'C', 'X', 'Y']);
+      // From the page again: the reverse walk starts at its last stop.
+      FocusManager.instance.primaryFocus!.unfocus();
+      await tester.pump();
+      expect(await tabOrder(tester, reverse: true), ['C', 'B', 'A', 'Y', 'X']);
+
+      await expectTraversable(tester, expectedOrder: ['A', 'B', 'C', 'X', 'Y']);
+      handle.dispose();
+    });
+
     testWidgets('starts from the page when a control has focus', (
       tester,
     ) async {
