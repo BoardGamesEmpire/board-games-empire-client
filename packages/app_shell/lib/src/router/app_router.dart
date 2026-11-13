@@ -13,6 +13,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart' show BgePopupCoverObserver, BgeTopLevelRoute;
+import 'package:ui_tokens/ui_tokens.dart' show BgeSelectionPage;
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -1607,6 +1608,10 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
 
 /// Builds [child]'s page with [create], from the values go_router's own
 /// builder passes. Every page type goes through here, so they can't drift.
+///
+/// Each page is a [BgeSelectionPage], out of the app-wide selection region
+/// while a page above hides it: a page restored beneath another, as a
+/// browser Back can, would otherwise break the region (#611).
 Page<void> _page(
   Page<void> Function({
     required Widget child,
@@ -1626,7 +1631,7 @@ Page<void> _page(
     ...state.uri.queryParameters,
   },
   restorationId: state.pageKey.value,
-  child: child,
+  child: BgeSelectionPage(child: child),
 );
 
 /// Builds the home screen for the [AppRoutes.home] route: the sections the

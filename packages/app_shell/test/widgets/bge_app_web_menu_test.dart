@@ -312,6 +312,28 @@ void main() {
       );
     });
 
+    // Back restores home and settings at once, home beneath settings and
+    // never laid out. On a pointer platform, which has the selection
+    // region, home's text broke the region's sort (see BgeSelectionPage).
+    // macOS is a desktop browser on a Mac.
+    testWidgets('browser Back from a section picked on settings goes back to '
+        'settings', (tester) async {
+      _useSettingsStorage();
+      final history = FakeBrowserHistory.install(tester);
+      await pumpApp(tester, browserOwnsBack: true);
+      await openMenuEntry(tester, 'settings');
+      await tester.tap(menuButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(MenuDrawer.entryKey('collection')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GameCollectionListScreen), findsOneWidget);
+
+      await history.back();
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(menuButton, findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
     // A cancel in a flow is an action, not navigation (#611).
     testWidgets('feedback review keeps its cancel', (tester) async {
       await pumpApp(
