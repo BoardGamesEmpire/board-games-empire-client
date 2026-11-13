@@ -61,6 +61,10 @@
 ///   unmounted.
 /// - Implementations serialize [activate]/[deactivate]; overlapping calls
 ///   cannot interleave scope mutations.
+/// - [deactivate] ends the open session's `SessionLease` before it returns,
+///   even though the teardown itself may wait behind other scope work. The
+///   shell calls it in the same turn it routes away, so a late outcome
+///   settling in between already reads the session as over (#694).
 abstract interface class UserSessionScope {
   /// The user id of the currently active session scope, or null when none
   /// is active.

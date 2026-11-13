@@ -352,4 +352,91 @@ void main() {
       },
     );
   });
+
+  group('session lease', () {
+    late UserScopeHost host;
+    final parent = DependencyContainerImpl();
+
+    setUp(() {
+      host = UserScopeHost(parent: () => parent);
+    });
+
+    test('an open scope holds a live lease', () async {
+      await host.open((_) async {});
+
+      expect(host.maybeGet<SessionLease>()!.isLive, isTrue);
+    });
+
+    test('closing the scope ends its lease', () async {
+      await host.open((_) async {});
+      final lease = host.maybeGet<SessionLease>()!;
+
+      await host.close();
+
+      expect(lease.isLive, isFalse);
+    });
+
+    test('endLease ends the lease and leaves the scope open', () async {
+      await host.open((_) async {});
+      final lease = host.maybeGet<SessionLease>()!;
+
+      host.endLease();
+
+      expect(lease.isLive, isFalse);
+      expect(host.isActive, isTrue);
+      expect(host.maybeGet<SessionLease>(), same(lease));
+    });
+
+    test('endLease with no scope open does nothing', () {
+      expect(host.endLease, returnsNormally);
+    });
+
+    test(
+      'the next scope gets a new lease, and the old one stays ended',
+      () async {
+        await host.open((_) async {});
+        final a = host.maybeGet<SessionLease>()!;
+        await host.close();
+        await host.open((_) async {});
+        final b = host.maybeGet<SessionLease>()!;
+
+        expect(identical(a, b), isFalse);
+        expect(a.isLive, isFalse);
+        expect(b.isLive, isTrue);
+      },
+    );
+
+    test('a failed install ends the lease it was given', () async {
+      late SessionLease lease;
+
+      await expectLater(
+        host.open((view) async {
+          lease = view.get<SessionLease>();
+          throw StateError('install failed');
+        }),
+        throwsStateError,
+      );
+
+      expect(lease.isLive, isFalse);
+    });
+
+    test(
+      'the lease has ended before anything else in the scope is disposed',
+      () async {
+        bool? liveWhenDisposed;
+
+        await host.open((view) async {
+          final lease = view.get<SessionLease>();
+          view.registerSingleton<Probe>(
+            Probe('service'),
+            dispose: (_) => liveWhenDisposed = lease.isLive,
+          );
+        });
+
+        await host.close();
+
+        expect(liveWhenDisposed, isFalse);
+      },
+    );
+  });
 }

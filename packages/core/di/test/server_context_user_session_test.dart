@@ -373,6 +373,27 @@ void main() {
       expect(installer.probes.single.closes, 1);
     });
 
+    test('ends the lease before the teardown it queues runs, even behind '
+        'a transition (#694)', () async {
+      final installer = RecordingUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      addTearDown(context.dispose);
+      await context.activate();
+      await context.activateUserSession('user-a');
+      final lease = context.container.get<SessionLease>();
+
+      final transition = context.background();
+      final deactivation = context.deactivateUserSession();
+
+      expect(lease.isLive, isFalse, reason: "ended in the caller's turn");
+      expect(installer.probes.single.disposed, isFalse);
+      await Future.wait([transition, deactivation]);
+      expect(installer.probes.single.disposed, isTrue);
+    });
+
     test('is a no-op without an active session and is idempotent', () async {
       final context = ServerContextImpl(config: _makeConfig());
       addTearDown(context.dispose);

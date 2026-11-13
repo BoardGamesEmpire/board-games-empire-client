@@ -388,7 +388,12 @@ class ServerContextImpl implements ServerContext {
   /// the container (no-op); post-background the scope was torn down by
   /// [background] itself (no-op). A live scope found here is disposed
   /// regardless of state, so a sign-out can never be silently dropped.
+  ///
+  /// The session's [SessionLease] ends at once, before the teardown is
+  /// queued: the caller has ended the session, whatever the chain is still
+  /// working through (#694).
   Future<void> deactivateUserSession() {
+    _container.endUserLease();
     return _enqueueScopeOp(() async {
       if (_state == ServerContextState.disposed) {
         _activeUserId = null;
@@ -538,6 +543,9 @@ class _SwappableContainer implements DependencyContainer {
 
   /// Whether a user-session scope is currently active (#135).
   bool get hasUserScope => _userScope.isActive;
+
+  /// Ends the open user scope's lease without closing the scope (#694).
+  void endUserLease() => _userScope.endLease();
 
   /// Opens the per-user child scope and runs [install] against the
   /// container **view**: registrations land in the user scope while

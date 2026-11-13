@@ -140,6 +140,20 @@ void main() {
       expect(probe!.disposed, isFalse);
     });
 
+    test('deactivate ends the lease before the teardown it queues runs '
+        '(#694)', () async {
+      await scope.activate('user-a');
+      final lease = host.maybeGet<SessionLease>()!;
+      final probe = host.maybeGet<Probe>()!;
+
+      final deactivation = scope.deactivate();
+
+      expect(lease.isLive, isFalse, reason: "ended in the caller's turn");
+      expect(probe.disposed, isFalse, reason: 'the teardown is still queued');
+      await deactivation;
+      expect(probe.disposed, isTrue);
+    });
+
     test('a different user tears the previous scope down first', () async {
       await scope.activate('user-a');
       final first = host.maybeGet<Probe>()!;

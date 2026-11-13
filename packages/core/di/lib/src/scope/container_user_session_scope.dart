@@ -107,8 +107,14 @@ class ContainerUserSessionScope implements UserSessionScope {
     });
   }
 
+  /// Ends the session's [SessionLease] at once, then queues the teardown:
+  /// the caller has ended the session, whatever the chain is still working
+  /// through (#694).
   @override
-  Future<void> deactivate() => _enqueue(_teardown);
+  Future<void> deactivate() {
+    _host.endLease();
+    return _enqueue(_teardown);
+  }
 
   /// Ends any live session and closes this holder permanently. Idempotent.
   ///
