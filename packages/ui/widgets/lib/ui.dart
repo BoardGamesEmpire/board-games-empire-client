@@ -69,6 +69,7 @@ library;
 export 'src/banners/bge_inline_banner.dart';
 export 'src/banners/bge_offline_strip.dart';
 export 'src/banners/bge_refresh_banner.dart';
+export 'src/banners/bge_snack_bars.dart';
 export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_fab_label.dart';
 export 'src/buttons/bge_inert_button.dart';
