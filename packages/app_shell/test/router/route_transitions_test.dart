@@ -54,13 +54,13 @@ void main() {
     return router;
   }
 
-  /// The root navigator's pages, the ones every route outside the auth
-  /// [ShellRoute] is built into.
+  /// The root navigator's pages: the bootstrap routes' and the reserved
+  /// deep links', which sit outside both shells.
   List<Page<Object?>> rootPages(GoRouter router) =>
       router.routerDelegate.navigatorKey.currentState!.widget.pages;
 
-  /// The innermost navigator's pages: the auth [ShellRoute]'s, when auth or
-  /// home is on top.
+  /// The innermost navigator's pages: the auth [ShellRoute]'s when auth is on
+  /// top, the navigation shell's (#414) when any signed-in route is.
   List<Page<Object?>> innermostPages(WidgetTester tester) =>
       tester.widget<Navigator>(find.byType(Navigator).last).pages;
 
@@ -74,8 +74,11 @@ void main() {
     unawaited(router.push(AppRoutes.feedback));
     await tester.pumpAndSettle();
 
-    expect(rootPages(router).last, isA<MaterialPage<void>>());
-    expect(rootPages(router).last, isNot(isA<NoTransitionPage<void>>()));
+    expect(innermostPages(tester).last, isA<MaterialPage<void>>());
+    expect(
+      innermostPages(tester).last,
+      isNot(isA<NoTransitionPage<void>>()),
+    );
   });
 
   // A NoTransitionPage has no back swipe; a MaterialPage on iOS gets the
@@ -88,7 +91,7 @@ void main() {
         tester,
         initialState: const AppBootstrapReady(),
       );
-      final depth = rootPages(router).length;
+      final depth = innermostPages(tester).length;
       unawaited(router.push(AppRoutes.feedback));
       await tester.pumpAndSettle();
 
@@ -98,7 +101,7 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
 
-      expect(rootPages(router), hasLength(depth));
+      expect(innermostPages(tester), hasLength(depth));
       expect(find.text('Home'), findsOneWidget);
     },
   );
@@ -167,11 +170,11 @@ void main() {
       router.go(location);
       await tester.pumpAndSettle();
 
-      expect(
-        rootPages(router).last,
-        isA<MaterialPage<void>>(),
-        reason: location,
-      );
+      // The reserved deep links stay top-level, outside both shells.
+      final pages = location.startsWith('/server/')
+          ? rootPages(router)
+          : innermostPages(tester);
+      expect(pages.last, isA<MaterialPage<void>>(), reason: location);
     }
   });
 

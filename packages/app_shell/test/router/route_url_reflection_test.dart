@@ -25,7 +25,10 @@ void main() {
   // The flag is global, and test order is random.
   tearDown(() => GoRouter.optionURLReflectsImperativeAPIs = false);
 
-  Future<GoRouter> pumpRouter(WidgetTester tester) async {
+  Future<GoRouter> pumpRouter(
+    WidgetTester tester, {
+    NavigationShellBuilder? navigationShellBuilder,
+  }) async {
     whenListen(
       cubit,
       const Stream<AppBootstrapState>.empty(),
@@ -36,6 +39,7 @@ void main() {
       bootstrapCubit: cubit,
       refreshListenable: listenable,
       homeBuilder: (_) => const Scaffold(body: Center(child: Text('Home'))),
+      navigationShellBuilder: navigationShellBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -73,6 +77,19 @@ void main() {
     final router = await pumpRouter(tester);
 
     await push(tester, router, AppRoutes.household);
+    await push(tester, router, AppRoutes.householdDetailOf('h1'));
+
+    expect(reportedLocation(router), '/household/h1');
+  });
+
+  testWidgets('a push inside the navigation shell still reaches the address '
+      'bar (#414)', (tester) async {
+    reflectPushedRoutesInUrl();
+    final router = await pumpRouter(
+      tester,
+      navigationShellBuilder: (context, location, child) => child,
+    );
+
     await push(tester, router, AppRoutes.householdDetailOf('h1'));
 
     expect(reportedLocation(router), '/household/h1');
@@ -123,8 +140,9 @@ void main() {
     final router = await pumpRouter(tester);
     RouteInformation reported() => router.routeInformationParser
         .restoreRouteInformation(router.routerDelegate.currentConfiguration)!;
+    // Signed-in routes build into the navigation shell's navigator (#414).
     List<Page<Object?>> pages() =>
-        router.routerDelegate.navigatorKey.currentState!.widget.pages;
+        tester.widget<Navigator>(find.byType(Navigator).last).pages;
 
     final history = [reported()];
     await push(tester, router, AppRoutes.household);
