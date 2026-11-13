@@ -111,6 +111,115 @@ ServerIdentity _identityWithProviders() => testServerIdentity().copyWith(
   ],
 );
 
+/// Signed-in home with every section up: a household, an upcoming event,
+/// a game of the user's own and one on the server (#767). The caller sets
+/// the window first.
+Future<void> _pumpHome(WidgetTester tester) async {
+  final repository = _MockHouseholdRepository();
+  // A household in the cache, so the list shows rows and the floating
+  // Create is the only create control.
+  when(repository.watchHouseholds).thenAnswer(
+    (_) => Stream<List<Household>>.value([
+      Household(
+        id: 'hh_1',
+        name: 'Sunday Crew',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+    ]),
+  );
+  // One upcoming event, so home builds its upcoming events section.
+  // Far enough ahead to stay upcoming, in local time so the card reads the
+  // same wherever the suite runs.
+  final start = DateTime(2099, 1, 1, 19);
+  final eventRepository = _MockEventRepository();
+  when(eventRepository.watchAttendingEventListItems).thenAnswer(
+    (_) => Stream<List<EventListItem>>.value([
+      EventListItem(
+        event: Event(
+          id: 'e1',
+          title: 'Game night',
+          createdById: 'user-host',
+          type: EventType.casualGathering,
+          reach: Reach.friends,
+          status: EventStatus.planning,
+          schedulingMode: EventSchedulingMode.fixed,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+        occurrences: [
+          EventOccurrence(
+            id: 'o1',
+            eventId: 'e1',
+            startDate: start,
+            status: OccurrenceStatus.confirmed,
+            sortOrder: 0,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ],
+      ),
+    ]),
+  );
+  // One game of the user's own, so home builds its stats card, and its
+  // "Something to play" row draws that game. Another on the server, so the
+  // "Recently added" row has one too (#767).
+  final collection = _MockGameCollectionRepository();
+  when(collection.watchCollectionListItems).thenAnswer(
+    (_) => Stream<List<GameCollectionListItem>>.value([
+      GameCollectionListItem(
+        entry: GameCollection(
+          id: 'entry-azul',
+          userId: 'u1',
+          platformGameId: 'pg-azul',
+          medium: GameMedium.physical,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+        gameId: 'azul',
+        title: 'Azul',
+        platformName: 'Board game',
+      ),
+    ]),
+  );
+  final cubit = _MockAppBootstrapCubit();
+  when(() => cubit.activeServerScope).thenReturn(
+    FakeActiveServerScope(
+      buildActiveServer(
+        FakeAuthRepository(initialSession: testAuthResponse()),
+        householdRepository: repository,
+        eventRepository: eventRepository,
+        gameCollectionRepository: collection,
+        gamesRemoteDataSource: _OneGameRemote(
+          Game(
+            id: 'cascadia',
+            title: 'Cascadia',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ),
+        // The create route's guard: without a sender, the list offers no
+        // create (#121).
+        syncOperationSender: _MockSyncOperationSender(),
+      ),
+    ),
+  );
+  whenListen(
+    cubit,
+    const Stream<AppBootstrapState>.empty(),
+    initialState: const AppBootstrapReady(),
+  );
+
+  await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+  await tester.pumpAndSettle();
+  expect(find.byType(HomeScreen), findsOneWidget);
+
+  // Every section is up, so the walk crosses all four (#767).
+  expect(find.byKey(StatsCard.ownedKey), findsOneWidget);
+  expect(find.byKey(NewestGamesSection.coverKey('cascadia')), findsOneWidget);
+  expect(find.byKey(SomethingToPlaySection.coverKey('azul')), findsOneWidget);
+}
+
 /// Keyboard flows through the real app root (#50): Tab follows the order a
 /// screen reads in, Shift+Tab walks it back, nothing traps focus, and focus
 /// goes back to the control that opened a route once the route closes.
@@ -220,109 +329,7 @@ void main() {
     // A phone's window: home carries the menu button in its app bar, and the
     // destinations go on the bar along the bottom (#414).
     useViewSize(tester, const Size(400, 800));
-    final repository = _MockHouseholdRepository();
-    // A household in the cache, so the list shows rows and the floating
-    // Create is the only create control.
-    when(repository.watchHouseholds).thenAnswer(
-      (_) => Stream<List<Household>>.value([
-        Household(
-          id: 'hh_1',
-          name: 'Sunday Crew',
-          createdAt: DateTime.utc(2026),
-          updatedAt: DateTime.utc(2026),
-        ),
-      ]),
-    );
-    // One upcoming event, so home builds its upcoming events section.
-    // Far enough ahead to stay upcoming, in local time so the card reads the
-    // same wherever the suite runs.
-    final start = DateTime(2099, 1, 1, 19);
-    final eventRepository = _MockEventRepository();
-    when(eventRepository.watchAttendingEventListItems).thenAnswer(
-      (_) => Stream<List<EventListItem>>.value([
-        EventListItem(
-          event: Event(
-            id: 'e1',
-            title: 'Game night',
-            createdById: 'user-host',
-            type: EventType.casualGathering,
-            reach: Reach.friends,
-            status: EventStatus.planning,
-            schedulingMode: EventSchedulingMode.fixed,
-            createdAt: DateTime.utc(2026),
-            updatedAt: DateTime.utc(2026),
-          ),
-          occurrences: [
-            EventOccurrence(
-              id: 'o1',
-              eventId: 'e1',
-              startDate: start,
-              status: OccurrenceStatus.confirmed,
-              sortOrder: 0,
-              createdAt: DateTime.utc(2026),
-              updatedAt: DateTime.utc(2026),
-            ),
-          ],
-        ),
-      ]),
-    );
-    // One game of the user's own, so home builds its stats card, and its
-    // "Something to play" row draws that game. Another on the server, so the
-    // "Recently added" row has one too (#767).
-    final collection = _MockGameCollectionRepository();
-    when(collection.watchCollectionListItems).thenAnswer(
-      (_) => Stream<List<GameCollectionListItem>>.value([
-        GameCollectionListItem(
-          entry: GameCollection(
-            id: 'entry-azul',
-            userId: 'u1',
-            platformGameId: 'pg-azul',
-            medium: GameMedium.physical,
-            createdAt: DateTime.utc(2026),
-            updatedAt: DateTime.utc(2026),
-          ),
-          gameId: 'azul',
-          title: 'Azul',
-          platformName: 'Board game',
-        ),
-      ]),
-    );
-    final cubit = _MockAppBootstrapCubit();
-    when(() => cubit.activeServerScope).thenReturn(
-      FakeActiveServerScope(
-        buildActiveServer(
-          FakeAuthRepository(initialSession: testAuthResponse()),
-          householdRepository: repository,
-          eventRepository: eventRepository,
-          gameCollectionRepository: collection,
-          gamesRemoteDataSource: _OneGameRemote(
-            Game(
-              id: 'cascadia',
-              title: 'Cascadia',
-              createdAt: DateTime.utc(2026),
-              updatedAt: DateTime.utc(2026),
-            ),
-          ),
-          // The create route's guard: without a sender, the list offers no
-          // create (#121).
-          syncOperationSender: _MockSyncOperationSender(),
-        ),
-      ),
-    );
-    whenListen(
-      cubit,
-      const Stream<AppBootstrapState>.empty(),
-      initialState: const AppBootstrapReady(),
-    );
-
-    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
-    await tester.pumpAndSettle();
-    expect(find.byType(HomeScreen), findsOneWidget);
-
-    // Every section is up, so the walk crosses all four (#767).
-    expect(find.byKey(StatsCard.ownedKey), findsOneWidget);
-    expect(find.byKey(NewestGamesSection.coverKey('cascadia')), findsOneWidget);
-    expect(find.byKey(SomethingToPlaySection.coverKey('azul')), findsOneWidget);
+    await _pumpHome(tester);
 
     // The menu button, then the sections top to bottom. Upcoming events: its
     // See all link in the heading row, then the card, which reads its title
@@ -418,5 +425,45 @@ void main() {
     );
     expect(find.byType(CreateHouseholdScreen), findsNothing);
     expect(find.byType(HouseholdListScreen), findsOneWidget);
+  });
+
+  testWidgets('home at a medium window: Tab meets the rail in the order it is '
+      'drawn, then the page, with no trap', (tester) async {
+    // The default 800x600 window: a rail at the start, its menu button at
+    // the top, and the page without one (#414).
+    await _pumpHome(tester);
+    expect(find.byKey(NavigationShell.railKey), findsOneWidget);
+    expect(find.byKey(NavigationShell.barKey), findsNothing);
+
+    // The page first, top to bottom, then the rail as it is drawn: the menu
+    // button, then Home to Events. The bar at a phone's width is met after
+    // the page the same way, so the chrome sits last at every width. The
+    // rail is a traversal group of its own, so the walk takes its stops
+    // together and not scattered among the page's. Material reads each
+    // destination with "Tab n of m".
+    await expectTraversable(
+      tester,
+      expectedOrder: [
+        'See all your events',
+        'Game night\nThu, Jan 1, 2099 · 7:00 PM',
+        'See all recently added games',
+        'Cascadia',
+        'Reshuffle',
+        'Azul',
+        'Open navigation menu',
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
+      ],
+    );
+
+    // The drawer from the rail's menu button lists entries only.
+    await activateByKeyboard(tester, find.byIcon(Icons.menu));
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+    await expectTraversable(
+      tester,
+      expectedOrder: ['Households', 'Send feedback', 'Settings', 'Sign Out'],
+    );
   });
 }

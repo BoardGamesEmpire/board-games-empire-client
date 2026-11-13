@@ -321,42 +321,50 @@ class _NavigationShellState extends State<NavigationShell> {
                         Theme.of(context).colorScheme,
                       ),
                     ),
-                    child: NavigationRail(
-                      key: NavigationShell.railKey,
-                      selectedIndex: current,
-                      labelType: windowClass == BgeWindowClass.expanded
-                          ? NavigationRailLabelType.all
-                          : NavigationRailLabelType.selected,
-                      // A landscape phone, or large text, is shorter than the
-                      // destinations.
-                      scrollable: true,
-                      leading: IconButton(
-                        icon: const Icon(Icons.menu),
-                        tooltip: MaterialLocalizations.of(
-                          context,
-                        ).openAppDrawerTooltip,
-                        onPressed: _openDrawer,
+                    // Its own traversal group, so Tab walks the rail as it
+                    // is drawn: the menu button, then the destinations top
+                    // to bottom. Left to the page's policy, the full-height
+                    // pages beside it share a reading-order band with every
+                    // stop, and the rail came out as Collection, Events,
+                    // Home, Games, then the menu button (#414).
+                    child: FocusTraversalGroup(
+                      child: NavigationRail(
+                        key: NavigationShell.railKey,
+                        selectedIndex: current,
+                        labelType: windowClass == BgeWindowClass.expanded
+                            ? NavigationRailLabelType.all
+                            : NavigationRailLabelType.selected,
+                        // A landscape phone, or large text, is shorter than the
+                        // destinations.
+                        scrollable: true,
+                        leading: IconButton(
+                          icon: const Icon(Icons.menu),
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).openAppDrawerTooltip,
+                          onPressed: _openDrawer,
+                        ),
+                        onDestinationSelected: (index) =>
+                            _go(destinations[index]),
+                        destinations: [
+                          for (final destination in destinations)
+                            NavigationRailDestination(
+                              icon: KeyedSubtree(
+                                key: NavigationShell.destinationKey(
+                                  destination.id,
+                                ),
+                                child: Icon(destination.icon),
+                              ),
+                              selectedIcon: KeyedSubtree(
+                                key: NavigationShell.destinationKey(
+                                  destination.id,
+                                ),
+                                child: Icon(destination.selectedIcon),
+                              ),
+                              label: Text(destination.label),
+                            ),
+                        ],
                       ),
-                      onDestinationSelected: (index) =>
-                          _go(destinations[index]),
-                      destinations: [
-                        for (final destination in destinations)
-                          NavigationRailDestination(
-                            icon: KeyedSubtree(
-                              key: NavigationShell.destinationKey(
-                                destination.id,
-                              ),
-                              child: Icon(destination.icon),
-                            ),
-                            selectedIcon: KeyedSubtree(
-                              key: NavigationShell.destinationKey(
-                                destination.id,
-                              ),
-                              child: Icon(destination.selectedIcon),
-                            ),
-                            label: Text(destination.label),
-                          ),
-                      ],
                     ),
                   ),
                 ),

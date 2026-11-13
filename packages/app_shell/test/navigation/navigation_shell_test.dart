@@ -928,6 +928,85 @@ void main() {
     }
   });
 
+  // The chrome is met in visual order: a rail's menu button, then Home down
+  // to Events; a bar's Home to Events left to right (#414).
+  group('Tab walks the chrome in the order it is drawn (#414)', () {
+    Future<List<String>> chromeStops(
+      WidgetTester tester,
+      Size size, {
+      bool reverse = false,
+    }) async {
+      await _pump(tester, size: size);
+      final names = await tabOrder(tester, reverse: reverse);
+      // The page's own stops: its Add button, and at compact its menu
+      // button.
+      return names
+          .where((name) => name != 'Add')
+          .where((name) => size.width >= 600 || name != 'Open navigation menu')
+          .toList();
+    }
+
+    testWidgets('Tab walks the rail in order: menu, Home, Collection, Games, '
+        'Events', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final stops = await chromeStops(tester, const Size(700, 800));
+      expect(stops, [
+        'Open navigation menu',
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
+      ]);
+      semantics.dispose();
+    });
+
+    testWidgets('Shift+Tab walks the rail back', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final stops = await chromeStops(
+        tester,
+        const Size(700, 800),
+        reverse: true,
+      );
+      expect(stops, [
+        'Events\nTab 4 of 4',
+        'Games\nTab 3 of 4',
+        'Collection\nTab 2 of 4',
+        'Home\nTab 1 of 4',
+        'Open navigation menu',
+      ]);
+      semantics.dispose();
+    });
+
+    testWidgets('Tab walks the bar in order: Home, Collection, Games, '
+        'Events', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final stops = await chromeStops(tester, const Size(400, 800));
+      expect(stops, [
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
+      ]);
+      semantics.dispose();
+    });
+
+    testWidgets('Shift+Tab walks the bar back', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final stops = await chromeStops(
+        tester,
+        const Size(400, 800),
+        reverse: true,
+      );
+      expect(stops, [
+        'Events\nTab 4 of 4',
+        'Games\nTab 3 of 4',
+        'Collection\nTab 2 of 4',
+        'Home\nTab 1 of 4',
+      ]);
+      semantics.dispose();
+    });
+  });
+
   // #644: a rail shows focus as a fill alone, and its fill is the shell's
   // to set, around the rail only. The bar's is the theme's, tested in
   // ui_tokens.
