@@ -250,6 +250,8 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
 | `replaceSnackBar` on a `ScaffoldMessengerState` | `showSnackBar`, which queued each bar behind the one showing, so a stale outcome replayed for its full window (#341, #343) | The newest outcome shows within a second and nothing replays: the whole queue is cleared, not just the current bar, which would only promote the next stale one; one live region, Flutter's own, with no `Semantics(liveRegion:)` and no announce added (#191) |
+| `closeWhenSettled` | the collection entry screen's hand-rolled `_sayWhenSettled`, which every screen that saves and then leaves would have copied (#464) | A bloc left with a save under way closes once the save settles, and not before; its outcome is said then, through the screen's `SessionMessenger`, on the page the user went to; it never navigates; with nothing under way the bloc closes at once and nothing is said; a stream that ends or fails still closes it |
+| `SessionMessenger` | a `_say` guard copied into each screen that saves and then leaves, beside a second copy in `closeWhenSettled` (#464) | Every bar such a screen says, its listener's and its late one, goes through `replaceSnackBar` on the messenger it captured while mounted, and only while the session it was opened in is live (#694) and that messenger is mounted |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
 | `BgeInertButton` | a busy control's own semantics node, focus node and press guard, copied per control with the copies drifting (#607) | Enabled while inert, so it keeps focus; a press does nothing; one semantics node, the same inert or not, that reads as not enabled and offers no tap while inert; a held Enter or Space presses once; a null `onPressed` disables it in place, taking no focus, so a control that is inert after its own press and disabled after another's keeps one node; `selected` keeps a choice's selected state through all three (#508) |
 | `BgeFabLabel` | a `FloatingActionButton.extended`'s plain `Text` label, which at 200% text on a narrow window made the button wider than the window and pushed its start edge off screen (#50) | Held to what the window leaves it after the button's margins, padding and icon, and scaled down to fit on one line, never cut; a label with room keeps its size |
@@ -640,14 +642,44 @@ no longer news, for its full display window (the copy button stacked three for
 over fifteen seconds, #341). A refused write is never lost this way, because
 its copy sends the user to the home screen's review list (#190). One narrow
 loss is accepted: a failure whose bar is its only word is lost if another
-outcome replaces it within its display window. Today that is a save or a
-removal that fails after its sheet or screen was left mid-way (adding to the
-collection, editing or removing a collection entry), and a range the game
-filter sheet drops as it closes. Failures that arrive together must share one
-bar, as the filter sheet's dropped ranges do, or each replaces the last. A new
-failure that can't afford the loss needs a lasting home, as refused writes
-have, rather than the bar. The enforcement test rejects a raw `showSnackBar`,
-called or torn off (#343).
+outcome replaces it within its display window. Today that is a failure said
+once the user has left what started it: any said late under the rule below,
+and an add to the collection whose sheet was dismissed mid-way, which the
+sheet says itself. It is also a range the game filter sheet drops as it
+closes. Failures that arrive together must share one bar, as the filter
+sheet's dropped ranges do, or each replaces the last. A new failure that
+can't afford the loss needs a lasting home, as refused writes have, rather
+than the bar. The enforcement test rejects a raw `showSnackBar`, called or
+torn off (#343).
+
+**A screen that saves and then leaves owns its save past the route.** It makes
+its bloc in its `State` and provides it with `BlocProvider.value`, so the
+route's provider doesn't close it mid-save. When it makes the bloc it takes
+the `SessionLease` of the session the bloc's repository came from, never one
+a later build holds, and makes a `SessionMessenger` that asks it. In
+`dispose` it hands the bloc and that messenger's `say` to `closeWhenSettled`.
+A save the user walked away from is still said, success or failure, in a
+SnackBar on the page they went to. It never navigates (#464), and it is
+never said once its session has ended (#694).
+
+Every bar such a screen says goes through its `SessionMessenger`, which asks
+that lease first, whether the route is mounted or gone. The shell ends a
+session in the same turn it routes away, on sign-out or a switch of user:
+`UserSessionScope.deactivate` ends the lease before it queues the teardown.
+A leaving route stays mounted through its exit transition, so a bar said
+there without asking would reach the next account. While the route is
+leaving, popped or removed rather than covered (`ModalRoute.isActiveOf`
+reads false), the screen says what it would say late, and nothing else: a
+failure too, since its banner is on a page the user has left, and it never
+navigates. By `dispose` that save has settled, so `closeWhenSettled` closes
+without a word, and nothing is said twice.
+
+The bar goes to the messenger the screen sits under, captured while it is
+mounted. Since #414 the shell's page area has its own, so replacement holds
+per messenger: a bar replaces those on its own messenger, and late outcomes
+can't pile up within it. A late outcome is said only while that messenger
+is mounted. Because the bar is then a failure's only word, it falls under
+the accepted loss above.
 
 **Fields that are not prose** — URLs, hostnames, emails, IDs, codes — must set
 `autocorrect: false` and `enableSuggestions: false`. An autocorrected server
@@ -786,6 +818,9 @@ legible body text on every surface role.
 - [ ] A rejected submit calls `rejectSubmit()`
 - [ ] Outcomes follow the surface rule above — banner if the screen stays,
       `replaceSnackBar` if it pops, and never a SnackBar inside a live region
+- [ ] A form that saves and then leaves closes its bloc through
+      `closeWhenSettled`, and says every bar through a `SessionMessenger`
+      that asks its session's lease
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)
 - [ ] Arriving outcome banners are left to reveal themselves; `reveal: false`
       only for a persistent one
