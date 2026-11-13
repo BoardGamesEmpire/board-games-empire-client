@@ -10,13 +10,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The thresholds are the window size classes' own, so a grid gains a column
 /// where the rest of the layout changes form.
 int bgeGridColumns(double width, BgeTokens tokens) {
-  if (width >= tokens.breakpointExpanded) {
-    return 4;
-  }
-  if (width >= tokens.breakpointMedium) {
-    return 3;
-  }
-  return 2;
+  return switch (BgeWindowClass.fromWidth(width, tokens)) {
+    BgeWindowClass.expanded => 4,
+    BgeWindowClass.medium => 3,
+    BgeWindowClass.compact => 2,
+  };
 }
 
 /// The grid Games and Collection lay their covers out in (#710):

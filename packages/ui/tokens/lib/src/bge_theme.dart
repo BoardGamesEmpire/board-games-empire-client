@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:ui_tokens/src/accessibility/bge_button_focus_ring.dart';
+import 'package:ui_tokens/src/accessibility/bge_navigation_focus.dart';
 import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
 import 'package:ui_tokens/src/bge_status_colors.dart';
@@ -200,6 +201,28 @@ abstract final class BgeTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: _buttonStyle(BgeButtonFocusRingPlacement.inside),
       ),
+      // #644: a focused bar destination is a fill alone, and Flutter's own
+      // focus tint stands about 1.3:1 from the bar. The unselected icon is
+      // `onSurface`, so it stands 3:1 from that fill. The rail takes both
+      // from the shell, which sets its focus fill around the rail alone: see
+      // [BgeNavigationFocus].
+      navigationBarTheme: NavigationBarThemeData(
+        overlayColor: _FocusFill(BgeNavigationFocus.barFill(scheme)),
+        iconTheme: _NavigationIcon(
+          selected: IconThemeData(color: scheme.onSecondaryContainer),
+          unselected: IconThemeData(
+            color: BgeNavigationFocus.iconColor(scheme),
+          ),
+        ),
+      ),
+      // The rail takes this in place of its default rather than merged with
+      // it, so the size the default carries is set here too.
+      navigationRailTheme: NavigationRailThemeData(
+        unselectedIconTheme: IconThemeData(
+          color: BgeNavigationFocus.iconColor(scheme),
+          size: 24,
+        ),
+      ),
       extensions: [tokens, BgeStatusColors.forScheme(scheme)],
     );
   }
@@ -226,4 +249,52 @@ class BgeThemeSet {
 
   /// High-contrast dark theme.
   final ThemeData highContrastDark;
+}
+
+/// A [WidgetStateProperty] that is [color] while focused and unset otherwise.
+///
+/// A class rather than `resolveWith`, so two themes built from one palette
+/// compare equal.
+@immutable
+class _FocusFill implements WidgetStateProperty<Color?> {
+  const _FocusFill(this.color);
+
+  final Color color;
+
+  @override
+  Color? resolve(Set<WidgetState> states) =>
+      states.contains(WidgetState.focused) ? color : null;
+
+  @override
+  bool operator ==(Object other) => other is _FocusFill && other.color == color;
+
+  @override
+  int get hashCode => color.hashCode;
+}
+
+/// A navigation bar's icon colours by state, with the value equality that
+/// `resolveWith` lacks, so two themes built from one palette compare equal.
+@immutable
+class _NavigationIcon implements WidgetStateProperty<IconThemeData?> {
+  const _NavigationIcon({required this.selected, required this.unselected});
+
+  final IconThemeData selected;
+  final IconThemeData unselected;
+
+  @override
+  IconThemeData? resolve(Set<WidgetState> states) =>
+      states.contains(WidgetState.disabled)
+      ? null
+      : states.contains(WidgetState.selected)
+      ? selected
+      : unselected;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _NavigationIcon &&
+      other.selected == selected &&
+      other.unselected == unselected;
+
+  @override
+  int get hashCode => Object.hash(selected, unselected);
 }

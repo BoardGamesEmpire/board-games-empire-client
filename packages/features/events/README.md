@@ -160,8 +160,8 @@ backend#867 is only after a detail read. The screens take hooks a
 composition may leave out: without `onOpen` a row is inert, and without
 `onCreate` there is no New event button, neither the one beside the list nor
 the one the empty overview offers under its message. The shell wires
-`onOpen` to the detail and `onCreate` to the create form. It opens the
-overview from the home drawer at `/events`, and each group at
+`onOpen` to the detail and `onCreate` to the create form. The overview is
+the Events destination, at `/events`, and each group is at
 `/events/upcoming`, `/events/planning`, `/events/past` and
 `/events/archived`.
 

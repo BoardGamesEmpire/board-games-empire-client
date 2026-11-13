@@ -41,6 +41,8 @@
 /// constructor calls in every package, this one included: 2 of
 /// `BgeInertButton`'s, 1 of `BgeOnlineOnlyLabel`'s and 1 of
 /// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
+/// `BgeMenuButton` is both of the navigation shell's menu buttons, a first
+/// page's and the rail's (#414).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -52,6 +54,9 @@
 /// here with one call site, the game quick look, because #707 placed the
 /// sheet-or-dialog launcher in this package for #709's picker to open the
 /// same way. That picker, the collection entry picker, is now its second.
+/// `BgePopupCoverObserver` is part of it: the navigation shell installs one
+/// on its nested navigator, so a pop-up opened from a page there hears of
+/// the pages it opens (#414).
 /// `BgeSearchField` came here with #715, whose Collection list was its one
 /// call site, because #516's two lists, an event's Games tab and its Offer
 /// games page, were designed with it to filter the same way as the user types.
@@ -89,6 +94,7 @@ export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_keyed_sliver_grid.dart';
 export 'src/layout/bge_keyed_sliver_list.dart';
 export 'src/layout/bge_layout_toggle.dart';
+export 'src/layout/bge_navigation_menu.dart';
 export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/layout/bge_unfolding_cover_grid.dart';

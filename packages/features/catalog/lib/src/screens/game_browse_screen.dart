@@ -19,8 +19,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The server's games, a page at a time (#42).
 ///
 /// The caller resolves the remote, the cache and the callbacks, and the
-/// screen owns its bloc, as the collection list does (#44). Reached from the
-/// home drawer; search and each game's detail are pushed from here.
+/// screen owns its bloc, as the collection list does (#44). Reached as a
+/// destination of the app's navigation (#414), or pushed from a link on
+/// another page; search and each game's detail are pushed from here.
 ///
 /// The next page loads from a button at the end of the list rather than on
 /// scroll: it is reachable by keyboard and by screen reader, and says what it

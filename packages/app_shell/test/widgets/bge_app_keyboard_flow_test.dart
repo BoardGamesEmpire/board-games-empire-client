@@ -111,6 +111,115 @@ ServerIdentity _identityWithProviders() => testServerIdentity().copyWith(
   ],
 );
 
+/// Signed-in home with every section up: a household, an upcoming event,
+/// a game of the user's own and one on the server (#767). The caller sets
+/// the window first.
+Future<void> _pumpHome(WidgetTester tester) async {
+  final repository = _MockHouseholdRepository();
+  // A household in the cache, so the list shows rows and the floating
+  // Create is the only create control.
+  when(repository.watchHouseholds).thenAnswer(
+    (_) => Stream<List<Household>>.value([
+      Household(
+        id: 'hh_1',
+        name: 'Sunday Crew',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+    ]),
+  );
+  // One upcoming event, so home builds its upcoming events section.
+  // Far enough ahead to stay upcoming, in local time so the card reads the
+  // same wherever the suite runs.
+  final start = DateTime(2099, 1, 1, 19);
+  final eventRepository = _MockEventRepository();
+  when(eventRepository.watchAttendingEventListItems).thenAnswer(
+    (_) => Stream<List<EventListItem>>.value([
+      EventListItem(
+        event: Event(
+          id: 'e1',
+          title: 'Game night',
+          createdById: 'user-host',
+          type: EventType.casualGathering,
+          reach: Reach.friends,
+          status: EventStatus.planning,
+          schedulingMode: EventSchedulingMode.fixed,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+        occurrences: [
+          EventOccurrence(
+            id: 'o1',
+            eventId: 'e1',
+            startDate: start,
+            status: OccurrenceStatus.confirmed,
+            sortOrder: 0,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ],
+      ),
+    ]),
+  );
+  // One game of the user's own, so home builds its stats card, and its
+  // "Something to play" row draws that game. Another on the server, so the
+  // "Recently added" row has one too (#767).
+  final collection = _MockGameCollectionRepository();
+  when(collection.watchCollectionListItems).thenAnswer(
+    (_) => Stream<List<GameCollectionListItem>>.value([
+      GameCollectionListItem(
+        entry: GameCollection(
+          id: 'entry-azul',
+          userId: 'u1',
+          platformGameId: 'pg-azul',
+          medium: GameMedium.physical,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+        gameId: 'azul',
+        title: 'Azul',
+        platformName: 'Board game',
+      ),
+    ]),
+  );
+  final cubit = _MockAppBootstrapCubit();
+  when(() => cubit.activeServerScope).thenReturn(
+    FakeActiveServerScope(
+      buildActiveServer(
+        FakeAuthRepository(initialSession: testAuthResponse()),
+        householdRepository: repository,
+        eventRepository: eventRepository,
+        gameCollectionRepository: collection,
+        gamesRemoteDataSource: _OneGameRemote(
+          Game(
+            id: 'cascadia',
+            title: 'Cascadia',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ),
+        // The create route's guard: without a sender, the list offers no
+        // create (#121).
+        syncOperationSender: _MockSyncOperationSender(),
+      ),
+    ),
+  );
+  whenListen(
+    cubit,
+    const Stream<AppBootstrapState>.empty(),
+    initialState: const AppBootstrapReady(),
+  );
+
+  await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+  await tester.pumpAndSettle();
+  expect(find.byType(HomeScreen), findsOneWidget);
+
+  // Every section is up, so the walk crosses all four (#767).
+  expect(find.byKey(StatsCard.ownedKey), findsOneWidget);
+  expect(find.byKey(NewestGamesSection.coverKey('cascadia')), findsOneWidget);
+  expect(find.byKey(SomethingToPlaySection.coverKey('azul')), findsOneWidget);
+}
+
 /// Keyboard flows through the real app root (#50): Tab follows the order a
 /// screen reads in, Shift+Tab walks it back, nothing traps focus, and focus
 /// goes back to the control that opened a route once the route closes.
@@ -217,116 +326,20 @@ void main() {
   testWidgets('home → create household: Tab follows reading order with no '
       'trap on each, Escape closes the drawer back to its opener, and back '
       'returns focus to the opener', (tester) async {
-    final repository = _MockHouseholdRepository();
-    // A household in the cache, so the list shows rows and the floating
-    // Create is the only create control.
-    when(repository.watchHouseholds).thenAnswer(
-      (_) => Stream<List<Household>>.value([
-        Household(
-          id: 'hh_1',
-          name: 'Sunday Crew',
-          createdAt: DateTime.utc(2026),
-          updatedAt: DateTime.utc(2026),
-        ),
-      ]),
-    );
-    // One upcoming event, so home builds its upcoming events section.
-    // Far enough ahead to stay upcoming, in local time so the card reads the
-    // same wherever the suite runs.
-    final start = DateTime(2099, 1, 1, 19);
-    final eventRepository = _MockEventRepository();
-    when(eventRepository.watchAttendingEventListItems).thenAnswer(
-      (_) => Stream<List<EventListItem>>.value([
-        EventListItem(
-          event: Event(
-            id: 'e1',
-            title: 'Game night',
-            createdById: 'user-host',
-            type: EventType.casualGathering,
-            reach: Reach.friends,
-            status: EventStatus.planning,
-            schedulingMode: EventSchedulingMode.fixed,
-            createdAt: DateTime.utc(2026),
-            updatedAt: DateTime.utc(2026),
-          ),
-          occurrences: [
-            EventOccurrence(
-              id: 'o1',
-              eventId: 'e1',
-              startDate: start,
-              status: OccurrenceStatus.confirmed,
-              sortOrder: 0,
-              createdAt: DateTime.utc(2026),
-              updatedAt: DateTime.utc(2026),
-            ),
-          ],
-        ),
-      ]),
-    );
-    // One game of the user's own, so home builds its stats card, and its
-    // "Something to play" row draws that game. Another on the server, so the
-    // "Recently added" row has one too (#767).
-    final collection = _MockGameCollectionRepository();
-    when(collection.watchCollectionListItems).thenAnswer(
-      (_) => Stream<List<GameCollectionListItem>>.value([
-        GameCollectionListItem(
-          entry: GameCollection(
-            id: 'entry-azul',
-            userId: 'u1',
-            platformGameId: 'pg-azul',
-            medium: GameMedium.physical,
-            createdAt: DateTime.utc(2026),
-            updatedAt: DateTime.utc(2026),
-          ),
-          gameId: 'azul',
-          title: 'Azul',
-          platformName: 'Board game',
-        ),
-      ]),
-    );
-    final cubit = _MockAppBootstrapCubit();
-    when(() => cubit.activeServerScope).thenReturn(
-      FakeActiveServerScope(
-        buildActiveServer(
-          FakeAuthRepository(initialSession: testAuthResponse()),
-          householdRepository: repository,
-          eventRepository: eventRepository,
-          gameCollectionRepository: collection,
-          gamesRemoteDataSource: _OneGameRemote(
-            Game(
-              id: 'cascadia',
-              title: 'Cascadia',
-              createdAt: DateTime.utc(2026),
-              updatedAt: DateTime.utc(2026),
-            ),
-          ),
-          // The create route's guard: without a sender, the list offers no
-          // create (#121).
-          syncOperationSender: _MockSyncOperationSender(),
-        ),
-      ),
-    );
-    whenListen(
-      cubit,
-      const Stream<AppBootstrapState>.empty(),
-      initialState: const AppBootstrapReady(),
-    );
-
-    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
-    await tester.pumpAndSettle();
-    expect(find.byType(HomeScreen), findsOneWidget);
-
-    // Every section is up, so the walk crosses all four (#767).
-    expect(find.byKey(StatsCard.ownedKey), findsOneWidget);
-    expect(find.byKey(NewestGamesSection.coverKey('cascadia')), findsOneWidget);
-    expect(find.byKey(SomethingToPlaySection.coverKey('azul')), findsOneWidget);
+    // A phone's window: home carries the menu button in its app bar, and the
+    // destinations go on the bar along the bottom (#414).
+    useViewSize(tester, const Size(400, 800));
+    await _pumpHome(tester);
 
     // The menu button, then the sections top to bottom. Upcoming events: its
     // See all link in the heading row, then the card, which reads its title
     // and when. The stats card has no stop: its heading and count are text,
     // and its households link shows only to someone in no household. Each row
     // of games: the link or button in its heading row, then its cover. One
-    // cover fits, so neither row shows its previous and next buttons.
+    // cover fits, so neither row shows its previous and next buttons. Then
+    // the bar's destinations (#414): Collection, Games and Events are there
+    // because the collection repository, the games remote and the event
+    // repository are registered. Material reads each with "Tab n of m".
     await expectTraversable(
       tester,
       expectedOrder: [
@@ -337,44 +350,39 @@ void main() {
         'Cascadia',
         'Reshuffle',
         'Azul',
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
       ],
     );
 
-    // The drawer, from the menu button. Its destinations (Collection, Games
-    // and Events are there because the collection repository, the games
-    // remote and the event repository are registered), then its action under
-    // the divider. Material reads each destination with "Tab n of m"
+    // The drawer, from the menu button: its entries, then its action under
+    // the divider. The bar carries the destinations, so the drawer lists
+    // none (#414), and each entry is a button, read without "Tab n of m"
     // (#763).
     final menu = find.byIcon(Icons.menu);
     final menuNode = Focus.of(tester.element(menu));
     await activateByKeyboard(tester, menu);
-    expect(find.byKey(HomeScreen.drawerKey), findsOneWidget);
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
     await expectTraversable(
       tester,
-      expectedOrder: [
-        'Collection\nTab 1 of 6',
-        'Games\nTab 2 of 6',
-        'Events\nTab 3 of 6',
-        'Households\nTab 4 of 6',
-        'Send feedback\nTab 5 of 6',
-        'Settings\nTab 6 of 6',
-        'Sign Out',
-      ],
+      expectedOrder: ['Households', 'Send feedback', 'Settings', 'Sign Out'],
     );
 
     // Escape closes it, and focus goes back to the menu button.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(HomeScreen.drawerKey), findsNothing);
+    expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
     expect(FocusManager.instance.primaryFocus, same(menuNode));
 
     // Open again, then the households entry.
     await activateByKeyboard(tester, menu);
-    expect(find.byKey(HomeScreen.drawerKey), findsOneWidget);
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
     await activateByKeyboard(
       tester,
       find.descendant(
-        of: find.byKey(HomeScreen.entryKey('households')),
+        of: find.byKey(MenuDrawer.entryKey('households')),
         matching: find.text('Households'),
       ),
     );
@@ -417,5 +425,46 @@ void main() {
     );
     expect(find.byType(CreateHouseholdScreen), findsNothing);
     expect(find.byType(HouseholdListScreen), findsOneWidget);
+  });
+
+  testWidgets('home at a medium window: Tab meets the page, then the rail in '
+      'the order it is drawn, with no trap', (tester) async {
+    // The default 800x600 window: a rail at the start, its menu button at
+    // the top, and the page without one (#414).
+    await _pumpHome(tester);
+    expect(find.byKey(NavigationShell.railKey), findsOneWidget);
+    expect(find.byKey(NavigationShell.barKey), findsNothing);
+
+    // The page's content first, top to bottom, then the rail as it is
+    // drawn: the menu button, then Home to Events. At a phone's width the
+    // bar comes after the content the same way, but the menu button there
+    // is the page's own, in its app bar, and leads (see the compact walk
+    // above). The rail is a traversal group of its own, so the walk takes
+    // its stops together and not scattered among the page's. Material reads
+    // each destination with "Tab n of m".
+    await expectTraversable(
+      tester,
+      expectedOrder: [
+        'See all your events',
+        'Game night\nThu, Jan 1, 2099 · 7:00 PM',
+        'See all recently added games',
+        'Cascadia',
+        'Reshuffle',
+        'Azul',
+        'Open navigation menu',
+        'Home\nTab 1 of 4',
+        'Collection\nTab 2 of 4',
+        'Games\nTab 3 of 4',
+        'Events\nTab 4 of 4',
+      ],
+    );
+
+    // The drawer from the rail's menu button lists entries only.
+    await activateByKeyboard(tester, find.byIcon(Icons.menu));
+    expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+    await expectTraversable(
+      tester,
+      expectedOrder: ['Households', 'Send feedback', 'Settings', 'Sign Out'],
+    );
   });
 }

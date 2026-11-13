@@ -503,6 +503,40 @@ void main() {
     expect(find.text('from 4'), findsOneWidget);
   });
 
+  // #414: a page under the navigation shell is on a nested navigator. The
+  // sheet goes on the root one, so its barrier covers the shell's bar too.
+  testWidgets('opened from a nested navigator, it goes on the root one, and '
+      "says why a range was dropped on the opener's messenger", (tester) async {
+    await openFilterSheet(tester, nested: true);
+
+    final sheet = tester.element(find.byType(BottomSheet));
+    final opener = tester.element(find.byKey(openSheetKey));
+    expect(
+      Navigator.of(sheet),
+      same(Navigator.of(opener, rootNavigator: true)),
+    );
+    expect(Navigator.of(sheet), isNot(same(Navigator.of(opener))));
+
+    final from = find.byKey(
+      GameFilterKeys.rangeField(CollectionFacet.playerCount, from: true),
+    );
+    await tester.ensureVisible(from);
+    await tester.pumpAndSettle();
+    await tester.enterText(from, '0');
+    await tester.pump();
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Player count not applied. Must be at least 1.'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('at 320x640 and text scale 2.0, the sheet with every option on '
       'has no overflow, and each switch row is at least 48dp tall', (
     tester,

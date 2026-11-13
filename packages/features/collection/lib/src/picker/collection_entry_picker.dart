@@ -24,9 +24,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// picker can go while it is open, as a stack does when a sync leaves its
 /// game with one entry, and a push from a context that has gone asserts.
 ///
-/// It doesn't close the picker either. The page pushed over it removes it
-/// once the page has arrived ([BgeRemoveWhenCovered]), so back from that page
-/// lands where the picker was opened, with no picker.
+/// It doesn't close the picker either. The page it opens removes it once
+/// the page has arrived ([BgeRemoveWhenCovered]), so back from that page
+/// lands where the picker was opened, with no picker. Under the app's
+/// navigation shell the page arrives beneath the picker, which goes once it
+/// has (see `showBgePopup`).
 Future<void> showCollectionEntryPicker(
   BuildContext context, {
   required List<GameCollectionListItem> items,

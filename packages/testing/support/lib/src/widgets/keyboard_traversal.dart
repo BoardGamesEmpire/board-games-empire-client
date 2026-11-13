@@ -23,6 +23,21 @@ Future<List<String>> tabOrder(
   bool reverse = false,
 }) async => (await _walk(tester, maxSteps, reverse)).names;
 
+/// [tabOrder]'s walk, with each stop's [FocusNode] beside its name, for a
+/// test that keeps only the stops in one part of the screen, chosen by
+/// where the node is rather than by what it is called.
+Future<List<({String name, FocusNode node})>> tabStops(
+  WidgetTester tester, {
+  int maxSteps = 60,
+  bool reverse = false,
+}) async {
+  final walk = await _walk(tester, maxSteps, reverse);
+  return [
+    for (var i = 0; i < walk.nodes.length; i++)
+      (name: walk.names[i], node: walk.nodes[i]),
+  ];
+}
+
 /// One Tab walk: the stops by name, the same stops by `FocusNode`, whether
 /// focus wrapped back to the first stop, the node that repeated, if any, and
 /// whether focus left the page's controls instead.
@@ -77,13 +92,20 @@ Future<_Walk> _walk(WidgetTester tester, int maxSteps, bool reverse) async {
 /// Fails if a stop repeats before the walk wraps (a trap), if focus leaves the
 /// page's controls rather than wrapping (to nothing, or to a scope), if
 /// [maxSteps] is hit without wrapping, or if `tabOrder(reverse: true)` is not
-/// `tabOrder()` reversed (#50). With [expectedOrder], the forward walk must
-/// equal it.
+/// `tabOrder()` reversed, starting at the page's last stop (#50). With
+/// [expectedOrder], the forward walk must equal it.
 ///
 /// Both walks start from the page with no control focused, so the first Tab
 /// lands on the page's first stop and the first Shift+Tab on its last. A
 /// control that had focus is unfocused first; a route's scope that had it
-/// keeps it.
+/// keeps it. The page's stops are those inside the scope the reverse walk
+/// starts from.
+///
+/// Where the walk runs on past the page, through stops outside its route
+/// such as a navigation bar's or rail's (#414), the two walks go round the
+/// same circle from different places on it. So the reverse walk is held to
+/// the forward one reversed, read from the page's last stop: a walk that
+/// goes round the circle from any other stop fails.
 ///
 /// A repeat is the same `FocusNode` coming round twice, not the same label:
 /// several rows may each carry a "Delete" button.
@@ -102,13 +124,28 @@ Future<void> expectTraversable(
   // Held to the same terms as the forward walk. Its names alone can match
   // while it is stuck on, or leaves from, the first stop (#50).
   await _focusPage(tester);
+  final page = FocusManager.instance.primaryFocus;
   final backward = await _walk(tester, maxSteps, true);
   _expectWrapped(backward, maxSteps, 'Shift+Tab');
+  // The page's last stop, where Shift+Tab enters: the last forward stop
+  // inside the scope the reverse walk starts from. With every stop in the
+  // page it is the forward walk's last, and nothing is rotated.
+  final pageLast = forward.nodes.lastIndexWhere(
+    (node) => node.ancestors.contains(page),
+  );
+  final last = pageLast < 0 ? forward.nodes.length - 1 : pageLast;
+  final from = forward.nodes.length - 1 - last;
+  final reversed = forward.names.reversed.toList();
+  const reason =
+      "Shift+Tab must enter at the page's last stop and walk Tab order "
+      'backwards';
   expect(
     backward.names,
-    forward.names.reversed.toList(),
-    reason: 'Shift+Tab must walk Tab order backwards',
+    [...reversed.sublist(from), ...reversed.sublist(0, from)],
+    reason: reason,
   );
+  // By node too: several rows may each carry a "Delete" button.
+  expect(backward.nodes.first, same(forward.nodes[last]), reason: reason);
 }
 
 /// Fails unless [walk], made by pressing [keys], wrapped back to its first

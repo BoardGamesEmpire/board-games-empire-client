@@ -157,6 +157,26 @@ void main() {
     return colourAt;
   }
 
+  /// The points of [rect], one per pixel, each at the pixel's centre.
+  Iterable<Offset> pixelsOf(Rect rect) sync* {
+    for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
+      for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
+        yield Offset(x + 0.5, y + 0.5);
+      }
+    }
+  }
+
+  /// The most any pixel of [rect] stands out between [a] and [b], as a
+  /// contrast ratio: 1 where the two draw it alike.
+  double strongestContrast(
+    Rect rect,
+    Color Function(Offset) a,
+    Color Function(Offset) b,
+  ) =>
+      pixelsOf(rect)
+          .map((p) => Wcag.contrastRatio(a(p), b(p)))
+          .fold<double>(1, (most, ratio) => ratio > most ? ratio : most);
+
   // Within a little of the ring's colour: the ring's edge is a curve, so a
   // pixel on it can be a shade off at the tangent.
   final isRingColour = predicate<Color>(
@@ -733,6 +753,63 @@ void main() {
     expect(shown(tester), hasLength(1), reason: 'after Space');
   });
 
+  // The navigation shell's bar (#414) shows focus as a fill alone, so the fill
+  // must stand apart from rest by 3:1 (#644), and the icon on it from the
+  // fill (WCAG 1.4.11). The rail's fill is the shell's; its test is there.
+  group("a navigation bar's focused destination differs from rest by 3:1", () {
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets(name, (tester) async {
+        await host(tester, [
+          NavigationBar(
+            key: goKey,
+            onDestinationSelected: (_) {},
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+              NavigationDestination(icon: Icon(Icons.search), label: 'Entry'),
+            ],
+          ),
+        ], themeData: build());
+        // The second destination: the first is selected, and its indicator
+        // would mask the focus fill.
+        final icon = tester.getRect(find.byIcon(Icons.search));
+        // Round the icon, where the indicator's pill shows the fill.
+        final area = icon.inflate(8);
+        final atRest = await capture(tester);
+
+        await tab(tester);
+        await tab(tester);
+        await tester.pumpAndSettle();
+        expect(
+          Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+          isTrue,
+        );
+        final focused = await capture(tester);
+
+        // Anywhere the focus shows: a fill, a ring, an edge.
+        expect(
+          strongestContrast(area, atRest, focused),
+          greaterThanOrEqualTo(3.0),
+          reason: 'the fill',
+        );
+
+        // The icon against the fill beside it.
+        final fill = focused(Offset(icon.left - 4, icon.center.dy));
+        expect(
+          strongestContrast(icon, focused, (_) => fill),
+          greaterThanOrEqualTo(3.0),
+          reason: 'the icon',
+        );
+      });
+    }
+  });
+
   // What #50's drafted findings want, skipped until each is fixed, so the gap
   // stays visible in the suite. Each is written against what a user sees
   // rather than against today's ring, so a fix of any shape passes it. Each
@@ -744,15 +821,6 @@ void main() {
         (c.r - target.r).abs() < 0.05 &&
         (c.g - target.g).abs() < 0.05 &&
         (c.b - target.b).abs() < 0.05;
-
-    /// The points of [rect], one per pixel.
-    Iterable<Offset> pixelsOf(Rect rect) sync* {
-      for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
-        for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
-          yield Offset(x + 0.5, y + 0.5);
-        }
-      }
-    }
 
     final schemes = {
       'light': BgeTheme.light,
@@ -784,12 +852,10 @@ void main() {
               final focused = await capture(tester);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
-              var strongest = 1.0;
-              for (final point in pixelsOf(rect)) {
-                final ratio = Wcag.contrastRatio(atRest(point), focused(point));
-                if (ratio > strongest) strongest = ratio;
-              }
-              expect(strongest, greaterThanOrEqualTo(3.0));
+              expect(
+                strongestContrast(rect, atRest, focused),
+                greaterThanOrEqualTo(3.0),
+              );
             },
           );
         }
@@ -990,10 +1056,10 @@ void main() {
               final focused = await capture(tester);
 
               // Anywhere the focus shows: a fill, a ring, an edge.
-              final strongest = pixelsOf(rect)
-                  .map((p) => Wcag.contrastRatio(atRest(p), focused(p)))
-                  .fold<double>(1, (a, b) => a > b ? a : b);
-              expect(strongest, greaterThanOrEqualTo(3.0));
+              expect(
+                strongestContrast(rect, atRest, focused),
+                greaterThanOrEqualTo(3.0),
+              );
             });
           }
         }

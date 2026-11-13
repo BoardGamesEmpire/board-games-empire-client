@@ -78,7 +78,7 @@
   },
   "homeMenuAdmin": "Admin",
   "@homeMenuAdmin": {
-    "description": "Home drawer entry that opens the admin dashboard (#684), which lists the server administration sections, such as data gateways and households. Shown only to users the server lets read everything in at least one of those sections."
+    "description": "Navigation menu entry that opens the admin dashboard (#684), which lists the server administration sections, such as data gateways and households. Shown only to users the server lets read everything in at least one of those sections."
   },
   "adminSectionDataGatewaysSummary": "Where the server finds its games",
   "@adminSectionDataGatewaysSummary": {

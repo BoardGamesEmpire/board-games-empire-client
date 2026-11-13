@@ -73,6 +73,8 @@ Future<CollectionSync?> showAddToCollectionSheet(
   try {
     await showModalBottomSheet<void>(
       context: context,
+      // Over the navigation shell's bar or rail too, not only the page (#414).
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,

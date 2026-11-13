@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/navigation/shell_modal_guard.dart';
 import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
 import 'package:app_shell/src/screens/not_yet_available_screen.dart';
 import 'package:app_shell/src/screens/route_not_found_screen.dart';
@@ -11,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart' show BgePopupCoverObserver;
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -388,12 +390,13 @@ typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 /// feedback wiring), in which case the route falls back to
 /// [NotYetAvailableScreen].
 ///
-/// The route sits **outside** the auth [ShellRoute]: the flow needs no
-/// `AuthBloc` — submission goes through the device-global service, which
-/// owns the send-or-queue decision. Reachability is still post-auth by
-/// design (multi-server: a report must be attributable to a target
-/// server): the redirect table only admits non-bootstrap locations once
-/// [AppBootstrapReady].
+/// The route sits inside the navigation shell (#414), itself inside the auth
+/// [ShellRoute], so `AuthBloc` and the unverified-session banner reach it
+/// (#145). The flow doesn't read the bloc: submission goes through the
+/// device-global service, which owns the send-or-queue decision.
+/// Reachability is post-auth by design (multi-server: a report must be
+/// attributable to a target server): the redirect table only admits
+/// non-bootstrap locations once [AppBootstrapReady].
 typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the settings surface (#120) for the [AppRoutes.settings] route.
@@ -403,8 +406,8 @@ typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 /// unavailable), in which case the route falls back to
 /// [NotYetAvailableScreen].
 ///
-/// Like feedback, the route sits **outside** the auth [ShellRoute]
-/// (settings needs no `AuthBloc`) and is reachable only once
+/// Like feedback, the route sits inside the navigation shell (#414) and so
+/// inside the auth [ShellRoute] (#145), and is reachable only once
 /// [AppBootstrapReady] admits non-bootstrap locations. `settings` is not
 /// in [AppRoutes.bootstrapLocations], so a ready app is not bounced away
 /// from it.
@@ -418,11 +421,12 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// to [NotYetAvailableScreen]. Both platforms wire both halves in a real
 /// session.
 ///
-/// The route sits **outside** the auth [ShellRoute]: the screen needs no
-/// `AuthBloc`, only the active server's scoped container. Reachability is
-/// still post-auth — the redirect table only admits non-bootstrap
-/// locations once [AppBootstrapReady] — and it is pushed from the household
-/// list's FAB (#269) rather than deep-linked.
+/// The route sits inside the navigation shell (#414) and so inside the auth
+/// [ShellRoute] (#145). The screen reads the active server's scoped
+/// container, not the `AuthBloc`. Reachability is post-auth — the redirect
+/// table only admits non-bootstrap locations once [AppBootstrapReady] — and
+/// it is pushed from the household list's FAB (#269) rather than
+/// deep-linked.
 typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the household list (#269) for the [AppRoutes.household] route.
@@ -437,8 +441,8 @@ typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 /// no way to send (#269). Where the `SyncOperationSender` is missing the
 /// list still renders — it simply offers no create affordance.
 ///
-/// Sits outside the auth [ShellRoute] for the same reason the create route
-/// does: it needs the active server's scoped container, not an `AuthBloc`.
+/// Sits inside the navigation shell (#414), like the create route; it reads
+/// the active server's scoped container, not the `AuthBloc`.
 typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds one household's detail screen (#270) for the
@@ -519,8 +523,8 @@ typedef EditHouseholdScreenBuilder = Widget? Function(
 /// Guarded on the repository alone, like the household list: the list reads
 /// the local cache, and a missing hydrate costs it only the retry.
 ///
-/// Sits outside the auth [ShellRoute] for the household list's reason: it
-/// needs the active server's scoped container, not an `AuthBloc`.
+/// Sits inside the navigation shell (#414), like the household list; it
+/// reads the active server's scoped container, not the `AuthBloc`.
 typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds one collection entry's detail (#46) for the
@@ -674,8 +678,8 @@ typedef EventOfferGamesScreenBuilder = Widget? Function(
 /// without a container; no active user session), in which case the route
 /// falls back to [NotYetAvailableScreen].
 ///
-/// Outside the auth [ShellRoute] for the collection list's reason: it needs
-/// the active server's scoped container, not an `AuthBloc`. Pushed from the
+/// Inside the navigation shell (#414), like the collection list; it reads
+/// the active server's scoped container, not the `AuthBloc`. Pushed from the
 /// home screen's notice.
 typedef StuckChangesScreenBuilder = Widget? Function(BuildContext context);
 
@@ -778,6 +782,7 @@ GoRouter buildAppRouter({
   AuthScreenBuilder? authBuilder,
   HomeScreenBuilder? homeBuilder,
   AuthScopeBuilder? authScopeBuilder,
+  NavigationShellBuilder? navigationShellBuilder,
   FeedbackScreenBuilder? feedbackBuilder,
   SettingsScreenBuilder? settingsBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
@@ -809,8 +814,12 @@ GoRouter buildAppRouter({
   AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
   ServerSettingsScreenBuilder? serverSettingsBuilder,
 }) {
+  // #414: a modal on the root navigator leaves with the navigation shell
+  // page it was opened over. One per router.
+  final modalGuard = ShellModalGuard();
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    observers: [modalGuard.rootObserver],
     // go_router removes its listener on dispose but never disposes the
     // listenable itself. It is therefore a required parameter: the caller
     // owns it and must dispose it (after the router). There is deliberately
@@ -863,16 +872,19 @@ GoRouter buildAppRouter({
               ),
         ),
       ),
-      // #37: the auth and home routes share ONE AuthBloc, provided by
-      // [authScopeBuilder] inside the router subtree — go_router builds
-      // route widgets under its own Navigator, which does not inherit
-      // providers placed above the router's widget, so the provider must
-      // live here (a ShellRoute), not app-level. The shell's scope builder
-      // creates the keyed provider + drives the bootstrap gate from the
-      // bloc's terminal auth states; a single instance survives the
-      // auth → home transition. When no scope builder is supplied (tests
-      // without a scope) the child renders bare and the route builders fall
-      // back to their placeholders.
+      // #37: the auth route and the navigation shell (#414) share ONE AuthBloc,
+      // provided by [authScopeBuilder] inside the router subtree — go_router
+      // builds route widgets under its own Navigator, which does not inherit
+      // providers placed above the router's widget, so the provider must live
+      // here (a ShellRoute), not app-level. The shell's scope builder creates
+      // the keyed provider + drives the bootstrap gate from the bloc's terminal
+      // auth states; a single instance survives the auth → home transition.
+      // When no scope builder is supplied (tests without a scope) the child
+      // renders bare and the route builders fall back to their placeholders.
+      //
+      // #414: every signed-in route sits in the navigation shell nested here,
+      // so the auth scope (and #145's unverified-session banner) reaches all of
+      // them. `/auth` stays beside it, outside the shell.
       ShellRoute(
         builder: (context, state, child) =>
             authScopeBuilder?.call(context, child) ?? child,
@@ -885,469 +897,551 @@ GoRouter buildAppRouter({
                   const ShellPlaceholderScreen(kind: ShellPlaceholderKind.auth),
             ),
           ),
-          GoRoute(
-            path: AppRoutes.home,
-            // Home is only reached once [AppBootstrapReady] (post-auth,
-            // active server present), so homeBuilder returns null only in a
-            // transient/defensive pre-active state. Falls back to
-            // [NotYetAvailableScreen]: static (so widget tests settle —
-            // a spinner would hang pumpAndSettle) and consistent with the
-            // other optional-builder routes (feedback / settings /
-            // householdCreate). The home placeholder is retired (#129).
-            pageBuilder: (context, state) => _noTransitionPage(
-              state,
-              homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
-            ),
-          ),
-        ],
-      ),
-      // #107: user-initiated feedback. Outside the auth ShellRoute (no
-      // AuthBloc needed — see [FeedbackScreenBuilder]); reachable only
-      // when [AppBootstrapReady] admits non-bootstrap locations.
-      GoRoute(
-        path: AppRoutes.feedback,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          feedbackBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-      ),
-      // #120: user settings. Outside the auth ShellRoute (no AuthBloc
-      // needed — see [SettingsScreenBuilder]); reachable only when
-      // [AppBootstrapReady] admits non-bootstrap locations, and not
-      // bounced (settings is not a bootstrap location).
-      GoRoute(
-        path: AppRoutes.settings,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-      ),
-      // ── The household routes: why they nest, and why their order matters ──
-      //
-      // `/household/create` (#129) and `/household/:householdId` (#270) are
-      // children of `/household` (#269), not its siblings (#308). A `go` to
-      // either therefore builds the list beneath it, so there is always
-      // something to go back to — which is what lets the detail screen's
-      // way back be a plain pop. A `push` still adds only the leaf page, so
-      // the drawer path keeps home beneath the list.
-      //
-      // Order among the children is the part that cannot change. `create`
-      // is a perfectly legal `:householdId`, so `/household/create` matches
-      // BOTH children. go_router takes the first declared match, so create
-      // must come first or the create flow silently becomes a detail screen
-      // for a household nobody can have.
-      //
-      // The detail screen also answers a literal `create` id with its
-      // not-found state (#270 D6). That is the belt to this ordering's
-      // braces — cheap, and it keeps the failure legible if these are ever
-      // reordered.
-      GoRoute(
-        path: AppRoutes.household,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          householdListBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-        routes: [
-          // #129: create-household flow. Outside the auth ShellRoute (needs
-          // no AuthBloc — only the active server's container; see
-          // [CreateHouseholdScreenBuilder]). Reachable only once
-          // [AppBootstrapReady] admits non-bootstrap locations; pushed from
-          // the list screen's FAB (#269).
+          // #414: the navigation shell. The location it hands the builder
+          // is this route's own `state.uri.path`: it follows a push, a go,
+          // a pop and browser Back. `state.matchedLocation` goes stale
+          // (it stays the declarative base after a push) and
+          // `routeInformationProvider.value` holds the pre-pop URL during
+          // build, so neither will do. Its own page is left as go_router
+          // builds it, like the auth [ShellRoute]'s (see [_materialPage]).
           //
-          // MUST stay declared above the detail route — see the block above.
-          GoRoute(
-            path: AppRoutes._householdCreateSegment,
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              createHouseholdBuilder?.call(context) ??
-                  const NotYetAvailableScreen(),
-            ),
-          ),
-          // #270: one household, read-only. Pushed from a list row, and
-          // where the reserved invite deep link eventually lands — which is
-          // why the id-addressed route exists now rather than later.
-          GoRoute(
-            path: AppRoutes._householdDetailSegment,
-            pageBuilder: (context, state) {
-              final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
-              return _materialPage(
-                state,
-                householdDetailBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-            // #455: the household's invites, its send form (#569) and its
-            // edit form (#476), side by side and nested for the reason the
-            // household children are (#308): a `go` to any of them builds
-            // the household beneath it, so leaving is a plain pop. A
-            // member's send is the exception, which leaves for the Sent
-            // screen above the household.
-            routes: [
-              GoRoute(
-                path: AppRoutes._householdInvitesSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    householdInvitesBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-              // #569: the send form sits beside the invites rather than
-              // under them. A member may send but can't read the invites,
-              // so a `go` here builds the household beneath the form, not
-              // a list that would answer them 403. The invites' own button
-              // pushes it, which keeps the invites beneath.
-              GoRoute(
-                path: AppRoutes._householdInviteSendSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    sendHouseholdInviteBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-              // #476: the household's edit form. A save leaves by a plain
-              // pop.
-              GoRoute(
-                path: AppRoutes._householdEditSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    editHouseholdBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-      // #455: the invites sent to the current user, from the home drawer.
-      GoRoute(
-        path: AppRoutes.invites,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-        routes: [
-          // #487: the invites the current user sent, pushed from the inbox.
-          GoRoute(
-            path: 'sent',
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              sentInvitesBuilder?.call(context) ??
-                  const NotYetAvailableScreen(),
-            ),
-          ),
-        ],
-      ),
-      // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
-      // needed; see [CollectionListScreenBuilder]), pushed from the home
-      // drawer, and reachable only once [AppBootstrapReady] admits
-      // non-bootstrap locations. A top-level destination is #414's.
-      // #46: one entry is a child, so a location straight to it builds the
-      // list beneath, and the entry's pop after a removal lands on the list.
-      GoRoute(
-        path: AppRoutes.collection,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          collectionListBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-        routes: [
-          GoRoute(
-            path: ':${AppRoutes.collectionEntryIdParam}',
-            pageBuilder: (context, state) {
-              final id =
-                  state.pathParameters[AppRoutes.collectionEntryIdParam] ?? '';
-              return _materialPage(
-                state,
-                collectionEntryBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-          ),
-        ],
-      ),
-      // #42: browse, search and one game. Outside the auth ShellRoute, like
-      // the collection list, and pushed from the home drawer. Search and the
-      // detail are children of browse, as the household children are of
-      // their list (#308), so a `go` straight to either builds browse
-      // beneath it.
-      //
-      // Search MUST stay declared above the detail: `search` is a legal
-      // `:gameId`, and go_router takes the first declared match.
-      GoRoute(
-        path: AppRoutes.games,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          gameBrowseBuilder?.call(
-                context,
-                GameSort.fromWire(
-                      state.uri.queryParameters[AppRoutes._gamesSortParam],
-                    ) ??
-                    GameSort.title,
-              ) ??
-              const NotYetAvailableScreen(),
-        ),
-        routes: [
-          GoRoute(
-            path: AppRoutes._gameSearchSegment,
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              gameSearchBuilder?.call(context) ?? const NotYetAvailableScreen(),
-            ),
-          ),
-          GoRoute(
-            path: AppRoutes._gameDetailSegment,
-            pageBuilder: (context, state) {
-              final id = state.pathParameters[AppRoutes.gameIdParam] ?? '';
-              return _materialPage(
-                state,
-                gameDetailBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-          ),
-        ],
-      ),
-      // #497: the events overview and a page per group. Outside the auth
-      // ShellRoute, like the collection list, and pushed from the home
-      // drawer. The group pages are children of the overview, as the
-      // household children are of their list (#308), so a `go` straight to
-      // one builds the overview beneath it.
-      //
-      // #499: the create form is a child of the overview too, beside the
-      // group pages, so a `go` straight to it builds the overview beneath it,
-      // which back from the event that replaces the form returns to.
-      //
-      // #498: one event is a child of the overview too, so a `go` straight to
-      // it builds the overview beneath it. It MUST be declared after the
-      // group pages and the create form: `upcoming` is a legal `:eventId`,
-      // and so is `create`, and go_router takes the first declared match, as
-      // with game search and the game detail.
-      GoRoute(
-        path: AppRoutes.events,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          eventOverviewBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-        routes: [
-          for (final segment in AppRoutes.eventGroupSegments)
-            GoRoute(
-              path: segment,
-              pageBuilder: (context, state) => _materialPage(
-                state,
-                eventGroupBuilder?.call(context, segment) ??
-                    const NotYetAvailableScreen(),
-              ),
-            ),
-          GoRoute(
-            path: AppRoutes._eventCreateSegment,
-            pageBuilder: (context, state) {
-              final query = state.uri.queryParameters;
-              final household = query[AppRoutes.eventCreateHouseholdParam];
-              // An empty value names no household, as an absent one does.
-              final householdId = household == null || household.isEmpty
-                  ? null
-                  : household;
-              return _materialPage(
-                state,
-                eventCreateBuilder?.call(context, householdId) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-          ),
-          GoRoute(
-            path: AppRoutes._eventDetailSegment,
-            pageBuilder: (context, state) {
-              final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
-              return _materialPage(
-                state,
-                eventDetailBuilder?.call(context, id) ??
-                    const NotYetAvailableScreen(),
-              );
-            },
-            // #507: who answered the event's poll, nested for the reason
-            // the household children are (#308): a `go` straight to it
-            // builds the event beneath it, so back is a plain pop to there.
-            //
-            // #510: the Add people page, nested the same way. It is built
-            // only from what the detail pushed it with, so a deep link lands
-            // on the detail instead (see [EventAddAttendeeScreenBuilder]).
-            //
-            // #516: the Offer games page, nested and built as Add people's
-            // is (see [EventOfferGamesScreenBuilder]).
-            routes: [
-              GoRoute(
-                path: AppRoutes._eventAvailabilitySegment,
-                pageBuilder: (context, state) {
-                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    eventAvailabilityBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-              GoRoute(
-                path: AppRoutes._eventAddAttendeeSegment,
-                redirect: (context, state) => state.extra == null
-                    ? AppRoutes.eventDetailOf(
-                        state.pathParameters[AppRoutes.eventIdParam] ?? '',
-                      )
-                    : null,
-                pageBuilder: (context, state) {
-                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
-                  final args = state.extra;
-                  // The page's own history entry, restored once the page
-                  // has closed, which the redirect never sees.
-                  if (args == null) {
-                    return _passThroughPage(state, _LeaveForEvent(eventId: id));
-                  }
-                  return _materialPage(
-                    state,
-                    eventAddAttendeeBuilder?.call(context, id, args) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-              GoRoute(
-                path: AppRoutes._eventOfferGamesSegment,
-                redirect: (context, state) => state.extra == null
-                    ? AppRoutes.eventDetailOf(
-                        state.pathParameters[AppRoutes.eventIdParam] ?? '',
-                      )
-                    : null,
-                pageBuilder: (context, state) {
-                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
-                  final args = state.extra;
-                  // The page's own history entry, restored once the page
-                  // has closed, which the redirect never sees.
-                  if (args == null) {
-                    return _passThroughPage(state, _LeaveForEvent(eventId: id));
-                  }
-                  return _materialPage(
-                    state,
-                    eventOfferGamesBuilder?.call(context, id, args) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-      // #190: the changes that couldn't sync. Outside the auth ShellRoute
-      // (see [StuckChangesScreenBuilder]), pushed from the home notice, and
-      // reachable only once [AppBootstrapReady] admits non-bootstrap
-      // locations.
-      GoRoute(
-        path: AppRoutes.stuckChanges,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-      ),
-      // #684: the admin dashboard, with each section's screens beneath it,
-      // so a deep link to a section builds the dashboard beneath it and
-      // leaving the section is a plain pop back to it. The sections' paths
-      // didn't change when they moved beneath it.
-      GoRoute(
-        path: AppRoutes.admin,
-        pageBuilder: (context, state) => _materialPage(
-          state,
-          adminDashboardBuilder?.call(context) ?? const NotYetAvailableScreen(),
-        ),
-        routes: [
-          // #41: the DataGateway admin screens. The forms and a DataGateway's
-          // own page (#457) are children of the list, as the household
-          // children are of theirs (#308), so a deep link to one builds the
-          // list beneath it and leaving it is a plain pop. The add form stays
-          // ahead of the detail: see [AppRoutes.dataGatewayDetail].
-          GoRoute(
-            path: AppRoutes._adminDataGatewaysSegment,
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              dataGatewayListBuilder?.call(context) ??
-                  const NotYetAvailableScreen(),
+          // #707: showBgePopup keeps pop-ups on the root navigator so their
+          // barrier covers the shell's bar or rail. The observer tells them
+          // of a page pushed inside the shell, so a page opened from a
+          // pop-up still removes it once it has arrived (#414). One per
+          // navigator, made here so each router has its own.
+          //
+          // #414: the guard hears this navigator's pages leave, and the
+          // shell itself leave, to take a root modal down with its page.
+          ShellRoute(
+            observers: [BgePopupCoverObserver(), modalGuard.shellObserver],
+            builder: (context, state, child) => modalGuard.wrapShell(
+              navigationShellBuilder?.call(context, state.uri.path, child) ??
+                  child,
             ),
             routes: [
               GoRoute(
-                path: AppRoutes._dataGatewayAddSegment,
+                path: AppRoutes.home,
+                // Home is only reached once [AppBootstrapReady] (post-auth,
+                // active server present), so homeBuilder returns null only in a
+                // transient/defensive pre-active state. Falls back to
+                // [NotYetAvailableScreen]: static (so widget tests settle —
+                // a spinner would hang pumpAndSettle) and consistent with the
+                // other optional-builder routes (feedback / settings /
+                // householdCreate). The home placeholder is retired (#129).
+                pageBuilder: (context, state) => _noTransitionPage(
+                  state,
+                  homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
+                ),
+              ),
+              // #107: user-initiated feedback. Inside the navigation shell
+              // (#414) and the auth scope (see [FeedbackScreenBuilder]);
+              // reachable only when [AppBootstrapReady] admits non-bootstrap
+              // locations.
+              GoRoute(
+                path: AppRoutes.feedback,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  dataGatewayFormBuilder?.call(context, null) ??
+                  feedbackBuilder?.call(context) ??
                       const NotYetAvailableScreen(),
                 ),
               ),
+              // #120: user settings. Inside the navigation shell (#414) and the
+              // auth scope (see [SettingsScreenBuilder]); reachable only when
+              // [AppBootstrapReady] admits non-bootstrap locations, and not
+              // bounced (settings is not a bootstrap location).
               GoRoute(
-                path: AppRoutes._dataGatewayDetailSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    dataGatewayDetailBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
+                path: AppRoutes.settings,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  settingsBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
               ),
+              // ── The household routes: why they nest, and their order ──
+              //
+              // `/household/create` (#129) and `/household/:householdId` (#270)
+              // are children of `/household` (#269), not its siblings (#308). A
+              // `go` to either therefore builds the list beneath it, so there
+              // is always something to go back to — which is what lets the
+              // detail screen's way back be a plain pop. A `push` still adds
+              // only the leaf page, so the menu's Households entry pushes the
+              // list over whatever page is current.
+              //
+              // Order among the children is the part that cannot change.
+              // `create` is a perfectly legal `:householdId`, so
+              // `/household/create` matches BOTH children. go_router takes the
+              // first declared match, so create must come first or the create
+              // flow silently becomes a detail screen for a household nobody
+              // can have.
+              //
+              // The detail screen also answers a literal `create` id with its
+              // not-found state (#270). That is the belt to this ordering's
+              // braces — cheap, and it keeps the failure legible if these are
+              // ever reordered.
               GoRoute(
-                path: AppRoutes._dataGatewayEditSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
-                  return _materialPage(
-                    state,
-                    dataGatewayFormBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
+                path: AppRoutes.household,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  householdListBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  // #129: create-household flow. Inside the navigation shell
+                  // (#414) and the auth scope; it reads the active server's
+                  // container (see [CreateHouseholdScreenBuilder]). Reachable
+                  // only once [AppBootstrapReady] admits non-bootstrap
+                  // locations; pushed from the list screen's FAB (#269).
+                  //
+                  // MUST stay declared above the detail route — see the block
+                  // above.
+                  GoRoute(
+                    path: AppRoutes._householdCreateSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      createHouseholdBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                  // #270: one household, read-only. Pushed from a list row, and
+                  // where the reserved invite deep link eventually lands —
+                  // which is why the id-addressed route exists now rather than
+                  // later.
+                  GoRoute(
+                    path: AppRoutes._householdDetailSegment,
+                    pageBuilder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes.householdIdParam] ??
+                          '';
+                      return _materialPage(
+                        state,
+                        householdDetailBuilder?.call(context, id) ??
+                            const NotYetAvailableScreen(),
+                      );
+                    },
+                    // #455: the household's invites, its send form (#569) and
+                    // its edit form (#476), side by side and nested for the
+                    // reason the household children are (#308): a `go` to any
+                    // of them builds the household beneath it, so leaving is a
+                    // plain pop. A member's send is the exception, which leaves
+                    // for the Sent screen above the household.
+                    routes: [
+                      GoRoute(
+                        path: AppRoutes._householdInvitesSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .householdIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            householdInvitesBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      // #569: the send form sits beside the invites rather than
+                      // under them. A member may send but can't read the
+                      // invites, so a `go` here builds the household beneath
+                      // the form, not a list that would answer them 403. The
+                      // invites' own button pushes it, which keeps the invites
+                      // beneath.
+                      GoRoute(
+                        path: AppRoutes._householdInviteSendSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .householdIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            sendHouseholdInviteBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      // #476: the household's edit form. A save leaves by a
+                      // plain pop.
+                      GoRoute(
+                        path: AppRoutes._householdEditSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .householdIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            editHouseholdBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              // #455: the invites sent to the current user, pushed from the
+              // navigation menu.
+              GoRoute(
+                path: AppRoutes.invites,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  inviteInboxBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  // #487: the invites the current user sent, pushed from the
+                  // inbox.
+                  GoRoute(
+                    path: 'sent',
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      sentInvitesBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                ],
+              ),
+              // #44: the collection list. Inside the navigation shell (#414)
+              // and the auth scope (see [CollectionListScreenBuilder]), a
+              // top-level destination, and reachable only once
+              // [AppBootstrapReady] admits non-bootstrap locations. #46: one
+              // entry is a child, so a location straight to it builds the list
+              // beneath, and the entry's pop after a removal lands on the list.
+              GoRoute(
+                path: AppRoutes.collection,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  collectionListBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  GoRoute(
+                    path: ':${AppRoutes.collectionEntryIdParam}',
+                    pageBuilder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes
+                              .collectionEntryIdParam] ??
+                          '';
+                      return _materialPage(
+                        state,
+                        collectionEntryBuilder?.call(context, id) ??
+                            const NotYetAvailableScreen(),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              // #42: browse, search and one game. Inside the navigation shell
+              // (#414), like the collection list, and a top-level destination.
+              // Search and the detail are children of browse, as the household
+              // children are of their list (#308), so a `go` straight to either
+              // builds browse beneath it.
+              //
+              // Search MUST stay declared above the detail: `search` is a legal
+              // `:gameId`, and go_router takes the first declared match.
+              GoRoute(
+                path: AppRoutes.games,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  gameBrowseBuilder?.call(
+                        context,
+                        GameSort.fromWire(
+                              state.uri.queryParameters[AppRoutes
+                                  ._gamesSortParam],
+                            ) ??
+                            GameSort.title,
+                      ) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  GoRoute(
+                    path: AppRoutes._gameSearchSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      gameSearchBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: AppRoutes._gameDetailSegment,
+                    pageBuilder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes.gameIdParam] ?? '';
+                      return _materialPage(
+                        state,
+                        gameDetailBuilder?.call(context, id) ??
+                            const NotYetAvailableScreen(),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              // #497: the events overview and a page per group. Inside the
+              // navigation shell (#414), like the collection list, and a
+              // top-level destination. The group pages are children of the
+              // overview, as the household children are of their list (#308),
+              // so a `go` straight to one builds the overview beneath it.
+              //
+              // #499: the create form is a child of the overview too, beside
+              // the group pages, so a `go` straight to it builds the overview
+              // beneath it, which back from the event that replaces the form
+              // returns to.
+              //
+              // #498: one event is a child of the overview too, so a `go`
+              // straight to it builds the overview beneath it. It MUST be
+              // declared after the group pages and the create form: `upcoming`
+              // is a legal `:eventId`, and so is `create`, and go_router takes
+              // the first declared match, as with game search and the game
+              // detail.
+              GoRoute(
+                path: AppRoutes.events,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  eventOverviewBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  for (final segment in AppRoutes.eventGroupSegments)
+                    GoRoute(
+                      path: segment,
+                      pageBuilder: (context, state) => _materialPage(
+                        state,
+                        eventGroupBuilder?.call(context, segment) ??
+                            const NotYetAvailableScreen(),
+                      ),
+                    ),
+                  GoRoute(
+                    path: AppRoutes._eventCreateSegment,
+                    pageBuilder: (context, state) {
+                      final query = state.uri.queryParameters;
+                      final household =
+                          query[AppRoutes.eventCreateHouseholdParam];
+                      // An empty value names no household, as an absent one
+                      // does.
+                      final householdId = household == null || household.isEmpty
+                          ? null
+                          : household;
+                      return _materialPage(
+                        state,
+                        eventCreateBuilder?.call(context, householdId) ??
+                            const NotYetAvailableScreen(),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: AppRoutes._eventDetailSegment,
+                    pageBuilder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes.eventIdParam] ?? '';
+                      return _materialPage(
+                        state,
+                        eventDetailBuilder?.call(context, id) ??
+                            const NotYetAvailableScreen(),
+                      );
+                    },
+                    // #507: who answered the event's poll, nested for the
+                    // reason the household children are (#308): a `go` straight
+                    // to it builds the event beneath it, so back is a plain pop
+                    // to there.
+                    //
+                    // #510: the Add people page, nested the same way. It is
+                    // built only from what the detail pushed it with, so a deep
+                    // link lands on the detail instead (see
+                    // [EventAddAttendeeScreenBuilder]).
+                    //
+                    // #516: the Offer games page, nested and built as Add
+                    // people's is (see [EventOfferGamesScreenBuilder]).
+                    routes: [
+                      GoRoute(
+                        path: AppRoutes._eventAvailabilitySegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes.eventIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            eventAvailabilityBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      GoRoute(
+                        path: AppRoutes._eventAddAttendeeSegment,
+                        redirect: (context, state) => state.extra == null
+                            ? AppRoutes.eventDetailOf(
+                                state.pathParameters[AppRoutes.eventIdParam] ??
+                                    '',
+                              )
+                            : null,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes.eventIdParam] ??
+                              '';
+                          final args = state.extra;
+                          // The page's own history entry, restored once the
+                          // page has closed, which the redirect never sees.
+                          if (args == null) {
+                            return _passThroughPage(
+                              state,
+                              _LeaveForEvent(eventId: id),
+                            );
+                          }
+                          return _materialPage(
+                            state,
+                            eventAddAttendeeBuilder?.call(context, id, args) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      GoRoute(
+                        path: AppRoutes._eventOfferGamesSegment,
+                        redirect: (context, state) => state.extra == null
+                            ? AppRoutes.eventDetailOf(
+                                state.pathParameters[AppRoutes.eventIdParam] ??
+                                    '',
+                              )
+                            : null,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes.eventIdParam] ??
+                              '';
+                          final args = state.extra;
+                          // The page's own history entry, restored once the
+                          // page has closed, which the redirect never sees.
+                          if (args == null) {
+                            return _passThroughPage(
+                              state,
+                              _LeaveForEvent(eventId: id),
+                            );
+                          }
+                          return _materialPage(
+                            state,
+                            eventOfferGamesBuilder?.call(context, id, args) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              // #190: the changes that couldn't sync. Inside the navigation
+              // shell (#414; see [StuckChangesScreenBuilder]), pushed from the
+              // home notice, and reachable only once [AppBootstrapReady] admits
+              // non-bootstrap locations.
+              GoRoute(
+                path: AppRoutes.stuckChanges,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  stuckChangesBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+              ),
+              // #684: the admin dashboard, with each section's screens beneath
+              // it, so a deep link to a section builds the dashboard beneath it
+              // and leaving the section is a plain pop back to it. The
+              // sections' paths didn't change when they moved beneath it.
+              GoRoute(
+                path: AppRoutes.admin,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  adminDashboardBuilder?.call(context) ??
+                      const NotYetAvailableScreen(),
+                ),
+                routes: [
+                  // #41: the DataGateway admin screens. The forms and a
+                  // DataGateway's own page (#457) are children of the list, as
+                  // the household children are of theirs (#308), so a deep link
+                  // to one builds the list beneath it and leaving it is a plain
+                  // pop. The add form stays ahead of the detail: see
+                  // [AppRoutes.dataGatewayDetail].
+                  GoRoute(
+                    path: AppRoutes._adminDataGatewaysSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      dataGatewayListBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: AppRoutes._dataGatewayAddSegment,
+                        pageBuilder: (context, state) => _materialPage(
+                          state,
+                          dataGatewayFormBuilder?.call(context, null) ??
+                              const NotYetAvailableScreen(),
+                        ),
+                      ),
+                      GoRoute(
+                        path: AppRoutes._dataGatewayDetailSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .dataGatewayIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            dataGatewayDetailBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                      GoRoute(
+                        path: AppRoutes._dataGatewayEditSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .dataGatewayIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            dataGatewayFormBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  // #685: every household on the server, with a live one's
+                  // staff detail beneath the list, for the reason the
+                  // DataGateway page is beneath its list.
+                  GoRoute(
+                    path: AppRoutes._adminHouseholdsSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      adminHouseholdListBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: AppRoutes._adminHouseholdDetailSegment,
+                        pageBuilder: (context, state) {
+                          final id =
+                              state.pathParameters[AppRoutes
+                                  .adminHouseholdIdParam] ??
+                              '';
+                          return _materialPage(
+                            state,
+                            adminHouseholdDetailBuilder?.call(context, id) ??
+                                const NotYetAvailableScreen(),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  // #807: the server's own settings, a screen with nothing
+                  // beneath it.
+                  GoRoute(
+                    path: AppRoutes._adminSettingsSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      serverSettingsBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-          // #685: every household on the server, with a live one's staff
-          // detail beneath the list, for the reason the DataGateway page is
-          // beneath its list.
-          GoRoute(
-            path: AppRoutes._adminHouseholdsSegment,
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              adminHouseholdListBuilder?.call(context) ??
-                  const NotYetAvailableScreen(),
-            ),
-            routes: [
-              GoRoute(
-                path: AppRoutes._adminHouseholdDetailSegment,
-                pageBuilder: (context, state) {
-                  final id =
-                      state.pathParameters[AppRoutes.adminHouseholdIdParam] ??
-                      '';
-                  return _materialPage(
-                    state,
-                    adminHouseholdDetailBuilder?.call(context, id) ??
-                        const NotYetAvailableScreen(),
-                  );
-                },
-              ),
-            ],
-          ),
-          // #807: the server's own settings, a screen with nothing beneath it.
-          GoRoute(
-            path: AppRoutes._adminSettingsSegment,
-            pageBuilder: (context, state) => _materialPage(
-              state,
-              serverSettingsBuilder?.call(context) ??
-                  const NotYetAvailableScreen(),
-            ),
           ),
         ],
       ),
@@ -1390,8 +1484,9 @@ GoRouter buildAppRouter({
 // platform and, on iOS, brings the edge swipe. Routes the bootstrap
 // redirect lands on (splash, error, server-add, auth and home) keep no
 // transition: the app moved there by itself, and a slide would suggest a
-// back step that doesn't exist. The auth [ShellRoute]'s own page is left
-// as go_router builds it, for the same reason.
+// back step that doesn't exist. The auth [ShellRoute]'s own page, and the
+// navigation shell's (#414), are left as go_router builds them, for the
+// same reason.
 
 /// A [MaterialPage] for a route the user opens (#465).
 Page<void> _materialPage(GoRouterState state, Widget child) =>
@@ -1427,8 +1522,9 @@ Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
 /// [EventAddAttendeeScreenBuilder]).
 ///
 /// It draws nothing, and after its first frame leaves for the event beneath
-/// it: a pop, or a `go` to the event where there is nothing to pop. Under
-/// [Router.neglect], so on the web the restored entry becomes the event's.
+/// it: a pop of its own page, or a `go` to the event where there is nothing
+/// beneath it to pop. Under [Router.neglect], so on the web the restored
+/// entry becomes the event's.
 /// Reported as a new entry instead, the event would follow the restored one
 /// in the history, and Back from it would come straight back here.
 class _LeaveForEvent extends StatefulWidget {
@@ -1447,9 +1543,13 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
     // After the frame that built it: the restore it is part of has settled.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Its own navigator, the shell's: the router pops a dialog on the
+      // root navigator first, and one the event opened stays over the
+      // event beneath this.
+      final navigator = Navigator.of(context);
       Router.neglect(context, () {
-        if (context.canPop()) {
-          context.pop();
+        if (navigator.canPop()) {
+          navigator.pop();
         } else {
           context.go(AppRoutes.eventDetailOf(widget.eventId));
         }
@@ -1485,24 +1585,39 @@ Page<void> _page(
   child: child,
 );
 
-/// Builds the real home screen subtree for the [AppRoutes.home] route —
-/// the navigation-drawer menu (#129). Always supplied by `BgeApp` so the
-/// menu's sign-out entry can reach the active server's auth bloc; returns
-/// null at navigation time when no active server backs the bloc (a
-/// transient pre-active state), in which case the route falls back to
-/// [NotYetAvailableScreen], like the other optional-builder routes.
+/// Builds the home screen for the [AppRoutes.home] route: the sections the
+/// session can show (#129, #613). The menu is not home's: the navigation
+/// shell holds it, above every signed-in page (#414). Always supplied by
+/// `BgeApp`; returns null at navigation time when no active server is
+/// resolvable (a transient pre-active state), in which case the route falls
+/// back to [NotYetAvailableScreen], like the other optional-builder routes.
 typedef HomeScreenBuilder = Widget? Function(BuildContext context);
 
-/// Wraps the auth+home [ShellRoute] child with the active server's
-/// `AuthBloc` provider and the bootstrap-gate listener (#37). Supplied by
-/// `BgeApp`; when null the child renders bare (tests without a scope) and
-/// the route builders fall back to placeholders.
+/// Wraps the auth [ShellRoute] child (the auth route and the navigation
+/// shell, #414) with the active server's `AuthBloc` provider and the
+/// bootstrap-gate listener (#37). Supplied by `BgeApp`; when null the child
+/// renders bare (tests without a scope) and the route builders fall back to
+/// placeholders.
 ///
 /// Lives at the router layer because go_router builds route widgets under
 /// its own Navigator, which does not inherit providers placed above the
 /// router — so the provider must be inside the route subtree, not
 /// app-level.
 typedef AuthScopeBuilder = Widget Function(BuildContext context, Widget child);
+
+/// Wraps every signed-in route (#414) in the navigation shell: the menu,
+/// the bar and whatever else stays put while the page beneath changes.
+/// [location] is the path the visible page was reached at, after pushes,
+/// pops and browser Back; [child] is the page's navigator. Supplied by
+/// `BgeApp`; when null the child renders bare (tests without a shell).
+///
+/// The shell sits inside the auth scope (#145), so it can read the
+/// `AuthBloc`; `/auth` itself stays outside it.
+typedef NavigationShellBuilder = Widget Function(
+  BuildContext context,
+  String location,
+  Widget child,
+);
 
 /// Adapts the cubit's state stream to the [Listenable] that go_router uses
 /// to re-evaluate redirects.

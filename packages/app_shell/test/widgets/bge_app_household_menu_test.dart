@@ -22,7 +22,8 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
-/// Exercises the household menu gate in `_buildHomeRoute`.
+/// Exercises the household menu gate in `_menuEntries`, the navigation
+/// menu's (#414).
 ///
 /// The entry is the **household list** (#269), replacing #129's
 /// create-household entry — create moved to the list's own FAB. That
@@ -62,7 +63,7 @@ void main() {
     HydratedBloc.storage = storage;
   });
 
-  /// Pumps the home drawer with each household dependency independently
+  /// Pumps home with the menu open, each household dependency independently
   /// present or absent, so a regression that drops either half of the gate
   /// fails a test.
   Future<void> pumpHomeDrawer(
@@ -104,7 +105,7 @@ void main() {
     ) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
 
-      expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('households')), findsOneWidget);
     });
 
     testWidgets('shows the households entry with no household client — the '
@@ -114,7 +115,7 @@ void main() {
       // The case the old create-only gate got wrong. Reinstating
       // `isRegistered<HouseholdRemoteDataSource>()` in this gate would
       // pass every other test in this file but fail here.
-      expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('households')), findsOneWidget);
     });
 
     testWidgets('hides the households entry when the per-user repository is '
@@ -126,8 +127,8 @@ void main() {
       // #125 that is web's signed-out shape too, not just native's.
       await pumpHomeDrawer(tester, withRepository: false, withRemote: true);
 
-      expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('households')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
     });
 
     testWidgets('hides the households entry when neither is registered — a '
@@ -137,22 +138,22 @@ void main() {
       // register the remote.
       await pumpHomeDrawer(tester, withRepository: false, withRemote: false);
 
-      expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('households')), findsNothing);
       // The scope-independent entries still render.
-      expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('send_feedback')), findsOneWidget);
     });
 
     testWidgets('retires the create-household entry — create is the list '
         "screen's FAB now", (tester) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
 
-      expect(find.byKey(HomeScreen.entryKey('create_household')), findsNothing);
+      expect(find.byKey(MenuDrawer.entryKey('create_household')), findsNothing);
     });
 
     testWidgets('opens the list from the drawer', (tester) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
 
-      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.tap(find.byKey(MenuDrawer.entryKey('households')));
       await tester.pumpAndSettle();
 
       // The container carries a repository, so the route resolves its real

@@ -178,7 +178,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  final adminEntry = find.byKey(HomeScreen.entryKey('admin'));
+  final adminEntry = find.byKey(MenuDrawer.entryKey('admin'));
   final gatewaysSection = find.byKey(
     AdminDashboardScreen.entryKey('data_gateways'),
   );
@@ -249,7 +249,7 @@ void main() {
     await openDrawer(tester);
 
     expect(adminEntry, findsNothing);
-    expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+    expect(find.byKey(MenuDrawer.entryKey('settings')), findsOneWidget);
   });
 
   testWidgets('the households entry opens the list, and a live row opens its '

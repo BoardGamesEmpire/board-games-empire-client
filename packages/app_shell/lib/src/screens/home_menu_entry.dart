@@ -1,29 +1,29 @@
 import 'package:flutter/widgets.dart';
 
-/// A single actionable item in the home navigation menu (#129).
+/// A single actionable item in the shell's navigation menu (#129, #414).
 ///
-/// Presentation-agnostic: `HomeScreen` renders these into the navigation
-/// drawer in declaration order — the same contribution shape as
-/// `SettingsSection`, so future top-level sections (collection, games,
-/// households list) slot in as extra entries without the screen learning
-/// their internals.
+/// Presentation-agnostic: `MenuDrawer` renders these into the navigation
+/// drawer in declaration order, the same contribution shape as
+/// `SettingsSection`, so a new screen the menu opens slots in as an entry
+/// without the menu learning its internals. A top-level section is a
+/// destination instead (`NavDestination`).
 ///
-/// [onSelected] receives `HomeScreen`'s own (State) [BuildContext] — stable
-/// and rooted under the auth scope + router, so navigation (`context.push`)
-/// and provider reads (`context.read<AuthBloc>()`) resolve. It is called
-/// **synchronously** on selection: the drawer's close animation may still be
-/// in flight when it runs, which is fine for push / dispatch actions. An
-/// entry that must wait for the drawer to finish closing has to arrange that
-/// itself — `HomeScreen` does not await the close.
+/// An entry opens a screen, at [location], or runs [onSelected]: one of the
+/// two. The shell acts on a pick after the drawer has closed, except for a
+/// destructive entry, which it runs at once.
 @immutable
 class HomeMenuEntry {
   const HomeMenuEntry({
     required this.id,
     required this.icon,
     required this.label,
-    required this.onSelected,
+    this.location,
+    this.onSelected,
     this.isDestructive = false,
-  });
+  }) : assert(
+         (location == null) != (onSelected == null),
+         'An entry opens a location or runs onSelected, not both.',
+       );
 
   /// Stable identifier; also used to key the rendered tile in tests.
   final String id;
@@ -35,11 +35,20 @@ class HomeMenuEntry {
   /// l10n and passes the finished string in.
   final String label;
 
-  /// Invoked with `HomeScreen`'s State context, synchronously on selection
-  /// (the drawer close animation may still be in flight).
-  final void Function(BuildContext context) onSelected;
+  /// The location of the screen the entry opens, which the shell pushes,
+  /// or null where the entry runs [onSelected] instead.
+  ///
+  /// Picked while that screen is the page on top, the entry only closes the
+  /// menu: the menu shows over every signed-in page (#414), and a second
+  /// copy of the page would only add a step to Back.
+  final String? location;
+
+  /// The entry's action, where it opens no [location]. Invoked with the
+  /// navigation shell's own [BuildContext], under the auth scope and the
+  /// router, so provider reads (`context.read<AuthBloc>()`) resolve.
+  final void Function(BuildContext context)? onSelected;
 
   /// Destructive/terminal actions (e.g. sign out) render apart from the
-  /// navigational destinations, below a divider and in the error color.
+  /// other entries, below a divider and in the error color.
   final bool isDestructive;
 }

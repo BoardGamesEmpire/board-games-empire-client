@@ -195,14 +195,31 @@ and stops short on a monitor with no window-class check. Reach for a breakpoint
 only when a layout should *change form* (rail vs. bottom bar, one pane vs.
 two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
-the other. Two things read them so far: `showBgePopup` (a sheet below
-`breakpointMedium`, a dialog from there up) and `bgeGridColumns` (the column
-count of a cover grid) (#707, #710). The home page stopped setting its events
-and stats sections side by side (#669); the next readers are expected to be
-the navigation shell (#414), once a section of equal standing with home
-exists, and the first two-pane layout (#46). A layout that reads one
-reads it against the window, not a `LayoutBuilder`: under the page's padding a
-`LayoutBuilder` reaches 840 only at a window of 888.
+the other.
+
+**The window class is the one way to read a breakpoint.**
+`BgeWindowClass.of(context)` says which form a layout takes at the window's
+width, and nothing compares a width to `breakpointMedium` or
+`breakpointExpanded` by hand. It reads the window (`MediaQuery.sizeOf`), never a
+`LayoutBuilder`'s constraints: under the page's padding, or beside a rail, a
+`LayoutBuilder` reaches 840 only at a window of 888, and the layout would flip
+at the wrong width. A threshold belongs to the wider class: 600 is medium, 840
+is expanded.
+
+| Class | Window width | Navigation |
+| --- | --- | --- |
+| `compact` | below 600 | A bottom `NavigationBar` |
+| `medium` | 600 to 839 | A `NavigationRail`, labelling the selected destination only |
+| `expanded` | 840 and up | A `NavigationRail`, labelling every destination |
+
+The bar or rail shows only when there are two or more destinations and the page
+on screen is inside one of them. Everywhere else, and for whatever is not a
+destination, the menu drawer is the way in (#414). Three things read the window
+class so far: `showBgePopup` (a sheet in `compact`, a dialog from `medium` up),
+`bgeGridColumns` (the column count of a cover grid) (#707, #710), and the
+navigation shell. The home page stopped setting its events and stats sections
+side by side (#669); the next readers are expected to be the width-aware list
+rows (#680) and the first two-pane layout (#46).
 
 ---
 
@@ -221,7 +238,10 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgePointerFocus` | the `:focus-visible` handling copied into each control that takes focus from a tap, the cover tile's and the collection list's stack rows (#707, #709) | A mouse's or a trackpad's press hides the control's ring (`BgeFocusRing.suppressed`) and its ink's focus tint (`pointerFocusColor`) until the next key press, so the focus a pop-up or a page it opened hands back isn't drawn for a user who never touched the keyboard; a touch or a stylus sets nothing, as the highlight mode hides feedback already. One known limit: an ink highlight keeps the alpha it was first drawn with, so the tint stays hidden until the control's next focus while the ring comes back at once — the ring is the reliable cue |
 | `BgeFocusHandoffScope` (with a `BgeFocusHandoff` around each item) | nothing: when a game's item changed form — one entry to a stack, top level to under its base game — its focus went with the old widget, and a pop's restore had nowhere to land (#769, #711) | For a keyed list or grid whose items change form, or show one thing in more than one place: one scope around the item slivers, and each item names what it shows. Focus on an item that leaves goes to its replacement at the end of the frame that replaced it, a frame later for focus a click gave (below), and a pop's restore goes there too once the route above has gone, a page or a pop-up, unless the user has moved focus since; the replacement in the same place wins, else the one built first; within it, the control in the place of the one that had focus, in widget order, such as a cover's expansions badge, else its first; focus a click gave stays undrawn in the new form, ring and tint (`BgePointerFocus`), with focus waiting a frame on the page while a replacement built for the other kind of focus rebuilds, and going on to the newest replacement if the game changes form again meanwhile. No semantics node, no Tab stop, no render object of its own. One known limit: a focused item scrolled out of a lazy list's cache counts as leaving, so focus goes to a copy of the same game that is still built, if there is one |
 | `BgeLayoutToggle` (with `BgeRememberedLayout`) | a per-screen list/thumbnail switch and the preference behind it | One control for the choice, with its selected state announced; the choice is remembered per user, and the builder gets `null` until it has been read, so a screen holds its rows back until then rather than flash the other layout (#710) |
-| `showBgePopup` | `showModalBottomSheet` at every width, a wide strip along the bottom edge from 840dp up | A bottom sheet below `breakpointMedium`, a dialog from there up, on the root navigator; a page pushed over it removes it once the page has arrived, so back lands where the pop-up was opened from (#707) |
+| `showBgePopup` | `showModalBottomSheet` at every width, a wide strip along the bottom edge from 840dp up | A bottom sheet in the `compact` window class, a dialog from `medium` up, on the root navigator, so its barrier covers the navigation bar or rail; a page opened from it removes it once the page has arrived, so back lands where the pop-up was opened from. A page pushed inside the navigation shell arrives beneath the pop-up, which hears of it through the shell navigator's `BgePopupCoverObserver`; the pop-up goes once the page has arrived (#707, #414) |
+| `BgeWindowClass` | a `MediaQuery` width compared to `breakpointMedium` or `breakpointExpanded` at each call site, or read from a `LayoutBuilder`, which sees the width under the page's padding (#414) | `compact`, `medium` or `expanded` for the window the layout is in, each threshold belonging to the wider class; resolved against the theme's `BgeTokens`; rebuilds only when the width changes |
+| `NavigationShell` (with `NavDestination` and `MenuDrawer`) | each page keeping its own drawer, with the app's sections reachable only through Home's menu (#414) | The bar or rail above every signed-in page: a `NavigationBar` at `compact`, a `NavigationRail` from `medium` up, shown only with two or more destinations and the page inside one of them. The drawer lists the destinations exactly when no bar or rail does, then the menu entries, a destructive one (sign out) set apart; a pick closes the drawer and runs once it has gone, so a pushed page's transition plays in full (#643), and an entry for the page already on top only closes it. Its chrome is a `SelectionContainer.disabled`, so a drag across it selects no text (#625). The page area has its own `ScaffoldMessenger`, so a page's SnackBar shows in that page's `Scaffold` and moves its floating action button. On iOS the drawer's edge drag is off, to keep the back swipe. Picking a destination `go`es to it; System Back closes an open drawer first, then goes home from another destination's own screen. A modal opened over a shell page on the root navigator is closed when that page leaves (`ShellModalGuard`) |
+| `BgeNavigationMenu` (with `BgeMenuButton`) | a page deciding for itself whether to draw a menu button or a back arrow | An inherited hook the shell puts above its pages: a `BgePage` on a route with nothing beneath it swaps its implied back arrow for a `BgeMenuButton`, the control the rail's top shows too, that opens the shell's menu, and shows no leading control while a rail carries the button. A page does not otherwise know the shell is there; with no shell above, it behaves as before |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
@@ -238,6 +258,15 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeStateSliver` | a hand-wrapped `SliverFillRemaining` around a state on a sliver page | Fills the rest of the page and centres the state; `hasScrollBody: false`, so a state taller than the room, at 200% text, scrolls with the page instead of overflowing it (#49) |
 | `BgeOfflineStrip` | nothing: the app showed no sign that it was offline, and an offline banner per page would have scrolled away and been rebuilt on every route | One strip at the top of the window, hosted by the shell, so it reaches every route; it takes the status-bar inset while it shows and no height while hidden; one merged live region whose label change announces; not focusable; motion through `BgeMotion.durationOf` (#49) |
 | `BgeOnlineOnly` (with `BgeOnlineOnlyLabel`, `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu`, `BgeOnlineOnlyPopupMenuItem`, and the `BgeConnectivityScope` they read) | a direct-write control that was live offline and failed on press, with only the failure banner to say why | Offline, the control is disabled and says why: the reason is its accessible hint, once, and drawn once per row or group; the same tree online and offline, so the control keeps its state; with no scope everything reads as online (#49) |
+
+### Modals under the shell
+
+Every pop-up goes on the root navigator, so its barrier covers the navigation
+bar or rail rather than leaving it live. `showDialog` and `showBgePopup` do so
+already. `showModalBottomSheet` does not: pass `useRootNavigator: true` under
+the shell, or the sheet opens inside the page area, beside the bar. Three call
+sites do (#414), and the design-system enforcement test fails on one that
+doesn't.
 
 ### Empty and loading states
 
@@ -648,6 +677,12 @@ These are not aspirations; each is enforced somewhere.
   style, or the ring keeps the theme's. On a toned container, as in a banner,
   the ring takes the container's
   foreground, since `primary` was never solved against it.
+- **A navigation destination's focus is a fill alone**, so the fill stands
+  3:1 clear of the bar behind it (#644), and the destination's unselected
+  icon, set to `onSurface`, stands 3:1 clear of the fill (WCAG 1.4.11):
+  `BgeNavigationFocus` holds both. The bar takes them from the theme. The rail
+  reads the nearest `focusColor`, which the theme leaves alone so that no
+  other ink well changes, and `NavigationShell` sets it around the rail only.
 - **The release-time audit script** is
   [`ACCESSIBILITY_AUDIT.md`](ACCESSIBILITY_AUDIT.md): what the automated checks
   cover, and the manual screen-reader walk for each platform.
@@ -701,7 +736,13 @@ legible body text on every surface role.
       prose with rows
 - [ ] Dialogs set no width: the theme caps them at the reading measure. A
       calendar range picker is the exception, and lifts the cap
-- [ ] A breakpoint changes a layout's form, never its width
+- [ ] A breakpoint changes a layout's form, never its width, and is read
+      through `BgeWindowClass`, never a `LayoutBuilder` or a width compared by
+      hand
+- [ ] A top-level screen is a destination of the navigation shell or an entry
+      of its menu, not only a button on another page
+- [ ] A bottom sheet passes `useRootNavigator: true`, so its barrier covers
+      the bar or rail
 - [ ] A list surface passes `semanticChildCount` — the count it currently
       holds, grown as pages arrive, never left null on a known list
 - [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by

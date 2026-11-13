@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:ui/ui.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -32,6 +33,8 @@ void main() {
     WidgetTester tester, {
     required AppBootstrapState initialState,
     Stream<AppBootstrapState>? stream,
+    AuthScopeBuilder? authScopeBuilder,
+    NavigationShellBuilder? navigationShellBuilder,
   }) async {
     whenListen(
       cubit,
@@ -48,6 +51,8 @@ void main() {
       // real builder-null fallback is the (defensive, unreachable)
       // NotYetAvailableScreen, which renders no "Home" text.
       homeBuilder: (_) => const Scaffold(body: Center(child: Text('Home'))),
+      authScopeBuilder: authScopeBuilder,
+      navigationShellBuilder: navigationShellBuilder,
     );
     // go_router does not own the listenable; dispose the router first (it
     // removes its listener during dispose) then the listenable.
@@ -177,6 +182,122 @@ void main() {
         expect(find.text('Home'), findsOneWidget);
       });
     }
+  });
+
+  group('buildAppRouter — navigation shell (#414)', () {
+    testWidgets('every signed-in route builds inside the navigation shell', (
+      tester,
+    ) async {
+      final wrapped = <String>[];
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        navigationShellBuilder: (context, location, child) {
+          wrapped.add(location);
+          return child;
+        },
+      );
+
+      for (final route in const [
+        '/home',
+        '/settings',
+        '/feedback',
+        '/household',
+        '/household/create',
+        '/invites',
+        '/collection',
+        '/games',
+        '/events',
+        '/stuck-changes',
+        '/admin',
+      ]) {
+        wrapped.clear();
+        unawaited(router.push<void>(route));
+        await tester.pumpAndSettle();
+
+        expect(wrapped, contains(route), reason: route);
+      }
+    });
+
+    testWidgets('/auth is not inside the navigation shell', (tester) async {
+      var built = false;
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapNeedsAuth(),
+        navigationShellBuilder: (context, location, child) {
+          built = true;
+          return child;
+        },
+      );
+
+      expect(built, isFalse);
+    });
+
+    testWidgets('the navigation shell is inside the auth scope', (
+      tester,
+    ) async {
+      const scopeKey = Key('auth-scope');
+      const shellKey = Key('nav-shell');
+      await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        authScopeBuilder: (context, child) =>
+            KeyedSubtree(key: scopeKey, child: child),
+        navigationShellBuilder: (context, location, child) =>
+            KeyedSubtree(key: shellKey, child: child),
+      );
+
+      expect(
+        find.descendant(
+          of: find.byKey(scopeKey),
+          matching: find.byKey(shellKey),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('buildAppRouter — pop-ups over the navigation shell (#414)', () {
+    testWidgets('a page pushed inside the shell from a pop-up removes the '
+        'pop-up once it has arrived', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        navigationShellBuilder: (context, location, child) => child,
+      );
+      final homeContext = tester.element(find.text('Home'));
+      unawaited(
+        showBgePopup<void>(
+          homeContext,
+          semanticLabel: 'Probe pop-up',
+          builder: (context) => Center(
+            child: TextButton(
+              onPressed: () => unawaited(
+                GoRouter.of(context)
+                    .push<void>(AppRoutes.collectionEntryOf('c1')),
+              ),
+              child: const Text('Open entry'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Open entry'), findsOneWidget);
+
+      // No collectionEntryBuilder: the entry's route builds the
+      // NotYetAvailableScreen, which is page enough for the hand-off.
+      await tester.tap(find.text('Open entry'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Open entry'), findsNothing);
+      expect(router.state.uri.path, '/collection/c1');
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Open entry'), findsNothing);
+    });
   });
 
   group('buildAppRouter — error screen wiring', () {

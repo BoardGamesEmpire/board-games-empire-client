@@ -101,7 +101,8 @@ PaginatedResult<DataGateway> _listing(List<DataGateway> rows) =>
 
 const _forbidden = DataGatewayForbiddenException('refused', statusCode: 403);
 
-/// The Admin entry in the home drawer, and the deep link past it (#41).
+/// The Admin entry in the navigation menu (#414), and the deep link past it
+/// (#41).
 ///
 /// With only the DataGateway section to show, the entry shows while the
 /// session's access reads every DataGateway (#456, #684), and opens the admin
@@ -149,7 +150,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  final adminEntry = find.byKey(HomeScreen.entryKey('admin'));
+  final adminEntry = find.byKey(MenuDrawer.entryKey('admin'));
 
   group('the Admin entry (#41, #456)', () {
     testWidgets('shows on read, labelled Admin', (tester) async {
@@ -171,7 +172,7 @@ void main() {
       await openDrawer(tester);
 
       expect(adminEntry, findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('settings')), findsOneWidget);
     });
 
     testWidgets('stays hidden while read is none, whatever else is allowed', (
@@ -186,7 +187,7 @@ void main() {
       await openDrawer(tester);
 
       expect(adminEntry, findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('settings')), findsOneWidget);
     });
 
     testWidgets('appears when access arrives', (tester) async {
@@ -215,7 +216,7 @@ void main() {
     group('focus when read falls with the drawer open', () {
       void focusEntry(WidgetTester tester, String id) {
         final label = find.descendant(
-          of: find.byKey(HomeScreen.entryKey(id)),
+          of: find.byKey(MenuDrawer.entryKey(id)),
           matching: find.byType(Text),
         );
         Focus.of(tester.element(label.first)).requestFocus();
@@ -226,7 +227,7 @@ void main() {
         FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
           element,
         ) {
-          found = element.widget.key == HomeScreen.entryKey(id);
+          found = element.widget.key == MenuDrawer.entryKey(id);
           return !found;
         });
         return found;
@@ -281,7 +282,7 @@ void main() {
       await openDrawer(tester);
 
       expect(adminEntry, findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+      expect(find.byKey(MenuDrawer.entryKey('settings')), findsOneWidget);
     });
 
     testWidgets('opens the admin dashboard, whose DataGateway entry opens the '

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show BoxParentData, PipelineOwner, RenderShiftedBox, ScrollCacheExtent;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
+import 'package:ui/src/layout/bge_navigation_menu.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The largest share of the viewport a [BgePage.footer] may take.
@@ -214,10 +215,18 @@ class BgePage extends StatelessWidget {
   final List<Widget>? actions;
 
   /// [AppBar.leading].
+  ///
+  /// Wins over the menu button a [BgeNavigationMenu] asks for.
   final Widget? leading;
 
   /// Whether the app bar supplies its own back button.
+  ///
+  /// False also turns off the menu button a [BgeNavigationMenu] asks for.
   final bool automaticallyImplyLeading;
+
+  /// Key on the [BgeMenuButton] a [BgeNavigationMenu] puts on a first route
+  /// (#414).
+  static const Key menuButtonKey = Key('bge_page_menu_button');
 
   /// Optional [Scaffold.floatingActionButton].
   ///
@@ -381,6 +390,33 @@ class BgePage extends StatelessWidget {
     );
   }
 
+  /// The menu a shell above this page asks it to show, or null when this page
+  /// is not on a route with nothing beneath it, or [leading] or
+  /// [automaticallyImplyLeading] already settle the leading control (#414).
+  BgeNavigationMenu? _menu(BuildContext context) {
+    if (leading != null || !automaticallyImplyLeading) {
+      return null;
+    }
+    final menu = BgeNavigationMenu.maybeOf(context);
+    if (menu == null || ModalRoute.of(context)?.isFirst != true) {
+      return null;
+    }
+    return menu;
+  }
+
+  Widget? _leading(BuildContext context) {
+    final menu = _menu(context);
+    if (menu == null || !menu.offersPageButton) {
+      return leading;
+    }
+    return BgeMenuButton(key: menuButtonKey, onPressed: menu.onOpen);
+  }
+
+  /// False when a shell takes the leading control away: the rail carries the
+  /// menu button, and a first route has nothing to go back to.
+  bool _implyLeading(BuildContext context) =>
+      _menu(context) == null && automaticallyImplyLeading;
+
   @override
   Widget build(BuildContext context) {
     _checkBottomSlotExclusivity();
@@ -433,8 +469,8 @@ class BgePage extends StatelessWidget {
           : AppBar(
               title: title,
               actions: actions,
-              leading: leading,
-              automaticallyImplyLeading: automaticallyImplyLeading,
+              leading: _leading(context),
+              automaticallyImplyLeading: _implyLeading(context),
             ),
       floatingActionButton: floatingActionButton,
       bottomNavigationBar: bottomNavigationBar,

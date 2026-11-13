@@ -32,9 +32,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// [onViewDetails] pushes the detail page from it just as it would from
 /// [context].
 ///
-/// It doesn't close the quick look either. The page pushed over it removes
-/// it once the page has arrived ([BgeRemoveWhenCovered]), so back from that
-/// page lands where the quick look was opened, with no quick look.
+/// It doesn't close the quick look either. The page it opens removes it
+/// once the page has arrived ([BgeRemoveWhenCovered]), so back from that
+/// page lands where the quick look was opened, with no quick look. Under the
+/// app's navigation shell the page arrives beneath the quick look, which
+/// goes once it has (see `showBgePopup`).
 ///
 /// Null [onViewDetails] offers no View full details. [sections] and
 /// [actions] are [GameQuickLook]'s.

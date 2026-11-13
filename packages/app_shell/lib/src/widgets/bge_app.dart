@@ -7,6 +7,8 @@ import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
+import 'package:app_shell/src/navigation/nav_destination.dart';
+import 'package:app_shell/src/navigation/navigation_shell.dart';
 import 'package:app_shell/src/observability/feedback_uncaught_error_reporter.dart';
 import 'package:app_shell/src/observability/shell_observability.dart';
 import 'package:app_shell/src/router/app_router.dart';
@@ -99,10 +101,11 @@ import 'package:user_search/l10n/user_search_localizations.dart';
 /// states into [AppBootstrapCubit.onAuthenticated] /
 /// [AppBootstrapCubit.onSignedOut] — the presentation-layer coordination that
 /// drives the router gate (blocs never depend on blocs). The `/auth` route
-/// renders [AuthGate] and `/home` the navigation-drawer menu ([HomeScreen],
-/// #129); both resolve the same provided bloc. When no scope/active server is
-/// available (tests without a scope; web until #96) the router renders its
-/// placeholders and no auth subtree is mounted.
+/// renders [AuthGate], and every signed-in route sits in the navigation
+/// shell (#414), whose menu signs out; both resolve the same provided bloc.
+/// When no scope/active server is available (tests without a scope; web
+/// until #96) the router renders its placeholders and no auth subtree is
+/// mounted.
 ///
 /// Crash reporting (#69, #76): when a [feedbackReporter] is supplied, the
 /// app builder overlays the crash flow above the router's Navigator. A
@@ -390,6 +393,7 @@ class _BgeAppState extends State<BgeApp> {
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
+      navigationShellBuilder: _buildNavigationShell,
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
       householdListBuilder: _buildHouseholdListRoute,
@@ -652,13 +656,11 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// Renders the home route at navigation time — the navigation-drawer
-  /// menu (#129). Null (→ `NotYetAvailableScreen`) when no active server
-  /// backs the auth bloc the sign-out entry needs. Entry labels are
-  /// resolved here from each feature's localizations; each entry's action
-  /// runs against the context [HomeScreen] hands back (its State context,
-  /// under the auth scope + router), so `context.push` / `context.read`
-  /// resolve.
+  /// Renders the home route at navigation time: the sections the session
+  /// can show (#613). Null (→ `NotYetAvailableScreen`) when no active server
+  /// is resolvable, whose container they read. The menu is not home's: the
+  /// navigation shell holds it, around every signed-in page
+  /// ([_buildNavigationShell], #414).
   ///
   /// Rebuilt whenever the session's user changes (#432), so a user switched
   /// in place gets a home built from their own services, and the splash
@@ -675,11 +677,154 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  Widget _buildHome(BuildContext context, ActiveServer active) {
+  /// Puts every signed-in page in the navigation shell (#414): the
+  /// destinations the session can reach on a bar or a rail, the rest of the
+  /// menu in its drawer. [location] is the visible page's, and [child] the
+  /// pages' navigator.
+  ///
+  /// The pages go bare where no active server is resolvable, and while a
+  /// user is switched in place (#432): the departing user's scope is being
+  /// torn down, and the shell's destinations and entries open screens over
+  /// its services. Rebuilt on [_homeSession], so the shell comes back, built
+  /// from the arriving user's services, once their session is live. The
+  /// pages keep their state across that: go_router keys their navigator
+  /// globally.
+  Widget _buildNavigationShell(
+    BuildContext context,
+    String location,
+    Widget child,
+  ) => ValueListenableBuilder<_HomeSession>(
+    valueListenable: _homeSession,
+    child: child,
+    builder: (context, session, pages) {
+      final active = widget.bootstrapCubit.activeServerScope?.active;
+      if (active == null || session.switching) return pages!;
+      return _navigationFor(context, active, location, pages!);
+    },
+  );
+
+  /// The navigation shell around [pages] for [active]'s session (#414).
+  ///
+  /// Its destinations are Home, then the collection, the games and the
+  /// events, each where the session registers what its screen reads, under
+  /// the gate home's section for it stands on. Its menu is [_menuEntries].
+  ///
+  /// Everything is resolved here, outside the access builder (#456): the
+  /// session's access closes its changes as the user scope pops, while the
+  /// shell is on its way out, and a builder that resolved the user's services
+  /// then threw on every sign-out. Only the answer is read inside it, for the
+  /// Admin entry, which comes and goes with it. The builder reads the
+  /// repository rather than the snapshot, as home's does (#432).
+  Widget _navigationFor(
+    BuildContext context,
+    ActiveServer active,
+    String location,
+    Widget pages,
+  ) {
+    final container = active.container;
+    final destinations = [
+      NavDestination(
+        id: 'home',
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home,
+        label: ShellLocalizations.of(context).homeTitle,
+        location: AppRoutes.home,
+      ),
+      if (_canReadCollection(container))
+        NavDestination(
+          id: 'collection',
+          icon: Icons.casino_outlined,
+          selectedIcon: Icons.casino,
+          label: GameCollectionLocalizations.of(context).collectionListTitle,
+          location: AppRoutes.collection,
+        ),
+      if (_canBrowseGames(container))
+        NavDestination(
+          id: 'games',
+          icon: Icons.explore_outlined,
+          selectedIcon: Icons.explore,
+          label: GameCatalogLocalizations.of(context).catalogBrowseTitle,
+          location: AppRoutes.games,
+        ),
+      if (_canReadEvents(container))
+        NavDestination(
+          id: 'events',
+          icon: Icons.event_outlined,
+          selectedIcon: Icons.event,
+          label: EventsLocalizations.of(context).eventsTitle,
+          location: AppRoutes.events,
+        ),
+    ];
+    final access = _callerAccess(container);
+    final sections = access == null
+        ? const <AdminSection>[]
+        : _adminSections(context, container);
+    final entries = _menuEntries(context, active);
+    final withoutAdmin = [
+      for (final entry in entries)
+        if (entry.id != _adminEntryId) entry,
+    ];
+
+    // One shape with an access to ask or without, so the shell keeps its
+    // state whichever a session has.
+    return StreamBuilder<CallerAccess>(
+      stream: access?.changes,
+      builder: (_, _) {
+        final admin =
+            access != null &&
+            visibleAdminSections(access.current, sections).isNotEmpty;
+        return NavigationShell(
+          destinations: destinations,
+          entries: admin ? entries : withoutAdmin,
+          activeServerName: active.displayName,
+          location: location,
+          deferBack: _backHeldAbove,
+          child: pages,
+        );
+      },
+    );
+  }
+
+  /// Whether System Back belongs, for now, to what sits above the router:
+  /// the recovery notice (#428) or the crash flow (#106), each taking it
+  /// through a handler of its own. The navigation shell's handler, mounted
+  /// after either came up, would otherwise hear it first.
+  bool _backHeldAbove() => _recoveryNoticeUp || _crashFlowUp;
+
+  /// The Admin entry's id among [_menuEntries].
+  static const _adminEntryId = 'admin';
+
+  /// The navigation menu's entries (#129, #414), in display order. The
+  /// destinations are not among them: the shell lists those
+  /// ([_navigationFor]).
+  ///
+  /// They include the Admin entry, which [_navigationFor] takes out while
+  /// it is hidden. #274, #684: the entry opens the admin dashboard, and
+  /// shows while the session's access shows any of its sections, that is,
+  /// while the caller reads every resource of some section's type
+  /// ([visibleAdminSections]). Reading some is not enough: a
+  /// plain member reads some households, their own. For DataGateways this
+  /// agrees with the rule the entry had before the dashboard (#41), since a
+  /// plain user reads none. A section is offered only where the server
+  /// registers the client its screens read through ([_adminSections]).
+  ///
+  /// #456: hidden while the answer is unknown. It comes and goes as the
+  /// answer changes: a sign-up's first answer lands after home is up, and a
+  /// refusal on any section's screen asks again. Moderators may read
+  /// DataGateways too, so the entry says nothing about changing anything:
+  /// each screen offers what the answer allows.
+  ///
+  /// No access registered (no user session, or no user client to ask
+  /// through) is no entry.
+  ///
+  /// [_navigationFor] decides whether it shows; see it for how, and for why
+  /// the sections are resolved outside the access builder (#456).
+  ///
+  /// An entry that opens a screen names its location, and the shell pushes
+  /// it; sign out runs with the shell's own context, under the auth scope,
+  /// so `context.read` resolves.
+  List<HomeMenuEntry> _menuEntries(BuildContext context, ActiveServer active) {
     final authL10n = AuthLocalizations.of(context);
-    final catalogL10n = GameCatalogLocalizations.of(context);
-    final collectionL10n = GameCollectionLocalizations.of(context);
-    final eventsL10n = EventsLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
@@ -718,27 +863,84 @@ class _BgeAppState extends State<BgeApp> {
     // right if a composition without a client ever ships again.
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
-    // #44: the collection list's gate is the household list's — the
-    // repository alone, which the user tier registers, so the entry shows
-    // exactly while a session is active. A drawer entry rather than a
-    // top-level destination until #414 decides those.
-    final canReadCollection = container
-        .isRegistered<GameCollectionRepository>();
-    // #42: browse reads the server, so its gate is the games remote, which
-    // the network installer registers per server. A drawer entry, like the
-    // collection's (#44): navigation is #414's.
-    final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
-    // #497: the events overview's gate is the collection's — the repository
-    // alone, which the user tier registers, so the entry shows exactly
-    // while a session is active. A drawer entry until #414 makes every one
-    // a destination.
-    final canReadEvents = container.isRegistered<EventRepository>();
+
     // #455: the inbox needs the invite client as well, since it reads the
     // server rather than the cache; the household gate keeps it to a live
     // user session, as the households entry is.
     final canReadInvites =
         canReadHouseholds &&
         container.isRegistered<HouseholdInviteRemoteDataSource>();
+
+    return [
+      if (canReadHouseholds)
+        HomeMenuEntry(
+          id: 'households',
+          icon: Icons.groups_outlined,
+          label: householdL10n.householdListTitle,
+          location: AppRoutes.household,
+        ),
+      if (canReadInvites)
+        HomeMenuEntry(
+          id: 'invites',
+          icon: Icons.mail_outline,
+          label: householdL10n.inviteInboxTitle,
+          location: AppRoutes.invites,
+        ),
+      HomeMenuEntry(
+        id: 'send_feedback',
+        icon: Icons.feedback_outlined,
+        label: feedbackL10n.feedbackComposeTitle,
+        location: AppRoutes.feedback,
+      ),
+      HomeMenuEntry(
+        id: _adminEntryId,
+        icon: Icons.admin_panel_settings_outlined,
+        label: shellL10n.homeMenuAdmin,
+        location: AppRoutes.admin,
+      ),
+      HomeMenuEntry(
+        id: 'settings',
+        icon: Icons.settings_outlined,
+        label: shellL10n.settingsTitle,
+        location: AppRoutes.settings,
+      ),
+      HomeMenuEntry(
+        id: 'sign_out',
+        icon: Icons.logout,
+        label: authL10n.authSignOutButton,
+        isDestructive: true,
+        onSelected: (ctx) =>
+            ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
+      ),
+    ];
+  }
+
+  /// Whether [container]'s session can read its collection (#44): the
+  /// repository alone, the household list's gate, which the user tier
+  /// registers, so it holds exactly while a session is active. Home's stats
+  /// and the Collection destination (#414) stand on it.
+  static bool _canReadCollection(DependencyContainer container) =>
+      container.isRegistered<GameCollectionRepository>();
+
+  /// Whether [container]'s server can be browsed for games (#42): browse
+  /// reads the server, so the gate is the games remote, which the network
+  /// installer registers per server. Home's game shelves and the Games
+  /// destination (#414) stand on it.
+  static bool _canBrowseGames(DependencyContainer container) =>
+      container.isRegistered<GamesRemoteDataSource>();
+
+  /// Whether [container]'s session can read its events (#497): the
+  /// repository alone, as the collection's gate is, so it holds exactly while
+  /// a session is active. Home's upcoming events and the Events destination
+  /// (#414) stand on it.
+  static bool _canReadEvents(DependencyContainer container) =>
+      container.isRegistered<EventRepository>();
+
+  Widget _buildHome(BuildContext context, ActiveServer active) {
+    final container = active.container;
+    final canReadCollection = _canReadCollection(container);
+    final canBrowseGames = _canBrowseGames(container);
+    final canReadEvents = _canReadEvents(container);
 
     // Everything home shows is resolved here, once, and not in the access
     // builder below (#456). The session's access closes its changes when the
@@ -765,101 +967,15 @@ class _BgeAppState extends State<BgeApp> {
     final somethingToPlay = canBrowseGames
         ? _buildSomethingToPlay(container)
         : null;
-    final adminSections = _adminSections(context, container);
 
-    HomeScreen home({required bool admin, bool canConnect = false}) =>
-        HomeScreen(
-          activeServerName: active.displayName,
-          notice: notice,
-          upcomingEvents: upcomingEvents,
-          stats: stats,
-          newestGames: newestGames?.call(canConnect: canConnect),
-          somethingToPlay: somethingToPlay,
-          entries: [
-            if (canReadCollection)
-              HomeMenuEntry(
-                id: 'collection',
-                icon: Icons.casino_outlined,
-                label: collectionL10n.collectionListTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.collection),
-              ),
-            if (canBrowseGames)
-              HomeMenuEntry(
-                id: 'games',
-                icon: Icons.explore_outlined,
-                label: catalogL10n.catalogBrowseTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.games),
-              ),
-            if (canReadEvents)
-              HomeMenuEntry(
-                id: 'events',
-                icon: Icons.event_outlined,
-                label: eventsL10n.eventsTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.events),
-              ),
-            if (canReadHouseholds)
-              HomeMenuEntry(
-                id: 'households',
-                icon: Icons.groups_outlined,
-                label: householdL10n.householdListTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.household),
-              ),
-            if (canReadInvites)
-              HomeMenuEntry(
-                id: 'invites',
-                icon: Icons.mail_outline,
-                label: householdL10n.inviteInboxTitle,
-                onSelected: (ctx) => ctx.push(AppRoutes.invites),
-              ),
-            HomeMenuEntry(
-              id: 'send_feedback',
-              icon: Icons.feedback_outlined,
-              label: feedbackL10n.feedbackComposeTitle,
-              onSelected: (ctx) => ctx.push(AppRoutes.feedback),
-            ),
-            if (admin)
-              HomeMenuEntry(
-                id: 'admin',
-                icon: Icons.admin_panel_settings_outlined,
-                label: shellL10n.homeMenuAdmin,
-                onSelected: (ctx) => ctx.push(AppRoutes.admin),
-              ),
-            HomeMenuEntry(
-              id: 'settings',
-              icon: Icons.settings_outlined,
-              label: shellL10n.settingsTitle,
-              onSelected: (ctx) => ctx.push(AppRoutes.settings),
-            ),
-            HomeMenuEntry(
-              id: 'sign_out',
-              icon: Icons.logout,
-              label: authL10n.authSignOutButton,
-              isDestructive: true,
-              onSelected: (ctx) =>
-                  ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
-            ),
-          ],
-        );
+    HomeScreen home({bool canConnect = false}) => HomeScreen(
+      notice: notice,
+      upcomingEvents: upcomingEvents,
+      stats: stats,
+      newestGames: newestGames?.call(canConnect: canConnect),
+      somethingToPlay: somethingToPlay,
+    );
 
-    // #274, #684: the Admin entry opens the admin dashboard, and shows while
-    // the session's access shows any of its sections, that is, while the
-    // caller reads every resource of some section's type
-    // ([visibleAdminSections]). Reading some is not enough: a plain member
-    // reads some households, their own. For DataGateways this agrees with the
-    // rule the entry had before the dashboard (#41), since a plain user reads
-    // none. A section is offered only where the server registers the client
-    // its screens read through ([_adminSections]), resolved above with the
-    // rest of home.
-    //
-    // #456: hidden while the answer is unknown. It comes and goes as the
-    // answer changes: a sign-up's first answer lands after home is up, and a
-    // refusal on any section's screen asks again. Moderators may read
-    // DataGateways too, so the entry says nothing about changing anything:
-    // each screen offers what the answer allows.
-    //
-    // No access registered (no user session, or no user client to ask
-    // through) is no entry.
-    //
     // #617: a server with no games offers the connect card while the access
     // allows read and create: the card opens the DataGateway list, which
     // needs read, to add one there, which needs create. A failed ask
@@ -875,7 +991,7 @@ class _BgeAppState extends State<BgeApp> {
     // arriving user's may never replace. Reading the repository holds either
     // way.
     final access = _callerAccess(container);
-    if (access == null) return home(admin: false);
+    if (access == null) return home();
     return StreamBuilder<CallerAccess>(
       stream: access.changes,
       builder: (_, _) {
@@ -885,7 +1001,6 @@ class _BgeAppState extends State<BgeApp> {
           AccessAction.read,
         );
         return home(
-          admin: visibleAdminSections(current, adminSections).isNotEmpty,
           canConnect:
               mayRead &&
               current.allows(ResourceType.dataGateway, AccessAction.create),
@@ -1734,9 +1849,10 @@ class _BgeAppState extends State<BgeApp> {
   ///
   /// A game the quick look finds gone is told to [_gamesFoundGone], so it
   /// comes down from every list showing it, the shelf it was opened from
-  /// included. View full details pushes the detail page through [_openGame],
-  /// over the quick look, which removes itself once the page has arrived, so
-  /// back from the page lands where the cover was tapped.
+  /// included. View full details pushes the detail page through [_openGame].
+  /// The page arrives beneath the quick look, which sits over the navigation
+  /// shell (#414) and removes itself once the page has arrived, so back from
+  /// the page lands where the cover was tapped.
   void Function(BuildContext context, GameQuickLookSeed seed) _openQuickLook(
     DependencyContainer container,
   ) {
@@ -2481,8 +2597,8 @@ class _BgeAppState extends State<BgeApp> {
   /// composition without feedback wiring).
   ///
   /// Not logged, unlike [_buildServerAddRoute]: this route is *pushed*
-  /// from the home menu rather than pinned by a bootstrap redirect, so the
-  /// fallback is a screen the user chose to open and the app is still
+  /// from the navigation menu rather than pinned by a bootstrap redirect, so
+  /// the fallback is a screen the user chose to open and the app is still
   /// working — and `NotYetAvailableScreen`'s app bar gives it the same back
   /// button as the real flow (#308).
   Widget? _buildFeedbackRoute(BuildContext context) {
@@ -2819,7 +2935,7 @@ class _BgeAppState extends State<BgeApp> {
       builder: (context, child) {
         // #49: the offline strip, and the connectivity scope every screen's
         // controls read. Above the Navigator, so both reach every route,
-        // those outside the auth shell included. Part of `content`, so a
+        // the bootstrap screens and sign-in included. Part of `content`, so a
         // pending crash draft's barrier covers the strip like the rest of
         // the app. Outside the selection region, whose first-frame swap
         // would otherwise remount the host. Unconditional, as
@@ -2829,14 +2945,11 @@ class _BgeAppState extends State<BgeApp> {
           child: _selectable(context, child ?? const SizedBox.shrink()),
         );
         final reporter = widget.feedbackReporter;
-        // #302: mounted here, above the Navigator, so it survives every
-        // route change. The screens that read a re-hydrated cache (the
-        // household list and detail) are routes outside the auth
-        // ShellRoute, so a trigger inside that shell would be unmounted on
-        // exactly the screen showing "couldn't refresh". The widget tracks
-        // the active server itself; wrapping this subtree in a
-        // StreamBuilder instead would remount the whole app whenever a
-        // server came or went.
+        // #302: mounted below, above the Navigator, so it survives every
+        // route change, whichever screen shows a re-hydrated cache and the
+        // "couldn't refresh" that goes with it. The widget tracks the active
+        // server itself; wrapping this subtree in a StreamBuilder instead
+        // would remount the whole app whenever a server came or went.
         Widget body = reporter == null
             ? content
             : ValueListenableBuilder<FeedbackReport?>(
@@ -3531,8 +3644,9 @@ class _AuthScopeState extends State<_AuthScope> {
   ///
   /// Screens opened under the departing user are closed first, for the
   /// reason the sign-out arm routes first: they hold repositories the scope
-  /// pop is about to dispose. Going home does that, since every such screen
-  /// is pushed above it, and [_closePopUps] closes what is open over home.
+  /// pop is about to dispose. Going home does that: the `go` leaves home
+  /// alone on the navigation shell's stack, whatever was pushed or gone to
+  /// before, and [_closePopUps] closes the modals open over it.
   /// Home itself shows the splash until the new user's scope is live, and is
   /// rebuilt for them then (see `_BgeAppState._homeSession`).
   void _endSessionInPlace(BuildContext context, ActiveServer active) {
@@ -3543,24 +3657,24 @@ class _AuthScopeState extends State<_AuthScope> {
     unawaited(_deactivateSessionScope(active));
   }
 
-  /// Closes the pop-ups open on the root navigator as a session ends, such
-  /// as a game's quick look over home (#707).
+  /// Closes the pop-ups and dialogs open on the root navigator as a session
+  /// ends, such as a game's quick look over home (#707).
   ///
-  /// A pop-up is a route with no page of its own, so it goes when the page
-  /// it was opened over goes. The routing a session's end does takes down
-  /// every page pushed above home, and theirs with them, but home and the
-  /// sign-in screen share the auth shell's page, which stays. One over home
-  /// would outlive the session: over the sign-in screen, or over the next
-  /// user's home, still showing the departing user's game, and reading
-  /// through repositories the scope pop is about to dispose.
+  /// Every modal goes on the root navigator, above the navigation shell, and
+  /// `ShellModalGuard` takes one down once the shell page it was opened over
+  /// leaves, or the shell does (#414). A user switched in place goes home
+  /// ([_endSessionInPlace]), and home's page stays, so one over home would
+  /// outlive the session: over the next user's home, still showing the
+  /// departing user's game, and reading through repositories the scope pop
+  /// is about to dispose. Sign-out closes them here too, at once, where the
+  /// guard would wait for the frame to end.
   ///
-  /// Closed twice. Now, for one on top. And again after the next frame,
-  /// once the routing has taken down the pages above home, for one that was
-  /// under a page: View full details's page, while it is still arriving,
-  /// covers the quick look it removes only once it has arrived. Popping
-  /// stops at the first page, so that one is out of reach until the page has
-  /// gone. The routing lands by then: `go` and the bootstrap redirect are
-  /// synchronous, and the router builds its new pages in that frame.
+  /// Closed twice. Now, and again after the next frame, once the routing
+  /// has landed: `go` and the bootstrap redirect are synchronous, and the
+  /// router builds its new pages in that frame. Popping stops at the first
+  /// page, so the second pass is for a modal under a page on the root
+  /// navigator itself. A page opened from a pop-up arrives beneath it, on
+  /// the shell's navigator, so it never hides one from the first pass.
   static void _closePopUps(BuildContext context) {
     final navigator = Navigator.maybeOf(context, rootNavigator: true);
     if (navigator == null) return;
@@ -3739,12 +3853,12 @@ class _UnsentChanges {
 }
 
 /// Hosts the #98 unverified-session banner above the auth shell's
-/// navigator, so it shows on every route INSIDE the auth [ShellRoute]
-/// (auth + home) without any route opting in.
-///
-/// Scope note: routes deliberately placed OUTSIDE the auth shell
-/// (settings, feedback, create-household — each documented in
-/// `app_router.dart` as needing no [AuthBloc]) do not display it (#145).
+/// navigator, so it shows on every route inside the auth [ShellRoute]
+/// without any route opting in: the sign-in route, and the navigation shell
+/// that holds every signed-in route (#414), settings, feedback and
+/// create-household among them (#145). The banner spans the window above
+/// the shell's rail, and a dismissal holds across every screen, since the
+/// host stays put while the pages beneath it change.
 ///
 /// Owns TWO things that must never disagree (#98 review):
 ///

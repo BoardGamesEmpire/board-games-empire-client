@@ -27,31 +27,45 @@ const openSheetKey = Key('test.open_filter_sheet');
 /// Pumps a page whose one button opens the filter sheet on [initial] with
 /// [options], presses it, and waits for the sheet to finish opening.
 ///
+/// With [nested], the page is on a navigator nested in the root one, as a
+/// page under the navigation shell is (#414), inside a [ScaffoldMessenger]
+/// of its own: a SnackBar sent to the root's messenger has no Scaffold to
+/// show in.
+///
 /// Returns the list each filter the sheet sends is added to, in order.
 Future<List<CollectionFilter>> openFilterSheet(
   WidgetTester tester, {
   CollectionFilter initial = const CollectionFilter(),
   GameFilterOptions options = const GameFilterOptions(),
   ThemeData? theme,
+  bool nested = false,
 }) async {
   final sent = <CollectionFilter>[];
+  final page = Scaffold(
+    body: Builder(
+      builder: (context) => TextButton(
+        key: openSheetKey,
+        onPressed: () => showGameFilterSheet(
+          context,
+          initial: initial,
+          options: options,
+          onChanged: sent.add,
+        ),
+        child: const Text('Open'),
+      ),
+    ),
+  );
   await tester.pumpWidget(
     gameFiltersApp(
       theme: theme,
-      Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            key: openSheetKey,
-            onPressed: () => showGameFilterSheet(
-              context,
-              initial: initial,
-              options: options,
-              onChanged: sent.add,
-            ),
-            child: const Text('Open'),
-          ),
-        ),
-      ),
+      nested
+          ? ScaffoldMessenger(
+              child: Navigator(
+                onGenerateRoute: (_) =>
+                    MaterialPageRoute<void>(builder: (_) => page),
+              ),
+            )
+          : page,
     ),
   );
   await tester.tap(find.byKey(openSheetKey));

@@ -154,12 +154,18 @@ void main() {
   ///
   /// With [pushed], that screen is pushed over a home screen, so a pop the
   /// sheet doesn't own shows as that screen gone.
+  ///
+  /// With [nested], that screen is on a navigator nested in the root one, as
+  /// a page under the navigation shell is (#414), inside a
+  /// [ScaffoldMessenger] of its own: a SnackBar sent to the root's messenger
+  /// has no Scaffold to show in.
   Future<void> open(
     WidgetTester tester, {
     List<CollectionAddOption>? options,
     String? platformGameId,
     TextScaler textScaler = TextScaler.noScaling,
     bool pushed = false,
+    bool nested = false,
   }) async {
     final opener = Scaffold(
       body: Builder(
@@ -199,6 +205,13 @@ void main() {
                         .push(MaterialPageRoute<void>(builder: (_) => opener)),
                     child: const Text('Home'),
                   ),
+                ),
+              )
+            : nested
+            ? ScaffoldMessenger(
+                child: Navigator(
+                  onGenerateRoute: (_) =>
+                      MaterialPageRoute<void>(builder: (_) => opener),
                 ),
               )
             : opener,
@@ -558,6 +571,34 @@ void main() {
     expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
     expect(find.text('Added Wingspan to your collection.'), findsOneWidget);
     expect(resolved, isTrue);
+    expect(result, CollectionSync.synced);
+  });
+
+  // #414: a page under the navigation shell is on a nested navigator. The
+  // sheet goes on the root one, so its barrier covers the shell's bar too.
+  testWidgets('opened from a nested navigator, it goes on the root one, and '
+      "says what became of the add on the opener's messenger", (tester) async {
+    await open(tester, nested: true);
+
+    final sheet = tester.element(find.byKey(AddToCollectionSheet.sheetKey));
+    final opener = tester.element(find.byKey(_openKey));
+    expect(
+      Navigator.of(sheet),
+      same(Navigator.of(opener, rootNavigator: true)),
+    );
+    expect(Navigator.of(sheet), isNot(same(Navigator.of(opener))));
+
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await submit(tester);
+
+    verify(
+      () => repository.addToCollection(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+      ),
+    ).called(1);
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+    expect(find.text('Added Wingspan to your collection.'), findsOneWidget);
     expect(result, CollectionSync.synced);
   });
 
