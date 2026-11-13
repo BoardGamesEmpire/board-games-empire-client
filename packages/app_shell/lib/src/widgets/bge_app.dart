@@ -1271,6 +1271,7 @@ class _BgeAppState extends State<BgeApp> {
     return HouseholdDetailScreen(
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
+      session: _sessionLease(container),
       hydration: hydration,
       onRetry: _householdRetry(container),
       // A pop, not a `go` to the list (#308). The route is the list's child,
@@ -1436,6 +1437,7 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
       remote: remote,
+      session: _sessionLease(container),
       onRefresh: _householdRetry(container),
       onSaved: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
     );
@@ -1510,6 +1512,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       remote: container.get<HouseholdInviteRemoteDataSource>(),
       users: container.get<UserRemoteDataSource>(),
+      session: _sessionLease(container),
       onRefresh: _householdRetry(container),
     );
   }
@@ -1595,6 +1598,7 @@ class _BgeAppState extends State<BgeApp> {
     return CreateHouseholdScreen(
       repository: container.get<HouseholdRepository>(),
       sender: container.get<SyncOperationSender>(),
+      session: _sessionLease(container),
       // #271: the new household's own screen takes the place of the spent
       // form, so back can never land on it again (#162).
       //
@@ -4019,6 +4023,7 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
     required this.repository,
     required this.remote,
     required this.users,
+    required this.session,
     this.onRefresh,
     super.key,
   });
@@ -4027,6 +4032,10 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
   final HouseholdRepository repository;
   final HouseholdInviteRemoteDataSource remote;
   final UserRemoteDataSource users;
+
+  /// The user session [repository] and [remote] came from, for the form's
+  /// late outcome (#694).
+  final SessionLease session;
 
   /// Runs the households' own pass after a send refused with 403.
   final Future<void> Function()? onRefresh;
@@ -4136,6 +4145,7 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       memberInvitePolicy: viewer.policy,
       remote: widget.remote,
       users: widget.users,
+      session: widget.session,
       onRefresh: widget.onRefresh,
       onSent: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
       // Back from Sent returns to the household, even under a form opened

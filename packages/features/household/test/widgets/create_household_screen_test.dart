@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -66,6 +68,7 @@ const _errorCopy =
 void main() {
   late _MockHouseholdRepository repo;
   late _MockSyncOperationSender sender;
+  late FakeSessionLease lease;
 
   setUpAll(
     () => registerFallbackValue(
@@ -76,6 +79,7 @@ void main() {
   setUp(() {
     repo = _MockHouseholdRepository();
     sender = _MockSyncOperationSender();
+    lease = FakeSessionLease();
 
     when(
       () => repo.create(
@@ -116,6 +120,7 @@ void main() {
               builder: (_) => CreateHouseholdScreen(
                 repository: repo,
                 sender: sender,
+                session: lease,
                 onCreated: (_, householdId) => onCreated(householdId),
               ),
             ),
@@ -586,6 +591,7 @@ void main() {
           home: CreateHouseholdScreen(
             repository: repo,
             sender: sender,
+            session: lease,
             onCreated: (_, householdId) => created = householdId,
           ),
         ),
@@ -601,6 +607,177 @@ void main() {
         'hh_server',
         reason: 'no route beneath is not a special case any more (#162)',
       );
+    });
+
+    // #464: the create outlives the form. Left while it is under way, it
+    // still says how it went, on the page the user went back to, and goes
+    // nowhere: the user already has.
+    group('left mid-save', () {
+      late Completer<_Draft> gate;
+      late List<String> created;
+      late CreateHouseholdBloc bloc;
+
+      setUp(() => created = []);
+
+      /// Submits a create that waits on [gate].
+      Future<void> submitHeld(WidgetTester tester) async {
+        // Made in the test body, inside its fake async zone: one made in
+        // setUp completes outside it, where pumping never gets to it.
+        gate = Completer<_Draft>();
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenAnswer((_) => gate.future);
+        await tester.pumpWidget(harness(onCreated: created.add));
+        await openScreen(tester);
+        await fillAndSubmit(tester);
+        await tester.pump();
+        bloc = BlocProvider.of<CreateHouseholdBloc>(
+          tester.element(find.byType(CreateHouseholdForm)),
+        );
+        expect(bloc.state, isA<CreateHouseholdSubmitting>());
+      }
+
+      /// Submits a create that waits on [gate], then goes back to the page
+      /// beneath while it is under way.
+      Future<void> submitThenLeave(WidgetTester tester) async {
+        await submitHeld(tester);
+
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(CreateHouseholdScreen), findsNothing);
+      }
+
+      Future<bool> closed(WidgetTester tester) async {
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+        return bloc.isClosed;
+      }
+
+      /// The page beneath is the only route: nothing was pushed or popped
+      /// after the user went back.
+      void expectStackUnchanged(WidgetTester tester) {
+        expect(find.text('open'), findsOneWidget);
+        expect(Navigator.of(tester.element(find.text('open'))).canPop(), false);
+        expect(created, isEmpty);
+      }
+
+      testWidgets('left mid-save, the outcome is still said', (tester) async {
+        await submitThenLeave(tester);
+        // Kept for the create still under way.
+        expect(await closed(tester), isFalse);
+
+        gate.complete(_draft());
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_syncedCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-save, a failure is still said', (tester) async {
+        await submitThenLeave(tester);
+
+        gate.completeError(StateError('db is down'));
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_errorCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-save, nothing is said once the session has '
+          'ended', (tester) async {
+        await submitThenLeave(tester);
+        lease.isLive = false;
+
+        gate.complete(_draft());
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SnackBar), findsNothing);
+        expectStackUnchanged(tester);
+        // Still closed: ending the session skips the message, not the close.
+        expect(await closed(tester), isTrue);
+      });
+
+      // The shell ends a session in the same turn it routes away, and the
+      // popped route stays mounted through its exit. A create that settles
+      // there asks the lease (#694), is said as it would be once the form
+      // had gone, and goes nowhere (#464).
+      group("on the route's way out", () {
+        /// Submits a create that waits on [gate], pops the form and, in the
+        /// same turn when [endSession], ends the session, then pumps 50 ms
+        /// into the exit.
+        Future<void> submitThenPop(
+          WidgetTester tester, {
+          bool endSession = false,
+        }) async {
+          await submitHeld(tester);
+          Navigator.of(tester.element(find.byType(CreateHouseholdForm))).pop();
+          if (endSession) lease.isLive = false;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(CreateHouseholdScreen), findsOneWidget);
+        }
+
+        /// Lets the answer reach the screen, still inside the exit.
+        Future<void> answer(WidgetTester tester, {required bool fails}) async {
+          if (fails) {
+            gate.completeError(StateError('db is down'));
+          } else {
+            gate.complete(_draft());
+          }
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(CreateHouseholdScreen), findsOneWidget);
+        }
+
+        /// The keys of the bars showing: a bar said again is a new key.
+        Set<Key?> barKeys(WidgetTester tester) => {
+          for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+            bar.key,
+        };
+
+        for (final (name, fails) in [('lands', false), ('fails', true)]) {
+          testWidgets('a create that $name after the session ended says '
+              'nothing, and the bloc still closes', (tester) async {
+            await submitThenPop(tester, endSession: true);
+
+            await answer(tester, fails: fails);
+            expect(find.byType(SnackBar), findsNothing);
+            await tester.pumpAndSettle();
+
+            expect(find.byType(SnackBar), findsNothing);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+
+        for (final (name, fails, copy) in [
+          ('lands', false, _syncedCopy),
+          ('fails', true, _errorCopy),
+        ]) {
+          testWidgets('a create that $name is said once, and goes nowhere', (
+            tester,
+          ) async {
+            await submitThenPop(tester);
+
+            await answer(tester, fails: fails);
+            // One bar, drawn in both pages' scaffolds while the exit runs.
+            expect(inSnackBar(copy), findsWidgets);
+            final said = barKeys(tester);
+            expect(said, hasLength(1));
+            await tester.pumpAndSettle();
+
+            expect(inSnackBar(copy), findsOneWidget);
+            expect(barKeys(tester), said);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+      });
     });
 
     group('accessibility audit', () {
