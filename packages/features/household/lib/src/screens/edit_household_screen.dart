@@ -182,7 +182,7 @@ class _EditHouseholdView extends StatelessWidget {
           // nothing was updated.
           if (state case EditHouseholdSaved(changed: true)) {
             ScaffoldMessenger.of(context)
-                .showSnackBar(SnackBar(content: Text(l10n.editHouseholdSaved)));
+                .replaceSnackBar(l10n.editHouseholdSaved);
           }
           screen.onSaved(context);
         },

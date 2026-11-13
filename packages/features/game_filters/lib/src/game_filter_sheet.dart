@@ -8,6 +8,7 @@ import 'package:game_filters/src/game_filter_options.dart';
 import 'package:game_filters/src/game_length_band.dart';
 import 'package:game_filters/src/search_range_field.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// Opens every control a list of games can be narrowed by, in a modal bottom
@@ -47,7 +48,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// and the sheet says why once the frame ends, as an outcome whose surface
 /// pops takes (docs/design/STYLE_GUIDE.md): the field can't show it any
 /// more. [onDropped] is told, or, without one, a SnackBar on the opener's
-/// [ScaffoldMessenger] says it. An opener gone by then is told nothing.
+/// [ScaffoldMessenger] says it. Ranges dropped as the same sheet closes are
+/// told once, together, a line each. An opener gone by then is told nothing.
 Future<void> showGameFilterSheet(
   BuildContext context, {
   required CollectionFilter initial,
@@ -55,14 +57,25 @@ Future<void> showGameFilterSheet(
   GameFilterOptions options = const GameFilterOptions(),
   ValueChanged<String>? onDropped,
 }) {
-  final tell = onDropped ?? _snackBarOn(ScaffoldMessenger.of(context));
+  final tell = onDropped ?? ScaffoldMessenger.of(context).replaceSnackBar;
   // Told as the field is disposed, when nothing may be rebuilt, so it waits
-  // for the frame's end.
-  void dropped(String message) =>
+  // for the frame's end. Every field closes with the sheet in that one frame,
+  // so the ranges dropped together are told together: told one at a time,
+  // each bar would replace the last, and only one range would be heard of
+  // (#343).
+  final pending = <String>[];
+  void dropped(String message) {
+    if (pending.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        final messages = [...pending];
+        pending.clear();
         if (!context.mounted) return;
-        tell(message);
+        tell(messages.join('\n'));
       });
+    }
+    pending.add(message);
+  }
+
   return showModalBottomSheet<void>(
     context: context,
     // Over the navigation shell's bar or rail too, not only the page (#414).
@@ -78,9 +91,6 @@ Future<void> showGameFilterSheet(
     ),
   );
 }
-
-ValueChanged<String> _snackBarOn(ScaffoldMessengerState messenger) =>
-    (message) => messenger.showSnackBar(SnackBar(content: Text(message)));
 
 class _GameFilterSheet extends StatefulWidget {
   const _GameFilterSheet({

@@ -1027,8 +1027,8 @@ class _EventDetailView extends StatelessWidget {
     if (_deleted(state)) {
       // The messenger is the app's, so the snackbar outlives this route and
       // shows on the screen it leaves for.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(EventsLocalizations.of(context).eventsDeleted)),
+      ScaffoldMessenger.of(context).replaceSnackBar(
+        EventsLocalizations.of(context).eventsDeleted,
       );
       // Only from the top. Busy shows nothing, so while the DELETE was out
       // the user may have pressed back, and the route stays mounted through

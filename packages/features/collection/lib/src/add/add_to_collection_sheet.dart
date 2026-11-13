@@ -108,7 +108,7 @@ Future<CollectionSync?> showAddToCollectionSheet(
       null => null,
     };
     if (message != null && messenger.mounted) {
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.replaceSnackBar(message);
     }
     return sync;
   } finally {

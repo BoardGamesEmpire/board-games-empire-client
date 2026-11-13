@@ -196,7 +196,7 @@ class _CollectionEntryScreenState extends State<CollectionEntryScreen> {
   void _say(CollectionEntryState state) {
     final message = _outcomeOf(state);
     if (message == null || !_messenger.mounted) return;
-    _messenger.showSnackBar(SnackBar(content: Text(message)));
+    _messenger.replaceSnackBar(message);
   }
 
   String? _outcomeOf(CollectionEntryState state) {

@@ -607,6 +607,35 @@ void main() {
       );
     });
 
+    testWidgets('ranges dropped as the sheet closes are said in one bar', (
+      tester,
+    ) async {
+      // Each would replace the last in a bar of its own (#343).
+      await showSheet(tester);
+      await enterBound(tester, 'year', 'from', '2000');
+      await enterBound(tester, 'year', 'to', '1990');
+      final players = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('players', 'from')),
+      );
+      await tester.enterText(players, '0');
+      await tester.pump();
+
+      await closeFilters(tester);
+
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SnackBar),
+          matching: find.text(
+            "Publish year not applied. From can't be after To.\n"
+            'Player count not applied. Must be at least 1.',
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets("a range's typing and its error outlive scrolling it out of "
         'view', (tester) async {
       tester.view.physicalSize = const Size(320, 640);

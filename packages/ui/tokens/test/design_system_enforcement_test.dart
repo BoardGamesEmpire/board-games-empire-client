@@ -45,20 +45,22 @@ void main() {
       violations = _scan(root);
     });
 
-    test('no literal spacing, colors, radii or type at call sites', () {
+    test('no literal spacing, colors, radii or type, and no raw SnackBars, '
+        'at call sites', () {
       expect(
         violations,
         isEmpty,
         reason:
             '\n${violations.map((v) => v.describe(root)).join('\n')}\n\n'
-            'Each of these should come from a token:\n'
-            '  spacing  -> const BgeGap.md() / BgeTokens.of(context).spaceMd\n'
-            '  colors   -> Theme.of(context).colorScheme.<role>\n'
-            '  radii    -> BgeTokens.of(context).radiusMd\n'
-            '  type     -> Theme.of(context).textTheme.<role>\n'
-            '  widths   -> BgeTokens.of(context).contentMaxWidth\n'
-            '  sheets   -> showModalBottomSheet(useRootNavigator: true, …)\n\n'
-            'If a literal is genuinely correct, add it to _allowlist in\n'
+            'Each of these should come from a token or a shared helper:\n'
+            '  spacing    -> const BgeGap.md() / BgeTokens.of(context).spaceMd\n'
+            '  colors     -> Theme.of(context).colorScheme.<role>\n'
+            '  radii      -> BgeTokens.of(context).radiusMd\n'
+            '  type       -> Theme.of(context).textTheme.<role>\n'
+            '  widths     -> BgeTokens.of(context).contentMaxWidth\n'
+            '  sheets     -> showModalBottomSheet(useRootNavigator: true, …)\n'
+            '  snack bars -> messenger.replaceSnackBar(message)\n\n'
+            'If one is genuinely correct, add it to _allowlist in\n'
             'test/design_system_enforcement_test.dart WITH A REASON.\n',
       );
     });
@@ -110,6 +112,17 @@ void main() {
         'showModalBottomSheet<void>(context: context, '
                 'useRootNavigator: false, builder: (_) => f(x))':
             'root-modal',
+        // snackbar — bare, dotted and cascaded calls all queue, and so does
+        // a tear-off once it is called
+        'messenger.showSnackBar(SnackBar(content: Text(m)))': 'snackbar',
+        'future.then(messenger.showSnackBar)': 'snackbar',
+        'final show = messenger.showSnackBar;': 'snackbar',
+        'ScaffoldMessenger.of(context)\n'
+                '  ..clearSnackBars()\n'
+                '  ..showSnackBar(bar)':
+            'snackbar',
+        'ScaffoldMessenger.of(\n  context,\n).showSnackBar(bar)': 'snackbar',
+        'showSnackBar(bar)': 'snackbar',
       };
 
       const shouldNotFire = <String>[
@@ -139,6 +152,11 @@ void main() {
         'TextStyle(fontSize: size, height: height)',
         // The flag after a builder whose nested call ends in a `)`.
         'showModalBottomSheet(builder: (_) => f(x), useRootNavigator: true)',
+        // The helper, and the call that only clears. A commented-out raw call
+        // is not a call.
+        'messenger.replaceSnackBar(message)',
+        'messenger.clearSnackBars()',
+        '// showSnackBar(SnackBar(content: Text(m)))',
       ];
 
       shouldFire.forEach((source, ruleId) {
@@ -157,7 +175,7 @@ void main() {
           expect(
             _scanSource(source).map((v) => v.rule.id),
             isEmpty,
-            reason: '"$source" is the tokenized form and must be legal',
+            reason: '"$source" is the sanctioned form and must be legal',
           );
         });
       }
@@ -213,8 +231,10 @@ void main() {
 const Map<String, List<String>> _allowlist = {
   // The generated scheme table: these `Color(0x…)` values ARE the palette
   // every other file consumes through `colorScheme`, so they are definitions
-  // rather than call sites. The one remaining entry.
+  // rather than call sites.
   'packages/ui/tokens/lib/src/bge_color_schemes.dart': ['color'],
+  // The helper itself: the one place the queue is cleared before showing.
+  'packages/ui/widgets/lib/src/banners/bge_snack_bars.dart': ['snackbar'],
 };
 
 // This list started at seven entries covering most of the token package, and
@@ -299,6 +319,14 @@ final List<_Rule> _rules = [
     'root-modal',
     null,
     'bottom sheet off the root navigator (pass useRootNavigator: true)',
+  ),
+  // Queued bars replay stale outcomes, so every bar goes through
+  // `replaceSnackBar`. The pattern catches bare, dotted and cascaded calls,
+  // and a tear-off, which queues as surely once it is called.
+  _Rule(
+    'snackbar',
+    RegExp(r'\bshowSnackBar\b'),
+    'raw showSnackBar, which queues (#343)',
   ),
 ];
 

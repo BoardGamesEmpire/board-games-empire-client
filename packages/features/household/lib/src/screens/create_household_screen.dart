@@ -84,16 +84,14 @@ class _CreateHouseholdView extends StatelessWidget {
             // `Semantics(liveRegion:)` wrapper — SnackBar already is one
             // (`snack_bar.dart`), and nesting them makes screen readers
             // stutter (#191).
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(switch (sync) {
-                  CreateHouseholdSync.synced => l10n.createHouseholdSynced,
-                  CreateHouseholdSync.queued => l10n.createHouseholdQueued,
-                  // No later sync sends it, so say where the user can retry
-                  // or discard it instead (#190).
-                  CreateHouseholdSync.refused => l10n.createHouseholdRefused,
-                }),
-              ),
+            ScaffoldMessenger.of(context).replaceSnackBar(
+              switch (sync) {
+                CreateHouseholdSync.synced => l10n.createHouseholdSynced,
+                CreateHouseholdSync.queued => l10n.createHouseholdQueued,
+                // No later sync sends it, so say where the user can retry
+                // or discard it instead (#190).
+                CreateHouseholdSync.refused => l10n.createHouseholdRefused,
+              },
             );
             // Shown first, navigated second, and in that order: the
             // messenger has to receive the SnackBar while this route's

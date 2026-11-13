@@ -580,9 +580,7 @@ class _LeaveOutcomeState extends State<_LeaveOutcome> {
     }
     final name = _name;
     if (name != null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.householdLeaveDone(name))),
-      );
+      messenger.replaceSnackBar(l10n.householdLeaveDone(name));
     }
     if (!going) widget.onBack(context);
   }
