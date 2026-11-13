@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
-import 'package:ui/ui.dart' show BgePopupCoverObserver;
+import 'package:ui/ui.dart' show BgePopupCoverObserver, BgeTopLevelRoute;
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -913,6 +913,13 @@ GoRouter buildAppRouter({
           //
           // #414: the guard hears this navigator's pages leave, and the
           // shell itself leave, to take a root modal down with its page.
+          //
+          // #611: each route directly under the shell is the top of a
+          // section, a destination or a screen the menu opens, and wraps
+          // its page in a [BgeTopLevelRoute]. Where the browser owns Back,
+          // such a page shows the menu however it was reached, and a page
+          // under one shows no in-app arrow. The routes nested beneath them
+          // are not wrapped.
           ShellRoute(
             observers: [BgePopupCoverObserver(), modalGuard.shellObserver],
             builder: (context, state, child) => modalGuard.wrapShell(
@@ -931,7 +938,11 @@ GoRouter buildAppRouter({
                 // householdCreate). The home placeholder is retired (#129).
                 pageBuilder: (context, state) => _noTransitionPage(
                   state,
-                  homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        homeBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #107: user-initiated feedback. Inside the navigation shell
@@ -942,8 +953,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.feedback,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  feedbackBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        feedbackBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #120: user settings. Inside the navigation shell (#414) and the
@@ -954,8 +968,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.settings,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  settingsBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        settingsBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // ── The household routes: why they nest, and their order ──
@@ -983,8 +1000,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.household,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  householdListBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        householdListBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #129: create-household flow. Inside the navigation shell
@@ -1086,8 +1106,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.invites,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  inviteInboxBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        inviteInboxBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #487: the invites the current user sent, pushed from the
@@ -1112,8 +1135,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.collection,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  collectionListBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        collectionListBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   GoRoute(
@@ -1144,15 +1170,18 @@ GoRouter buildAppRouter({
                 path: AppRoutes.games,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  gameBrowseBuilder?.call(
-                        context,
-                        GameSort.fromWire(
-                              state.uri.queryParameters[AppRoutes
-                                  ._gamesSortParam],
-                            ) ??
-                            GameSort.title,
-                      ) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        gameBrowseBuilder?.call(
+                          context,
+                          GameSort.fromWire(
+                                state.uri.queryParameters[AppRoutes
+                                    ._gamesSortParam],
+                              ) ??
+                              GameSort.title,
+                        ) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   GoRoute(
@@ -1198,8 +1227,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.events,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  eventOverviewBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        eventOverviewBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   for (final segment in AppRoutes.eventGroupSegments)
@@ -1334,8 +1366,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.stuckChanges,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  stuckChangesBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        stuckChangesBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #684: the admin dashboard, with each section's screens beneath
@@ -1346,8 +1381,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.admin,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  adminDashboardBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        adminDashboardBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #41: the DataGateway admin screens. The forms and a

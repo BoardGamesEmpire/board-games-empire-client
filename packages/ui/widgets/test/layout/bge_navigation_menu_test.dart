@@ -4,26 +4,34 @@ import 'package:ui/ui.dart';
 
 const _pushKey = Key('push');
 
-Widget _page(String title, {Widget? leading, bool implyLeading = true}) =>
-    BgePage(
-      title: Text(title),
-      leading: leading,
-      automaticallyImplyLeading: implyLeading,
-      child: Builder(
-        builder: (context) => TextButton(
-          key: _pushKey,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => _page('Pushed')),
-          ),
-          child: const Text('Push'),
+/// A page whose Push button pushes [next], or a plain page titled Pushed.
+Widget _page(
+  String title, {
+  Widget? leading,
+  bool implyLeading = true,
+  Widget Function()? next,
+}) => BgePage(
+  title: Text(title),
+  leading: leading,
+  automaticallyImplyLeading: implyLeading,
+  child: Builder(
+    builder: (context) => TextButton(
+      key: _pushKey,
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => next?.call() ?? _page('Pushed'),
         ),
       ),
-    );
+      child: const Text('Push'),
+    ),
+  ),
+);
 
 Widget _host({
   required Widget home,
   VoidCallback? onOpen,
   bool offersPageButton = true,
+  bool browserOwnsBack = false,
   bool withMenu = true,
 }) => MaterialApp(
   home: home,
@@ -31,10 +39,17 @@ Widget _host({
       ? BgeNavigationMenu(
           onOpen: onOpen ?? () {},
           offersPageButton: offersPageButton,
+          browserOwnsBack: browserOwnsBack,
           child: child!,
         )
       : child!,
 );
+
+/// Pushes the page home's Push button opens.
+Future<void> _push(WidgetTester tester) async {
+  await tester.tap(find.byKey(_pushKey));
+  await tester.pumpAndSettle();
+}
 
 Finder get _menuButton => find.byKey(BgePage.menuButtonKey);
 
@@ -53,15 +68,18 @@ class _MenuHost extends StatefulWidget {
 class _MenuHostState extends State<_MenuHost> {
   VoidCallback _onOpen = () {};
   bool _offersPageButton = true;
+  bool _browserOwnsBack = false;
   bool _present = true;
 
   void change({
     VoidCallback? onOpen,
     bool? offersPageButton,
+    bool? browserOwnsBack,
     bool? present,
   }) => setState(() {
     _onOpen = onOpen ?? _onOpen;
     _offersPageButton = offersPageButton ?? _offersPageButton;
+    _browserOwnsBack = browserOwnsBack ?? _browserOwnsBack;
     _present = present ?? _present;
   });
 
@@ -70,6 +88,7 @@ class _MenuHostState extends State<_MenuHost> {
       ? BgeNavigationMenu(
           onOpen: _onOpen,
           offersPageButton: _offersPageButton,
+          browserOwnsBack: _browserOwnsBack,
           child: widget.child,
         )
       : widget.child;
@@ -224,6 +243,234 @@ void main() {
 
       await tester.tap(_menuButton);
       expect(opened, ['second']);
+    });
+
+    testWidgets('without browserOwnsBack, a pushed top-level page keeps its '
+        'back arrow', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => BgeTopLevelRoute(child: _page('Section')),
+          ),
+        ),
+      );
+      await _push(tester);
+
+      expect(find.text('Section'), findsOneWidget);
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(_menuButton, findsNothing);
+    });
+  });
+
+  // #611: on the web the browser's own Back is the way back, so the in-app
+  // arrow would repeat it.
+  group('browser owns back (#611)', () {
+    testWidgets('the first route shows the menu', (tester) async {
+      await tester.pumpWidget(
+        _host(home: _page('Home'), browserOwnsBack: true),
+      );
+
+      expect(_menuButton, findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+    });
+
+    testWidgets('a pushed top-level page shows the menu, and it calls '
+        'onOpen', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => BgeTopLevelRoute(child: _page('Section')),
+          ),
+          onOpen: () => opened++,
+          browserOwnsBack: true,
+        ),
+      );
+      await _push(tester);
+
+      expect(find.text('Section'), findsOneWidget);
+      expect(_menuButton, findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+      await tester.tap(_menuButton);
+      expect(opened, 1);
+    });
+
+    testWidgets('a pushed child page shows no arrow', (tester) async {
+      await tester.pumpWidget(
+        _host(home: _page('Home'), browserOwnsBack: true),
+      );
+      await _push(tester);
+
+      expect(find.text('Pushed'), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+      expect(_menuButton, findsNothing);
+      // No leading control of any kind.
+      expect(find.byType(IconButton), findsNothing);
+    });
+
+    testWidgets('while a rail carries the menu, a pushed top-level page shows '
+        'nothing', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => BgeTopLevelRoute(child: _page('Section')),
+          ),
+          offersPageButton: false,
+          browserOwnsBack: true,
+        ),
+      );
+      await _push(tester);
+
+      expect(find.text('Section'), findsOneWidget);
+      expect(find.byType(IconButton), findsNothing);
+    });
+
+    // #611: a cancel in a flow, such as the feedback review's, is an
+    // action, not navigation, so it stays.
+    testWidgets('an explicit leading is kept', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => _page(
+              'Review',
+              implyLeading: false,
+              leading: BackButton(onPressed: () {}),
+            ),
+          ),
+          browserOwnsBack: true,
+        ),
+      );
+      await _push(tester);
+
+      expect(find.text('Review'), findsOneWidget);
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(_menuButton, findsNothing);
+    });
+
+    testWidgets('an explicit leading wins on a top-level page too', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => BgeTopLevelRoute(
+              child: _page('Section', leading: const Icon(Icons.star)),
+            ),
+          ),
+          browserOwnsBack: true,
+        ),
+      );
+      await _push(tester);
+
+      expect(find.byIcon(Icons.star), findsOneWidget);
+      expect(_menuButton, findsNothing);
+    });
+
+    testWidgets('automaticallyImplyLeading false on a top-level page shows '
+        'nothing', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          home: _page(
+            'Home',
+            next: () => BgeTopLevelRoute(
+              child: _page('Section', implyLeading: false),
+            ),
+          ),
+          browserOwnsBack: true,
+        ),
+      );
+      await _push(tester);
+
+      expect(find.text('Section'), findsOneWidget);
+      expect(find.byType(IconButton), findsNothing);
+    });
+
+    testWidgets('a change to browserOwnsBack rebuilds the page', (
+      tester,
+    ) async {
+      final host = GlobalKey<_MenuHostState>();
+      await tester.pumpWidget(_hostWithState(host));
+      await _push(tester);
+      expect(find.byType(BackButton), findsOneWidget);
+
+      host.currentState!.change(browserOwnsBack: true);
+      await tester.pump();
+      expect(find.byType(BackButton), findsNothing);
+
+      host.currentState!.change(browserOwnsBack: false);
+      await tester.pump();
+      expect(find.byType(BackButton), findsOneWidget);
+    });
+  });
+
+  group('BgeTopLevelRoute', () {
+    testWidgets('isAt is true beneath one and false elsewhere', (
+      tester,
+    ) async {
+      late BuildContext inside;
+      late BuildContext outside;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Column(
+            children: [
+              BgeTopLevelRoute(
+                child: Builder(
+                  builder: (context) {
+                    inside = context;
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ),
+              Builder(
+                builder: (context) {
+                  outside = context;
+                  return const SizedBox.shrink();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(BgeTopLevelRoute.isAt(inside), isTrue);
+      expect(BgeTopLevelRoute.isAt(outside), isFalse);
+    });
+
+    // A marker carries nothing that can change, so a new one, as a route
+    // builds each time its page is rebuilt, sends no notice to the pages
+    // that read it.
+    testWidgets('a new marker rebuilds nothing that reads it', (tester) async {
+      var builds = 0;
+      late StateSetter rebuildHost;
+      // The same instance on every host build, so only a notice from the
+      // marker could build it again.
+      final reader = Builder(
+        builder: (context) {
+          BgeTopLevelRoute.isAt(context);
+          builds++;
+          return const SizedBox.shrink();
+        },
+      );
+      await tester.pumpWidget(
+        StatefulBuilder(
+          builder: (context, setState) {
+            rebuildHost = setState;
+            return BgeTopLevelRoute(child: reader);
+          },
+        ),
+      );
+      expect(builds, 1);
+
+      rebuildHost(() {});
+      await tester.pump();
+
+      expect(builds, 1);
     });
   });
 

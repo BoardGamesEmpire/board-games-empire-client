@@ -257,6 +257,106 @@ void main() {
     });
   });
 
+  // #611: where the browser owns Back, a section's top shows the menu
+  // however it was reached, and a page under one shows no arrow. The router
+  // is what knows which is which.
+  group("buildAppRouter — a section's top (#611)", () {
+    Finder marked(Finder page) =>
+        find.ancestor(of: page, matching: find.byType(BgeTopLevelRoute));
+
+    /// The paths of the routes directly under the navigation shell: the
+    /// `ShellRoute` holding home. Read from the router's own table, so a
+    /// route added there later is checked too.
+    List<String> shellChildren(GoRouter router) {
+      Iterable<RouteBase> all(List<RouteBase> routes) sync* {
+        for (final route in routes) {
+          yield route;
+          yield* all(route.routes);
+        }
+      }
+
+      final shell = all(router.configuration.routes)
+          .whereType<ShellRoute>()
+          .singleWhere(
+            (shell) => shell.routes.whereType<GoRoute>().any(
+              (route) => route.path == AppRoutes.home,
+            ),
+          );
+      return [
+        for (final route in shell.routes.whereType<GoRoute>()) route.path,
+      ];
+    }
+
+    testWidgets('every route directly under the navigation shell marks its '
+        'page', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+      final routes = shellChildren(router);
+      // The walk found the shell: the routes it holds today are among them.
+      expect(
+        routes,
+        containsAll(const [
+          '/home',
+          '/settings',
+          '/feedback',
+          '/household',
+          '/invites',
+          '/collection',
+          '/games',
+          '/events',
+          '/stuck-changes',
+          '/admin',
+        ]),
+      );
+
+      for (final route in routes) {
+        router.go(route);
+        await tester.pumpAndSettle();
+
+        final page = route == '/home'
+            ? find.text('Home')
+            : find.byType(NotYetAvailableScreen);
+        expect(marked(page), findsOneWidget, reason: route);
+      }
+    });
+
+    testWidgets('a page under a section is not marked', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+      );
+
+      for (final route in const [
+        '/household/create',
+        '/household/hh-1',
+        '/household/hh-1/invites',
+        '/household/hh-1/edit',
+        '/invites/sent',
+        '/collection/entry-1',
+        '/games/search',
+        '/games/game-1',
+        '/events/upcoming',
+        '/events/create',
+        '/events/ev-1',
+        '/events/ev-1/availability',
+        '/admin/data-gateways',
+        '/admin/data-gateways/new',
+        '/admin/households',
+        '/admin/households/hh-1',
+      ]) {
+        router.go(route);
+        await tester.pumpAndSettle();
+
+        // The page on top; the section's own is offstage beneath it.
+        final page = find.byType(NotYetAvailableScreen);
+        expect(page, findsOneWidget, reason: route);
+        expect(marked(page), findsNothing, reason: route);
+      }
+    });
+  });
+
   group('buildAppRouter — pop-ups over the navigation shell (#414)', () {
     testWidgets('a page pushed inside the shell from a pop-up removes the '
         'pop-up once it has arrived', (tester) async {

@@ -652,6 +652,21 @@ void main() {
       );
     });
   });
+
+  group('runBgeApp — who owns Back (#611)', () {
+    for (final owns in [true, false]) {
+      testWidgets("hands BgeApp the platform's browserOwnsBack ($owns)", (
+        tester,
+      ) async {
+        await boot(tester, FakePlatformBootstrap(browserOwnsBack: owns));
+
+        expect(
+          tester.widget<BgeApp>(find.byType(BgeApp)).browserOwnsBack,
+          owns,
+        );
+      });
+    }
+  });
 }
 
 class _SpyReporter implements UncaughtErrorReporter {

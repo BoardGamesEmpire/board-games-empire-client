@@ -186,6 +186,7 @@ class BgeApp extends StatefulWidget {
     this.themeMode = ThemeMode.system,
     this.locale,
     this.additionalLocalizationsDelegates = const [],
+    this.browserOwnsBack = false,
     super.key,
   });
 
@@ -256,6 +257,17 @@ class BgeApp extends StatefulWidget {
   /// fallback.
   final Locale? locale;
   final List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates;
+
+  /// Whether the browser's own Back is the way back (#611), as
+  /// `PlatformBootstrap.browserOwnsBack` says; `runBgeApp` hands it in.
+  ///
+  /// When true, no signed-in screen shows an in-app back arrow, which would
+  /// repeat the browser's: the top of every section shows the navigation
+  /// menu in its place, and a page under one shows nothing (see
+  /// `NavigationShell.browserOwnsBack`). A control a page sets itself in a
+  /// flow stays, such as the feedback review's cancel, which is an action
+  /// rather than navigation. False by default, as on native.
+  final bool browserOwnsBack;
 
   @override
   State<BgeApp> createState() => _BgeAppState();
@@ -779,6 +791,7 @@ class _BgeAppState extends State<BgeApp> {
           activeServerName: active.displayName,
           location: location,
           deferBack: _backHeldAbove,
+          browserOwnsBack: widget.browserOwnsBack,
           child: pages,
         );
       },
