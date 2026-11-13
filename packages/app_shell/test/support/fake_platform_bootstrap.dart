@@ -40,6 +40,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   FakePlatformBootstrap({
     List<Object> outcomes = const [],
     this.supportsReset = true,
+    this.browserOwnsBack = false,
     this._orchestrator,
     this._activeServerScope,
     this.rootContainerOutcome,
@@ -53,6 +54,10 @@ class FakePlatformBootstrap implements PlatformBootstrap {
 
   @override
   final bool supportsReset;
+
+  /// False by default, as on native (#611).
+  @override
+  final bool browserOwnsBack;
 
   /// Scripts [createRootContainer]; see the class docs.
   Object? rootContainerOutcome;

@@ -194,6 +194,11 @@ void main() {
       expect(buildBootstrap().supportsReset, isTrue);
     });
 
+    // Mobile and desktop extend this bootstrap and inherit it.
+    test('browserOwnsBack is false on native platforms (#611)', () {
+      expect(buildBootstrap().browserOwnsBack, isFalse);
+    });
+
     test('rejects an injected executorFactory without a matching keyService, '
         'guarding against divergent encryption-key services', () {
       expect(

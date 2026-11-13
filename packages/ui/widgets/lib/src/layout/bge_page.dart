@@ -216,16 +216,21 @@ class BgePage extends StatelessWidget {
 
   /// [AppBar.leading].
   ///
-  /// Wins over the menu button a [BgeNavigationMenu] asks for.
+  /// Wins over the menu button a [BgeNavigationMenu] asks for, and stays
+  /// where the browser owns Back (#611).
   final Widget? leading;
 
   /// Whether the app bar supplies its own back button.
   ///
   /// False also turns off the menu button a [BgeNavigationMenu] asks for.
+  /// True never supplies a back button under a shell where the browser owns
+  /// Back ([BgeNavigationMenu.browserOwnsBack], #611): a section's top shows
+  /// the menu button, or nothing beside a rail, and a page below one shows
+  /// nothing.
   final bool automaticallyImplyLeading;
 
   /// Key on the [BgeMenuButton] a [BgeNavigationMenu] puts on a first route
-  /// (#414).
+  /// (#414), or on a section's top where the browser owns Back (#611).
   static const Key menuButtonKey = Key('bge_page_menu_button');
 
   /// Optional [Scaffold.floatingActionButton].
@@ -390,32 +395,43 @@ class BgePage extends StatelessWidget {
     );
   }
 
-  /// The menu a shell above this page asks it to show, or null when this page
-  /// is not on a route with nothing beneath it, or [leading] or
-  /// [automaticallyImplyLeading] already settle the leading control (#414).
-  BgeNavigationMenu? _menu(BuildContext context) {
-    if (leading != null || !automaticallyImplyLeading) {
-      return null;
-    }
+  /// The app bar's leading control, and whether it implies one, as a shell
+  /// above this page asks (#414, #611).
+  ///
+  /// [leading] and [automaticallyImplyLeading] false settle it first, and so
+  /// does having no shell above. Under a shell, a route with nothing beneath
+  /// it shows the menu button, or nothing while the rail carries the button.
+  /// Where the browser owns Back, so does a section's top, a
+  /// [BgeTopLevelRoute], wherever it sits in the stack, and every other page
+  /// shows nothing: the browser's Back is its way back.
+  ({Widget? leading, bool imply}) _leadingControl(BuildContext context) {
+    final asSet = (leading: leading, imply: automaticallyImplyLeading);
+    if (leading != null || !automaticallyImplyLeading) return asSet;
     final menu = BgeNavigationMenu.maybeOf(context);
-    if (menu == null || ModalRoute.of(context)?.isFirst != true) {
-      return null;
+    if (menu == null) return asSet;
+    final top =
+        ModalRoute.of(context)?.isFirst == true ||
+        (menu.browserOwnsBack && BgeTopLevelRoute.isAt(context));
+    if (!top) {
+      return menu.browserOwnsBack ? (leading: null, imply: false) : asSet;
     }
-    return menu;
+    return (
+      leading: menu.offersPageButton
+          ? BgeMenuButton(key: menuButtonKey, onPressed: menu.onOpen)
+          : null,
+      imply: false,
+    );
   }
 
-  Widget? _leading(BuildContext context) {
-    final menu = _menu(context);
-    if (menu == null || !menu.offersPageButton) {
-      return leading;
-    }
-    return BgeMenuButton(key: menuButtonKey, onPressed: menu.onOpen);
+  AppBar _appBar(BuildContext context) {
+    final control = _leadingControl(context);
+    return AppBar(
+      title: title,
+      actions: actions,
+      leading: control.leading,
+      automaticallyImplyLeading: control.imply,
+    );
   }
-
-  /// False when a shell takes the leading control away: the rail carries the
-  /// menu button, and a first route has nothing to go back to.
-  bool _implyLeading(BuildContext context) =>
-      _menu(context) == null && automaticallyImplyLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -464,14 +480,7 @@ class BgePage extends StatelessWidget {
     return Scaffold(
       key: scaffoldKey,
       drawer: drawer,
-      appBar: title == null
-          ? null
-          : AppBar(
-              title: title,
-              actions: actions,
-              leading: _leading(context),
-              automaticallyImplyLeading: _implyLeading(context),
-            ),
+      appBar: title == null ? null : _appBar(context),
       floatingActionButton: floatingActionButton,
       bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(

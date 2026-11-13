@@ -4,10 +4,13 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+
+import '../support/fake_browser_history.dart';
 
 const _home = NavDestination(
   id: 'home',
@@ -178,7 +181,8 @@ Page<void> _material(GoRouterState state) => MaterialPage<void>(
 /// the app builds them. [underRegion] puts the app's selection region
 /// above the router and a pointer platform in the theme, as `BgeApp` has
 /// them on desktop and web (#338). [platform] goes in the theme, where the
-/// shell and the page transitions read it.
+/// shell and the page transitions read it. [browserOwnsBack] is the
+/// shell's, as the web sets it (#611).
 /// [inOuterShell] puts the shell's route inside another `ShellRoute`, as
 /// the app's auth shell holds it.
 Future<_Harness> _pump(
@@ -191,6 +195,7 @@ Future<_Harness> _pump(
   TargetPlatform? platform,
   TextDirection textDirection = TextDirection.ltr,
   bool Function()? deferBack,
+  bool browserOwnsBack = false,
   ThemeData? themeData,
   GlobalKey? boundary,
   bool inOuterShell = false,
@@ -205,8 +210,9 @@ Future<_Harness> _pump(
       destinations: destinations,
       entries: entries,
       activeServerName: 'Test server',
-      location: state.uri.path,
+      location: state.uri.toString(),
       deferBack: deferBack,
+      browserOwnsBack: browserOwnsBack,
       child: child,
     ),
     routes: [
@@ -297,6 +303,15 @@ FocusNode _destinationNode(WidgetTester tester, String id) {
   visit(element);
   return found ?? Focus.of(element);
 }
+
+/// The control or scope that has focus.
+Finder _focused() => find.byElementPredicate(
+  (element) => element == FocusManager.instance.primaryFocus?.context,
+);
+
+/// What [matching] finds around the control or scope that has focus.
+Finder _focusedWithin(Finder matching) =>
+    find.ancestor(of: _focused(), matching: matching);
 
 bool _inside(FocusNode? node, Finder chrome) =>
     node?.context != null &&
@@ -747,6 +762,273 @@ void main() {
       deferred = false;
       expect(await shell.back(), isTrue);
       expect(shell.location, '/home');
+    });
+  });
+
+  group('where the browser owns Back (#611)', () {
+    testWidgets('the pages hear of it, and a page under a section shows no '
+        'arrow', (tester) async {
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        browserOwnsBack: true,
+      );
+      expect(
+        tester
+            .widget<BgeNavigationMenu>(find.byType(BgeNavigationMenu))
+            .browserOwnsBack,
+        isTrue,
+      );
+
+      await shell.push('/collection/1');
+
+      expect(find.text('Page /collection/1'), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+      expect(find.byKey(BgePage.menuButtonKey), findsNothing);
+    });
+
+    testWidgets('natively, the pages hear it does not, and a page under a '
+        'section keeps its arrow', (tester) async {
+      final shell = await _pump(tester, at: '/collection');
+      expect(
+        tester
+            .widget<BgeNavigationMenu>(find.byType(BgeNavigationMenu))
+            .browserOwnsBack,
+        isFalse,
+      );
+
+      await shell.push('/collection/1');
+
+      expect(find.byType(BackButton), findsOneWidget);
+    });
+
+    // Browser Back reaches the router as a new location, not as System Back,
+    // so the shell's Back handler never hears it. The location changing
+    // under a waiting pick is how the shell learns of it.
+    testWidgets('browser Back while a pick waits for the drawer to go drops '
+        'the pick', (tester) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        browserOwnsBack: true,
+      );
+      await shell.push('/collection/1');
+      await shell.openMenu();
+
+      await tester.tap(_entry('settings'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+
+      await history.back();
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.location, '/collection');
+      expect(shell.runs, isEmpty);
+      // The button that opened the drawer went with its page, so focus goes
+      // to the one on the page Back went to.
+      expect(
+        _focusedWithin(find.byKey(BgePage.menuButtonKey)),
+        findsOneWidget,
+      );
+
+      // The next pick is taken.
+      await shell.openMenu();
+      await tester.tap(_entry('settings'));
+      await tester.pumpAndSettle();
+      expect(shell.runs, ['settings']);
+      expect(shell.location, '/settings');
+    });
+
+    // Home's newest games is `/games?sort=newest`, the bar's Games `/games`:
+    // one path, two entries in the browser's history.
+    testWidgets('browser Back to the same path with another query drops the '
+        'pick', (tester) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(tester, browserOwnsBack: true);
+      await shell.push('/games?sort=newest');
+      await tester.tap(_destination('games'));
+      await tester.pumpAndSettle();
+      expect(shell.router.state.uri.toString(), '/games');
+      await shell.openMenu();
+
+      await tester.tap(_entry('settings'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await history.back();
+
+      expect(shell.router.state.uri.toString(), '/games?sort=newest');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.runs, isEmpty);
+    });
+
+    // Natively the user's Back goes through the shell, which drops the pick
+    // itself (above). A location that changes on its own, as when a page
+    // leaves once its work is done, leaves the user's pick standing.
+    testWidgets('natively, a pick outlasts a location change under it', (
+      tester,
+    ) async {
+      final shell = await _pump(tester, at: '/collection');
+      await shell.push('/collection/1');
+      await shell.openMenu();
+
+      await tester.tap(_entry('settings'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      shell.router.pop();
+      await tester.pumpAndSettle();
+
+      expect(shell.runs, ['settings']);
+      expect(shell.location, '/settings');
+    });
+  });
+
+  // A modal drawer stays over the page it was opened on. Natively System
+  // Back closes it first, so this bites on the web, or on a `go` of the
+  // app's own (#611).
+  group('a drawer whose page goes closes (#611)', () {
+    testWidgets('browser Back with the drawer open closes it, the earlier '
+        'page shows, and focus goes to its menu button', (tester) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        browserOwnsBack: true,
+      );
+      await shell.push('/collection/1');
+      await shell.openMenu();
+      expect(shell.scaffold.isDrawerOpen, isTrue);
+
+      await history.back();
+
+      expect(shell.location, '/collection');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.scaffold.isDrawerOpen, isFalse);
+      expect(find.byKey(_Page.bodyKey('/collection')), findsOneWidget);
+      expect(shell.runs, isEmpty);
+      expect(_focusedWithin(find.byKey(BgePage.menuButtonKey)), findsOneWidget);
+    });
+
+    testWidgets("beside the rail, focus goes to the rail's menu button", (
+      tester,
+    ) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(
+        tester,
+        size: const Size(1000, 800),
+        at: '/collection',
+        browserOwnsBack: true,
+      );
+      await shell.push('/collection/1');
+      await shell.openMenu();
+
+      await history.back();
+
+      expect(shell.location, '/collection');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(_focusedWithin(find.byType(BgeMenuButton)), findsOneWidget);
+      expect(_focusedWithin(_rail), findsOneWidget);
+    });
+
+    testWidgets('on a page with no menu button, focus stays on the page, and '
+        'Tab goes on into it', (tester) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(
+        tester,
+        at: '/collection',
+        browserOwnsBack: true,
+      );
+      await shell.push('/collection/1');
+      await shell.push('/collection/2');
+      await shell.openMenu();
+
+      await history.back();
+
+      expect(shell.location, '/collection/1');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      // The page's own scope: the page, not the drawer that went or none.
+      expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>());
+      expect(
+        find.descendant(
+          of: _focused(),
+          matching: find.byKey(_Page.bodyKey('/collection/1')),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(
+        _focusedWithin(find.byKey(_Page.fabKey('/collection/1'))),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("natively, a go of the app's own with the drawer open closes "
+        'it', (tester) async {
+      final shell = await _pump(tester, at: '/collection');
+      await shell.openMenu();
+
+      await shell.go('/games');
+
+      expect(shell.location, '/games');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.runs, isEmpty);
+      expect(_focusedWithin(find.byKey(BgePage.menuButtonKey)), findsOneWidget);
+    });
+
+    testWidgets('focus put on a control while the drawer closes stays there', (
+      tester,
+    ) async {
+      final shell = await _pump(tester, at: '/collection');
+      await shell.openMenu();
+
+      shell.router.go('/games');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+      final fab = Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(_Page.fabKey('/games')),
+            matching: find.byType(Icon),
+          ),
+        ),
+      )..requestFocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(FocusManager.instance.primaryFocus, same(fab));
+    });
+
+    // A dialog with nothing to autofocus leaves focus on its own route's
+    // scope, which a hand-off reading any scope as fallen would take.
+    testWidgets('a dialog that comes up while the drawer closes keeps focus', (
+      tester,
+    ) async {
+      final shell = await _pump(tester, at: '/collection');
+      await shell.openMenu();
+
+      shell.router.go('/games');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.byKey(_Page.bodyKey('/games'))),
+          builder: (_) => const AlertDialog(content: Text('A dialog')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(find.text('A dialog'), findsOneWidget);
+      expect(
+        find.descendant(of: _focused(), matching: find.text('A dialog')),
+        findsOneWidget,
+      );
+      expect(_focusedWithin(find.byKey(BgePage.menuButtonKey)), findsNothing);
     });
   });
 

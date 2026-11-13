@@ -38,7 +38,14 @@ enum _Chrome { none, bar, rail }
 /// other than Home, with nothing beneath it, it goes home. Anything else is
 /// the router's.
 /// While [deferBack] says so, every press passes the shell by, to the
-/// handler registered before it, then the router.
+/// handler registered before it, then the router. Where the browser owns
+/// Back ([browserOwnsBack]), browser Back passes the shell by too, and the
+/// shell drops a waiting pick when the location changes under it.
+///
+/// An open drawer closes when the location changes by any other way than
+/// a pick, such as browser Back or a `go` of the app's own: it was opened
+/// over a page that has gone. Focus then goes to the menu button the new
+/// screen shows, the rail's or the page's, or stays on the page (#611).
 class NavigationShell extends StatefulWidget {
   const NavigationShell({
     required this.destinations,
@@ -47,6 +54,7 @@ class NavigationShell extends StatefulWidget {
     required this.location,
     required this.child,
     this.deferBack,
+    this.browserOwnsBack = false,
     super.key,
   });
 
@@ -59,8 +67,10 @@ class NavigationShell extends StatefulWidget {
   /// The active server's display name, for the menu's header, or null.
   final String? activeServerName;
 
-  /// The location of the page on top, which decides the destination shown
-  /// as current.
+  /// The location of the page on top, its query included. Its path decides
+  /// the destination shown as current; the whole of it tells one browser
+  /// history entry from another, as `/games?sort=newest` from `/games`
+  /// (#611).
   final String location;
 
   /// The pages: the navigation route's nested navigator.
@@ -75,6 +85,15 @@ class NavigationShell extends StatefulWidget {
   /// it, so one that came up before the shell would otherwise never hear
   /// Back while the shell is there.
   final bool Function()? deferBack;
+
+  /// Whether the browser's own Back is the way back, as on the web (#611).
+  ///
+  /// The pages hear of it through [BgeNavigationMenu.browserOwnsBack], and
+  /// show no in-app back arrow. Browser Back reaches the router as a new
+  /// location, not as System Back, so the shell never hears it either: a
+  /// pick still waiting for the drawer to go is dropped when the location
+  /// changes under it instead, as System Back drops it.
+  final bool browserOwnsBack;
 
   /// Key on the [NavigationBar], for tests.
   static const Key barKey = Key('nav_bar');
@@ -100,6 +119,11 @@ class _NavigationShellState extends State<NavigationShell> {
   /// Whether a pick has closed the drawer. Another pick is ignored until
   /// the drawer has gone.
   bool _picked = false;
+
+  /// Whether the page the open drawer was opened over has gone, and the
+  /// menu button that opened it with it. The drawer then has nothing to
+  /// hand focus back to as it goes ([_focusMenuButton]).
+  bool _openerGone = false;
 
   /// What the last build showed the destinations in.
   _Chrome _shown = _Chrome.none;
@@ -132,6 +156,34 @@ class _NavigationShellState extends State<NavigationShell> {
   }
 
   @override
+  void didUpdateWidget(NavigationShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The whole location, not its path: browser Back from `/games` to
+    // `/games?sort=newest` changes only the query.
+    if (widget.location == oldWidget.location) return;
+    // Browser Back, or Forward, while a pick waits for the drawer to go
+    // (#611). It reaches the router, not [_back], and reads as "never
+    // mind", as System Back does there. The pick itself runs only once the
+    // drawer has gone, so this change is not its own. The page the drawer
+    // was opened over went, and its menu button with it. Natively the
+    // user's Back goes through [_back], and a location that changes on its
+    // own, as when a page leaves once its work is done, leaves the pick
+    // standing.
+    if (widget.browserOwnsBack && _afterClose != null) {
+      _afterClose = null;
+      _openerGone = true;
+    }
+    // An open drawer with no pick made: the page went from under it by some
+    // other way than the drawer, browser Back or a `go` of the app's own.
+    // The drawer was opened over that page, and doesn't stay over another.
+    final scaffold = _scaffold.currentState;
+    if (!_picked && scaffold != null && scaffold.isDrawerOpen) {
+      _openerGone = true;
+      scaffold.closeDrawer();
+    }
+  }
+
+  @override
   void dispose() {
     FocusManager.instance.removeListener(_noteFocusedId);
     _barFocus.dispose();
@@ -152,7 +204,52 @@ class _NavigationShellState extends State<NavigationShell> {
         ?.id;
   }
 
+  /// The path of [NavigationShell.location], without its query.
+  String get _path => Uri.parse(widget.location).path;
+
   void _openDrawer() => _scaffold.currentState?.openDrawer();
+
+  /// Gives focus to the menu button the screen now shows, the rail's or the
+  /// page's, once a drawer whose opener went ([_openerGone]) has gone too
+  /// (#611).
+  ///
+  /// A drawer that closes hands focus back to what opened it, but that
+  /// button left with its page, and focus falls to the page that replaced
+  /// it. The menu button there stands in for it. With none, as on a page
+  /// under a section on the web, focus stays on that page, and Tab goes on
+  /// from its top.
+  ///
+  /// Runs after the frame the drawer left in, as [_keepChromeFocus] does.
+  /// Focus on none, or on a scope in the shell's, has fallen there. Focus
+  /// on a control was put there since, by the user, and focus in another
+  /// route's scope belongs to that route, such as a dialog that came up
+  /// over the shell meanwhile: both are left alone.
+  void _focusMenuButton() {
+    final now = FocusManager.instance.primaryFocus;
+    final scope = FocusScope.of(context, createDependency: false);
+    final fallen =
+        now == null ||
+        (now is FocusScopeNode &&
+            (now == scope || now.ancestors.contains(scope)));
+    if (!fallen) return;
+    scope.traversalDescendants
+        .where((node) => _isMenuButton(node) && _onCurrentPage(node, scope))
+        .firstOrNull
+        ?.requestFocus();
+  }
+
+  static bool _isMenuButton(FocusNode node) =>
+      node.context?.findAncestorWidgetOfExactType<BgeMenuButton>() != null;
+
+  /// Whether [node] is on the page on top, or on the chrome, rather than on
+  /// a page beneath: a route's scope skips traversal while the route is not
+  /// the current one. The walk up stops at [scope], the shell's.
+  static bool _onCurrentPage(FocusNode node, FocusScopeNode scope) => node
+      .ancestors
+      .takeWhile((ancestor) => ancestor != scope)
+      .every(
+        (ancestor) => ancestor is! FocusScopeNode || !ancestor.skipTraversal,
+      );
 
   /// Goes to [destination], unless its own screen is already the only page.
   ///
@@ -160,7 +257,7 @@ class _NavigationShellState extends State<NavigationShell> {
   /// `go` replaces the whole stack with the destination's own screen (#414).
   void _go(NavDestination destination) {
     final router = GoRouter.of(context);
-    if (widget.location == destination.location && !router.canPop()) return;
+    if (_path == destination.location && !router.canPop()) return;
     router.go(destination.location);
   }
 
@@ -170,7 +267,7 @@ class _NavigationShellState extends State<NavigationShell> {
     final location = entry.location;
     if (location == null) {
       entry.onSelected!(context);
-    } else if (location != widget.location) {
+    } else if (location != _path) {
       unawaited(GoRouter.of(context).push<void>(location));
     }
   }
@@ -195,12 +292,20 @@ class _NavigationShellState extends State<NavigationShell> {
   /// animation, so a push from there would play under the drawer (#643).
   void _drawerGone() {
     final run = _afterClose;
+    final openerGone = _openerGone;
     _afterClose = null;
     _picked = false;
-    if (run == null) return;
-    // Called while the frame tears the drawer down; navigate after it.
+    _openerGone = false;
+    // Called while the frame tears the drawer down; act after it. A pick
+    // made as the drawer closed goes where it goes, and focus with it.
+    if (run == null && !openerGone) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) run();
+      if (!mounted) return;
+      if (run != null) {
+        run();
+      } else {
+        _focusMenuButton();
+      }
     });
   }
 
@@ -227,7 +332,7 @@ class _NavigationShellState extends State<NavigationShell> {
       scaffold.closeDrawer();
       return true;
     }
-    final location = widget.location;
+    final location = _path;
     final router = GoRouter.of(context);
     // `canPop` is true while a dialog or pop-up is up on the root
     // navigator, so the router closes that first.
@@ -330,7 +435,7 @@ class _NavigationShellState extends State<NavigationShell> {
   Widget build(BuildContext context) {
     final destinations = widget.destinations;
     final current = destinations.indexWhere(
-      (d) => d.contains(widget.location),
+      (d) => d.contains(_path),
     );
     final windowClass = BgeWindowClass.of(context);
     final chrome = destinations.length < 2 || current < 0
@@ -351,8 +456,10 @@ class _NavigationShellState extends State<NavigationShell> {
         onDrawerChanged: _drawerChanged,
         // On iOS a swipe from the edge is the back gesture of the page on
         // top, and this drawer sits under every page (#414), so its edge
-        // drag would take that swipe. Elsewhere the edge drag is how a pushed
-        // screen, which shows a back arrow, reaches the menu.
+        // drag would take that swipe. Elsewhere the edge drag is how a page
+        // with no menu button of its own reaches the menu: natively a pushed
+        // screen, which shows a back arrow in its place, and on the web a
+        // page under a section, which shows nothing there (#611).
         drawerEnableOpenDragGesture:
             Theme.of(context).platform != TargetPlatform.iOS,
         drawer: _DrawerGone(
@@ -391,6 +498,7 @@ class _NavigationShellState extends State<NavigationShell> {
         body: BgeNavigationMenu(
           onOpen: _openDrawer,
           offersPageButton: chrome != _Chrome.rail,
+          browserOwnsBack: widget.browserOwnsBack,
           // The same shape in every form, so a resize across a breakpoint,
           // or the rail going on a screen the menu opens, never remounts
           // the pages or their messenger.

@@ -12,7 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:models/domain.dart';
-import 'package:ui/ui.dart' show BgePopupCoverObserver;
+import 'package:ui/ui.dart' show BgePopupCoverObserver, BgeTopLevelRoute;
+import 'package:ui_tokens/ui_tokens.dart' show BgeSelectionPage;
 
 /// Shell route locations.
 abstract final class AppRoutes {
@@ -898,12 +899,14 @@ GoRouter buildAppRouter({
             ),
           ),
           // #414: the navigation shell. The location it hands the builder
-          // is this route's own `state.uri.path`: it follows a push, a go,
-          // a pop and browser Back. `state.matchedLocation` goes stale
-          // (it stays the declarative base after a push) and
-          // `routeInformationProvider.value` holds the pre-pop URL during
-          // build, so neither will do. Its own page is left as go_router
-          // builds it, like the auth [ShellRoute]'s (see [_materialPage]).
+          // is this route's own `state.uri`, query and all: it follows a
+          // push, a go, a pop and browser Back, and its query tells
+          // `/games?sort=newest` from `/games` (#611).
+          // `state.matchedLocation` goes stale (it stays the declarative
+          // base after a push) and `routeInformationProvider.value` holds
+          // the pre-pop URL during build, so neither will do. Its own page
+          // is left as go_router builds it, like the auth [ShellRoute]'s
+          // (see [_materialPage]).
           //
           // #707: showBgePopup keeps pop-ups on the root navigator so their
           // barrier covers the shell's bar or rail. The observer tells them
@@ -913,10 +916,21 @@ GoRouter buildAppRouter({
           //
           // #414: the guard hears this navigator's pages leave, and the
           // shell itself leave, to take a root modal down with its page.
+          //
+          // #611: each route directly under the shell is the top of a
+          // section, a destination or a screen the menu opens, and wraps
+          // its page in a [BgeTopLevelRoute]. Where the browser owns Back,
+          // such a page shows the menu however it was reached, and a page
+          // under one shows no in-app arrow. The routes nested beneath them
+          // are not wrapped.
           ShellRoute(
             observers: [BgePopupCoverObserver(), modalGuard.shellObserver],
             builder: (context, state, child) => modalGuard.wrapShell(
-              navigationShellBuilder?.call(context, state.uri.path, child) ??
+              navigationShellBuilder?.call(
+                    context,
+                    state.uri.toString(),
+                    child,
+                  ) ??
                   child,
             ),
             routes: [
@@ -931,7 +945,11 @@ GoRouter buildAppRouter({
                 // householdCreate). The home placeholder is retired (#129).
                 pageBuilder: (context, state) => _noTransitionPage(
                   state,
-                  homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        homeBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #107: user-initiated feedback. Inside the navigation shell
@@ -942,8 +960,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.feedback,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  feedbackBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        feedbackBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #120: user settings. Inside the navigation shell (#414) and the
@@ -954,8 +975,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.settings,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  settingsBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        settingsBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // ── The household routes: why they nest, and their order ──
@@ -983,8 +1007,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.household,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  householdListBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        householdListBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #129: create-household flow. Inside the navigation shell
@@ -1086,8 +1113,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.invites,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  inviteInboxBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        inviteInboxBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #487: the invites the current user sent, pushed from the
@@ -1112,8 +1142,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.collection,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  collectionListBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        collectionListBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   GoRoute(
@@ -1144,15 +1177,18 @@ GoRouter buildAppRouter({
                 path: AppRoutes.games,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  gameBrowseBuilder?.call(
-                        context,
-                        GameSort.fromWire(
-                              state.uri.queryParameters[AppRoutes
-                                  ._gamesSortParam],
-                            ) ??
-                            GameSort.title,
-                      ) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        gameBrowseBuilder?.call(
+                          context,
+                          GameSort.fromWire(
+                                state.uri.queryParameters[AppRoutes
+                                    ._gamesSortParam],
+                              ) ??
+                              GameSort.title,
+                        ) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   GoRoute(
@@ -1198,8 +1234,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.events,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  eventOverviewBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        eventOverviewBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   for (final segment in AppRoutes.eventGroupSegments)
@@ -1334,8 +1373,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.stuckChanges,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  stuckChangesBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        stuckChangesBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
               ),
               // #684: the admin dashboard, with each section's screens beneath
@@ -1346,8 +1388,11 @@ GoRouter buildAppRouter({
                 path: AppRoutes.admin,
                 pageBuilder: (context, state) => _materialPage(
                   state,
-                  adminDashboardBuilder?.call(context) ??
-                      const NotYetAvailableScreen(),
+                  BgeTopLevelRoute(
+                    child:
+                        adminDashboardBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
                 ),
                 routes: [
                   // #41: the DataGateway admin screens. The forms and a
@@ -1563,6 +1608,10 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
 
 /// Builds [child]'s page with [create], from the values go_router's own
 /// builder passes. Every page type goes through here, so they can't drift.
+///
+/// Each page is a [BgeSelectionPage], out of the app-wide selection region
+/// while a page above hides it: a page restored beneath another, as a
+/// browser Back can, would otherwise break the region (#611).
 Page<void> _page(
   Page<void> Function({
     required Widget child,
@@ -1582,7 +1631,7 @@ Page<void> _page(
     ...state.uri.queryParameters,
   },
   restorationId: state.pageKey.value,
-  child: child,
+  child: BgeSelectionPage(child: child),
 );
 
 /// Builds the home screen for the [AppRoutes.home] route: the sections the
@@ -1607,9 +1656,10 @@ typedef AuthScopeBuilder = Widget Function(BuildContext context, Widget child);
 
 /// Wraps every signed-in route (#414) in the navigation shell: the menu,
 /// the bar and whatever else stays put while the page beneath changes.
-/// [location] is the path the visible page was reached at, after pushes,
-/// pops and browser Back; [child] is the page's navigator. Supplied by
-/// `BgeApp`; when null the child renders bare (tests without a shell).
+/// [location] is the one the visible page was reached at, query included,
+/// after pushes, pops and browser Back; [child] is the page's navigator.
+/// Supplied by `BgeApp`; when null the child renders bare (tests without a
+/// shell).
 ///
 /// The shell sits inside the auth scope (#145), so it can read the
 /// `AuthBloc`; `/auth` itself stays outside it.

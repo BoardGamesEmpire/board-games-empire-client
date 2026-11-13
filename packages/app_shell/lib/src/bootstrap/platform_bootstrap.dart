@@ -160,6 +160,15 @@ abstract interface class PlatformBootstrap {
   /// bootstrap's own fields, and [dispose] waits for the latest one only.
   Future<BootstrapResult> initialize();
 
+  /// Whether the browser's own Back is the way back on this platform
+  /// (#611).
+  ///
+  /// `true` on web: the browser has a Back button or gesture of its own,
+  /// which steps back through the history entries the router reports, a
+  /// pushed screen's included. `false` on native (mobile and desktop), which
+  /// has no browser chrome and no such history.
+  bool get browserOwnsBack;
+
   /// Whether [reset] is meaningful on this platform.
   ///
   /// `true` on native (a device-local MetaDB exists to delete), `false` on

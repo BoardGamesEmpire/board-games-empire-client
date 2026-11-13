@@ -347,6 +347,7 @@ Future<void> runBgeApp({
       themeMode: themeMode,
       locale: locale,
       additionalLocalizationsDelegates: additionalLocalizationsDelegates,
+      browserOwnsBack: platformBootstrap.browserOwnsBack,
     ),
   );
 }
