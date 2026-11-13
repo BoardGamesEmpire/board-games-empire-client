@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/navigation/shell_modal_guard.dart';
 import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
 import 'package:app_shell/src/screens/not_yet_available_screen.dart';
 import 'package:app_shell/src/screens/route_not_found_screen.dart';
@@ -813,8 +814,12 @@ GoRouter buildAppRouter({
   AdminHouseholdDetailScreenBuilder? adminHouseholdDetailBuilder,
   ServerSettingsScreenBuilder? serverSettingsBuilder,
 }) {
+  // #414: a modal on the root navigator leaves with the navigation shell
+  // page it was opened over. One per router.
+  final modalGuard = ShellModalGuard();
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    observers: [modalGuard.rootObserver],
     // go_router removes its listener on dispose but never disposes the
     // listenable itself. It is therefore a required parameter: the caller
     // owns it and must dispose it (after the router). There is deliberately
@@ -905,15 +910,15 @@ GoRouter buildAppRouter({
           // of a page pushed inside the shell, so a page opened from a
           // pop-up still removes it once it has arrived (#414). One per
           // navigator, made here so each router has its own.
+          //
+          // #414: the guard hears this navigator's pages leave, and the
+          // shell itself leave, to take a root modal down with its page.
           ShellRoute(
-            observers: [BgePopupCoverObserver()],
-            builder: (context, state, child) =>
-                navigationShellBuilder?.call(
-                  context,
-                  state.uri.path,
+            observers: [BgePopupCoverObserver(), modalGuard.shellObserver],
+            builder: (context, state, child) => modalGuard.wrapShell(
+              navigationShellBuilder?.call(context, state.uri.path, child) ??
                   child,
-                ) ??
-                child,
+            ),
             routes: [
               GoRoute(
                 path: AppRoutes.home,
