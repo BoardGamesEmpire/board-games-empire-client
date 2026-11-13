@@ -1504,6 +1504,39 @@ void main() {
         expect(history.allLocations, hasLength(before.length));
       });
 
+      testWidgets("the closed page's entry gives way under a dialog the "
+          'event opened, which stays', (tester) async {
+        // The dialog is on the root navigator, over the shell, and its
+        // event stays beneath the restored entry, so the dialog stays too.
+        // The route leaves from its own navigator: the router's pop would
+        // close the dialog and leave the spent page and its address.
+        final history = FakeBrowserHistory.install(tester);
+        await openHosted(tester, remote: hosting(), users: finding());
+        await tapShown(tester, find.byKey(EventDetailScreen.addAttendeeKey));
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final detail = AppRoutes.eventDetailOf('e-0');
+        final page = AppRoutes.eventAddAttendeeOf('e-0');
+        final before = history.allLocations;
+        expect(before.sublist(before.length - 3), [detail, page, detail]);
+
+        unawaited(
+          showDialog<void>(
+            context: tester.element(find.byType(EventDetailScreen)),
+            builder: (_) => const AlertDialog(content: Text('probe')),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await history.back();
+        await tester.pumpAndSettle();
+
+        expect(find.text('probe'), findsOneWidget);
+        expect(find.byType(AddAttendeeScreen), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+        expect(history.locations.last, detail);
+      });
+
       testWidgets('no Add people where no user search is registered', (
         tester,
       ) async {

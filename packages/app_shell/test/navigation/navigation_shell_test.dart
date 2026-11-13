@@ -1053,6 +1053,30 @@ void main() {
       expect(_inside(FocusManager.instance.primaryFocus, _bar), isTrue);
     });
 
+    testWidgets('a resize keeps focus on the destination that had it, not '
+        'the selected one', (tester) async {
+      final shell = await _pump(tester, at: '/collection');
+      _destinationNode(tester, 'games').requestFocus();
+      await tester.pump();
+
+      await shell.resize(const Size(700, 800));
+
+      expect(tester.widget<NavigationRail>(_rail).selectedIndex, 1);
+      expect(
+        FocusManager.instance.primaryFocus,
+        _destinationNode(tester, 'games'),
+      );
+      expect(_inside(FocusManager.instance.primaryFocus, _rail), isTrue);
+
+      await shell.resize(const Size(400, 800));
+
+      expect(
+        FocusManager.instance.primaryFocus,
+        _destinationNode(tester, 'games'),
+      );
+      expect(_inside(FocusManager.instance.primaryFocus, _bar), isTrue);
+    });
+
     testWidgets('a resize from medium to expanded keeps focus on the rail '
         'destination', (tester) async {
       final shell = await _pump(

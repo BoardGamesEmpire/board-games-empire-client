@@ -117,11 +117,39 @@ class _NavigationShellState extends State<NavigationShell> {
     skipTraversal: true,
   );
 
+  /// The destination whose control in the bar or the rail last took focus,
+  /// for a resize to hand focus to the same one in the other form.
+  ///
+  /// Noted as focus moves, since a resize reads it in build, where the
+  /// rail's control, which its destination's key sits below, can't be
+  /// searched.
+  String? _focusedId;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_noteFocusedId);
+  }
+
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_noteFocusedId);
     _barFocus.dispose();
     _railFocus.dispose();
     super.dispose();
+  }
+
+  void _noteFocusedId() {
+    final focused = FocusManager.instance.primaryFocus;
+    if (focused == null || _shown == _Chrome.none) return;
+    final chrome = _focusOf(_shown);
+    if (!chrome.hasFocus) return;
+    _focusedId = widget.destinations
+        .where(
+          (d) => _marks(focused, NavigationShell.destinationKey(d.id), chrome),
+        )
+        .firstOrNull
+        ?.id;
   }
 
   void _openDrawer() => _scaffold.currentState?.openDrawer();
@@ -233,12 +261,18 @@ class _NavigationShellState extends State<NavigationShell> {
   /// for the rail or back.
   ///
   /// The old form's control goes with it, and focus on it would fall to
-  /// nothing. So when it had focus, the new form's [currentId] gets it,
-  /// after the frame that builds it: by then the old node has gone and
-  /// Flutter's own fallback has yet to run, and a request made there wins.
+  /// nothing. So when it had focus, the same destination's control in the
+  /// new form, [_focusedId]'s, gets it, after the frame that builds it: by
+  /// then the old node has gone and Flutter's own fallback has yet to run,
+  /// and a request made there wins. Focus on a control that is no
+  /// destination, such as the rail's menu button, goes to [currentId]'s.
   ///
   /// Runs in build, while the old form's control still has focus.
-  void _keepChromeFocus(_Chrome chrome, String? currentId) {
+  void _keepChromeFocus(
+    _Chrome chrome,
+    List<NavDestination> destinations,
+    String? currentId,
+  ) {
     final before = _shown;
     _shown = chrome;
     if (before == chrome ||
@@ -249,12 +283,14 @@ class _NavigationShellState extends State<NavigationShell> {
       return;
     }
     final focused = FocusManager.instance.primaryFocus;
+    final noted = _focusedId;
+    final focusedId = destinations.any((d) => d.id == noted) ? noted : null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final now = FocusManager.instance.primaryFocus;
       // Gone elsewhere meanwhile: the user's, not ours.
       if (!mounted || (now != null && now != focused)) return;
-      _focusDestination(_focusOf(chrome), currentId);
+      _focusDestination(_focusOf(chrome), focusedId ?? currentId);
     });
   }
 
@@ -302,7 +338,11 @@ class _NavigationShellState extends State<NavigationShell> {
         : windowClass == BgeWindowClass.compact
         ? _Chrome.bar
         : _Chrome.rail;
-    _keepChromeFocus(chrome, current < 0 ? null : destinations[current].id);
+    _keepChromeFocus(
+      chrome,
+      destinations,
+      current < 0 ? null : destinations[current].id,
+    );
 
     return BackButtonListener(
       onBackButtonPressed: _back,

@@ -1522,8 +1522,9 @@ Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
 /// [EventAddAttendeeScreenBuilder]).
 ///
 /// It draws nothing, and after its first frame leaves for the event beneath
-/// it: a pop, or a `go` to the event where there is nothing to pop. Under
-/// [Router.neglect], so on the web the restored entry becomes the event's.
+/// it: a pop of its own page, or a `go` to the event where there is nothing
+/// beneath it to pop. Under [Router.neglect], so on the web the restored
+/// entry becomes the event's.
 /// Reported as a new entry instead, the event would follow the restored one
 /// in the history, and Back from it would come straight back here.
 class _LeaveForEvent extends StatefulWidget {
@@ -1542,9 +1543,13 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
     // After the frame that built it: the restore it is part of has settled.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Its own navigator, the shell's: the router pops a dialog on the
+      // root navigator first, and one the event opened stays over the
+      // event beneath this.
+      final navigator = Navigator.of(context);
       Router.neglect(context, () {
-        if (context.canPop()) {
-          context.pop();
+        if (navigator.canPop()) {
+          navigator.pop();
         } else {
           context.go(AppRoutes.eventDetailOf(widget.eventId));
         }
