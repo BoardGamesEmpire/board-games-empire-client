@@ -733,6 +733,72 @@ void main() {
     expect(shown(tester), hasLength(1), reason: 'after Space');
   });
 
+  // The navigation shell's bar (#414) shows focus as a fill alone, so the fill
+  // must stand apart from rest by 3:1 (#644), and the icon on it from the
+  // fill (WCAG 1.4.11). The rail's fill is the shell's; its test is there.
+  group("a navigation bar's focused destination differs from rest by 3:1", () {
+    final themes = {
+      'light': BgeTheme.light,
+      'dark': BgeTheme.dark,
+      'highContrastLight': BgeTheme.highContrastLight,
+      'highContrastDark': BgeTheme.highContrastDark,
+    };
+
+    for (final MapEntry(key: name, value: build) in themes.entries) {
+      testWidgets(name, (tester) async {
+        await host(tester, [
+          NavigationBar(
+            key: goKey,
+            onDestinationSelected: (_) {},
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+              NavigationDestination(icon: Icon(Icons.search), label: 'Entry'),
+            ],
+          ),
+        ], themeData: build());
+        // The second destination: the first is selected, and its indicator
+        // would mask the focus fill.
+        final icon = tester.getRect(find.byIcon(Icons.search));
+        final rect = tester.getRect(find.text('Entry')).inflate(8);
+        final atRest = await capture(tester);
+
+        await tab(tester);
+        await tab(tester);
+        await tester.pumpAndSettle();
+        expect(
+          Focus.of(tester.element(find.text('Entry'))).hasPrimaryFocus,
+          isTrue,
+        );
+        final focused = await capture(tester);
+
+        // Anywhere the focus shows: a fill, a ring, an edge.
+        var strongest = 1.0;
+        for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
+          for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
+            final point = Offset(x + 0.5, y + 0.5);
+            final ratio = Wcag.contrastRatio(atRest(point), focused(point));
+            if (ratio > strongest) strongest = ratio;
+          }
+        }
+        expect(strongest, greaterThanOrEqualTo(3.0), reason: 'the fill');
+
+        // The icon against the fill beside it.
+        final fill = focused(Offset(icon.left - 4, icon.center.dy));
+        var iconRatio = 1.0;
+        for (var y = icon.top.ceil(); y < icon.bottom.floor(); y++) {
+          for (var x = icon.left.ceil(); x < icon.right.floor(); x++) {
+            final ratio = Wcag.contrastRatio(
+              focused(Offset(x + 0.5, y + 0.5)),
+              fill,
+            );
+            if (ratio > iconRatio) iconRatio = ratio;
+          }
+        }
+        expect(iconRatio, greaterThanOrEqualTo(3.0), reason: 'the icon');
+      });
+    }
+  });
+
   // What #50's drafted findings want, skipped until each is fixed, so the gap
   // stays visible in the suite. Each is written against what a user sees
   // rather than against today's ring, so a fix of any shape passes it. Each
