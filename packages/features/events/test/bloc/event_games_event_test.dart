@@ -126,7 +126,7 @@ void main() {
     );
   });
 
-  test('a dropped write is equal by its write and title', () {
+  test('a dropped write is equal by its write, title and subtitle', () {
     const dropped = EventGamesWriteDropped(
       EventGamesWrite.takeBack,
       title: 'Game 1',
@@ -145,6 +145,16 @@ void main() {
     expect(
       dropped,
       isNot(const EventGamesWriteDropped(EventGamesWrite.takeBack)),
+    );
+    expect(
+      dropped,
+      isNot(
+        const EventGamesWriteDropped(
+          EventGamesWrite.takeBack,
+          title: 'Game 1',
+          subtitle: 'Seafarers',
+        ),
+      ),
     );
   });
 

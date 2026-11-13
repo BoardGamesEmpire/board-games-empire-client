@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -62,7 +63,9 @@ OfferedGame _game(
   String id,
   String attendeeId,
   String title, {
+  String? subtitle,
   String platform = 'Tabletop',
+  PlatformType? platformType,
   GameMedium? medium = GameMedium.physical,
 }) => OfferedGame(
   id: id,
@@ -71,7 +74,9 @@ OfferedGame _game(
   platformGameId: 'pg-$id',
   gameId: 'g-$id',
   title: title,
+  subtitle: subtitle,
   platformName: platform,
+  platformType: platformType,
   medium: medium,
 );
 
@@ -289,7 +294,11 @@ void main() {
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
       locale: const Locale('en', 'US'),
-      localizationsDelegates: EventsLocalizations.localizationsDelegates,
+      localizationsDelegates: const [
+        ...EventsLocalizations.localizationsDelegates,
+        // The pool's Filters, its sheet and its chips (#851).
+        GameFiltersLocalizations.delegate,
+      ],
       supportedLocales: EventsLocalizations.supportedLocales,
       builder: (context, child) {
         if (offline == null) return child!;
@@ -1742,6 +1751,433 @@ void main() {
         expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
         handle.dispose();
       });
+    });
+
+    // The shared filter sheet, applied on the device (#851).
+    group('Filters', () {
+      Finder filters() => find.byKey(GameFilterKeys.button);
+      Finder filterChip(String id) => find.byKey(GameFilterKeys.inUse(id));
+      FocusNode filtersFocus(WidgetTester tester) =>
+          tester.widget<ButtonStyleButton>(filters()).focusNode!;
+
+      /// The pool with platform types: the viewer's Catan and Ada's Azul on
+      /// a tabletop, Ada's Catan on a PC, and Bo's Root with none, as an old
+      /// server sends it.
+      void servePlatforms() => served = [
+        _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+        _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        _game(
+          'o-3',
+          'att-ada',
+          'Catan',
+          platform: 'Board Game Arena',
+          platformType: PlatformType.pc,
+          medium: GameMedium.digital,
+        ),
+        _game('o-4', 'att-bo', 'Root', medium: null),
+      ];
+
+      Future<void> openFilters(WidgetTester tester) async {
+        await press(tester, filters());
+        await animate(tester);
+      }
+
+      Future<void> tapInSheet(WidgetTester tester, Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pump();
+        await tester.tap(finder);
+        await tester.pump();
+      }
+
+      Future<void> closeFilters(WidgetTester tester) async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await animate(tester);
+      }
+
+      /// Opens the sheet, chooses [type], flipped where [flipped], and
+      /// closes it.
+      Future<void> filterBy(
+        WidgetTester tester,
+        PlatformType type, {
+        bool flipped = false,
+      }) async {
+        await openFilters(tester);
+        await tapInSheet(tester, find.byKey(GameFilterKeys.platformType(type)));
+        if (flipped) {
+          await tapInSheet(
+            tester,
+            find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+          );
+        }
+        await closeFilters(tester);
+      }
+
+      testWidgets('Filters opens the sheet and narrows the pool', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        expect(
+          find.descendant(of: filters(), matching: find.text('Filters')),
+          findsOneWidget,
+        );
+
+        await openFilters(tester);
+        // Offer games' sheet: the medium and the flips, and no missing-base
+        // switch, since the rows are flat.
+        expect(
+          find.byKey(GameFilterKeys.medium(GameMedium.digital)),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+          findsOneWidget,
+        );
+        expect(find.byKey(GameFilterKeys.missingBaseGame), findsNothing);
+        await tapInSheet(
+          tester,
+          find.byKey(GameFilterKeys.platformType(PlatformType.tabletop)),
+        );
+        await closeFilters(tester);
+
+        // Root, with no platform type, is in no set.
+        expect(rowsShown(tester), ['o-1', 'o-2']);
+        expect(scrollView(tester).semanticChildCount, 2);
+        expect(find.text('Filters (1)'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: filterChip('platform_tabletop'),
+            matching: find.text('Tabletop'),
+          ),
+          findsOneWidget,
+        );
+        // Closed, it puts focus back on Filters.
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('the search and the facets narrow together, and the sheet '
+          'leaves the search as typed', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await tester.enterText(search(), 'catan');
+        await tester.pump();
+
+        await filterBy(tester, PlatformType.tabletop);
+
+        // Ada's Catan is on a PC.
+        expect(rowsShown(tester), ['o-1']);
+        expect(tester.widget<TextField>(search()).controller!.text, 'catan');
+        expect(find.text('1 game of 4'), findsOneWidget);
+      });
+
+      testWidgets('flipped, it keeps the rest, a row with no platform type '
+          'included', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+
+        await filterBy(tester, PlatformType.tabletop, flipped: true);
+
+        expect(rowsShown(tester), ['o-3', 'o-4']);
+        expect(
+          find.descendant(
+            of: filterChip('platform_tabletop'),
+            matching: find.text('Not Tabletop'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a chip removed lets its filter go', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+
+        await press(tester, filterChip('platform_tabletop'));
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(rowsShown(tester), ['o-1', 'o-2', 'o-3', 'o-4']);
+        expect(find.text('Filters (1)'), findsNothing);
+      });
+
+      testWidgets('removing the last chip hands focus to Filters', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+        await tester.ensureVisible(filterChip('platform_tabletop'));
+        await tester.pump();
+        tester
+            .widget<InputChip>(filterChip('platform_tabletop'))
+            .focusNode!
+            .requestFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets("removing the last chip by a screen reader's activation "
+          'hands focus to Filters', (tester) async {
+        final handle = tester.ensureSemantics();
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+        await focusNothing(tester);
+
+        screenReaderTap(tester, 'Tabletop');
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('Clear filters clears the facets too', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.console);
+        final clearFilters = find.byKey(
+          EventDetailScreen.poolClearFiltersKey,
+          skipOffstage: false,
+        );
+        expect(
+          find.text('No games match', skipOffstage: false),
+          findsOneWidget,
+        );
+
+        await tester.ensureVisible(clearFilters);
+        await tester.pump();
+        await activateByKeyboard(tester, clearFilters);
+        await animate(tester);
+
+        expect(rowsShown(tester), ['o-1', 'o-2', 'o-3', 'o-4']);
+        expect(filterChip('platform_console'), findsNothing);
+        expect(
+          find.descendant(of: filters(), matching: find.text('Filters')),
+          findsOneWidget,
+        );
+        // The hand-off stays on People.
+        expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('the count line counts facet narrowing', (tester) async {
+        final handle = tester.ensureSemantics();
+        servePlatforms();
+        await showGames(tester);
+        expect(find.byKey(EventDetailScreen.poolCountKey), findsNothing);
+
+        await filterBy(tester, PlatformType.tabletop);
+
+        expect(find.text('2 games of 4'), findsOneWidget);
+        expect(
+          tester.getSemantics(find.byKey(EventDetailScreen.poolCountKey)),
+          matchesSemantics(label: '2 games of 4', isLiveRegion: true),
+        );
+
+        // With a person chosen too, both narrow.
+        await choosePeople(tester, ['att-ada']);
+        expect(rowsShown(tester), ['o-2']);
+        expect(find.text('1 game of 4'), findsOneWidget);
+        handle.dispose();
+      });
+
+      testWidgets('the filters outlive a read of the pool and a switch to '
+          'Details', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await settle(tester);
+        await animate(tester);
+        // The bar, scrolled out of view to reach the sheet's button.
+        await tester.ensureVisible(
+          find.byKey(
+            EventDetailScreen.tabKey(EventDetailTab.details),
+            skipOffstage: false,
+          ),
+        );
+        await tester.pump();
+        await tester.tap(tab(EventDetailTab.details));
+        await animate(tester);
+        await chooseGames(tester);
+
+        expect(rowsShown(tester), ['o-1', 'o-2']);
+        expect(find.text('Filters (1)'), findsOneWidget);
+      });
+
+      testWidgets('nothing chosen, the chips add no space under the people', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        final wrap = find
+            .ancestor(of: people(), matching: find.byType(Wrap))
+            .first;
+        final tokens = BgeTokens.of(tester.element(people()));
+
+        // From the controls to the first row, whose padding is its own: the
+        // header's closing gap alone.
+        expect(
+          tester.getRect(row('o-1')).top - tester.getRect(wrap).bottom,
+          tokens.spaceMd,
+        );
+
+        await filterBy(tester, PlatformType.tabletop);
+        // A chip, spaced from the controls above it, then the count.
+        expect(
+          tester.getRect(filterChip('platform_tabletop')).top -
+              tester.getRect(wrap).bottom,
+          greaterThanOrEqualTo(tokens.spaceSm),
+        );
+      });
+
+      testWidgets('a range the sheet commits as the screen goes changes '
+          'nothing', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await openFilters(tester);
+        final from = find.byKey(
+          GameFilterKeys.rangeField(CollectionFacet.publishYear, from: true),
+        );
+        await tester.ensureVisible(from);
+        await tester.pump();
+        await tester.enterText(from, '2000');
+        await tester.pump();
+
+        // The screen goes with the sheet open, as a redirect takes it, and
+        // the field commits its bound once that frame has ended.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
+  group('names with subtitles (#851)', () {
+    final seafarers = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+
+    testWidgets('a row names its subtitle', (tester) async {
+      final handle = tester.ensureSemantics();
+      served = [seafarers, azul];
+      await showGames(tester);
+      await tester.ensureVisible(row(seafarers.id));
+      await tester.pump();
+
+      final name = find.descendant(
+        of: row(seafarers.id),
+        matching: find.text('Catan: Seafarers'),
+      );
+      expect(name, findsOneWidget);
+      expect(
+        tester.getSemantics(name),
+        matchesSemantics(
+          label: "Catan: Seafarers\nTabletop, Physical\nYou're bringing this",
+        ),
+      );
+      // A subtitle searched for finds it.
+      await tester.enterText(search(), 'seafarers');
+      await tester.pump();
+      expect(rowsShown(tester), [seafarers.id]);
+      handle.dispose();
+    });
+
+    testWidgets("a take-back's outcome names the subtitle", (tester) async {
+      served = [seafarers, azul];
+      await showGames(tester);
+      served = [azul];
+
+      await press(tester, takeBack(seafarers.id));
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text('Catan: Seafarers is off your games.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a dropped take-back's outcome names the subtitle", (
+      tester,
+    ) async {
+      served = [seafarers, azul];
+      await showGames(tester);
+      await tester.ensureVisible(takeBack(seafarers.id));
+      await tester.pump();
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      // A read starts, and the press lands before a frame shows it.
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await tester.tap(takeBack(seafarers.id));
+
+      // Meanwhile a read of the pool finds the game gone.
+      served = [azul];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await settle(tester);
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect(remote.takeBacks, isEmpty);
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            "Catan: Seafarers wasn't taken back: the event changed first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Take back says the subtitle, and so does the dialog before '
+        "someone else's is taken back", (tester) async {
+      final handle = tester.ensureSemantics();
+      final adas = _game('o-2', 'att-ada', 'Azul', subtitle: 'Summer Pavilion');
+      served = [seafarers, adas];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        ),
+      );
+      await tester.ensureVisible(takeBack(seafarers.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(takeBack(seafarers.id)),
+        matchesSemantics(
+          label: 'Take back Catan: Seafarers',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await press(tester, takeBack(adas.id));
+      await animate(tester);
+      expect(
+        find.text("Take Azul: Summer Pavilion off Ada's games?"),
+        findsOneWidget,
+      );
+      handle.dispose();
     });
   });
 
@@ -3983,6 +4419,97 @@ void main() {
       ]);
     });
 
+    group('a game with a subtitle (#851)', () {
+      final seafarers = _game(
+        'o-2',
+        'att-ada',
+        'Catan',
+        subtitle: 'Seafarers',
+      );
+
+      testWidgets('Nominate is named "Nominate Catan: Seafarers" to a screen '
+          'reader, as Take back on the same row is', (tester) async {
+        final handle = tester.ensureSemantics();
+        final mine = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+        served = [mine, azul];
+        await showGames(tester);
+        await tester.ensureVisible(nominate(mine.id));
+        await tester.pump();
+
+        expect(
+          tester.getSemantics(nominate(mine.id)),
+          isSemantics(label: 'Nominate Catan: Seafarers', isButton: true),
+        );
+        expect(
+          tester.getSemantics(takeBack(mine.id)),
+          isSemantics(label: 'Take back Catan: Seafarers', isButton: true),
+        );
+        handle.dispose();
+      });
+
+      testWidgets('the scope dialog and the outcome name the subtitle', (
+        tester,
+      ) async {
+        served = [catanMine, seafarers];
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await press(tester, nominate(seafarers.id));
+        await animate(tester);
+
+        expect(find.text('Nominate Catan: Seafarers'), findsOneWidget);
+
+        await tester.tap(scope(null));
+        await tester.pump();
+        await tester.tap(confirm());
+        await animate(tester);
+
+        expect(
+          find.descendant(
+            of: nominationsOutcome(),
+            matching: find.text(
+              'Catan: Seafarers is nominated. Voting is open.',
+            ),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("a dropped nominate's outcome names the subtitle", (
+        tester,
+      ) async {
+        final soon = confirmed(
+          'd-1',
+          now.add(const Duration(minutes: 1)),
+        ).copyWith(eventId: 'e-1');
+        served = [catanMine, seafarers];
+        await showGames(
+          tester,
+          detail: detailOf(occurrences: [soon, twoDates.last]),
+        );
+
+        await press(tester, nominate(seafarers.id));
+        await animate(tester);
+        // The date starts while the dialog is open.
+        clock = now.add(const Duration(minutes: 2));
+        await tester.tap(scope('d-1'));
+        await tester.pump();
+        await tester.tap(confirm());
+        await animate(tester);
+
+        expect(remote.nominates, isEmpty);
+        expect(
+          find.descendant(
+            of: nominationsOutcome(),
+            matching: find.text(
+              "Catan: Seafarers wasn't nominated: something changed on this "
+              'event first.',
+            ),
+          ),
+          findsOneWidget,
+        );
+      });
+    });
+
     testWidgets('a date already past, or cancelled, is not offered', (
       tester,
     ) async {
@@ -5020,6 +5547,94 @@ void main() {
       handle.dispose();
     });
 
+    /// Opens Filters, chooses tabletops, and closes the sheet (#851).
+    Future<void> filterTabletops(WidgetTester tester) async {
+      await press(tester, find.byKey(GameFilterKeys.button));
+      await animate(tester);
+      final tabletop = find.byKey(
+        GameFilterKeys.platformType(PlatformType.tabletop),
+      );
+      await tester.ensureVisible(tabletop);
+      await tester.pump();
+      await tester.tap(tabletop);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+    }
+
+    for (final (name, scale) in [
+      ('100%', 1.0),
+      ('200%', BgeTextScale.maxScaleFactor),
+    ]) {
+      testWidgets('the header at 320×640 and $name text: People, Not mine and '
+          'Filters fit the window in that order, with the people chosen, then '
+          'the facets in use, under them (#851)', (tester) async {
+        useViewSize(tester, const Size(320, 640));
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        served = [
+          _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+          _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        ];
+        await showGames(tester);
+        // Below the Nominations section (#517): built once scrolled to.
+        await tester.scrollUntilVisible(
+          notMine(),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await press(tester, notMine());
+        await tester.pump();
+        await filterTabletops(tester);
+        await tester.ensureVisible(people());
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        // The content's edges, inside the page's gutters: the search field
+        // spans the header's width.
+        final content = tester.getRect(search());
+        expect(content.left, greaterThan(0));
+        expect(content.right, lessThan(320));
+        final controls = [
+          people(),
+          notMine(),
+          find.byKey(GameFilterKeys.button),
+        ];
+        final rects = [for (final control in controls) tester.getRect(control)];
+        for (final (i, rect) in rects.indexed) {
+          expect(rect.left, greaterThanOrEqualTo(content.left), reason: '$i');
+          expect(rect.right, lessThanOrEqualTo(content.right), reason: '$i');
+          if (i == 0) continue;
+          final before = rects[i - 1];
+          // On a run of its own below, or after the one before on its run.
+          expect(
+            rect.top >= before.bottom ||
+                (rect.top == before.top && rect.left >= before.right),
+            isTrue,
+            reason: 'control $i follows control ${i - 1}',
+          );
+        }
+        final person = tester.getRect(inUse('att-me'));
+        final facet = tester.getRect(
+          find.byKey(GameFilterKeys.inUse('platform_tabletop')),
+        );
+        expect(
+          person.top,
+          greaterThanOrEqualTo(
+            rects.map((rect) => rect.bottom).reduce((a, b) => a > b ? a : b),
+          ),
+        );
+        expect(facet.top, greaterThanOrEqualTo(person.bottom));
+        expect(person.right, lessThanOrEqualTo(content.right));
+        expect(facet.right, lessThanOrEqualTo(content.right));
+      });
+    }
+
     /// The cache's answer, then the Games tab.
     Future<void> arrangeGames(WidgetTester tester) async {
       cache.add(detailOf());
@@ -5084,6 +5699,36 @@ void main() {
         await tester.tap(takeBack(azul.id));
         await tester.pumpAndSettle();
         expect(find.text("Take Azul off Ada's games?"), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the Games tab with filters in use (#851)',
+      build: (theme) => harness(detail: detailOf(), theme: theme),
+      arrange: (tester) async {
+        served = [
+          _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+          _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        ];
+        await arrangeGames(tester);
+        // Below the Nominations section (#517): built once scrolled to.
+        await tester.scrollUntilVisible(
+          notMine(),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await press(tester, notMine());
+        await tester.pump();
+        await filterTabletops(tester);
+        final chip = find.byKey(GameFilterKeys.inUse('platform_tabletop'));
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        expect(chip, findsOneWidget);
       },
     );
 

@@ -133,12 +133,12 @@ typedef _BatchEnd = ({Set<String> offered, EventOfferResult? stopped});
 /// - Anything else, or the session said no or threw (below), when nothing is
 ///   sent, or after a 404; failed.
 ///
-/// The outcome carries the game's title as the event carried it, and the
-/// offered game's id, by which the screen finds the nominations of the copy
-/// (#517). A done take-back's state also drops the game from
-/// [EventGamesState.games], since the answer already says it is off the
-/// pool, and a read that was out as it ended leaves the game out of its
-/// answer, which can predate the take-back. Then the pool is read again,
+/// The outcome carries the game's title and subtitle as the event carried
+/// them (#851), and the offered game's id, by which the screen finds the
+/// nominations of the copy (#517). A done take-back's state also drops the
+/// game from [EventGamesState.games], since the answer already says it is
+/// off the pool, and a read that was out as it ended leaves the game out of
+/// its answer, which can predate the take-back. Then the pool is read again,
 /// unless the take-back failed, when the pool is as it was, or the event is
 /// gone (see Reads).
 ///
@@ -146,10 +146,10 @@ typedef _BatchEnd = ({Set<String> offered, EventOfferResult? stopped});
 ///
 /// [EventGamesWriteDropped] is a write the screen's own re-check stopped. It
 /// sends nothing and sets an outcome of dropped for that write, with the
-/// title when given, since a screen reader hears nothing happen when a press
-/// sends nothing. It clears the last outcome first, as a write starting
-/// does, so a drop like the one before it is still a new outcome. It is
-/// ignored while a write is out, whose own outcome says what happened.
+/// title and subtitle when given, since a screen reader hears nothing happen
+/// when a press sends nothing. It clears the last outcome first, as a write
+/// starting does, so a drop like the one before it is still a new outcome.
+/// It is ignored while a write is out, whose own outcome says what happened.
 ///
 /// ## The session
 ///
@@ -386,6 +386,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
         outcome: () => EventTakeBackOutcome(
           result: result,
           title: game.title,
+          subtitle: game.subtitle,
           offeredGameId: game.id,
           attendeeId: event.attendeeId,
         ),
@@ -452,6 +453,7 @@ class EventGamesBloc extends Bloc<EventGamesEvent, EventGamesState> {
           EventGamesWrite.takeBack => EventTakeBackOutcome(
             result: EventTakeBackResult.dropped,
             title: event.title,
+            subtitle: event.subtitle,
           ),
         },
       ),

@@ -125,7 +125,8 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 /// [EventNominationsState.writing] names it until its outcome comes in, in
 /// the same state as any row its answer changes. So the outcome never lands
 /// beside the row as it was. The outcome carries the game's title: the pool
-/// row's for a nominate, and the nomination's for every other write.
+/// row's for a nominate, with its subtitle (#851), and the nomination's for
+/// every other write.
 ///
 /// A row's change is kept over a read that was out as the write ended, whose
 /// answer can predate the write: the change is made again on that answer. A
@@ -205,10 +206,11 @@ ResolveResult _resolved(_Decided decided) => switch (decided) {
 ///
 /// [NominationWriteDropped] is a write the screen's own re-check stopped. It
 /// sends nothing and sets an outcome of dropped for that write, with the
-/// title, since a screen reader hears nothing happen when a press sends
-/// nothing. It clears the last outcome first, as a write starting does, so a
-/// drop like the one before it is still a new outcome. It is ignored while a
-/// write is out, whose own outcome says what happened.
+/// title, and a nominate's subtitle (#851), since a screen reader hears
+/// nothing happen when a press sends nothing. It clears the last outcome
+/// first, as a write starting does, so a drop like the one before it is
+/// still a new outcome. It is ignored while a write is out, whose own
+/// outcome says what happened.
 ///
 /// ## The session
 ///
@@ -316,7 +318,7 @@ class EventNominationsBloc
     if (_closing) return;
 
     _ended(
-      NominateOutcome(result, title: game.title),
+      NominateOutcome(result, title: game.title, subtitle: game.subtitle),
       emit,
       change: answer == null ? null : _atHead(answer),
       settling: sent && result == NominateResult.failed,
@@ -711,6 +713,7 @@ class EventNominationsBloc
           NominationWrite.nominate => NominateOutcome(
             NominateResult.dropped,
             title: title,
+            subtitle: event.subtitle,
           ),
           NominationWrite.vote => VoteOutcome(VoteResult.dropped, title: title),
           NominationWrite.withdraw => WithdrawOutcome(

@@ -97,9 +97,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## The Games tab
 ///
 /// The games the attendees offer to bring, one row per offered copy, with a
-/// title search, a filter by person, and Take back on the viewer's own rows
-/// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
-/// what was read last.
+/// search, a filter by person, the shared filter sheet (#851), and Take back
+/// on the viewer's own rows ([EventGamesTab], #516). The pool isn't cached:
+/// the [EventGamesBloc] holds what was read last, and the tab filters it on
+/// the device.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again

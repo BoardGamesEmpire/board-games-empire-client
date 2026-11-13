@@ -11,6 +11,7 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -277,10 +278,11 @@ class EventGamesFooter extends StatelessWidget {
     };
   }
 
-  /// A take-back's copy, naming its game; the tab always names it, so one
-  /// with no title has none. A 409 says what to do by [supplied] (#517):
-  /// where nobody holds a live nomination of the row, it is in the lineup,
-  /// or nominated in a way the nominations held don't show.
+  /// A take-back's copy, naming its game by its title and subtitle
+  /// ([gameName], #851); the tab always names it, so one with no title has
+  /// none. A 409 says what to do by [supplied] (#517): where nobody holds a
+  /// live nomination of the row, it is in the lineup, or nominated in a way
+  /// the nominations held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -295,40 +297,41 @@ class EventGamesFooter extends StatelessWidget {
   ) {
     final title = outcome.title;
     if (title == null) return null;
+    final name = gameName(l10n, title, outcome.subtitle);
     final id = outcome.attendeeId;
     final theirs = id != null && id != viewerId;
     String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;
     return switch (outcome.result) {
       EventTakeBackResult.done =>
         theirs
-            ? l10n.eventsGamesTheirsTakenBack(title, offeredBy())
-            : l10n.eventsGamesTakenBack(title),
+            ? l10n.eventsGamesTheirsTakenBack(name, offeredBy())
+            : l10n.eventsGamesTakenBack(name),
       EventTakeBackResult.stillSupplies => switch ((supplied, theirs)) {
         (StillSuppliedBy.viewer, false) => l10n.eventsGamesStillSuppliesYours(
-          title,
+          name,
         ),
         (StillSuppliedBy.viewer, true) =>
-          l10n.eventsGamesTheirsStillSuppliesYours(title, offeredBy()),
+          l10n.eventsGamesTheirsStillSuppliesYours(name, offeredBy()),
         (StillSuppliedBy.viewerAndSomeoneElse, false) =>
-          l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
+          l10n.eventsGamesStillSuppliesYoursAndTheirs(name),
         (StillSuppliedBy.viewerAndSomeoneElse, true) =>
           l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(
-            title,
+            name,
             offeredBy(),
           ),
         (StillSuppliedBy.someoneElse, false) =>
-          l10n.eventsGamesStillSuppliesTheirs(title),
+          l10n.eventsGamesStillSuppliesTheirs(name),
         (StillSuppliedBy.someoneElse, true) =>
-          l10n.eventsGamesTheirsStillSuppliesTheirs(title, offeredBy()),
-        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(title),
+          l10n.eventsGamesTheirsStillSuppliesTheirs(name, offeredBy()),
+        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(name),
         (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
-          title,
+          name,
           offeredBy(),
         ),
       },
-      EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
-      EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
-      EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(title),
+      EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(name),
+      EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(name),
+      EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(name),
     };
   }
 
@@ -384,14 +387,23 @@ class EventGamesFooter extends StatelessWidget {
         },
       };
 
-  /// A nominations write's copy (#517), naming its game. A nominate that
-  /// went through says what the server made of it, and a host's close of a
-  /// vote how the vote came out (#518).
+  /// A nominations write's copy (#517), naming its game: a nominate's as its
+  /// pool row names it, with its subtitle ([gameName], #851), and every
+  /// other write's by the nomination's title. A nominate that went through
+  /// says what the server made of it, and a host's close of a vote how the
+  /// vote came out (#518).
   static String _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
   ) {
-    final title = outcome.title;
+    final title = switch (outcome) {
+      NominateOutcome(:final subtitle) => gameName(
+        l10n,
+        outcome.title,
+        subtitle,
+      ),
+      _ => outcome.title,
+    };
     return switch (outcome) {
       NominateOutcome(:final result) => switch (result) {
         NominateResult.open => l10n.eventsNominatedOpen(title),

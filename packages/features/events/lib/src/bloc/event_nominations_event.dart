@@ -123,13 +123,22 @@ final class NominationResolved extends EventNominationsEvent {
 /// game titled [title]. Nothing is sent: the outcome says so, since a screen
 /// reader hears nothing happen when a press sends nothing.
 final class NominationWriteDropped extends EventNominationsEvent {
-  const NominationWriteDropped(this.write, {required this.title});
+  const NominationWriteDropped(
+    this.write, {
+    required this.title,
+    this.subtitle,
+  });
 
   final NominationWrite write;
   final String title;
 
+  /// A nominate's pool row's subtitle, where it has one (#851), which its
+  /// outcome names the game with. Every other write's outcome names the
+  /// nomination's title alone, so it is ignored there.
+  final String? subtitle;
+
   @override
-  List<Object?> get props => [write, title];
+  List<Object?> get props => [write, title, subtitle];
 }
 
 /// The person closed the last write's banner.

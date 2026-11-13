@@ -590,7 +590,7 @@
   },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {
-    "description": "Label of the search field on the Games tab of an event's screen, which narrows the games people offer to bring by their title as the user types."
+    "description": "Label of the search field on the Games tab of an event's screen, which narrows the games people offer to bring by their title or subtitle as the user types."
   },
   "eventsGamesSearchClear": "Clear search",
   "@eventsGamesSearchClear": {
@@ -648,7 +648,7 @@
   },
   "eventsGamesCount": "{count, plural, =1{1 game} other{{count} games}} of {total}",
   "@eventsGamesCount": {
-    "description": "Under the Games tab's search field while a search or a person narrows the games: how many games are shown, of all the games offered to the event.",
+    "description": "Under the Games tab's search field while a search, a filter or a person narrows the games: how many games are shown, of all the games offered to the event.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -742,11 +742,11 @@
   },
   "eventsGamesNoMatchesTitle": "No games match",
   "@eventsGamesNoMatchesTitle": {
-    "description": "On the Games tab of an event's screen when games are offered but the search or the people chosen leave none of them."
+    "description": "On the Games tab of an event's screen when games are offered but the search, the filters or the people chosen leave none of them."
   },
   "eventsGamesClearFilters": "Clear filters",
   "@eventsGamesClearFilters": {
-    "description": "Button under eventsGamesNoMatchesTitle that empties the search and stops narrowing by people, so every game offered shows again."
+    "description": "Button under eventsGamesNoMatchesTitle that empties the search, clears the filters and stops narrowing by people, so every game offered shows again."
   },
   "eventsGamesHiddenTitle": "The games aren't shown to you",
   "@eventsGamesHiddenTitle": {
@@ -2164,7 +2164,7 @@
   },
   "eventsOfferTitleWithSubtitle": "{title}: {subtitle}",
   "@eventsOfferTitleWithSubtitle": {
-    "description": "A game's name on its row of the Offer games page when the game also has a subtitle, for example 'Catan: Seafarers', as the collection list names it. The subtitle is often what tells two rows apart. Reorder or change the punctuation as your language needs.",
+    "description": "A game's name when the game also has a subtitle, for example 'Catan: Seafarers', as the collection list names it. Used on the game's row of the Offer games page, and for the event's games on the Games tab of an event's screen: on the game's row; in its Take back and Nominate buttons as a screen reader reads them (eventsGamesTakeBackNamed, eventsNominateNamed); in the dialog that asks before someone else's game is taken back (eventsTakeBackTheirsConfirmTitle) and the one that asks what a nomination is for (eventsNominateTitle); and in the outcome lines at the foot of the screen after a take-back or a nominate from the game's row (eventsGamesTakenBack, eventsNominatedOpen and the others that name the game). A nomination's own row, and the outcome lines of a vote, a withdrawal or a host's decision, name the game by its title alone. The subtitle is often what tells two games apart. Reorder or change the punctuation as your language needs.",
     "placeholders": {
       "title": {
         "type": "String",

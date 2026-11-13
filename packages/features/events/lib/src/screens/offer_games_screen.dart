@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/detail/event_game_offers.dart';
+import 'package:events/src/widgets/event_game_filter_options.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
@@ -9,12 +11,6 @@ import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-/// What the page's filter sheet offers, and so what its chips name and its
-/// Filters button counts (#516): the game search's sections, the medium,
-/// and a flip under each. No expansions-missing-their-base switch: the rows
-/// are flat, so no row is marked as one.
-const _filterOptions = GameFilterOptions(medium: true, exclusion: true);
 
 /// The Offer games page (#516): the viewer's collection, to pick games from
 /// to offer to bring to an event. It pops its route with the picks, a
@@ -296,7 +292,7 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
   Future<void> _openFilters(BuildContext context) => showGameFilterSheet(
     context,
     initial: _filter,
-    options: _filterOptions,
+    options: eventGameFilterOptions,
     onChanged: (filter) {
       if (mounted) _setFilter(filter);
     },
@@ -309,7 +305,10 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
     final picks = [
       for (final item in _items ?? const <GameCollectionListItem>[])
         if (_picked.contains(item.entry.id))
-          OfferPick(collectionId: item.entry.id, title: _titleOf(l10n, item)),
+          OfferPick(
+            collectionId: item.entry.id,
+            title: gameName(l10n, item.title, item.subtitle),
+          ),
     ];
     if (picks.isEmpty) return;
     Navigator.of(context).pop(picks);
@@ -414,7 +413,10 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
     List<GameCollectionListItem> rows,
   ) {
     final tokens = BgeTokens.of(context);
-    final inUse = gameFiltersInUseCount(_filter, options: _filterOptions);
+    final inUse = gameFiltersInUseCount(
+      _filter,
+      options: eventGameFilterOptions,
+    );
     final shown = [
       for (final item in rows)
         if (_pickable(item)) item.entry.id,
@@ -478,7 +480,7 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
           padding: EdgeInsets.only(top: inUse > 0 ? tokens.spaceSm : 0),
           child: GameFiltersInUse(
             filter: _filter,
-            options: _filterOptions,
+            options: eventGameFilterOptions,
             onChanged: _setFilter,
             onEmptied: _filtersFocus.requestFocus,
           ),
@@ -500,19 +502,10 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
   }
 }
 
-/// [item]'s name on its row: its title, with its subtitle where it has one,
-/// as Collection's rows name it. The search matches both, and the subtitle
-/// is often what tells two rows apart.
-String _titleOf(EventsLocalizations l10n, GameCollectionListItem item) {
-  final subtitle = item.subtitle;
-  return subtitle == null || subtitle.isEmpty
-      ? item.title
-      : l10n.eventsOfferTitleWithSubtitle(item.title, subtitle);
-}
-
-/// One collection entry (#516): its picture, its title ([_titleOf]), where
-/// it is played and, where it can't be picked, why, with its checkbox, as
-/// one node. A null [reason] is a row that can be picked.
+/// One collection entry (#516): its picture, its title with its subtitle
+/// where it has one ([gameName]), where it is played and, where it can't be
+/// picked, why, with its checkbox, as one node. A null [reason] is a row
+/// that can be picked.
 ///
 /// A row that can't be picked is a disabled tile: its title and platform
 /// line, the control's own label, take the disabled look, which WCAG 1.4.3
@@ -552,7 +545,7 @@ class _OfferRow extends StatelessWidget {
       // the title little room, and a long word would break mid-word.
       horizontalTitleGap: BgeTokens.of(context).spaceSm,
       secondary: BgeThumbnail(url: item.thumbnail),
-      title: Text(_titleOf(l10n, item)),
+      title: Text(gameName(l10n, item.title, item.subtitle)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -279,7 +280,11 @@ void main() {
     return MaterialApp(
       theme: BgeTheme.light(),
       locale: const Locale('en', 'US'),
-      localizationsDelegates: EventsLocalizations.localizationsDelegates,
+      localizationsDelegates: const [
+        ...EventsLocalizations.localizationsDelegates,
+        // The Games tab's Filters, its sheet and its chips (#851).
+        GameFiltersLocalizations.delegate,
+      ],
       supportedLocales: EventsLocalizations.supportedLocales,
       builder: (context, child) {
         if (offline == null) return child!;

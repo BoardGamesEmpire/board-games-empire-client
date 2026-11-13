@@ -11,7 +11,7 @@ import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:models/domain.dart' show EventNomination;
+import 'package:models/domain.dart' show CollectionFilter, EventNomination;
 import 'package:ui/ui.dart';
 
 /// What the Games tab keeps across the screen's rebuilds (#516): its filter,
@@ -30,6 +30,7 @@ class EventGamesTabController extends ChangeNotifier {
   NominationSort _nominationSort = NominationSort.newest;
   int _searchEpoch = 0;
   bool _shown = false;
+  bool _disposed = false;
   EventGamesLoad? _settled;
   EventNominationsLoad? _nominationsSettled;
 
@@ -170,6 +171,24 @@ class EventGamesTabController extends ChangeNotifier {
 
   void setQuery(String query) => _set(_filter.copyWith(query: query));
 
+  /// Narrows the pool by [filter]'s facets, as each change in the filter
+  /// sheet or a chip's removal makes them (#851). The query stays as the
+  /// search field set it: [filter]'s own, the one the sheet or the chip was
+  /// given, is ignored.
+  ///
+  /// Once the controller is disposed, as it is with the screen, it does
+  /// nothing: the sheet commits a range field's bounds after it has closed,
+  /// which can be after the screen has gone (`showGameFilterSheet`).
+  void setGameFilter(CollectionFilter filter) {
+    if (_disposed) return;
+    _set(_filter.copyWith(game: filter.copyWith(query: _filter.query)));
+  }
+
+  /// The pool's Filters button's focus (#851): where the last chip's
+  /// removal hands focus, and where it comes back once the filter sheet
+  /// closes.
+  final FocusNode filtersFocus = FocusNode(debugLabel: 'Games filters');
+
   /// Chooses the person [id], or with [chosen] false, lets them go
   /// ([PoolFilter.withoutPerson]).
   void choose(String id, {required bool chosen}) => _set(
@@ -199,13 +218,14 @@ class EventGamesTabController extends ChangeNotifier {
   /// Clear filters' focus, in the state that says no game matches.
   final FocusNode clearFiltersFocus = FocusNode(debugLabel: 'Clear filters');
 
-  /// Clears the search and the people, from Clear filters, which leaves
-  /// with the state it sits in: the search field is emptied, and focus
-  /// handed to People once the frame that builds it has ended, if focus is
-  /// free then ([focusIsFree], from [context], with Clear filters counting
-  /// as free if it held focus at the press). The press arms it however it
-  /// came. Never to the search field: focus put on a text field opens the
-  /// on-screen keyboard, over the games the user asked to see.
+  /// Clears the search, the filter sheet's facets (#851) and the people, from
+  /// Clear filters, which leaves with the state it sits in: the search field
+  /// is emptied, and focus handed to People once the frame that builds it
+  /// has ended, if focus is free then ([focusIsFree], from [context], with
+  /// Clear filters counting as free if it held focus at the press). The
+  /// press arms it however it came. Never to the search field: focus put on
+  /// a text field opens the on-screen keyboard, over the games the user
+  /// asked to see.
   void clearFilters(BuildContext context) {
     final held = clearFiltersFocus.hasFocus ? clearFiltersFocus : null;
     _searchEpoch++;
@@ -493,8 +513,10 @@ class EventGamesTabController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     offerArea.dispose();
     peopleFocus.dispose();
+    filtersFocus.dispose();
     clearFiltersFocus.dispose();
     searchArea.dispose();
     nominationsFiltersFocus.dispose();

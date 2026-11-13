@@ -169,10 +169,10 @@ Know these limits before trusting a green run.
 - **Text on event detail.** The vote chips, "Confirm this date", the
   tallies and the type and status line speak a label that differs from their
   drawn text, so the contrast guideline measures none of them there. Nor
-  the Games tab's rows (#516): each is one merged node, its title, where it
+  the Games tab's rows (#516): each is one merged node, its name, where it
   is played and who brings it, and its platform line speaks a comma where it
   draws a dot. Nor each Take back, which draws "Take back" and speaks "Take
-  back" with its game's title. The same colour pairs are measured
+  back" with its game's name. The same colour pairs are measured
   elsewhere on the page. Nor the Offer games page's rows, each one merged
   node, its title, where it is played and, where it can't be picked, why.
   There the reason a row can't be picked, in `bodySmall` and
@@ -227,22 +227,27 @@ The same flows as the keyboard tests, plus the screens they don't reach:
    Type in the search and check the count ("2 games of 4") is read as it
    changes. Open People, check the pop-up is read as "Whose games", choose
    someone, and close it: focus is back on People, and the chip under the
-   search names them. Turn on Not mine and check your own rows leave. Take
-   one of your games back and check the footer reads "… is off your
-   games." Then stop the server, and on Details change your answer (Going
-   to Maybe, say): the change fails, so the event is read again, and that
-   read fails, so the games are read again, and fail too. Back on Games,
-   check the footer also reads "Couldn't update the games. These may be
-   out of date." under that outcome, and that both its Dismiss and its Try
-   again are reached, by the reader and with Tab, at the largest text. Then,
-   with the server back, take back a game that is nominated, or in the
-   lineup for a date still to come (the server's 409), and check the
-   footer reads "… is nominated, or in the lineup for a date still to
-   come, so it can't come off your games yet.", and that its Dismiss is
-   reached. Offline, check Offer games and each Take back say "Available
-   when you're online" as their hint, and that it is drawn once, under
-   Offer games. As someone who answered Not going, check Offer games is
-   read as unavailable, with why as its hint.
+   search names them. Turn on Not mine and check your own rows leave. Open
+   Filters (#851), choose a platform, and close it: focus is back on Filters,
+   which reads "Filters (1)", a chip under the people's names the platform,
+   and the count is read as it changes. Remove that chip with the reader's
+   double-tap: focus goes to Filters. On an event with a game that has a
+   subtitle, check its row, its Take back and its Nominate say it ("Catan:
+   Seafarers"), and so do Nominate's dialog and its outcome. Take one of your
+   games back and check the footer reads "… is off your games."
+   Then stop the server, and on Details change your answer (Going to Maybe,
+   say): the change fails, so the event is read again, and that read fails, so
+   the games are read again, and fail too. Back on Games, check the footer
+   also reads "Couldn't update the games. These may be out of date." under
+   that outcome, and that both its Dismiss and its Try again are reached, by
+   the reader and with Tab, at the largest text. Then, with the server back,
+   take back a game that is nominated, or in the lineup for a date still to
+   come (the server's 409), and check the footer reads "… is nominated, or in
+   the lineup for a date still to come, so it can't come off your games yet.",
+   and that its Dismiss is reached. Offline, check Offer games and each Take
+   back say "Available when you're online" as their hint, and that it is drawn
+   once, under Offer games. As someone who answered Not going, check Offer
+   games is read as unavailable, with why as its hint.
    Then, online, press Offer games, and check the page is read as "Offer
    games", that each row is one item saying the game, where it is played
    and whether it is checked, and that a game you offered already reads
@@ -568,11 +573,13 @@ The hand-offs:
 - A person's chip under the search, removed: the chip that takes its
   place, else the one before it, else People. A chip removed by pointer
   while focus is on another chip moves no focus.
+- A filter's chip under the people's (#851), removed: the chip that takes
+  its place, else the one before it, else Filters, as on the page.
 - Clear filters, in "No games match", however it is pressed: People, never
   the emptied search field, so no on-screen keyboard opens. Pressed by a
   pointer while keyboard focus sits on another control, it moves no
   focus.
-- *Whose games*, closed: People.
+- *Whose games*, closed: People. Filters' sheet, closed: Filters (#851).
 - The Offer games page, closed by its Offer button or by Back: Offer games,
   which keeps it, read as "Offering…", through the run it sent.
 - On the page, Clear filters, in "No games match", however it is pressed:

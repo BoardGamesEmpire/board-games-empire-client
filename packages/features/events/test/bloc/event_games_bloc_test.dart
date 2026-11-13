@@ -122,9 +122,9 @@ EventGamesOutcome _offerEnded(
   notOffered: notOffered,
 );
 
-/// A take-back's end, of [game]: named by its title, by its id, and by the
-/// row's attendee [attendeeId] it was sent for (#518), `a-1` as [_takeBack]
-/// sends it.
+/// A take-back's end, of [game]: named by its title and subtitle (#851), by
+/// its id, and by the row's attendee [attendeeId] it was sent for (#518),
+/// `a-1` as [_takeBack] sends it.
 EventGamesOutcome _takeBackEnded(
   EventTakeBackResult result,
   OfferedGame game, {
@@ -132,6 +132,7 @@ EventGamesOutcome _takeBackEnded(
 }) => EventTakeBackOutcome(
   result: result,
   title: game.title,
+  subtitle: game.subtitle,
   offeredGameId: game.id,
   attendeeId: attendeeId,
 );
@@ -1393,6 +1394,40 @@ void main() {
       expect(remote.poolRequests, [_poolRead('e-1', _ids)]);
     });
 
+    test('a take-back outcome carries the subtitle', () async {
+      final seafarers = _game(2).copyWith(subtitle: 'Seafarers');
+      for (final (answer, result)
+          in <(EventRemoteException?, EventTakeBackResult)>[
+            (null, EventTakeBackResult.done),
+            (_stillSupplies, EventTakeBackResult.stillSupplies),
+            (_refused, EventTakeBackResult.refused),
+            (_offline, EventTakeBackResult.failed),
+          ]) {
+        final remote = serving(
+          takenBack: (_) {
+            if (answer != null) throw answer;
+          },
+        );
+        final bloc = build(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(_takeBack(seafarers));
+        await pumpEventQueue();
+
+        expect(
+          bloc.state.outcome,
+          EventTakeBackOutcome(
+            result: result,
+            title: 'Game 2',
+            subtitle: 'Seafarers',
+            offeredGameId: 'g-2',
+            attendeeId: 'a-1',
+          ),
+          reason: result.name,
+        );
+      }
+    });
+
     test("a take-back of someone else's row names that row's attendee in "
         'its outcome (#518)', () async {
       final remote = serving(takenBack: (_) => throw _stillSupplies);
@@ -1696,14 +1731,20 @@ void main() {
   });
 
   group('a dropped write', () {
-    for (final (write, title) in <(EventGamesWrite, String?)>[
-      (EventGamesWrite.offer, null),
-      (EventGamesWrite.takeBack, 'Game 2'),
-    ]) {
+    for (final (write, title, subtitle)
+        in <(EventGamesWrite, String?, String?)>[
+          (EventGamesWrite.offer, null, null),
+          (EventGamesWrite.takeBack, 'Game 2', null),
+          // Named as a sent take-back is (#851).
+          (EventGamesWrite.takeBack, 'Game 2', 'Seafarers'),
+        ]) {
       blocTest<EventGamesBloc, EventGamesState>(
-        'a dropped write sets its outcome and sends nothing (${write.name})',
+        'a dropped write sets its outcome and sends nothing (${write.name}'
+        '${subtitle == null ? '' : ', with a subtitle'})',
         build: () => build(serving()),
-        act: (bloc) => bloc.add(EventGamesWriteDropped(write, title: title)),
+        act: (bloc) => bloc.add(
+          EventGamesWriteDropped(write, title: title, subtitle: subtitle),
+        ),
         expect: () => [
           EventGamesState(
             outcome: switch (write) {
@@ -1713,6 +1754,7 @@ void main() {
               EventGamesWrite.takeBack => EventTakeBackOutcome(
                 result: EventTakeBackResult.dropped,
                 title: title,
+                subtitle: subtitle,
               ),
             },
           ),

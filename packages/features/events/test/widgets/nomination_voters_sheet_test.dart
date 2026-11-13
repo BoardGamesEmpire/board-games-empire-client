@@ -6,6 +6,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -112,7 +113,11 @@ void main() {
   Widget harness(EventDetail detail) => MaterialApp(
     theme: BgeTheme.light(),
     locale: const Locale('en', 'US'),
-    localizationsDelegates: EventsLocalizations.localizationsDelegates,
+    localizationsDelegates: const [
+      ...EventsLocalizations.localizationsDelegates,
+      // The Games tab's Filters, its sheet and its chips (#851).
+      GameFiltersLocalizations.delegate,
+    ],
     supportedLocales: EventsLocalizations.supportedLocales,
     home: EventDetailScreen(
       eventId: 'e-1',

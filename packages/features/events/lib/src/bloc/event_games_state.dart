@@ -112,13 +112,14 @@ final class EventOfferOutcome extends EventGamesOutcome {
   List<Object?> get props => [result, offered, notOffered];
 }
 
-/// How a take-back ended. [title] names the game it was about, as the event
-/// carried it, when there is one, [offeredGameId] the pool row, and
-/// [attendeeId] whose row it was.
+/// How a take-back ended. [title] and [subtitle] name the game it was about,
+/// as the event carried it, when there is one, [offeredGameId] the pool
+/// row, and [attendeeId] whose row it was.
 final class EventTakeBackOutcome extends EventGamesOutcome {
   const EventTakeBackOutcome({
     required this.result,
     this.title,
+    this.subtitle,
     this.offeredGameId,
     this.attendeeId,
   });
@@ -128,9 +129,14 @@ final class EventTakeBackOutcome extends EventGamesOutcome {
   /// The game's title as the event carried it.
   final String? title;
 
+  /// The game's subtitle as the event carried it, which the screen names the
+  /// game with after its title, as the pool's row does (#851). Null where it
+  /// has none.
+  final String? subtitle;
+
   /// The pool row it was about (`OfferedGame.id`), which a nomination names
   /// as the copy it nominates (#517): set on every take-back but a dropped
-  /// one, whose drop names only the title.
+  /// one, whose drop names only the game.
   final String? offeredGameId;
 
   /// The roster row whose games the take-back was sent for, which says
@@ -139,7 +145,13 @@ final class EventTakeBackOutcome extends EventGamesOutcome {
   final String? attendeeId;
 
   @override
-  List<Object?> get props => [result, title, offeredGameId, attendeeId];
+  List<Object?> get props => [
+    result,
+    title,
+    subtitle,
+    offeredGameId,
+    attendeeId,
+  ];
 }
 
 /// The games pool on one event's Games tab, and the viewer's write that is

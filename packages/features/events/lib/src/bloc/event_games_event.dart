@@ -91,16 +91,18 @@ final class EventGameTakenBack extends EventGamesEvent {
 }
 
 /// A [write] the screen's own re-check stopped before it was sent, of the
-/// game titled [title] when there is one. Nothing is sent: the outcome says
-/// so, since a screen reader hears nothing happen when a press sends nothing.
+/// game titled [title], with its [subtitle] where it has one (#851), when
+/// there is one. Nothing is sent: the outcome says so, since a screen reader
+/// hears nothing happen when a press sends nothing.
 final class EventGamesWriteDropped extends EventGamesEvent {
-  const EventGamesWriteDropped(this.write, {this.title});
+  const EventGamesWriteDropped(this.write, {this.title, this.subtitle});
 
   final EventGamesWrite write;
   final String? title;
+  final String? subtitle;
 
   @override
-  List<Object?> get props => [write, title];
+  List<Object?> get props => [write, title, subtitle];
 }
 
 /// The person closed the last write's banner.

@@ -7,17 +7,42 @@ import '../support/event_list_items.dart';
 /// The games pool's filter on an event's Games tab, and the attendees a
 /// read of the pool names (#516).
 void main() {
-  /// A game [attendeeId] offers, titled [title].
-  OfferedGame offered(String id, String attendeeId, String title) =>
-      OfferedGame(
-        id: id,
-        attendeeId: attendeeId,
-        collectionId: 'col-$id',
-        platformGameId: 'pg-$id',
-        gameId: 'g-$id',
-        title: title,
-        platformName: 'Tabletop',
-      );
+  /// A game [attendeeId] offers, titled [title], with the facts given.
+  OfferedGame offered(
+    String id,
+    String attendeeId,
+    String title, {
+    String? subtitle,
+    PlatformType? platformType,
+    ContentType? contentType,
+    GameMedium? medium,
+    int? publishYear,
+    int? minPlayers,
+    int? maxPlayers,
+    int? minPlayTime,
+    int? maxPlayTime,
+  }) => OfferedGame(
+    id: id,
+    attendeeId: attendeeId,
+    collectionId: 'col-$id',
+    platformGameId: 'pg-$id',
+    gameId: 'g-$id',
+    title: title,
+    subtitle: subtitle,
+    platformName: 'Tabletop',
+    platformType: platformType,
+    contentType: contentType,
+    medium: medium,
+    publishYear: publishYear,
+    minPlayers: minPlayers,
+    maxPlayers: maxPlayers,
+    minPlayTime: minPlayTime,
+    maxPlayTime: maxPlayTime,
+  );
+
+  /// A filter whose search is [query].
+  PoolFilter searching(String query) =>
+      PoolFilter(game: CollectionFilter(query: query));
 
   final catanMine = offered('o-1', 'att-me', 'Catan');
   final azul = offered('o-2', 'att-ada', 'Azul');
@@ -32,14 +57,14 @@ void main() {
     });
 
     test('the query matches the title, trimmed, ignoring case', () {
-      const filter = PoolFilter(query: '  cAT ');
+      final filter = searching('  cAT ');
 
       expect(filterPool(pool, filter), [catanMine, catanAdas]);
       expect(filter.narrows, isTrue);
     });
 
     test('a blank query narrows nothing', () {
-      const filter = PoolFilter(query: '   ');
+      final filter = searching('   ');
 
       expect(filterPool(pool, filter), pool);
       expect(filter.narrows, isFalse);
@@ -73,7 +98,10 @@ void main() {
     });
 
     test('the query and the people narrow together', () {
-      const filter = PoolFilter(query: 'catan', attendeeIds: {'att-me'});
+      const filter = PoolFilter(
+        game: CollectionFilter(query: 'catan'),
+        attendeeIds: {'att-me'},
+      );
 
       expect(filterPool(pool, filter), [catanMine]);
     });
@@ -88,7 +116,7 @@ void main() {
       'two people offering one game are two rows, and leaving one person out '
       "keeps the other's",
       () {
-        expect(filterPool(pool, const PoolFilter(query: 'Catan')), [
+        expect(filterPool(pool, searching('Catan')), [
           catanMine,
           catanAdas,
         ]);
@@ -97,7 +125,7 @@ void main() {
           filterPool(
             pool,
             const PoolFilter(
-              query: 'Catan',
+              game: CollectionFilter(query: 'Catan'),
               attendeeIds: {'att-me'},
               leaveOut: true,
             ),
@@ -114,45 +142,293 @@ void main() {
 
       for (final query in ['catan sea', 'Catan: Seafarers', 'seafarers cat']) {
         expect(
-          filterPool(games, PoolFilter(query: query)),
+          filterPool(games, searching(query)),
           [seafarers],
           reason: query,
         );
       }
-      expect(filterPool(games, const PoolFilter(query: 'catan root')), isEmpty);
+      expect(filterPool(games, searching('catan root')), isEmpty);
     });
 
     test('a query of punctuation alone narrows nothing', () {
-      const filter = PoolFilter(query: ' : - ');
+      final filter = searching(' : - ');
 
       expect(filterPool(pool, filter), pool);
       expect(filter.narrows, isFalse);
     });
 
+    test('search finds the subtitle', () {
+      final seafarers = offered(
+        'o-5',
+        'att-bo',
+        'Catan',
+        subtitle: 'Seafarers',
+      );
+      final games = [...pool, seafarers];
+
+      expect(filterPool(games, searching('seafarers')), [seafarers]);
+      // Each term in either: the name the row shows.
+      expect(filterPool(games, searching('catan sea')), [seafarers]);
+      expect(filterPool(games, searching('Catan: Seafarers')), [seafarers]);
+      expect(filterPool(games, searching('catan')), [
+        catanMine,
+        catanAdas,
+        seafarers,
+      ]);
+    });
+
+    // A row the server sent with no platform type or content type, as an old
+    // server or a game with no data sends, is in no set (#851).
+    final tabletop = offered(
+      'o-5',
+      'att-me',
+      'Azul',
+      platformType: PlatformType.tabletop,
+      contentType: ContentType.baseGame,
+    );
+    final pc = offered(
+      'o-6',
+      'att-ada',
+      'Root',
+      platformType: PlatformType.pc,
+      contentType: ContentType.expansion,
+    );
+    final unknown = offered('o-7', 'att-bo', 'Catan');
+    final kinds = [tabletop, pc, unknown];
+
+    PoolFilter platforms({bool flipped = false}) => PoolFilter(
+      game: CollectionFilter(
+        game: const GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+        excluded: {if (flipped) CollectionFacet.platformType},
+      ),
+    );
+
+    PoolFilter contents({bool flipped = false}) => PoolFilter(
+      game: CollectionFilter(
+        game: const GameSearchFilter(contentTypes: {ContentType.baseGame}),
+        excluded: {if (flipped) CollectionFacet.contentType},
+      ),
+    );
+
+    test('a platform type filter keeps tabletop rows', () {
+      expect(filterPool(kinds, platforms()), [tabletop]);
+    });
+
+    test('flipped, it keeps the rest, nulls included', () {
+      expect(filterPool(kinds, platforms(flipped: true)), [pc, unknown]);
+    });
+
+    test('a content type filter drops a row with none, and flipped keeps '
+        'it', () {
+      expect(filterPool(kinds, contents()), [tabletop]);
+      expect(filterPool(kinds, contents(flipped: true)), [pc, unknown]);
+    });
+
+    test('player count narrows', () {
+      final duel = offered('o-5', 'att-me', 'Patchwork', minPlayers: 2);
+      final party = offered(
+        'o-6',
+        'att-ada',
+        'Codenames',
+        minPlayers: 2,
+        maxPlayers: 8,
+      );
+      final few = offered(
+        'o-7',
+        'att-bo',
+        'Azul',
+        minPlayers: 2,
+        maxPlayers: 4,
+      );
+      const five = PoolFilter(
+        game: CollectionFilter(
+          game: GameSearchFilter(playerCount: GameSearchRange(min: 5)),
+        ),
+      );
+
+      // Both counts must be known: Patchwork has no maximum.
+      expect(filterPool([duel, party, few], five), [party]);
+      expect(five.narrows, isTrue);
+    });
+
+    test('medium narrows', () {
+      final boxed = offered(
+        'o-5',
+        'att-me',
+        'Azul',
+        medium: GameMedium.physical,
+      );
+      final app = offered('o-6', 'att-ada', 'Root', medium: GameMedium.digital);
+      final none = offered('o-7', 'att-bo', 'Catan');
+      const digital = PoolFilter(
+        game: CollectionFilter(mediums: {GameMedium.digital}),
+      );
+
+      expect(filterPool([boxed, app, none], digital), [app]);
+    });
+
+    test('publish year narrows', () {
+      final older = offered('o-5', 'att-me', 'Catan', publishYear: 1995);
+      final newer = offered('o-6', 'att-ada', 'Root', publishYear: 2018);
+      const since2000 = PoolFilter(
+        game: CollectionFilter(
+          game: GameSearchFilter(publishYear: GameSearchRange(min: 2000)),
+        ),
+      );
+
+      expect(filterPool([older, newer], since2000), [newer]);
+    });
+
+    test('play time narrows, each end its own', () {
+      final quick = offered(
+        'o-5',
+        'att-me',
+        'Azul',
+        minPlayTime: 30,
+        maxPlayTime: 90,
+      );
+      final long = offered(
+        'o-6',
+        'att-ada',
+        'Root',
+        minPlayTime: 60,
+        maxPlayTime: 90,
+      );
+      const fromThreeQuarters = PoolFilter(
+        game: CollectionFilter(
+          game: GameSearchFilter(playTime: GameSearchRange(min: 45, max: 90)),
+        ),
+      );
+
+      // Azul can take 30 minutes, shorter than the range allows.
+      expect(filterPool([quick, long], fromThreeQuarters), [long]);
+    });
+
+    test('facets and people both apply', () {
+      final adasTabletop = offered(
+        'o-8',
+        'att-ada',
+        'Catan',
+        platformType: PlatformType.tabletop,
+      );
+      final adasPc = offered(
+        'o-9',
+        'att-ada',
+        'Catan',
+        platformType: PlatformType.pc,
+      );
+      final games = [...kinds, adasTabletop, adasPc];
+
+      expect(
+        filterPool(
+          games,
+          platforms().copyWith(attendeeIds: const {'att-ada'}),
+        ),
+        [adasTabletop],
+      );
+      expect(
+        filterPool(
+          games,
+          platforms().copyWith(attendeeIds: const {'att-ada'}, leaveOut: true),
+        ),
+        [tabletop],
+      );
+      // With the search too, each of the three narrowing: the search and the
+      // flip keep Bo's Catan and Ada's PC one, and Ada alone is chosen.
+      expect(
+        filterPool(
+          games,
+          platforms(flipped: true).copyWith(
+            query: 'catan',
+            attendeeIds: const {'att-ada'},
+          ),
+        ),
+        [adasPc],
+      );
+    });
+
+    test('narrows with a facet alone', () {
+      const digital = PoolFilter(
+        game: CollectionFilter(mediums: {GameMedium.digital}),
+      );
+
+      expect(digital.narrows, isTrue);
+      expect(platforms().narrows, isTrue);
+      expect(const PoolFilter().narrows, isFalse);
+    });
+
     test('copyWith changes only the fields given', () {
-      const filter = PoolFilter(query: 'a', attendeeIds: {'x'}, leaveOut: true);
+      const tabletop = CollectionFilter(
+        query: 'a',
+        game: GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+      );
+      const filter = PoolFilter(
+        game: tabletop,
+        attendeeIds: {'x'},
+        leaveOut: true,
+      );
 
       expect(filter.copyWith(), filter);
+      expect(filter.query, 'a');
+      // The query is the game filter's own, and its facets stay.
       expect(
         filter.copyWith(query: 'b'),
-        const PoolFilter(query: 'b', attendeeIds: {'x'}, leaveOut: true),
+        PoolFilter(
+          game: tabletop.copyWith(query: 'b'),
+          attendeeIds: const {'x'},
+          leaveOut: true,
+        ),
+      );
+      expect(
+        filter.copyWith(game: const CollectionFilter(query: 'c')),
+        const PoolFilter(
+          game: CollectionFilter(query: 'c'),
+          attendeeIds: {'x'},
+          leaveOut: true,
+        ),
+      );
+      // Both given: the query over the game filter given.
+      expect(
+        filter.copyWith(query: 'd', game: const CollectionFilter()),
+        const PoolFilter(
+          game: CollectionFilter(query: 'd'),
+          attendeeIds: {'x'},
+          leaveOut: true,
+        ),
       );
       expect(
         filter.copyWith(attendeeIds: const {}),
-        const PoolFilter(query: 'a', leaveOut: true),
+        const PoolFilter(game: tabletop, leaveOut: true),
       );
       expect(
         filter.copyWith(leaveOut: false),
-        const PoolFilter(query: 'a', attendeeIds: {'x'}),
+        const PoolFilter(game: tabletop, attendeeIds: {'x'}),
       );
     });
 
     test('filters are equal by value', () {
+      // Built apart, so not the one const instance.
       expect(
-        const PoolFilter(query: 'a', attendeeIds: {'x'}, leaveOut: true),
-        const PoolFilter(query: 'a', attendeeIds: {'x'}, leaveOut: true),
+        const PoolFilter().copyWith(
+          game: const CollectionFilter(query: 'a'),
+          attendeeIds: {'x'},
+          leaveOut: true,
+        ),
+        const PoolFilter(
+          game: CollectionFilter(query: 'a'),
+          attendeeIds: {'x'},
+          leaveOut: true,
+        ),
       );
       expect(const PoolFilter(), isNot(const PoolFilter(leaveOut: true)));
+      expect(
+        const PoolFilter(),
+        isNot(
+          const PoolFilter(
+            game: CollectionFilter(mediums: {GameMedium.digital}),
+          ),
+        ),
+      );
     });
   });
 
