@@ -210,7 +210,7 @@ Future<_Harness> _pump(
       destinations: destinations,
       entries: entries,
       activeServerName: 'Test server',
-      location: state.uri.path,
+      location: state.uri.toString(),
       deferBack: deferBack,
       browserOwnsBack: browserOwnsBack,
       child: child,
@@ -839,6 +839,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(shell.runs, ['settings']);
       expect(shell.location, '/settings');
+    });
+
+    // Home's newest games is `/games?sort=newest`, the bar's Games `/games`:
+    // one path, two entries in the browser's history.
+    testWidgets('browser Back to the same path with another query drops the '
+        'pick', (tester) async {
+      final history = FakeBrowserHistory.install(tester);
+      final shell = await _pump(tester, browserOwnsBack: true);
+      await shell.push('/games?sort=newest');
+      await tester.tap(_destination('games'));
+      await tester.pumpAndSettle();
+      expect(shell.router.state.uri.toString(), '/games');
+      await shell.openMenu();
+
+      await tester.tap(_entry('settings'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await history.back();
+
+      expect(shell.router.state.uri.toString(), '/games?sort=newest');
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(shell.runs, isEmpty);
     });
 
     // Natively the user's Back goes through the shell, which drops the pick

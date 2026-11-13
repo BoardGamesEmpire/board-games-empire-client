@@ -67,8 +67,10 @@ class NavigationShell extends StatefulWidget {
   /// The active server's display name, for the menu's header, or null.
   final String? activeServerName;
 
-  /// The location of the page on top, which decides the destination shown
-  /// as current.
+  /// The location of the page on top, its query included. Its path decides
+  /// the destination shown as current; the whole of it tells one browser
+  /// history entry from another, as `/games?sort=newest` from `/games`
+  /// (#611).
   final String location;
 
   /// The pages: the navigation route's nested navigator.
@@ -156,6 +158,8 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   void didUpdateWidget(NavigationShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The whole location, not its path: browser Back from `/games` to
+    // `/games?sort=newest` changes only the query.
     if (widget.location == oldWidget.location) return;
     // Browser Back, or Forward, while a pick waits for the drawer to go
     // (#611). It reaches the router, not [_back], and reads as "never
@@ -199,6 +203,9 @@ class _NavigationShellState extends State<NavigationShell> {
         .firstOrNull
         ?.id;
   }
+
+  /// The path of [NavigationShell.location], without its query.
+  String get _path => Uri.parse(widget.location).path;
 
   void _openDrawer() => _scaffold.currentState?.openDrawer();
 
@@ -250,7 +257,7 @@ class _NavigationShellState extends State<NavigationShell> {
   /// `go` replaces the whole stack with the destination's own screen (#414).
   void _go(NavDestination destination) {
     final router = GoRouter.of(context);
-    if (widget.location == destination.location && !router.canPop()) return;
+    if (_path == destination.location && !router.canPop()) return;
     router.go(destination.location);
   }
 
@@ -260,7 +267,7 @@ class _NavigationShellState extends State<NavigationShell> {
     final location = entry.location;
     if (location == null) {
       entry.onSelected!(context);
-    } else if (location != widget.location) {
+    } else if (location != _path) {
       unawaited(GoRouter.of(context).push<void>(location));
     }
   }
@@ -325,7 +332,7 @@ class _NavigationShellState extends State<NavigationShell> {
       scaffold.closeDrawer();
       return true;
     }
-    final location = widget.location;
+    final location = _path;
     final router = GoRouter.of(context);
     // `canPop` is true while a dialog or pop-up is up on the root
     // navigator, so the router closes that first.
@@ -428,7 +435,7 @@ class _NavigationShellState extends State<NavigationShell> {
   Widget build(BuildContext context) {
     final destinations = widget.destinations;
     final current = destinations.indexWhere(
-      (d) => d.contains(widget.location),
+      (d) => d.contains(_path),
     );
     final windowClass = BgeWindowClass.of(context);
     final chrome = destinations.length < 2 || current < 0

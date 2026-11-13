@@ -898,12 +898,14 @@ GoRouter buildAppRouter({
             ),
           ),
           // #414: the navigation shell. The location it hands the builder
-          // is this route's own `state.uri.path`: it follows a push, a go,
-          // a pop and browser Back. `state.matchedLocation` goes stale
-          // (it stays the declarative base after a push) and
-          // `routeInformationProvider.value` holds the pre-pop URL during
-          // build, so neither will do. Its own page is left as go_router
-          // builds it, like the auth [ShellRoute]'s (see [_materialPage]).
+          // is this route's own `state.uri`, query and all: it follows a
+          // push, a go, a pop and browser Back, and its query tells
+          // `/games?sort=newest` from `/games` (#611).
+          // `state.matchedLocation` goes stale (it stays the declarative
+          // base after a push) and `routeInformationProvider.value` holds
+          // the pre-pop URL during build, so neither will do. Its own page
+          // is left as go_router builds it, like the auth [ShellRoute]'s
+          // (see [_materialPage]).
           //
           // #707: showBgePopup keeps pop-ups on the root navigator so their
           // barrier covers the shell's bar or rail. The observer tells them
@@ -923,7 +925,11 @@ GoRouter buildAppRouter({
           ShellRoute(
             observers: [BgePopupCoverObserver(), modalGuard.shellObserver],
             builder: (context, state, child) => modalGuard.wrapShell(
-              navigationShellBuilder?.call(context, state.uri.path, child) ??
+              navigationShellBuilder?.call(
+                    context,
+                    state.uri.toString(),
+                    child,
+                  ) ??
                   child,
             ),
             routes: [
@@ -1645,9 +1651,10 @@ typedef AuthScopeBuilder = Widget Function(BuildContext context, Widget child);
 
 /// Wraps every signed-in route (#414) in the navigation shell: the menu,
 /// the bar and whatever else stays put while the page beneath changes.
-/// [location] is the path the visible page was reached at, after pushes,
-/// pops and browser Back; [child] is the page's navigator. Supplied by
-/// `BgeApp`; when null the child renders bare (tests without a shell).
+/// [location] is the one the visible page was reached at, query included,
+/// after pushes, pops and browser Back; [child] is the page's navigator.
+/// Supplied by `BgeApp`; when null the child renders bare (tests without a
+/// shell).
 ///
 /// The shell sits inside the auth scope (#145), so it can read the
 /// `AuthBloc`; `/auth` itself stays outside it.
