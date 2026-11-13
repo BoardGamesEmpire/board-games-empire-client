@@ -44,8 +44,8 @@ enum ImportJobStatus {
 /// The server's rollup of every job in an import batch: the backend's
 /// `ImportBatchStatus`.
 ///
-/// The base game's job decides how an import ended (#43), so this is read
-/// but nothing decides by it.
+/// The requested game's job decides how an import ended (#43, #896), so this
+/// is read but nothing decides by it.
 enum ImportBatchStatus {
   pending,
   running,
@@ -81,7 +81,7 @@ enum ImportErrorCode {
   /// The server failed to store the game.
   internalError,
 
-  /// An expansion was never imported, because its base game's import failed.
+  /// Skipped, because the import that brought the job into the batch failed.
   baseImportFailed,
 
   /// A code this client does not know. Never sent.
@@ -98,8 +98,34 @@ enum ImportErrorCode {
   };
 }
 
+/// Why a job is in its import batch: the backend's `ImportJobOrigin`
+/// (backend#971).
+enum ImportJobOrigin {
+  /// The game the import asked for.
+  requested,
+
+  /// An expansion chosen with the requested game.
+  chosenExpansion,
+
+  /// A base game the server added, because a game in the batch needed it.
+  addedBaseGame,
+
+  /// A name this client does not know, or no origin at all: the server
+  /// leaves it out for a job written before backend#971.
+  unknown;
+
+  /// Resolves the backend's enum name, degrading to [unknown] for a name this
+  /// client does not know rather than failing the whole batch.
+  static ImportJobOrigin fromWire(String name) => switch (name) {
+    'Requested' => ImportJobOrigin.requested,
+    'ChosenExpansion' => ImportJobOrigin.chosenExpansion,
+    'AddedBaseGame' => ImportJobOrigin.addedBaseGame,
+    _ => ImportJobOrigin.unknown,
+  };
+}
+
 /// What `POST /games/import` answers once the import is queued: the batch to
-/// poll, and the job importing the base game.
+/// poll, and the requested game's job, which the server calls `baseJobId`.
 @freezed
 abstract class GameImportReceipt with _$GameImportReceipt {
   const factory GameImportReceipt({
@@ -120,15 +146,17 @@ abstract class ImportPlatformGame with _$ImportPlatformGame {
   }) = _ImportPlatformGame;
 }
 
-/// One job of an import batch: the base game's, or an expansion's.
+/// One job of an import batch: the requested game's, an expansion chosen with
+/// it, or a base game the server added (backend#971).
 @freezed
 abstract class ImportJob with _$ImportJob {
   const factory ImportJob({
     required String jobId,
     required ImportJobStatus status,
 
-    /// False for the base game, true for an expansion imported with it.
-    required bool isExpansion,
+    /// Why the job is in the batch. Only the [ImportJobOrigin.requested] job
+    /// decides how the import ends.
+    required ImportJobOrigin origin,
 
     /// The game's id at its DataGateway.
     required String externalId,
@@ -148,8 +176,8 @@ abstract class ImportJob with _$ImportJob {
   }) = _ImportJob;
 }
 
-/// One import batch as `GET /games/import/:batchId` reports it: the base
-/// game's job first, then any expansions'.
+/// One import batch as `GET /games/import/:batchId` reports it: the requested
+/// game's job first, then any others'.
 @freezed
 abstract class ImportBatch with _$ImportBatch {
   const factory ImportBatch({
@@ -160,7 +188,8 @@ abstract class ImportBatch with _$ImportBatch {
   }) = _ImportBatch;
   const ImportBatch._();
 
-  /// The first job that is not an expansion; null when the server listed
-  /// none.
-  ImportJob? get baseJob => jobs.where((job) => !job.isExpansion).firstOrNull;
+  /// The job the import asked for, wherever it is listed; null when no job
+  /// reads as requested.
+  ImportJob? get requestedJob =>
+      jobs.where((job) => job.origin == ImportJobOrigin.requested).firstOrNull;
 }

@@ -40,8 +40,8 @@ class GameImportDialog extends StatefulWidget {
   });
 
   /// Opens the dialog and starts the import. Completes with the imported
-  /// game's id when the base job completes, or null when the user closes it
-  /// or the import completes beneath another page.
+  /// game's id when the requested game's job completes, or null when the user
+  /// closes it or the import completes beneath another page.
   static Future<String?> show(
     BuildContext context, {
     required GamesRemoteDataSource remote,

@@ -31,7 +31,7 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 ///
 /// Backend `libs/api/game` at `a21cd51e` (`GET /games?sort=` and
 /// `GET /games/random` at `c8f42b83`), `libs/api/game-search` at `997cc084`,
-/// and `libs/api/game-import` at `83e62bb0`, all under the `api` global
+/// and `libs/api/game-import` at `5e869de9`, all under the `api` global
 /// prefix:
 ///
 /// | Method | Path | Body |

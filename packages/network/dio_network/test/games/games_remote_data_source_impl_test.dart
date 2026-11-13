@@ -275,33 +275,47 @@ String _receiptBody() => jsonEncode({
 
 /// One job of a polled batch, as `toJobDto` maps a `Job` row: the result's
 /// fields only once the job has one, and `undefined` left out.
+///
+/// As the server sends it since backend#971: `origin`, and no `isExpansion`.
+/// The requested job is `job_base`, the receipt's `baseJobId`. Every other
+/// job hangs off it, an added base game with ids of its own.
 Map<String, dynamic> _jobRow({
   String status = 'Running',
   String? gameId,
   String? gameTitle,
   Object? platformGames,
   String? errorCode,
-  bool isExpansion = false,
-}) => {
-  'jobId': isExpansion ? 'job_expansion' : 'job_base',
-  'status': status,
-  'isExpansion': isExpansion,
-  'parentJobId': isExpansion ? 'job_base' : null,
-  // The coordinator snapshots the requested expansions on the base job only.
-  if (!isExpansion) 'requestedExpansions': <String>[],
-  'externalId': isExpansion ? '927' : '926',
-  'gameId': ?gameId,
-  'gameTitle': ?gameTitle,
-  // A completed job's result stores its thumbnail, null or not.
-  if (gameId != null) 'thumbnail': null,
-  'platformGames': ?platformGames,
-  'errorCode': ?errorCode,
-  if (errorCode != null) 'error': 'Fetching game data from the gateway failed.',
-  'startedAt': status == 'Pending' ? null : '2026-10-26T10:00:00.000Z',
-  'completedAt': const {'Pending', 'Running'}.contains(status)
-      ? null
-      : '2026-10-26T10:00:04.000Z',
-};
+  String origin = 'Requested',
+}) {
+  final requested = origin == 'Requested';
+  final (jobId, externalId) = switch (origin) {
+    'Requested' => ('job_base', '926'),
+    'AddedBaseGame' => ('job_added_base', '13'),
+    _ => ('job_expansion', '927'),
+  };
+  return {
+    'jobId': jobId,
+    'status': status,
+    'origin': origin,
+    'parentJobId': requested ? null : 'job_base',
+    // The coordinator snapshots the requested expansions on the requested
+    // game's job only.
+    if (requested) 'requestedExpansions': <String>[],
+    'externalId': externalId,
+    'gameId': ?gameId,
+    'gameTitle': ?gameTitle,
+    // A completed job's result stores its thumbnail, null or not.
+    if (gameId != null) 'thumbnail': null,
+    'platformGames': ?platformGames,
+    'errorCode': ?errorCode,
+    if (errorCode != null)
+      'error': 'Fetching game data from the gateway failed.',
+    'startedAt': status == 'Pending' ? null : '2026-10-26T10:00:00.000Z',
+    'completedAt': const {'Pending', 'Running'}.contains(status)
+        ? null
+        : '2026-10-26T10:00:04.000Z',
+  };
+}
 
 /// What `GET /games/import/:batchId` answers.
 String _batchBody({
@@ -1216,8 +1230,8 @@ void main() {
       expect(adapter.sent, isEmpty);
     });
 
-    test('fetchImport reads a completed base job and its platform '
-        'games', () async {
+    test('fetchImport reads a completed requested job, as the server sends it '
+        'since backend#971, and its platform games', () async {
       final remote = answering(
         _batchBody(
           status: 'Completed',
@@ -1247,7 +1261,7 @@ void main() {
             ImportJob(
               jobId: 'job_base',
               status: ImportJobStatus.completed,
-              isExpansion: false,
+              origin: ImportJobOrigin.requested,
               externalId: '926',
               gameId: 'g_seafarers',
               gameTitle: 'Catan: Seafarers',
@@ -1263,22 +1277,49 @@ void main() {
       );
     });
 
-    test("fetchImport tells the base game's job from an expansion's", () async {
+    test("fetchImport reads each job's origin", () async {
       final remote = answering(
         _batchBody(
           jobs: [
             _jobRow(),
-            _jobRow(status: 'Pending', isExpansion: true),
+            _jobRow(status: 'Pending', origin: 'ChosenExpansion'),
+            _jobRow(status: 'Pending', origin: 'AddedBaseGame'),
           ],
         ),
       );
 
       final batch = await remote.fetchImport(_batch);
 
-      expect(batch.jobs.map((job) => (job.jobId, job.isExpansion)), [
-        ('job_base', false),
-        ('job_expansion', true),
-      ]);
+      expect(
+        batch.jobs.map((job) => (job.jobId, job.externalId, job.origin)),
+        [
+          ('job_base', '926', ImportJobOrigin.requested),
+          ('job_expansion', '927', ImportJobOrigin.chosenExpansion),
+          ('job_added_base', '13', ImportJobOrigin.addedBaseGame),
+        ],
+      );
+    });
+
+    test('fetchImport reads a job with no origin as unknown', () async {
+      final remote = answering(
+        _batchBody(jobs: [_jobRow()..remove('origin')]),
+      );
+
+      final job = (await remote.fetchImport(_batch)).jobs.single;
+
+      expect(job.origin, ImportJobOrigin.unknown);
+      expect(job.status, ImportJobStatus.running);
+    });
+
+    test('fetchImport reads an origin that is not a name as unknown', () async {
+      final remote = answering(
+        _batchBody(jobs: [_jobRow()..['origin'] = 1]),
+      );
+
+      final job = (await remote.fetchImport(_batch)).jobs.single;
+
+      expect(job.origin, ImportJobOrigin.unknown);
+      expect(job.status, ImportJobStatus.running);
     });
 
     test("fetchImport reads a failed job's error code", () async {
@@ -1299,7 +1340,13 @@ void main() {
       final remote = answering(
         _batchBody(
           status: 'Paused',
-          jobs: [_jobRow(status: 'Paused', errorCode: 'TIMEOUT')],
+          jobs: [
+            _jobRow(
+              status: 'Paused',
+              errorCode: 'TIMEOUT',
+              origin: 'Suggested',
+            ),
+          ],
         ),
       );
 
@@ -1308,6 +1355,7 @@ void main() {
       expect(batch.status, ImportBatchStatus.unknown);
       expect(batch.jobs.single.status, ImportJobStatus.unknown);
       expect(batch.jobs.single.errorCode, ImportErrorCode.unknown);
+      expect(batch.jobs.single.origin, ImportJobOrigin.unknown);
     });
 
     test('an application 404 on the poll is an unknown import', () {

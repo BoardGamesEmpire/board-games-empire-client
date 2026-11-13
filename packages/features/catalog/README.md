@@ -59,14 +59,17 @@ The shell opens `GameImportDialog` from the search's `onImport`, and the
 dialog's `GameImportBloc` sends `POST /api/games/import`, then polls
 `GET /api/games/import/:batchId`.
 
-One import is one base game, with no expansions and no locale: several at
-once is #595, and a language is #594. The dialog polls every 2 seconds. The
-server sets no deadline, so after 90 seconds, counting the time each poll
-takes, the dialog says the import is still running. That isn't a failure: "Check again" polls the same
-batch and starts nothing. The base game's job decides how the import ended,
-not the batch's rollup. A failed job shows copy for its error code, and a
-status this client doesn't know keeps polling. A poll that got no answer
-keeps polling too, while a 403 or an unknown batch ends the import.
+One import asks for one game, with no expansions chosen and no locale:
+several at once is #595, and a language is #594. If that game needs a base
+game the server doesn't hold, the server adds one to the batch
+(backend#971). The dialog polls every 2 seconds. The server sets no
+deadline, so after 90 seconds, counting the time each poll takes, the
+dialog says the import is still running. That isn't a failure: "Check
+again" polls the same batch and starts nothing. The requested game's job
+decides how the import ended, not the batch's rollup, nor any other job in
+it. A failed job shows copy for its error code, and a status this client
+doesn't know keeps polling. A poll that got no answer keeps polling too,
+while a 403 or an unknown batch ends the import.
 
 Each attempt has its own `correlationId`, a UUID v4, the only form the server
 accepts. A start whose answer never came keeps its id, so trying again sends
@@ -76,11 +79,11 @@ jobs on the correlation id, the same id will find the batch the server may
 already have queued. A start the server answered drops its id, so trying
 again after a failure takes a new one.
 
-When the base game's job completes, the dialog closes with the game's id and
-the shell opens the game's detail in its place. Closing the dialog first
-stops the polling and opens nothing. The server finishes the import anyway,
-and the next search shows the game as one it holds. Following an import after
-its dialog closes is #596.
+When the requested game's job completes, the dialog closes with the game's
+id and the shell opens the game's detail in its place. Closing the dialog
+first stops the polling and opens nothing. The server finishes the import
+anyway, and the next search shows the game as one it holds. Following an
+import after its dialog closes is #596.
 
 Nothing is cached here. The detail caches the game it reads, for this user,
 as it does any game it opens. The poll's platform games are read but unused:

@@ -158,7 +158,7 @@ class _GamesRemote implements GamesRemoteDataSource {
   /// The order each list read asked for.
   final List<GameSort> sorts = [];
 
-  /// Where every poll says the import's base game stands.
+  /// Where every poll says the import's requested game stands.
   ImportJobStatus importStatus = ImportJobStatus.completed;
 
   /// The platforms every detail read gives Catan.
@@ -243,7 +243,7 @@ class _GamesRemote implements GamesRemoteDataSource {
       ImportJob(
         jobId: 'job_base',
         status: importStatus,
-        isExpansion: false,
+        origin: ImportJobOrigin.requested,
         externalId: '926',
         gameId: importStatus == ImportJobStatus.completed
             ? 'g_seafarers'

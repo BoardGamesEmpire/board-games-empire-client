@@ -79,11 +79,24 @@ void main() {
     unrecognised: 'TIMEOUT',
   );
 
+  // `ImportJobOrigin` in libs/api/game-import's import-job.interface.ts.
+  _readContract<ImportJobOrigin>(
+    byWire: const {
+      'Requested': ImportJobOrigin.requested,
+      'ChosenExpansion': ImportJobOrigin.chosenExpansion,
+      'AddedBaseGame': ImportJobOrigin.addedBaseGame,
+    },
+    values: ImportJobOrigin.values,
+    unknown: ImportJobOrigin.unknown,
+    fromWire: ImportJobOrigin.fromWire,
+    unrecognised: 'Suggested',
+  );
+
   group('ImportBatch', () {
-    ImportJob job(String id, {required bool isExpansion}) => ImportJob(
+    ImportJob job(String id, {required ImportJobOrigin origin}) => ImportJob(
       jobId: id,
       status: ImportJobStatus.running,
-      isExpansion: isExpansion,
+      origin: origin,
       externalId: 'ext_$id',
     );
 
@@ -94,15 +107,23 @@ void main() {
       jobs: jobs,
     );
 
-    test('baseJob is the job that is not an expansion', () {
-      final e1 = job('e1', isExpansion: true);
-      final b1 = job('b1', isExpansion: false);
+    test('requestedJob is the job the import asked for, wherever it is '
+        'listed', () {
+      final e1 = job('e1', origin: ImportJobOrigin.chosenExpansion);
+      final a1 = job('a1', origin: ImportJobOrigin.addedBaseGame);
+      final r1 = job('r1', origin: ImportJobOrigin.requested);
 
-      expect(batchOf([e1, b1]).baseJob, b1);
+      expect(batchOf([e1, a1, r1]).requestedJob, r1);
     });
 
-    test('baseJob is null when the server listed no base job', () {
-      expect(batchOf([job('e1', isExpansion: true)]).baseJob, isNull);
+    test('requestedJob is null when no job reads as requested', () {
+      expect(
+        batchOf([
+          job('u1', origin: ImportJobOrigin.unknown),
+          job('e1', origin: ImportJobOrigin.chosenExpansion),
+        ]).requestedJob,
+        isNull,
+      );
     });
   });
 }
