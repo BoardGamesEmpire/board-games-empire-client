@@ -968,6 +968,28 @@ void main() {
       expect(calls, ['nominate', 'read']);
     });
 
+    test(
+      "a nominate's outcome carries its pool row's subtitle (#851)",
+      () async {
+        final remote = serving(nominations: (_) => one, nominated: (_) => n2);
+        final bloc = await readFirst(remote);
+
+        bloc.add(
+          GameNominated('e-1', _game(2).copyWith(subtitle: 'Seafarers')),
+        );
+        await pumpEventQueue();
+
+        expect(
+          bloc.state.outcome,
+          const NominateOutcome(
+            NominateResult.open,
+            title: 'Game 2',
+            subtitle: 'Seafarers',
+          ),
+        );
+      },
+    );
+
     blocTest<EventNominationsBloc, EventNominationsState>(
       'nominate under Direct says it went into the lineup',
       build: () => build(
@@ -2208,6 +2230,28 @@ void main() {
         verify: (_) => expect(calls, isEmpty),
       );
     }
+
+    blocTest<EventNominationsBloc, EventNominationsState>(
+      "a dropped nominate carries its pool row's subtitle (#851)",
+      build: () => build(serving()),
+      act: (bloc) => bloc.add(
+        const NominationWriteDropped(
+          NominationWrite.nominate,
+          title: 'Game 2',
+          subtitle: 'Seafarers',
+        ),
+      ),
+      expect: () => const [
+        EventNominationsState(
+          outcome: NominateOutcome(
+            NominateResult.dropped,
+            title: 'Game 2',
+            subtitle: 'Seafarers',
+          ),
+        ),
+      ],
+      verify: (_) => expect(calls, isEmpty),
+    );
 
     blocTest<EventNominationsBloc, EventNominationsState>(
       'the same drop twice is two outcomes, cleared between',

@@ -61,6 +61,8 @@ List<String> _sorted(
   CollectionSort sort,
 ) => [for (final item in sortCollection(items, sort)) item.title];
 
+typedef Row = ({String id, FilterableGame facts});
+
 void main() {
   group('CollectionFilter', () {
     test('the empty filter has no facet in use and does not narrow', () {
@@ -855,6 +857,200 @@ void main() {
           ],
         );
       });
+    });
+  });
+
+  group('filterGames', () {
+    Row row(
+      String id, {
+      String title = 'Game',
+      String? subtitle,
+      ContentType? contentType,
+      PlatformType? platformType,
+      GameMedium? medium,
+      int? publishYear,
+      int? minPlayers,
+      int? maxPlayers,
+      int? minPlayTime,
+      int? maxPlayTime,
+    }) => (
+      id: id,
+      facts: (
+        title: title,
+        subtitle: subtitle,
+        contentType: contentType,
+        platformType: platformType,
+        medium: medium,
+        publishYear: publishYear,
+        minPlayers: minPlayers,
+        maxPlayers: maxPlayers,
+        minPlayTime: minPlayTime,
+        maxPlayTime: maxPlayTime,
+      ),
+    );
+
+    List<String> ids(List<Row> rows, CollectionFilter filter) => [
+      for (final r in filterGames(rows, filter, factsOf: (r) => r.facts)) r.id,
+    ];
+
+    test('keeps a row when every term is in its title or subtitle', () {
+      final rows = [
+        row('a', title: 'Catan', subtitle: 'Seafarers'),
+        row('b', title: 'Catan'),
+      ];
+
+      expect(ids(rows, const CollectionFilter(query: 'catan sea')), ['a']);
+    });
+
+    test('a null platform type is in no set', () {
+      final rows = [row('a'), row('b', platformType: PlatformType.tabletop)];
+      const set = {PlatformType.tabletop};
+
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(game: GameSearchFilter(platformTypes: set)),
+        ),
+        ['b'],
+      );
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            game: GameSearchFilter(platformTypes: set),
+            excluded: {CollectionFacet.platformType},
+          ),
+        ),
+        ['a'],
+      );
+    });
+
+    test('a null content type is in no set', () {
+      final rows = [row('a'), row('b', contentType: ContentType.baseGame)];
+      const set = {ContentType.baseGame};
+
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(game: GameSearchFilter(contentTypes: set)),
+        ),
+        ['b'],
+      );
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            game: GameSearchFilter(contentTypes: set),
+            excluded: {CollectionFacet.contentType},
+          ),
+        ),
+        ['a'],
+      );
+    });
+
+    test('player count reads the facts given', () {
+      final rows = [
+        row('a', minPlayers: 2, maxPlayers: 6),
+        row('b', minPlayers: 2, maxPlayers: 4),
+      ];
+
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            game: GameSearchFilter(playerCount: GameSearchRange(min: 5)),
+          ),
+        ),
+        ['a'],
+      );
+    });
+
+    test('medium reads the facts given, and a null medium is in no set', () {
+      final rows = [
+        row('a'),
+        row('b', medium: GameMedium.physical),
+        row('c', medium: GameMedium.digital),
+      ];
+      const set = {GameMedium.physical};
+
+      expect(ids(rows, const CollectionFilter(mediums: set)), ['b']);
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            mediums: set,
+            excluded: {CollectionFacet.medium},
+          ),
+        ),
+        ['a', 'c'],
+      );
+    });
+
+    test('publish year reads the facts given', () {
+      final rows = [
+        row('a', publishYear: 2010),
+        row('b', publishYear: 2020),
+      ];
+
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            game: GameSearchFilter(publishYear: GameSearchRange(min: 2015)),
+          ),
+        ),
+        ['b'],
+      );
+    });
+
+    test('play time reads the facts given, each end its own', () {
+      final rows = [
+        row('a', minPlayTime: 30, maxPlayTime: 90),
+        row('b', minPlayTime: 60, maxPlayTime: 90),
+      ];
+
+      expect(
+        ids(
+          rows,
+          const CollectionFilter(
+            game: GameSearchFilter(
+              playTime: GameSearchRange(min: 45, max: 90),
+            ),
+          ),
+        ),
+        ['b'],
+      );
+    });
+
+    test('missingBaseGame without a predicate fails an assert', () {
+      final rows = [row('a'), row('b')];
+
+      expect(
+        () => ids(rows, const CollectionFilter(missingBaseGame: true)),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => ids(
+          rows,
+          const CollectionFilter(
+            missingBaseGame: true,
+            excluded: {CollectionFacet.missingBaseGame},
+          ),
+        ),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+
+    test('returns the list itself when nothing narrows', () {
+      final rows = [row('a')];
+
+      expect(
+        identical(
+          filterGames(rows, const CollectionFilter(), factsOf: (r) => r.facts),
+          rows,
+        ),
+        isTrue,
+      );
     });
   });
 

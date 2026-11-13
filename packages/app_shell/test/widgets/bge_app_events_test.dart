@@ -1586,7 +1586,8 @@ void main() {
           tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
               as GoRouter;
 
-      /// A server that reads [hosted], an empty pool, and takes offers.
+      /// A server that reads [hosted], an empty pool, and offers every game
+      /// a batch sends.
       _MockEventRemote hosting() {
         final remote = _MockEventRemote();
         when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
@@ -1594,24 +1595,24 @@ void main() {
           () => remote.fetchGamesPool(
             any(),
             attendeeIds: any(named: 'attendeeIds'),
+            cancelled: any(named: 'cancelled'),
           ),
         ).thenAnswer((_) async => const []);
         when(
-          () => remote.offerGame(
+          () => remote.offerGames(
             any(),
             any(),
-            collectionId: any(named: 'collectionId'),
+            collectionIds: any(named: 'collectionIds'),
           ),
         ).thenAnswer(
-          (call) async => OfferedGame(
-            id: 'o-1',
-            attendeeId: 'att-me',
-            collectionId: call.namedArguments[#collectionId] as String,
-            platformGameId: 'pg-azul',
-            gameId: 'g-azul',
-            title: 'Azul',
-            platformName: 'Tabletop',
-          ),
+          (call) async => [
+            for (final id
+                in call.namedArguments[#collectionIds] as List<String>)
+              GameOfferResult.offered(
+                collectionId: id,
+                alreadyOffered: false,
+              ),
+          ],
         );
         return remote;
       }
@@ -1700,7 +1701,7 @@ void main() {
         expect(find.byType(EventDetailScreen), findsOneWidget);
         expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
         verify(
-          () => remote.offerGame('e-0', 'att-me', collectionId: 'c-azul'),
+          () => remote.offerGames('e-0', 'att-me', collectionIds: ['c-azul']),
         ).called(1);
         expect(find.text('1 game offered.'), findsOneWidget);
       });

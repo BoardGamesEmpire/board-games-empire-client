@@ -49,16 +49,16 @@ typedef AddAttendeeRequest = ({String eventId, String userId, EventRole role});
 /// What a remove sent (#510): the event and the attendee.
 typedef RemoveAttendeeRequest = ({String eventId, String attendeeId});
 
-/// What a games pool read asked for (#516): the event and the attendees whose
-/// offered games it reads, in order.
-typedef GamesPoolRequest = ({String eventId, List<String> attendeeIds});
+/// What a games pool read asked for (#516): the event, and the attendees whose
+/// offered games it reads, in order, or null for everyone's (#851).
+typedef GamesPoolRequest = ({String eventId, List<String>? attendeeIds});
 
-/// What an offer sent (#516): the event, the attendee and the collection
-/// entry.
-typedef OfferGameRequest = ({
+/// What a batch offer sent (#851): the event, the attendee and the collection
+/// entries, in order.
+typedef OfferGamesRequest = ({
   String eventId,
   String attendeeId,
-  String collectionId,
+  List<String> collectionIds,
 });
 
 /// What a take-back sent (#516): the event, the attendee and the offered game.
@@ -134,7 +134,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -162,7 +162,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -194,7 +194,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.added = _noAdd,
     this.removed = _noRemove,
     this.pool = _noPool,
-    this.offered = _noOffer,
+    this.offeredBatch = _noOfferBatch,
     this.takenBack = _noTakeBack,
     this.nominations = _noNominations,
     this.nomination = _noNomination,
@@ -230,8 +230,8 @@ class FakeEventRemote implements EventRemoteDataSource {
   static Never _noPool(GamesPoolRequest request) =>
       throw UnimplementedError('fetchGamesPool is not faked');
 
-  static Never _noOffer(OfferGameRequest request) =>
-      throw UnimplementedError('offerGame is not faked');
+  static Never _noOfferBatch(OfferGamesRequest request) =>
+      throw UnimplementedError('offerGames is not faked');
 
   static Never _noTakeBack(TakeBackGameRequest request) =>
       throw UnimplementedError('takeBackGame is not faked');
@@ -331,12 +331,18 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// Each games pool read, in order, recorded before it is answered.
   final List<GamesPoolRequest> poolRequests = [];
 
-  /// Answers each offer with the offered game as the server holds it, which
-  /// throws unless a test supplies one (#516).
-  final FutureOr<OfferedGame> Function(OfferGameRequest request) offered;
+  /// The cancel future the latest games pool read was given, or null when it
+  /// was given none (#851). Kept out of [GamesPoolRequest], so a test that
+  /// compares the requests compares what was asked for.
+  Future<void>? poolCancelled;
 
-  /// Each offer, in order, recorded before it is answered.
-  final List<OfferGameRequest> offers = [];
+  /// Answers each batch offer with its results, which throws unless a test
+  /// supplies one (#851).
+  final FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)
+  offeredBatch;
+
+  /// Each batch offer, in order, recorded before it is answered.
+  final List<OfferGamesRequest> offerBatches = [];
 
   /// Answers each take-back, which throws unless a test supplies one (#516).
   final FutureOr<void> Function(TakeBackGameRequest request) takenBack;
@@ -681,29 +687,33 @@ class FakeEventRemote implements EventRemoteDataSource {
   @override
   Future<List<OfferedGame>> fetchGamesPool(
     String eventId, {
-    required List<String> attendeeIds,
+    List<String>? attendeeIds,
+    Future<void>? cancelled,
   }) async {
     final request = (
       eventId: eventId,
-      attendeeIds: List<String>.unmodifiable(attendeeIds),
+      attendeeIds: attendeeIds == null
+          ? null
+          : List<String>.unmodifiable(attendeeIds),
     );
     poolRequests.add(request);
+    poolCancelled = cancelled;
     return pool(request);
   }
 
   @override
-  Future<OfferedGame> offerGame(
+  Future<List<GameOfferResult>> offerGames(
     String eventId,
     String attendeeId, {
-    required String collectionId,
+    required List<String> collectionIds,
   }) async {
     final request = (
       eventId: eventId,
       attendeeId: attendeeId,
-      collectionId: collectionId,
+      collectionIds: List<String>.unmodifiable(collectionIds),
     );
-    offers.add(request);
-    return offered(request);
+    offerBatches.add(request);
+    return offeredBatch(request);
   }
 
   @override

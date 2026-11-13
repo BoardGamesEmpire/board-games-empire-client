@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -265,7 +266,11 @@ void main() {
   }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     locale: const Locale('en', 'US'),
-    localizationsDelegates: EventsLocalizations.localizationsDelegates,
+    localizationsDelegates: const [
+      ...EventsLocalizations.localizationsDelegates,
+      // The Games tab's Filters, its sheet and its chips (#851).
+      GameFiltersLocalizations.delegate,
+    ],
     supportedLocales: EventsLocalizations.supportedLocales,
     builder: (context, child) {
       // No override unless a test sets one, so an audit cell's own scale
@@ -1362,7 +1367,13 @@ void main() {
     }) => FakeEventRemote.detail(
       read ?? (_) => detail.snapshot,
       pool: pool ?? (_) => const [],
-      offered: (_) => catanOffered,
+      offeredBatch: (request) => [
+        for (final id in request.collectionIds)
+          GameOfferResult.offered(
+            collectionId: id,
+            alreadyOffered: false,
+          ),
+      ],
       takenBack: (_) {},
       nominations: nominations ?? (_) => [catan],
       nomination: (_) => catan,
@@ -1524,7 +1535,7 @@ void main() {
                 ..add(offerCatan);
           await animate(tester);
 
-          expect(remote.offers, hasLength(1));
+          expect(remote.offerBatches, hasLength(1));
           expect(remote.nominationReads, hasLength(1 + readsAfterEach));
 
           pool.add(takeBackCatan);
@@ -1545,7 +1556,7 @@ void main() {
       final remote = FakeEventRemote.detail(
         (_) => detail.snapshot,
         pool: (_) => const [],
-        offered: (_) =>
+        offeredBatch: (_) =>
             throw const EventWriteRefusedException('no', statusCode: 403),
         takenBack: (_) =>
             throw const EventWriteConflictException('held', statusCode: 409),
@@ -1560,7 +1571,7 @@ void main() {
       pool.add(takeBackCatan);
       await animate(tester);
 
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(remote.takeBacks, hasLength(1));
       expect(remote.nominationReads, ['e-1']);
     });
@@ -2664,7 +2675,11 @@ void main() {
         MaterialApp(
           navigatorKey: navigator,
           theme: BgeTheme.light(),
-          localizationsDelegates: EventsLocalizations.localizationsDelegates,
+          localizationsDelegates: const [
+            ...EventsLocalizations.localizationsDelegates,
+            // The Games tab's Filters, its sheet and its chips (#851).
+            GameFiltersLocalizations.delegate,
+          ],
           supportedLocales: EventsLocalizations.supportedLocales,
           home: const Scaffold(body: Text('Home')),
         ),
@@ -9187,7 +9202,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
-        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        localizationsDelegates: const [
+          ...EventsLocalizations.localizationsDelegates,
+          // The Games tab's Filters, its sheet and its chips (#851).
+          GameFiltersLocalizations.delegate,
+        ],
         supportedLocales: EventsLocalizations.supportedLocales,
         home: EventDetailScreen(
           eventId: 'e-2',

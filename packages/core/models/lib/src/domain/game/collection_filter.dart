@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:models/src/domain/game/content_type.dart';
 import 'package:models/src/domain/game/expansion_placement.dart';
 import 'package:models/src/domain/game/game_collection_list_item.dart';
 import 'package:models/src/domain/game/game_medium.dart';
@@ -147,38 +148,103 @@ List<GameCollectionListItem> filterCollection(
   List<GameCollectionListItem> items,
   CollectionFilter filter,
 ) {
+  final gameIds = filter.missingBaseGame
+      ? {for (final item in items) item.gameId}
+      : const <String>{};
+
+  return filterGames(
+    items,
+    filter,
+    factsOf: (item) => (
+      title: item.title,
+      subtitle: item.subtitle,
+      contentType: item.contentType,
+      platformType: item.platformType,
+      medium: item.entry.medium,
+      publishYear: item.publishYear,
+      minPlayers: item.minPlayers,
+      maxPlayers: item.maxPlayers,
+      minPlayTime: item.minPlayTime,
+      maxPlayTime: item.maxPlayTime,
+    ),
+    missingBaseGame: (item) => _missingBaseGame(item, gameIds),
+  );
+}
+
+/// The facts of a game that [filterGames] reads (#851), whatever list the
+/// game is in. A fact a list doesn't know is null.
+typedef FilterableGame = ({
+  String title,
+  String? subtitle,
+  ContentType? contentType,
+  PlatformType? platformType,
+  GameMedium? medium,
+  int? publishYear,
+  int? minPlayers,
+  int? maxPlayers,
+  int? minPlayTime,
+  int? maxPlayTime,
+});
+
+/// The items of [items] that [filter] keeps, in input order, reading each
+/// item's facts through [factsOf] (#851).
+///
+/// The rules are [filterCollection]'s, over [FilterableGame]'s facts. A null
+/// content type, platform type or medium is in no set, so that facet drops
+/// the item, or keeps it when the facet is in [CollectionFilter.excluded].
+/// The ranges read a missing value as [filterCollection] says.
+/// [CollectionFacet.missingBaseGame] is decided by [missingBaseGame], which
+/// says whether an item is an expansion shown without its base game. A
+/// filter that uses that facet needs the predicate: without one, an assert
+/// fails, and a release build leaves the facet out, flipped or not.
+///
+/// Returns [items] itself when [filter] doesn't narrow, and a new list
+/// otherwise.
+List<T> filterGames<T>(
+  List<T> items,
+  CollectionFilter filter, {
+  required FilterableGame Function(T item) factsOf,
+  bool Function(T item)? missingBaseGame,
+}) {
+  assert(
+    missingBaseGame != null || !filter.missingBaseGame,
+    'filterGames needs a missingBaseGame predicate for a filter that uses it',
+  );
   if (!filter.narrows) return items;
 
   final query = filter.query;
   final facets = filter.facetsInUse;
-  final gameIds = facets.contains(CollectionFacet.missingBaseGame)
-      ? {for (final item in items) item.gameId}
-      : const <String>{};
 
-  bool matches(GameCollectionListItem item, CollectionFacet facet) {
+  bool matches(T item, FilterableGame facts, CollectionFacet facet) {
     final game = filter.game;
     return switch (facet) {
       CollectionFacet.contentType => game.contentTypes.contains(
-        item.contentType,
+        facts.contentType,
       ),
       CollectionFacet.platformType => game.platformTypes.contains(
-        item.platformType,
+        facts.platformType,
       ),
-      CollectionFacet.medium => filter.mediums.contains(item.entry.medium),
-      CollectionFacet.publishYear => _inPublishYear(item, game.publishYear),
+      CollectionFacet.medium => filter.mediums.contains(facts.medium),
+      CollectionFacet.publishYear => _inPublishYear(facts, game.publishYear),
       CollectionFacet.playerCount => _supportsPlayerCount(
-        item,
+        facts,
         game.playerCount,
       ),
-      CollectionFacet.playTime => _fitsPlayTime(item, game.playTime),
-      CollectionFacet.missingBaseGame => _missingBaseGame(item, gameIds),
+      CollectionFacet.playTime => _fitsPlayTime(facts, game.playTime),
+      CollectionFacet.missingBaseGame => missingBaseGame!(item),
     };
   }
 
-  bool keeps(GameCollectionListItem item) {
-    if (!matchesSearchTerms(query, [item.title, item.subtitle])) return false;
+  bool keeps(T item) {
+    final facts = factsOf(item);
+    if (!matchesSearchTerms(query, [facts.title, facts.subtitle])) {
+      return false;
+    }
     for (final facet in facets) {
-      if (matches(item, facet) == filter.excluded.contains(facet)) {
+      if (facet == CollectionFacet.missingBaseGame && missingBaseGame == null) {
+        continue;
+      }
+      if (matches(item, facts, facet) == filter.excluded.contains(facet)) {
         return false;
       }
     }
@@ -287,7 +353,7 @@ bool _orUnknown(
 
 /// Whether [item]'s publish year is within [range]'s bounds; a bound left
 /// out leaves that side open. An item with no year is unknown.
-bool _inPublishYear(GameCollectionListItem item, GameSearchRange range) {
+bool _inPublishYear(FilterableGame item, GameSearchRange range) {
   final year = item.publishYear;
   return _orUnknown(
     range,
@@ -302,7 +368,7 @@ bool _inPublishYear(GameCollectionListItem item, GameSearchRange range) {
 /// Whether [item] supports every player count in [range]. A bound alone is
 /// one count (#580), so `min: 5` means "supports 5". Both of the item's
 /// counts must be known to match; an item missing either is unknown.
-bool _supportsPlayerCount(GameCollectionListItem item, GameSearchRange range) {
+bool _supportsPlayerCount(FilterableGame item, GameSearchRange range) {
   final lo = (range.min ?? range.max)!;
   final hi = (range.max ?? range.min)!;
   final (min, max) = (item.minPlayers, item.maxPlayers);
@@ -317,7 +383,7 @@ bool _supportsPlayerCount(GameCollectionListItem item, GameSearchRange range) {
 /// one play time takes that long, so it stands in for the missing end, and
 /// a bound left out doesn't narrow that side. An item with neither is
 /// unknown.
-bool _fitsPlayTime(GameCollectionListItem item, GameSearchRange range) {
+bool _fitsPlayTime(FilterableGame item, GameSearchRange range) {
   final (shortest, longest) = (item.minPlayTime, item.maxPlayTime);
   final start = shortest ?? longest;
   final end = longest ?? shortest;

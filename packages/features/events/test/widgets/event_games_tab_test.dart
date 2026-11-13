@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -62,7 +63,9 @@ OfferedGame _game(
   String id,
   String attendeeId,
   String title, {
+  String? subtitle,
   String platform = 'Tabletop',
+  PlatformType? platformType,
   GameMedium? medium = GameMedium.physical,
 }) => OfferedGame(
   id: id,
@@ -71,9 +74,31 @@ OfferedGame _game(
   platformGameId: 'pg-$id',
   gameId: 'g-$id',
   title: title,
+  subtitle: subtitle,
   platformName: platform,
+  platformType: platformType,
   medium: medium,
 );
+
+/// A batch offer's answer that offers every entry of [request], each as a
+/// game of its own.
+List<GameOfferResult> _offeredAll(OfferGamesRequest request) => [
+  for (final id in request.collectionIds)
+    GameOfferResult.offered(
+      collectionId: id,
+      alreadyOffered: false,
+    ),
+];
+
+/// A batch offer's answer that refuses every entry of [request].
+List<GameOfferResult> _refusedAll(OfferGamesRequest request) => [
+  for (final id in request.collectionIds)
+    GameOfferResult.refused(
+      collectionId: id,
+      reason: GameOfferRefusal.removedFromCollection,
+      message: 'No longer in the collection',
+    ),
+];
 
 /// The Games tab of an event's screen (#516): when the pool is read, what
 /// it shows in each state, its rows, the filter and the people sheet, Take
@@ -96,9 +121,10 @@ void main() {
   poolAnswer;
   late FutureOr<void> Function(TakeBackGameRequest request) takeBackAnswer;
 
-  /// What each offer answers: the game as the server holds it, unless a
+  /// What each batch offer answers: every entry it sent offered, unless a
   /// test says otherwise.
-  late FutureOr<OfferedGame> Function(OfferGameRequest request) offerAnswer;
+  late FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)
+  offerAnswer;
 
   /// What the Offer games page answers with, once opened.
   late Future<List<OfferPick>?> Function(BuildContext context) pageAnswer;
@@ -198,11 +224,7 @@ void main() {
     served = [catanMine, azul, catanAdas, root];
     poolAnswer = (_) => served;
     takeBackAnswer = (_) {};
-    offerAnswer = (request) => _game(
-      'o-${request.collectionId}',
-      request.attendeeId,
-      request.collectionId,
-    );
+    offerAnswer = _offeredAll;
     pageAnswer = (_) async => null;
     nominationsAnswer = (_) => const [];
     nominateAnswer = (request) => EventNomination(
@@ -261,7 +283,7 @@ void main() {
     remote = FakeEventRemote.detail(
       (_) => heldRead?.future ?? detail.snapshot,
       pool: (request) => poolAnswer(request),
-      offered: (request) => offerAnswer(request),
+      offeredBatch: (request) => offerAnswer(request),
       takenBack: (request) => takeBackAnswer(request),
       nominations: (eventId) async =>
           kept.over(await nominationsAnswer(eventId)),
@@ -272,7 +294,11 @@ void main() {
     return MaterialApp(
       theme: theme ?? BgeTheme.light(),
       locale: const Locale('en', 'US'),
-      localizationsDelegates: EventsLocalizations.localizationsDelegates,
+      localizationsDelegates: const [
+        ...EventsLocalizations.localizationsDelegates,
+        // The pool's Filters, its sheet and its chips (#851).
+        GameFiltersLocalizations.delegate,
+      ],
       supportedLocales: EventsLocalizations.supportedLocales,
       builder: (context, child) {
         if (offline == null) return child!;
@@ -391,7 +417,7 @@ void main() {
       find.byKey(EventDetailScreen.poolTakeBackKey(id), skipOffstage: false);
 
   /// The pool reads made, as event id and attendee ids.
-  List<(String, List<String>)> poolReads() => [
+  List<(String, List<String>?)> poolReads() => [
     for (final (:eventId, :attendeeIds) in remote.poolRequests)
       (eventId, attendeeIds),
   ];
@@ -516,7 +542,8 @@ void main() {
 
       expect(poolReads(), hasLength(1));
       expect(poolReads().single.$1, 'e-1');
-      expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+      // Everyone's games, with no ids, where the roster is read (#851).
+      expect(poolReads().single.$2, isNull);
       expect(row(azul.id), findsOneWidget);
     });
 
@@ -561,7 +588,7 @@ void main() {
 
       expect(poolReads(), hasLength(1));
       expect(poolReads().single.$1, 'e-1');
-      expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+      expect(poolReads().single.$2, isNull);
       expect(row(azul.id), findsOneWidget);
     });
 
@@ -590,7 +617,7 @@ void main() {
         await animate(tester);
 
         expect(poolReads(), hasLength(1));
-        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().single.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
 
@@ -607,8 +634,9 @@ void main() {
         cache.add(detailOf(roster: [me, ada, bo, cy]));
         await animate(tester);
 
+        // The roster says when to read again, and the read is everyone's.
         expect(remote.poolRequests, hasLength(3));
-        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo', 'att-cy']);
+        expect(poolReads().last.$2, isNull);
       });
 
       testWidgets('the same roster, arriving after a read, is not read for '
@@ -621,6 +649,51 @@ void main() {
         await animate(tester);
 
         expect(remote.poolRequests, hasLength(2));
+      });
+
+      // The read names nobody where the roster is read, so the order of its
+      // rows changes nothing it reads (#851).
+      testWidgets('the same roster in another order is not read for again', (
+        tester,
+      ) async {
+        await showGames(tester);
+        expect(remote.poolRequests, hasLength(1));
+
+        cache.add(detailOf(roster: [bo, ada, me]));
+        await animate(tester);
+
+        expect(remote.poolRequests, hasLength(1));
+      });
+
+      // A roster of the viewer alone reads the whole event, and one
+      // withheld reads the viewer's own games: the same ids, read for
+      // differently, so the games read for the one aren't the other's.
+      testWidgets("the viewer's roster withheld is read for again, for their "
+          'own games', (tester) async {
+        await showGames(tester, detail: detailOf(roster: [me]));
+        expect(poolReads().single.$2, isNull);
+        expect(row(azul.id), findsOneWidget);
+
+        poolAnswer = (_) => [catanMine];
+        cache.add(detailOf(roster: const []));
+        await animate(tester);
+
+        expect(poolReads(), hasLength(2));
+        expect(poolReads().last.$2, ['att-me']);
+        expect(row(azul.id), findsNothing);
+        expect(row(catanMine.id), findsOneWidget);
+      });
+
+      testWidgets("a withheld roster given back as the viewer's alone is read "
+          "for again, for everyone's", (tester) async {
+        await showGames(tester, detail: detailOf(roster: const []));
+        expect(poolReads().single.$2, ['att-me']);
+
+        cache.add(detailOf(roster: [me]));
+        await animate(tester);
+
+        expect(poolReads(), hasLength(2));
+        expect(poolReads().last.$2, isNull);
       });
 
       // Through the screen's own detail bloc: the read answers a roster
@@ -672,7 +745,7 @@ void main() {
         await animate(tester);
 
         expect(remote.poolRequests, hasLength(2));
-        expect(poolReads().last.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().last.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
     });
@@ -758,7 +831,7 @@ void main() {
         await animate(tester);
 
         expect(poolReads(), hasLength(1));
-        expect(poolReads().single.$2, ['att-me', 'att-ada', 'att-bo']);
+        expect(poolReads().single.$2, isNull);
         expect(row(azul.id), findsOneWidget);
       });
 
@@ -1679,6 +1752,433 @@ void main() {
         handle.dispose();
       });
     });
+
+    // The shared filter sheet, applied on the device (#851).
+    group('Filters', () {
+      Finder filters() => find.byKey(GameFilterKeys.button);
+      Finder filterChip(String id) => find.byKey(GameFilterKeys.inUse(id));
+      FocusNode filtersFocus(WidgetTester tester) =>
+          tester.widget<ButtonStyleButton>(filters()).focusNode!;
+
+      /// The pool with platform types: the viewer's Catan and Ada's Azul on
+      /// a tabletop, Ada's Catan on a PC, and Bo's Root with none, as an old
+      /// server sends it.
+      void servePlatforms() => served = [
+        _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+        _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        _game(
+          'o-3',
+          'att-ada',
+          'Catan',
+          platform: 'Board Game Arena',
+          platformType: PlatformType.pc,
+          medium: GameMedium.digital,
+        ),
+        _game('o-4', 'att-bo', 'Root', medium: null),
+      ];
+
+      Future<void> openFilters(WidgetTester tester) async {
+        await press(tester, filters());
+        await animate(tester);
+      }
+
+      Future<void> tapInSheet(WidgetTester tester, Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pump();
+        await tester.tap(finder);
+        await tester.pump();
+      }
+
+      Future<void> closeFilters(WidgetTester tester) async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await animate(tester);
+      }
+
+      /// Opens the sheet, chooses [type], flipped where [flipped], and
+      /// closes it.
+      Future<void> filterBy(
+        WidgetTester tester,
+        PlatformType type, {
+        bool flipped = false,
+      }) async {
+        await openFilters(tester);
+        await tapInSheet(tester, find.byKey(GameFilterKeys.platformType(type)));
+        if (flipped) {
+          await tapInSheet(
+            tester,
+            find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+          );
+        }
+        await closeFilters(tester);
+      }
+
+      testWidgets('Filters opens the sheet and narrows the pool', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        expect(
+          find.descendant(of: filters(), matching: find.text('Filters')),
+          findsOneWidget,
+        );
+
+        await openFilters(tester);
+        // Offer games' sheet: the medium and the flips, and no missing-base
+        // switch, since the rows are flat.
+        expect(
+          find.byKey(GameFilterKeys.medium(GameMedium.digital)),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(GameFilterKeys.exclude(CollectionFacet.platformType)),
+          findsOneWidget,
+        );
+        expect(find.byKey(GameFilterKeys.missingBaseGame), findsNothing);
+        await tapInSheet(
+          tester,
+          find.byKey(GameFilterKeys.platformType(PlatformType.tabletop)),
+        );
+        await closeFilters(tester);
+
+        // Root, with no platform type, is in no set.
+        expect(rowsShown(tester), ['o-1', 'o-2']);
+        expect(scrollView(tester).semanticChildCount, 2);
+        expect(find.text('Filters (1)'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: filterChip('platform_tabletop'),
+            matching: find.text('Tabletop'),
+          ),
+          findsOneWidget,
+        );
+        // Closed, it puts focus back on Filters.
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('the search and the facets narrow together, and the sheet '
+          'leaves the search as typed', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await tester.enterText(search(), 'catan');
+        await tester.pump();
+
+        await filterBy(tester, PlatformType.tabletop);
+
+        // Ada's Catan is on a PC.
+        expect(rowsShown(tester), ['o-1']);
+        expect(tester.widget<TextField>(search()).controller!.text, 'catan');
+        expect(find.text('1 game of 4'), findsOneWidget);
+      });
+
+      testWidgets('flipped, it keeps the rest, a row with no platform type '
+          'included', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+
+        await filterBy(tester, PlatformType.tabletop, flipped: true);
+
+        expect(rowsShown(tester), ['o-3', 'o-4']);
+        expect(
+          find.descendant(
+            of: filterChip('platform_tabletop'),
+            matching: find.text('Not Tabletop'),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a chip removed lets its filter go', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+
+        await press(tester, filterChip('platform_tabletop'));
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(rowsShown(tester), ['o-1', 'o-2', 'o-3', 'o-4']);
+        expect(find.text('Filters (1)'), findsNothing);
+      });
+
+      testWidgets('removing the last chip hands focus to Filters', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+        await tester.ensureVisible(filterChip('platform_tabletop'));
+        await tester.pump();
+        tester
+            .widget<InputChip>(filterChip('platform_tabletop'))
+            .focusNode!
+            .requestFocus();
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets("removing the last chip by a screen reader's activation "
+          'hands focus to Filters', (tester) async {
+        final handle = tester.ensureSemantics();
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+        await focusNothing(tester);
+
+        screenReaderTap(tester, 'Tabletop');
+        await animate(tester);
+
+        expect(filterChip('platform_tabletop'), findsNothing);
+        expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('Clear filters clears the facets too', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.console);
+        final clearFilters = find.byKey(
+          EventDetailScreen.poolClearFiltersKey,
+          skipOffstage: false,
+        );
+        expect(
+          find.text('No games match', skipOffstage: false),
+          findsOneWidget,
+        );
+
+        await tester.ensureVisible(clearFilters);
+        await tester.pump();
+        await activateByKeyboard(tester, clearFilters);
+        await animate(tester);
+
+        expect(rowsShown(tester), ['o-1', 'o-2', 'o-3', 'o-4']);
+        expect(filterChip('platform_console'), findsNothing);
+        expect(
+          find.descendant(of: filters(), matching: find.text('Filters')),
+          findsOneWidget,
+        );
+        // The hand-off stays on People.
+        expect(peopleFocus(tester).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets('the count line counts facet narrowing', (tester) async {
+        final handle = tester.ensureSemantics();
+        servePlatforms();
+        await showGames(tester);
+        expect(find.byKey(EventDetailScreen.poolCountKey), findsNothing);
+
+        await filterBy(tester, PlatformType.tabletop);
+
+        expect(find.text('2 games of 4'), findsOneWidget);
+        expect(
+          tester.getSemantics(find.byKey(EventDetailScreen.poolCountKey)),
+          matchesSemantics(label: '2 games of 4', isLiveRegion: true),
+        );
+
+        // With a person chosen too, both narrow.
+        await choosePeople(tester, ['att-ada']);
+        expect(rowsShown(tester), ['o-2']);
+        expect(find.text('1 game of 4'), findsOneWidget);
+        handle.dispose();
+      });
+
+      testWidgets('the filters outlive a read of the pool and a switch to '
+          'Details', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await filterBy(tester, PlatformType.tabletop);
+
+        blocOf<EventDetailBloc>(tester).add(const EventDetailRetryRequested());
+        await settle(tester);
+        await animate(tester);
+        // The bar, scrolled out of view to reach the sheet's button.
+        await tester.ensureVisible(
+          find.byKey(
+            EventDetailScreen.tabKey(EventDetailTab.details),
+            skipOffstage: false,
+          ),
+        );
+        await tester.pump();
+        await tester.tap(tab(EventDetailTab.details));
+        await animate(tester);
+        await chooseGames(tester);
+
+        expect(rowsShown(tester), ['o-1', 'o-2']);
+        expect(find.text('Filters (1)'), findsOneWidget);
+      });
+
+      testWidgets('nothing chosen, the chips add no space under the people', (
+        tester,
+      ) async {
+        servePlatforms();
+        await showGames(tester);
+        final wrap = find
+            .ancestor(of: people(), matching: find.byType(Wrap))
+            .first;
+        final tokens = BgeTokens.of(tester.element(people()));
+
+        // From the controls to the first row, whose padding is its own: the
+        // header's closing gap alone.
+        expect(
+          tester.getRect(row('o-1')).top - tester.getRect(wrap).bottom,
+          tokens.spaceMd,
+        );
+
+        await filterBy(tester, PlatformType.tabletop);
+        // A chip, spaced from the controls above it, then the count.
+        expect(
+          tester.getRect(filterChip('platform_tabletop')).top -
+              tester.getRect(wrap).bottom,
+          greaterThanOrEqualTo(tokens.spaceSm),
+        );
+      });
+
+      testWidgets('a range the sheet commits as the screen goes changes '
+          'nothing', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await openFilters(tester);
+        final from = find.byKey(
+          GameFilterKeys.rangeField(CollectionFacet.publishYear, from: true),
+        );
+        await tester.ensureVisible(from);
+        await tester.pump();
+        await tester.enterText(from, '2000');
+        await tester.pump();
+
+        // The screen goes with the sheet open, as a redirect takes it, and
+        // the field commits its bound once that frame has ended.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
+  group('names with subtitles (#851)', () {
+    final seafarers = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+
+    testWidgets('a row names its subtitle', (tester) async {
+      final handle = tester.ensureSemantics();
+      served = [seafarers, azul];
+      await showGames(tester);
+      await tester.ensureVisible(row(seafarers.id));
+      await tester.pump();
+
+      final name = find.descendant(
+        of: row(seafarers.id),
+        matching: find.text('Catan: Seafarers'),
+      );
+      expect(name, findsOneWidget);
+      expect(
+        tester.getSemantics(name),
+        matchesSemantics(
+          label: "Catan: Seafarers\nTabletop, Physical\nYou're bringing this",
+        ),
+      );
+      // A subtitle searched for finds it.
+      await tester.enterText(search(), 'seafarers');
+      await tester.pump();
+      expect(rowsShown(tester), [seafarers.id]);
+      handle.dispose();
+    });
+
+    testWidgets("a take-back's outcome names the subtitle", (tester) async {
+      served = [seafarers, azul];
+      await showGames(tester);
+      served = [azul];
+
+      await press(tester, takeBack(seafarers.id));
+      await animate(tester);
+
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text('Catan: Seafarers is off your games.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a dropped take-back's outcome names the subtitle", (
+      tester,
+    ) async {
+      served = [seafarers, azul];
+      await showGames(tester);
+      await tester.ensureVisible(takeBack(seafarers.id));
+      await tester.pump();
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+
+      // A read starts, and the press lands before a frame shows it.
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await tester.tap(takeBack(seafarers.id));
+
+      // Meanwhile a read of the pool finds the game gone.
+      served = [azul];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await settle(tester);
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+
+      expect(remote.takeBacks, isEmpty);
+      expect(
+        find.descendant(
+          of: outcome(),
+          matching: find.text(
+            "Catan: Seafarers wasn't taken back: the event changed first.",
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Take back says the subtitle, and so does the dialog before '
+        "someone else's is taken back", (tester) async {
+      final handle = tester.ensureSemantics();
+      final adas = _game('o-2', 'att-ada', 'Azul', subtitle: 'Summer Pavilion');
+      served = [seafarers, adas];
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.host),
+        ),
+      );
+      await tester.ensureVisible(takeBack(seafarers.id));
+      await tester.pump();
+
+      expect(
+        tester.getSemantics(takeBack(seafarers.id)),
+        matchesSemantics(
+          label: 'Take back Catan: Seafarers',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await press(tester, takeBack(adas.id));
+      await animate(tester);
+      expect(
+        find.text("Take Azul: Summer Pavilion off Ada's games?"),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
   });
 
   group('Take back', () {
@@ -2033,7 +2533,7 @@ void main() {
       final send = Completer<void>();
       offerAnswer = (request) async {
         await send.future;
-        return _game('o-new', request.attendeeId, request.collectionId);
+        return _offeredAll(request);
       };
       await showGames(tester);
       // On screen before the read starts, so the press needs no frame.
@@ -3245,16 +3745,17 @@ void main() {
 
       await offer(tester);
 
-      expect(remote.offers, [
-        (eventId: 'e-1', attendeeId: 'att-me', collectionId: 'c-azul'),
-        (eventId: 'e-1', attendeeId: 'att-me', collectionId: 'c-root'),
-      ]);
+      // One request for the run.
+      final batch = remote.offerBatches.single;
+      expect(batch.eventId, 'e-1');
+      expect(batch.attendeeId, 'att-me');
+      expect(batch.collectionIds, ['c-azul', 'c-root']);
       expectOutcome('2 games offered.');
       expectInFooter(tester, outcome());
-      // The pool is read again once the run ends, for the roster.
+      // The pool is read again once the run ends, for everyone's games.
       expect(remote.poolRequests, hasLength(reads + 1));
       expect(poolReads().last.$1, 'e-1');
-      expect(poolReads().last.$2, roster);
+      expect(poolReads().last.$2, isNull);
     });
 
     testWidgets('no picks, or Back, send nothing and say nothing', (
@@ -3267,19 +3768,23 @@ void main() {
       await offer(tester);
 
       expect(offerArgs, hasLength(2));
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expect(outcome(), findsNothing);
       expect(progress(), findsNothing);
     });
 
-    testWidgets('progress shows in the footer while they go', (tester) async {
-      final answers = [Completer<void>(), Completer<void>()];
-      var sent = 0;
+    testWidgets('progress shows in the footer while they go, saying how many', (
+      tester,
+    ) async {
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
-      pageAnswer = (_) async => picks;
+      pageAnswer = (_) async => [
+        ...picks,
+        const OfferPick(collectionId: 'c-wingspan', title: 'Wingspan'),
+      ];
       await showGames(tester);
 
       await offer(tester);
@@ -3288,42 +3793,41 @@ void main() {
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 0 of 2…'),
+          matching: find.text('Offering 3 games…'),
         ),
         findsOneWidget,
       );
       expect(outcome(), findsNothing);
 
-      answers[0].complete();
-      await settle(tester);
+      // It says the same however long the run is out.
+      await tester.pump(const Duration(seconds: 5));
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 1 of 2…'),
+          matching: find.text('Offering 3 games…'),
         ),
         findsOneWidget,
       );
 
-      answers[1].complete();
+      held.complete();
       await animate(tester);
       // The outcome takes its place.
       expect(progress(), findsNothing);
-      expectOutcome('2 games offered.');
+      expectOutcome('3 games offered.');
     });
 
     testWidgets('the progress line and the outcome stay in the footer on '
         'Details; the stale-data banner does not', (tester) async {
-      final answers = [Completer<void>(), Completer<void>()];
-      var sent = 0;
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
       await offer(tester);
 
-      // A run of forty can outlast the stay on Games.
+      // A run can outlast the stay on Games.
       Future<void> choose(EventDetailTab which) async {
         await tester.ensureVisible(
           find.byKey(EventDetailScreen.tabKey(which), skipOffstage: false),
@@ -3335,20 +3839,17 @@ void main() {
 
       await choose(EventDetailTab.details);
       expectInFooter(tester, progress());
-
-      answers[0].complete();
-      await settle(tester);
       expect(
         find.descendant(
           of: progress(),
-          matching: find.text('Offering 1 of 2…'),
+          matching: find.text('Offering 2 games…'),
         ),
         findsOneWidget,
       );
 
       // The read after the run fails, over the games shown.
       poolAnswer = (_) => throw _offline;
-      answers[1].complete();
+      held.complete();
       await animate(tester);
 
       expect(progress(), findsNothing);
@@ -3361,19 +3862,15 @@ void main() {
       expectInFooter(tester, stale());
     });
 
-    testWidgets('the progress line is one live region, which says a step at '
-        'most every two seconds, and the latest', (tester) async {
+    testWidgets('the progress line is one live region, said as it appears and '
+        'not again while the run is out', (tester) async {
       final handle = tester.ensureSemantics();
-      final answers = [for (var n = 0; n < 6; n++) Completer<void>()];
-      var sent = 0;
+      final held = Completer<void>();
       offerAnswer = (request) async {
-        await answers[sent++].future;
-        return _game('o-new-$sent', request.attendeeId, 'x');
+        await held.future;
+        return _offeredAll(request);
       };
-      pageAnswer = (_) async => [
-        for (var n = 0; n < 6; n++)
-          OfferPick(collectionId: 'c-$n', title: 'Game $n'),
-      ];
+      pageAnswer = (_) async => [picks.first];
       await showGames(tester);
       await offer(tester);
 
@@ -3381,48 +3878,21 @@ void main() {
       final id = line().id;
       expect(
         line(),
-        isSemantics(label: 'Offering 0 of 6…', isLiveRegion: true),
+        isSemantics(label: 'Offering 1 game…', isLiveRegion: true),
       );
 
-      // The first answer, more than two seconds on: said at once.
-      answers[0].complete();
-      await settle(tester);
-      expect(line().label, 'Offering 1 of 6…');
-
-      // Two more in quick succession: drawn at once, said once the two
-      // seconds since the last are up, as the latest.
-      for (var n = 1; n < 3; n++) {
-        answers[n].complete();
-        await settle(tester);
-        await tester.pump(const Duration(milliseconds: 200));
-      }
-      expect(
-        find.descendant(
-          of: progress(),
-          matching: find.text('Offering 3 of 6…'),
-        ),
-        findsOneWidget,
-      );
-      expect(line().label, 'Offering 1 of 6…');
-      await tester.pump(const Duration(seconds: 2));
+      // The same node, saying the same, for as long as the run is out.
+      await tester.pump(const Duration(seconds: 3));
       expect(
         line(),
-        isSemantics(label: 'Offering 3 of 6…', isLiveRegion: true),
+        isSemantics(label: 'Offering 1 game…', isLiveRegion: true),
       );
       expect(line().id, id);
 
-      // One more, after a pause: said at once.
-      await tester.pump(const Duration(seconds: 2));
-      answers[3].complete();
-      await settle(tester);
-      expect(line().label, 'Offering 4 of 6…');
-      expect(line().id, id);
-
-      answers[4].complete();
-      answers[5].complete();
+      held.complete();
       await animate(tester);
       expect(progress(), findsNothing);
-      expectOutcome('6 games offered.');
+      expectOutcome('1 game offered.');
       handle.dispose();
     });
 
@@ -3447,7 +3917,7 @@ void main() {
       page.complete(picks);
       await animate(tester);
 
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
       expectOutcome(
         "Those games weren't offered: the event changed while you were "
         'choosing.',
@@ -3466,67 +3936,88 @@ void main() {
       await settle(tester);
       page.complete(picks);
       await animate(tester);
-      expect(remote.offers, isEmpty);
+      expect(remote.offerBatches, isEmpty);
 
       heldRead!.complete(detailOf().snapshot);
       heldRead = null;
       await animate(tester);
       await animate(tester);
 
-      expect(remote.offers, hasLength(2));
+      expect(remote.offerBatches.single.collectionIds, ['c-azul', 'c-root']);
       expectOutcome('2 games offered.');
     });
 
     group('each end of a run says how it went', () {
-      const conflict = EventWriteConflictException('gone', statusCode: 400);
       const refused = EventWriteRefusedException('no', statusCode: 403);
+
+      /// Picks of the entries `c-1` to `c-[count]`.
+      List<OfferPick> many(int count) => [
+        for (var n = 1; n <= count; n++)
+          OfferPick(collectionId: 'c-$n', title: 'Game $n'),
+      ];
+
+      /// An answer that offers each batch of a run but the one that sends
+      /// [id], which throws [error].
+      List<GameOfferResult> Function(OfferGamesRequest) throwingFor(
+        String id,
+        EventRemoteException error,
+      ) =>
+          (request) => request.collectionIds.contains(id)
+          ? throw error
+          : _offeredAll(request);
+
       final rows = [
         (
           name: 'done',
-          answers: <EventRemoteException?>[null, null],
+          picked: picks,
+          answer: _offeredAll,
           copy: '2 games offered.',
         ),
         (
           name: 'partly',
-          answers: <EventRemoteException?>[null, conflict],
+          picked: picks,
+          answer: (OfferGamesRequest request) => [
+            ..._offeredAll(request).take(1),
+            ..._refusedAll(request).skip(1),
+          ],
           copy: "1 game offered. 1 couldn't be offered.",
         ),
         (
           name: 'none',
-          answers: <EventRemoteException?>[conflict, conflict],
+          picked: picks,
+          answer: _refusedAll,
           copy: 'None of those 2 games could be offered.',
         ),
         (
           name: 'refused, with some offered',
-          answers: <EventRemoteException?>[null, refused],
-          copy: "1 game offered. 1 couldn't be offered.",
+          picked: many(101),
+          answer: throwingFor('c-101', refused),
+          copy: "100 games offered. 1 couldn't be offered.",
         ),
         (
           name: 'refused, with none offered',
-          answers: <EventRemoteException?>[refused],
+          picked: picks,
+          answer: throwingFor('c-azul', refused),
           copy: "You can't offer games to this event any more.",
         ),
         (
           name: 'failed, with some offered',
-          answers: <EventRemoteException?>[null, _offline],
-          copy: "1 game offered. 1 couldn't be offered.",
+          picked: many(101),
+          answer: throwingFor('c-101', _offline),
+          copy: "100 games offered. 1 couldn't be offered.",
         ),
         (
           name: 'failed, with none offered',
-          answers: <EventRemoteException?>[_offline],
+          picked: picks,
+          answer: throwingFor('c-azul', _offline),
           copy: 'None of those 2 games could be offered.',
         ),
       ];
 
-      for (final (:name, :answers, :copy) in rows) {
+      for (final (:name, :picked, :answer, :copy) in rows) {
         testWidgets('$name: "$copy"', (tester) async {
-          var sent = 0;
-          offerAnswer = (request) {
-            final thrown = answers[sent++];
-            if (thrown != null) throw thrown;
-            return _game('o-new-$sent', request.attendeeId, 'x');
-          };
-          pageAnswer = (_) async => picks;
+          offerAnswer = answer;
+          pageAnswer = (_) async => picked;
           await showGames(tester);
 
           await offer(tester);
@@ -3539,7 +4030,7 @@ void main() {
       testWidgets("none, of one: \"That game couldn't be offered.\"", (
         tester,
       ) async {
-        offerAnswer = (_) => throw conflict;
+        offerAnswer = _refusedAll;
         pageAnswer = (_) async => [picks.first];
         await showGames(tester);
 
@@ -3570,7 +4061,7 @@ void main() {
       final held = Completer<void>();
       offerAnswer = (request) async {
         await held.future;
-        return _game('o-new', request.attendeeId, 'x');
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
@@ -3597,10 +4088,9 @@ void main() {
         'after it have ended: a detail read running then disables it, and '
         "it doesn't say it is offering", (tester) async {
       final last = Completer<void>();
-      var sent = 0;
       offerAnswer = (request) async {
-        if (sent++ == 1) await last.future;
-        return _game('o-new-$sent', request.attendeeId, 'x');
+        await last.future;
+        return _offeredAll(request);
       };
       pageAnswer = (_) async => picks;
       await showGames(tester);
@@ -3694,7 +4184,7 @@ void main() {
       final held = Completer<void>();
       offerAnswer = (request) async {
         await held.future;
-        return _game('o-new', request.attendeeId, 'x');
+        return _offeredAll(request);
       };
       // A page of its own, which pops with the picks.
       pageAnswer = (context) => Navigator.of(context).push<List<OfferPick>>(
@@ -3722,7 +4212,7 @@ void main() {
 
       // Back on the tab, with the run out.
       expect(find.text('Send them'), findsNothing);
-      expect(remote.offers, hasLength(1));
+      expect(remote.offerBatches, hasLength(1));
       expect(focus.hasPrimaryFocus, isTrue);
       expect(
         find.descendant(of: offerGames(), matching: find.text('Offering…')),
@@ -3741,7 +4231,7 @@ void main() {
       await animate(tester);
       await animate(tester);
 
-      expect(remote.offers, hasLength(2));
+      expect(remote.offerBatches, hasLength(1));
       expect(focus.hasPrimaryFocus, isTrue);
       expect(
         find.descendant(of: offerGames(), matching: find.text('Offer games')),
@@ -3927,6 +4417,97 @@ void main() {
           occurrenceId: 'd-2',
         ),
       ]);
+    });
+
+    group('a game with a subtitle (#851)', () {
+      final seafarers = _game(
+        'o-2',
+        'att-ada',
+        'Catan',
+        subtitle: 'Seafarers',
+      );
+
+      testWidgets('Nominate is named "Nominate Catan: Seafarers" to a screen '
+          'reader, as Take back on the same row is', (tester) async {
+        final handle = tester.ensureSemantics();
+        final mine = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+        served = [mine, azul];
+        await showGames(tester);
+        await tester.ensureVisible(nominate(mine.id));
+        await tester.pump();
+
+        expect(
+          tester.getSemantics(nominate(mine.id)),
+          isSemantics(label: 'Nominate Catan: Seafarers', isButton: true),
+        );
+        expect(
+          tester.getSemantics(takeBack(mine.id)),
+          isSemantics(label: 'Take back Catan: Seafarers', isButton: true),
+        );
+        handle.dispose();
+      });
+
+      testWidgets('the scope dialog and the outcome name the subtitle', (
+        tester,
+      ) async {
+        served = [catanMine, seafarers];
+        await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+        await press(tester, nominate(seafarers.id));
+        await animate(tester);
+
+        expect(find.text('Nominate Catan: Seafarers'), findsOneWidget);
+
+        await tester.tap(scope(null));
+        await tester.pump();
+        await tester.tap(confirm());
+        await animate(tester);
+
+        expect(
+          find.descendant(
+            of: nominationsOutcome(),
+            matching: find.text(
+              'Catan: Seafarers is nominated. Voting is open.',
+            ),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("a dropped nominate's outcome names the subtitle", (
+        tester,
+      ) async {
+        final soon = confirmed(
+          'd-1',
+          now.add(const Duration(minutes: 1)),
+        ).copyWith(eventId: 'e-1');
+        served = [catanMine, seafarers];
+        await showGames(
+          tester,
+          detail: detailOf(occurrences: [soon, twoDates.last]),
+        );
+
+        await press(tester, nominate(seafarers.id));
+        await animate(tester);
+        // The date starts while the dialog is open.
+        clock = now.add(const Duration(minutes: 2));
+        await tester.tap(scope('d-1'));
+        await tester.pump();
+        await tester.tap(confirm());
+        await animate(tester);
+
+        expect(remote.nominates, isEmpty);
+        expect(
+          find.descendant(
+            of: nominationsOutcome(),
+            matching: find.text(
+              "Catan: Seafarers wasn't nominated: something changed on this "
+              'event first.',
+            ),
+          ),
+          findsOneWidget,
+        );
+      });
     });
 
     testWidgets('a date already past, or cancelled, is not offered', (
@@ -4966,6 +5547,94 @@ void main() {
       handle.dispose();
     });
 
+    /// Opens Filters, chooses tabletops, and closes the sheet (#851).
+    Future<void> filterTabletops(WidgetTester tester) async {
+      await press(tester, find.byKey(GameFilterKeys.button));
+      await animate(tester);
+      final tabletop = find.byKey(
+        GameFilterKeys.platformType(PlatformType.tabletop),
+      );
+      await tester.ensureVisible(tabletop);
+      await tester.pump();
+      await tester.tap(tabletop);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+    }
+
+    for (final (name, scale) in [
+      ('100%', 1.0),
+      ('200%', BgeTextScale.maxScaleFactor),
+    ]) {
+      testWidgets('the header at 320×640 and $name text: People, Not mine and '
+          'Filters fit the window in that order, with the people chosen, then '
+          'the facets in use, under them (#851)', (tester) async {
+        useViewSize(tester, const Size(320, 640));
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        served = [
+          _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+          _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        ];
+        await showGames(tester);
+        // Below the Nominations section (#517): built once scrolled to.
+        await tester.scrollUntilVisible(
+          notMine(),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await press(tester, notMine());
+        await tester.pump();
+        await filterTabletops(tester);
+        await tester.ensureVisible(people());
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        // The content's edges, inside the page's gutters: the search field
+        // spans the header's width.
+        final content = tester.getRect(search());
+        expect(content.left, greaterThan(0));
+        expect(content.right, lessThan(320));
+        final controls = [
+          people(),
+          notMine(),
+          find.byKey(GameFilterKeys.button),
+        ];
+        final rects = [for (final control in controls) tester.getRect(control)];
+        for (final (i, rect) in rects.indexed) {
+          expect(rect.left, greaterThanOrEqualTo(content.left), reason: '$i');
+          expect(rect.right, lessThanOrEqualTo(content.right), reason: '$i');
+          if (i == 0) continue;
+          final before = rects[i - 1];
+          // On a run of its own below, or after the one before on its run.
+          expect(
+            rect.top >= before.bottom ||
+                (rect.top == before.top && rect.left >= before.right),
+            isTrue,
+            reason: 'control $i follows control ${i - 1}',
+          );
+        }
+        final person = tester.getRect(inUse('att-me'));
+        final facet = tester.getRect(
+          find.byKey(GameFilterKeys.inUse('platform_tabletop')),
+        );
+        expect(
+          person.top,
+          greaterThanOrEqualTo(
+            rects.map((rect) => rect.bottom).reduce((a, b) => a > b ? a : b),
+          ),
+        );
+        expect(facet.top, greaterThanOrEqualTo(person.bottom));
+        expect(person.right, lessThanOrEqualTo(content.right));
+        expect(facet.right, lessThanOrEqualTo(content.right));
+      });
+    }
+
     /// The cache's answer, then the Games tab.
     Future<void> arrangeGames(WidgetTester tester) async {
       cache.add(detailOf());
@@ -5030,6 +5699,36 @@ void main() {
         await tester.tap(takeBack(azul.id));
         await tester.pumpAndSettle();
         expect(find.text("Take Azul off Ada's games?"), findsOneWidget);
+      },
+    );
+
+    auditScreen(
+      'EventDetailScreen, the Games tab with filters in use (#851)',
+      build: (theme) => harness(detail: detailOf(), theme: theme),
+      arrange: (tester) async {
+        served = [
+          _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+          _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
+        ];
+        await arrangeGames(tester);
+        // Below the Nominations section (#517): built once scrolled to.
+        await tester.scrollUntilVisible(
+          notMine(),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await press(tester, notMine());
+        await tester.pump();
+        await filterTabletops(tester);
+        final chip = find.byKey(GameFilterKeys.inUse('platform_tabletop'));
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        expect(chip, findsOneWidget);
       },
     );
 

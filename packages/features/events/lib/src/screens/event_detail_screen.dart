@@ -39,7 +39,7 @@ import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_rsvp_controls.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/rsvp_note_dialog.dart';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -97,19 +97,22 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## The Games tab
 ///
 /// The games the attendees offer to bring, one row per offered copy, with a
-/// title search, a filter by person, and Take back on the viewer's own rows
-/// ([EventGamesTab], #516). The pool isn't cached: the [EventGamesBloc] holds
-/// what was read last.
+/// search, a filter by person, the shared filter sheet (#851), and Take back
+/// on the viewer's own rows ([EventGamesTab], #516). The pool isn't cached:
+/// the [EventGamesBloc] holds what was read last, and the tab filters it on
+/// the device.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
 /// each time a read of the event ends once the tab has shown, for the event
 /// and the roster the detail shows then ([poolAttendeeIds]); and, once the
 /// tab has shown, whenever those ids come to differ from the ids it was last
-/// read for, as when the roster a read wrote reaches the screen after the
+/// asked with, as when the roster a read wrote reaches the screen after the
 /// read has ended. Never before the tab is opened, and never for ids that
-/// are the same or for none. The viewer's own writes read it as they end: a
-/// run of offers, however it ended, and a take-back unless it failed, which
+/// are the same or for none. Each read is for every attendee's games where
+/// the roster is a non-empty list, and otherwise the viewer's own
+/// ([poolReadIds], #851). The viewer's own writes read it as they end: a run
+/// of offers, however it ended, and a take-back unless it failed, which
 /// changed nothing. A write the screen's re-check dropped reads nothing, and
 /// Try again, on the failed state and on the stale-data banner, reads it as
 /// the user asks. With nobody to read it for, nothing is read: where the roster
@@ -117,7 +120,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// hasn't been read, as for an event cached from the list, the tab waits for
 /// the event's read to bring it, and says it couldn't load the games if that
 /// read fails, with Try again reading the event. A read that finds the
-/// event gone reads the event again, as the poll's does.
+/// event gone reads the event again, as the poll's does, and a write that
+/// ends while it does reads nothing.
 ///
 /// The nominations (#517) aren't cached either: the [EventNominationsBloc]
 /// holds what was read last. They are read when the pool is: the first time
@@ -133,16 +137,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// says so there, with Try again, and one that fails over nominations read
 /// before leaves them, for the footer's stale-data banner to say.
 ///
-/// The page's footer holds what answers the lists: how far a run of offers
-/// has got while it is out, or how the pool's last write went, a run of
-/// offers or a take-back, then how the viewer's last nominations write went,
-/// a nominate, a vote or a withdrawal, or a host's approval, rejection or
-/// close of a vote (#518), each with its own Dismiss, on either tab, since a
-/// run can outlast the stay on Games; then, while Games is selected, the
-/// stale-data banners, the pool's and the nominations', while what each
-/// shows may be out of date. There each is on screen and heard however far
-/// down the list the user is; what answers the whole screen stays in the
-/// header.
+/// The page's footer holds what answers the lists: how many games a run of
+/// offers is offering while it is out, or how the pool's last write went, a run
+/// of offers or a take-back, then how the viewer's last nominations write went,
+/// a nominate, a vote or a withdrawal, or a host's approval, rejection or close
+/// of a vote (#518), each with its own Dismiss, on either tab, since a run can
+/// outlast the stay on Games; then, while Games is selected, the stale-data
+/// banners, the pool's and the nominations', while what each shows may be out
+/// of date. There each is on screen and heard however far down the list the
+/// user is; what answers the whole screen stays in the header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
@@ -157,15 +160,15 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// going still has it, and it needs no [onOfferGames].
 ///
 /// Offer games opens the page of the viewer's collection through
-/// [onOfferGames], which shows the games the viewer already offers as
-/// checked and disabled, so none is picked twice, and sends the games picked
-/// there once it closes, one at a time, as Add people sends its add: once a
-/// running read of the event has ended, for the event, the viewer's row and
-/// the roster as the detail shows them then, and not at all if the viewer
-/// may no longer offer games, or has answered Not going meanwhile, which the
-/// footer says. Take back is sent once a running read of the event has
-/// ended too, and only if the viewer may still take games back and the game
-/// is still theirs and in the pool; answering Not going doesn't stop it.
+/// [onOfferGames], which shows the games the viewer already offers as checked
+/// and disabled, so none is picked twice, and sends the games picked there once
+/// it closes, in batches (#851), as Add people sends its add: once a running
+/// read of the event has ended, for the event, the viewer's row and the roster
+/// as the detail shows them then, and not at all if the viewer may no longer
+/// offer games, or has answered Not going meanwhile, which the footer says.
+/// Take back is sent once a running read of the event has ended too, and only
+/// if the viewer may still take games back and the game is still theirs and in
+/// the pool; answering Not going doesn't stop it.
 ///
 /// The Offer games button keeps its focus through the run it sent, which the
 /// page hands it back as it closes (#607). While the run is out it stays
@@ -501,7 +504,8 @@ class EventDetailScreen extends StatelessWidget {
   /// a run of offers, or a take-back.
   static const Key poolOutcomeKey = Key('event_detail.pool_outcome');
 
-  /// Key on the line in the footer saying how far a run of offers has got.
+  /// Key on the line in the footer saying how many games a run of offers is
+  /// offering.
   static const Key poolProgressKey = Key('event_detail.pool_progress');
 
   /// Key on the footer's banner saying the games shown may be out of date,
@@ -1182,31 +1186,43 @@ bool _poolIdsMayHaveChanged(
     !current.reading &&
     !_detailReadEnded(previous, current);
 
-/// Reads the games pool where the Games tab has shown and the ids to read
-/// it for differ, by value and order, from the ids it was last asked for
-/// (#516): as when a read of the event has ended and the roster it wrote
-/// reaches the screen after it. Ids that are the same read nothing, and so
-/// do none, which forgets the ids last asked for ([_readPool]).
+/// Reads the games pool where the Games tab has shown and the roster's ids
+/// ([poolAttendeeIds]) differ, as a set, from the ids it was last asked with
+/// (#516), or the read they make ([poolReadIds]) changes between the whole
+/// event's and the viewer's own (#851): as when a read of the event has
+/// ended and the roster it wrote reaches the screen after it. The same ids
+/// in another order read nothing, as the read doesn't depend on their order
+/// (#851), and nor do none, which forgets the ids last asked with
+/// ([_readPool]).
 ///
-/// A read of the pool changes no detail, and each request is for ids that
-/// differ from the last asked, so this sends one request per change of the
-/// ids and can't loop. A read already out for the old ids is followed by
-/// one for these, as the bloc runs one more read for the latest request.
+/// A read of the pool changes no detail, and each request comes of ids that
+/// differ from the last asked with, so this sends one request per change of
+/// the ids and can't loop. A read already out for the old roster is
+/// followed by one for this, as the bloc runs one more read for the latest
+/// request, unless the one out ends gone: then the event's read asks again.
 void _readPoolForNewIds(BuildContext context, EventDetailState state) {
   if (state is! EventDetailReady) return;
   final scope = EventGamesTabScope.of(context);
   if (!scope.shown) return;
   final ids = poolAttendeeIds(state.detail);
-  if (ids.isNotEmpty && listEquals(ids, scope.requestedIds)) return;
+  final requested = scope.requested;
+  if (ids.isNotEmpty &&
+      requested != null &&
+      requested.wholeEvent == (poolReadIds(state.detail) == null) &&
+      setEquals(ids.toSet(), requested.ids.toSet())) {
+    return;
+  }
   _readPool(context, state, scope);
 }
 
-/// Reads the games pool of the event [state] shows, for the roster it shows
-/// then, by the ids it shows then, which a reconcile can move (#499), and
-/// notes those ids on [controller]. Not at all with nobody to read it
-/// for, or for an event the server doesn't know.
+/// Reads the games pool of the event [state] shows, by the id it shows then,
+/// which a reconcile can move (#499), for the attendees [poolReadIds] names
+/// (#851), and notes the roster's ids ([poolAttendeeIds]) and that read's
+/// scope on [controller].
+/// Not at all with nobody to read it for, or for an event the server
+/// doesn't know.
 ///
-/// Nobody to read it for forgets the ids last asked for. The tab shows no
+/// Nobody to read it for forgets the ids last asked with. The tab shows no
 /// games then, so a roster that comes back, the same one included, is read
 /// for again, and the games shown are never as old as its absence.
 void _readPool(
@@ -1218,11 +1234,12 @@ void _readPool(
   if (event.isLocalOnly) return;
   final ids = poolAttendeeIds(state.detail);
   if (ids.isEmpty) {
-    controller.requestedIds = null;
+    controller.requested = null;
     return;
   }
-  controller.requestedIds = ids;
-  context.read<EventGamesBloc>().add(EventGamesRequested(event.id, ids));
+  final readIds = poolReadIds(state.detail);
+  controller.requested = (ids: ids, wholeEvent: readIds == null);
+  context.read<EventGamesBloc>().add(EventGamesRequested(event.id, readIds));
 }
 
 /// Whether [outcome] ends a pool write that changed the pool: a run of
@@ -1429,14 +1446,14 @@ class _ReadyPage extends StatelessWidget {
       // nominations' and the pool's, and none of either while it shows a
       // state (#516, #517).
       semanticChildCount: gamesTab?.rowCount,
-      // How far a run of offers has got or how the pool's last write went
-      // (#516), then how the viewer's last nominations write went (#517), on
-      // either tab, then, on the Games tab, the stale-data banners: answers
-      // on a long list, so on screen and heard wherever the list is
-      // scrolled. A run can outlast the stay on Games, and a footer left out
-      // on Details would silence its live region. Passed on every build
-      // where there is a games bloc, so the page keeps one shape as the tabs
-      // swap.
+      // How many games a run of offers is offering (#851) or how the pool's
+      // last write went (#516), then how the viewer's last nominations write
+      // went (#517), on either tab, then, on the Games tab, the stale-data
+      // banners: answers on a long list, so on screen and heard wherever the
+      // list is scrolled. A run can outlast the stay on Games, and a footer
+      // left out on Details would silence its live region. Passed on every
+      // build where there is a games bloc, so the page keeps one shape as the
+      // tabs swap.
       footer: gamesState == null
           ? null
           : EventGamesFooter(

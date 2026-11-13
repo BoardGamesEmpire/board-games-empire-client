@@ -80,15 +80,16 @@ class FakeEventRemote implements EventRemoteDataSource {
   @override
   Future<List<OfferedGame>> fetchGamesPool(
     String eventId, {
-    required List<String> attendeeIds,
+    List<String>? attendeeIds,
+    Future<void>? cancelled,
   }) async => throw UnimplementedError('fetchGamesPool is not faked');
 
   @override
-  Future<OfferedGame> offerGame(
+  Future<List<GameOfferResult>> offerGames(
     String eventId,
     String attendeeId, {
-    required String collectionId,
-  }) async => throw UnimplementedError('offerGame is not faked');
+    required List<String> collectionIds,
+  }) async => throw UnimplementedError('offerGames is not faked');
 
   @override
   Future<void> takeBackGame(

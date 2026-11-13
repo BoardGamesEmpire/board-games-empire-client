@@ -189,19 +189,24 @@ enum ResolveResult {
 sealed class EventNominationsOutcome extends Equatable {
   const EventNominationsOutcome({required this.title});
 
-  /// The game's title: the pool row's for a nominate, and the nomination's
-  /// for every other write, as the event carried it.
+  /// The game's title: the pool row's for a nominate, whose subtitle
+  /// [NominateOutcome.subtitle] carries (#851), and the nomination's for
+  /// every other write, as the event carried it.
   final String title;
 }
 
 /// How a nominate ended.
 final class NominateOutcome extends EventNominationsOutcome {
-  const NominateOutcome(this.result, {required super.title});
+  const NominateOutcome(this.result, {required super.title, this.subtitle});
 
   final NominateResult result;
 
+  /// The pool row's subtitle, which the screen names the game with after
+  /// its title, as the row does (#851). Null where it has none.
+  final String? subtitle;
+
   @override
-  List<Object?> get props => [result, title];
+  List<Object?> get props => [result, title, subtitle];
 }
 
 /// How a vote ended. [voteType] is the vote recorded, on a done, and null

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_detail_bloc.dart';
 import 'package:events/src/bloc/event_detail_state.dart';
@@ -13,6 +11,7 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -21,14 +20,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 /// What the page's footer holds for the Games tab: the games pool's (#516),
 /// then the nominations' (#517). First the pool's last write, as the line
-/// saying how far a run of offers has got while one is out, then as the
-/// banner saying how it went; then the viewer's last nominations write, a
+/// saying how many games a run of offers is offering while one is out, then as
+/// the banner saying how it went; then the viewer's last nominations write, a
 /// nominate, a vote or a withdrawal, or a host's approval, rejection or close
-/// of a vote (#518), as the banner saying how it went; then, with
-/// [showStale], the stale-data banners: the pool's while the games shown may
-/// be out of date, then the nominations' while those shown may be. Each when
-/// there is one; nothing otherwise. Passed on every build, on either tab, so
-/// the page keeps one shape.
+/// of a vote (#518), as the banner saying how it went; then, with [showStale],
+/// the stale-data banners: the pool's while the games shown may be out of date,
+/// then the nominations' while those shown may be. Each when there is one;
+/// nothing otherwise. Passed on every build, on either tab, so the page keeps
+/// one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
@@ -37,8 +36,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// pool's before the nominations', and the stale-data banners under them,
 /// in the same order. Each write's banner has its own Dismiss.
 ///
-/// The writes' lines and banners show on either tab: a run of forty sends
-/// can outlast the stay on Games, and its line is a live region that a footer
+/// The writes' lines and banners show on either tab: a run of offers can
+/// outlast the stay on Games, and its line is a live region that a footer
 /// left out on Details would silence. The stale-data banners are about what
 /// the tab shows, so they show only while Games is selected ([showStale]),
 /// and only over something read before: a first read that fails has nothing
@@ -129,7 +128,7 @@ class EventGamesFooter extends StatelessWidget {
             padding: EdgeInsets.only(top: gap),
             child: _OfferProgress(
               key: EventDetailScreen.poolProgressKey,
-              text: l10n.eventsGamesOffering(sending.done, sending.total),
+              text: l10n.eventsGamesOffering(sending),
             ),
           )
         else if (outcome != null && message != null)
@@ -279,10 +278,11 @@ class EventGamesFooter extends StatelessWidget {
     };
   }
 
-  /// A take-back's copy, naming its game; the tab always names it, so one
-  /// with no title has none. A 409 says what to do by [supplied] (#517):
-  /// where nobody holds a live nomination of the row, it is in the lineup,
-  /// or nominated in a way the nominations held don't show.
+  /// A take-back's copy, naming its game by its title and subtitle
+  /// ([gameName], #851); the tab always names it, so one with no title has
+  /// none. A 409 says what to do by [supplied] (#517): where nobody holds a
+  /// live nomination of the row, it is in the lineup, or nominated in a way
+  /// the nominations held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -297,40 +297,41 @@ class EventGamesFooter extends StatelessWidget {
   ) {
     final title = outcome.title;
     if (title == null) return null;
+    final name = gameName(l10n, title, outcome.subtitle);
     final id = outcome.attendeeId;
     final theirs = id != null && id != viewerId;
     String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;
     return switch (outcome.result) {
       EventTakeBackResult.done =>
         theirs
-            ? l10n.eventsGamesTheirsTakenBack(title, offeredBy())
-            : l10n.eventsGamesTakenBack(title),
+            ? l10n.eventsGamesTheirsTakenBack(name, offeredBy())
+            : l10n.eventsGamesTakenBack(name),
       EventTakeBackResult.stillSupplies => switch ((supplied, theirs)) {
         (StillSuppliedBy.viewer, false) => l10n.eventsGamesStillSuppliesYours(
-          title,
+          name,
         ),
         (StillSuppliedBy.viewer, true) =>
-          l10n.eventsGamesTheirsStillSuppliesYours(title, offeredBy()),
+          l10n.eventsGamesTheirsStillSuppliesYours(name, offeredBy()),
         (StillSuppliedBy.viewerAndSomeoneElse, false) =>
-          l10n.eventsGamesStillSuppliesYoursAndTheirs(title),
+          l10n.eventsGamesStillSuppliesYoursAndTheirs(name),
         (StillSuppliedBy.viewerAndSomeoneElse, true) =>
           l10n.eventsGamesTheirsStillSuppliesYoursAndTheirs(
-            title,
+            name,
             offeredBy(),
           ),
         (StillSuppliedBy.someoneElse, false) =>
-          l10n.eventsGamesStillSuppliesTheirs(title),
+          l10n.eventsGamesStillSuppliesTheirs(name),
         (StillSuppliedBy.someoneElse, true) =>
-          l10n.eventsGamesTheirsStillSuppliesTheirs(title, offeredBy()),
-        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(title),
+          l10n.eventsGamesTheirsStillSuppliesTheirs(name, offeredBy()),
+        (StillSuppliedBy.none, false) => l10n.eventsGamesStillSupplies(name),
         (StillSuppliedBy.none, true) => l10n.eventsGamesTheirsStillSupplies(
-          title,
+          name,
           offeredBy(),
         ),
       },
-      EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(title),
-      EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(title),
-      EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(title),
+      EventTakeBackResult.refused => l10n.eventsGamesTakeBackRefused(name),
+      EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(name),
+      EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(name),
     };
   }
 
@@ -386,14 +387,23 @@ class EventGamesFooter extends StatelessWidget {
         },
       };
 
-  /// A nominations write's copy (#517), naming its game. A nominate that
-  /// went through says what the server made of it, and a host's close of a
-  /// vote how the vote came out (#518).
+  /// A nominations write's copy (#517), naming its game: a nominate's as its
+  /// pool row names it, with its subtitle ([gameName], #851), and every
+  /// other write's by the nomination's title. A nominate that went through
+  /// says what the server made of it, and a host's close of a vote how the
+  /// vote came out (#518).
   static String _nominationsMessage(
     EventsLocalizations l10n,
     EventNominationsOutcome outcome,
   ) {
-    final title = outcome.title;
+    final title = switch (outcome) {
+      NominateOutcome(:final subtitle) => gameName(
+        l10n,
+        outcome.title,
+        subtitle,
+      ),
+      _ => outcome.title,
+    };
     return switch (outcome) {
       NominateOutcome(:final result) => switch (result) {
         NominateResult.open => l10n.eventsNominatedOpen(title),
@@ -528,64 +538,17 @@ class _LandedState extends State<_Landed> {
   Widget build(BuildContext context) => widget.builder(context, _message);
 }
 
-/// How far a run of offers has got (#516): a spinner and [text], drawn as
-/// each pick is settled.
+/// A run of offers out (#516): a spinner and [text], which says how many
+/// games it is offering (#851).
 ///
-/// One live region, the same node for the whole run, so a screen reader
-/// hears it as it appears and as it changes, never once for the line and
-/// again for something around it. What it says keeps pace with what it
-/// draws only so far: a pick can settle many times a second, and a live
-/// region speaks every change of its words, queued, so a forty-game run
-/// would be read out step by step long after it ended. So each step said
-/// stays said for [_held] at least, and the latest step is said once that
-/// is up; a run's end is the outcome banner's to say.
-class _OfferProgress extends StatefulWidget {
+/// One live region, the same node for the whole run, saying the same, so a
+/// screen reader hears it once, as it appears, never once for the line and
+/// again for something around it. A run's end is the outcome banner's to
+/// say.
+class _OfferProgress extends StatelessWidget {
   const _OfferProgress({required this.text, super.key});
 
   final String text;
-
-  /// The least a step said stays before the next is said: longer than a
-  /// screen reader takes to read the line out.
-  static const _held = Duration(seconds: 2);
-
-  @override
-  State<_OfferProgress> createState() => _OfferProgressState();
-}
-
-class _OfferProgressState extends State<_OfferProgress> {
-  /// What the live region says.
-  late String _said;
-
-  /// Runs while the step said last is held; at its end, the latest step is
-  /// said if it differs.
-  Timer? _hold;
-
-  @override
-  void initState() {
-    super.initState();
-    _say();
-  }
-
-  @override
-  void didUpdateWidget(_OfferProgress oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // While a step is held, the latest waits for the hold's end.
-    if (widget.text != _said && _hold == null) _say();
-  }
-
-  void _say() {
-    _said = widget.text;
-    _hold = Timer(_OfferProgress._held, () {
-      _hold = null;
-      if (mounted && widget.text != _said) setState(_say);
-    });
-  }
-
-  @override
-  void dispose() {
-    _hold?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +558,7 @@ class _OfferProgressState extends State<_OfferProgress> {
     return Semantics(
       container: true,
       liveRegion: true,
-      label: _said,
+      label: text,
       child: ExcludeSemantics(
         child: Row(
           children: [
@@ -606,9 +569,7 @@ class _OfferProgressState extends State<_OfferProgress> {
               child: const CircularProgressIndicator(strokeWidth: 2),
             ),
             const BgeGap.sm(axis: Axis.horizontal),
-            Expanded(
-              child: Text(widget.text, style: theme.textTheme.bodyMedium),
-            ),
+            Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
           ],
         ),
       ),
@@ -616,17 +577,23 @@ class _OfferProgressState extends State<_OfferProgress> {
   }
 }
 
-/// Reads the pool again, as the person asked (#516), for the event and the
-/// roster the detail shows now, and notes those ids as the ones last asked
-/// for, as the screen's own reads do. Nothing with nobody to read it for.
+/// Reads the pool again, as the person asked (#516), for the event the
+/// detail shows now and the attendees [poolReadIds] names (#851), and notes
+/// the roster's ids ([poolAttendeeIds]) and that read's scope as the ones
+/// last asked with, as the screen's own reads do. Nothing with nobody to
+/// read it for.
 void retryEventGamesPool(BuildContext context) {
   final state = context.read<EventDetailBloc>().state;
   if (state is! EventDetailReady) return;
   final ids = poolAttendeeIds(state.detail);
   if (ids.isEmpty) return;
-  EventGamesTabScope.of(context).requestedIds = ids;
+  final readIds = poolReadIds(state.detail);
+  EventGamesTabScope.of(context).requested = (
+    ids: ids,
+    wholeEvent: readIds == null,
+  );
   context.read<EventGamesBloc>().add(
-    EventGamesRetryRequested(state.detail.snapshot.event.id, ids),
+    EventGamesRetryRequested(state.detail.snapshot.event.id, readIds),
   );
 }
 

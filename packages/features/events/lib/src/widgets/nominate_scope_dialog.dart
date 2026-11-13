@@ -11,7 +11,8 @@ typedef NominateScopeChoice = ({
   NominateTaken taken,
 });
 
-/// Asks whether a nomination of the game titled [title] is for the whole
+/// Asks whether a nomination of the game named [title], as its pool row
+/// names it, with its subtitle where it has one (#851), is for the whole
 /// event or for one of its dates (#517), and answers the scope chosen, or
 /// null when cancelled.
 ///

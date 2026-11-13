@@ -16,17 +16,25 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/event_game_filter_options.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_nominations_section.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
+import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/nominate_scope_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_filters/game_filters.dart'
-    show GameFilterChipLabel, InUseChips;
+    show
+        GameFilterChipLabel,
+        GameFiltersButton,
+        GameFiltersInUse,
+        InUseChips,
+        gameFiltersInUseCount,
+        showGameFilterSheet;
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -221,13 +229,16 @@ final class _GamesBody {
 
 /// The Games tab of an event's screen (#516): the games nominated for the
 /// lineup ([EventNominationsSection], #517), narrowed and ordered by its own
-/// filters and sort, then the games its attendees
-/// offer to bring, one row per offered copy, under a header with Offer
-/// games, a title search, a filter by person and "Not mine". A row that
-/// supplies a live nomination says "Nominated" (#517). Each row ends with
-/// Nominate where the viewer is offered it ([nominateGate]), and the
-/// viewer's own rows with Take back ([offerGamesGate]); every other row too
-/// where the viewer may take back anyone's game ([canTakeBackAnyGame],
+/// filters and sort, then the games its attendees offer to bring, one row
+/// per offered copy, under a header with Offer games, a search, a filter by
+/// person, "Not mine" and the shared filter sheet, as Offer games has it
+/// ([eventGameFilterOptions], #851). Each row names its game with
+/// its subtitle where it has one ([gameName], #851), as do its Take back and
+/// Nominate, the dialogs they ask with, and their outcomes. A
+/// row that supplies a live nomination says "Nominated" (#517). Each row
+/// ends with Nominate where the viewer is offered it ([nominateGate]), and
+/// the viewer's own rows with Take back ([offerGamesGate]); every other row
+/// too where the viewer may take back anyone's game ([canTakeBackAnyGame],
 /// #518).
 ///
 /// Its slivers, as one group under the tab bar: the Nominations section,
@@ -248,10 +259,11 @@ final class _GamesBody {
 /// both states and the [controller] (#517). The page's `semanticChildCount`
 /// is [rowCount], from that same value: the nominations' rows and the
 /// pool's, the pool's counted on from the nominations' so a screen reader
-/// numbers them as one list. How far a run of offers has got and how the
-/// pool's last write went are [EventGamesFooter]'s, in the page's footer on
-/// either tab; so is the stale-data banner after a failed read of games
-/// still shown, while this tab is selected, and the nominations' own.
+/// numbers them as one list. The line saying how many games a run of offers
+/// is offering and how the pool's last write went are [EventGamesFooter]'s,
+/// in the page's footer on either tab; so is the stale-data banner after a
+/// failed read of games still shown, while this tab is selected, and the
+/// nominations' own.
 ///
 /// ## Writes
 ///
@@ -299,13 +311,19 @@ final class _GamesBody {
 ///
 /// ## The filter
 ///
-/// It narrows as it is changed: the search on every edit, and the people in
-/// *Whose games* as each is chosen. Each person chosen shows a chip under
-/// the field, which removes them ([InUseChips], the chips of Collection's
-/// filters in use); a chip's own press hands focus to the chip in its
-/// place, else the one before it, else People, while focus is free. While
-/// the filter narrows a pool that has games, the count of what it keeps is
-/// a live region.
+/// It narrows as it is changed, on the device ([filterPool]): the search, of
+/// the title and the subtitle, on every edit; the people in *Whose games* as
+/// each is chosen; and the facets of Filters' sheet as each is set (#851),
+/// the sheet Offer games has ([showGameFilterSheet]): content type, platform
+/// type, medium, publish year, players and play time, each of which can be
+/// flipped. Each person chosen shows a chip under the field, which removes
+/// them ([InUseChips], the chips of Collection's filters in use), and each
+/// facet in use a chip under those ([GameFiltersInUse]). A chip's own press
+/// hands focus to the chip in its place, else the one before it, else
+/// People for a person's and Filters for a facet's, while focus is free.
+/// *Whose games* and the sheet, closed, hand focus back to the button that
+/// opened them. While the filter narrows a pool that has games, the count of
+/// what it keeps is a live region.
 class EventGamesTab extends StatelessWidget {
   EventGamesTab({
     required this.detail,
@@ -590,9 +608,10 @@ class EventGamesTab extends StatelessWidget {
 ///
 /// Whose game it is comes from the row's attendee: the viewer's own, where
 /// it is their row [viewerId], goes at once. Someone else's asks first, as a
-/// destructive action, naming whoever offered it from [names], the roster's
-/// names, as the row does: only they can offer it again (#518). It then goes
-/// for the row's attendee as the pool holds it then.
+/// destructive action, naming the game and whoever offered it from [names],
+/// the roster's names, as the row does ([gameName], #851): only they can
+/// offer it again (#518). It then goes for the row's attendee as the pool
+/// holds it then.
 ///
 /// Nothing is sent if, by then, the viewer may no longer take that game
 /// back (their own: [offerGamesGate]; anyone else's: [canTakeBackAnyGame]),
@@ -617,7 +636,10 @@ Future<bool> _takeBack(
     final offeredBy = names[game.attendeeId] ?? l10n.eventsAttendeeSomeone;
     final confirmed = await showConfirmDialog(
       context,
-      title: l10n.eventsTakeBackTheirsConfirmTitle(game.title, offeredBy),
+      title: l10n.eventsTakeBackTheirsConfirmTitle(
+        gameName(l10n, game.title, game.subtitle),
+        offeredBy,
+      ),
       body: l10n.eventsTakeBackTheirsConfirmBody,
       keepLabel: l10n.eventsTakeBackTheirsConfirmKeep,
       confirmLabel: l10n.eventsTakeBackTheirsConfirm,
@@ -652,7 +674,11 @@ Future<bool> _takeBack(
   if (attendeeId == null) {
     controller.disarmTakeBack(game.id);
     games.add(
-      EventGamesWriteDropped(EventGamesWrite.takeBack, title: game.title),
+      EventGamesWriteDropped(
+        EventGamesWrite.takeBack,
+        title: game.title,
+        subtitle: game.subtitle,
+      ),
     );
     return false;
   }
@@ -666,7 +692,7 @@ Future<bool> _takeBack(
       state.detail.snapshot.event.id,
       attendeeId,
       game,
-      attendeeIds: poolAttendeeIds(state.detail),
+      attendeeIds: poolReadIds(state.detail),
     ),
   );
   return true;
@@ -741,8 +767,10 @@ String? _alreadyTaken(
 /// than one choice ([_nominateScopes]), for the one chosen in
 /// [showNominateScopeDialog], where a choice the row already supplies a
 /// live nomination for, or its game is in the lineup for, can't be chosen.
-/// Completes true when the nomination was sent, and false when nothing was:
-/// the dialog cancelled, or as below.
+/// The dialog, the nomination's outcome and a drop name the game as the row
+/// does, with its subtitle ([gameName], #851). Completes true when the
+/// nomination was sent, and false when nothing was: the dialog cancelled,
+/// or as below.
 ///
 /// It goes once any running detail read has ended ([readEnded]), for the
 /// event as the detail shows it then, whose id a reconcile can have moved
@@ -777,7 +805,7 @@ Future<bool> _nominate(
   } else {
     final chosen = await showNominateScopeDialog(
       context,
-      title: game.title,
+      title: gameName(l10n, game.title, game.subtitle),
       choices: [
         for (final choice in choices)
           (
@@ -814,7 +842,11 @@ Future<bool> _nominate(
       nominateTaken(game, nominations.state.nominations, scope: scope) !=
           NominateTaken.no) {
     nominations.add(
-      NominationWriteDropped(NominationWrite.nominate, title: game.title),
+      NominationWriteDropped(
+        NominationWrite.nominate,
+        title: game.title,
+        subtitle: game.subtitle,
+      ),
     );
     return false;
   }
@@ -864,9 +896,11 @@ List<PoolPerson> _poolPeople(
   ];
 }
 
-/// The tab's header: Offer games, the search, People and "Not mine", the
-/// people chosen, and the count while the filter narrows a pool that has
-/// games.
+/// The tab's header: Offer games, the search, People, "Not mine" and
+/// Filters (#851), the people chosen, the facets in use, and the count while
+/// the filter narrows a pool that has games. Each row of chips is always in
+/// the tree, drawing nothing and spaced from above only while it shows a
+/// chip, so that it is there to hand focus on after its last chip goes.
 class _PoolHeader extends StatelessWidget {
   const _PoolHeader({
     required this.controller,
@@ -903,6 +937,10 @@ class _PoolHeader extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final offline = BgeConnectivityScope.offlineOf(context);
     final filter = controller.filter;
+    final facets = gameFiltersInUseCount(
+      filter.game,
+      options: eventGameFilterOptions,
+    );
     final viewerId = this.viewerId;
     final open = onOfferGames;
     final people = _poolPeople(
@@ -970,6 +1008,11 @@ class _PoolHeader extends StatelessWidget {
                 selected: controller.isNotMine(viewerId),
                 onSelected: (on) => controller.setNotMine(viewerId, on: on),
               ),
+            GameFiltersButton(
+              count: facets,
+              focusNode: controller.filtersFocus,
+              onPressed: () => unawaited(_openFilters(context)),
+            ),
           ],
         ),
         // A chip per person chosen, which lets them go. Always in the tree,
@@ -997,6 +1040,17 @@ class _PoolHeader extends StatelessWidget {
             ],
             onRemove: (chip) => controller.choose(chip.id, chosen: false),
             onEmptied: controller.peopleFocus.requestFocus,
+          ),
+        ),
+        // A chip per facet in use (#851), which clears it, under the
+        // people's: the same rule, handing focus to Filters after its last.
+        Padding(
+          padding: EdgeInsets.only(top: facets > 0 ? tokens.spaceSm : 0),
+          child: GameFiltersInUse(
+            filter: filter.game,
+            options: eventGameFilterOptions,
+            onChanged: controller.setGameFilter,
+            onEmptied: controller.filtersFocus.requestFocus,
           ),
         ),
         // With nothing offered there is nothing to count.
@@ -1075,7 +1129,7 @@ class _PoolHeader extends StatelessWidget {
         state.detail.snapshot.event.id,
         viewer.id,
         picks,
-        attendeeIds: poolAttendeeIds(state.detail),
+        attendeeIds: poolReadIds(state.detail),
       ),
     );
     return true;
@@ -1093,6 +1147,21 @@ class _PoolHeader extends StatelessWidget {
       people: people,
     );
     if (focus.context != null) focus.requestFocus();
+  }
+
+  /// Opens the filter sheet on the pool's facets (#851), each change applied
+  /// as it is made, and puts focus back on Filters once it has closed, where
+  /// Filters is still built: a node asked while it isn't would take focus
+  /// whenever it is built again.
+  Future<void> _openFilters(BuildContext context) async {
+    final focus = controller.filtersFocus;
+    await showGameFilterSheet(
+      context,
+      initial: controller.filter.game,
+      options: eventGameFilterOptions,
+      onChanged: controller.setGameFilter,
+    );
+    if (focus.context?.mounted ?? false) focus.requestFocus();
   }
 }
 
@@ -1215,7 +1284,8 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
   }
 }
 
-/// One offered copy (#516): its picture, its title, where it is played, who
+/// One offered copy (#516): its picture, its name, the title with the
+/// subtitle where it has one ([gameName], #851), where it is played, who
 /// brings it and, where it supplies a live nomination, "Nominated" (#517),
 /// as one node. Then its controls, each a node of its own: [nominate] where
 /// the viewer is offered it, and [takeBack] where they may take it back.
@@ -1276,7 +1346,10 @@ class _PoolRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(game.title, style: theme.textTheme.bodyLarge),
+                      Text(
+                        gameName(l10n, game.title, game.subtitle),
+                        style: theme.textTheme.bodyLarge,
+                      ),
                       if (medium == null)
                         Text(game.platformName, style: quiet)
                       else
@@ -1340,7 +1413,7 @@ class _PoolRow extends StatelessWidget {
 
 /// Nominate on a pool row (#517): a direct write, so disabled offline
 /// through [BgeOnlineOnly], with the connection's reason as its hint. Named
-/// for its game to a screen reader.
+/// for its game to a screen reader, as its row names it ([gameName], #851).
 ///
 /// Online it is disabled, with the reason as its hint, while the nominations
 /// couldn't be read or aren't shown to the viewer ([unread]), else while
@@ -1476,7 +1549,9 @@ class _NominateButtonState extends State<_NominateButton>
           hint: reason,
           child: BgeInertButton(
             inert: inert,
-            label: l10n.eventsNominateNamed(widget.game.title),
+            label: l10n.eventsNominateNamed(
+              gameName(l10n, widget.game.title, widget.game.subtitle),
+            ),
             onPressed: available || inert
                 ? () => unawaited(holdPress(_press))
                 : null,
@@ -1520,7 +1595,8 @@ class _NominateButtonState extends State<_NominateButton>
 /// back anyone's game, on someone else's (#518): a direct write, so
 /// disabled offline through [BgeOnlineOnly], saying why as its hint.
 /// Disabled while another write is out or a detail read runs ([enabled]).
-/// Named for its game to a screen reader.
+/// Named for its game to a screen reader, as its row names it ([gameName],
+/// #851).
 ///
 /// It keeps focus through its own take-back (#607). On someone else's row
 /// its press opens a dialog first, which hands focus back to it as it
@@ -1586,7 +1662,9 @@ class _TakeBackButtonState extends State<_TakeBackButton>
         showNote: false,
         child: BgeInertButton(
           inert: inert,
-          label: l10n.eventsGamesTakeBackNamed(game.title),
+          label: l10n.eventsGamesTakeBackNamed(
+            gameName(l10n, game.title, game.subtitle),
+          ),
           onPressed: available || inert
               ? () => unawaited(holdPress(widget.onPressed))
               : null,

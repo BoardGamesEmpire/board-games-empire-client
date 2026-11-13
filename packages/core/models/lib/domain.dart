@@ -35,6 +35,7 @@ export 'src/domain/event/event_snapshot.dart';
 export 'src/domain/event/event_status.dart';
 export 'src/domain/event/event_type.dart';
 export 'src/domain/event/game_addition_mode.dart';
+export 'src/domain/event/game_offer_result.dart';
 export 'src/domain/event/interested_weight.dart';
 export 'src/domain/event/nomination_resolution.dart';
 export 'src/domain/event/nomination_status.dart';

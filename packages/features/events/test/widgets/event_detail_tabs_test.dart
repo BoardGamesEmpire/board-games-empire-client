@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_filters/game_filters.dart' show GameFiltersLocalizations;
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -105,6 +106,8 @@ void main() {
     localizationsDelegates: [
       if (longLabel) const _LongDetailsLabelDelegate(),
       ...EventsLocalizations.localizationsDelegates,
+      // The Games tab's Filters, its sheet and its chips (#851).
+      GameFiltersLocalizations.delegate,
     ],
     supportedLocales: EventsLocalizations.supportedLocales,
     home: EventDetailScreen(

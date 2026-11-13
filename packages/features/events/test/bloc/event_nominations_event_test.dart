@@ -149,7 +149,7 @@ void main() {
     );
   });
 
-  test('a dropped write is equal by its write and title', () {
+  test('a dropped write is equal by its write, title and subtitle', () {
     const dropped = NominationWriteDropped(
       NominationWrite.vote,
       title: 'Game 1',
@@ -169,6 +169,16 @@ void main() {
       dropped,
       isNot(
         const NominationWriteDropped(NominationWrite.vote, title: 'Game 2'),
+      ),
+    );
+    expect(
+      dropped,
+      isNot(
+        const NominationWriteDropped(
+          NominationWrite.vote,
+          title: 'Game 1',
+          subtitle: 'Seafarers',
+        ),
       ),
     );
   });

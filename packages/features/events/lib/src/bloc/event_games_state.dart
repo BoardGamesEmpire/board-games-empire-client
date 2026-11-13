@@ -21,13 +21,13 @@ enum EventGamesLoad {
   /// it.
   failed,
 
-  /// The server won't show this viewer the pool: a 403 on any attendee's
-  /// games.
+  /// The server won't show this viewer the pool: a 403 refuses them the
+  /// event's games.
   hidden,
 
-  /// The server has no such event, or everyone named has left it: a 404. A
-  /// screen that shows the event reads it again, which finds out for the
-  /// whole screen, and then reads the pool again.
+  /// The server has no such event: a 404. A screen that shows the event
+  /// reads it again, which finds out for the whole screen, and then reads the
+  /// pool again.
   gone,
 }
 
@@ -35,7 +35,7 @@ enum EventGamesLoad {
 /// `EventGamesWriteDropped`: it picks the outcome a dropped write ends with,
 /// an [EventOfferOutcome] or an [EventTakeBackOutcome].
 enum EventGamesWrite {
-  /// A run of offers: the viewer's picks, sent one at a time.
+  /// A run of offers: the viewer's picks, sent in batches (#851).
   offer,
 
   /// Taking one offered game back off the pool.
@@ -103,21 +103,23 @@ final class EventOfferOutcome extends EventGamesOutcome {
   /// The picks now on the list: offered by this run, or already there.
   final int offered;
 
-  /// Every other pick: skipped, the one that stopped the run, and every pick
-  /// after it.
+  /// Every other pick: one naming no entry, one refused by the server or
+  /// missing from its answer, and every pick of the batch that stopped the
+  /// run and of each batch after it.
   final int notOffered;
 
   @override
   List<Object?> get props => [result, offered, notOffered];
 }
 
-/// How a take-back ended. [title] names the game it was about, as the event
-/// carried it, when there is one, [offeredGameId] the pool row, and
-/// [attendeeId] whose row it was.
+/// How a take-back ended. [title] and [subtitle] name the game it was about,
+/// as the event carried it, when there is one, [offeredGameId] the pool
+/// row, and [attendeeId] whose row it was.
 final class EventTakeBackOutcome extends EventGamesOutcome {
   const EventTakeBackOutcome({
     required this.result,
     this.title,
+    this.subtitle,
     this.offeredGameId,
     this.attendeeId,
   });
@@ -127,9 +129,14 @@ final class EventTakeBackOutcome extends EventGamesOutcome {
   /// The game's title as the event carried it.
   final String? title;
 
+  /// The game's subtitle as the event carried it, which the screen names the
+  /// game with after its title, as the pool's row does (#851). Null where it
+  /// has none.
+  final String? subtitle;
+
   /// The pool row it was about (`OfferedGame.id`), which a nomination names
   /// as the copy it nominates (#517): set on every take-back but a dropped
-  /// one, whose drop names only the title.
+  /// one, whose drop names only the game.
   final String? offeredGameId;
 
   /// The roster row whose games the take-back was sent for, which says
@@ -138,7 +145,13 @@ final class EventTakeBackOutcome extends EventGamesOutcome {
   final String? attendeeId;
 
   @override
-  List<Object?> get props => [result, title, offeredGameId, attendeeId];
+  List<Object?> get props => [
+    result,
+    title,
+    subtitle,
+    offeredGameId,
+    attendeeId,
+  ];
 }
 
 /// The games pool on one event's Games tab, and the viewer's write that is
@@ -165,10 +178,9 @@ final class EventGamesState extends Equatable {
   /// a hidden or a gone. A game taken back leaves it as the take-back ends.
   final List<OfferedGame> games;
 
-  /// While an offer run is out: how many of its `total` picks have been
-  /// settled, offered or not, as `done`. The pick that stops a run isn't
-  /// counted.
-  final ({int done, int total})? sending;
+  /// While an offer run is out: how many picks it holds, which the screen
+  /// says are being offered (#851). Null otherwise.
+  final int? sending;
 
   /// While a take-back is out: the id of the offered game being taken back.
   final String? takingBack;
@@ -197,7 +209,7 @@ final class EventGamesState extends Equatable {
   EventGamesState copyWith({
     EventGamesLoad? load,
     List<OfferedGame>? games,
-    ({int done, int total})? Function()? sending,
+    int? Function()? sending,
     String? Function()? takingBack,
     EventGamesOutcome? Function()? outcome,
     bool? refreshFailed,
