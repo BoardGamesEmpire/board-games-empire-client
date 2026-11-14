@@ -2879,6 +2879,10 @@
   "@eventsStatusScheduled": {
     "description": "Where an event stands, on its screen: it is arranged and will happen."
   },
+  "eventsReachExtendedNetwork": "Extended network",
+  "@eventsReachExtendedNetwork": {
+    "description": "Who can see an event, on its screen: the host's friends and everyone up to three friendship steps from them."
+  },
   "eventsReachFriends": "Friends",
   "@eventsReachFriends": {
     "description": "Who can see an event, on its screen: the host's friends."
@@ -3002,6 +3006,10 @@
   "eventCreateReach": "Who can see it",
   "@eventCreateReach": {
     "description": "Label of the menu in the new-event form that picks who besides the people invited can see the event, such as Friends or Public."
+  },
+  "eventCreateReachExtendedNetworkNote": "Friends up to three steps away",
+  "@eventCreateReachExtendedNetworkNote": {
+    "description": "Line under the Who can see it menu in the new-event form, shown while Extended network is chosen: it says who that is, the host's friends, their friends, and their friends' friends."
   },
   "eventCreateDescription": "Description (optional)",
   "@eventCreateDescription": {

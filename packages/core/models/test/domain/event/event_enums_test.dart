@@ -96,12 +96,49 @@ void main() {
   );
 
   _wireContract<Reach>(
-    wireNames: const ['Friends', 'FriendsOfFriends', 'Private', 'Public'],
+    wireNames: const [
+      'ExtendedNetwork',
+      'Friends',
+      'FriendsOfFriends',
+      'Private',
+      'Public',
+    ],
     values: Reach.values,
     unknown: Reach.unknown,
     fromWire: Reach.fromWire,
     toWire: (reach) => reach.toWire(),
   );
+
+  group('Reach.extendedNetwork', () {
+    test('ExtendedNetwork reads and writes its wire name', () {
+      expect(Reach.fromWire('ExtendedNetwork'), Reach.extendedNetwork);
+      expect(Reach.extendedNetwork.toWire(), 'ExtendedNetwork');
+    });
+
+    test('a stored ExtendedNetwork row reads back', () {
+      expect(Reach.fromWire('ExtendedNetwork'), isNot(Reach.unknown));
+    });
+  });
+
+  group('Reach.ladder', () {
+    test('runs from the fewest people to the most', () {
+      expect(Reach.ladder, [
+        Reach.private,
+        Reach.friends,
+        Reach.friendsOfFriends,
+        Reach.extendedNetwork,
+        Reach.public,
+      ]);
+    });
+
+    test('holds every value but unknown, once each', () {
+      expect(Reach.ladder.toSet(), hasLength(Reach.ladder.length));
+      expect(
+        Reach.ladder.toSet(),
+        Reach.values.where((reach) => reach != Reach.unknown).toSet(),
+      );
+    });
+  });
 
   _wireContract<OccurrenceStatus>(
     wireNames: const ['Proposed', 'Confirmed', 'Declined', 'Cancelled'],

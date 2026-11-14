@@ -1,7 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 /// How far past its owner something reaches: only them, their friends, friends
-/// of friends, or everyone signed in to the server.
+/// of friends, their extended network, or everyone signed in to the server.
 ///
 /// Mirrors the backend's `Reach` enum (`prisma/models/enums/reach.prisma` in
 /// `board-games-empire-backend`). The backend shares it across resources rather
@@ -9,12 +9,15 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 /// event types (#496).
 ///
 /// The values follow the backend's alphabetical order, not the order of the
-/// ladder, so their `index` says nothing about how far one reaches.
+/// ladder, so their `index` says nothing about how far one reaches: [ladder]
+/// holds that order.
 ///
 /// The `@JsonValue` names are the backend's, so a model's JSON keeps them, as
 /// `ContentType`'s does. [fromWire] / [toWire] must agree with them, apart
 /// from [unknown], which has a JSON name but no wire name.
 enum Reach {
+  @JsonValue('ExtendedNetwork')
+  extendedNetwork,
   @JsonValue('Friends')
   friends,
   @JsonValue('FriendsOfFriends')
@@ -28,9 +31,20 @@ enum Reach {
   @JsonValue('Unknown')
   unknown;
 
+  /// The rungs a person can pick, from the fewest people to the most.
+  /// [unknown] isn't one: it has nothing to send.
+  static const List<Reach> ladder = [
+    Reach.private,
+    Reach.friends,
+    Reach.friendsOfFriends,
+    Reach.extendedNetwork,
+    Reach.public,
+  ];
+
   /// Resolves the backend's enum name, degrading to [unknown] for a name this
   /// client does not know rather than failing the whole row.
   static Reach fromWire(String name) => switch (name) {
+    'ExtendedNetwork' => Reach.extendedNetwork,
     'Friends' => Reach.friends,
     'FriendsOfFriends' => Reach.friendsOfFriends,
     'Private' => Reach.private,
@@ -41,6 +55,7 @@ enum Reach {
   /// The backend's enum name. [unknown] has none: it stands for a name this
   /// client could not read, so it is never sent.
   String toWire() => switch (this) {
+    Reach.extendedNetwork => 'ExtendedNetwork',
     Reach.friends => 'Friends',
     Reach.friendsOfFriends => 'FriendsOfFriends',
     Reach.private => 'Private',

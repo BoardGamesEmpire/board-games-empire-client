@@ -67,6 +67,10 @@
 /// `BgeSwitchField` moved here from the collection entry sheet, which has two
 /// of them, for the server settings' reset-password switch, which #807 adds
 /// in the same change: its third call site.
+/// `BgeAvatar` came with #547 for two call sites at once, the household roster
+/// and the event attendee rows, which name a person the same way (#603).
+/// `BgeFieldNote` came with #547 for two call sites at once, the line under
+/// the reach menu on the event form and on the profile form.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -86,11 +90,13 @@ export 'src/focus/bge_focus_ring.dart';
 export 'src/focus/bge_pointer_focus.dart';
 export 'src/focus/focus_is_free.dart';
 export 'src/forms/bge_dropdown_field.dart';
+export 'src/forms/bge_field_note.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_search_field.dart';
 export 'src/forms/bge_switch_field.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_avatar.dart';
 export 'src/images/bge_cover_expansions.dart' show BgeCoverExpansions;
 export 'src/images/bge_cover_tile.dart';
 export 'src/images/bge_stack_marker.dart';

@@ -897,12 +897,23 @@ class _AttendeeEntry extends StatelessWidget {
       ],
     );
 
-    if (menu == null) return entry;
+    // The avatar sits outside the merged entry: it is decorative, and the
+    // name is what a screen reader reads (#603).
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: BgeTokens.of(context).spaceSm,
+          ),
+          child: BgeAvatar(
+            initials: personInitials(name),
+            imageUrl: attendee.avatarUrl,
+          ),
+        ),
+        const BgeGap.md(axis: Axis.horizontal),
         Expanded(child: entry),
-        menu,
+        ?menu,
       ],
     );
   }

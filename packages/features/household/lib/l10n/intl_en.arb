@@ -1222,6 +1222,10 @@
   "@adminHouseholdDetailReachFriendsOfFriends": {
     "description": "Staff household detail: who can see the household, when its members' friends' friends can too."
   },
+  "adminHouseholdDetailReachExtendedNetwork": "Extended network",
+  "@adminHouseholdDetailReachExtendedNetwork": {
+    "description": "Staff household detail: who can see the household, when friends up to three steps from its members can too."
+  },
   "adminHouseholdDetailReachPublic": "Everyone on the server",
   "@adminHouseholdDetailReachPublic": {
     "description": "Staff household detail: who can see the household, when everyone signed in to the server can."

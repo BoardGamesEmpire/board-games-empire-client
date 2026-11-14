@@ -53,6 +53,10 @@ class CreateEventScreen extends StatelessWidget {
   static const Key householdKey = Key('event_create.household');
   static const Key typeKey = Key('event_create.type');
   static const Key reachKey = Key('event_create.reach');
+
+  /// Key on the line under the reach menu saying what *Extended network*
+  /// means, shown while it is chosen.
+  static const Key reachNoteKey = Key('event_create.reach_note');
   static const Key descriptionKey = Key('event_create.description');
   static const Key locationKey = Key('event_create.location');
   static const Key urlKey = Key('event_create.url');

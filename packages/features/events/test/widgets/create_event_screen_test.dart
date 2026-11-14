@@ -455,6 +455,7 @@ void main() {
       Reach.private,
       Reach.friends,
       Reach.friendsOfFriends,
+      Reach.extendedNetwork,
       Reach.public,
     ]);
 
@@ -468,6 +469,31 @@ void main() {
       (sent().single.type, sent().single.reach),
       (EventType.strategyNight, Reach.public),
     );
+  });
+
+  testWidgets('Extended network says who it reaches, under the menu, while '
+      'it is chosen', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await open(tester);
+    final note = find.byKey(CreateEventScreen.reachNoteKey);
+
+    // Untouched, the menu reads as Friends, which says who it is.
+    expect(note, findsNothing);
+
+    await choose(tester, CreateEventScreen.reachKey, 'Extended network');
+    expect(tester.widget<Text>(note).data, 'Friends up to three steps away');
+    // A live region, so a pick that brings it is heard.
+    expect(
+      tester.getSemantics(note),
+      isSemantics(
+        label: 'Friends up to three steps away',
+        isLiveRegion: true,
+      ),
+    );
+
+    await choose(tester, CreateEventScreen.reachKey, 'Friends of friends');
+    expect(note, findsNothing);
+    semantics.dispose();
   });
 
   group('the household', () {
@@ -940,6 +966,11 @@ void main() {
         reason: choice,
       );
     }
+
+    // The line saying who the extended network is.
+    await choose(tester, CreateEventScreen.reachKey, 'Extended network');
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(CreateEventScreen.reachNoteKey), findsOneWidget);
 
     // A refusal, with the rules open below it.
     await fill(tester);

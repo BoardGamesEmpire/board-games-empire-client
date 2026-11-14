@@ -87,6 +87,9 @@ abstract final class AppRoutes {
   /// spans every household, so it belongs under none of them.
   static const invites = '/invites';
 
+  /// The current user's own profile (#547).
+  static const profile = '/profile';
+
   /// The invites the current user sent (#487). Under the inbox, because it
   /// is reached from there.
   static const invitesSent = '/invites/sent';
@@ -475,6 +478,13 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 /// case the route falls back to [NotYetAvailableScreen].
 typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the current user's own profile (#547) for the [AppRoutes.profile]
+/// route. Supplied by `BgeApp`; returns null when no active server is
+/// resolvable, or its container lacks the `UserProfileRemoteDataSource` or
+/// a user session, in which case the route falls back to
+/// [NotYetAvailableScreen].
+typedef ProfileScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the invites the current user sent (#487) for the
 /// [AppRoutes.invitesSent] route. Supplied by `BgeApp`; same null contract
 /// as [InviteInboxScreenBuilder], so the two routes are available together.
@@ -793,6 +803,7 @@ GoRouter buildAppRouter({
   SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
   EditHouseholdScreenBuilder? editHouseholdBuilder,
   InviteInboxScreenBuilder? inviteInboxBuilder,
+  ProfileScreenBuilder? profileBuilder,
   SentInvitesScreenBuilder? sentInvitesBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
   CollectionEntryScreenBuilder? collectionEntryBuilder,
@@ -1106,6 +1117,19 @@ GoRouter buildAppRouter({
                     ],
                   ),
                 ],
+              ),
+              // #547: the current user's own profile, pushed from the
+              // navigation menu.
+              GoRoute(
+                path: AppRoutes.profile,
+                pageBuilder: (context, state) => _materialPage(
+                  state,
+                  BgeTopLevelRoute(
+                    child:
+                        profileBuilder?.call(context) ??
+                        const NotYetAvailableScreen(),
+                  ),
+                ),
               ),
               // #455: the invites sent to the current user, pushed from the
               // navigation menu.

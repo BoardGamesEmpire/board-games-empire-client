@@ -112,6 +112,7 @@ workspace:
   - packages/features/feedback
   - packages/features/game_filters
   - packages/features/household
+  - packages/features/profile
   - packages/features/server_onboarding
   - packages/features/server_settings
   - packages/features/sync

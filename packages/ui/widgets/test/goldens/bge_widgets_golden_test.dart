@@ -125,6 +125,27 @@ void main() {
                   ),
                 ),
               ),
+              GoldenTestScenario(
+                // Initials, the no-name icon, and a picture that failed (the
+                // test binding answers every image request with an error).
+                name: 'avatar · initials, icon, failed image · ${scale}x',
+                child: _Host(
+                  theme: theme,
+                  scale: scale,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: BgeTokens.standard.spaceSm,
+                    children: const [
+                      BgeAvatar(initials: 'AB'),
+                      BgeAvatar(initials: null),
+                      BgeAvatar(
+                        initials: 'WW',
+                        imageUrl: 'https://example.com/missing.png',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ],
         ),
