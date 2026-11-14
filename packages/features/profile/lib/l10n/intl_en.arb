@@ -1,0 +1,191 @@
+{
+  "@@locale": "en",
+  "profileTitle": "Your profile",
+  "@profileTitle": {
+    "description": "Title of the screen where the signed-in user reads and edits their own profile on this server."
+  },
+  "profileAboutHeading": "About you",
+  "@profileAboutHeading": {
+    "description": "Heading of the profile form's first group: the user's display name, pronouns, location and bio."
+  },
+  "profileDisplayNameLabel": "Display name",
+  "@profileDisplayNameLabel": {
+    "description": "Label of the profile field for the name other people see, in place of the username."
+  },
+  "profileDisplayNameBlank": "Enter a display name.",
+  "@profileDisplayNameBlank": {
+    "description": "Validation message under the display name field when the user emptied a display name that was set. The server doesn't clear a display name, so it can only be changed."
+  },
+  "profilePronounsLabel": "Pronouns",
+  "@profilePronounsLabel": {
+    "description": "Label of the profile field for the user's pronouns, such as she/her."
+  },
+  "profileLocationLabel": "Location",
+  "@profileLocationLabel": {
+    "description": "Label of the profile field for where the user is, in their own words, such as a town."
+  },
+  "profileBioLabel": "Bio",
+  "@profileBioLabel": {
+    "description": "Label of the profile field where the user writes about themselves."
+  },
+  "profileBioHelper": "Markdown supported",
+  "@profileBioHelper": {
+    "description": "Helper text under the bio field: the bio may use Markdown formatting, such as lists and links."
+  },
+  "profilePlayingHeading": "Playing",
+  "@profilePlayingHeading": {
+    "description": "Heading of the profile form's group about how the user likes to play: teaching, new players, hosting, player count and house rules."
+  },
+  "profileWillingToTeachLabel": "Willing to teach games",
+  "@profileWillingToTeachLabel": {
+    "description": "Label of the profile switch saying the user is happy to teach other people how to play a game."
+  },
+  "profileOpenToNewPlayersLabel": "Open to new players",
+  "@profileOpenToNewPlayersLabel": {
+    "description": "Label of the profile switch saying the user is happy to play with people they haven't played with before."
+  },
+  "profileHostingLabel": "Able to host games",
+  "@profileHostingLabel": {
+    "description": "Label of the profile switch saying the user can host a game night at their place."
+  },
+  "profilePlayerCountLabel": "Preferred number of players",
+  "@profilePlayerCountLabel": {
+    "description": "Label of the profile field for how many players the user likes a game to have. Left empty, the user has no preference."
+  },
+  "profilePlayerCountInvalid": "Enter a whole number from {min} to {max}, or leave it empty.",
+  "@profilePlayerCountInvalid": {
+    "description": "Validation message under the preferred number of players when it isn't a whole number in the range the server takes.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "profileHouseRulesLabel": "House rules",
+  "@profileHouseRulesLabel": {
+    "description": "Label of the profile field for how the user feels about house rules: changes players agree to a game's official rules."
+  },
+  "profilePracticalHeading": "Practical details",
+  "@profilePracticalHeading": {
+    "description": "Heading of the profile form's group for dietary restrictions and accessibility needs."
+  },
+  "profilePracticalNote": "Only you see these for now.",
+  "@profilePracticalNote": {
+    "description": "Note under the Practical details heading: the server shows dietary restrictions and accessibility needs to no one but the user, whatever the profile's reach. A screen reader also reads it with each of the two fields."
+  },
+  "profileDietaryLabel": "Dietary restrictions",
+  "@profileDietaryLabel": {
+    "description": "Label of the profile field for food the user can't or won't eat."
+  },
+  "profileAccessibilityLabel": "Accessibility needs",
+  "@profileAccessibilityLabel": {
+    "description": "Label of the profile field for what the user needs to take part, such as step-free access or large print."
+  },
+  "profileReachHeading": "Who can see your profile",
+  "@profileReachHeading": {
+    "description": "Heading of the profile form's group that holds the profile's reach: who besides the user may open the profile."
+  },
+  "profileReachLabel": "Shown to",
+  "@profileReachLabel": {
+    "description": "Label of the menu that picks who may see the user's profile, read with the choice, as in 'Shown to: Friends'."
+  },
+  "profileReachUnknown": "A choice this app doesn't know",
+  "@profileReachUnknown": {
+    "description": "Shown in the reach menu when the server holds a reach this version of the app doesn't know, until the user picks one it does."
+  },
+  "profileReachPrivate": "Only me",
+  "@profileReachPrivate": {
+    "description": "A profile reach: no one but the user. The server's staff, its admins and moderators, can still read every profile."
+  },
+  "profileReachPrivateDescription": "You and this server's staff",
+  "@profileReachPrivateDescription": {
+    "description": "Under the reach menu while 'Only me' is chosen: who can see the profile. Names the server's staff, its admins and moderators, who can read every profile whatever its reach, so it doesn't promise no one else can."
+  },
+  "profileReachFriends": "Friends",
+  "@profileReachFriends": {
+    "description": "A profile reach: the user's friends."
+  },
+  "profileReachFriendsDescription": "People you're friends with",
+  "@profileReachFriendsDescription": {
+    "description": "Under the reach menu while 'Friends' is chosen: who can see the profile, the user's accepted friends."
+  },
+  "profileReachFriendsOfFriends": "Friends of friends",
+  "@profileReachFriendsOfFriends": {
+    "description": "A profile reach: the user's friends and their friends."
+  },
+  "profileReachFriendsOfFriendsDescription": "Your friends and their friends",
+  "@profileReachFriendsOfFriendsDescription": {
+    "description": "Under the reach menu while 'Friends of friends' is chosen: who can see the profile."
+  },
+  "profileReachExtendedNetwork": "Extended network",
+  "@profileReachExtendedNetwork": {
+    "description": "A profile reach: the user's friends and everyone up to three friendship steps from them."
+  },
+  "profileReachExtendedNetworkDescription": "Friends up to three steps away",
+  "@profileReachExtendedNetworkDescription": {
+    "description": "Under the reach menu while 'Extended network' is chosen: friends, their friends, and their friends' friends."
+  },
+  "profileReachPublic": "Everyone",
+  "@profileReachPublic": {
+    "description": "A profile reach: every signed-in user of this server."
+  },
+  "profileReachPublicDescription": "Everyone signed in to this server",
+  "@profileReachPublicDescription": {
+    "description": "Under the reach menu while 'Everyone' is chosen: who can see the profile. Only people signed in to this server, not the whole internet."
+  },
+  "profileSearchHeading": "Search",
+  "@profileSearchHeading": {
+    "description": "Heading of the profile form's group about whether user search finds the profile."
+  },
+  "profileSearchableLabel": "Let people find you in search",
+  "@profileSearchableLabel": {
+    "description": "Label of the switch that offers the user's profile to user search."
+  },
+  "profileSearchableHelper": "This controls whether search shows your profile. Who can open it is set above.",
+  "@profileSearchableHelper": {
+    "description": "Under the search switch: it decides only whether search lists the profile. Who may open it is the reach chosen above it in the form."
+  },
+  "profileFieldTooLong": "Use at most {max} characters.",
+  "@profileFieldTooLong": {
+    "description": "Validation message under a profile text field that is longer than the server takes.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "40"
+      }
+    }
+  },
+  "profileSave": "Save profile",
+  "@profileSave": {
+    "description": "Button that saves the changes to the user's profile. Disabled until something changed."
+  },
+  "profileSaving": "Saving…",
+  "@profileSaving": {
+    "description": "Label of the save button while the profile is being saved."
+  },
+  "profileSaved": "Profile saved.",
+  "@profileSaved": {
+    "description": "Shown above the save button once the server has stored the profile, until the user edits it again."
+  },
+  "profileNotSavedTitle": "Profile not saved",
+  "@profileNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the profile failed."
+  },
+  "profileSaveRejected": "One of these values wasn't accepted. Check them and try again.",
+  "@profileSaveRejected": {
+    "description": "Shown when one of the profile's values was refused, by the server or by the app's own checks before sending. Neither says which to the user, so the message names none."
+  },
+  "profileSaveRefused": "This server doesn't let you change your profile.",
+  "@profileSaveRefused": {
+    "description": "Shown when the server refused to let the signed-in user change their profile at all."
+  },
+  "profileSaveFailed": "Couldn't reach the server. Check your connection and try again.",
+  "@profileSaveFailed": {
+    "description": "Shown when saving the profile failed because the server could not be reached or did not answer usefully."
+  }
+}
