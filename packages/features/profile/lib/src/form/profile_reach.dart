@@ -6,9 +6,9 @@ import 'package:profile/l10n/profile_localizations.dart';
 /// value doesn't compile until it has its copy. The menu offers the rungs
 /// in [Reach.ladder]'s order (#547).
 ///
-/// "Only me" names the server's staff, its admins and moderators: they can
-/// read every profile, whatever its reach, so it doesn't promise no one
-/// else can.
+/// "Only me" names the server's staff, its owner, admins and moderators:
+/// they can read every profile, whatever its reach, so it doesn't promise
+/// no one else can.
 ({String label, String description})? profileReachCopy(
   ProfileLocalizations l10n,
   Reach reach,

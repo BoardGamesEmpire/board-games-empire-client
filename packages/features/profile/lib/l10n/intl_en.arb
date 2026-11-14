@@ -100,11 +100,11 @@
   },
   "profileReachPrivate": "Only me",
   "@profileReachPrivate": {
-    "description": "A profile reach: no one but the user. The server's staff, its admins and moderators, can still read every profile."
+    "description": "A profile reach: no one but the user. The server's staff, its owner, admins and moderators, can still read every profile."
   },
   "profileReachPrivateDescription": "You and this server's staff",
   "@profileReachPrivateDescription": {
-    "description": "Under the reach menu while 'Only me' is chosen: who can see the profile. Names the server's staff, its admins and moderators, who can read every profile whatever its reach, so it doesn't promise no one else can."
+    "description": "Under the reach menu while 'Only me' is chosen: who can see the profile. Names the server's staff, its owner, admins and moderators, who can read every profile whatever its reach, so it doesn't promise no one else can."
   },
   "profileReachFriends": "Friends",
   "@profileReachFriends": {

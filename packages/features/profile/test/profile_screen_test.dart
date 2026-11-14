@@ -196,6 +196,54 @@ void main() {
       expect(find.byType(ProfileForm), findsNothing);
       expect(focusIsOn(tester, find.text(_title)), isTrue);
     });
+
+    testWidgets('a save that takes the form away leaves focus that has '
+        'moved outside the form where it is', (tester) async {
+      final elsewhere = FocusNode(debugLabel: 'elsewhere');
+      addTearDown(elsewhere.dispose);
+      await tester.pumpWidget(
+        _app(
+          Column(
+            children: [
+              Expanded(child: screen()),
+              Material(
+                child: TextButton(
+                  focusNode: elsewhere,
+                  onPressed: () {},
+                  child: const Text('Elsewhere'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      remote.fetches.single.complete(profileFixture());
+      await tester.pumpAndSettle();
+
+      final location = ProfileForm.fieldKey(ProfileControls.location);
+      await tester.ensureVisible(find.byKey(location));
+      await tester.enterText(find.byKey(location), 'York');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(ProfileForm.saveKey));
+      await tester.pumpAndSettle();
+      Focus.of(tester.element(find.text('Save profile'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(remote.updateCalls, hasLength(1));
+
+      elsewhere.requestFocus();
+      await tester.pump();
+      remote.updates.single.completeError(
+        const UserProfileNotFoundException('gone', statusCode: 404),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(ProfileScreen.notReadyKey), findsOneWidget);
+      expect(elsewhere.hasPrimaryFocus, isTrue);
+      expect(focusIsOn(tester, find.text(_title)), isFalse);
+    });
   });
 
   group('header', () {
