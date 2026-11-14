@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
@@ -89,6 +91,23 @@ class FailingUserInstaller implements UserScopeInstaller {
   ) async {
     calls++;
     throw StateError('user installer boom');
+  }
+}
+
+/// User installer that parks until released, so a test can act while an
+/// activation is mid-install.
+class GatedUserInstaller implements UserScopeInstaller {
+  final gate = Completer<void>();
+  final started = <String>[];
+
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ScopedServer server,
+    String userId,
+  ) async {
+    started.add(userId);
+    await gate.future;
   }
 }
 
@@ -559,6 +578,65 @@ void main() {
       await disposal;
       expect(installer.probes.single.disposed, isTrue);
     });
+
+    for (final (name, end) in [
+      (
+        'deactivateUserSession',
+        (ServerContextImpl c) => c.deactivateUserSession(),
+      ),
+      ('background', (ServerContextImpl c) => c.background()),
+      ('dispose', (ServerContextImpl c) => c.dispose()),
+    ]) {
+      test('$name issued while an activation is queued ends the lease the '
+          'activation opens, before its installers run (#694)', () async {
+        // The end request finds no lease to end — the activation has not
+        // opened its scope yet — so the lease that activation creates must
+        // be born ended, or it stays live for as long as the installers take.
+        final gated = GatedUserInstaller();
+        final context = ServerContextImpl(
+          config: _makeConfig(),
+          userInstallers: [gated],
+        );
+        addTearDown(context.dispose);
+        // Runs first (tear-downs run last-in, first-out): a failed
+        // expectation must not leave the dispose above waiting on the gate.
+        addTearDown(() {
+          if (!gated.gate.isCompleted) gated.gate.complete();
+        });
+        await context.activate();
+
+        final activating = context.activateUserSession('user-a');
+        final ending = end(context);
+        await Future<void>.delayed(Duration.zero);
+        expect(gated.started, ['user-a'], reason: 'installing now');
+
+        expect(context.container.get<SessionLease>().isLive, isFalse);
+
+        gated.gate.complete();
+        await activating;
+        await ending;
+      });
+    }
+
+    test(
+      'an activation queued after an end request keeps its lease live',
+      () async {
+        final context = ServerContextImpl(
+          config: _makeConfig(),
+          userInstallers: [RecordingUserInstaller()],
+        );
+        addTearDown(context.dispose);
+        await context.activate();
+        await context.activateUserSession('user-a');
+
+        final ending = context.deactivateUserSession();
+        final activating = context.activateUserSession('user-b');
+        await Future.wait([ending, activating]);
+
+        expect(context.activeUserId, 'user-b');
+        expect(context.container.get<SessionLease>().isLive, isTrue);
+      },
+    );
 
     test('context.dispose disposes an active user-session scope', () async {
       final installer = RecordingUserInstaller();

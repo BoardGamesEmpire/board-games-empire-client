@@ -276,6 +276,46 @@ void main() {
         expect(installer.calls, hasLength(1));
       });
 
+      for (final (name, end) in [
+        ('deactivate', (ContainerUserSessionScope s) => s.deactivate()),
+        ('dispose', (ContainerUserSessionScope s) => s.dispose()),
+      ]) {
+        test('$name issued while an activation is queued ends the lease the '
+            'activation opens, before its installers run (#694)', () async {
+          // The end request finds no lease to end — the activation has not
+          // opened its scope yet — so the lease that activation creates must
+          // be born ended, or it stays live for as long as the installers
+          // take.
+          final gated = GatedInstaller();
+          final queued = build([gated]);
+
+          final activating = queued.activate('user-a');
+          final ending = end(queued);
+          await Future<void>.delayed(Duration.zero);
+          expect(gated.started, ['user-a'], reason: 'installing now');
+
+          expect(host.maybeGet<SessionLease>()!.isLive, isFalse);
+
+          gated.gate.complete();
+          await activating;
+          await ending;
+        });
+      }
+
+      test(
+        'an activation queued after an end request keeps its lease live',
+        () async {
+          await scope.activate('user-a');
+          final ending = scope.deactivate();
+          final activating = scope.activate('user-b');
+
+          await Future.wait([ending, activating]);
+
+          expect(scope.activeUserId, 'user-b');
+          expect(host.maybeGet<SessionLease>()!.isLive, isTrue);
+        },
+      );
+
       test('a failed operation does not poison the chain', () async {
         final failing = build([ThrowingInstaller(StateError('boom'))]);
 
