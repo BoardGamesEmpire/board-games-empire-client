@@ -19,7 +19,7 @@ import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 
 /// What a save that failed for any other reason says (#464 reuses it late).
-const _failedCopy = "We couldn't save this data gateway. Try again.";
+const _addFailedLateCopy = "We couldn't add the data gateway.";
 
 void main() {
   late FakeDataGatewayRemote remote;
@@ -306,12 +306,16 @@ void main() {
     late DataGatewayFormBloc bloc;
 
     /// Opens the add form over a list page and submits a create that waits
-    /// on [gate].
-    Future<void> submitHeld(WidgetTester tester) async {
+    /// on [gate]. With [editingId], opens that row's edit form instead and
+    /// submits a changed port.
+    Future<void> submitHeld(WidgetTester tester, {String? editingId}) async {
       // Made in the test body, inside its fake async zone: one made in
       // setUp completes outside it, where pumping never gets to it.
       gate = Completer<DataGatewayChangeResult>();
-      remote.onCreate = (_) => gate.future;
+      remote
+        ..onCreate = ((_) => gate.future)
+        ..onFetchOne = ((_) async => bgg)
+        ..onUpdate = ((_, _) => gate.future);
       await tester.pumpWidget(
         MaterialApp(
           theme: BgeTheme.light(),
@@ -329,6 +333,7 @@ void main() {
                 remote: remote,
                 access: access,
                 session: lease,
+                editingId: editingId,
                 onDone: (context) {
                   doneCount++;
                   Navigator.of(context).pop();
@@ -337,7 +342,11 @@ void main() {
             ),
           );
       await tester.pumpAndSettle();
-      await fillValid(tester);
+      if (editingId == null) {
+        await fillValid(tester);
+      } else {
+        await enter(tester, DataGatewayForm.portFieldKey, '50060');
+      }
       await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
       await tester.tap(find.byKey(DataGatewayForm.submitKey));
       await tester.pump();
@@ -347,9 +356,13 @@ void main() {
     }
 
     /// Opens the add form over a list page, submits a create that waits on
-    /// [gate], and goes back while it is under way.
-    Future<void> submitThenLeave(WidgetTester tester) async {
-      await submitHeld(tester);
+    /// [gate], and goes back while it is under way. With [editingId], the
+    /// same for that row's edit.
+    Future<void> submitThenLeave(
+      WidgetTester tester, {
+      String? editingId,
+    }) async {
+      await submitHeld(tester, editingId: editingId);
 
       await tester.pageBack();
       await tester.pumpAndSettle();
@@ -386,7 +399,36 @@ void main() {
       gate.completeError(StateError('db is down'));
       await tester.pumpAndSettle();
 
-      expect(inSnackBar(_failedCopy), findsOneWidget);
+      expect(inSnackBar(_addFailedLateCopy), findsOneWidget);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+    });
+
+    // Read away from the form, the bar names what wasn't saved and asks
+    // nothing of a form that is gone.
+    testWidgets("an edit's failure names the row", (tester) async {
+      await submitThenLeave(tester, editingId: 'dg_1');
+
+      gate.completeError(StateError('db is down'));
+      await tester.pumpAndSettle();
+
+      expect(
+        inSnackBar("We couldn't save your changes to BGG."),
+        findsOneWidget,
+      );
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets("a refusal for the user's role is said as the role's "
+        'refusal, as on the form', (tester) async {
+      await submitThenLeave(tester);
+
+      gate.completeError(forbidden());
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar("Your role can't change data gateways."), findsOne);
       expect(find.text('list'), findsOneWidget);
       expect(doneCount, 0);
     });
@@ -485,7 +527,7 @@ void main() {
 
       for (final (name, fails, copy) in [
         ('lands', false, 'Added BGG and connected to it.'),
-        ('fails', true, _failedCopy),
+        ('fails', true, _addFailedLateCopy),
       ]) {
         testWidgets('a save that $name is said once, and goes nowhere', (
           tester,

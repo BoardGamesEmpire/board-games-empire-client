@@ -238,7 +238,7 @@
   },
   "dataGatewayChangeRefused": "Your role can't change data gateways.",
   "@dataGatewayChangeRefused": {
-    "description": "Says the user's role on the server can't change data gateways. Shown in the outcome banner when the server refused a change to a data gateway, or to one of its language names, on the data gateway list and on a data gateway's own screen; above the submit on the add and edit form when the server refused a save; in place of that submit when the server says the user's role can't save it; and as a SnackBar over whatever page the user went to, when they left the add form while the add was in flight and it failed once their role no longer allowed adding (#464). The user can still see data gateways."
+    "description": "Says the user's role on the server can't change data gateways. Shown in the outcome banner when the server refused a change to a data gateway, or to one of its language names, on the data gateway list and on a data gateway's own screen; above the submit on the add and edit form when the server refused a save; in place of that submit when the server says the user's role can't save it; and as a SnackBar over whatever page the user went to, when they left the add or edit form while the save was in flight and the server refused it, or it failed once their role no longer allowed it (#464). The user can still see data gateways."
   },
   "dataGatewayDismiss": "Dismiss",
   "@dataGatewayDismiss": {
@@ -314,7 +314,21 @@
   },
   "dataGatewayFormFailed": "We couldn't save this data gateway. Try again.",
   "@dataGatewayFormFailed": {
-    "description": "Shown when a save failed for any other reason: the server was unreachable, refused the values, or answered with an error. Deliberately names no cause. Also a SnackBar over whatever page the user went to, for any failed save, when they left the form while the save was in flight (#464): there it is read away from the form and its fields."
+    "description": "Shown on the form when a save failed for any other reason: the server was unreachable, refused the values, or answered with an error. Deliberately names no cause."
+  },
+  "dataGatewayAddFailedLate": "We couldn't add the data gateway.",
+  "@dataGatewayAddFailedLate": {
+    "description": "SnackBar over whatever page the user went to, when they left the add form while the add was in flight and it failed for any reason but the user's role (#464). Read away from the form, so it names no field and doesn't ask the user to try again: the form and what they typed are gone."
+  },
+  "dataGatewaySaveFailedLate": "We couldn't save your changes to {name}.",
+  "@dataGatewaySaveFailedLate": {
+    "description": "SnackBar over whatever page the user went to, when they left the edit form while the save was in flight and it failed for any reason but the user's role (#464). {name} is the data gateway's name as the form opened on it. Read away from the form, so it names no field and doesn't ask the user to try again: the form and the changes are gone.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BGG"
+      }
+    }
   },
   "dataGatewayFormLoading": "Loading this data gateway…",
   "@dataGatewayFormLoading": {

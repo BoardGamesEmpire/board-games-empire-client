@@ -197,18 +197,23 @@ class _DataGatewayFormOwnerState extends State<_DataGatewayFormOwner> {
 
 /// What is said of a save that settled once the user had left the form,
 /// after it went or while it was going (#464), or null for a state that is
-/// no outcome: a save as the listener says it, and any failure, whose banner
-/// went with the form, as the generic one.
+/// no outcome: a save as the listener says it, and a failure, whose banner
+/// went with the form, as a bar that names what wasn't saved and asks
+/// nothing of a form that is gone.
 ///
-/// An add that fails once access no longer allows it settles as
+/// A refusal for the user's role is said as the role's refusal, as on the
+/// form. An add that fails once access no longer allows it settles as
 /// [DataGatewayFormDenied], not as a failure: the form would have shown
-/// access-denied in its place. Said late, it is the role's refusal, since
+/// access-denied in its place. Said late, it is that refusal too, since
 /// trying again would fail the same way.
 String? _outcomeOf(DataGatewayLocalizations l10n, DataGatewayFormState state) =>
     switch (state) {
       DataGatewayFormSaved() => _savedMessage(l10n, state),
-      DataGatewayFormEditing(failure: != null) => l10n.dataGatewayFormFailed,
+      DataGatewayFormEditing(failure: DataGatewayFormFailure.refused) ||
       DataGatewayFormDenied() => l10n.dataGatewayChangeRefused,
+      DataGatewayFormEditing(failure: != null, :final original?) =>
+        l10n.dataGatewaySaveFailedLate(original.name),
+      DataGatewayFormEditing(failure: != null) => l10n.dataGatewayAddFailedLate,
       _ => null,
     };
 
