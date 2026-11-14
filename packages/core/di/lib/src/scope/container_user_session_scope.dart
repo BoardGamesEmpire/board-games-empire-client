@@ -119,8 +119,11 @@ class ContainerUserSessionScope implements UserSessionScope {
   /// Ends any live session and closes this holder permanently. Idempotent.
   ///
   /// Terminal, unlike [deactivate]: after this an [activate] throws rather
-  /// than building a scope with no owner left to dispose it.
+  /// than building a scope with no owner left to dispose it. Like
+  /// [deactivate], it ends the session's [SessionLease] at once, before the
+  /// teardown is queued (#694).
   Future<void> dispose() {
+    _host.endLease();
     return _enqueue(() async {
       if (_disposed) return;
       _disposed = true;

@@ -300,6 +300,20 @@ void main() {
         expect(host.isActive, isFalse);
       });
 
+      test('dispose ends the lease before the teardown it queues runs '
+          '(#694)', () async {
+        await scope.activate('user-a');
+        final lease = host.maybeGet<SessionLease>()!;
+        final probe = host.maybeGet<Probe>()!;
+
+        final disposal = scope.dispose();
+
+        expect(lease.isLive, isFalse, reason: "ended in the caller's turn");
+        expect(probe.disposed, isFalse, reason: 'the teardown is still queued');
+        await disposal;
+        expect(probe.disposed, isTrue);
+      });
+
       test(
         'activate after dispose throws rather than orphaning a scope',
         () async {
