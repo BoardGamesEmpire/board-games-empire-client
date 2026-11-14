@@ -18,6 +18,9 @@ disabled and says why, and the fields are read-only.
   server's answer as the profile, so the form shows what was stored: the
   server trims text and sanitizes the bio. A failed save says why until the
   next edit, and so does a save that landed.
+- `ProfileScreen`: the page. Loading; a failed read and a profile the server
+  doesn't have yet, each with Try again, which keeps focus on the title; then
+  the avatar, name and `@username`, read-only, above the form.
 - `ProfileForm`: the fields, in five headed groups (About you, Playing,
   Practical details, Who can see your profile, Search), with Save at the
   end. Save sends only what changed, and is disabled until something has. A

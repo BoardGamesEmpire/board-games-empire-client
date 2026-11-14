@@ -187,5 +187,39 @@
   "profileSaveFailed": "Couldn't reach the server. Check your connection and try again.",
   "@profileSaveFailed": {
     "description": "Shown when saving the profile failed because the server could not be reached or did not answer usefully."
+  },
+  "profileLoading": "Loading your profile…",
+  "@profileLoading": {
+    "description": "Announced on the profile screen while the user's profile is being read. Not drawn: a spinner shows instead."
+  },
+  "profileLoadFailed": "Couldn't load your profile.",
+  "@profileLoadFailed": {
+    "description": "Title shown on the profile screen when the user's profile could not be read."
+  },
+  "profileLoadFailedBody": "Check your connection and try again.",
+  "@profileLoadFailedBody": {
+    "description": "Body under the title shown when the profile screen could not read the user's profile."
+  },
+  "profileNotReady": "Your profile is not ready yet.",
+  "@profileNotReady": {
+    "description": "Title shown on the profile screen when the server has no profile for the signed-in user yet, as for a brand-new account."
+  },
+  "profileNotReadyBody": "It can take a moment to set up. Try again shortly.",
+  "@profileNotReadyBody": {
+    "description": "Body under the title shown when the server has no profile for the signed-in user yet."
+  },
+  "profileRetry": "Try again",
+  "@profileRetry": {
+    "description": "Button that reads the user's profile again after the profile screen failed to read it, or found none yet."
+  },
+  "profileUsername": "@{username}",
+  "@profileUsername": {
+    "description": "The user's username with an at sign, shown under their name at the top of the profile screen.",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "ada"
+      }
+    }
   }
 }
