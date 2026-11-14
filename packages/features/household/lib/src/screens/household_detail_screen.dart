@@ -1179,11 +1179,18 @@ class _MemberRow extends StatelessWidget {
       ),
     );
 
-    if (menu == null) return details;
+    // The avatar sits outside the merged node: it is decorative, and the
+    // name beside it is what a screen reader reads. A "You" row takes its
+    // initials from the member's own name, not the "(you)" text (#603).
     return Row(
       children: [
+        BgeAvatar(
+          initials: personInitials(name),
+          imageUrl: member.avatarUrl,
+        ),
+        const BgeGap.md(axis: Axis.horizontal),
         Expanded(child: details),
-        menu,
+        ?menu,
       ],
     );
   }

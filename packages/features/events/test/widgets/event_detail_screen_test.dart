@@ -175,6 +175,7 @@ EventAttendee _member(
   String id, {
   String? displayName,
   String? username,
+  String? avatarUrl,
   EventRole? role = EventRole.participant,
   EventParticipationStatus status = EventParticipationStatus.attending,
 }) => EventAttendee(
@@ -182,6 +183,7 @@ EventAttendee _member(
   eventId: 'e-1',
   userId: 'user-$id',
   displayName: displayName,
+  avatarUrl: avatarUrl,
   username: username,
   role: role,
   status: status,
@@ -794,6 +796,87 @@ void main() {
       final label = tester.getSemantics(find.text('Ana Ortiz')).label;
       expect(label, contains('Ana Ortiz'));
       expect(label, contains('Host, Going'));
+    });
+
+    group('avatars (#603)', () {
+      testWidgets("a named attendee shows the person's initials", (
+        tester,
+      ) async {
+        await show(
+          tester,
+          _detail(
+            attendees: [
+              _member(
+                'att-1',
+                displayName: 'Ada Lovelace',
+                role: EventRole.host,
+              ),
+            ],
+          ),
+        );
+
+        expect(find.widgetWithText(BgeAvatar, 'AL'), findsOneWidget);
+      });
+
+      testWidgets('an attendee with an avatarUrl builds the image', (
+        tester,
+      ) async {
+        await show(
+          tester,
+          _detail(
+            attendees: [
+              _member(
+                'att-1',
+                displayName: 'Ada Lovelace',
+                avatarUrl: 'https://example.com/ada.png',
+              ),
+            ],
+          ),
+        );
+
+        final image = tester.widget<Image>(find.byKey(BgeAvatar.imageKey));
+        final resize = image.image as ResizeImage;
+        expect(
+          (resize.imageProvider as NetworkImage).url,
+          'https://example.com/ada.png',
+        );
+      });
+
+      testWidgets('an unnamed attendee shows the icon', (tester) async {
+        await show(
+          tester,
+          _detail(attendees: [_member('att-1', role: EventRole.host)]),
+        );
+
+        expect(
+          find.descendant(
+            of: find.byType(BgeAvatar),
+            matching: find.byIcon(Icons.person_outline),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("the row's spoken label is unchanged", (tester) async {
+        await show(
+          tester,
+          _detail(
+            attendees: [
+              _member(
+                'att-1',
+                displayName: 'Ada Lovelace',
+                role: EventRole.host,
+              ),
+            ],
+          ),
+        );
+
+        expect(
+          tester.getSemantics(find.text('Ada Lovelace')).label,
+          'Ada Lovelace\nHost, Going',
+        );
+        expect(find.bySemanticsLabel('AL'), findsNothing);
+      });
     });
 
     testWidgets('leaves out an unknown role and answer', (tester) async {

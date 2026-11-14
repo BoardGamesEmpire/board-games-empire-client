@@ -40,6 +40,7 @@ HouseholdMember _member(
   HouseholdRole? role = HouseholdRole.householdMember,
   String? username,
   String? displayName,
+  String? avatarUrl,
 }) => HouseholdMember(
   id: 'm-$userId',
   userId: userId,
@@ -47,6 +48,7 @@ HouseholdMember _member(
   role: role,
   username: username,
   displayName: displayName,
+  avatarUrl: avatarUrl,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -379,6 +381,96 @@ void main() {
       await settleWith(tester, roster: [_member('u-me', displayName: 'Alex')]);
 
       expect(inRow('u-me', 'Alex (you)'), findsOneWidget);
+    });
+
+    group('avatars (#603)', () {
+      Finder avatarOf(String text) => find.widgetWithText(BgeAvatar, text);
+
+      testWidgets("a named row shows the person's initials", (tester) async {
+        await tester.pumpWidget(harness());
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', username: 'alexd'),
+            _member('u-2', displayName: 'Ada Lovelace'),
+          ],
+        );
+
+        expect(avatarOf('AL'), findsOneWidget);
+      });
+
+      testWidgets("the current user's row takes initials from their name", (
+        tester,
+      ) async {
+        // Not from "Ada Lovelace (you)", which would read AL(.
+        await tester.pumpWidget(harness());
+        await settleWith(
+          tester,
+          roster: [_member('u-me', displayName: 'Ada Lovelace')],
+        );
+
+        expect(inRow('u-me', 'Ada Lovelace (you)'), findsOneWidget);
+        expect(avatarOf('AL'), findsOneWidget);
+      });
+
+      testWidgets('a row with an avatarUrl builds the image', (tester) async {
+        await tester.pumpWidget(harness());
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', username: 'alexd'),
+            _member(
+              'u-2',
+              displayName: 'Ada Lovelace',
+              avatarUrl: 'https://example.com/ada.png',
+            ),
+          ],
+        );
+
+        final image = tester.widget<Image>(find.byKey(BgeAvatar.imageKey));
+        final resize = image.image as ResizeImage;
+        expect(
+          (resize.imageProvider as NetworkImage).url,
+          'https://example.com/ada.png',
+        );
+      });
+
+      testWidgets('an unnamed row shows the icon', (tester) async {
+        await tester.pumpWidget(harness());
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', username: 'alexd'),
+            _member('u-2', role: HouseholdRole.householdAdmin),
+          ],
+        );
+
+        expect(
+          find.descendant(
+            of: find.byType(BgeAvatar),
+            matching: find.byIcon(Icons.person_outline),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("the row's spoken label is unchanged", (tester) async {
+        await tester.pumpWidget(harness());
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', username: 'alexd'),
+            _member('u-2', displayName: 'Ada Lovelace'),
+          ],
+        );
+
+        expect(
+          tester.getSemantics(inRow('u-2', 'Ada Lovelace')).label,
+          'Ada Lovelace\nMember',
+        );
+        // The initials never reach a screen reader, in this row or another.
+        expect(find.bySemanticsLabel('AL'), findsNothing);
+      });
     });
 
     testWidgets("the current user's row without a name reads You", (
