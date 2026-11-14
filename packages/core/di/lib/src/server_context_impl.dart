@@ -114,6 +114,11 @@ class ServerContextImpl implements ServerContext {
   /// can await it unconditionally.
   Future<void> _scopeOps = Future<void>.value();
 
+  /// Counts the calls that end the user session ([deactivateUserSession],
+  /// [background], [dispose]), so an [activateUserSession] can tell whether
+  /// the session was ended while it waited on [_scopeOps].
+  int _userSessionEndRequests = 0;
+
   @override
   DependencyContainer get container => _container;
   final _SwappableContainer _container;
@@ -199,6 +204,9 @@ class ServerContextImpl implements ServerContext {
       );
     }
 
+    // Leaving the active state ends the session (below), so its lease ends
+    // now, in the caller's turn, not once the queued teardown runs (#694).
+    _endUserSessionLease();
     await _transition(() async {
       // Per-server resources remain open during backgrounding — the DB,
       // clients, and their registrations are retained for a cheap
@@ -263,6 +271,10 @@ class ServerContextImpl implements ServerContext {
   @override
   Future<void> dispose() async {
     if (_state == ServerContextState.disposed) return;
+
+    // The session ends with the context, so its lease ends now, before the
+    // waits below, as deactivateUserSession's does (#694).
+    _endUserSessionLease();
 
     // Let any in-flight transition settle before tearing down — activate()
     // now performs real async work (DB open, client construction), and
@@ -344,7 +356,13 @@ class ServerContextImpl implements ServerContext {
   ///
   /// Serialized with [deactivateUserSession] and every state transition
   /// through [_scopeOps].
+  ///
+  /// An activation that a session end overtook while it was queued still
+  /// runs, and the queued end undoes it. Its [SessionLease] is ended as it is
+  /// created, though: the end request found no lease to end, and the session
+  /// it opens is already over (#694).
   Future<void> activateUserSession(String userId) {
+    final endRequestsAtCall = _userSessionEndRequests;
     return _enqueueScopeOp(() async {
       _assertNotDisposed();
       if (_state != ServerContextState.active) {
@@ -368,6 +386,11 @@ class ServerContextImpl implements ServerContext {
       // no `ServerConfig` to give them.
       final scopedServer = ScopedServer.fromConfig(_config);
       await _container.openUserScope((view) async {
+        // The lease exists from here; an end request from now on ends it
+        // directly.
+        if (_userSessionEndRequests != endRequestsAtCall) {
+          _container.endUserLease();
+        }
         for (final installer in _userInstallers) {
           await installer.install(view, scopedServer, userId);
         }
@@ -388,7 +411,12 @@ class ServerContextImpl implements ServerContext {
   /// the container (no-op); post-background the scope was torn down by
   /// [background] itself (no-op). A live scope found here is disposed
   /// regardless of state, so a sign-out can never be silently dropped.
+  ///
+  /// The session's [SessionLease] ends at once, before the teardown is
+  /// queued: the caller has ended the session, whatever the chain is still
+  /// working through (#694).
   Future<void> deactivateUserSession() {
+    _endUserSessionLease();
     return _enqueueScopeOp(() async {
       if (_state == ServerContextState.disposed) {
         _activeUserId = null;
@@ -396,6 +424,13 @@ class ServerContextImpl implements ServerContext {
       }
       await _teardownUserScope();
     });
+  }
+
+  /// Ends the user session's [SessionLease] in the caller's turn, and records
+  /// the end for any [activateUserSession] still queued behind it.
+  void _endUserSessionLease() {
+    _userSessionEndRequests++;
+    _container.endUserLease();
   }
 
   /// Chains [op] onto [_scopeOps] and keeps the chain settled.
@@ -538,6 +573,9 @@ class _SwappableContainer implements DependencyContainer {
 
   /// Whether a user-session scope is currently active (#135).
   bool get hasUserScope => _userScope.isActive;
+
+  /// Ends the open user scope's lease without closing the scope (#694).
+  void endUserLease() => _userScope.endLease();
 
   /// Opens the per-user child scope and runs [install] against the
   /// container **view**: registrations land in the user scope while

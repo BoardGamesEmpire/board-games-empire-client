@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -26,6 +28,7 @@ void main() {
   late int sent;
   late int memberSent;
   late int refreshes;
+  late FakeSessionLease lease;
 
   setUp(() {
     remote = FakeHouseholdInviteRemote();
@@ -33,6 +36,7 @@ void main() {
     sent = 0;
     memberSent = 0;
     refreshes = 0;
+    lease = FakeSessionLease();
   });
 
   Widget harness({
@@ -66,6 +70,7 @@ void main() {
       memberInvitePolicy: policy,
       remote: remote,
       users: users,
+      session: lease,
       onSent: (_) => sent++,
       onMemberSent: (_) => memberSent++,
       onRefresh: onRefresh,
@@ -843,6 +848,215 @@ void main() {
     answer.complete(invite('i_1'));
     await sentAndSpinning(tester);
     expect(sent, 1);
+  });
+
+  // #464: the send outlives the form. Left while it is under way, it still
+  // says how it went, on the page the user went back to, and goes nowhere:
+  // the user already has.
+  group('left mid-send', () {
+    late Completer<HouseholdInvite> answer;
+    late SendHouseholdInviteBloc bloc;
+
+    /// A page whose one button pushes the screen, as the household
+    /// screen's Invite row does for a member whose household's invites
+    /// await approval.
+    Widget pushedHarness() => MaterialApp(
+      theme: BgeTheme.light(),
+      localizationsDelegates: const [
+        ...HouseholdLocalizations.localizationsDelegates,
+        UserSearchLocalizations.delegate,
+      ],
+      supportedLocales: HouseholdLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => SendHouseholdInviteScreen(
+                  householdId: 'hh_1',
+                  viewerRole: HouseholdRole.householdMember,
+                  memberInvitePolicy: MemberInvitePolicy.needsApproval,
+                  remote: remote,
+                  users: users,
+                  session: lease,
+                  onSent: (_) => sent++,
+                  onMemberSent: (_) => memberSent++,
+                ),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+
+    /// Sends an invite whose answer waits on [answer].
+    Future<void> sendHeld(WidgetTester tester) async {
+      answer = Completer<HouseholdInvite>();
+      remote.onSend = (_, _) => answer.future;
+      await tester.pumpWidget(pushedHarness());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      bloc = BlocProvider.of<SendHouseholdInviteBloc>(
+        tester.element(find.byKey(SendHouseholdInviteScreen.submitKey)),
+      );
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        'ana@example.com',
+      );
+      await submit(tester);
+      expect(bloc.state, isA<SendHouseholdInviteSending>());
+    }
+
+    /// Sends an invite whose answer waits on [answer], then goes back while
+    /// it is on its way.
+    Future<void> sendThenLeave(WidgetTester tester) async {
+      await sendHeld(tester);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(SendHouseholdInviteScreen), findsNothing);
+    }
+
+    Future<bool> closed(WidgetTester tester) async {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      return bloc.isClosed;
+    }
+
+    Finder inSnackBar(String copy) =>
+        find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+    /// The page beneath is the only route: nothing was pushed or popped
+    /// after the user went back.
+    void expectStackUnchanged(WidgetTester tester) {
+      expect(find.text('open'), findsOneWidget);
+      expect(Navigator.of(tester.element(find.text('open'))).canPop(), false);
+      expect(sent, 0);
+      expect(memberSent, 0);
+    }
+
+    testWidgets('left mid-send, the outcome is still said', (tester) async {
+      await sendThenLeave(tester);
+      // Kept for the send still on its way.
+      expect(await closed(tester), isFalse);
+
+      answer.complete(
+        invite('i_1', status: HouseholdInviteStatus.awaitingApproval),
+      );
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar('Sent for approval.'), findsOneWidget);
+      expectStackUnchanged(tester);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets('left mid-send, a failure is still said', (tester) async {
+      await sendThenLeave(tester);
+
+      answer.completeError(refused(409));
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar("Couldn't send the invite"), findsOneWidget);
+      expectStackUnchanged(tester);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets('left mid-send, nothing is said once the session has ended', (
+      tester,
+    ) async {
+      await sendThenLeave(tester);
+      lease.isLive = false;
+
+      answer.complete(invite('i_1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+      expectStackUnchanged(tester);
+      // Still closed: ending the session skips the message, not the close.
+      expect(await closed(tester), isTrue);
+    });
+
+    // The shell ends a session in the same turn it routes away, and the
+    // popped route stays mounted through its exit. A send that settles there
+    // asks the lease (#694), is said as it would be once the form had gone,
+    // and goes nowhere (#464).
+    group("on the route's way out", () {
+      /// Sends an invite whose answer waits on [answer], pops the form and,
+      /// in the same turn when [endSession], ends the session, then pumps
+      /// 50 ms into the exit.
+      Future<void> sendThenPop(
+        WidgetTester tester, {
+        bool endSession = false,
+      }) async {
+        await sendHeld(tester);
+        Navigator.of(
+          tester.element(find.byKey(SendHouseholdInviteScreen.submitKey)),
+        ).pop();
+        if (endSession) lease.isLive = false;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(SendHouseholdInviteScreen), findsOneWidget);
+      }
+
+      /// Gives the answer, and lets it reach the form, still inside the exit.
+      Future<void> settle(WidgetTester tester, {required bool fails}) async {
+        if (fails) {
+          answer.completeError(refused(409));
+        } else {
+          answer.complete(
+            invite('i_1', status: HouseholdInviteStatus.awaitingApproval),
+          );
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(SendHouseholdInviteScreen), findsOneWidget);
+      }
+
+      /// The keys of the bars showing: a bar said again is a new key.
+      Set<Key?> barKeys(WidgetTester tester) => {
+        for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+          bar.key,
+      };
+
+      for (final (name, fails) in [('lands', false), ('fails', true)]) {
+        testWidgets('a send that $name after the session ended says nothing, '
+            'and the bloc still closes', (tester) async {
+          await sendThenPop(tester, endSession: true);
+
+          await settle(tester, fails: fails);
+          expect(find.byType(SnackBar), findsNothing);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(SnackBar), findsNothing);
+          expectStackUnchanged(tester);
+          expect(await closed(tester), isTrue);
+        });
+      }
+
+      for (final (name, fails, copy) in [
+        ('lands', false, 'Sent for approval.'),
+        ('fails', true, "Couldn't send the invite"),
+      ]) {
+        testWidgets('a send that $name is said once, and goes nowhere', (
+          tester,
+        ) async {
+          await sendThenPop(tester);
+
+          await settle(tester, fails: fails);
+          // One bar, drawn in both pages' scaffolds while the exit runs.
+          expect(inSnackBar(copy), findsWidgets);
+          final said = barKeys(tester);
+          expect(said, hasLength(1));
+          await tester.pumpAndSettle();
+
+          expect(inSnackBar(copy), findsOneWidget);
+          expect(barKeys(tester), said);
+          expectStackUnchanged(tester);
+          expect(await closed(tester), isTrue);
+        });
+      }
+    });
   });
 
   group('accessibility audit', () {

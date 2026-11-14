@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:bge_test_support/access.dart';
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -16,10 +18,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 import '../support/connectivity.dart';
 import '../support/fake_data_gateway_remote.dart';
 
+/// What a save that failed for any other reason says (#464 reuses it late).
+const _addFailedLateCopy = "We couldn't add the data gateway.";
+
 void main() {
   late FakeDataGatewayRemote remote;
   late FakeCallerAccessRepository access;
   late int doneCount;
+  late FakeSessionLease lease;
 
   final bgg = gateway(
     'dg_1',
@@ -39,6 +45,7 @@ void main() {
       ),
     );
     doneCount = 0;
+    lease = FakeSessionLease();
   });
 
   /// [settle] false pumps one frame only, for a state whose spinner never
@@ -58,6 +65,7 @@ void main() {
         builder: offline == null ? null : connectivityBuilder(offline),
         home: DataGatewayFormScreen(
           remote: remote,
+          session: lease,
           access: access,
           editingId: editingId,
           onDone: (_) => doneCount++,
@@ -202,6 +210,7 @@ void main() {
         MaterialPageRoute<void>(
           builder: (_) => DataGatewayFormScreen(
             remote: remote,
+            session: lease,
             access: access,
             // As the shell's does: leaving is a pop.
             onDone: (context) {
@@ -249,6 +258,7 @@ void main() {
           MaterialPageRoute<void>(
             builder: (_) => DataGatewayFormScreen(
               remote: remote,
+              session: lease,
               access: access,
               // As the shell's does: leaving is a pop.
               onDone: (context) {
@@ -285,6 +295,296 @@ void main() {
       expect(doneCount, 1);
       expect(find.text('list'), findsOneWidget);
       expect(find.byType(DataGatewayFormScreen), findsNothing);
+    });
+  });
+
+  // #464, #694: a save outlives the form. Left while it is under way, it
+  // still says how it went, on the page the user went back to, while the
+  // session it started in is live.
+  group('left mid-save', () {
+    late Completer<DataGatewayChangeResult> gate;
+    late DataGatewayFormBloc bloc;
+
+    /// Opens the add form over a list page and submits a create that waits
+    /// on [gate]. With [editingId], opens that row's edit form instead and
+    /// submits a changed port.
+    Future<void> submitHeld(WidgetTester tester, {String? editingId}) async {
+      // Made in the test body, inside its fake async zone: one made in
+      // setUp completes outside it, where pumping never gets to it.
+      gate = Completer<DataGatewayChangeResult>();
+      remote
+        ..onCreate = ((_) => gate.future)
+        ..onFetchOne = ((_) async => bgg)
+        ..onUpdate = ((_, _) => gate.future);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          home: const Scaffold(body: Text('list')),
+        ),
+      );
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => DataGatewayFormScreen(
+                remote: remote,
+                access: access,
+                session: lease,
+                editingId: editingId,
+                onDone: (context) {
+                  doneCount++;
+                  Navigator.of(context).pop();
+                },
+              ),
+            ),
+          );
+      await tester.pumpAndSettle();
+      if (editingId == null) {
+        await fillValid(tester);
+      } else {
+        await enter(tester, DataGatewayForm.portFieldKey, '50060');
+      }
+      await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
+      await tester.tap(find.byKey(DataGatewayForm.submitKey));
+      await tester.pump();
+      bloc = BlocProvider.of<DataGatewayFormBloc>(
+        tester.element(find.byType(DataGatewayForm)),
+      );
+    }
+
+    /// Opens the add form over a list page, submits a create that waits on
+    /// [gate], and goes back while it is under way. With [editingId], the
+    /// same for that row's edit.
+    Future<void> submitThenLeave(
+      WidgetTester tester, {
+      String? editingId,
+    }) async {
+      await submitHeld(tester, editingId: editingId);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(DataGatewayFormScreen), findsNothing);
+    }
+
+    Future<bool> closed(WidgetTester tester) async {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      return bloc.isClosed;
+    }
+
+    Finder inSnackBar(String copy) =>
+        find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+    testWidgets('the outcome is still said, and nothing is left', (
+      tester,
+    ) async {
+      await submitThenLeave(tester);
+
+      gate.complete(
+        changed(bgg, attempted: DataGatewayConnectionAction.connect),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Added BGG and connected to it.'), findsOneWidget);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+    });
+
+    testWidgets('a failure is still said', (tester) async {
+      await submitThenLeave(tester);
+
+      gate.completeError(StateError('db is down'));
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar(_addFailedLateCopy), findsOneWidget);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+    });
+
+    // Read away from the form, the bar names what wasn't saved and asks
+    // nothing of a form that is gone.
+    testWidgets("an edit's failure names the row", (tester) async {
+      await submitThenLeave(tester, editingId: 'dg_1');
+
+      gate.completeError(StateError('db is down'));
+      await tester.pumpAndSettle();
+
+      expect(
+        inSnackBar("We couldn't save your changes to BGG."),
+        findsOneWidget,
+      );
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets("a refusal for the user's role is said as the role's "
+        'refusal, as on the form', (tester) async {
+      await submitThenLeave(tester);
+
+      gate.completeError(forbidden());
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar("Your role can't change data gateways."), findsOne);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+    });
+
+    // An add that fails after access has fallen settles as access-denied,
+    // not as a failure. The user has left, so it is still said.
+    testWidgets('an add that fails once access no longer allows it says the '
+        "role's refusal", (tester) async {
+      await submitThenLeave(tester);
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
+      await tester.pump();
+
+      gate.completeError(forbidden());
+      await tester.pumpAndSettle();
+
+      expect(bloc.state, isA<DataGatewayFormDenied>());
+      expect(inSnackBar("Your role can't change data gateways."), findsOne);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets('nothing is said once the session has ended', (tester) async {
+      await submitThenLeave(tester);
+      lease.isLive = false;
+
+      gate.complete(
+        changed(bgg, attempted: DataGatewayConnectionAction.connect),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.text('list'), findsOneWidget);
+      expect(doneCount, 0);
+      // Still closed: ending the session skips the message, not the close.
+      expect(await closed(tester), isTrue);
+    });
+
+    // The shell ends a session in the same turn it routes away, and the
+    // popped route stays mounted through its exit. A save that settles there
+    // asks the lease (#694), is said as it would be once the form had gone,
+    // and goes nowhere (#464).
+    group("on the route's way out", () {
+      /// Submits a create that waits on [gate], pops the form and, in the
+      /// same turn when [endSession], ends the session, then pumps 50 ms
+      /// into the exit.
+      Future<void> submitThenPop(
+        WidgetTester tester, {
+        bool endSession = false,
+      }) async {
+        await submitHeld(tester);
+        Navigator.of(tester.element(find.byType(DataGatewayForm))).pop();
+        if (endSession) lease.isLive = false;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(DataGatewayFormScreen), findsOneWidget);
+      }
+
+      /// Gives the answer, and lets it reach the form, still inside the exit.
+      Future<void> answer(WidgetTester tester, {required bool fails}) async {
+        if (fails) {
+          gate.completeError(StateError('db is down'));
+        } else {
+          gate.complete(
+            changed(bgg, attempted: DataGatewayConnectionAction.connect),
+          );
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(DataGatewayFormScreen), findsOneWidget);
+      }
+
+      /// The keys of the bars showing: a bar said again is a new key.
+      Set<Key?> barKeys(WidgetTester tester) => {
+        for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+          bar.key,
+      };
+
+      for (final (name, fails) in [('lands', false), ('fails', true)]) {
+        testWidgets('a save that $name after the session ended says nothing, '
+            'and the bloc still closes', (tester) async {
+          await submitThenPop(tester, endSession: true);
+
+          await answer(tester, fails: fails);
+          expect(find.byType(SnackBar), findsNothing);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(SnackBar), findsNothing);
+          expect(find.text('list'), findsOneWidget);
+          expect(doneCount, 0);
+          expect(await closed(tester), isTrue);
+        });
+      }
+
+      for (final (name, fails, copy) in [
+        ('lands', false, 'Added BGG and connected to it.'),
+        ('fails', true, _addFailedLateCopy),
+      ]) {
+        testWidgets('a save that $name is said once, and goes nowhere', (
+          tester,
+        ) async {
+          await submitThenPop(tester);
+
+          await answer(tester, fails: fails);
+          // One bar, drawn in both pages' scaffolds while the exit runs.
+          expect(inSnackBar(copy), findsWidgets);
+          final said = barKeys(tester);
+          expect(said, hasLength(1));
+          await tester.pumpAndSettle();
+
+          expect(inSnackBar(copy), findsOneWidget);
+          expect(barKeys(tester), said);
+          expect(find.byType(DataGatewayFormScreen), findsNothing);
+          expect(find.text('list'), findsOneWidget);
+          expect(doneCount, 0);
+          expect(await closed(tester), isTrue);
+        });
+      }
+    });
+
+    testWidgets("going to another row's edit mid-save still says the first "
+        'save, and the second form starts fresh', (tester) async {
+      final first = gateway('dg_1', name: 'First', connectionUrl: 'a.internal');
+      final second = gateway(
+        'dg_2',
+        name: 'Second',
+        connectionUrl: 'b.internal',
+      );
+      final pending = Completer<DataGatewayChangeResult>();
+      remote
+        ..onFetchOne = ((id) async => id == 'dg_1' ? first : second)
+        ..onUpdate = ((_, _) => pending.future);
+      await pumpForm(tester, editingId: 'dg_1');
+      await enter(tester, DataGatewayForm.portFieldKey, '50060');
+      await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
+      await tester.tap(find.byKey(DataGatewayForm.submitKey));
+      await tester.pump();
+
+      // go_router rebuilds the same page in place for another id.
+      await pumpForm(tester, editingId: 'dg_2');
+      pending.complete(changed(first.copyWith(connectionPort: 50060)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Saved First.'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(find.text('b.internal'), findsOneWidget);
+      // The fresh bloc is idle: the first save's submitting did not carry
+      // over to the second row's form.
+      expect(
+        tester
+            .widget<BgeSubmitButton>(find.byKey(DataGatewayForm.submitKey))
+            .submitting,
+        isFalse,
+      );
     });
   });
 
@@ -488,6 +788,7 @@ void main() {
           supportedLocales: DataGatewayLocalizations.supportedLocales,
           home: DataGatewayFormScreen(
             remote: remote,
+            session: lease,
             editingId: 'dg_1',
             onDone: (_) {},
           ),
@@ -678,6 +979,7 @@ void main() {
           ),
           home: DataGatewayFormScreen(
             remote: remote,
+            session: lease,
             access: access,
             editingId: 'dg_1',
             onDone: (_) {},

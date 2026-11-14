@@ -64,6 +64,10 @@ class UserScopeHost {
 
   DependencyContainer? _scope;
 
+  /// The lease of the open scope, kept so [close] can end it before anything
+  /// else in the scope is disposed.
+  _SessionLease? _lease;
+
   /// Whether a user-session scope is currently open.
   bool get isActive => _scope != null;
 
@@ -118,7 +122,10 @@ class UserScopeHost {
     }
 
     final child = _childFactory();
+    final lease = _SessionLease();
     _scope = child;
+    _lease = lease;
+    child.registerSingleton<SessionLease>(lease, dispose: (_) => lease.end());
     try {
       await install(_UserScopeView(user: child, base: _parent));
     } on Object catch (_) {
@@ -135,17 +142,44 @@ class UserScopeHost {
     }
   }
 
+  /// Ends the open scope's [SessionLease] now, without closing the scope. A
+  /// no-op when none is open, or its lease has already ended.
+  ///
+  /// For an owner that queues [close] behind other scope work: the session
+  /// is over the moment the owner is told to end it, not when the queue
+  /// reaches the teardown. A save that settles in between must already read
+  /// as belonging to a finished session (#694).
+  void endLease() => _lease?.end();
+
   /// Disposes the open user-session scope — every registration is closed,
   /// through its `dispose:` callback or as a [Disposable] — and detaches it.
   /// A no-op when none is open.
   ///
   /// The scope is detached *before* its disposal is awaited, so a throwing
   /// dispose callback still leaves this host closed and reusable.
+  ///
+  /// The scope's [SessionLease] ends first, before anything in the scope is
+  /// disposed. Disposal can make an in-flight save fail (its repository is
+  /// gone), and that failure must already read as belonging to a finished
+  /// session, or its outcome would be said to the next account (#694).
   Future<void> close() async {
     final scope = _scope;
     _scope = null;
+    _lease?.end();
+    _lease = null;
     if (scope != null) await scope.dispose();
   }
+}
+
+/// The lease [UserScopeHost] registers in each user-session scope. It ends
+/// when the host closes the scope; ending twice is harmless.
+class _SessionLease implements SessionLease {
+  bool _live = true;
+
+  @override
+  bool get isLive => _live;
+
+  void end() => _live = false;
 }
 
 /// The container view handed to a user-scope installer (#135): registrations

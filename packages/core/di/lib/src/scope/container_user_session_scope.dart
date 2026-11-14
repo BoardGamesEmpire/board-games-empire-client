@@ -75,6 +75,10 @@ class ContainerUserSessionScope implements UserSessionScope {
   String? _activeUserId;
   bool _disposed = false;
 
+  /// Counts [deactivate] and [dispose] calls, so an [activate] can tell
+  /// whether the session was ended while it waited on the chain.
+  int _endRequests = 0;
+
   @override
   String? get activeUserId => _activeUserId;
 
@@ -82,8 +86,13 @@ class ContainerUserSessionScope implements UserSessionScope {
   /// treats [deactivate] as a no-op.
   bool get isDisposed => _disposed;
 
+  /// An activation that a [deactivate] or [dispose] overtook while it was
+  /// queued still runs, and the queued teardown undoes it. Its
+  /// [SessionLease] is ended as it is created, though: the end request found
+  /// no lease to end, and the session it opens is already over (#694).
   @override
   Future<void> activate(String userId) {
+    final endRequestsAtCall = _endRequests;
     return _enqueue(() async {
       if (_disposed) {
         throw StateError(
@@ -99,6 +108,9 @@ class ContainerUserSessionScope implements UserSessionScope {
       await _teardown();
 
       await _host.open((view) async {
+        // The lease exists from here; an end request from now on ends it
+        // directly.
+        if (_endRequests != endRequestsAtCall) _host.endLease();
         for (final installer in _installers) {
           await installer.install(view, _server, userId);
         }
@@ -107,14 +119,25 @@ class ContainerUserSessionScope implements UserSessionScope {
     });
   }
 
+  /// Ends the session's [SessionLease] at once, then queues the teardown:
+  /// the caller has ended the session, whatever the chain is still working
+  /// through (#694).
   @override
-  Future<void> deactivate() => _enqueue(_teardown);
+  Future<void> deactivate() {
+    _endRequests++;
+    _host.endLease();
+    return _enqueue(_teardown);
+  }
 
   /// Ends any live session and closes this holder permanently. Idempotent.
   ///
   /// Terminal, unlike [deactivate]: after this an [activate] throws rather
-  /// than building a scope with no owner left to dispose it.
+  /// than building a scope with no owner left to dispose it. Like
+  /// [deactivate], it ends the session's [SessionLease] at once, before the
+  /// teardown is queued (#694).
   Future<void> dispose() {
+    _endRequests++;
+    _host.endLease();
     return _enqueue(() async {
       if (_disposed) return;
       _disposed = true;

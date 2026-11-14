@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:di/di.dart' show LocalClockService;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
@@ -101,6 +102,7 @@ void main() {
                   builder: (_) => CollectionEntryScreen(
                     repository: collection,
                     sender: sender,
+                    session: FakeSessionLease(),
                     entryId: 'gc-1',
                   ),
                 ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,6 +41,7 @@ const _storedMax = 2147483647;
 void main() {
   late _MockGameCollectionRepository repository;
   late _MockSyncOperationSender sender;
+  late FakeSessionLease lease;
 
   /// What the sheet resolved to, once it has.
   late CollectionSync? result;
@@ -98,6 +100,7 @@ void main() {
   setUp(() {
     repository = _MockGameCollectionRepository();
     sender = _MockSyncOperationSender();
+    lease = FakeSessionLease();
     when(() => sender.deliver(any(), any()))
         .thenAnswer((_) async => const SyncDelivered());
     result = null;
@@ -176,6 +179,7 @@ void main() {
               context,
               repository: repository,
               sender: sender,
+              session: lease,
               game: wingspan,
               options: options ?? [option(onSwitch)],
               platformGameId: platformGameId,
@@ -664,6 +668,31 @@ void main() {
     );
     expect(resolved, isTrue);
     expect(result, CollectionSync.queued);
+  });
+
+  testWidgets('an add dismissed mid-flight says nothing once the session has '
+      'ended', (tester) async {
+    final send = Completer<SyncDelivery>();
+    when(() => sender.deliver(any(), any())).thenAnswer((_) => send.future);
+    await open(tester);
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await tester.ensureVisible(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pump();
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+    lease.isLive = false;
+
+    send.complete(const SyncDelivered());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsNothing);
+    // The caller still gets the outcome: only the message is skipped.
+    expect(resolved, isTrue);
+    expect(result, CollectionSync.synced);
   });
 
   testWidgets('an add that lands while a dismissed sheet is still leaving '

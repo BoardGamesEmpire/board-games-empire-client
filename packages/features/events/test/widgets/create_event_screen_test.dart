@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
@@ -8,6 +9,7 @@ import 'package:events/src/create/event_invitees_section.dart';
 import 'package:events/src/create/event_rules_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
@@ -86,6 +88,9 @@ const _queuedCopy = "Event saved. It'll be sent when you're back online.";
 /// The heading of every banner a create that failed shows: some of their
 /// messages give only a cause.
 const _failedTitle = "Couldn't create the event";
+const _refusedLateCopy =
+    "The server didn't accept this event. It's saved on this device: review "
+    'it from the home screen to try again or discard it.';
 const _refusedCopy =
     "Someone you invited may not accept invites from you. Change who's "
     'invited and try again.';
@@ -111,6 +116,9 @@ void main() {
   late _MockEventRepository repo;
   late _MockSyncOperationSender sender;
   late FakeUserRemote users;
+
+  /// The session the screen was opened in (#694).
+  late FakeSessionLease lease;
 
   /// Every create the repository answered, in order.
   late List<_Created> creates;
@@ -151,6 +159,7 @@ void main() {
     repo = _MockEventRepository();
     sender = _MockSyncOperationSender();
     users = FakeUserRemote()..onSearchUsers = (_) async => pageOf([_ana, _bo]);
+    lease = FakeSessionLease();
     creates = [];
     created = [];
 
@@ -206,6 +215,7 @@ void main() {
                 repository: repo,
                 sender: sender,
                 users: users,
+                session: lease,
                 households: households,
                 householdId: householdId,
                 now: () => now,
@@ -929,6 +939,226 @@ void main() {
         inBanner(CreateEventScreen.refusedKey, _refusedHouseholdCopy),
         findsOneWidget,
       );
+    });
+
+    // #464: the create outlives the form. Left before it lands, it still
+    // says how it went, on the page beneath, and goes nowhere: the user
+    // already has.
+    group('left mid-create', () {
+      late CreateEventBloc bloc;
+
+      /// Holds each send on the completer this returns. Made in the test
+      /// body, inside its fake async zone: one made in setUp completes
+      /// outside it, where pumping never gets to it.
+      Completer<SyncDelivery> holdSend() {
+        final delivery = Completer<SyncDelivery>();
+        when(() => sender.deliver(any(), any()))
+            .thenAnswer((_) => delivery.future);
+        return delivery;
+      }
+
+      /// Submits a filled-in form, with the create on its way.
+      Future<void> submitHeld(WidgetTester tester) async {
+        await open(tester);
+        await fill(tester);
+        await submit(tester);
+        await tester.pump();
+        bloc = BlocProvider.of<CreateEventBloc>(
+          tester.element(find.byKey(CreateEventScreen.titleKey)),
+        );
+        expect(bloc.state, isA<CreateEventSubmitting>());
+      }
+
+      /// Submits a filled-in form, then goes back to the page beneath, and
+      /// lets the form go, while the create is on its way.
+      Future<void> submitThenLeave(WidgetTester tester) async {
+        await submitHeld(tester);
+
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(CreateEventScreen), findsNothing);
+      }
+
+      Future<bool> closed(WidgetTester tester) async {
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+        return bloc.isClosed;
+      }
+
+      /// The page beneath is the only route: nothing was pushed or popped
+      /// after the user went back, and `onCreated` wasn't called.
+      void expectStackUnchanged(WidgetTester tester) {
+        expect(find.text('open'), findsOneWidget);
+        expect(Navigator.of(tester.element(find.text('open'))).canPop(), false);
+        expect(created, isEmpty);
+      }
+
+      testWidgets('left mid-create, the outcome is still said', (tester) async {
+        final delivery = holdSend();
+        await submitThenLeave(tester);
+        // Kept for the create still on its way.
+        expect(await closed(tester), isFalse);
+
+        delivery.complete(const SyncDelivered(eventId: 'ev_server'));
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_syncedCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-create, a create left queued says so', (
+        tester,
+      ) async {
+        final delivery = holdSend();
+        await submitThenLeave(tester);
+
+        delivery.complete(
+          SyncFailed(SyncFailure.unreachable, Exception('offline')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_queuedCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-create, a refusal is still said', (tester) async {
+        final delivery = holdSend();
+        await submitThenLeave(tester);
+
+        delivery.complete(_refusedQuietly);
+        await tester.pumpAndSettle();
+
+        // Not the banner's heading: the refused event stays on the device,
+        // so the bar says where to review it (#190).
+        expect(inSnackBar(_refusedLateCopy), findsOneWidget);
+        expect(inSnackBar(_failedTitle), findsNothing);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-create, a failure here is still said', (
+        tester,
+      ) async {
+        final create = Completer<_Created>();
+        when(() => repo.create(any())).thenAnswer((_) => create.future);
+        await submitThenLeave(tester);
+
+        create.completeError(StateError('database locked'));
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_failedTitle), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-create, nothing is said once the session has '
+          'ended', (tester) async {
+        final delivery = holdSend();
+        await submitThenLeave(tester);
+        lease.isLive = false;
+
+        delivery.complete(const SyncDelivered(eventId: 'ev_server'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SnackBar), findsNothing);
+        expectStackUnchanged(tester);
+        // Still closed: ending the session skips the message, not the close.
+        expect(await closed(tester), isTrue);
+      });
+
+      // The shell ends a session in the same turn it routes away, and the
+      // popped route stays mounted through its exit. A create that settles
+      // there asks the lease (#694), is said as it would be once the form
+      // had gone, and goes nowhere (#464).
+      group("on the route's way out", () {
+        /// Submits a create held on its way: the write here when it [fails],
+        /// else the send, which lands. Pops the form and, in the same turn
+        /// when [endSession], ends the session, then pumps 50 ms into the
+        /// exit. The returned function gives the answer and lets it reach the
+        /// form, still inside the exit.
+        Future<Future<void> Function()> submitThenPop(
+          WidgetTester tester, {
+          required bool fails,
+          bool endSession = false,
+        }) async {
+          final create = Completer<_Created>();
+          final delivery = holdSend();
+          if (fails) {
+            when(() => repo.create(any())).thenAnswer((_) => create.future);
+          }
+          await submitHeld(tester);
+          Navigator.of(
+            tester.element(find.byKey(CreateEventScreen.titleKey)),
+          ).pop();
+          if (endSession) lease.isLive = false;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(CreateEventScreen), findsOneWidget);
+
+          Future<void> answer() async {
+            if (fails) {
+              create.completeError(StateError('database locked'));
+            } else {
+              delivery.complete(const SyncDelivered(eventId: 'ev_server'));
+            }
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 50));
+            expect(find.byType(CreateEventScreen), findsOneWidget);
+          }
+
+          return answer;
+        }
+
+        /// The keys of the bars showing: a bar said again is a new key.
+        Set<Key?> barKeys(WidgetTester tester) => {
+          for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+            bar.key,
+        };
+
+        for (final (name, fails) in [('lands', false), ('fails', true)]) {
+          testWidgets('a create that $name after the session ended says '
+              'nothing, and the bloc still closes', (tester) async {
+            final answer = await submitThenPop(
+              tester,
+              fails: fails,
+              endSession: true,
+            );
+
+            await answer();
+            expect(find.byType(SnackBar), findsNothing);
+            await tester.pumpAndSettle();
+
+            expect(find.byType(SnackBar), findsNothing);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+
+        for (final (name, fails, copy) in [
+          ('lands', false, _syncedCopy),
+          ('fails', true, _failedTitle),
+        ]) {
+          testWidgets('a create that $name is said once, and goes nowhere', (
+            tester,
+          ) async {
+            final answer = await submitThenPop(tester, fails: fails);
+
+            await answer();
+            // One bar, drawn in both pages' scaffolds while the exit runs.
+            expect(inSnackBar(copy), findsWidgets);
+            final said = barKeys(tester);
+            expect(said, hasLength(1));
+            await tester.pumpAndSettle();
+
+            expect(inSnackBar(copy), findsOneWidget);
+            expect(barKeys(tester), said);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+      });
     });
   });
 

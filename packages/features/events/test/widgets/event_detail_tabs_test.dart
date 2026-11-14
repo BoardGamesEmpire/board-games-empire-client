@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
@@ -113,6 +114,7 @@ void main() {
     home: EventDetailScreen(
       eventId: 'e-1',
       repository: repository,
+      session: FakeSessionLease(),
       // Nobody has offered a game: the Games tab is the empty state, under
       // its header. Its rows are audited with the tab's own suite.
       remote: FakeEventRemote.detail(

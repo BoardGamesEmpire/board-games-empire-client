@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:data_gateway/src/bloc/data_gateway_form_bloc.dart';
 import 'package:data_gateway/src/bloc/data_gateway_form_event.dart';
@@ -5,6 +7,7 @@ import 'package:data_gateway/src/bloc/data_gateway_form_state.dart';
 import 'package:data_gateway/src/widgets/data_gateway_form.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
@@ -15,6 +18,19 @@ import 'package:ui/ui.dart';
 /// SnackBar and then calls [onDone], because the confirmation has to outlive
 /// the route the way the household create flow's does (#191). Every failure
 /// stays on the form, above the submit it answers.
+///
+/// ## A save that outlives the form
+///
+/// The form holds its bloc, not a `BlocProvider`, so a save the user walks
+/// away from still ends (#464). Left while one is under way, by the back
+/// button or by a `go` to another row, the bloc is kept until the save
+/// settles. Then a SnackBar over whatever page is showing says it was saved,
+/// or, since the form's banner went with it, that it failed, and the bloc
+/// closes, through `closeWhenSettled`. One that settles while the route is
+/// still on its way out is said the same way. That late outcome never calls
+/// [onDone]: the user has already gone somewhere. No outcome is said once
+/// [session] has ended, whether the form is gone or still leaving: it is no
+/// news to whoever signs in next (#694). The bloc closes either way.
 ///
 /// ## Access
 ///
@@ -31,6 +47,7 @@ import 'package:ui/ui.dart';
 class DataGatewayFormScreen extends StatelessWidget {
   const DataGatewayFormScreen({
     required this.remote,
+    required this.session,
     required this.onDone,
     this.access,
     this.editingId,
@@ -41,6 +58,11 @@ class DataGatewayFormScreen extends StatelessWidget {
   static const Key errorBannerKey = Key('data_gateway_form.error_banner');
 
   final DataGatewayRemoteDataSource remote;
+
+  /// The user session this screen was opened in, from the same container as
+  /// [remote] and [access]. A save that settles after the form is gone is
+  /// said only while it is live (#694).
+  final SessionLease session;
 
   /// The session's access, or null for a composition without one, which
   /// opens the form read-only.
@@ -58,19 +80,154 @@ class DataGatewayFormScreen extends StatelessWidget {
   final void Function(BuildContext context) onDone;
 
   @override
-  Widget build(BuildContext context) => BlocProvider<DataGatewayFormBloc>(
+  Widget build(BuildContext context) => _DataGatewayFormOwner(
     // Keyed on the row: go_router keys a page by its path pattern, so going
     // from one edit location straight to another rebuilds this screen in
     // place. A new id has to start a new bloc and new fields, or the form
-    // would show and save the first row under the second's URL.
+    // would show and save the first row under the second's URL. The old
+    // bloc is not lost with it: its owner closes it once its save settles.
     key: ValueKey<String?>(editingId),
-    create: (_) => DataGatewayFormBloc(
-      remote: remote,
-      access: access,
-      editingId: editingId,
-    )..add(const DataGatewayFormStarted()),
-    child: _DataGatewayFormView(editing: editingId != null, onDone: onDone),
+    screen: this,
   );
+}
+
+/// Owns the form's bloc, so it can outlive the form's route while a save is
+/// under way (#464). Held here rather than by a `BlocProvider`, which would
+/// close it with the form: a save still under way then would never say how
+/// it ended. See `dispose`.
+class _DataGatewayFormOwner extends StatefulWidget {
+  const _DataGatewayFormOwner({required this.screen, super.key});
+
+  final DataGatewayFormScreen screen;
+
+  @override
+  State<_DataGatewayFormOwner> createState() => _DataGatewayFormOwnerState();
+}
+
+class _DataGatewayFormOwnerState extends State<_DataGatewayFormOwner> {
+  late final DataGatewayFormBloc _bloc;
+
+  /// The lease the screen had when the bloc was made, beside the remote and
+  /// access it came from: [dispose] can't trust a later build's.
+  late final SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the form is mounted: a
+  /// save that settles after it is gone is said with them, and [dispose] can't
+  /// look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late DataGatewayLocalizations _l10n;
+
+  @override
+  void initState() {
+    super.initState();
+    final screen = widget.screen;
+    _session = screen.session;
+    _bloc = DataGatewayFormBloc(
+      remote: screen.remote,
+      access: screen.access,
+      editingId: screen.editingId,
+    )..add(const DataGatewayFormStarted());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = DataGatewayLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Left with a save under way: it settles, is said while the session
+    // lives, and the bloc closes then. Otherwise the form has already shown
+    // whatever there was, and the bloc closes now.
+    unawaited(
+      closeWhenSettled<DataGatewayFormState>(
+        current: _bloc.state,
+        states: _bloc.stream,
+        underWay: _underWay,
+        outcomeOf: (state) => _outcomeOf(_l10n, state),
+        say: _messenger.say,
+        close: _bloc.close,
+      ),
+    );
+    super.dispose();
+  }
+
+  static bool _underWay(DataGatewayFormState state) =>
+      state is DataGatewayFormEditing && state.submitting;
+
+  /// Answers a save that has just settled. Leaving after it is
+  /// [_LeaveWhenCurrent]'s, which leaves only a route that is current.
+  void _onSettled(BuildContext context, DataGatewayFormState state) {
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so the outcome is said as it would be once the form had gone, a
+    // failure too (#464). By [dispose] it has settled, so `closeWhenSettled`
+    // says nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      _messenger.say(_outcomeOf(_l10n, state));
+      return;
+    }
+    // A failure stays: the form draws it as a banner.
+    if (state case final DataGatewayFormSaved saved) {
+      // Shown before leaving, while this route's context is still mounted;
+      // the messenger outlives the route. Shown whether the save finds the
+      // form in view or covered, because the save happened either way.
+      _messenger.say(_savedMessage(_l10n, saved));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => BlocProvider<DataGatewayFormBloc>.value(
+    value: _bloc,
+    child: BlocListener<DataGatewayFormBloc, DataGatewayFormState>(
+      listenWhen: (previous, current) =>
+          _underWay(previous) && !_underWay(current),
+      listener: _onSettled,
+      child: _DataGatewayFormView(
+        editing: widget.screen.editingId != null,
+        onDone: widget.screen.onDone,
+      ),
+    ),
+  );
+}
+
+/// What is said of a save that settled once the user had left the form,
+/// after it went or while it was going (#464), or null for a state that is
+/// no outcome: a save as the listener says it, and a failure, whose banner
+/// went with the form, as a bar that names what wasn't saved and asks
+/// nothing of a form that is gone.
+///
+/// A refusal for the user's role is said as the role's refusal, as on the
+/// form. An add that fails once access no longer allows it settles as
+/// [DataGatewayFormDenied], not as a failure: the form would have shown
+/// access-denied in its place. Said late, it is that refusal too, since
+/// trying again would fail the same way.
+String? _outcomeOf(DataGatewayLocalizations l10n, DataGatewayFormState state) =>
+    switch (state) {
+      DataGatewayFormSaved() => _savedMessage(l10n, state),
+      DataGatewayFormEditing(failure: DataGatewayFormFailure.refused) ||
+      DataGatewayFormDenied() => l10n.dataGatewayChangeRefused,
+      DataGatewayFormEditing(failure: != null, :final original?) =>
+        l10n.dataGatewaySaveFailedLate(original.name),
+      DataGatewayFormEditing(failure: != null) => l10n.dataGatewayAddFailedLate,
+      _ => null,
+    };
+
+String _savedMessage(
+  DataGatewayLocalizations l10n,
+  DataGatewayFormSaved saved,
+) {
+  final name = saved.result.dataGateway.name;
+  if (!saved.created) return l10n.dataGatewaySaved(name);
+  return switch (saved.result.connectionAttempt?.succeeded) {
+    true => l10n.dataGatewayAddedConnected(name),
+    false => l10n.dataGatewayAddedNotConnected(name),
+    null => l10n.dataGatewayAdded(name),
+  };
 }
 
 class _DataGatewayFormView extends StatefulWidget {
@@ -138,19 +295,6 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  static String _savedMessage(
-    DataGatewayLocalizations l10n,
-    DataGatewayFormSaved saved,
-  ) {
-    final name = saved.result.dataGateway.name;
-    if (!saved.created) return l10n.dataGatewaySaved(name);
-    return switch (saved.result.connectionAttempt?.succeeded) {
-      true => l10n.dataGatewayAddedConnected(name),
-      false => l10n.dataGatewayAddedNotConnected(name),
-      null => l10n.dataGatewayAdded(name),
-    };
-  }
-
   static String _failureMessage(
     DataGatewayLocalizations l10n,
     DataGatewayFormFailure failure,
@@ -176,17 +320,7 @@ class _DataGatewayFormViewState extends State<_DataGatewayFormView> {
     return BlocListener<DataGatewayFormBloc, DataGatewayFormState>(
       listenWhen: _closesForm,
       listener: _onFormClosed,
-      child: BlocConsumer<DataGatewayFormBloc, DataGatewayFormState>(
-        listenWhen: (_, state) => state is DataGatewayFormSaved,
-        listener: (context, state) {
-          if (state is! DataGatewayFormSaved) return;
-          // Shown before leaving, while this route's context is still mounted;
-          // the messenger outlives the route. Shown however the save finds the
-          // form, because the save happened either way.
-          ScaffoldMessenger.of(
-            context,
-          ).replaceSnackBar(_savedMessage(l10n, state));
-        },
+      child: BlocBuilder<DataGatewayFormBloc, DataGatewayFormState>(
         builder: (context, state) => switch (state) {
           DataGatewayFormLoading() => BgePage(
             title: title,

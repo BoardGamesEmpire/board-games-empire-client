@@ -11,6 +11,7 @@ import 'package:game_collection/src/form/collection_quantity_field.dart';
 import 'package:game_collection/src/form/collection_rating_field.dart';
 import 'package:game_collection/src/medium_label.dart';
 import 'package:game_collection/src/sync/collection_sync.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
@@ -39,15 +40,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// take as long as the network's connect timeout. The add goes on, and its
 /// SnackBar shows once it settles, so a dismissed add is never silent: one
 /// whose write fails after the sheet is gone says it wasn't added. A failure
-/// the sheet already showed gets no SnackBar.
+/// the sheet already showed gets no SnackBar. Nor does one that settles after
+/// [session] ended: it is no news to whoever signs in next (#694).
 ///
 /// [repository] and [sender] must be the active session's. The caller
 /// resolves them per use: one held across a session change is disposed, and
-/// throws. The add is sent through [sender] at once.
+/// throws. [session] is the lease of that same session, taken at the press.
+/// The add is sent through [sender] at once.
 Future<CollectionSync?> showAddToCollectionSheet(
   BuildContext context, {
   required GameCollectionRepository repository,
   required SyncOperationSender sender,
+  required SessionLease session,
   required Game game,
   required List<CollectionAddOption> options,
   String? platformGameId,
@@ -63,9 +67,9 @@ Future<CollectionSync?> showAddToCollectionSheet(
         options.any((option) => option.platformGame.id == platformGameId),
     'The platform chosen must be one the sheet offers.',
   );
-  // Captured now: the sheet's own context is gone by the time the add
-  // settles.
-  final messenger = ScaffoldMessenger.of(context);
+  // Taken now: the sheet's own context is gone by the time the add settles.
+  final messenger = SessionMessenger(sessionIsLive: () => session.isLive)
+    ..attach(context);
   final l10n = GameCollectionLocalizations.of(context);
   // Held here rather than by the sheet, so an add still running when the
   // sheet is dismissed settles and says so.
@@ -107,9 +111,7 @@ Future<CollectionSync?> showAddToCollectionSheet(
       null when dismissedMidAdd => l10n.addToCollectionDismissedFailed(title),
       null => null,
     };
-    if (message != null && messenger.mounted) {
-      messenger.replaceSnackBar(message);
-    }
+    messenger.say(message);
     return sync;
   } finally {
     // Not awaited, as a BlocProvider doesn't await it: the outcome is

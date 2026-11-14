@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show Tristate;
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
@@ -225,6 +226,9 @@ void main() {
   late _MockEventRepository repository;
   late StreamController<EventDetail?> cache;
 
+  /// The session the screen was opened in (#694).
+  late FakeSessionLease lease;
+
   setUpAll(() {
     registerFallbackValue(_detail().snapshot);
     registerFallbackValue(EventAccessSource.read);
@@ -233,6 +237,7 @@ void main() {
   setUp(() {
     repository = _MockEventRepository();
     cache = StreamController<EventDetail?>.broadcast();
+    lease = FakeSessionLease();
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
     when(() => repository.cacheEvent(any(), source: any(named: 'source')))
         .thenAnswer((_) async {});
@@ -300,6 +305,7 @@ void main() {
     home: EventDetailScreen(
       eventId: eventId,
       repository: repository,
+      session: lease,
       remote: remote,
       households: households,
       householdRole: householdRole,
@@ -2772,6 +2778,7 @@ void main() {
           builder: (_) => EventDetailScreen(
             eventId: 'e-1',
             repository: repository,
+            session: lease,
             remote: remote,
             // The app's pops too.
             onBack: (context) {
@@ -3181,6 +3188,290 @@ void main() {
         tester.getRect(find.byKey(EventDetailScreen.deleteConfirmKey)).bottom,
         lessThanOrEqualTo(640),
       );
+    });
+
+    // #464: the delete outlives the screen. Gone before the answer lands, it
+    // still says how it went, on the page beneath, and goes nowhere: the
+    // user already has.
+    group('left mid-delete', () {
+      late EventActionsBloc bloc;
+
+      setUpAll(() => registerFallbackValue(_event()));
+
+      /// The screen over a page of its own, as the shell pushes it, from
+      /// [remote], with a way back that pops as the app's does. Shows
+      /// [detail] once it is up.
+      Future<void> pushed(
+        WidgetTester tester,
+        EventRemoteDataSource remote,
+        EventDetail detail,
+      ) async {
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigator,
+            theme: BgeTheme.light(),
+            localizationsDelegates: const [
+              ...EventsLocalizations.localizationsDelegates,
+              // The Games tab's Filters, its sheet and its chips (#851).
+              GameFiltersLocalizations.delegate,
+            ],
+            supportedLocales: EventsLocalizations.supportedLocales,
+            home: const Scaffold(body: Text('Home')),
+          ),
+        );
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => EventDetailScreen(
+              eventId: 'e-1',
+              repository: repository,
+              session: lease,
+              remote: remote,
+              onBack: (context) {
+                back(context);
+                Navigator.of(context).pop();
+              },
+              now: () => now,
+            ),
+          ),
+        );
+        await animate(tester);
+        cache.add(detail);
+        await settle(tester);
+        bloc = BlocProvider.of<EventActionsBloc>(
+          tester.element(find.text(detail.snapshot.event.title)),
+        );
+      }
+
+      /// Goes back to the page beneath while a request is out, and lets the
+      /// screen go.
+      Future<void> leave(WidgetTester tester) async {
+        expect(bloc.state.busy, isTrue);
+        Navigator.of(tester.element(find.byType(EventDetailScreen))).pop();
+        await tester.pumpAndSettle();
+        expect(find.byType(EventDetailScreen), findsNothing);
+      }
+
+      /// Confirms a delete whose answer waits on the completer this returns,
+      /// then leaves while it is out. The completer is made here, in the
+      /// test body's fake async zone: one made in setUp completes outside
+      /// it, where pumping never gets to it.
+      Future<Completer<void>> confirmThenGo(WidgetTester tester) async {
+        final deleting = Completer<void>();
+        await pushed(
+          tester,
+          answering(deleted: (_) => deleting.future),
+          hosted(),
+        );
+        await openDialog(tester);
+        await confirm(tester);
+        await leave(tester);
+        return deleting;
+      }
+
+      Future<bool> closed(WidgetTester tester) async {
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+        return bloc.isClosed;
+      }
+
+      Finder inSnackBar(String copy) =>
+          find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+      /// The page beneath is the only route: nothing was pushed or popped
+      /// after the user went back, and the way back wasn't asked for again.
+      void expectStackUnchanged(WidgetTester tester) {
+        expect(find.text('Home'), findsOneWidget);
+        expect(Navigator.of(tester.element(find.text('Home'))).canPop(), false);
+        expect(backs, 0);
+      }
+
+      testWidgets('left mid-delete, the outcome is still said', (tester) async {
+        final deleting = await confirmThenGo(tester);
+        // Kept for the delete still out.
+        expect(await closed(tester), isFalse);
+
+        deleting.complete();
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_deletedCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        verify(() => repository.removeDeletedEvent('e-1')).called(1);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-delete, a failure is still said', (tester) async {
+        final deleting = await confirmThenGo(tester);
+
+        deleting.completeError(_offline);
+        await tester.pumpAndSettle();
+
+        // The banner's words: the banner went with the screen.
+        expect(inSnackBar(_failedCopy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-delete, an event found gone is said as gone, not '
+          'as a failure', (tester) async {
+        final deleting = await confirmThenGo(tester);
+
+        deleting.completeError(const EventRemoteNotFoundException('gone'));
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(_goneCopy), findsOneWidget);
+        expect(find.text(_failedCopy), findsNothing);
+        expectStackUnchanged(tester);
+        verify(() => repository.removeDeletedEvent('e-1')).called(1);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-delete, nothing is said once the session has '
+          'ended', (tester) async {
+        final deleting = await confirmThenGo(tester);
+        lease.isLive = false;
+
+        deleting.complete();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SnackBar), findsNothing);
+        expectStackUnchanged(tester);
+        // The delete still went through, and the event still leaves the
+        // cache: the server deleted it for everyone.
+        verify(() => repository.removeDeletedEvent('e-1')).called(1);
+        // Still closed: ending the session skips the message, not the close.
+        expect(await closed(tester), isTrue);
+      });
+
+      // The shell ends a session in the same turn it routes away, and the
+      // popped route stays mounted through its exit. A delete that ends
+      // there asks the lease (#694), is said as it would be once the screen
+      // had gone, and goes nowhere (#464).
+      group("on the route's way out", () {
+        /// Confirms a delete whose answer waits on the completer this
+        /// returns, pops the screen and, in the same turn when [endSession],
+        /// ends the session, then pumps 50 ms into the exit.
+        Future<Completer<void>> confirmThenPop(
+          WidgetTester tester, {
+          bool endSession = false,
+        }) async {
+          final deleting = Completer<void>();
+          await pushed(
+            tester,
+            answering(deleted: (_) => deleting.future),
+            hosted(),
+          );
+          await openDialog(tester);
+          await confirm(tester);
+          expect(bloc.state.busy, isTrue);
+          Navigator.of(tester.element(find.byType(EventDetailScreen))).pop();
+          if (endSession) lease.isLive = false;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(EventDetailScreen), findsOneWidget);
+          return deleting;
+        }
+
+        /// Gives the answer, and lets it reach the screen, still inside the
+        /// exit.
+        Future<void> answer(
+          WidgetTester tester,
+          Completer<void> deleting, {
+          required bool fails,
+        }) async {
+          if (fails) {
+            deleting.completeError(_offline);
+          } else {
+            deleting.complete();
+          }
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(EventDetailScreen), findsOneWidget);
+        }
+
+        /// The keys of the bars showing: a bar said again is a new key.
+        Set<Key?> barKeys(WidgetTester tester) => {
+          for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+            bar.key,
+        };
+
+        for (final (name, fails) in [('lands', false), ('fails', true)]) {
+          testWidgets('a delete that $name after the session ended says '
+              'nothing, and the bloc still closes', (tester) async {
+            final deleting = await confirmThenPop(tester, endSession: true);
+
+            await answer(tester, deleting, fails: fails);
+            expect(find.byType(SnackBar), findsNothing);
+            await tester.pumpAndSettle();
+
+            expect(find.byType(SnackBar), findsNothing);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+
+        for (final (name, fails, copy) in [
+          ('lands', false, _deletedCopy),
+          ('fails', true, _failedCopy),
+        ]) {
+          testWidgets('a delete that $name is said once, and goes nowhere', (
+            tester,
+          ) async {
+            final deleting = await confirmThenPop(tester);
+
+            await answer(tester, deleting, fails: fails);
+            // One bar, drawn in both pages' scaffolds while the exit runs.
+            expect(inSnackBar(copy), findsWidgets);
+            final said = barKeys(tester);
+            expect(said, hasLength(1));
+            await tester.pumpAndSettle();
+
+            expect(inSnackBar(copy), findsOneWidget);
+            expect(barKeys(tester), said);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+      });
+
+      testWidgets('left mid-archive, nothing is said: only a delete outlives '
+          'the screen', (tester) async {
+        // Any other action's end is a banner over the event, which went
+        // with the screen. It still ends, and the bloc closes then.
+        when(() => repository.cacheEventRow(any()))
+            .thenAnswer((_) async => true);
+        final writing = Completer<Event>();
+        final ended = _detail(
+          occurrences: [
+            confirmed(
+              'o-1',
+              DateTime(2026, 10, 20, 19),
+              end: DateTime(2026, 10, 20, 23),
+            ).copyWith(eventId: 'e-1'),
+          ],
+          attendance: _attending(EventRole.host),
+        );
+        final remote = FakeEventRemote.detail(
+          (_) => ended.snapshot,
+          statusWritten: (_) => writing.future,
+        );
+        await pushed(tester, remote, ended);
+        await openMenu(tester);
+        await tester.tap(find.byKey(EventDetailScreen.archiveKey));
+        await animate(tester);
+        expect(remote.statusRequests, [
+          (call: 'archive', id: 'e-1', reason: null),
+        ]);
+        await leave(tester);
+        expect(await closed(tester), isFalse);
+
+        writing.complete(_event().copyWith(status: EventStatus.archived));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SnackBar), findsNothing);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
     });
   });
 
@@ -9294,6 +9585,7 @@ void main() {
         home: EventDetailScreen(
           eventId: 'e-2',
           repository: repository,
+          session: lease,
           now: () => now,
         ),
       ),
@@ -9303,6 +9595,38 @@ void main() {
     verify(() => repository.watchEvent('e-2')).called(1);
     expect(find.byKey(EventDetailScreen.loadingKey), findsOneWidget);
     expect(find.text('Catan night'), findsNothing);
+  });
+
+  testWidgets('a new id is new actions too, and the old ones close with '
+      'nothing out', (tester) async {
+    // The actions' bloc is held past the route (#464), by an owner keyed on
+    // the id, as the providers are (#466).
+    final remote = FakeEventRemote.detail(
+      (_) => _detail().snapshot,
+      pool: (_) => const [],
+      nominations: (_) => const [],
+    );
+    EventActionsBloc actionsOf() => BlocProvider.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.byType(EventDetailScreen),
+              matching: find.byType(Scaffold),
+            )
+            .first,
+      ),
+    );
+    await show(tester, _detail(), remote: remote, onBack: (_) {});
+    final first = actionsOf();
+
+    await tester.pumpWidget(
+      harness(eventId: 'e-2', remote: remote, onBack: (_) {}),
+    );
+    await settle(tester);
+
+    expect(actionsOf(), isNot(same(first)));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    expect(first.isClosed, isTrue);
   });
 
   testWidgets('lays out at 200% text on a narrow window', (tester) async {

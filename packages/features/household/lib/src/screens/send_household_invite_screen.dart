@@ -9,6 +9,7 @@ import 'package:household/src/bloc/send_household_invite_state.dart';
 import 'package:household/src/invites/invite_refusal_message.dart';
 import 'package:household/src/permissions/household_actions.dart';
 import 'package:household/src/widgets/household_role_label.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
@@ -41,6 +42,17 @@ import 'package:user_search/user_search.dart';
 /// [HouseholdInviteRemoteDataSource] and [UserRemoteDataSource], and leaves
 /// the screen in [onSent] or, for a member, [onMemberSent].
 ///
+/// The screen holds its send's bloc, not a `BlocProvider`, so a send the
+/// user walks away from still ends (#464). Left while one is on its way,
+/// the bloc is kept until it settles, a SnackBar over the page the user went
+/// to says it was sent, or, since the form's banner went with it, that it
+/// wasn't, and then the bloc closes, through `closeWhenSettled`. One that
+/// settles while the route is still on its way out is said the same way.
+/// That late outcome calls neither [onSent] nor [onMemberSent]: the user has
+/// already gone somewhere. No outcome is said once [session] has ended,
+/// whether the screen is gone or still leaving: it is no news to whoever
+/// signs in next (#694). The bloc closes either way.
+///
 /// The search is the shared user search (#499). Its copy comes from
 /// `UserSearchLocalizations`, so the caller registers that delegate beside
 /// this package's.
@@ -51,6 +63,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     required this.memberInvitePolicy,
     required this.remote,
     required this.users,
+    required this.session,
     required this.onSent,
     required this.onMemberSent,
     this.onRefresh,
@@ -87,14 +100,21 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   /// What person mode searches through for someone who has an account.
   final UserRemoteDataSource users;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [remote]. A send that settles after the screen is gone is said only
+  /// while it is live (#694).
+  final SessionLease session;
+
   /// Called once an owner's or admin's invite is sent, with this screen's
   /// context. A confirmation SnackBar is already showing, above the route.
+  /// Not called for a send that lands once the user has left (#464).
   final void Function(BuildContext context) onSent;
 
   /// Called in place of [onSent] once a member's invite is sent, or that of
   /// anyone else who isn't an owner or admin by the time it lands. They
   /// can't read the household's invites, so the caller takes them where
-  /// their own sent invites show (#569).
+  /// their own sent invites show (#569). Not called for a send that lands
+  /// once the user has left (#464).
   final void Function(BuildContext context) onMemberSent;
 
   /// Reads the household again after a send is refused with 403: the
@@ -110,56 +130,26 @@ class SendHouseholdInviteScreen extends StatelessWidget {
 
     final member = viewerRole == HouseholdRole.householdMember;
 
-    // Only a viewer who may read the household's invites goes back to them.
-    // Anyone else, including a member whose role changed under a send on
-    // its way, goes where their own sent invites show.
-    final manages = householdRoleActions(viewerRole)
-        .contains(HouseholdAction.manageInvites);
-
     // The blocs sit above the gate, so a send on its way when the viewer
     // loses the form still lands, and the form it comes back to is still
-    // sending rather than a fresh one to send again.
-    return MultiBlocProvider(
+    // sending rather than a fresh one to send again. Its end is answered
+    // there too.
+    return _SendInviteBlocs(
       // A new household is a new form (#466).
       key: ValueKey<String>(householdId),
-      providers: [
-        BlocProvider(
-          create: (_) => SendHouseholdInviteBloc(
-            householdId: householdId,
-            remote: remote,
-            onRefresh: onRefresh,
-          ),
-        ),
-        BlocProvider(create: (_) => UserSearchBloc(remote: users)),
-      ],
-      child: BlocListener<SendHouseholdInviteBloc, SendHouseholdInviteState>(
-        listenWhen: (_, state) => state is SendHouseholdInviteSent,
-        listener: (context, state) {
-          final status = (state as SendHouseholdInviteSent).invite.status;
-          ScaffoldMessenger.of(context).replaceSnackBar(
-            status == HouseholdInviteStatus.awaitingApproval
-                ? l10n.inviteSendDoneAwaitingApproval
-                : l10n.inviteSendDone,
-          );
-          if (manages) {
-            onSent(context);
-          } else {
-            onMemberSent(context);
-          }
-        },
-        child: roles.isEmpty
-            ? _notAllowed(context, l10n)
-            : BgePage(
-                title: Text(l10n.inviteSendTitle),
-                width: BgePageWidth.pane,
-                child: _SendForm(
-                  roles: roles,
-                  approvalNote:
-                      member &&
-                      memberInvitePolicy == MemberInvitePolicy.needsApproval,
-                ),
+      screen: this,
+      child: roles.isEmpty
+          ? _notAllowed(context, l10n)
+          : BgePage(
+              title: Text(l10n.inviteSendTitle),
+              width: BgePageWidth.pane,
+              child: _SendForm(
+                roles: roles,
+                approvalNote:
+                    member &&
+                    memberInvitePolicy == MemberInvitePolicy.needsApproval,
               ),
-      ),
+            ),
     );
   }
 
@@ -180,6 +170,142 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     );
   }
 }
+
+/// The send form's blocs, for one household (#466): its send's, held here
+/// so it outlives the route (#464), and its search's, on a provider. What is
+/// said of a send's end is said here.
+class _SendInviteBlocs extends StatefulWidget {
+  const _SendInviteBlocs({
+    required this.screen,
+    required this.child,
+    super.key,
+  });
+
+  final SendHouseholdInviteScreen screen;
+  final Widget child;
+
+  @override
+  State<_SendInviteBlocs> createState() => _SendInviteBlocsState();
+}
+
+class _SendInviteBlocsState extends State<_SendInviteBlocs> {
+  /// Held here rather than by a `BlocProvider`, which would close it with
+  /// the route: a send still on its way then would never say how it ended.
+  /// See [dispose].
+  late final SendHouseholdInviteBloc _bloc;
+
+  /// The lease the screen had when the bloc was made, beside the remote it
+  /// came from: [dispose] can't trust a later build's.
+  late final SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the screen is mounted: a
+  /// send that settles after it is gone is said with them, and [dispose] can't
+  /// look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late HouseholdLocalizations _l10n;
+
+  @override
+  void initState() {
+    super.initState();
+    final screen = widget.screen;
+    _session = screen.session;
+    _bloc = SendHouseholdInviteBloc(
+      householdId: screen.householdId,
+      remote: screen.remote,
+      onRefresh: screen.onRefresh,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = HouseholdLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Left with a send on its way: it settles, is said while the session
+    // lives, and the bloc closes then. Otherwise the screen has already
+    // shown whatever there was, and the bloc closes now.
+    unawaited(
+      closeWhenSettled<SendHouseholdInviteState>(
+        current: _bloc.state,
+        states: _bloc.stream,
+        underWay: (state) => state is SendHouseholdInviteSending,
+        outcomeOf: _lateOutcome,
+        say: _messenger.say,
+        close: _bloc.close,
+      ),
+    );
+    super.dispose();
+  }
+
+  /// What is said of a send that settled after the screen went, or while it
+  /// was going (#464): a sent invite as the listener says it, and a failure,
+  /// whose banner went with the form, by the banner's heading. The banner's
+  /// reason is left out: away from the form, there is nothing there to fix.
+  String? _lateOutcome(SendHouseholdInviteState state) => switch (state) {
+    SendHouseholdInviteSent() => _sentMessage(_l10n, state),
+    SendHouseholdInviteFailed() => _l10n.inviteSendFailedTitle,
+    SendHouseholdInviteEditing() || SendHouseholdInviteSending() => null,
+  };
+
+  /// Answers a send that has just ended.
+  void _onEnded(BuildContext context, SendHouseholdInviteState state) {
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so the outcome is said as it would be once the screen had gone, a
+    // failure too, and neither way back is taken (#464). By [dispose] it has
+    // settled, so `closeWhenSettled` says nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      _messenger.say(_lateOutcome(state));
+      return;
+    }
+    // A failure stays: the form draws it as a banner.
+    if (state case final SendHouseholdInviteSent sent) {
+      _messenger.say(_sentMessage(_l10n, sent));
+      final screen = widget.screen;
+      // Only a viewer who may read the household's invites goes back to
+      // them. Anyone else, including a member whose role changed under a
+      // send on its way, goes where their own sent invites show.
+      if (householdRoleActions(
+        screen.viewerRole,
+      ).contains(HouseholdAction.manageInvites)) {
+        screen.onSent(context);
+      } else {
+        screen.onMemberSent(context);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => MultiBlocProvider(
+    providers: [
+      BlocProvider<SendHouseholdInviteBloc>.value(value: _bloc),
+      BlocProvider(create: (_) => UserSearchBloc(remote: widget.screen.users)),
+    ],
+    child: BlocListener<SendHouseholdInviteBloc, SendHouseholdInviteState>(
+      listenWhen: (_, state) =>
+          state is SendHouseholdInviteSent ||
+          state is SendHouseholdInviteFailed,
+      listener: _onEnded,
+      child: widget.child,
+    ),
+  );
+}
+
+/// What the SnackBar says once an invite is sent: sent, or sent for an
+/// owner's or admin's approval. Said by the listener as the screen goes, or
+/// as a late outcome for a send that lands once the user has left (#464).
+String _sentMessage(
+  HouseholdLocalizations l10n,
+  SendHouseholdInviteSent state,
+) => state.invite.status == HouseholdInviteStatus.awaitingApproval
+    ? l10n.inviteSendDoneAwaitingApproval
+    : l10n.inviteSendDone;
 
 /// Why [role] may not send under [policy], or null when the cache can't say
 /// yet. Reached only when [offerableInviteRoles] offers nothing.

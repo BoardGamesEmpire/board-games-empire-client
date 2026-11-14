@@ -31,8 +31,12 @@
 /// quick look (#573, #607), `BgeInertButton` by buttons that keep focus
 /// while they can do nothing, at 16 call sites in `lib/` (#607, #807),
 /// `BgeFabLabel` by the 5 extended floating buttons, which it keeps on screen
-/// at large text (#50), `replaceSnackBar` by every SnackBar, at 12 uses in
-/// `lib/` (#343), and
+/// at large text (#50), `replaceSnackBar` by every SnackBar, at 4 uses in
+/// `lib/` (#343), `closeWhenSettled` by the 8 screens that save and then
+/// leave, at 8 call sites in `lib/`, all outside this package (#464),
+/// `SessionMessenger` by those 8 screens and the collection's add sheet,
+/// which say every bar through it, at 9 constructor calls in `lib/`, all
+/// outside this package (#464, #694), and
 /// `BgeLoadingState`, `BgeEmptyState` and `BgeStateSliver` by the loading,
 /// empty and denied surfaces of the feature screens, at 28, 38 and 60 call
 /// sites in `lib/` (#49, #807). `BgeOnlineOnly`, `BgeOnlineOnlyLabel`,
@@ -44,8 +48,9 @@
 /// `BgeOnlineOnlyNote`'s are inside this package's own widgets.
 /// `BgeMenuButton` is both of the navigation shell's menu buttons, a first
 /// page's and the rail's (#414).
-/// `replaceSnackBar`'s 12 uses are 11 method calls and the filter sheet's
-/// one tear-off, all outside this package.
+/// `replaceSnackBar`'s 4 uses are 3 method calls and the filter sheet's one
+/// tear-off. One of the calls is inside this package, in `SessionMessenger`,
+/// which every screen that saves and then leaves says its bars through.
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -109,7 +114,9 @@ export 'src/layout/bge_page.dart';
 export 'src/layout/bge_shelf.dart';
 export 'src/layout/bge_unfolding_cover_grid.dart';
 export 'src/popups/bge_popup.dart';
+export 'src/routes/close_when_settled.dart';
 export 'src/routes/read_again_when_uncovered.dart';
+export 'src/routes/session_messenger.dart';
 export 'src/states/bge_empty_state.dart';
 export 'src/states/bge_error_state.dart';
 export 'src/states/bge_loading_state.dart';

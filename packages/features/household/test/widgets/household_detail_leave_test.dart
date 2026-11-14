@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -80,6 +81,7 @@ void main() {
   late HouseholdHydrationStatus status;
   late int backs;
   late int refreshes;
+  late FakeSessionLease lease;
 
   setUp(() {
     repository = _MockHouseholdRepository();
@@ -89,6 +91,7 @@ void main() {
     status = HouseholdHydrationStatus();
     backs = 0;
     refreshes = 0;
+    lease = FakeSessionLease();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
     when(() => repository.watchMembers(any()))
         .thenAnswer((_) => members.stream);
@@ -117,6 +120,7 @@ void main() {
     final detail = HouseholdDetailScreen(
       householdId: _id,
       repository: repository,
+      session: lease,
       hydration: status.watch(),
       onBack: onBack,
       onNewEvent: onNewEvent,
@@ -1054,6 +1058,180 @@ void main() {
       expect(find.text(_beneathCopy), findsOneWidget);
       expect(find.text('You left Sunday Crew.'), findsOneWidget);
       expect(backs, 0);
+    });
+
+    // #464: the leave outlives the screen. Gone before the answer lands, it
+    // still says how it went, on the page beneath, and goes nowhere: the
+    // user already has.
+    group('left mid-leave', () {
+      late Completer<HouseholdMember> reply;
+      late LeaveHouseholdBloc bloc;
+
+      /// Confirms a leave whose answer waits on [reply], then goes back to
+      /// the page beneath. When [endSession], the session ends in the same
+      /// turn. Pumps 50 ms into the exit, with the screen still leaving.
+      Future<void> confirmThenPop(
+        WidgetTester tester, {
+        bool endSession = false,
+      }) async {
+        reply = Completer<HouseholdMember>();
+        when(() => remote.leave(any())).thenAnswer((_) => reply.future);
+        await tester.pumpWidget(pushedOver());
+        await settleWith(tester, roster: [_member('u-me'), _coOwner]);
+        bloc = BlocProvider.of<LeaveHouseholdBloc>(tester.element(leaveRow()));
+
+        await confirmPending(tester);
+        expect(bloc.state.busy, isTrue);
+        Navigator.of(tester.element(leaveRow())).pop();
+        if (endSession) lease.isLive = false;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+      }
+
+      /// Confirms a leave whose answer waits on [reply], then goes back to
+      /// the page beneath, and lets the screen go, while it is on its way.
+      Future<void> confirmThenGo(WidgetTester tester) async {
+        await confirmThenPop(tester);
+        await tester.pumpAndSettle();
+        expect(find.byType(HouseholdDetailScreen), findsNothing);
+      }
+
+      Future<bool> closed(WidgetTester tester) async {
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+        return bloc.isClosed;
+      }
+
+      /// The page beneath is the only route: nothing was pushed or popped
+      /// after the user went back.
+      void expectStackUnchanged(WidgetTester tester) {
+        expect(find.text(_beneathCopy), findsOneWidget);
+        expect(
+          Navigator.of(tester.element(find.text(_beneathCopy))).canPop(),
+          false,
+        );
+        expect(backs, 0);
+      }
+
+      Finder inSnackBar(String copy) =>
+          find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+      testWidgets('left mid-leave, the outcome is still said', (tester) async {
+        await confirmThenGo(tester);
+        // Kept for the leave still on its way.
+        expect(await closed(tester), isFalse);
+
+        reply.complete(_member('u-me'));
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar('You left Sunday Crew.'), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-leave, a failure is still said', (tester) async {
+        await confirmThenGo(tester);
+
+        reply.completeError(
+          const HouseholdMemberRefusedException('no', statusCode: 400),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          inSnackBar(
+            "You're the household's only owner. Make another member the "
+            'owner first.',
+          ),
+          findsOneWidget,
+        );
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+
+      testWidgets('left mid-leave, nothing is said once the session has '
+          'ended', (tester) async {
+        await confirmThenGo(tester);
+        lease.isLive = false;
+
+        reply.complete(_member('u-me'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SnackBar), findsNothing);
+        expectStackUnchanged(tester);
+        // Still closed: ending the session skips the message, not the close.
+        expect(await closed(tester), isTrue);
+      });
+
+      // The shell ends a session in the same turn it routes away, and the
+      // popped route stays mounted through its exit. A leave that settles
+      // there asks the lease (#694), is said as it would be once the screen
+      // had gone, and goes nowhere (#464).
+      group("on the route's way out", () {
+        /// Gives the answer, and lets it reach the screen, still inside the
+        /// exit.
+        Future<void> settle(WidgetTester tester, {required bool fails}) async {
+          if (fails) {
+            reply.completeError(
+              const HouseholdMemberRefusedException('no', statusCode: 400),
+            );
+          } else {
+            reply.complete(_member('u-me'));
+          }
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+        }
+
+        /// The keys of the bars showing: a bar said again is a new key.
+        Set<Key?> barKeys(WidgetTester tester) => {
+          for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+            bar.key,
+        };
+
+        for (final (name, fails) in [('lands', false), ('fails', true)]) {
+          testWidgets('a leave that $name after the session ended says '
+              'nothing, and the bloc still closes', (tester) async {
+            await confirmThenPop(tester, endSession: true);
+
+            await settle(tester, fails: fails);
+            expect(find.byType(SnackBar), findsNothing);
+            await tester.pumpAndSettle();
+
+            expect(find.byType(SnackBar), findsNothing);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+
+        for (final (name, fails, copy) in [
+          ('lands', false, 'You left Sunday Crew.'),
+          (
+            'fails',
+            true,
+            "You're the household's only owner. Make another member the "
+                'owner first.',
+          ),
+        ]) {
+          testWidgets('a leave that $name is said once, and goes nowhere', (
+            tester,
+          ) async {
+            await confirmThenPop(tester);
+
+            await settle(tester, fails: fails);
+            // One bar, drawn in both pages' scaffolds while the exit runs.
+            expect(inSnackBar(copy), findsWidgets);
+            final said = barKeys(tester);
+            expect(said, hasLength(1));
+            await tester.pumpAndSettle();
+
+            expect(inSnackBar(copy), findsOneWidget);
+            expect(barKeys(tester), said);
+            expectStackUnchanged(tester);
+            expect(await closed(tester), isTrue);
+          });
+        }
+      });
     });
   });
 

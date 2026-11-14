@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -54,6 +55,7 @@ const _coveringCopy = 'A page over the entry';
 void main() {
   late _MockGameCollectionRepository repository;
   late _MockSyncOperationSender sender;
+  late FakeSessionLease lease;
   late StreamController<GameCollectionListItem?> watch;
 
   setUpAll(() {
@@ -63,6 +65,7 @@ void main() {
   setUp(() {
     repository = _MockGameCollectionRepository();
     sender = _MockSyncOperationSender();
+    lease = FakeSessionLease();
     watch = StreamController<GameCollectionListItem?>();
     when(() => repository.watchCollectionListItem('gc_1'))
         .thenAnswer((_) => watch.stream);
@@ -155,6 +158,7 @@ void main() {
       CollectionEntryScreen(
         repository: repository,
         sender: sender,
+        session: lease,
         entryId: 'gc_1',
         onOpenGame: onOpenGame,
       );
@@ -285,6 +289,18 @@ void main() {
     return held;
   }
 
+  /// Submits a change to the copies from the open sheet, with the update
+  /// held open, and dismisses the sheet by its barrier.
+  Future<Completer<_Updated>> submitHeldThenDismiss(WidgetTester tester) async {
+    final held = await submitHeld(tester);
+
+    // Dismissed by its barrier while the save is still out.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.byKey(EditCollectionEntrySheet.sheetKey), findsNothing);
+    return held;
+  }
+
   Future<void> confirmRemove(WidgetTester tester) async {
     await tester.tap(find.byKey(CollectionEntryScreen.removeKey));
     await tester.pumpAndSettle();
@@ -402,6 +418,7 @@ void main() {
           CollectionEntryScreen(
             repository: repository,
             sender: sender,
+            session: lease,
             entryId: 'gc_1',
             hydration: hydration.stream,
           ),
@@ -553,20 +570,6 @@ void main() {
       expect(find.text(_saveFailedCopy), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing);
     });
-
-    /// Submits a change to the copies from the open sheet, with the update
-    /// held open, and dismisses the sheet by its barrier.
-    Future<Completer<_Updated>> submitHeldThenDismiss(
-      WidgetTester tester,
-    ) async {
-      final held = await submitHeld(tester);
-
-      // Dismissed by its barrier while the save is still out.
-      await tester.tapAt(const Offset(10, 10));
-      await tester.pumpAndSettle();
-      expect(find.byKey(EditCollectionEntrySheet.sheetKey), findsNothing);
-      return held;
-    }
 
     testWidgets('the sheet dismissed mid-save, then the save fails, shows the '
         'failure SnackBar', (tester) async {
@@ -906,6 +909,26 @@ void main() {
       expect(await closed(tester, bloc), isTrue);
     });
 
+    testWidgets('a removal left mid-flight says nothing once the session has '
+        'ended', (tester) async {
+      final held = holdRemoval();
+      await showPushed(tester);
+      await confirmRemove(tester);
+      final bloc = blocOf(tester);
+      expect(bloc.state.action, CollectionEntryAction.removing);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      lease.isLive = false;
+
+      held.complete((syncQueueId: 'sq_2', operation: _removeOp));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+      // Still closed: ending the session skips the message, not the close.
+      expect(await closed(tester, bloc), isTrue);
+    });
+
     for (final (name, answer, copy) in [
       (
         'a queued removal says it will sync',
@@ -957,6 +980,119 @@ void main() {
       expect(find.byKey(CollectionEntryScreen.removeKey), findsOneWidget);
       expect(blocOf(tester).state.action, CollectionEntryAction.idle);
     });
+  });
+
+  // The shell ends a session in the same turn it routes away (sign-out, a
+  // user switched in place), and a popped route stays mounted through its
+  // exit. What settles there asks the screen's lease (#694), and is said as
+  // it would be once the screen had gone (#464).
+  group('an outcome that settles while the route is on its way out', () {
+    /// Pops the screen and, in the same turn when [endSession], ends the
+    /// session, then pumps 50 ms into the exit.
+    Future<void> leave(WidgetTester tester, {bool endSession = false}) async {
+      Navigator.of(tester.element(find.byType(CollectionEntryDetail))).pop();
+      if (endSession) lease.isLive = false;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(CollectionEntryScreen), findsOneWidget);
+    }
+
+    /// The keys of the bars showing: a bar said again is a new key.
+    Set<Key?> barKeys(WidgetTester tester) => {
+      for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+        bar.key,
+    };
+
+    /// Lets an answer just given reach the screen, still inside the exit.
+    Future<void> answerInExit(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(CollectionEntryScreen), findsOneWidget);
+    }
+
+    /// Starts a removal, held until the returned function answers it.
+    Future<void Function({required bool fails})> startRemoval(
+      WidgetTester tester,
+    ) async {
+      final held = holdRemoval();
+      await confirmRemove(tester);
+      void answer({required bool fails}) => fails
+          ? held.completeError(StateError('repository disposed'))
+          : held.complete((syncQueueId: 'sq_2', operation: _removeOp));
+      return answer;
+    }
+
+    /// Starts a save from the sheet and dismisses the sheet, held until the
+    /// returned function answers it.
+    Future<void Function({required bool fails})> startSave(
+      WidgetTester tester,
+    ) async {
+      final held = await submitHeldThenDismiss(tester);
+      void answer({required bool fails}) => fails
+          ? held.completeError(StateError('repository disposed'))
+          : held.complete((
+              entry: listItem('gc_1').entry,
+              syncQueueId: 'sq_1',
+              operation: _updateOp,
+            ));
+      return answer;
+    }
+
+    for (final (name, start, fails) in [
+      ('a removal that fails', startRemoval, true),
+      ('a removal that lands', startRemoval, false),
+      ('a save that fails', startSave, true),
+      ('a save that lands', startSave, false),
+    ]) {
+      testWidgets('$name after the session ended there says nothing, and the '
+          'bloc still closes', (tester) async {
+        await showPushed(tester);
+        final answer = await start(tester);
+        final bloc = blocOf(tester);
+
+        await leave(tester, endSession: true);
+        answer(fails: fails);
+        await answerInExit(tester);
+
+        expect(find.byType(SnackBar), findsNothing);
+        await tester.pumpAndSettle();
+        expect(find.byType(CollectionEntryScreen), findsNothing);
+        expect(find.text(_listCopy), findsOneWidget);
+        expect(find.byType(SnackBar), findsNothing);
+        expect(await closed(tester, bloc), isTrue);
+      });
+    }
+
+    for (final (name, start, fails, copy) in [
+      ('a removal that fails', startRemoval, true, _removeFailedCopy),
+      ('a removal that lands', startRemoval, false, _removedCopy),
+      ('a save that fails', startSave, true, _saveFailedCopy),
+      ('a save that lands', startSave, false, _savedCopy),
+    ]) {
+      testWidgets('$name there is said once, over the page beneath, which '
+          'stays', (tester) async {
+        await showPushed(tester);
+        final answer = await start(tester);
+        final bloc = blocOf(tester);
+
+        await leave(tester);
+        answer(fails: fails);
+        await answerInExit(tester);
+
+        // One bar, drawn in both pages' scaffolds while the exit runs.
+        expect(snackBarText(copy), findsWidgets);
+        final said = barKeys(tester);
+        expect(said, hasLength(1));
+        await tester.pumpAndSettle();
+        // Nothing more was popped, and the bar is the one said in the exit:
+        // the screen's dispose said nothing more.
+        expect(find.byType(CollectionEntryScreen), findsNothing);
+        expect(find.text(_listCopy), findsOneWidget);
+        expect(snackBarText(copy), findsOneWidget);
+        expect(barKeys(tester), said);
+        expect(await closed(tester, bloc), isTrue);
+      });
+    }
   });
 
   testWidgets('lays out at 320dp and 2x text', (tester) async {

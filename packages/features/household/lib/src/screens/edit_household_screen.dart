@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -6,6 +8,7 @@ import 'package:household/src/bloc/edit_household_event.dart';
 import 'package:household/src/bloc/edit_household_state.dart';
 import 'package:household/src/permissions/household_actions.dart';
 import 'package:household/src/widgets/edit_household_form.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -28,11 +31,24 @@ import 'package:ui/ui.dart';
 /// Decoupled from DI like the other household screens: the caller resolves
 /// the [HouseholdRepository] and the per-server [HouseholdRemoteDataSource],
 /// and leaves the screen in [onSaved].
+///
+/// The form holds its bloc, not a `BlocProvider`, so a save the user walks
+/// away from still ends (#464). Left while one is under way, by the back
+/// button or by a note taking the form's place, the bloc is kept until the
+/// save settles. Then a SnackBar over whatever page is showing says it was
+/// saved, or, since the form's banner went with it, that the household's
+/// changes weren't, and the bloc closes, through `closeWhenSettled`. One that
+/// settles while the route is still on its way out is said the same way. A
+/// save that changed nothing says nothing. That late outcome never calls
+/// [onSaved]: the user has already gone somewhere. No outcome is said once
+/// [session] has ended, whether the form is gone or still leaving: it is no
+/// news to whoever signs in next (#694). The bloc closes either way.
 class EditHouseholdScreen extends StatelessWidget {
   const EditHouseholdScreen({
     required this.householdId,
     required this.repository,
     required this.remote,
+    required this.session,
     required this.onSaved,
     this.onRefresh,
     super.key,
@@ -45,9 +61,15 @@ class EditHouseholdScreen extends StatelessWidget {
   final HouseholdRepository repository;
   final HouseholdRemoteDataSource remote;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [repository] and [remote]. A save that settles after the form is gone
+  /// is said only while it is live (#694).
+  final SessionLease session;
+
   /// Called once the edit is saved, with this screen's context. A
   /// confirmation SnackBar is already showing, above the route, unless the
-  /// save changed nothing and so sent nothing.
+  /// save changed nothing and so sent nothing. Not called for a save that
+  /// lands once the user has left the form (#464).
   final void Function(BuildContext context) onSaved;
 
   /// Reads the user's households again, after an answer that says the
@@ -156,7 +178,7 @@ class _Note extends StatelessWidget {
   );
 }
 
-class _EditHouseholdView extends StatelessWidget {
+class _EditHouseholdView extends StatefulWidget {
   const _EditHouseholdView({required this.household, required this.screen});
 
   /// The latest read. Only the first reaches the bloc and the form, which
@@ -165,31 +187,119 @@ class _EditHouseholdView extends StatelessWidget {
   final EditHouseholdScreen screen;
 
   @override
+  State<_EditHouseholdView> createState() => _EditHouseholdViewState();
+}
+
+class _EditHouseholdViewState extends State<_EditHouseholdView> {
+  /// Held here rather than by a `BlocProvider`, which would close it with
+  /// the form: a save still under way then would never say how it ended.
+  /// See [dispose].
+  late final EditHouseholdBloc _bloc;
+
+  /// The lease the screen had when the bloc was made, beside the repository
+  /// and remote it came from: [dispose] can't trust a later build's.
+  late final SessionLease _session;
+
+  /// The household's name as the form opened with it, and as a failed save
+  /// leaves it: what a failure that lands after the form has gone names.
+  late final String _name;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the form is mounted: a
+  /// save that settles after it is gone is said with them, and [dispose] can't
+  /// look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late HouseholdLocalizations _l10n;
+
+  @override
+  void initState() {
+    super.initState();
+    final screen = widget.screen;
+    _session = screen.session;
+    _name = widget.household.name;
+    _bloc = EditHouseholdBloc(
+      original: widget.household,
+      remote: screen.remote,
+      repository: screen.repository,
+      onRefresh: screen.onRefresh,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = HouseholdLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Left with a save under way: it settles, is said while the session
+    // lives, and the bloc closes then. Otherwise the form has already shown
+    // whatever there was, and the bloc closes now.
+    unawaited(
+      closeWhenSettled<EditHouseholdState>(
+        current: _bloc.state,
+        states: _bloc.stream,
+        underWay: (state) => state is EditHouseholdSaving,
+        outcomeOf: _lateOutcome,
+        say: _messenger.say,
+        close: _bloc.close,
+      ),
+    );
+    super.dispose();
+  }
+
+  /// What is said of a save that settled after the form went, or while it
+  /// was going (#464): a save as the listener says it, and a failure, whose
+  /// banner went with the form, by the household it was for. The banner's
+  /// reason is left out: away from the form, there is nothing there to fix.
+  /// A failure the server may have saved first, as the bloc counts it, is
+  /// left open rather than said to be lost.
+  String? _lateOutcome(EditHouseholdState state) => switch (state) {
+    EditHouseholdSaved() => _savedMessage(_l10n, state),
+    EditHouseholdFailed(
+      reason: EditHouseholdFailure.offline || EditHouseholdFailure.unexpected,
+    ) =>
+      _l10n.editHouseholdUnconfirmedLate(_name),
+    EditHouseholdFailed() => _l10n.editHouseholdNotSavedLate(_name),
+    EditHouseholdEditing() || EditHouseholdSaving() => null,
+  };
+
+  /// Answers a save that has just ended.
+  void _onEnded(BuildContext context, EditHouseholdState state) {
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so the outcome is said as it would be once the form had gone, a
+    // failure too, and [EditHouseholdScreen.onSaved] is not called (#464).
+    // By [dispose] it has settled, so `closeWhenSettled` says nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      _messenger.say(_lateOutcome(state));
+      return;
+    }
+    // A failure stays: the form draws it as a banner.
+    if (state case final EditHouseholdSaved saved) {
+      // A SnackBar, since the next line takes this screen away; the
+      // messenger outlives the route.
+      _messenger.say(_savedMessage(_l10n, saved));
+      widget.screen.onSaved(context);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
-    return BlocProvider(
-      create: (_) => EditHouseholdBloc(
-        original: household,
-        remote: screen.remote,
-        repository: screen.repository,
-        onRefresh: screen.onRefresh,
-      ),
+    return BlocProvider<EditHouseholdBloc>.value(
+      value: _bloc,
       child: BlocConsumer<EditHouseholdBloc, EditHouseholdState>(
-        listenWhen: (_, state) => state is EditHouseholdSaved,
-        listener: (context, state) {
-          // A SnackBar, since the next line takes this screen away; the
-          // messenger outlives the route. Not for a save that sent nothing:
-          // nothing was updated.
-          if (state case EditHouseholdSaved(changed: true)) {
-            ScaffoldMessenger.of(context)
-                .replaceSnackBar(l10n.editHouseholdSaved);
-          }
-          screen.onSaved(context);
-        },
+        listenWhen: (_, state) =>
+            state is EditHouseholdSaved || state is EditHouseholdFailed,
+        listener: _onEnded,
         builder: (context, state) => BgePage(
           title: Text(l10n.editHouseholdTitle),
           child: EditHouseholdForm(
-            initial: household,
+            initial: widget.household,
             // Saved counts too: the form is about to close.
             submitting:
                 state is EditHouseholdSaving || state is EditHouseholdSaved,
@@ -229,3 +339,10 @@ class _EditHouseholdView extends StatelessWidget {
     EditHouseholdFailure.unexpected => l10n.editHouseholdErrorUnexpected,
   };
 }
+
+/// What the SnackBar says once an edit is saved, or null for a save that
+/// changed nothing: it sent nothing, so nothing was updated. Said by the
+/// listener as the form goes, or as a late outcome for a save that lands
+/// once the user has left (#464).
+String? _savedMessage(HouseholdLocalizations l10n, EditHouseholdSaved state) =>
+    state.changed ? l10n.editHouseholdSaved : null;

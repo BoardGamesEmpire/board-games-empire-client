@@ -22,6 +22,7 @@ import 'package:household/src/permissions/household_actions.dart';
 import 'package:household/src/sync/household_hydration_status.dart';
 import 'package:household/src/widgets/household_role_label.dart';
 import 'package:hydration/hydration.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -96,6 +97,17 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// failure stays on the page, in a banner directly above the row until
 /// dismissed.
 ///
+/// The screen holds the leave's bloc, not a `BlocProvider`, so a leave the
+/// user walks away from still ends (#464). Gone while one is on its way, the
+/// screen keeps the bloc until the answer lands, says it in a snack bar over
+/// the page the user went to, that they left or, since the banner went with
+/// the page, why they didn't, and then closes it, through
+/// `closeWhenSettled`. An answer that lands while the route is still on its
+/// way out is said the same way. That late answer never calls [onBack]: the
+/// user has already gone. No answer is said once [session] has ended,
+/// whether the screen is gone or still leaving: it is no news to whoever
+/// signs in next (#694). The bloc closes either way.
+///
 /// A failure can leave the row disabled: offline by the time it lands, or
 /// the last owner once a co-owner has gone, while the request was on its way
 /// or with the refresh a refusal starts. A disabled row can't hold focus, so
@@ -154,6 +166,7 @@ class HouseholdDetailScreen extends StatelessWidget {
   const HouseholdDetailScreen({
     required this.householdId,
     required this.repository,
+    required this.session,
     this.hydration,
     this.onBack,
     this.onRetry,
@@ -267,6 +280,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// The user-session household repository. Read-only here.
   final HouseholdRepository repository;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [repository] and [members]. A leave that settles after the screen is
+  /// gone is said only while it is live (#694).
+  final SessionLease session;
+
   /// What the hydrate is doing, when this composition runs one. Null reads
   /// as settled rather than as forever-loading (#269 D1).
   final Stream<Hydration>? hydration;
@@ -277,7 +295,8 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// app bar's back button alone. Null offers no such button.
   ///
   /// Also how the screen goes once the person has left the household
-  /// (#479). Null leaves the Leave row out.
+  /// (#479), but not when the leave lands once the user has left the screen
+  /// (#464). Null leaves the Leave row out.
   ///
   /// Called with this screen's own context, mirroring the list's
   /// `onCreate` — the feature package does not know the route table.
@@ -344,62 +363,208 @@ class HouseholdDetailScreen extends StatelessWidget {
       return _NotFoundPage(onBack: onBack);
     }
 
-    // Both or neither: without the refresh, a 404 would leave the member on
-    // the list, and the banners that say the household is being read again
-    // would be wrong.
-    final memberActions = switch ((members, onMembershipChanged)) {
-      (final remote?, final onChanged?) => (
-        remote: remote,
-        onChanged: onChanged,
-      ),
-      _ => null,
-    };
-
-    return MultiBlocProvider(
+    return _HouseholdDetailBlocs(
       // go_router keeps this page when only the id changes; the key makes a
       // new id new blocs rather than the old household under them (#466).
       key: ValueKey<String>(householdId),
+      screen: this,
+    );
+  }
+}
+
+/// The screen's blocs for one household (#466), and what is said of a leave.
+///
+/// The leave's bloc is held here, so it outlives the route (#464), while
+/// the detail's and the member actions' stay on their providers. The
+/// household's name and the wording of a leave's outcome are kept here too,
+/// so a leave that lands while the screen is up and one that lands after it
+/// has gone are worded in one place.
+class _HouseholdDetailBlocs extends StatefulWidget {
+  const _HouseholdDetailBlocs({required this.screen, super.key});
+
+  final HouseholdDetailScreen screen;
+
+  @override
+  State<_HouseholdDetailBlocs> createState() => _HouseholdDetailBlocsState();
+}
+
+class _HouseholdDetailBlocsState extends State<_HouseholdDetailBlocs> {
+  /// Held here rather than by a `BlocProvider`, which would close it with
+  /// the route: a leave still on its way then would never say how it ended.
+  /// Null without a member client and a refresh, which offers no Leave row.
+  /// See [dispose].
+  LeaveHouseholdBloc? _leave;
+
+  /// The lease of the session the leave's bloc came from: taken from the
+  /// same build as its repository and member client, whenever the bloc is
+  /// made, since [dispose] can't trust a later build's.
+  late SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the screen is mounted: a
+  /// leave that settles after it is gone is said with them, and [dispose] can't
+  /// look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late HouseholdLocalizations _l10n;
+
+  /// The household's name as the page last drew it, for saying the person
+  /// left it. The cache may have let the household go by the time the leave
+  /// is accepted, and the screen may be gone. Always set by then: Leave is
+  /// offered only on a page that drew it.
+  String? _name;
+
+  @override
+  void initState() {
+    super.initState();
+    _makeLeave();
+  }
+
+  @override
+  void didUpdateWidget(_HouseholdDetailBlocs oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A member client and a refresh that arrive later bring the Leave row,
+    // as a provider list that grew would have.
+    if (_leave == null) _makeLeave();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = HouseholdLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Gone with a leave on its way: it settles, is said while the session
+    // lives, and the bloc closes then. Otherwise the screen has already
+    // shown whatever there was, and the bloc closes now.
+    final leave = _leave;
+    if (leave != null) {
+      unawaited(
+        closeWhenSettled<LeaveHouseholdState>(
+          current: leave.state,
+          states: leave.stream,
+          underWay: (state) => state.busy,
+          outcomeOf: _leaveOutcome,
+          say: _messenger.say,
+          close: leave.close,
+        ),
+      );
+    }
+    super.dispose();
+  }
+
+  /// Both or neither: without the refresh, a 404 would leave the member on
+  /// the list, and the banners that say the household is being read again
+  /// would be wrong.
+  ({HouseholdMemberRemoteDataSource remote, Future<void> Function() onChanged})?
+  get _memberActions => switch ((
+    widget.screen.members,
+    widget.screen.onMembershipChanged,
+  )) {
+    (final remote?, final onChanged?) => (remote: remote, onChanged: onChanged),
+    _ => null,
+  };
+
+  /// Makes the leave's bloc from this build's member client, or none
+  /// without one, and takes this build's lease with it.
+  void _makeLeave() {
+    final screen = widget.screen;
+    final actions = _memberActions;
+    _session = screen.session;
+    _leave = actions == null
+        ? null
+        : LeaveHouseholdBloc(
+            remote: actions.remote,
+            repository: screen.repository,
+            onChanged: actions.onChanged,
+          );
+  }
+
+  /// Keeps the household's name from a page drawn, while not held.
+  void _remember(HouseholdDetailState state) {
+    if (state is HouseholdDetailReady) _name = state.household.name;
+  }
+
+  /// Says [state]'s outcome in a snack bar on the messenger above the route,
+  /// so it shows on the page beneath once the screen pops. Nothing when it
+  /// has none to say, or [_messenger] holds it back.
+  void _sayLeave(LeaveHouseholdState state) =>
+      _messenger.say(_leaveOutcome(state));
+
+  /// What a snack bar says of a leave: that the person left the household,
+  /// or why they didn't, as the banner above the Leave row words it. While
+  /// the screen is up only the first is asked for, since a failure is the
+  /// banner's to show; once the user has left it, either is (#464).
+  String? _leaveOutcome(LeaveHouseholdState state) {
+    if (state.phase == LeavePhase.left) {
+      final name = _name;
+      return name == null ? null : _l10n.householdLeaveDone(name);
+    }
+    final failure = state.failure;
+    return failure == null ? null : leaveFailureMessage(_l10n, failure);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = widget.screen;
+    // Both or neither: the leave's bloc is made once there is a member
+    // client, and a later build without one offers no member actions.
+    final member = switch ((_memberActions, _leave)) {
+      (final actions?, final leave?) => (actions: actions, leave: leave),
+      _ => null,
+    };
+
+    final view = _HouseholdDetailView(
+      onBack: screen.onBack,
+      canRetry: screen.onRetry != null,
+      invites: screen.invites,
+      onOpenInvites: screen.onOpenInvites,
+      onEdit: screen.onEdit,
+      onInvite: screen.onInvite,
+      onNewEvent: screen.onNewEvent,
+      eventsSection: screen.eventsSection,
+      hasMemberActionsBloc: member != null,
+    );
+    final back = screen.onBack;
+
+    return MultiBlocProvider(
       providers: [
         BlocProvider<HouseholdDetailBloc>(
           create: (_) => HouseholdDetailBloc(
-            householdId: householdId,
-            repository: repository,
-            hydration: hydration,
-            onRetry: onRetry,
+            householdId: screen.householdId,
+            repository: screen.repository,
+            hydration: screen.hydration,
+            onRetry: screen.onRetry,
           ),
         ),
         // None without a member client and a refresh, and then no row has a
         // menu and there is no Leave row.
-        if (memberActions != null) ...[
+        if (member != null) ...[
           BlocProvider<HouseholdMemberActionsBloc>(
             create: (_) => HouseholdMemberActionsBloc(
-              remote: memberActions.remote,
-              repository: repository,
-              onChanged: memberActions.onChanged,
+              remote: member.actions.remote,
+              repository: screen.repository,
+              onChanged: member.actions.onChanged,
             ),
           ),
-          BlocProvider<LeaveHouseholdBloc>(
-            create: (_) => LeaveHouseholdBloc(
-              remote: memberActions.remote,
-              repository: repository,
-              onChanged: memberActions.onChanged,
-            ),
-          ),
+          BlocProvider<LeaveHouseholdBloc>.value(value: member.leave),
         ],
       ],
       // The callbacks stay with the blocs; the view only needs to know
-      // whether there is one, to decide whether to draw a control.
-      child: _HouseholdDetailView(
-        onBack: onBack,
-        canRetry: onRetry != null,
-        invites: invites,
-        onOpenInvites: onOpenInvites,
-        onEdit: onEdit,
-        onInvite: onInvite,
-        onNewEvent: onNewEvent,
-        eventsSection: eventsSection,
-        hasMemberActionsBloc: memberActions != null,
-      ),
+      // whether there is one, to decide whether to draw a control. The Leave
+      // row is offered only with a way back.
+      child: member == null || back == null
+          ? view
+          : _LeaveOutcome(
+              onBack: back,
+              onDrawn: _remember,
+              say: _sayLeave,
+              child: view,
+            ),
     );
   }
 }
@@ -454,9 +619,8 @@ class _HouseholdDetailView extends StatelessWidget {
     final leave = hasMemberActionsBloc
         ? context.read<LeaveHouseholdBloc>()
         : null;
-    final back = onBack;
 
-    final page = BlocBuilder<HouseholdDetailBloc, HouseholdDetailState>(
+    return BlocBuilder<HouseholdDetailBloc, HouseholdDetailState>(
       // The hold (#479). The builder keeps the last state it was given, so
       // a rebuild from above draws the held page too.
       buildWhen: (_, _) => !_isHeld(leave),
@@ -499,26 +663,40 @@ class _HouseholdDetailView extends StatelessWidget {
         };
       },
     );
-    // The Leave row is offered only with a way back.
-    return leave == null || back == null
-        ? page
-        : _LeaveOutcome(onBack: back, child: page);
   }
 }
 
 /// Says the person left, then pops the screen, once a leave has gone through
-/// (#479).
+/// (#479). On the route's way out, says how any leave ended, and goes
+/// nowhere (#464).
 ///
 /// Above the page rather than in the Leave row, so it happens even when the
 /// row has gone from under the request: a hydrate that read the list after
 /// the server let the person go turns the page into the not-found one while
 /// the answer is on its way. The hold then keeps that page drawn until the
 /// screen has gone.
+///
+/// The words are the screen's, through [say], which also words a leave that
+/// lands after the screen has gone (#464). So is the household's name they
+/// use, which this keeps current through [onDrawn].
 class _LeaveOutcome extends StatefulWidget {
-  const _LeaveOutcome({required this.onBack, required this.child});
+  const _LeaveOutcome({
+    required this.onBack,
+    required this.onDrawn,
+    required this.say,
+    required this.child,
+  });
 
   /// Where the screen goes once the person has left.
   final void Function(BuildContext context) onBack;
+
+  /// Given each household state the page draws, from the one it is first
+  /// built with, but none while it is held: the name in the snack bar is
+  /// the household as the page last drew it.
+  final void Function(HouseholdDetailState state) onDrawn;
+
+  /// Says how a leave ended, through the screen's lease (#694).
+  final void Function(LeaveHouseholdState state) say;
 
   final Widget child;
 
@@ -527,19 +705,10 @@ class _LeaveOutcome extends StatefulWidget {
 }
 
 class _LeaveOutcomeState extends State<_LeaveOutcome> {
-  /// The household's name as the page last drew it, for the SnackBar. The
-  /// cache may have let the household go by the time the leave is accepted.
-  /// Always set by then: Leave is offered only on a page that drew it.
-  String? _name;
-
   @override
   void initState() {
     super.initState();
-    _remember(context.read<HouseholdDetailBloc>().state);
-  }
-
-  void _remember(HouseholdDetailState state) {
-    if (state is HouseholdDetailReady) _name = state.household.name;
+    widget.onDrawn(context.read<HouseholdDetailBloc>().state);
   }
 
   @override
@@ -549,40 +718,44 @@ class _LeaveOutcomeState extends State<_LeaveOutcome> {
         BlocListener<HouseholdDetailBloc, HouseholdDetailState>(
           // Not while the page is held, which draws none of them.
           listenWhen: (_, _) => !_isHeld(context.read<LeaveHouseholdBloc>()),
-          listener: (_, state) => _remember(state),
+          listener: (_, state) => widget.onDrawn(state),
         ),
         BlocListener<LeaveHouseholdBloc, LeaveHouseholdState>(
-          listenWhen: (previous, current) =>
-              previous.phase != LeavePhase.left &&
-              current.phase == LeavePhase.left,
-          listener: _onLeft,
+          // A leave's end, either way.
+          listenWhen: (previous, current) => previous.busy && !current.busy,
+          listener: _onEnded,
         ),
       ],
       child: widget.child,
     );
   }
 
-  /// Says the person left, then goes. The messenger is the one above the
-  /// route, read before any pop, so the snack bar shows on the page beneath.
+  /// Once the person has left, says so, then goes. [_LeaveOutcome.say] uses
+  /// the messenger above the route, so the snack bar shows on the page
+  /// beneath. A refusal or a failure is the banner's to show.
+  ///
+  /// A route already on its way out, by its back button say, says how the
+  /// leave ended, a failure too, since its banner is on a page the user has
+  /// left, and goes nowhere: popping then would take the page beneath with
+  /// it (#464). By the screen's `dispose` the leave has ended, so
+  /// `closeWhenSettled` says nothing more. One already gone hears no answer
+  /// here: the screen says it as it closes the bloc.
   ///
   /// The page stays live while a leave is on its way, so a dialog or a route
   /// can be open over it when the answer lands, and an [_LeaveOutcome.onBack]
-  /// that pops would take whichever is on top. Those go first. A route
-  /// already on its way out, by its back button say, is left to go: popping
-  /// then would take the page beneath with it.
-  void _onLeft(BuildContext context, LeaveHouseholdState _) {
-    final l10n = HouseholdLocalizations.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+  /// that pops would take whichever is on top. Those go first.
+  void _onEnded(BuildContext context, LeaveHouseholdState state) {
     final route = ModalRoute.of(context);
-    final going = route != null && !route.isActive;
-    if (route != null && !going && !route.isCurrent) {
+    if (route != null && !route.isActive) {
+      widget.say(state);
+      return;
+    }
+    if (state.phase != LeavePhase.left) return;
+    if (route != null && !route.isCurrent) {
       Navigator.of(context).popUntil((r) => r == route);
     }
-    final name = _name;
-    if (name != null) {
-      messenger.replaceSnackBar(l10n.householdLeaveDone(name));
-    }
-    if (!going) widget.onBack(context);
+    widget.say(state);
+    widget.onBack(context);
   }
 }
 

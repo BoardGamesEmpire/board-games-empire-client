@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -142,6 +143,7 @@ void main() {
     home: HouseholdDetailScreen(
       householdId: householdId,
       repository: repository,
+      session: FakeSessionLease(),
       hydration: status.watch(),
       onBack: onBack,
       onRetry: onRetry,
@@ -783,6 +785,7 @@ void main() {
                     builder: (_) => HouseholdDetailScreen(
                       householdId: _id,
                       repository: repository,
+                      session: FakeSessionLease(),
                       hydration: status.watch(),
                     ),
                   ),

@@ -1287,6 +1287,7 @@ class _BgeAppState extends State<BgeApp> {
     return HouseholdDetailScreen(
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
+      session: _sessionLease(container),
       hydration: hydration,
       onRetry: _householdRetry(container),
       // A pop, not a `go` to the list (#308). The route is the list's child,
@@ -1452,6 +1453,7 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
       remote: remote,
+      session: _sessionLease(container),
       onRefresh: _householdRetry(container),
       onSaved: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
     );
@@ -1526,6 +1528,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       remote: container.get<HouseholdInviteRemoteDataSource>(),
       users: container.get<UserRemoteDataSource>(),
+      session: _sessionLease(container),
       onRefresh: _householdRetry(container),
     );
   }
@@ -1611,6 +1614,7 @@ class _BgeAppState extends State<BgeApp> {
     return CreateHouseholdScreen(
       repository: container.get<HouseholdRepository>(),
       sender: container.get<SyncOperationSender>(),
+      session: _sessionLease(container),
       // #271: the new household's own screen takes the place of the spent
       // form, so back can never land on it again (#162).
       //
@@ -1749,6 +1753,7 @@ class _BgeAppState extends State<BgeApp> {
       key: ValueKey<String>(entryId),
       repository: container.get<GameCollectionRepository>(),
       sender: container.get<SyncOperationSender>(),
+      session: _sessionLease(container),
       entryId: entryId,
       hydration: container.isRegistered<GameCollectionHydrationStatus>()
           ? container.get<GameCollectionHydrationStatus>().watch()
@@ -1809,6 +1814,7 @@ class _BgeAppState extends State<BgeApp> {
             context,
             repository: current.get<GameCollectionRepository>(),
             sender: current.get<SyncOperationSender>(),
+            session: _sessionLease(current),
             game: game,
             options: options,
             platformGameId: platformGameId,
@@ -1846,6 +1852,25 @@ class _BgeAppState extends State<BgeApp> {
   static bool _canWriteCollection(DependencyContainer container) =>
       container.isRegistered<GameCollectionRepository>() &&
       container.isRegistered<SyncOperationSender>();
+
+  /// The lease of [container]'s user session (#694): what a late outcome asks
+  /// before it speaks.
+  ///
+  /// The registered [SessionLease]. Without one, a composition that hosts
+  /// user sessions (it registers a [UserSessionScope]) has no session open,
+  /// so the lease is already ended. Reading that as live would let a late
+  /// outcome reach the next account, and a wiring gap that drops the lease
+  /// should silence a screen's bars, where a test sees it, not leak them.
+  /// Only a composition with no user-session scope at all (shell tests) gets
+  /// [UnscopedSessionLease]: there is no session there to end.
+  static SessionLease _sessionLease(DependencyContainer container) {
+    if (container.isRegistered<SessionLease>()) {
+      return container.get<SessionLease>();
+    }
+    return container.isRegistered<UserSessionScope>()
+        ? const _NoSessionLease()
+        : const UnscopedSessionLease();
+  }
 
   /// The games cache (#42): the user-session [GameRepository], or null where
   /// no user session is active. The catalog screens read the server without
@@ -2162,6 +2187,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       sender: container.get<SyncOperationSender>(),
       users: container.get<UserRemoteDataSource>(),
+      session: _sessionLease(container),
       households: households == null || roleOf == null
           ? null
           : eventCreateHouseholds(households, roleOf),
@@ -2203,6 +2229,7 @@ class _BgeAppState extends State<BgeApp> {
     return EventDetailScreen(
       eventId: eventId,
       repository: container.get<EventRepository>(),
+      session: _sessionLease(container),
       remote: _eventRemote(container),
       confirmSession: _confirmSession(container),
       households: _eventHouseholds(container),
@@ -2459,6 +2486,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayFormScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
+      session: _sessionLease(container),
       access: _callerAccess(container),
       editingId: dataGatewayId,
       onDone: (ctx) => ctx.pop(),
@@ -3778,6 +3806,16 @@ class _AuthScopeState extends State<_AuthScope> {
   }
 }
 
+/// The lease `_BgeAppState._sessionLease` hands a screen built while no user
+/// session is open in a composition that hosts them: ended from the start
+/// (#694).
+final class _NoSessionLease implements SessionLease {
+  const _NoSessionLease();
+
+  @override
+  bool get isLive => false;
+}
+
 /// Whose session home is built for, and whether a switch to another user is
 /// under way (#432).
 typedef _HomeSession = ({String? userId, bool switching});
@@ -4031,6 +4069,7 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
     required this.repository,
     required this.remote,
     required this.users,
+    required this.session,
     this.onRefresh,
     super.key,
   });
@@ -4039,6 +4078,10 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
   final HouseholdRepository repository;
   final HouseholdInviteRemoteDataSource remote;
   final UserRemoteDataSource users;
+
+  /// The user session [repository] and [remote] came from, for the form's
+  /// late outcome (#694).
+  final SessionLease session;
 
   /// Runs the households' own pass after a send refused with 403.
   final Future<void> Function()? onRefresh;
@@ -4148,6 +4191,7 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       memberInvitePolicy: viewer.policy,
       remote: widget.remote,
       users: widget.users,
+      session: widget.session,
       onRefresh: widget.onRefresh,
       onSent: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
       // Back from Sent returns to the household, even under a form opened

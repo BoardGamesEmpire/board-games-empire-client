@@ -137,19 +137,19 @@
   },
   "createHouseholdSynced": "Household created.",
   "@createHouseholdSynced": {
-    "description": "Confirmation shown when the household was created and confirmed by the server."
+    "description": "Confirmation shown when the household was created and confirmed by the server. Also shown when the user left the create form while the create was in flight, over whatever page they went to (#464)."
   },
   "createHouseholdQueued": "Household created. It'll finish syncing when you're back online.",
   "@createHouseholdQueued": {
-    "description": "Confirmation shown when the household was created locally but not yet confirmed by the server."
+    "description": "Confirmation shown when the household was created locally but not yet confirmed by the server. Also shown when the user left the create form while the create was in flight, over whatever page they went to (#464)."
   },
   "createHouseholdRefused": "The server didn't accept this household. It's saved on this device: review it from the home screen to try again or discard it.",
   "@createHouseholdRefused": {
-    "description": "Confirmation shown when the household was created locally but the server refused it, so it will not sync on its own (#190). Points the user at the notice on the home screen, which opens the screen where changes that couldn't sync can be retried or discarded. Must not promise that it will sync later."
+    "description": "Confirmation shown when the household was created locally but the server refused it, so it will not sync on its own (#190). Points the user at the notice on the home screen, which opens the screen where changes that couldn't sync can be retried or discarded. Must not promise that it will sync later. Also shown when the user left the create form while the create was in flight, over whatever page they went to (#464)."
   },
   "createHouseholdError": "Something went wrong creating your household. Please try again.",
   "@createHouseholdError": {
-    "description": "Error shown when the household could not be created locally."
+    "description": "Error shown when the household could not be created locally. Also a SnackBar over whatever page the user went to, when they left the create form while the create was in flight and it then failed (#464)."
   },
   "inviteErrorOffline": "Couldn't reach the server. Try again.",
   "@inviteErrorOffline": {
@@ -411,15 +411,15 @@
   },
   "inviteSendFailedTitle": "Couldn't send the invite",
   "@inviteSendFailedTitle": {
-    "description": "Heading of the banner explaining why an invite was not sent."
+    "description": "Heading of the banner explaining why an invite was not sent. Also a SnackBar on its own, without the banner's reason, over whatever page the user went to, when they left the invite form while the invite was on its way and it then failed (#464)."
   },
   "inviteSendDone": "Invite sent.",
   "@inviteSendDone": {
-    "description": "Confirmation shown when the invite was sent."
+    "description": "Confirmation shown when the invite was sent. Also shown over whatever page the user went to, when they left the invite form while the invite was on its way and it then landed (#464)."
   },
   "inviteSendDoneAwaitingApproval": "Sent for approval.",
   "@inviteSendDoneAwaitingApproval": {
-    "description": "Confirmation shown when a member's invite was sent and now waits for an owner or admin to approve it. Promises nothing about the invite standing: the server checks the sender again when it is approved."
+    "description": "Confirmation shown when a member's invite was sent and now waits for an owner or admin to approve it. Promises nothing about the invite standing: the server checks the sender again when it is approved. Also shown over whatever page the user went to, when they left the invite form while the invite was on its way and it then landed (#464)."
   },
   "inviteSendNeedsApprovalNote": "An owner or admin has to approve this invite before the person you're inviting sees it.",
   "@inviteSendNeedsApprovalNote": {
@@ -618,7 +618,7 @@
   },
   "editHouseholdSaved": "Household updated.",
   "@editHouseholdSaved": {
-    "description": "Shown once a household edit is saved, as the edit form closes."
+    "description": "Shown once a household edit is saved, as the edit form closes. Also a SnackBar over whatever page the user went to, when they left the edit form while the save was in flight and it then landed (#464)."
   },
   "editHouseholdPolicyLabel": "Who can invite",
   "@editHouseholdPolicyLabel": {
@@ -688,6 +688,26 @@
   "@editHouseholdErrorUnexpected": {
     "description": "Household edit error: any other failure."
   },
+  "editHouseholdNotSavedLate": "Your changes to {name} weren't saved.",
+  "@editHouseholdNotSavedLate": {
+    "description": "SnackBar shown after the user left the edit form while its save was in flight, and the server turned the save away: it no longer allowed the edit, didn't accept the values, or the household no longer exists. {name} is the household's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "editHouseholdUnconfirmedLate": "We couldn't confirm your changes to {name} were saved.",
+  "@editHouseholdUnconfirmedLate": {
+    "description": "SnackBar shown after the user left the edit form while its save was in flight, and the save ended without an answer that says what happened: no connection, a server error, or an answer the app couldn't read. The server may or may not have saved the changes, so the copy must not say either way. {name} is the household's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
   "editHouseholdNotAllowed": "Only the household's owners and admins can edit it.",
   "@editHouseholdNotAllowed": {
     "description": "Shown on the household edit screen instead of the form when the user is not an owner or admin."
@@ -722,15 +742,15 @@
   },
   "householdMemberErrorRejected": "The server didn't accept that change. The household is being read again.",
   "@householdMemberErrorRejected": {
-    "description": "Banner on the household screen when the server turned down a role change, removal or ownership transfer (400 or 409), or a request to leave (403 or 409), for instance because the household no longer stands as the screen showed it. The household is being read again."
+    "description": "Banner on the household screen when the server turned down a role change, removal or ownership transfer (400 or 409), or a request to leave (403 or 409), for instance because the household no longer stands as the screen showed it. The household is being read again. For a request to leave, also a snack bar over whatever page the user went to, when they left the household screen while it was on its way (#464)."
   },
   "householdMemberErrorOffline": "Couldn't reach the server. Try again.",
   "@householdMemberErrorOffline": {
-    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave got no usable answer from the server: no connection, a timeout, a server error or an expired session. Nothing on the device was changed, but the server may or may not have made the change, so the text must not say either way. Must not say the device is offline."
+    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave got no usable answer from the server: no connection, a timeout, a server error or an expired session. Nothing on the device was changed, but the server may or may not have made the change, so the text must not say either way. Must not say the device is offline. For a request to leave, also a snack bar over whatever page the user went to, when they left the household screen while it was on its way (#464)."
   },
   "householdMemberErrorUnexpected": "Something went wrong. The household is being read again to show where things stand.",
   "@householdMemberErrorUnexpected": {
-    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again."
+    "description": "Banner on the household screen when a role change, removal, ownership transfer or request to leave failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again. For a request to leave, also a snack bar over whatever page the user went to, when they left the household screen while it was on its way (#464)."
   },
   "householdMemberActions": "Member actions",
   "@householdMemberActions": {
@@ -888,7 +908,7 @@
   },
   "householdLeaveDone": "You left {household}.",
   "@householdLeaveDone": {
-    "description": "Snack bar shown once the server accepted the person leaving the household, as the household screen closes and returns to the list.",
+    "description": "Snack bar shown once the server accepted the person leaving the household, as the household screen closes and returns to the list. Also shown over whatever page the user went to, when they left the household screen while the leave was on its way and it then went through (#464).",
     "placeholders": {
       "household": {
         "type": "String",
@@ -898,11 +918,11 @@
   },
   "householdLeaveGone": "You're no longer in this household. It's being read again.",
   "@householdLeaveGone": {
-    "description": "Warning banner by the Leave household row when the server answered that the person is not in the household (a 404). The screen stays, and the household is being read again."
+    "description": "Warning banner by the Leave household row when the server answered that the person is not in the household (a 404). The screen stays, and the household is being read again. Also a snack bar over whatever page the user went to, when they left the household screen while the leave was on its way (#464)."
   },
   "householdLeaveErrorLastOwner": "You're the household's only owner. Make another member the owner first.",
   "@householdLeaveErrorLastOwner": {
-    "description": "Warning banner by the Leave household row when the server refused because the person is its only owner (a 400), for instance because another owner left on another device."
+    "description": "Warning banner by the Leave household row when the server refused because the person is its only owner (a 400), for instance because another owner left on another device. Also a snack bar over whatever page the user went to, when they left the household screen while the leave was on its way (#464)."
   },
   "adminHouseholdsTitle": "Households",
   "@adminHouseholdsTitle": {

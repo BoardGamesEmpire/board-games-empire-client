@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -65,6 +67,9 @@ const _notYetSyncedCopy =
     'synced.';
 const _notFoundCopy = "We couldn't find this household.";
 const _savedCopy = 'Household updated.';
+const _notSavedLateCopy = "Your changes to Den weren't saved.";
+const _unconfirmedLateCopy =
+    "We couldn't confirm your changes to Den were saved.";
 
 void main() {
   late _MockHouseholdRepository repository;
@@ -74,6 +79,7 @@ void main() {
   late HouseholdRole? role;
   late List<BuildContext> saved;
   late int refreshes;
+  late FakeSessionLease lease;
 
   setUpAll(() => registerFallbackValue(_household()));
 
@@ -85,6 +91,7 @@ void main() {
     role = HouseholdRole.householdOwner;
     saved = [];
     refreshes = 0;
+    lease = FakeSessionLease();
     when(() => repository.getHousehold(_id)).thenAnswer((_) async => household);
     when(() => repository.getCurrentUserMember(_id))
         .thenAnswer((_) async => _me(role));
@@ -102,6 +109,7 @@ void main() {
       householdId: _id,
       repository: repository,
       remote: remote,
+      session: lease,
       onSaved: saved.add,
       onRefresh: () async => refreshes++,
     ),
@@ -326,6 +334,299 @@ void main() {
 
     expect(find.text('This household no longer exists.'), findsOneWidget);
     expect(refreshes, 1);
+  });
+
+  // #464: the save outlives the form. Left while it is under way, it still
+  // says how it went, on the page the user went back to, and goes nowhere:
+  // the user already has.
+  group('left mid-save', () {
+    late EditHouseholdBloc bloc;
+
+    /// A page whose one button pushes the screen, as the household screen's
+    /// Edit does.
+    Widget pushedHarness() => MaterialApp(
+      theme: BgeTheme.light(),
+      localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+      supportedLocales: HouseholdLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => EditHouseholdScreen(
+                  householdId: _id,
+                  repository: repository,
+                  remote: remote,
+                  session: lease,
+                  onSaved: saved.add,
+                  onRefresh: () async => refreshes++,
+                ),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+
+    Future<void> open(WidgetTester tester) async {
+      await tester.pumpWidget(pushedHarness());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      bloc = BlocProvider.of<EditHouseholdBloc>(
+        tester.element(find.byType(EditHouseholdForm)),
+      );
+    }
+
+    /// Renames the household to Annex against an answer that waits on the
+    /// returned completer.
+    Future<Completer<Household>> saveHeld(WidgetTester tester) async {
+      final answer = Completer<Household>();
+      remote.onUpdate = (_, _) => answer.future;
+      await open(tester);
+      await tester.enterText(
+        find.byKey(EditHouseholdForm.nameFieldKey),
+        'Annex',
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(EditHouseholdForm.submitButtonKey));
+      await tester.tap(find.byKey(EditHouseholdForm.submitButtonKey));
+      await tester.pump();
+      expect(bloc.state, isA<EditHouseholdSaving>());
+      return answer;
+    }
+
+    /// Renames the household to Annex against an answer that waits on the
+    /// returned completer, then goes back while it is under way.
+    Future<Completer<Household>> saveThenLeave(WidgetTester tester) async {
+      final answer = await saveHeld(tester);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(EditHouseholdScreen), findsNothing);
+      return answer;
+    }
+
+    Future<bool> closed(WidgetTester tester) async {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      return bloc.isClosed;
+    }
+
+    Finder inSnackBar(String copy) =>
+        find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+    /// The page beneath is the only route: nothing was pushed or popped
+    /// after the user went back.
+    void expectStackUnchanged(WidgetTester tester) {
+      expect(find.text('open'), findsOneWidget);
+      expect(Navigator.of(tester.element(find.text('open'))).canPop(), false);
+      expect(saved, isEmpty);
+    }
+
+    testWidgets('left mid-save, the outcome is still said', (tester) async {
+      final answer = await saveThenLeave(tester);
+      // Kept for the save still under way.
+      expect(await closed(tester), isFalse);
+
+      answer.complete(_household(name: 'Annex'));
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar(_savedCopy), findsOneWidget);
+      expectStackUnchanged(tester);
+      expect(await closed(tester), isTrue);
+    });
+
+    // Named as the form opened with it: the rename is what was or wasn't
+    // saved. A failure the server may have saved first leaves it open.
+    for (final (name, error, copy) in [
+      (
+        'with no answer',
+        const HouseholdRemoteTransientException('down'),
+        _unconfirmedLateCopy,
+      ),
+      (
+        'with an answer it could not read',
+        const HouseholdRemotePermanentException('?', statusCode: 200),
+        _unconfirmedLateCopy,
+      ),
+      (
+        'refused as invalid',
+        const HouseholdRemotePermanentException('no', statusCode: 400),
+        _notSavedLateCopy,
+      ),
+      (
+        'refused for the role',
+        const HouseholdRemotePermanentException('no', statusCode: 403),
+        _notSavedLateCopy,
+      ),
+    ]) {
+      testWidgets('left mid-save, a failure $name is still said, naming the '
+          'household', (tester) async {
+        final answer = await saveThenLeave(tester);
+
+        answer.completeError(error);
+        await tester.pumpAndSettle();
+
+        expect(inSnackBar(copy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+    }
+
+    testWidgets('left mid-save, nothing is said once the session has ended', (
+      tester,
+    ) async {
+      final answer = await saveThenLeave(tester);
+      lease.isLive = false;
+
+      answer.complete(_household(name: 'Annex'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+      expectStackUnchanged(tester);
+      // Still closed: ending the session skips the message, not the close.
+      expect(await closed(tester), isTrue);
+    });
+
+    // The shell ends a session in the same turn it routes away, and the
+    // popped route stays mounted through its exit. A save that settles there
+    // asks the lease (#694), is said as it would be once the form had gone,
+    // and goes nowhere (#464).
+    group("on the route's way out", () {
+      /// Saves against an answer that waits on the returned completer, pops
+      /// the form and, in the same turn when [endSession], ends the session,
+      /// then pumps 50 ms into the exit.
+      Future<Completer<Household>> saveThenPop(
+        WidgetTester tester, {
+        bool endSession = false,
+      }) async {
+        final answer = await saveHeld(tester);
+        Navigator.of(tester.element(find.byType(EditHouseholdForm))).pop();
+        if (endSession) lease.isLive = false;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(EditHouseholdScreen), findsOneWidget);
+        return answer;
+      }
+
+      /// Gives [answer], and lets it reach the form, still inside the exit.
+      Future<void> settle(
+        WidgetTester tester,
+        Completer<Household> answer, {
+        required bool fails,
+      }) async {
+        if (fails) {
+          answer.completeError(const HouseholdRemoteTransientException('down'));
+        } else {
+          answer.complete(_household(name: 'Annex'));
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(EditHouseholdScreen), findsOneWidget);
+      }
+
+      /// The keys of the bars showing: a bar said again is a new key.
+      Set<Key?> barKeys(WidgetTester tester) => {
+        for (final bar in tester.widgetList<SnackBar>(find.byType(SnackBar)))
+          bar.key,
+      };
+
+      for (final (name, fails) in [('lands', false), ('fails', true)]) {
+        testWidgets('a save that $name after the session ended says nothing, '
+            'and the bloc still closes', (tester) async {
+          final answer = await saveThenPop(tester, endSession: true);
+
+          await settle(tester, answer, fails: fails);
+          expect(find.byType(SnackBar), findsNothing);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(SnackBar), findsNothing);
+          expectStackUnchanged(tester);
+          expect(await closed(tester), isTrue);
+        });
+      }
+
+      for (final (name, fails, copy) in [
+        ('lands', false, _savedCopy),
+        // With no answer, the server may have saved it first.
+        ('fails', true, _unconfirmedLateCopy),
+      ]) {
+        testWidgets('a save that $name is said once, and goes nowhere', (
+          tester,
+        ) async {
+          final answer = await saveThenPop(tester);
+
+          await settle(tester, answer, fails: fails);
+          // One bar, drawn in both pages' scaffolds while the exit runs.
+          expect(inSnackBar(copy), findsWidgets);
+          final said = barKeys(tester);
+          expect(said, hasLength(1));
+          await tester.pumpAndSettle();
+
+          expect(inSnackBar(copy), findsOneWidget);
+          expect(barKeys(tester), said);
+          expectStackUnchanged(tester);
+          expect(await closed(tester), isTrue);
+        });
+      }
+    });
+
+    testWidgets('a form a lost role takes away mid-save still says how the '
+        'save went, over the note', (tester) async {
+      final answer = Completer<Household>();
+      remote.onUpdate = (_, _) => answer.future;
+      await tester.pumpWidget(harness());
+      await tester.pumpAndSettle();
+      bloc = BlocProvider.of<EditHouseholdBloc>(
+        tester.element(find.byType(EditHouseholdForm)),
+      );
+      await tester.enterText(
+        find.byKey(EditHouseholdForm.nameFieldKey),
+        'Annex',
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(EditHouseholdForm.submitButtonKey));
+      await tester.tap(find.byKey(EditHouseholdForm.submitButtonKey));
+      await tester.pump();
+      expect(bloc.state, isA<EditHouseholdSaving>());
+
+      role = HouseholdRole.householdMember;
+      await reread(tester);
+      expect(find.byType(EditHouseholdForm), findsNothing);
+      expect(find.text(_notAllowedCopy), findsOneWidget);
+
+      answer.completeError(
+        const HouseholdRemotePermanentException('no', statusCode: 403),
+      );
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar(_notSavedLateCopy), findsOneWidget);
+      expect(find.text(_notAllowedCopy), findsOneWidget);
+      expect(saved, isEmpty);
+      expect(await closed(tester), isTrue);
+    });
+
+    testWidgets('left mid-save with nothing changed says nothing', (
+      tester,
+    ) async {
+      await open(tester);
+
+      // Save with nothing changed, and go back in the same turn. A save that
+      // changes nothing sends nothing and is never under way, so there is
+      // nothing to wait for: the form closes as it goes.
+      await tester.ensureVisible(find.byKey(EditHouseholdForm.submitButtonKey));
+      await tester.tap(find.byKey(EditHouseholdForm.submitButtonKey));
+      Navigator.of(tester.element(find.byType(EditHouseholdForm))).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EditHouseholdScreen), findsNothing);
+      expect(remote.updates, isEmpty);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      expect(Navigator.of(tester.element(find.text('open'))).canPop(), false);
+      expect(await closed(tester), isTrue);
+    });
   });
 
   group('accessibility audit', () {

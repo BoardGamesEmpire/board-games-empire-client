@@ -5,6 +5,7 @@ export 'src/orchestration/server_context_state.dart';
 export 'src/orchestration/server_orchestrator.dart';
 export 'src/orchestration/server_scope_installer.dart';
 export 'src/orchestration/session_identity_guard.dart';
+export 'src/orchestration/session_lease.dart';
 export 'src/orchestration/session_rehydrator.dart';
 export 'src/orchestration/user_scope_installer.dart';
 export 'src/orchestration/user_session_scope.dart';

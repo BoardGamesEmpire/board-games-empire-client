@@ -42,6 +42,7 @@ import 'package:events/src/widgets/rsvp_note_dialog.dart';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -201,6 +202,19 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// banner over the event, and the screen reads the event again where
 /// [EventActionOutcome.rereads] says to.
 ///
+/// The screen holds the actions' bloc, not a `BlocProvider`, so a delete the
+/// user walks away from still ends (#464). Gone while one is out, the screen
+/// keeps the bloc until the answer lands, and says it in a snackbar over the
+/// page the user went to, in the words the screen would have used: that the
+/// event was deleted, that it already was, or, since the banner went with the
+/// screen, why it wasn't. Then it closes the bloc, through `closeWhenSettled`.
+/// An answer that lands while the route is still on its way out is said the
+/// same way. That late answer never calls [onBack]: the user has already
+/// gone. No answer is said once [session] has ended, whether the screen is
+/// gone or still leaving: it is no news to whoever signs in next (#694). Any
+/// other request's end is a banner over the event, which went with the
+/// screen, so nothing is said of it. The bloc closes either way.
+///
 /// ## The event's status
 ///
 /// The menu offers Cancel or Reopen, then Archive or Unarchive, by the
@@ -345,6 +359,7 @@ class EventDetailScreen extends StatelessWidget {
   const EventDetailScreen({
     required this.eventId,
     required this.repository,
+    required this.session,
     this.remote,
     this.confirmSession,
     this.households,
@@ -751,6 +766,11 @@ class EventDetailScreen extends StatelessWidget {
   /// write to.
   final EventRepository repository;
 
+  /// The user session this screen was opened in, from the same container as
+  /// [repository] and [remote]. A delete that ends after the screen is gone
+  /// is said only while it is live (#694).
+  final SessionLease session;
+
   /// The per-server event client, for the read every open makes, the retry
   /// and the delete (#501). Null reads nothing and offers neither a retry nor
   /// Delete: the screen shows the cache alone.
@@ -770,7 +790,8 @@ class EventDetailScreen extends StatelessWidget {
   final Future<HouseholdRole?> Function(String householdId)? householdRole;
 
   /// Returns to the events, with this screen's context: from the not-found
-  /// state, as that surface's primary action, and after a delete (#501). The
+  /// state, as that surface's primary action, and after a delete (#501), but
+  /// not after one that lands once the user has left the screen (#464). The
   /// feature package doesn't know the route table. Null offers neither that
   /// button nor Delete, and the app bar's back button still leaves.
   final void Function(BuildContext context)? onBack;
@@ -809,59 +830,172 @@ class EventDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final remote = this.remote;
-    final hasActions = remote != null && onBack != null;
-
-    return MultiBlocProvider(
+    return _EventDetailBlocs(
       // go_router keeps this page when only the id changes; the key makes a
       // new id new blocs rather than the old event under them, as the
       // household detail's does (#466).
       key: ValueKey<String>(eventId),
+      screen: this,
+    );
+  }
+}
+
+/// The screen's blocs for one event (#466), and what is said of a delete
+/// that ends after the screen has gone.
+///
+/// The actions' bloc is held here, so a delete outlives the route (#464),
+/// while the detail's, the poll's, the games pool's and the nominations'
+/// stay on their providers.
+class _EventDetailBlocs extends StatefulWidget {
+  const _EventDetailBlocs({required this.screen, super.key});
+
+  final EventDetailScreen screen;
+
+  @override
+  State<_EventDetailBlocs> createState() => _EventDetailBlocsState();
+}
+
+class _EventDetailBlocsState extends State<_EventDetailBlocs> {
+  /// Held here rather than by a `BlocProvider`, which would close it with
+  /// the route: a delete still out then would never say how it ended. See
+  /// [dispose].
+  ///
+  /// Null until a build has a server and a way back. Once made it is kept
+  /// until [dispose], and a later build without them offers no actions.
+  EventActionsBloc? _actions;
+
+  /// The lease of the session the actions' bloc came from: taken from the
+  /// same build as its repository and server, whenever the bloc is made,
+  /// since [dispose] can't trust a later build's.
+  late SessionLease _session;
+
+  /// The messenger above the route, which says a bar only while [_session] is
+  /// live, and this screen's strings, captured while the screen is mounted: a
+  /// delete that ends after it is gone is said with them, and [dispose] can't
+  /// look them up.
+  late final SessionMessenger _messenger = SessionMessenger(
+    sessionIsLive: () => _session.isLive,
+  );
+  late EventsLocalizations _l10n;
+
+  @override
+  void initState() {
+    super.initState();
+    _makeActions();
+  }
+
+  @override
+  void didUpdateWidget(_EventDetailBlocs oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A server and a way back that arrive later bring the actions, as a
+    // provider list that grew would have.
+    if (_actions == null) _makeActions();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger.attach(context);
+    _l10n = EventsLocalizations.of(context);
+  }
+
+  @override
+  void dispose() {
+    // Gone with a request out: it ends, a delete's end is said while the
+    // session lives, and the bloc closes then. Otherwise the screen has
+    // already shown whatever there was, and the bloc closes now.
+    final actions = _actions;
+    if (actions != null) {
+      unawaited(
+        closeWhenSettled<EventActionsState>(
+          current: actions.state,
+          states: actions.stream,
+          underWay: (state) => state.busy,
+          outcomeOf: (state) => _lateMessage(_l10n, state),
+          say: _messenger.say,
+          close: actions.close,
+        ),
+      );
+    }
+    super.dispose();
+  }
+
+  /// Makes the actions' bloc from this build's server, and takes this
+  /// build's lease with it. None without a server or a way back: the delete
+  /// is never queued, and once the event is gone a screen that can't leave
+  /// has nowhere to go.
+  void _makeActions() {
+    final screen = widget.screen;
+    final remote = screen.remote;
+    _session = screen.session;
+    _actions = remote == null || screen.onBack == null
+        ? null
+        : EventActionsBloc(
+            repository: screen.repository,
+            remote: remote,
+            confirmSession: screen.confirmSession,
+          );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = widget.screen;
+    final remote = screen.remote;
+    // A server and a way back, or no actions: the bloc is kept once made,
+    // and a build without them offers none.
+    final provided = switch ((remote, _actions)) {
+      (final remote?, final actions?) when screen.onBack != null => (
+        remote: remote,
+        actions: actions,
+      ),
+      _ => null,
+    };
+
+    return MultiBlocProvider(
       providers: [
         BlocProvider<EventDetailBloc>(
           create: (_) => EventDetailBloc(
-            eventId: eventId,
-            repository: repository,
+            eventId: screen.eventId,
+            repository: screen.repository,
             remote: remote,
-            confirmSession: confirmSession,
-            households: households,
-            householdRole: householdRole,
+            confirmSession: screen.confirmSession,
+            households: screen.households,
+            householdRole: screen.householdRole,
           ),
         ),
         // None without a server or a way back, and then nothing offers
         // Delete, a date's actions, the poll or the Games tab, with its pool
         // and its nominations.
-        if (hasActions) ...[
-          BlocProvider<EventActionsBloc>(
-            create: (_) => EventActionsBloc(
-              repository: repository,
-              remote: remote,
-              confirmSession: confirmSession,
+        if (provided != null) ...[
+          BlocProvider<EventActionsBloc>.value(value: provided.actions),
+          BlocProvider<EventPollBloc>(
+            create: (_) => EventPollBloc(
+              remote: provided.remote,
+              confirmSession: screen.confirmSession,
             ),
           ),
-          BlocProvider<EventPollBloc>(
-            create: (_) =>
-                EventPollBloc(remote: remote, confirmSession: confirmSession),
-          ),
           BlocProvider<EventGamesBloc>(
-            create: (_) =>
-                EventGamesBloc(remote: remote, confirmSession: confirmSession),
+            create: (_) => EventGamesBloc(
+              remote: provided.remote,
+              confirmSession: screen.confirmSession,
+            ),
           ),
           BlocProvider<EventNominationsBloc>(
             create: (_) => EventNominationsBloc(
-              remote: remote,
-              confirmSession: confirmSession,
+              remote: provided.remote,
+              confirmSession: screen.confirmSession,
             ),
           ),
         ],
       ],
       child: _EventDetailView(
-        onBack: onBack,
-        onWhoAnswered: onWhoAnswered,
-        onAddAttendee: onAddAttendee,
-        onOfferGames: onOfferGames,
-        now: now ?? DateTime.now,
-        hasActions: hasActions,
+        onBack: screen.onBack,
+        onWhoAnswered: screen.onWhoAnswered,
+        onAddAttendee: screen.onAddAttendee,
+        onOfferGames: screen.onOfferGames,
+        now: screen.now ?? DateTime.now,
+        hasActions: provided != null,
+        say: _messenger.say,
       ),
     );
   }
@@ -871,6 +1005,7 @@ class _EventDetailView extends StatelessWidget {
   const _EventDetailView({
     required this.now,
     required this.hasActions,
+    required this.say,
     this.onBack,
     this.onWhoAnswered,
     this.onAddAttendee,
@@ -887,6 +1022,9 @@ class _EventDetailView extends StatelessWidget {
   /// screen has a server and a way back. Looking it up where it isn't would
   /// throw.
   final bool hasActions;
+
+  /// Says a message in a snackbar, through the screen's lease (#694).
+  final void Function(String? message) say;
 
   @override
   Widget build(BuildContext context) {
@@ -1028,17 +1166,23 @@ class _EventDetailView extends StatelessWidget {
   void _onOutcome(BuildContext context, EventActionsState state) {
     final outcome = state.outcome;
     if (outcome == null) return;
+    final l10n = EventsLocalizations.of(context);
+    // Popped or removed, and mounted only for its exit: the user has left,
+    // so a delete's end is said as it would be once the screen had gone, a
+    // failure too, and nothing else is done (#464). By the screen's dispose
+    // the request has ended, so `closeWhenSettled` says nothing more.
+    if (ModalRoute.isActiveOf(context) == false) {
+      say(_lateMessage(l10n, state));
+      return;
+    }
     if (_deleted(state)) {
-      // The messenger is the app's, so the snackbar outlives this route and
+      // The messenger is above the route, so the snackbar outlives it and
       // shows on the screen it leaves for.
-      ScaffoldMessenger.of(context).replaceSnackBar(
-        EventsLocalizations.of(context).eventsDeleted,
-      );
+      say(_deleteMessage(l10n, outcome));
       // Only from the top. Busy shows nothing, so while the DELETE was out
-      // the user may have pressed back, and the route stays mounted through
-      // its exit, or opened another route over it. The app's way back pops
-      // whichever route is on top, so either way it would pop another. A
-      // covered screen stays, and shows not found once the removal lands.
+      // the user may have opened another route over it, and the app's way
+      // back pops whichever route is on top. A covered screen stays, and
+      // shows not found once the removal lands.
       if (ModalRoute.isCurrentOf(context) ?? true) onBack!(context);
       return;
     }
@@ -2805,7 +2949,7 @@ class _ActionOutcomeBanner extends StatelessWidget {
     // Delete is the only other action whose outcome reaches here: a status
     // write's and a roster write's take the arms above. The event's edit
     // (#500) is offered nowhere on this screen, so none reaches here.
-    _ => _deleteMessage(l10n),
+    _ => _deleteMessage(l10n, outcome),
   };
 
   /// A status write's copy (#502), saying which was done where it was.
@@ -2911,22 +3055,6 @@ class _ActionOutcomeBanner extends StatelessWidget {
           : l10n.eventsRsvpFailedUnexpected,
   };
 
-  String _deleteMessage(EventsLocalizations l10n) => switch (outcome.result) {
-    EventActionResult.done => l10n.eventsDeleted,
-    EventActionResult.gone => l10n.eventsDeleteGone,
-    EventActionResult.refused => l10n.eventsDeleteRefused,
-    // Only a date write (#506) ends changed or partlyDone.
-    EventActionResult.changed => l10n.eventsDateChanged,
-    EventActionResult.partlyDone => l10n.eventsDateCancelledRemoveUnconfirmed,
-    // Only a transient failure is worth pressing again (#501). A session
-    // that moved sent nothing, and a permanent failure (a 4xx) stays one: the
-    // same press would end the same way.
-    EventActionResult.failed =>
-      outcome.error is EventRemoteTransientException
-          ? l10n.eventsDeleteFailed
-          : l10n.eventsDeleteFailedUnexpected,
-  };
-
   /// A date write's copy (#506), saying [done] where it was.
   ///
   /// A failure never says the change didn't happen: a write whose answer
@@ -2955,6 +3083,38 @@ class _ActionOutcomeBanner extends StatelessWidget {
               : l10n.eventsDateFailedUnexpected,
       };
 }
+
+/// What is said of a request that ends once the user has left the screen,
+/// after it has gone or while it was going (#464): a delete's end, in the
+/// words the screen would have used. Any other request's end is a banner over
+/// the event, which went with the screen, so nothing is said of it.
+String? _lateMessage(EventsLocalizations l10n, EventActionsState state) {
+  final outcome = state.outcome;
+  if (outcome == null || outcome.action != EventAction.delete) return null;
+  return _deleteMessage(l10n, outcome);
+}
+
+/// A delete's copy (#501), in one place: the banner's while the screen is up,
+/// the snackbar's for a done, and the snackbar's for any end that lands once
+/// the user has left the screen (#464).
+String _deleteMessage(
+  EventsLocalizations l10n,
+  EventActionOutcome outcome,
+) => switch (outcome.result) {
+  EventActionResult.done => l10n.eventsDeleted,
+  EventActionResult.gone => l10n.eventsDeleteGone,
+  EventActionResult.refused => l10n.eventsDeleteRefused,
+  // Only a date write (#506) ends changed or partlyDone.
+  EventActionResult.changed => l10n.eventsDateChanged,
+  EventActionResult.partlyDone => l10n.eventsDateCancelledRemoveUnconfirmed,
+  // Only a transient failure is worth pressing again (#501). A session
+  // that moved sent nothing, and a permanent failure (a 4xx) stays one: the
+  // same press would end the same way.
+  EventActionResult.failed =>
+    outcome.error is EventRemoteTransientException
+        ? l10n.eventsDeleteFailed
+        : l10n.eventsDeleteFailedUnexpected,
+};
 
 /// Nothing cached to show and nothing that will answer: the overview's two
 /// failed-read surfaces, for one event.
