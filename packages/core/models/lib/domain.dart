@@ -92,6 +92,7 @@ export 'src/domain/sync/sync_status.dart';
 export 'src/domain/system_settings/system_settings.dart';
 export 'src/domain/system_settings/system_settings_patch.dart';
 export 'src/domain/user/auth_strategy.dart';
+export 'src/domain/user/person_initials.dart';
 export 'src/domain/user/person_name.dart';
 export 'src/domain/user/user.dart';
 export 'src/domain/user/user_authentication.dart';

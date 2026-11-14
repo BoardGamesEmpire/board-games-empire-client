@@ -16,7 +16,7 @@ part 'user.g.dart';
 /// Wire format is camelCase (only the well-known document is snake_case),
 /// so no `@JsonKey` renames are needed. There is no `avatar` / `profileImage`
 /// / `bio` on the backend user — the avatar field is [image]; profile-only
-/// fields live on the separate `UserProfile` relation.
+/// fields live on the separate profile relation.
 @freezed
 abstract class User with _$User implements UserBase {
   const factory User({

@@ -7,6 +7,9 @@ environment:
 resolution: workspace
 
 dependencies:
+  # Initials are taken by grapheme cluster, not code unit (#349). Flutter's own
+  # constraint.
+  characters: ^1.4.1
   equatable: ^2.1.0
   freezed_annotation: ^3.1.0
   json_annotation: ^4.12.0
