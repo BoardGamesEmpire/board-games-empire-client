@@ -329,6 +329,39 @@ void main() {
       );
       expect(save.onPressed, isNull);
     });
+
+    testWidgets('a session that is no longer the user sends no save (#432)', (
+      tester,
+    ) async {
+      var asked = 0;
+      await tester.pumpWidget(
+        _app(
+          ProfileScreen(
+            remote: remote,
+            confirmSession: () async {
+              asked++;
+              return false;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      remote.fetches.single.complete(profileFixture());
+      await tester.pumpAndSettle();
+
+      final location = ProfileForm.fieldKey(ProfileControls.location);
+      await tester.ensureVisible(find.byKey(location));
+      await tester.enterText(find.byKey(location), 'York');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(ProfileForm.saveKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ProfileForm.saveKey));
+      await tester.pumpAndSettle();
+
+      expect(asked, 1);
+      expect(remote.updateCalls, isEmpty);
+      expect(find.byKey(ProfileForm.failureKey), findsOneWidget);
+    });
   });
 
   group('accessibility audit', () {

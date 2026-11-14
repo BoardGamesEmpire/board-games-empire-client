@@ -269,6 +269,43 @@ void main() {
       verify: (_) => expect(remote.updateCalls, [_patch]),
     );
 
+    group("the session check (#432): web's session cookie can move to "
+        'another user under this tab', () {
+      blocTest<ProfileBloc, ProfileState>(
+        'a confirmed session sends the save',
+        build: () =>
+            ProfileBloc(remote: remote, confirmSession: () async => true),
+        seed: () => loaded,
+        act: (bloc) async {
+          bloc.add(const ProfileSaveRequested(_patch));
+          await pumpEventQueue();
+          remote.updates.single.complete(stored);
+        },
+        expect: () => [
+          loaded.copyWith(saving: true),
+          loaded.copyWith(profile: stored, saved: true),
+        ],
+        verify: (_) => expect(remote.updateCalls, [_patch]),
+      );
+
+      for (final (name, confirm) in [
+        ('a session that is no longer the user', () async => false),
+        ('a session check that throws', () async => throw StateError('no')),
+      ]) {
+        blocTest<ProfileBloc, ProfileState>(
+          '$name sends nothing, and the save fails',
+          build: () => ProfileBloc(remote: remote, confirmSession: confirm),
+          seed: () => loaded,
+          act: (bloc) => bloc.add(const ProfileSaveRequested(_patch)),
+          expect: () => [
+            loaded.copyWith(saving: true),
+            loaded.copyWith(saveFailure: () => ProfileSaveFailure.failed),
+          ],
+          verify: (_) => expect(remote.updateCalls, isEmpty),
+        );
+      }
+    });
+
     blocTest<ProfileBloc, ProfileState>(
       'an empty patch sends nothing',
       build: build,

@@ -10,13 +10,22 @@ import 'package:models/src/domain/user/person_name.dart';
 /// ZWJ sequence or a letter outside the Basic Multilingual Plane is never cut
 /// in half.
 ///
+/// Each letter is capitalised alone, and one whose capital is more than one
+/// letter stays as written: on web, `toUpperCase` makes ß "SS" and ﬁ "FI".
+///
 /// Pair it with [personName], which decides which name to pass.
 String? personInitials(String? name) {
   final trimmed = name?.trim();
   if (trimmed == null || trimmed.isEmpty) return null;
 
   final words = trimmed.split(RegExp(r'\s+'));
-  final first = words.first.characters.first;
-  if (words.length == 1) return first.toUpperCase();
-  return '$first${words.last.characters.first}'.toUpperCase();
+  final first = _capital(words.first.characters.first);
+  if (words.length == 1) return first;
+  return '$first${_capital(words.last.characters.first)}';
+}
+
+/// [letter], one grapheme, capitalised where its capital is one grapheme too.
+String _capital(String letter) {
+  final upper = letter.toUpperCase();
+  return upper.characters.length == 1 ? upper : letter;
 }

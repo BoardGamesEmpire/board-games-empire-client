@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -38,6 +39,32 @@ class _FakeProfileRemote implements UserProfileRemoteDataSource {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// A user scope that holds whoever the shell last activated.
+class _UserSessionScope implements UserSessionScope {
+  @override
+  String? activeUserId;
+
+  @override
+  Future<void> activate(String userId) async => activeUserId = userId;
+
+  @override
+  Future<void> deactivate() async => activeUserId = null;
+}
+
+/// A session guard that gives [answer] and records whom it was asked about.
+class _RecordingGuard implements SessionIdentityGuard {
+  _RecordingGuard(this.answer);
+
+  final SessionConfirmation answer;
+  final asked = <String>[];
+
+  @override
+  Future<SessionConfirmation> confirm(String userId) async {
+    asked.add(userId);
+    return answer;
+  }
+}
+
 /// #547 through the real composition: the menu entry, its gate, and the route.
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -55,6 +82,7 @@ void main() {
     WidgetTester tester, {
     bool withProfile = true,
     bool withSession = true,
+    SessionIdentityGuard? guard,
   }) async {
     final repository = _MockHouseholdRepository();
     when(repository.watchHouseholds).thenAnswer((_) => Stream.value([]));
@@ -63,6 +91,8 @@ void main() {
       FakeAuthRepository(initialSession: testAuthResponse()),
       householdRepository: withSession ? repository : null,
       userProfileRemoteDataSource: withProfile ? _FakeProfileRemote() : null,
+      userSessionScope: guard == null ? null : _UserSessionScope(),
+      sessionIdentityGuard: guard,
     );
     addTearDown(server.container.dispose);
     when(
@@ -143,6 +173,34 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ProfileScreen), findsOneWidget);
+  });
+
+  testWidgets("the screen confirms the session with the server's guard, as "
+      "the scope's user, before a save (#432)", (tester) async {
+    final guard = _RecordingGuard(SessionConfirmation.notThisUser);
+    final router = await pumpApp(tester, guard: guard);
+
+    router.go(AppRoutes.profile);
+    await tester.pumpAndSettle();
+
+    final confirm = tester
+        .widget<ProfileScreen>(find.byType(ProfileScreen))
+        .confirmSession!;
+    expect(await confirm(), isFalse);
+    expect(guard.asked, ['u1']);
+  });
+
+  testWidgets('without a guard, as on native, the screen has no session '
+      'check', (tester) async {
+    final router = await pumpApp(tester);
+
+    router.go(AppRoutes.profile);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<ProfileScreen>(find.byType(ProfileScreen)).confirmSession,
+      isNull,
+    );
   });
 
   testWidgets('/profile without the remote shows Not yet available', (

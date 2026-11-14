@@ -39,10 +39,21 @@ void main() {
       expect(personInitials('\u{10437}x'), '\u{1040F}');
     });
 
+    // On web, toUpperCase is JavaScript's, which maps ß to SS, ﬁ to FI and
+    // ŉ to ʼN, where the VM leaves each as it is. Uppercased whole, 'ß Foo'
+    // gave three letters there.
+    test('a letter whose capital is more than one letter stays as written', () {
+      expect(personInitials('ß Foo'), 'ßF');
+      expect(personInitials('ﬁona'), 'ﬁ');
+      expect(personInitials('ŉ x'), 'ŉX');
+    });
+
     test('never more than two graphemes, never a lone surrogate', () {
       const pieces = <String>[
         'a',
         'Z',
+        'ß',
+        'ﬁ',
         '\u{E9}',
         '\u{10437}',
         '\u{1F600}',

@@ -2204,7 +2204,7 @@ class _BgeAppState extends State<BgeApp> {
       eventId: eventId,
       repository: container.get<EventRepository>(),
       remote: _eventRemote(container),
-      confirmSession: _confirmEventSession(container),
+      confirmSession: _confirmSession(container),
       households: _eventHouseholds(container),
       householdRole: _eventHouseholdRole(container),
       onBack: (ctx) => ctx.pop(),
@@ -2239,7 +2239,7 @@ class _BgeAppState extends State<BgeApp> {
       eventId: eventId,
       repository: container.get<EventRepository>(),
       remote: _eventRemote(container),
-      confirmSession: _confirmEventSession(container),
+      confirmSession: _confirmSession(container),
     );
   }
 
@@ -2300,15 +2300,16 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// Asks the server's [SessionIdentityGuard] whether the session is still
-  /// the user whose scope the detail's repository lives in (#432), as the
-  /// event hydrate asks for its pass. Null where the server has no guard, as
-  /// on native.
+  /// the user whose scope the screen was built in (#432), as the event
+  /// hydrate asks for its pass: the event screens before their reads and
+  /// writes, and the profile before its save. Null where the server has no
+  /// guard, as on native.
   ///
   /// The user is the session scope's when the route is built, which is the
-  /// repository's: a user switch tears that scope down, and ends the
+  /// event repository's: a user switch tears that scope down, and ends the
   /// screen's cache with it. With no user scope to name one, every answer is
   /// no.
-  static Future<bool> Function()? _confirmEventSession(
+  static Future<bool> Function()? _confirmSession(
     DependencyContainer container,
   ) {
     if (!container.isRegistered<SessionIdentityGuard>()) return null;
@@ -2580,6 +2581,9 @@ class _BgeAppState extends State<BgeApp> {
   /// per server, so without the session the screen would read as a failure
   /// rather than not yet available. Null otherwise, which the route shows
   /// as not yet available.
+  ///
+  /// The save goes to whoever the session is, so it confirms the session
+  /// first, as the event screens' writes do (#432).
   Widget? _buildProfileRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -2590,7 +2594,10 @@ class _BgeAppState extends State<BgeApp> {
       return null;
     }
 
-    return ProfileScreen(remote: container.get<UserProfileRemoteDataSource>());
+    return ProfileScreen(
+      remote: container.get<UserProfileRemoteDataSource>(),
+      confirmSession: _confirmSession(container),
+    );
   }
 
   /// The #807 server settings: the per-server

@@ -34,13 +34,17 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// that can't be read, takes the form away, and the focus in it, so that
 /// focus goes to the title too.
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({required this.remote, super.key});
+  const ProfileScreen({required this.remote, this.confirmSession, super.key});
 
   static const Key loadingKey = Key('profile.loading');
   static const Key errorKey = Key('profile.error');
   static const Key notReadyKey = Key('profile.not_ready');
 
   final UserProfileRemoteDataSource remote;
+
+  /// Whether the session is still the signed-in user's, asked before each
+  /// save (#432). Null where nothing can move the session, as on native.
+  final Future<bool> Function()? confirmSession;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -59,7 +63,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _bloc = ProfileBloc(remote: widget.remote)..add(const ProfileStarted());
+    _bloc = ProfileBloc(
+      remote: widget.remote,
+      confirmSession: widget.confirmSession,
+    )..add(const ProfileStarted());
   }
 
   @override
