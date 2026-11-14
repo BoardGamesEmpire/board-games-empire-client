@@ -1063,9 +1063,11 @@ void main() {
       });
     }
 
-    for (final (name, start, copy) in [
-      ('a removal that fails', startRemoval, _removeFailedCopy),
-      ('a save that fails', startSave, _saveFailedCopy),
+    for (final (name, start, fails, copy) in [
+      ('a removal that fails', startRemoval, true, _removeFailedCopy),
+      ('a removal that lands', startRemoval, false, _removedCopy),
+      ('a save that fails', startSave, true, _saveFailedCopy),
+      ('a save that lands', startSave, false, _savedCopy),
     ]) {
       testWidgets('$name there is said once, over the page beneath, which '
           'stays', (tester) async {
@@ -1074,7 +1076,7 @@ void main() {
         final bloc = blocOf(tester);
 
         await leave(tester);
-        answer(fails: true);
+        answer(fails: fails);
         await answerInExit(tester);
 
         // One bar, drawn in both pages' scaffolds while the exit runs.

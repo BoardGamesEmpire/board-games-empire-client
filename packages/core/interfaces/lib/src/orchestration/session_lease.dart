@@ -15,8 +15,11 @@ abstract interface class SessionLease {
   bool get isLive;
 }
 
-/// The lease for compositions that register no `UserSessionScope` (shell
-/// tests). There is no session there to end, so it is always live.
+/// The lease for compositions that register no `UserSessionScope`, which
+/// today means shell tests: both platforms register one in every server
+/// scope, and a route built there before a session opens gets an ended
+/// lease, not this one. There is no session here to end, so it is always
+/// live.
 final class UnscopedSessionLease implements SessionLease {
   const UnscopedSessionLease();
 
