@@ -16,6 +16,7 @@ import 'package:dio_network/dio_network.dart'
         NetworkLogInterceptor,
         NotificationRemoteDataSourceImpl,
         SystemSettingsRemoteDataSourceImpl,
+        UserProfileRemoteDataSourceImpl,
         UserRemoteDataSourceImpl;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -33,6 +34,7 @@ import 'package:network_interface/network_interface.dart'
         HouseholdRemoteDataSource,
         NotificationRemoteDataSource,
         SystemSettingsRemoteDataSource,
+        UserProfileRemoteDataSource,
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -200,6 +202,14 @@ void registerServerNetworkWeb({
     // error's envelope.
     ..registerSingleton<UserRemoteDataSource>(
       UserRemoteDataSourceImpl(dio),
+    )
+    // #547: the caller's own profile remote. Same convention, placement and
+    // reuse argument as the user remote above: native's implementation over
+    // this origin's Dio (base URL + the browser-owned session cookie
+    // `/api/users/me/profile` requires), whose permissive validateStatus lets
+    // it read an error's envelope.
+    ..registerSingleton<UserProfileRemoteDataSource>(
+      UserProfileRemoteDataSourceImpl(dio),
     )
     // #368: the per-origin collection remote. Same convention, same placement
     // and the same reuse argument as the household remote above: it shares this

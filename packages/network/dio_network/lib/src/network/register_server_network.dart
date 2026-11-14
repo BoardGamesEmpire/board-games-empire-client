@@ -17,6 +17,7 @@ import 'package:dio_network/src/network/network_log_interceptor.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
 import 'package:dio_network/src/notification/notification_remote_data_source_impl.dart';
 import 'package:dio_network/src/system_settings/system_settings_remote_data_source_impl.dart';
+import 'package:dio_network/src/user/user_profile_remote_data_source_impl.dart';
 import 'package:dio_network/src/user/user_remote_data_source_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -35,6 +36,7 @@ import 'package:network_interface/network_interface.dart'
         HouseholdRemoteDataSource,
         NotificationRemoteDataSource,
         SystemSettingsRemoteDataSource,
+        UserProfileRemoteDataSource,
         UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -161,6 +163,13 @@ void registerServerNetwork({
     // stateless; the container owns the Dio.
     ..registerSingleton<UserRemoteDataSource>(
       UserRemoteDataSourceImpl(dio),
+    )
+    // #547: the caller's own profile remote, beside the user remote and for
+    // the same reason: it shares the per-server Dio (base URL + the session
+    // `/api/users/me/profile` requires) and adds no auth of its own. Const and
+    // stateless; the container owns the Dio.
+    ..registerSingleton<UserProfileRemoteDataSource>(
+      UserProfileRemoteDataSourceImpl(dio),
     )
     // #253: the per-server collection remote — the network seam the collection
     // slice had none of. Same convention and the same placement as the

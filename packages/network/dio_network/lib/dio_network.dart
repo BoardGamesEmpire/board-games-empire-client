@@ -31,6 +31,7 @@ export 'src/notification/notification_remote_data_source_impl.dart';
 
 export 'src/system_settings/system_settings_remote_data_source_impl.dart';
 
+export 'src/user/user_profile_remote_data_source_impl.dart';
 export 'src/user/user_remote_data_source_impl.dart';
 
 export 'src/well_known/well_known_client_impl.dart';
