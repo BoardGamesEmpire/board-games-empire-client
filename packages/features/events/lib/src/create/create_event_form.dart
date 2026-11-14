@@ -294,25 +294,6 @@ class _CreateEventFormState extends State<CreateEventForm> {
   }
 }
 
-/// Who can see an event, as the menu offers it: from the fewest people to
-/// the most. The enum's own order is the backend's alphabetical one, which
-/// says nothing about reach.
-final List<Reach> _reaches = [
-  for (final reach in Reach.values)
-    if (_breadth(reach) != null) reach,
-]..sort((a, b) => _breadth(a)!.compareTo(_breadth(b)!));
-
-/// Where [reach] falls among those offered, from the fewest people to the
-/// most, or null for `unknown`, which isn't offered. A switch, so a new
-/// value doesn't compile until it has its place.
-int? _breadth(Reach reach) => switch (reach) {
-  Reach.private => 0,
-  Reach.friends => 1,
-  Reach.friendsOfFriends => 2,
-  Reach.public => 3,
-  Reach.unknown => null,
-};
-
 /// The form's basics: the event's title, its household, what kind it is
 /// and who can see it, then its description, place and link.
 ///
@@ -399,16 +380,27 @@ class _Basics extends StatelessWidget {
           readOnly: readOnly,
         ),
         const BgeGap.md(),
+        // From the fewest people to the most: the enum's own order is the
+        // backend's alphabetical one, which says nothing about reach.
         EventCreateMenu<Reach>(
           key: CreateEventScreen.reachKey,
           formControlName: EventCreateControls.reach,
           label: l10n.eventCreateReach,
           hint: l10n.eventsReachFriends,
           items: eventCreateMenuItems(
-            _reaches,
+            Reach.ladder,
             (reach) => eventReachLabel(l10n, reach),
           ),
           readOnly: readOnly,
+        ),
+        // What *Extended network* means, while it is the one chosen (#547).
+        // The other rungs say who they are in their labels.
+        BgeFieldNote<Reach>(
+          formControlName: EventCreateControls.reach,
+          textKey: CreateEventScreen.reachNoteKey,
+          noteFor: (reach) => reach == Reach.extendedNetwork
+              ? l10n.eventCreateReachExtendedNetworkNote
+              : null,
         ),
         const BgeGap.md(),
         BgeTextField(

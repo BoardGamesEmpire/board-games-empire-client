@@ -215,6 +215,7 @@ class _Facts extends StatelessWidget {
         Reach.friends => l10n.adminHouseholdDetailReachFriends,
         Reach.friendsOfFriends =>
           l10n.adminHouseholdDetailReachFriendsOfFriends,
+        Reach.extendedNetwork => l10n.adminHouseholdDetailReachExtendedNetwork,
         Reach.public => l10n.adminHouseholdDetailReachPublic,
         Reach.unknown => null,
       };

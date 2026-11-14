@@ -57,6 +57,7 @@ void main() {
 
   test('names each reach', () {
     names(Reach.values, eventReachLabel, {
+      Reach.extendedNetwork: 'Extended network',
       Reach.friends: 'Friends',
       Reach.friendsOfFriends: 'Friends of friends',
       Reach.private: 'Private',

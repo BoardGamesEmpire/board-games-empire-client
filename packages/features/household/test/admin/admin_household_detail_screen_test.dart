@@ -96,6 +96,7 @@ void main() {
       (Reach.private, 'Only members'),
       (Reach.friends, "Members' friends"),
       (Reach.friendsOfFriends, 'Friends of friends'),
+      (Reach.extendedNetwork, 'Extended network'),
       (Reach.public, 'Everyone on the server'),
     ]) {
       testWidgets('names $reach as "$label"', (tester) async {

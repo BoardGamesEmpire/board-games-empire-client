@@ -100,6 +100,18 @@ _Avoid_: Unsaved, draft, pending
 A record with local changes the server has not yet accepted.
 _Avoid_: Modified, stale, out of date
 
+### Reach
+
+**Reach**:
+How far past its owner something reaches: only me, friends, friends of friends,
+extended network, everyone.
+_Avoid_: Visibility, audience
+
+**Extended network**:
+A user's accepted friends and everyone up to three friendship steps from them,
+unless a block stands between them.
+_Avoid_: third degree, network on its own
+
 ### Servers
 
 **Server**:

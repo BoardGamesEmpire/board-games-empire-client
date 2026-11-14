@@ -40,6 +40,7 @@ String? eventStatusLabel(EventsLocalizations l10n, EventStatus status) =>
 /// Who may see the event.
 String? eventReachLabel(EventsLocalizations l10n, Reach reach) =>
     switch (reach) {
+      Reach.extendedNetwork => l10n.eventsReachExtendedNetwork,
       Reach.friends => l10n.eventsReachFriends,
       Reach.friendsOfFriends => l10n.eventsReachFriendsOfFriends,
       Reach.private => l10n.eventsReachPrivate,
