@@ -521,6 +521,45 @@ void main() {
       expect(context.container.get<UserProbe>().disposed, isFalse);
     });
 
+    test("background ends the lease in the caller's turn, before its queued "
+        'teardown runs (#694)', () async {
+      final installer = RecordingUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      addTearDown(context.dispose);
+      await context.activate();
+      await context.activateUserSession('user-a');
+      final lease = context.container.get<SessionLease>();
+
+      final transition = context.background();
+
+      expect(lease.isLive, isFalse, reason: "ended in the caller's turn");
+      expect(installer.probes.single.disposed, isFalse);
+      await transition;
+      expect(installer.probes.single.disposed, isTrue);
+    });
+
+    test("context.dispose ends the lease in the caller's turn, before it "
+        'waits on queued scope work (#694)', () async {
+      final installer = RecordingUserInstaller();
+      final context = ServerContextImpl(
+        config: _makeConfig(),
+        userInstallers: [installer],
+      );
+      await context.activate();
+      await context.activateUserSession('user-a');
+      final lease = context.container.get<SessionLease>();
+
+      final disposal = context.dispose();
+
+      expect(lease.isLive, isFalse, reason: "ended in the caller's turn");
+      expect(installer.probes.single.disposed, isFalse);
+      await disposal;
+      expect(installer.probes.single.disposed, isTrue);
+    });
+
     test('context.dispose disposes an active user-session scope', () async {
       final installer = RecordingUserInstaller();
       final context = ServerContextImpl(

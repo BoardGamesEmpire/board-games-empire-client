@@ -199,6 +199,9 @@ class ServerContextImpl implements ServerContext {
       );
     }
 
+    // Leaving the active state ends the session (below), so its lease ends
+    // now, in the caller's turn, not once the queued teardown runs (#694).
+    _container.endUserLease();
     await _transition(() async {
       // Per-server resources remain open during backgrounding — the DB,
       // clients, and their registrations are retained for a cheap
@@ -263,6 +266,10 @@ class ServerContextImpl implements ServerContext {
   @override
   Future<void> dispose() async {
     if (_state == ServerContextState.disposed) return;
+
+    // The session ends with the context, so its lease ends now, before the
+    // waits below, as deactivateUserSession's does (#694).
+    _container.endUserLease();
 
     // Let any in-flight transition settle before tearing down — activate()
     // now performs real async work (DB open, client construction), and
