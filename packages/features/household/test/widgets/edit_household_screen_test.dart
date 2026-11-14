@@ -67,6 +67,9 @@ const _notYetSyncedCopy =
     'synced.';
 const _notFoundCopy = "We couldn't find this household.";
 const _savedCopy = 'Household updated.';
+const _notSavedLateCopy = "Your changes to Den weren't saved.";
+const _unconfirmedLateCopy =
+    "We couldn't confirm your changes to Den were saved.";
 
 void main() {
   late _MockHouseholdRepository repository;
@@ -434,18 +437,42 @@ void main() {
       expect(await closed(tester), isTrue);
     });
 
-    testWidgets('left mid-save, a failure is still said, naming the '
-        'household', (tester) async {
-      final answer = await saveThenLeave(tester);
+    // Named as the form opened with it: the rename is what was or wasn't
+    // saved. A failure the server may have saved first leaves it open.
+    for (final (name, error, copy) in [
+      (
+        'with no answer',
+        const HouseholdRemoteTransientException('down'),
+        _unconfirmedLateCopy,
+      ),
+      (
+        'with an answer it could not read',
+        const HouseholdRemotePermanentException('?', statusCode: 200),
+        _unconfirmedLateCopy,
+      ),
+      (
+        'refused as invalid',
+        const HouseholdRemotePermanentException('no', statusCode: 400),
+        _notSavedLateCopy,
+      ),
+      (
+        'refused for the role',
+        const HouseholdRemotePermanentException('no', statusCode: 403),
+        _notSavedLateCopy,
+      ),
+    ]) {
+      testWidgets('left mid-save, a failure $name is still said, naming the '
+          'household', (tester) async {
+        final answer = await saveThenLeave(tester);
 
-      answer.completeError(const HouseholdRemoteTransientException('down'));
-      await tester.pumpAndSettle();
+        answer.completeError(error);
+        await tester.pumpAndSettle();
 
-      // Named as the form opened with it: the rename is what wasn't saved.
-      expect(inSnackBar("Your changes to Den weren't saved."), findsOneWidget);
-      expectStackUnchanged(tester);
-      expect(await closed(tester), isTrue);
-    });
+        expect(inSnackBar(copy), findsOneWidget);
+        expectStackUnchanged(tester);
+        expect(await closed(tester), isTrue);
+      });
+    }
 
     testWidgets('left mid-save, nothing is said once the session has ended', (
       tester,
@@ -522,8 +549,8 @@ void main() {
 
       for (final (name, fails, copy) in [
         ('lands', false, _savedCopy),
-        // Named as the form opened with it: the rename is what wasn't saved.
-        ('fails', true, "Your changes to Den weren't saved."),
+        // With no answer, the server may have saved it first.
+        ('fails', true, _unconfirmedLateCopy),
       ]) {
         testWidgets('a save that $name is said once, and goes nowhere', (
           tester,
@@ -574,7 +601,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(inSnackBar("Your changes to Den weren't saved."), findsOneWidget);
+      expect(inSnackBar(_notSavedLateCopy), findsOneWidget);
       expect(find.text(_notAllowedCopy), findsOneWidget);
       expect(saved, isEmpty);
       expect(await closed(tester), isTrue);

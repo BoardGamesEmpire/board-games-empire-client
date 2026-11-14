@@ -256,8 +256,14 @@ class _EditHouseholdViewState extends State<_EditHouseholdView> {
   /// was going (#464): a save as the listener says it, and a failure, whose
   /// banner went with the form, by the household it was for. The banner's
   /// reason is left out: away from the form, there is nothing there to fix.
+  /// A failure the server may have saved first, as the bloc counts it, is
+  /// left open rather than said to be lost.
   String? _lateOutcome(EditHouseholdState state) => switch (state) {
     EditHouseholdSaved() => _savedMessage(_l10n, state),
+    EditHouseholdFailed(
+      reason: EditHouseholdFailure.offline || EditHouseholdFailure.unexpected,
+    ) =>
+      _l10n.editHouseholdUnconfirmedLate(_name),
     EditHouseholdFailed() => _l10n.editHouseholdNotSavedLate(_name),
     EditHouseholdEditing() || EditHouseholdSaving() => null,
   };

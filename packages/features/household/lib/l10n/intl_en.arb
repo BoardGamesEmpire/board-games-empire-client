@@ -690,7 +690,17 @@
   },
   "editHouseholdNotSavedLate": "Your changes to {name} weren't saved.",
   "@editHouseholdNotSavedLate": {
-    "description": "SnackBar shown after the user left the edit form while its save was in flight, and the save failed. {name} is the household's name.",
+    "description": "SnackBar shown after the user left the edit form while its save was in flight, and the server turned the save away: it no longer allowed the edit, didn't accept the values, or the household no longer exists. {name} is the household's name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "editHouseholdUnconfirmedLate": "We couldn't confirm your changes to {name} were saved.",
+  "@editHouseholdUnconfirmedLate": {
+    "description": "SnackBar shown after the user left the edit form while its save was in flight, and the save ended without an answer that says what happened: no connection, a server error, or an answer the app couldn't read. The server may or may not have saved the changes, so the copy must not say either way. {name} is the household's name.",
     "placeholders": {
       "name": {
         "type": "String",
