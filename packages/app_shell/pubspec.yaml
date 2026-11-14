@@ -47,6 +47,8 @@ dependencies:
     path: ../network/network_interface
   observability:
     path: ../core/observability
+  profile:
+    path: ../features/profile
   server_onboarding:
     path: ../features/server_onboarding
   server_settings:

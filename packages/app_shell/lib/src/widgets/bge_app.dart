@@ -55,6 +55,7 @@ import 'package:models/domain.dart';
 import 'package:models/dto.dart' show AuthUser;
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
+import 'package:profile/profile.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 import 'package:server_settings/server_settings.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
@@ -415,6 +416,7 @@ class _BgeAppState extends State<BgeApp> {
       sendHouseholdInviteBuilder: _buildSendHouseholdInviteRoute,
       editHouseholdBuilder: _buildEditHouseholdRoute,
       inviteInboxBuilder: _buildInviteInboxRoute,
+      profileBuilder: _buildProfileRoute,
       sentInvitesBuilder: _buildSentInvitesRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
@@ -842,6 +844,7 @@ class _BgeAppState extends State<BgeApp> {
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
+    final profileL10n = ProfileLocalizations.of(context);
 
     // Only surface households where the household scope is actually
     // installed — the same guard _buildHouseholdListRoute applies.
@@ -885,7 +888,20 @@ class _BgeAppState extends State<BgeApp> {
         canReadHouseholds &&
         container.isRegistered<HouseholdInviteRemoteDataSource>();
 
+    // #547: the profile is read from the server; the household gate keeps the
+    // entry to a live user session, as invites does.
+    final canReadProfile =
+        canReadHouseholds &&
+        container.isRegistered<UserProfileRemoteDataSource>();
+
     return [
+      if (canReadProfile)
+        HomeMenuEntry(
+          id: 'profile',
+          icon: Icons.account_circle_outlined,
+          label: profileL10n.profileTitle,
+          location: AppRoutes.profile,
+        ),
       if (canReadHouseholds)
         HomeMenuEntry(
           id: 'households',
@@ -2558,6 +2574,25 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
+  /// The current user's own profile (#547), under the menu entry's gate: the
+  /// profile remote, and the household repository, which keeps it to a live
+  /// user session, as the invite inbox is kept. The remote is registered
+  /// per server, so without the session the screen would read as a failure
+  /// rather than not yet available. Null otherwise, which the route shows
+  /// as not yet available.
+  Widget? _buildProfileRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<UserProfileRemoteDataSource>() ||
+        !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return ProfileScreen(remote: container.get<UserProfileRemoteDataSource>());
+  }
+
   /// The #807 server settings: the per-server
   /// [SystemSettingsRemoteDataSource] and [NotificationRemoteDataSource], and
   /// the session's [CallerAccessRepository], from the active server's
@@ -3159,6 +3194,7 @@ class _BgeAppState extends State<BgeApp> {
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
         ServerSettingsLocalizations.delegate,
+        ProfileLocalizations.delegate,
         UserSearchLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
