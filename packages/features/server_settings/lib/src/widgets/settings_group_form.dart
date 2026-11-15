@@ -109,7 +109,8 @@ class SettingsGroupForm extends StatefulWidget {
   /// The words and keys of the group's Save and of what its save came to.
   final SettingsGroupLabels labels;
 
-  /// Builds the group's fields, above its Save.
+  /// Builds the group's fields, above its Save. Its `context` is below the
+  /// group's [ReactiveForm], so `ReactiveForm.of` finds the form.
   ///
   /// `readOnly` while the group saves or the role may not save. `submit` is
   /// the form's own, for a field that submits, such as with Enter: it holds
@@ -240,10 +241,14 @@ class _SettingsGroupFormState extends State<SettingsGroupForm> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          widget.fields(
-            context,
-            readOnly: binding.saving || !binding.maySave,
-            submit: _submit,
+          // A Builder, so the fields' context is below the form and
+          // `ReactiveForm.of` finds it.
+          Builder(
+            builder: (context) => widget.fields(
+              context,
+              readOnly: binding.saving || !binding.maySave,
+              submit: _submit,
+            ),
           ),
           SettingsGroupActions(
             maySave: binding.maySave,

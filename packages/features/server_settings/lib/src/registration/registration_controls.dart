@@ -1,6 +1,6 @@
 import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
-import 'package:server_settings/src/mail/mail_controls.dart';
+import 'package:server_settings/src/whole_number.dart';
 
 /// The errors the Registration and sign-in form's checks set (#894).
 abstract final class RegistrationErrors {
@@ -9,14 +9,11 @@ abstract final class RegistrationErrors {
 }
 
 /// A reset link lifetime's value as minutes in the server's range, or null.
-int? resetLinkLifetime(Object? value) {
-  final minutes = mailWholeNumber(value);
-  return minutes == null ||
-          minutes < SystemSettingsRemoteDataSource.minLinkLifetimeMinutes ||
-          minutes > SystemSettingsRemoteDataSource.maxLinkLifetimeMinutes
-      ? null
-      : minutes;
-}
+int? resetLinkLifetime(Object? value) => wholeNumberIn(
+  value,
+  min: SystemSettingsRemoteDataSource.minLinkLifetimeMinutes,
+  max: SystemSettingsRemoteDataSource.maxLinkLifetimeMinutes,
+);
 
 Map<String, dynamic>? validResetLinkLifetime(
   AbstractControl<dynamic> control,

@@ -8,6 +8,7 @@ import 'package:server_settings/l10n/server_settings_localizations.dart';
 import 'package:server_settings/src/bloc/server_settings_state.dart';
 import 'package:server_settings/src/mail/mail_controls.dart';
 import 'package:server_settings/src/mail/mail_patch.dart';
+import 'package:server_settings/src/whole_number.dart';
 import 'package:server_settings/src/widgets/mail_password_section.dart';
 import 'package:server_settings/src/widgets/settings_group_actions.dart';
 import 'package:server_settings/src/widgets/settings_group_binding.dart';
@@ -236,7 +237,7 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
   /// Whether the form holds anything [settings] don't: a port that doesn't
   /// parse counts, as one that differs does.
   bool _unsavedAgainst(SystemSettings settings) {
-    final port = mailWholeNumber(_form.control(MailControls.port).value);
+    final port = wholeNumber(_form.control(MailControls.port).value);
     if (port == null) return true;
     return _passwordEdit != _initialPasswordEdit(settings) ||
         !mailPatch(settings, _values(port: port)).isEmpty;
@@ -293,7 +294,7 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
       _form.rejectSubmit();
       return;
     }
-    final port = mailWholeNumber(_form.control(MailControls.port).value)!;
+    final port = wholeNumber(_form.control(MailControls.port).value)!;
     final patch = mailPatch(_base, _values(port: port));
     // Against the server's current settings: the rule is the server's, on
     // what it holds now.

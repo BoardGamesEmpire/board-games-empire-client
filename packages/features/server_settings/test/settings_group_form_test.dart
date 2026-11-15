@@ -62,6 +62,9 @@ void main() {
   late int edits;
   late List<bool> readOnlyBuilt;
 
+  /// What `ReactiveForm.of` found from the fields' context.
+  Object? formOfFields;
+
   /// When the last field was asked for, and the switch's value in the form
   /// it was asked of.
   late List<(SchedulerPhase, Object?)> lastFieldAsked;
@@ -110,6 +113,7 @@ void main() {
         labels: _labels,
         fields: (context, {required readOnly, required submit}) {
           readOnlyBuilt.add(readOnly);
+          formOfFields = ReactiveForm.of(context);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -364,5 +368,13 @@ void main() {
       // built: what a group answers can turn on a value just put back.
       expect(lastFieldAsked, [(SchedulerPhase.postFrameCallbacks, true)]);
     });
+  });
+
+  testWidgets("the fields find the group's form from their context", (
+    tester,
+  ) async {
+    await pumpGroup(tester);
+
+    expect(formOfFields, isA<FormGroup>());
   });
 }

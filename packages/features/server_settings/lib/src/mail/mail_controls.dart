@@ -2,6 +2,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:server_settings/l10n/server_settings_localizations.dart';
 import 'package:server_settings/src/mail/mail_patch.dart';
+import 'package:server_settings/src/whole_number.dart';
 
 /// The names of the Mail form's controls (#807), in its one [FormGroup].
 abstract final class MailControls {
@@ -30,28 +31,19 @@ abstract final class MailErrors {
   static const passwordRequired = 'passwordRequired';
 }
 
-/// Digits only. `int.tryParse` alone also takes a sign and a `0x` prefix, so
-/// "0x50" would pass and save port 80.
-final RegExp _digits = RegExp(r'^[0-9]+$');
-
-/// A control's value as a whole number once trimmed, or null.
-int? mailWholeNumber(Object? value) {
-  final text = value is String ? value.trim() : '';
-  return _digits.hasMatch(text) ? int.tryParse(text) : null;
-}
-
 /// The message for [MailErrors.tooLong].
 String mailTooLongMessage(ServerSettingsLocalizations l10n) =>
     l10n.mailFieldTooLong(SystemSettingsRemoteDataSource.maxMailSettingLength);
 
-Map<String, dynamic>? validMailPort(AbstractControl<dynamic> control) {
-  final port = mailWholeNumber(control.value);
-  return port == null ||
-          port < SystemSettingsRemoteDataSource.minPort ||
-          port > SystemSettingsRemoteDataSource.maxPort
-      ? <String, dynamic>{MailErrors.port: true}
-      : null;
-}
+Map<String, dynamic>? validMailPort(AbstractControl<dynamic> control) =>
+    wholeNumberIn(
+          control.value,
+          min: SystemSettingsRemoteDataSource.minPort,
+          max: SystemSettingsRemoteDataSource.maxPort,
+        ) ==
+        null
+    ? <String, dynamic>{MailErrors.port: true}
+    : null;
 
 /// At most the server's length, counted as the server counts it, once
 /// trimmed as the server trims it.

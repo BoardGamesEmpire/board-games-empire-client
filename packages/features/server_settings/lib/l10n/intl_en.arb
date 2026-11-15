@@ -411,5 +411,107 @@
   "registrationNotSavedTitle": "Registration and sign-in settings not saved",
   "@registrationNotSavedTitle": {
     "description": "Heading of the message above the save button when saving the Registration and sign-in group's settings failed."
+  },
+  "settingsDaysHelper": "From {min} to {max} days.",
+  "@settingsDaysHelper": {
+    "description": "Helper text under a field that takes a number of days: the lowest and highest the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "settingsDaysInvalid": "Enter a whole number of days from {min} to {max}.",
+  "@settingsDaysInvalid": {
+    "description": "Validation message when a days field is blank, not a whole number, or out of range: the lowest and highest the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "generalGroupTitle": "General",
+  "@generalGroupTitle": {
+    "description": "Heading of the General group of the server settings."
+  },
+  "generalNameLabel": "Server name",
+  "@generalNameLabel": {
+    "description": "Label of the field for the name of the server."
+  },
+  "generalNameHelper": "People see this name when they choose which server to add.",
+  "@generalNameHelper": {
+    "description": "Helper text under the server name field."
+  },
+  "generalNameEmpty": "Enter a name for the server.",
+  "@generalNameEmpty": {
+    "description": "Validation message when the server name is blank."
+  },
+  "generalNameTooLong": "Use at most {max} characters.",
+  "@generalNameTooLong": {
+    "description": "Validation message when the server name is longer than the server takes: the limit.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "generalSave": "Save general settings",
+  "@generalSave": {
+    "description": "Button that saves the General group's settings to the server."
+  },
+  "generalSaving": "Saving…",
+  "@generalSaving": {
+    "description": "Label of the save button while the General group's settings are being saved."
+  },
+  "generalSaved": "General settings saved.",
+  "@generalSaved": {
+    "description": "Shown above the save button once the server has stored the General group's settings, until they are edited again."
+  },
+  "generalNotSavedTitle": "General settings not saved",
+  "@generalNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the General group's settings failed."
+  },
+  "contributionsGroupTitle": "Contributions",
+  "@contributionsGroupTitle": {
+    "description": "Heading of the Contributions group of the server settings."
+  },
+  "contributionsApprovalLabel": "Hold media contributions for staff approval",
+  "@contributionsApprovalLabel": {
+    "description": "Label of the switch that holds media contributions until staff approve them."
+  },
+  "contributionsApprovalSubtitle": "A contribution is published only once staff approve it.",
+  "@contributionsApprovalSubtitle": {
+    "description": "Explanation under the contribution approval switch."
+  },
+  "contributionsReclaimLabel": "Days to reclaim a rejected contribution",
+  "@contributionsReclaimLabel": {
+    "description": "Label of the field for how many days the person who contributed a rejected item may reclaim it."
+  },
+  "contributionsSave": "Save contribution settings",
+  "@contributionsSave": {
+    "description": "Button that saves the Contributions group's settings to the server."
+  },
+  "contributionsSaving": "Saving…",
+  "@contributionsSaving": {
+    "description": "Label of the save button while the Contributions group's settings are being saved."
+  },
+  "contributionsSaved": "Contribution settings saved.",
+  "@contributionsSaved": {
+    "description": "Shown above the save button once the server has stored the Contributions group's settings, until they are edited again."
+  },
+  "contributionsNotSavedTitle": "Contribution settings not saved",
+  "@contributionsNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Contributions group's settings failed."
   }
 }
