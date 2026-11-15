@@ -91,7 +91,7 @@ dev_dependencies:
   # Browser-only suite for the storage composition (#288): asserts the log
   # level the storage report emits, and needs drift's storage enum to build
   # the cases.
-  drift: ^2.34.3
+  drift: ^2.35.4
   flutter_test:
     sdk: flutter
   logging: ^1.2.0

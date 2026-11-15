@@ -22,7 +22,7 @@ dependencies:
     path: ../../core/di
   dio_network:
     path: ../../network/dio_network
-  drift: ^2.34.3
+  drift: ^2.35.4
   drift_storage:
     path: ../../storage/drift_storage
   events:

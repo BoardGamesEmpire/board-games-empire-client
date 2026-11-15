@@ -40,7 +40,7 @@ import 'dart:typed_data';
 
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -265,6 +265,34 @@ void main() {
       );
       expect(header?.userVersion, second.schemaVersion);
       expect(second.schemaVersion, 18);
+    });
+  });
+
+  // #950: drift 2.34.3 flushed a write to IndexedDB only outside a
+  // transaction, so a transaction's writes (its COMMIT included) stayed in the
+  // worker's memory until the next plain write. This reads storage.
+  group("a transaction's writes reach storage (#950)", () {
+    test("a transaction's writes are stored without a later write", () async {
+      final serverId = _uniqueServerId();
+      final name = WebWasmExecutorFactory.databaseName(serverId);
+      final opening = await const WebWasmExecutorFactory().serverDatabase(
+        serverId,
+      );
+      final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+      addTearDown(db.close);
+      await db.customSelect('SELECT 1').get();
+      await db.customStatement('CREATE TABLE probe_950 (x INTEGER)');
+      final before = (await _storedHeader(name))!.changeCounter;
+
+      await db.transaction(() async {
+        await db.customInsert(
+          'INSERT INTO probe_950 (x) VALUES (?)',
+          variables: [Variable.withInt(1)],
+        );
+      });
+
+      final after = (await _storedHeader(name))!.changeCounter;
+      expect(after, greaterThan(before));
     });
   });
 

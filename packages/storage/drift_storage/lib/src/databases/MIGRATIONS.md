@@ -189,7 +189,7 @@ schema.
 > need to run with foreign keys off, inside a transaction. Where that wrapper
 > lives — owned by `bgeMigrationStrategy` around `steps`, or written by the
 > migration author — is #54's decision. Drift's generated `stepByStep` does not
-> settle it: in drift 2.34.3, `runMigrationSteps` only dispatches the steps,
+> settle it: in drift 2.35.4, `runMigrationSteps` only dispatches the steps,
 > and its doc comment has the caller turn foreign keys off, open the
 > transaction, and check foreign keys after
 > (`lib/src/runtime/query_builder/migration.dart`; read from the source, not

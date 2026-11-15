@@ -13,8 +13,8 @@
 //
 // Drift's docs say to take both files from the SAME release as the
 // package, so the release tag is DERIVED from the resolved `drift`
-// version in `pubspec.lock` — `drift 2.34.3` fetches from
-// `drift-2.34.3`. Bumping `drift` moves the assets with it.
+// version in `pubspec.lock` — `drift 2.35.4` fetches from
+// `drift-2.35.4`. Bumping `drift` moves the assets with it.
 //
 // This requires drift >= 2.34.2, the first release publishing
 // `sqlite3.wasm` as an asset (earlier ones ship only the worker). Keep
@@ -61,11 +61,11 @@ const _assets = <String>['sqlite3.wasm', 'drift_worker.js'];
 /// GitHub lists each asset's digest on the release page
 /// (`https://github.com/simolus3/drift/releases/tag/drift-<version>`).
 const _checksums = <String, Map<String, String>>{
-  'drift-2.34.3': {
+  'drift-2.35.4': {
     'sqlite3.wasm':
-        '41cf968998241465d8b1dfffb1eb60dd10c35de5022a3647e14174ea3af84143',
+        'e7451780e78c56ff864fe9317a0fbcd6aeb2e8de3beba7f5efd963202f7ec3d9',
     'drift_worker.js':
-        '4db0469de8ceabad8d5cd3d920614486ba587e100e39523f36f704a3aec5f26c',
+        '48c950cd8e3bc3cddb34816c860e228be8832bef07a297c27e9907c057ff8162',
   },
 };
 

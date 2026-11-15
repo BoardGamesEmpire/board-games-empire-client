@@ -81,7 +81,7 @@ const _webSafeLibrariesByPackage = {
     'internal/migrations.dart',
     'internal/modular.dart',
     // NOT 'internal/export_schema.dart': imports `dart:isolate` directly
-    // (drift 2.34.3, lib/internal/export_schema.dart:2). Genuinely
+    // (drift 2.35.4, lib/internal/export_schema.dart:2). Genuinely
     // VM-only, correctly caught as an offender — see the pin below.
   },
 };
