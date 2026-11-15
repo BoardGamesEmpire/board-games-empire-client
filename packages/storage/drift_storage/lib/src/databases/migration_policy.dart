@@ -66,6 +66,13 @@ extension BgeMigrationDefaults on GeneratedDatabase {
   /// web (drift/wasm) database must pass `false`. See that method for why
   /// this is the owner's decision rather than a runtime probe.
   ///
+  /// drift sets `user_version` after `beforeOpen`, and on web IndexedDB
+  /// storage nothing flushes that write, so a page that leaves without a
+  /// later write reloads at version 0 over a full schema. `beforeOpen` writes
+  /// the version itself through `customStatement`, which does flush, when it
+  /// changes. It runs only after `onCreate` / `onUpgrade` succeed, so it
+  /// never records a version a failed step didn't reach (#608).
+  ///
   /// The `PRAGMA foreign_keys = OFF` + `transaction(...)` wrapper that real
   /// destructive migrations need is deliberately NOT applied here yet: whether
   /// this factory should own it depends on how drift's generated `stepByStep`
@@ -85,8 +92,12 @@ extension BgeMigrationDefaults on GeneratedDatabase {
           await steps(m, from, to);
         }
       },
-      beforeOpen: (details) =>
-          applyStandardPragmas(enableWriteAheadLog: enableWriteAheadLog),
+      beforeOpen: (details) async {
+        if (details.versionBefore != details.versionNow) {
+          await customStatement('PRAGMA user_version = ${details.versionNow}');
+        }
+        await applyStandardPragmas(enableWriteAheadLog: enableWriteAheadLog);
+      },
     );
   }
 }

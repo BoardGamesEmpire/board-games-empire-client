@@ -36,6 +36,8 @@
 @TestOn('browser')
 library;
 
+import 'dart:typed_data';
+
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -68,6 +70,32 @@ Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
 /// derived from, and nothing else about the identity matters here.
 ServerIdentity _identity(String serverId) =>
     testServerIdentity().copyWith(serverId: serverId);
+
+/// The schema version and change counter as IndexedDB stores them, read from
+/// page 1 of the stored file: big-endian `uint32`s at offsets 60 and 24.
+///
+/// This reads storage, not the worker's memory. The shared worker keeps pages
+/// it hasn't flushed, so reopening in the same page would pass with or
+/// without a flush. Null for a missing or short file.
+Future<({int userVersion, int changeCounter})?> _storedHeader(
+  String databaseName,
+) async {
+  final probe = await WasmDatabase.probe(
+    sqlite3Uri: Uri.parse('sqlite3.wasm'),
+    driftWorkerUri: Uri.parse('drift_worker.js'),
+    databaseName: databaseName,
+  );
+  final bytes = await probe.exportDatabase((
+    WebStorageApi.indexedDb,
+    databaseName,
+  ));
+  if (bytes == null || bytes.length < 64) return null;
+  final header = ByteData.sublistView(bytes);
+  return (
+    userVersion: header.getUint32(60),
+    changeCounter: header.getUint32(24),
+  );
+}
 
 void main() {
   group('WebWasmExecutorFactory', () {
@@ -189,6 +217,54 @@ void main() {
         () => const WebWasmExecutorFactory().serverDatabase(''),
         throwsA(isA<ArgumentError>()),
       );
+    });
+  });
+
+  // #608: drift sets `user_version` after `beforeOpen`, and nothing flushes
+  // that write to IndexedDB. These read the stored bytes, so a database left
+  // without a later write still has to carry its version.
+  group('the stored schema version (#608)', () {
+    Future<ServerDatabase> open(String serverId) async {
+      final opening = await const WebWasmExecutorFactory().serverDatabase(
+        serverId,
+      );
+      final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+      addTearDown(db.close);
+      return db;
+    }
+
+    test(
+      'a fresh open that writes nothing stores the schema version',
+      () async {
+        final serverId = _uniqueServerId();
+        final db = await open(serverId);
+        await db.doWhenOpened((_) {});
+
+        final header = await _storedHeader(
+          WebWasmExecutorFactory.databaseName(serverId),
+        );
+        expect(header?.userVersion, db.schemaVersion);
+      },
+    );
+
+    test('an upgrade that writes nothing stores the new version', () async {
+      final serverId = _uniqueServerId();
+      final first = await open(serverId);
+      await first.customSelect('SELECT 1').get();
+      await first.customStatement(
+        'ALTER TABLE games DROP COLUMN base_games_json',
+      );
+      await first.customStatement('PRAGMA user_version = 17');
+      await first.close();
+
+      final second = await open(serverId);
+      await second.doWhenOpened((_) {});
+
+      final header = await _storedHeader(
+        WebWasmExecutorFactory.databaseName(serverId),
+      );
+      expect(header?.userVersion, second.schemaVersion);
+      expect(second.schemaVersion, 18);
     });
   });
 

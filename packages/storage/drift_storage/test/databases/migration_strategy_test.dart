@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, OpeningDetails, QueryExecutor, QueryInterceptor;
 import 'package:drift/native.dart' show NativeDatabase;
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
@@ -105,4 +107,55 @@ void main() {
       expect(await foreignKeysOn(db), isTrue);
     });
   });
+
+  // Invokes the database's real `beforeOpen` directly on an open, intercepted
+  // database. drift runs `beforeOpen`'s statements on the inner executor, past
+  // any interceptor, so opening through an interceptor never sees them.
+  group(
+    'beforeOpen writes user_version only when the version changes (#608)',
+    () {
+      Future<(ServerDatabase, _CustomStatementLog)> openLogged() async {
+        final log = _CustomStatementLog();
+        final db = ServerDatabase(NativeDatabase.memory().interceptWith(log));
+        addTearDown(db.close);
+        await db.customSelect('SELECT 1').get();
+        log.statements.clear();
+        return (db, log);
+      }
+
+      test('a version change writes it through a custom statement', () async {
+        final (db, log) = await openLogged();
+
+        await db.migration.beforeOpen!(const OpeningDetails(17, 18));
+
+        expect(log.statements, contains('PRAGMA user_version = 18'));
+      });
+
+      test('an unchanged version writes none', () async {
+        final (db, log) = await openLogged();
+
+        await db.migration.beforeOpen!(const OpeningDetails(18, 18));
+
+        expect(
+          log.statements.where((s) => s.contains('user_version')),
+          isEmpty,
+        );
+      });
+    },
+  );
+}
+
+/// Records every `runCustom` statement a database runs.
+class _CustomStatementLog extends QueryInterceptor {
+  final statements = <String>[];
+
+  @override
+  Future<void> runCustom(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    statements.add(statement);
+    return executor.runCustom(statement, args);
+  }
 }
