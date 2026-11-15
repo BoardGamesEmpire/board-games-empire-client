@@ -162,7 +162,10 @@ class _StuckRow extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const BgeGap.xs(),
-                const _StuckBadge(),
+                BgeSyncBadge(
+                  state: BgeSyncState.stuck,
+                  label: l10n.syncStuckStatus,
+                ),
               ],
             ),
           ),
@@ -266,38 +269,5 @@ class _StuckRow extends StatelessWidget {
       ),
     );
     return confirmed ?? false;
-  }
-}
-
-/// "Couldn't sync", with the icon that carries the state alongside its
-/// colour.
-class _StuckBadge extends StatelessWidget {
-  const _StuckBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = SyncLocalizations.of(context);
-    final theme = Theme.of(context);
-    final color = BgeStatusColors.of(context).conflict;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          BgeStatusColors.iconFor(BgeStatus.conflict),
-          // Scales with its label, as the household list's badge does.
-          size: MediaQuery.textScalerOf(context)
-              .scale(theme.textTheme.labelMedium?.fontSize ?? 0),
-          color: color,
-        ),
-        const BgeGap.xs(axis: Axis.horizontal),
-        Flexible(
-          child: Text(
-            l10n.syncStuckStatus,
-            style: theme.textTheme.labelMedium?.copyWith(color: color),
-          ),
-        ),
-      ],
-    );
   }
 }

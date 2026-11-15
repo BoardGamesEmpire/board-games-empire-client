@@ -7,6 +7,8 @@ export 'src/recovery/stuck_sync_ops_state.dart';
 export 'src/recovery/sync_recovery.dart';
 export 'src/status/session_sync_status.dart';
 export 'src/status/sync_status_cubit.dart';
+export 'src/status/sync_status_line.dart';
+export 'src/status/sync_status_scope_host.dart';
 export 'src/sync_operation_sender_impl.dart';
 export 'src/sync_queue_drain.dart';
 export 'src/sync_queue_drain_installer.dart';

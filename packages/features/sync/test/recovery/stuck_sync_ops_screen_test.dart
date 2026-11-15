@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockRecovery extends Mock implements SyncRecovery {}
@@ -85,6 +86,27 @@ void main() {
       expect(find.text(text), findsOneWidget);
     }
     expect(find.text("Couldn't sync"), findsNWidgets(_visibleRows(tester)));
+  });
+
+  testWidgets("each row's status is the stuck sync badge, read with its "
+      'description', (tester) async {
+    final handle = tester.ensureSemantics();
+    await show(tester, _ops.take(1).toList());
+
+    expect(
+      tester.getSemantics(find.text('Add Brass to your collection')),
+      isSemantics(label: "Add Brass to your collection\nCouldn't sync"),
+    );
+    // The badge every other stuck row shows (#47), not one of its own.
+    final badge = find.descendant(
+      of: find.byKey(StuckSyncOpsScreen.rowKey('q1')),
+      matching: find.byType(BgeSyncBadge),
+    );
+    expect(badge, findsOneWidget);
+    final widget = tester.widget<BgeSyncBadge>(badge);
+    expect(widget.state, BgeSyncState.stuck);
+    expect(widget.label, "Couldn't sync");
+    handle.dispose();
   });
 
   testWidgets('a stuck event create reads "Create the event “Game night”"', (
