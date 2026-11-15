@@ -266,9 +266,9 @@
   "@settingsFailed": {
     "description": "Shown when saving the settings failed because the server could not be reached or did not answer usefully."
   },
-  "settingsOtherGroupSaving": "Available when the other save finishes.",
+  "settingsOtherGroupSaving": "Available when the save in progress finishes.",
   "@settingsOtherGroupSaving": {
-    "description": "Read by a screen reader with a group's disabled Save button while another group of settings is being saved: why it can't be pressed yet. Not drawn on screen."
+    "description": "Read by a screen reader with a group's disabled Save button while a save of another group of settings is in progress: why it can't be pressed yet. Not drawn on screen."
   },
   "mailTestSend": "Send test email",
   "@mailTestSend": {

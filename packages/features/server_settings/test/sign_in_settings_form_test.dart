@@ -27,7 +27,7 @@ const _warningCopy =
 const _savedCopy = 'Sign-in settings saved.';
 const _rejectedCopy =
     'The server refused one of these values. Check them and try again.';
-const _otherSavingCopy = 'Available when the other save finishes.';
+const _otherSavingCopy = 'Available when the save in progress finishes.';
 
 void main() {
   late List<SystemSettingsPatch> saves;
@@ -281,7 +281,7 @@ void main() {
       expect(find.text('Saving…'), findsOneWidget);
     });
 
-    testWidgets('Save is disabled while the other group saves, with the '
+    testWidgets('Save is disabled while another group saves, with the '
         'reason as its hint and no line drawn', (tester) async {
       final handle = tester.ensureSemantics();
       await pumpForm(tester);
@@ -305,7 +305,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('offline while the other group saves, the offline reason is '
+    testWidgets('offline while another group saves, the offline reason is '
         "Save's hint", (tester) async {
       final handle = tester.ensureSemantics();
       await pumpForm(tester, offline: true, otherGroupSaving: true);

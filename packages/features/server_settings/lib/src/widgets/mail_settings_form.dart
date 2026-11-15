@@ -37,7 +37,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// ## New values from the server
 ///
 /// [revision] moves whenever the server's settings were read or a save of
-/// either group landed. The form takes the new values when its own save just
+/// any group landed. The form takes the new values when its own save just
 /// landed ([saved]), or when it holds no unsaved changes, so another group's
 /// save never discards the user's edits here. Taking them is not an edit.
 ///
@@ -94,7 +94,7 @@ class MailSettingsForm extends StatefulWidget {
   /// Whether this group's save is in flight.
   final bool saving;
 
-  /// Whether the other group's save is in flight. One save at a time.
+  /// Whether another group's save is in flight. One save at a time.
   final bool otherGroupSaving;
 
   /// Why this group's last save didn't land, until the group is edited.

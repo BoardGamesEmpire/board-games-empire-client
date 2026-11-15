@@ -2,7 +2,7 @@
 /// the rule for taking new ones.
 ///
 /// `revision` moves whenever the server's settings were read or a save of
-/// either group landed. A form takes the new values when its own save just
+/// any group landed. A form takes the new values when its own save just
 /// landed, or when it holds no unsaved changes, so another group's save never
 /// discards the user's edits ([takes]).
 ///

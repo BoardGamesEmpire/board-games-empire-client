@@ -836,7 +836,7 @@ void main() {
       }
     });
 
-    testWidgets('Save is disabled while the other group saves', (
+    testWidgets('Save is disabled while another group saves', (
       tester,
     ) async {
       await pumpForm(tester, otherGroupSaving: true);
