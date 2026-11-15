@@ -2180,9 +2180,13 @@
   "@eventsOfferAlready": {
     "description": "Under a game on the Offer games page, which is ticked and can't be changed, because the user has already offered it to this event."
   },
-  "eventsOfferNotSynced": "Not synced yet",
-  "@eventsOfferNotSynced": {
-    "description": "Under a game on the Offer games page that can't be picked, because the user added it to their collection while offline and the server doesn't have it."
+  "eventsNotSynced": "Not yet synced",
+  "@eventsNotSynced": {
+    "description": "Badge on an event row or card that exists only on this device, or has local changes the server has not confirmed yet, and on a game on the Offer games page that was added to the collection offline and isn't on the server yet, so it can't be offered until it is. It will send on its own."
+  },
+  "eventsCouldNotSync": "Couldn't sync",
+  "@eventsCouldNotSync": {
+    "description": "Badge on an event row or card, or on a game on the Offer games page, whose change the server refused or that ran out of attempts, so it will not send on its own; the user retries or discards it from the stuck changes screen."
   },
   "eventsOfferSend": "{count, plural, =0{Offer games} =1{Offer 1 game} other{Offer {count} games}}",
   "@eventsOfferSend": {

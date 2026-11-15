@@ -2,6 +2,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/overview/event_groups.dart';
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 
 // The words for an event's values, where the overview and the detail screen
 // show them (#497, #498).
@@ -190,3 +191,11 @@ String eventTimeOfDayLabel(BuildContext context, DateTime instant) =>
       TimeOfDay.fromDateTime(instant.toLocal()),
       alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
     );
+
+/// The words for an event's or a collection entry's [state] on the shared
+/// sync badge (#47).
+String eventSyncLabel(EventsLocalizations l10n, BgeSyncState state) =>
+    switch (state) {
+      BgeSyncState.waiting => l10n.eventsNotSynced,
+      BgeSyncState.stuck => l10n.eventsCouldNotSync,
+    };

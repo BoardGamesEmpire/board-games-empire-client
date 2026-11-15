@@ -67,6 +67,11 @@ class EventCard extends StatelessWidget {
     final colors = theme.colorScheme;
     final textTheme = theme.textTheme;
     final open = onOpen;
+    final syncState = BgeSyncStatusScope.stateOf(
+      context,
+      recordId: row.event.id,
+      unsynced: row.event.isLocalOnly || row.event.isDirty,
+    );
     final details = eventRowDetails(l10n, row);
     final secondary = textTheme.bodyMedium?.copyWith(
       color: colors.onSurfaceVariant,
@@ -119,6 +124,13 @@ class EventCard extends StatelessWidget {
                           l10n.eventsDetailSpokenSeparator,
                         ),
                         style: secondary,
+                      ),
+                    ],
+                    if (syncState != null) ...[
+                      const BgeGap.xs(),
+                      BgeSyncBadge(
+                        state: syncState,
+                        label: eventSyncLabel(l10n, syncState),
                       ),
                     ],
                   ],

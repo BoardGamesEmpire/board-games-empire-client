@@ -2,6 +2,7 @@ import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/overview/event_groups.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// One event on the overview or a group's page (#497): its title, when it
@@ -54,6 +55,11 @@ class EventRowTile extends StatelessWidget {
     final details = eventRowDetails(l10n, row);
 
     final tokens = BgeTokens.of(context);
+    final syncState = BgeSyncStatusScope.stateOf(
+      context,
+      recordId: event.id,
+      unsynced: event.isLocalOnly || event.isDirty,
+    );
 
     // MergeSemantics rather than a Semantics container: a tappable ListTile
     // builds an InkWell with its own node, and merging keeps the tap action
@@ -86,6 +92,13 @@ class EventRowTile extends StatelessWidget {
                     semanticsLabel: details.join(
                       l10n.eventsDetailSpokenSeparator,
                     ),
+                  ),
+                // Under the details, in the merged node, so it is read with
+                // the row; `trailing` has no room for it at 200% text (#47).
+                if (syncState != null)
+                  BgeSyncBadge(
+                    state: syncState,
+                    label: eventSyncLabel(l10n, syncState),
                   ),
               ],
             ),
