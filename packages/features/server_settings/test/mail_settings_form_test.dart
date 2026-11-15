@@ -7,6 +7,7 @@ import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
 import 'package:ui/ui.dart';
 
+import 'support/fake_system_settings_remote.dart';
 import 'support/harness.dart';
 
 /// Settings with mail set up and a password saved, unless told otherwise.
@@ -20,8 +21,7 @@ SystemSettings _settings({
   int lifetime = 1440,
   bool allowPasswordResets = true,
   ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
-}) => SystemSettings(
-  id: 'settings-1',
+}) => settingsFixture(
   smtpHost: host,
   smtpPort: port,
   smtpSecurity: security,

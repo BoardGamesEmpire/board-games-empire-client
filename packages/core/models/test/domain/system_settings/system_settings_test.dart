@@ -12,6 +12,16 @@ SystemSettings _settings({String? host, String? from}) => SystemSettings(
   passwordResetLinkLifetimeMinutes: 1440,
   allowPasswordResets: true,
   providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
+  name: 'Board Games Empire',
+  allowUserRegistration: true,
+  allowUsernameChange: true,
+  feedbackReportRetentionDays: 90,
+  feedbackReportServerRedactionEnabled: true,
+  requireContributionApproval: false,
+  contributionReclaimDays: 14,
+  auditLogRetentionDays: null,
+  householdInviteePolicy: Reach.public,
+  eventInviteePolicy: Reach.public,
 );
 
 void main() {
@@ -89,6 +99,16 @@ void main() {
       passwordResetLinkLifetimeMinutes: 1440,
       allowPasswordResets: true,
       providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
+      name: 'Board Games Empire',
+      allowUserRegistration: true,
+      allowUsernameChange: true,
+      feedbackReportRetentionDays: 90,
+      feedbackReportServerRedactionEnabled: true,
+      requireContributionApproval: false,
+      contributionReclaimDays: 14,
+      auditLogRetentionDays: null,
+      householdInviteePolicy: Reach.public,
+      eventInviteePolicy: Reach.public,
     );
     SystemSettings copy({
       String id = 's1',
@@ -101,6 +121,16 @@ void main() {
       int lifetime = 1440,
       bool allowPasswordResets = true,
       ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
+      String name = 'Board Games Empire',
+      bool registration = true,
+      bool usernameChange = true,
+      int feedbackDays = 90,
+      bool redaction = true,
+      bool approval = false,
+      int reclaimDays = 14,
+      int? auditDays,
+      Reach household = Reach.public,
+      Reach event = Reach.public,
     }) => SystemSettings(
       id: id,
       smtpHost: host,
@@ -112,6 +142,16 @@ void main() {
       passwordResetLinkLifetimeMinutes: lifetime,
       allowPasswordResets: allowPasswordResets,
       providerLinkingPolicy: linking,
+      name: name,
+      allowUserRegistration: registration,
+      allowUsernameChange: usernameChange,
+      feedbackReportRetentionDays: feedbackDays,
+      feedbackReportServerRedactionEnabled: redaction,
+      requireContributionApproval: approval,
+      contributionReclaimDays: reclaimDays,
+      auditLogRetentionDays: auditDays,
+      householdInviteePolicy: household,
+      eventInviteePolicy: event,
     );
 
     expect(copy(), base);
@@ -126,6 +166,16 @@ void main() {
       copy(lifetime: 60),
       copy(allowPasswordResets: false),
       copy(linking: ProviderLinkingPolicy.automaticWhenVerified),
+      copy(name: 'Other'),
+      copy(registration: false),
+      copy(usernameChange: false),
+      copy(feedbackDays: 30),
+      copy(redaction: false),
+      copy(approval: true),
+      copy(reclaimDays: 7),
+      copy(auditDays: 365),
+      copy(household: Reach.friends),
+      copy(event: Reach.friends),
     ]) {
       expect(other, isNot(base));
     }

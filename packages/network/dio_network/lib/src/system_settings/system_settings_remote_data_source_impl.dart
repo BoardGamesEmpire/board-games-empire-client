@@ -232,6 +232,19 @@ class SystemSettingsRemoteDataSourceImpl
       providerLinkingPolicy: ProviderLinkingPolicy.fromWire(
         json['providerLinkingPolicy'] as String,
       ),
+      name: json['name'] as String,
+      allowUserRegistration: json['allowUserRegistration'] as bool,
+      allowUsernameChange: json['allowUsernameChange'] as bool,
+      feedbackReportRetentionDays: json['feedbackReportRetentionDays'] as int,
+      feedbackReportServerRedactionEnabled:
+          json['feedbackReportServerRedactionEnabled'] as bool,
+      requireContributionApproval: json['requireContributionApproval'] as bool,
+      contributionReclaimDays: json['contributionReclaimDays'] as int,
+      auditLogRetentionDays: json['auditLogRetentionDays'] as int?,
+      householdInviteePolicy: Reach.fromWire(
+        json['householdInviteePolicy'] as String,
+      ),
+      eventInviteePolicy: Reach.fromWire(json['eventInviteePolicy'] as String),
     );
   }
 }

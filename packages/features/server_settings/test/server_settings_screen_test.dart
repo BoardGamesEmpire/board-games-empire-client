@@ -34,16 +34,10 @@ final CallerAccess _moderator = _access(update: AccessExtent.none);
 SystemSettings _settings({
   String? user = 'mailer',
   ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
-}) => SystemSettings(
-  id: 'settings-1',
+}) => settingsFixture(
   smtpHost: 'smtp.example.com',
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
   smtpUser: user,
-  smtpPasswordSet: false,
   mailFromAddress: 'games@example.com',
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
   providerLinkingPolicy: linking,
 );
 

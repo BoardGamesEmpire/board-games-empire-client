@@ -2,31 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:server_settings/src/mail/mail_patch.dart';
 
-const _stored = SystemSettings(
-  id: 'settings-1',
+import 'support/fake_system_settings_remote.dart';
+
+final SystemSettings _stored = settingsFixture(
   smtpHost: 'smtp.example.com',
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
   smtpUser: 'mailer',
   smtpPasswordSet: true,
   mailFromAddress: 'games@example.com',
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
-  providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
 );
 
-const _noHost = SystemSettings(
-  id: 'settings-1',
-  smtpHost: null,
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
-  smtpUser: null,
-  smtpPasswordSet: false,
-  mailFromAddress: null,
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
-  providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
-);
+final SystemSettings _noHost = settingsFixture();
 
 /// The form's values for [from] as it was read, with the changes given.
 MailFormValues _values(

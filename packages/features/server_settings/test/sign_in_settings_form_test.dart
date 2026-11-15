@@ -5,20 +5,14 @@ import 'package:server_settings/server_settings.dart';
 import 'package:server_settings/src/widgets/sign_in_settings_form.dart';
 import 'package:ui/ui.dart';
 
+import 'support/fake_system_settings_remote.dart';
 import 'support/harness.dart';
 
 SystemSettings _settings([
   ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
-]) => SystemSettings(
-  id: 'settings-1',
+]) => settingsFixture(
   smtpHost: 'smtp.example.com',
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
-  smtpUser: null,
-  smtpPasswordSet: false,
   mailFromAddress: 'games@example.com',
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
   providerLinkingPolicy: linking,
 );
 
