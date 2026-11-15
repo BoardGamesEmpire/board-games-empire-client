@@ -513,5 +513,73 @@
   "contributionsNotSavedTitle": "Contribution settings not saved",
   "@contributionsNotSavedTitle": {
     "description": "Heading of the message above the save button when saving the Contributions group's settings failed."
+  },
+  "invitationsGroupTitle": "Invitations",
+  "@invitationsGroupTitle": {
+    "description": "Heading of the Invitations group of the server settings: who can be invited to a household and added to an event."
+  },
+  "invitationsHouseholdLabel": "Who can be invited to a household",
+  "@invitationsHouseholdLabel": {
+    "description": "Label of the menu that sets who can be invited to a household."
+  },
+  "invitationsEventLabel": "Who can be added to an event",
+  "@invitationsEventLabel": {
+    "description": "Label of the menu that sets who can be added to an event."
+  },
+  "invitationsReachPublic": "Everyone",
+  "@invitationsReachPublic": {
+    "description": "Menu item in the Invitations group: anyone can be invited or added."
+  },
+  "invitationsReachFriendsOfFriends": "Friends of friends",
+  "@invitationsReachFriendsOfFriends": {
+    "description": "Menu item in the Invitations group: the inviter's friends and their friends."
+  },
+  "invitationsReachFriends": "Friends",
+  "@invitationsReachFriends": {
+    "description": "Menu item in the Invitations group: only the inviter's friends."
+  },
+  "invitationsReachNotOffered": "A setting this app doesn't offer",
+  "@invitationsReachNotOffered": {
+    "description": "Shown in an Invitations menu when the server holds a policy the menu doesn't offer: Private, Extended network, or one this app doesn't know. Saving leaves it as it is unless another choice is picked."
+  },
+  "invitationsHouseholdPublicDescription": "Anyone can be invited. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdPublicDescription": {
+    "description": "Under the household menu while Everyone is chosen: says who can be invited and that a user can narrow it."
+  },
+  "invitationsHouseholdFriendsOfFriendsDescription": "The inviter's friends and their friends, unless a block stands between them. Each is invited from their account, and invites by email address are refused. Whether an invite goes through shows the inviter whether that user shares a friend with them. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdFriendsOfFriendsDescription": {
+    "description": "Under the household menu while Friends of friends is chosen: says who can be invited, that email invites are refused and what an invite's outcome shows."
+  },
+  "invitationsHouseholdFriendsDescription": "Only the inviter's friends. Each is invited from their account, and invites by email address are refused. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdFriendsDescription": {
+    "description": "Under the household menu while Friends is chosen: says who can be invited and that email invites are refused."
+  },
+  "invitationsEventPublicDescription": "Anyone can be added, when the event is created or later. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventPublicDescription": {
+    "description": "Under the event menu while Everyone is chosen: says who can be added and that a user can narrow it."
+  },
+  "invitationsEventFriendsOfFriendsDescription": "The inviter's friends and their friends, unless a block stands between them. Whether an addition goes through shows the inviter whether that user shares a friend with them. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventFriendsOfFriendsDescription": {
+    "description": "Under the event menu while Friends of friends is chosen: says who can be added and what an addition's outcome shows."
+  },
+  "invitationsEventFriendsDescription": "Only the inviter's friends. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventFriendsDescription": {
+    "description": "Under the event menu while Friends is chosen: says who can be added and that a user can narrow it."
+  },
+  "invitationsSave": "Save invitation settings",
+  "@invitationsSave": {
+    "description": "Button that saves the Invitations group's settings to the server."
+  },
+  "invitationsSaving": "Saving…",
+  "@invitationsSaving": {
+    "description": "Label of the save button while the Invitations group's settings are being saved."
+  },
+  "invitationsSaved": "Invitation settings saved.",
+  "@invitationsSaved": {
+    "description": "Shown above the save button once the server has stored the Invitations group's settings, until they are edited again."
+  },
+  "invitationsNotSavedTitle": "Invitation settings not saved",
+  "@invitationsNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Invitations group's settings failed."
   }
 }
