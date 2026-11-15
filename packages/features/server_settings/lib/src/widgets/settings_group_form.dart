@@ -84,6 +84,10 @@ class SettingsGroupForm extends StatefulWidget {
   /// their echo from an edit by comparing them with the form's value, so
   /// every control is named, and none is disabled: a disabled control drops
   /// out of the form's value.
+  ///
+  /// The values of any settings the server can send must make a valid form,
+  /// as [buildForm] makes it and as it takes them again. An invalid form
+  /// counts as unsaved, so it would never take newer values.
   final Map<String, Object?> Function(SystemSettings settings) valuesOf;
 
   /// What `form` changes against `base`, the settings the form last took,
@@ -102,8 +106,9 @@ class SettingsGroupForm extends StatefulWidget {
   /// Asked after the frame that takes Save away, which has built the fields
   /// for the values just put back, so the answer may turn on `form`'s
   /// values. The control's field must register a reactive_forms
-  /// `FocusController`, as `BgeTextField` and `BgeDropdownField` do;
-  /// `BgeSwitchField` registers none, so focus would be lost with it.
+  /// `FocusController`, as `BgeTextField`, `BgeDropdownField` and
+  /// `BgeSwitchField` do; with a field that registers none, focus is lost
+  /// with Save.
   final String Function(FormGroup form) lastField;
 
   /// The words and keys of the group's Save and of what its save came to.

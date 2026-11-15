@@ -581,5 +581,63 @@
   "invitationsNotSavedTitle": "Invitation settings not saved",
   "@invitationsNotSavedTitle": {
     "description": "Heading of the message above the save button when saving the Invitations group's settings failed."
+  },
+  "retentionGroupTitle": "Data retention",
+  "@retentionGroupTitle": {
+    "description": "Heading of the Data retention group of the server settings: how long feedback reports and audit log entries are kept, and whether the server redacts feedback reports."
+  },
+  "retentionFeedbackDaysLabel": "Days to keep feedback reports",
+  "@retentionFeedbackDaysLabel": {
+    "description": "Label of the field for how many days the server keeps a feedback report before deleting it."
+  },
+  "retentionFeedbackDaysHelper": "Older reports are deleted automatically. From {min} to {max} days.",
+  "@retentionFeedbackDaysHelper": {
+    "description": "Helper text under the feedback report days field: that older reports are deleted, and the lowest and highest number of days the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "retentionRedactionLabel": "Redact feedback reports on the server",
+  "@retentionRedactionLabel": {
+    "description": "Label of the switch that has the server redact personal details from feedback reports as they arrive."
+  },
+  "retentionRedactionOffWarning": "Feedback reports are stored as they arrive, and the server relies on each app to redact them.",
+  "@retentionRedactionOffWarning": {
+    "description": "Warning under the redaction switch while it is off: the server stores reports unredacted and relies on each app to redact them."
+  },
+  "retentionAuditLabel": "Delete old audit log entries",
+  "@retentionAuditLabel": {
+    "description": "Label of the switch that has the server delete audit log entries older than a number of days."
+  },
+  "retentionAuditSubtitle": "While this is off, entries are kept indefinitely.",
+  "@retentionAuditSubtitle": {
+    "description": "Explanation under the audit log switch: with it off, the server never deletes audit log entries."
+  },
+  "retentionAuditDaysLabel": "Days to keep audit log entries",
+  "@retentionAuditDaysLabel": {
+    "description": "Label of the field for how many days the server keeps an audit log entry before deleting it. Shown only while the audit log switch is on."
+  },
+  "retentionSave": "Save data retention settings",
+  "@retentionSave": {
+    "description": "Button that saves the Data retention group's settings to the server."
+  },
+  "retentionSaving": "Saving…",
+  "@retentionSaving": {
+    "description": "Label of the save button while the Data retention group's settings are being saved."
+  },
+  "retentionSaved": "Data retention settings saved.",
+  "@retentionSaved": {
+    "description": "Shown above the save button once the server has stored the Data retention group's settings, until they are edited again."
+  },
+  "retentionNotSavedTitle": "Data retention settings not saved",
+  "@retentionNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Data retention group's settings failed."
   }
 }
