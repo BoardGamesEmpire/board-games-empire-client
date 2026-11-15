@@ -381,25 +381,28 @@ The same flows as the keyboard tests, plus the screens they don't reach:
       check focus returns to Change password. Then change the host and Save
       with the password kept, and check the password field is asked for and
       takes focus. Save the mail group, and while the save is out (a slow
-      connection helps), check the Sign-in Save reads as unavailable with
-      "Available when the other save finishes." as its hint, with no line
-      drawn for it. Then Send test email: the button keeps focus while the
-      test is out; "Test email queued for your address. Waiting…" is read, then
-      the outcome. Send a second test that ends the same way and check the
-      outcome is read again, not skipped as unchanged. Then edit a Mail
-      field and check the outcome goes. Save a wrong password and send a
+      connection helps), check the Registration and sign-in Save reads as
+      unavailable with "Available when the save in progress finishes." as
+      its hint, with no line drawn for it. Then Send test email: the button
+      keeps focus while the test is out; "Test email queued for your
+      address. Waiting…" is read, then the outcome. Send a second test that
+      ends the same way and check the outcome is read again, not skipped as
+      unchanged. Then edit a Mail field and check the outcome goes. Save a wrong password and send a
       test: the outcome is read with its title first, "Test email failed",
       then the reason (a test the server won't send is titled "Test email
       not sent"). With unsaved Mail changes, check the button reads as
       unavailable with its reason ("Save your changes first…") as its hint.
-      In Sign-in, pick Automatically, when both have verified the email,
+      In Registration and sign-in, pick Automatically, when both have verified the email,
       and check its warning is read.
     - Server settings as a Moderator, whose role reads the settings but
       cannot change them: the role reads every setting, so the entry is on
       the dashboard; open the section from it. The banner "Your role can
       view these settings but not change them." is read, every field reads
       as read-only, not as disabled, and there is no Save, no password
-      button and no Send test email.
+      button and no Send test email. Walk all six groups (General,
+      Registration and sign-in, Mail, Invitations, Contributions, Data
+      retention): every switch, menu and field reads as read-only, not as
+      disabled, and no group has a Save.
 11. The invite inbox: a pending invite's Accept, then its Decline and the
     decline confirm dialog (Cancel, then Decline), and the outcome banner
     after each. No automated check opens this dialog (§3, "Some pop-ups").
@@ -519,11 +522,17 @@ replaced by the control named, and focus is handed on, however it is pressed
   new password field: Keep password as well.
 - Keep password: Change password.
 - Save and the password buttons, taken away when the role's update access
-  falls while the screen is open: the field just before them (the reset
-  link lifetime, or the password field, or the user name when no password
-  button is shown). Save and Send test email likewise go to the lifetime.
-- The Sign-in group's Save, taken away the same way: the "Linking a
-  sign-in provider" menu.
+  falls while the screen is open: the field just before them (the From
+  address, or the password field, or the user name when no password
+  button is shown). Save and Send test email likewise go to the From
+  address, Mail's last field.
+- The Registration and sign-in group's Save, taken away the same way: the
+  "Linking a sign-in provider" menu.
+- General's Save, taken away the same way: the server name.
+- Invitations' Save, taken away the same way: the event policy menu.
+- Contributions' Save, taken away the same way: the reclaim days.
+- Data retention's Save, taken away the same way: the audit days while the
+  audit switch is on, and the audit switch while it is off.
 - Retry, on the screen's load failure: the heading.
 - Send test email keeps focus while a test is out.
 

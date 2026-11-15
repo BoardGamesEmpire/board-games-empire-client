@@ -5,9 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:server_settings/server_settings.dart';
+import 'package:server_settings/src/widgets/contributions_settings_form.dart';
+import 'package:server_settings/src/widgets/general_settings_form.dart';
+import 'package:server_settings/src/widgets/invitations_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
 import 'package:server_settings/src/widgets/registration_settings_form.dart';
+import 'package:server_settings/src/widgets/retention_settings_form.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -34,12 +38,48 @@ final CallerAccess _moderator = _access(update: AccessExtent.none);
 SystemSettings _settings({
   String? user = 'mailer',
   ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
+  String name = 'Board Games Empire',
+  Reach household = Reach.public,
+  Reach event = Reach.public,
+  bool approval = false,
+  int feedbackDays = 90,
+  bool redaction = true,
+  int? auditDays,
 }) => settingsFixture(
   smtpHost: 'smtp.example.com',
   smtpUser: user,
   mailFromAddress: 'games@example.com',
   providerLinkingPolicy: linking,
+  name: name,
+  householdInviteePolicy: household,
+  eventInviteePolicy: event,
+  requireContributionApproval: approval,
+  feedbackReportRetentionDays: feedbackDays,
+  feedbackReportServerRedactionEnabled: redaction,
+  auditLogRetentionDays: auditDays,
 );
+
+/// Every group showing all it can: the linking warning, the longest invitee
+/// descriptions, the redaction warning and the audit days.
+SystemSettings _everythingShown() => _settings(
+  linking: ProviderLinkingPolicy.automaticWhenVerified,
+  household: Reach.friendsOfFriends,
+  event: Reach.friendsOfFriends,
+  redaction: false,
+  auditDays: 365,
+);
+
+/// A settings group as these tests drive it: its heading and form, its Save,
+/// its last field, an edit that gives it something to save, and the
+/// settings that save lands with.
+typedef _Group = ({
+  String title,
+  Type form,
+  Key save,
+  Key lastField,
+  Future<void> Function(WidgetTester tester) edit,
+  SystemSettings landed,
+});
 
 const _title = 'Server settings';
 const _loadFailedCopy = "Couldn't load the server's settings.";
@@ -52,6 +92,10 @@ const _warningCopy =
 const _registrationTitle = 'Registration and sign-in';
 const _mailSavedCopy = 'Mail settings saved.';
 const _registrationSavedCopy = 'Registration and sign-in settings saved.';
+const _contributionsSavedCopy = 'Contribution settings saved.';
+const _redactionOffCopy =
+    'Feedback reports are stored as they arrive, and the server relies on '
+    'each app to redact them.';
 const _waitingCopy =
     "Test email queued for your address. Waiting for the mail server's answer…";
 const _sentCopy = 'The test email was sent. Check your inbox.';
@@ -119,13 +163,24 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> pickAutomatic(WidgetTester tester) async {
-    final policy = find.byKey(RegistrationSettingsForm.policyFieldKey);
-    await tester.ensureVisible(policy);
+  /// Opens the menu of the dropdown at [key] and picks [label].
+  Future<void> pick(WidgetTester tester, Key key, String label) async {
+    final menu = find.byKey(key);
+    await tester.ensureVisible(menu);
     await tester.pumpAndSettle();
-    await tester.tap(policy);
+    await tester.tap(menu);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(_automaticLabel).last);
+    await tester.tap(find.text(label).last);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> pickAutomatic(WidgetTester tester) =>
+      pick(tester, RegistrationSettingsForm.policyFieldKey, _automaticLabel);
+
+  Future<void> toggle(WidgetTester tester, Key key) async {
+    await tester.ensureVisible(find.byKey(key));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(key));
     await tester.pumpAndSettle();
   }
 
@@ -160,42 +215,100 @@ void main() {
       .focusNode!
       .hasPrimaryFocus;
 
+  /// The six groups, in the order the page lists them (#894).
+  final groups = <_Group>[
+    (
+      title: 'General',
+      form: GeneralSettingsForm,
+      save: GeneralSettingsForm.saveKey,
+      lastField: GeneralSettingsForm.nameFieldKey,
+      edit: (tester) =>
+          enter(tester, GeneralSettingsForm.nameFieldKey, 'Game night'),
+      landed: _settings(name: 'Game night'),
+    ),
+    (
+      title: _registrationTitle,
+      form: RegistrationSettingsForm,
+      save: RegistrationSettingsForm.saveKey,
+      lastField: RegistrationSettingsForm.policyFieldKey,
+      edit: pickAutomatic,
+      landed: _settings(linking: ProviderLinkingPolicy.automaticWhenVerified),
+    ),
+    (
+      title: 'Mail',
+      form: MailSettingsForm,
+      save: MailSettingsForm.saveKey,
+      lastField: MailSettingsForm.fromFieldKey,
+      edit: (tester) => enter(tester, MailSettingsForm.userFieldKey, 'relay'),
+      landed: _settings(user: 'relay'),
+    ),
+    (
+      title: 'Invitations',
+      form: InvitationsSettingsForm,
+      save: InvitationsSettingsForm.saveKey,
+      lastField: InvitationsSettingsForm.eventFieldKey,
+      edit: (tester) =>
+          pick(tester, InvitationsSettingsForm.householdFieldKey, 'Friends'),
+      landed: _settings(household: Reach.friends),
+    ),
+    (
+      title: 'Contributions',
+      form: ContributionsSettingsForm,
+      save: ContributionsSettingsForm.saveKey,
+      lastField: ContributionsSettingsForm.reclaimFieldKey,
+      edit: (tester) =>
+          toggle(tester, ContributionsSettingsForm.approvalSwitchKey),
+      landed: _settings(approval: true),
+    ),
+    (
+      title: 'Data retention',
+      form: RetentionSettingsForm,
+      save: RetentionSettingsForm.saveKey,
+      lastField: RetentionSettingsForm.auditDaysFieldKey,
+      edit: (tester) =>
+          enter(tester, RetentionSettingsForm.feedbackDaysFieldKey, '30'),
+      landed: _settings(feedbackDays: 30),
+    ),
+  ];
+
   group('loading', () {
-    testWidgets('waits for the read, then shows the Mail and Registration '
-        'and sign-in groups under their headings', (tester) async {
+    testWidgets('waits for the read, then shows the six groups in order', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(_app(screen()));
       await tester.pump();
 
       expect(find.text(_title), findsOneWidget);
       expect(find.byKey(ServerSettingsScreen.loadingKey), findsOneWidget);
-      expect(find.byType(MailSettingsForm), findsNothing);
+      for (final group in groups) {
+        expect(find.byType(group.form), findsNothing, reason: group.title);
+      }
 
       remote.fetches.single.complete(_settings());
       await tester.pumpAndSettle();
 
       expect(find.byKey(ServerSettingsScreen.loadingKey), findsNothing);
-      expect(find.byType(MailSettingsForm), findsOneWidget);
-      expect(find.byType(RegistrationSettingsForm), findsOneWidget);
-      for (final heading in ['Mail', _registrationTitle]) {
+      expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
+      // Each heading sits below the group before it, and above its own form.
+      var above = double.negativeInfinity;
+      for (final group in groups) {
+        expect(find.byType(group.form), findsOneWidget, reason: group.title);
+        final heading = tester.getRect(find.text(group.title));
+        final form = tester.getRect(find.byType(group.form));
+        expect(heading.top, greaterThan(above), reason: group.title);
+        expect(heading.bottom, lessThan(form.top), reason: group.title);
+        above = form.bottom;
+      }
+      for (final group in groups) {
+        final heading = find.text(group.title);
+        await tester.ensureVisible(heading);
+        await tester.pumpAndSettle();
         expect(
-          tester.getSemantics(find.text(heading)),
-          isSemantics(isHeader: true, label: heading),
+          tester.getSemantics(heading),
+          isSemantics(isHeader: true, label: group.title),
         );
       }
-      expect(
-        tester.getRect(find.text('Mail')).bottom,
-        lessThan(tester.getRect(find.byType(MailSettingsForm)).top),
-      );
-      expect(
-        tester.getRect(find.byType(MailSettingsForm)).bottom,
-        lessThan(tester.getRect(find.text(_registrationTitle)).top),
-      );
-      expect(
-        tester.getRect(find.text(_registrationTitle)).bottom,
-        lessThan(tester.getRect(find.byType(RegistrationSettingsForm)).top),
-      );
-      expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
       handle.dispose();
     });
 
@@ -248,10 +361,11 @@ void main() {
   });
 
   group('access', () {
-    testWidgets('a Moderator sees the settings read-only, is told why at the '
-        'top, and has no Save or Send test email', (tester) async {
+    testWidgets('a Moderator sees every group read-only, is told why at the '
+        'top', (tester) async {
+      final handle = tester.ensureSemantics();
       access.current = _moderator;
-      await pumpScreen(tester);
+      await pumpScreen(tester, settings: _everythingShown());
 
       final banner = tester.widget<BgeInlineBanner>(
         find.byKey(ServerSettingsScreen.readOnlyKey),
@@ -260,34 +374,20 @@ void main() {
       expect(banner.reveal, isFalse);
       expect(
         tester.getRect(find.byKey(ServerSettingsScreen.readOnlyKey)).bottom,
-        lessThan(tester.getRect(find.text('Mail')).top),
+        lessThan(tester.getRect(find.text(groups.first.title)).top),
       );
       for (final key in [
+        GeneralSettingsForm.nameFieldKey,
+        RegistrationSettingsForm.lifetimeFieldKey,
         MailSettingsForm.hostFieldKey,
         MailSettingsForm.portFieldKey,
         MailSettingsForm.userFieldKey,
         MailSettingsForm.fromFieldKey,
-        RegistrationSettingsForm.lifetimeFieldKey,
+        ContributionsSettingsForm.reclaimFieldKey,
+        RetentionSettingsForm.feedbackDaysFieldKey,
+        RetentionSettingsForm.auditDaysFieldKey,
       ]) {
         expect(editable(tester, key).readOnly, isTrue, reason: '$key');
-      }
-      for (final key in [
-        RegistrationSettingsForm.signUpsSwitchKey,
-        RegistrationSettingsForm.usernameChangeSwitchKey,
-        RegistrationSettingsForm.passwordResetsSwitchKey,
-      ]) {
-        expect(
-          tester
-              .widget<BgeSwitchField>(
-                find.ancestor(
-                  of: find.byKey(key),
-                  matching: find.byType(BgeSwitchField),
-                ),
-              )
-              .readOnly,
-          isTrue,
-          reason: '$key',
-        );
       }
       expect(
         tester
@@ -297,10 +397,47 @@ void main() {
             .readOnly,
         isTrue,
       );
-      expect(find.byKey(MailSettingsForm.saveKey), findsNothing);
-      expect(find.byKey(RegistrationSettingsForm.saveKey), findsNothing);
+      expect(
+        tester
+            .widget<BgeDropdownField<SmtpSecurity>>(
+              find.byKey(MailSettingsForm.securityFieldKey),
+            )
+            .readOnly,
+        isTrue,
+      );
+      for (final key in [
+        InvitationsSettingsForm.householdFieldKey,
+        InvitationsSettingsForm.eventFieldKey,
+      ]) {
+        expect(
+          tester.widget<BgeDropdownField<Reach>>(find.byKey(key)).readOnly,
+          isTrue,
+          reason: '$key',
+        );
+      }
+      // A switch reads as read-only, as assistive tech hears it.
+      for (final key in [
+        RegistrationSettingsForm.signUpsSwitchKey,
+        RegistrationSettingsForm.usernameChangeSwitchKey,
+        RegistrationSettingsForm.passwordResetsSwitchKey,
+        ContributionsSettingsForm.approvalSwitchKey,
+        RetentionSettingsForm.redactionSwitchKey,
+        RetentionSettingsForm.auditSwitchKey,
+      ]) {
+        await tester.ensureVisible(find.byKey(key));
+        await tester.pumpAndSettle();
+        expect(
+          tester.getSemantics(find.byKey(key)).flagsCollection.isReadOnly,
+          isTrue,
+          reason: '$key',
+        );
+      }
+      for (final group in groups) {
+        expect(find.byKey(group.save), findsNothing, reason: group.title);
+      }
       expect(find.byKey(MailTestPanel.sendKey), findsNothing);
       expect(find.text('Send test email'), findsNothing);
+      handle.dispose();
     });
 
     testWidgets('while access is unknown nothing is said about the role, and '
@@ -310,18 +447,20 @@ void main() {
 
       expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
       expect(find.text(_readOnlyCopy), findsNothing);
-      expect(find.byKey(MailSettingsForm.saveKey), findsNothing);
-      expect(find.byKey(RegistrationSettingsForm.saveKey), findsNothing);
+      for (final group in groups) {
+        expect(find.byKey(group.save), findsNothing, reason: group.title);
+      }
       expect(find.byKey(MailTestPanel.sendKey), findsNothing);
     });
 
-    testWidgets('an admin sees no read-only banner, and can save both groups '
+    testWidgets('an admin sees no read-only banner, and can save every group '
         'and send a test', (tester) async {
       await pumpScreen(tester);
 
       expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
-      expect(find.byKey(MailSettingsForm.saveKey), findsOneWidget);
-      expect(find.byKey(RegistrationSettingsForm.saveKey), findsOneWidget);
+      for (final group in groups) {
+        expect(find.byKey(group.save), findsOneWidget, reason: group.title);
+      }
       expect(find.byKey(MailTestPanel.sendKey), findsOneWidget);
     });
   });
@@ -445,39 +584,84 @@ void main() {
       );
     });
 
-    testWidgets('saving Mail disables the Registration Save, and the reverse', (
+    group('saving any group disables every other Save', () {
+      for (final saving in groups) {
+        testWidgets('while ${saving.title} saves', (tester) async {
+          await pumpScreen(tester);
+          await saving.edit(tester);
+
+          // An empty patch sends nothing, so the edit is what starts it.
+          await press(tester, saving.save);
+          expect(remote.updateCalls, hasLength(1));
+          for (final other in groups.where((group) => group != saving)) {
+            expect(
+              saveButton(tester, other.save).onPressed,
+              isNull,
+              reason: other.title,
+            );
+          }
+
+          remote.updates.single.complete(saving.landed);
+          await tester.pumpAndSettle();
+          for (final group in groups) {
+            expect(
+              saveButton(tester, group.save).onPressed,
+              isNotNull,
+              reason: group.title,
+            );
+          }
+
+          // The group took what landed, so Save again has nothing to send.
+          await press(tester, saving.save);
+          expect(remote.updateCalls, hasLength(1));
+        });
+      }
+    });
+
+    testWidgets('an edit after a landed save takes its saved line away', (
       tester,
     ) async {
       await pumpScreen(tester);
-      await enter(tester, MailSettingsForm.userFieldKey, 'relay');
-      await pickAutomatic(tester);
-
-      await press(tester, MailSettingsForm.saveKey);
-      expect(
-        saveButton(tester, RegistrationSettingsForm.saveKey).onPressed,
-        isNull,
-      );
-      remote.updates.last.complete(_settings(user: 'relay'));
+      await toggle(tester, ContributionsSettingsForm.approvalSwitchKey);
+      await press(tester, ContributionsSettingsForm.saveKey);
+      remote.updates.single.complete(_settings(approval: true));
       await tester.pumpAndSettle();
-      expect(
-        saveButton(tester, RegistrationSettingsForm.saveKey).onPressed,
-        isNotNull,
-      );
+      expect(find.text(_contributionsSavedCopy), findsOneWidget);
 
-      await press(tester, RegistrationSettingsForm.saveKey);
-      expect(saveButton(tester, MailSettingsForm.saveKey).onPressed, isNull);
-      remote.updates.last.complete(
-        _settings(
-          user: 'relay',
-          linking: ProviderLinkingPolicy.automaticWhenVerified,
+      await toggle(tester, ContributionsSettingsForm.approvalSwitchKey);
+
+      expect(find.text(_contributionsSavedCopy), findsNothing);
+    });
+
+    testWidgets('a Contributions save that lands leaves unsaved Invitations '
+        'edits as they are', (tester) async {
+      await pumpScreen(tester);
+      await pick(tester, InvitationsSettingsForm.householdFieldKey, 'Friends');
+      await toggle(tester, ContributionsSettingsForm.approvalSwitchKey);
+
+      await press(tester, ContributionsSettingsForm.saveKey);
+      expect(
+        remote.updateCalls.single.patch,
+        const SystemSettingsPatch(requireContributionApproval: true),
+      );
+      remote.updates.single.complete(_settings(approval: true));
+      await tester.pumpAndSettle();
+
+      expect(find.text(_contributionsSavedCopy), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(InvitationsSettingsForm.householdFieldKey),
+          matching: find.text('Friends'),
         ),
+        findsOneWidget,
       );
-      await tester.pumpAndSettle();
+
+      // Still an edit: its own Save sends it, and only it.
+      await press(tester, InvitationsSettingsForm.saveKey);
       expect(
-        saveButton(tester, MailSettingsForm.saveKey).onPressed,
-        isNotNull,
+        remote.updateCalls.last.patch,
+        const SystemSettingsPatch(householdInviteePolicy: Reach.friends),
       );
-      expect(remote.updateCalls, hasLength(2));
     });
   });
 
@@ -685,9 +869,11 @@ void main() {
     });
   });
 
-  for (final (name, account) in [
-    ('an admin', _admin),
-    ('a Moderator', _moderator),
+  // Each group's end in turn: its Save, or for a role with none, its last
+  // field.
+  for (final (name, account, ends) in [
+    ('an admin', _admin, [for (final group in groups) group.save]),
+    ('a Moderator', _moderator, [for (final group in groups) group.lastField]),
   ]) {
     testWidgets('fits a 320dp window at 200% text for $name, top to bottom', (
       tester,
@@ -700,20 +886,25 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       access.current = account;
 
-      await pumpScreen(
-        tester,
-        settings: _settings(
-          linking: ProviderLinkingPolicy.automaticWhenVerified,
-        ),
-      );
-      final page = tester.state<ScrollableState>(
-        find.byType(Scrollable).first,
-      );
-      page.position.jumpTo(page.position.maxScrollExtent);
+      await pumpScreen(tester, settings: _everythingShown());
+      final page = find.byType(Scrollable).first;
+      for (final end in ends) {
+        await tester.scrollUntilVisible(
+          find.byKey(end),
+          200,
+          scrollable: page,
+        );
+        await tester.ensureVisible(find.byKey(end));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '$end');
+      }
+      final position = tester.state<ScrollableState>(page).position;
+      position.jumpTo(position.maxScrollExtent);
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       expect(find.text(_warningCopy), findsOneWidget);
+      expect(find.text(_redactionOffCopy), findsOneWidget);
     });
   }
 
@@ -722,17 +913,21 @@ void main() {
       CallerAccess? as,
     }) => (tester, theme) async {
       if (as != null) access.current = as;
-      await pumpScreen(
-        tester,
-        theme: theme,
-        settings: _settings(
-          linking: ProviderLinkingPolicy.automaticWhenVerified,
-        ),
-      );
+      await pumpScreen(tester, theme: theme, settings: _everythingShown());
     };
 
+    /// The whole page in view. At 320dp × 2.0 the six groups run past
+    /// [useWholePage]'s 6000dp, so the view grows by what is left to scroll.
     Future<void> wholePage(WidgetTester tester) async {
       await useWholePage(tester);
+      final rest = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .maxScrollExtent;
+      final ratio = tester.view.devicePixelRatio;
+      final view = tester.view.physicalSize / ratio;
+      tester.view.physicalSize = Size(view.width, view.height + rest) * ratio;
+      await tester.pumpAndSettle();
       expectWholePage(tester);
     }
 

@@ -88,9 +88,9 @@
   "@adminSectionHouseholdsSummary": {
     "description": "One line under the Households entry on the admin dashboard (#684, #685), saying what the section holds: every household on the server, including deleted ones staff can restore."
   },
-  "adminSectionServerSettingsSummary": "Mail, and how people sign in",
+  "adminSectionServerSettingsSummary": "Name, sign-in, mail, invitations and retention",
   "@adminSectionServerSettingsSummary": {
-    "description": "One line under the Server settings entry on the admin dashboard (#807), saying what the section holds: the server's outgoing mail, and the rules for how people sign in."
+    "description": "One line under the Server settings entry on the admin dashboard (#807, #894), saying what the section holds: the server's name, the rules for registering and signing in, outgoing mail, who may be invited, contribution rules, and how long records are kept."
   },
   "adminDashboardTitle": "Admin",
   "@adminDashboardTitle": {

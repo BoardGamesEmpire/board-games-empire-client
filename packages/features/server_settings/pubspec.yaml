@@ -1,5 +1,5 @@
 name: server_settings
-description: "Server settings admin feature: read the server's settings row and save its mail and sign-in settings one group at a time, and send a test email"
+description: "Server settings admin feature: read the server's settings row and save it one group at a time (general, registration and sign-in, mail, invitations, contributions and data retention), and send a test email"
 publish_to: none
 
 environment:

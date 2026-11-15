@@ -11,16 +11,20 @@ import 'package:server_settings/src/bloc/mail_test_state.dart';
 import 'package:server_settings/src/bloc/server_settings_bloc.dart';
 import 'package:server_settings/src/bloc/server_settings_event.dart';
 import 'package:server_settings/src/bloc/server_settings_state.dart';
+import 'package:server_settings/src/widgets/contributions_settings_form.dart';
+import 'package:server_settings/src/widgets/general_settings_form.dart';
+import 'package:server_settings/src/widgets/invitations_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
 import 'package:server_settings/src/widgets/registration_settings_form.dart';
+import 'package:server_settings/src/widgets/retention_settings_form.dart';
 import 'package:server_settings/src/widgets/settings_group_binding.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// The server's own settings, for staff (#807): the Mail group, with its
-/// test email, and the Registration and sign-in group (#894), each saved on
-/// its own.
+/// The server's own settings, for staff (#807, #894), in six groups, each
+/// saved on its own: General, Registration and sign-in, Mail with its test
+/// email, Invitations, Contributions and Data retention.
 ///
 /// Decoupled from DI like the admin households list: the caller resolves the
 /// per-server [SystemSettingsRemoteDataSource] and
@@ -242,6 +246,14 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
           ),
           const BgeGap.lg(),
         ],
+        _GroupHeading(l10n.generalGroupTitle),
+        const BgeGap.sm(),
+        GeneralSettingsForm(binding: bind(SettingsGroup.general)),
+        const BgeGap.xl(),
+        _GroupHeading(l10n.registrationGroupTitle),
+        const BgeGap.sm(),
+        RegistrationSettingsForm(binding: bind(SettingsGroup.registration)),
+        const BgeGap.xl(),
         _GroupHeading(l10n.mailGroupTitle),
         const BgeGap.sm(),
         MailSettingsForm(
@@ -259,9 +271,17 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
               : null,
         ),
         const BgeGap.xl(),
-        _GroupHeading(l10n.registrationGroupTitle),
+        _GroupHeading(l10n.invitationsGroupTitle),
         const BgeGap.sm(),
-        RegistrationSettingsForm(binding: bind(SettingsGroup.registration)),
+        InvitationsSettingsForm(binding: bind(SettingsGroup.invitations)),
+        const BgeGap.xl(),
+        _GroupHeading(l10n.contributionsGroupTitle),
+        const BgeGap.sm(),
+        ContributionsSettingsForm(binding: bind(SettingsGroup.contributions)),
+        const BgeGap.xl(),
+        _GroupHeading(l10n.retentionGroupTitle),
+        const BgeGap.sm(),
+        RetentionSettingsForm(binding: bind(SettingsGroup.retention)),
       ],
     );
   }
