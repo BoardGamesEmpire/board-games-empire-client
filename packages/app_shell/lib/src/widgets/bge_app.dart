@@ -29,6 +29,7 @@ import 'package:app_shell/src/widgets/offline_strip_host.dart';
 import 'package:app_shell/src/widgets/ownership_once_refreshed.dart';
 import 'package:app_shell/src/widgets/router_back_interceptor.dart';
 import 'package:app_shell/src/widgets/session_rehydrate_trigger.dart';
+import 'package:app_shell/src/widgets/session_sync_waiting.dart';
 import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
@@ -380,6 +381,12 @@ class _BgeAppState extends State<BgeApp> {
     switching: false,
   ));
 
+  /// How many of the session's changes are waiting to go out, for the
+  /// offline strip (#47). The strip sits above the Navigator, out of reach
+  /// of any session, so the session's `SyncStatusScopeHost`, around the
+  /// navigation shell ([_navigationFor]), reports up to it here.
+  final _syncWaiting = SessionSyncWaiting();
+
   @override
   void initState() {
     super.initState();
@@ -730,6 +737,16 @@ class _BgeAppState extends State<BgeApp> {
   /// then threw on every sign-out. Only the answer is read inside it, for the
   /// Admin entry, which comes and goes with it. The builder reads the
   /// repository rather than the snapshot, as home's does (#432).
+  ///
+  /// #47: the session's sync status is published over the shell, so every
+  /// signed-in page's rows can read their own, and reported up to the
+  /// offline strip ([_syncWaiting]); the drawer says it under its header.
+  /// All of it stands on the gate home's notice stands on
+  /// ([_canRecoverStuckChanges]), so a row that says a change couldn't sync
+  /// is never where the screen that fixes it can't appear, and nothing says
+  /// a change will send on its own where no drain would send it. The host
+  /// comes and goes with the shell, so a user switched in place takes their
+  /// count with them.
   Widget _navigationFor(
     BuildContext context,
     ActiveServer active,
@@ -779,25 +796,41 @@ class _BgeAppState extends State<BgeApp> {
       for (final entry in entries)
         if (entry.id != _adminEntryId) entry,
     ];
+    final recoverable = _canRecoverStuckChanges(container);
+    final queue = recoverable ? container.get<SyncQueueRepository>() : null;
+    final DrawerStatusBuilder? drawerStatus = recoverable
+        ? (open) => SyncStatusLine(onReview: () => open(AppRoutes.stuckChanges))
+        : null;
 
-    // One shape with an access to ask or without, so the shell keeps its
+    // A queue or none, the host is there, so the shell below it keeps its
     // state whichever a session has.
-    return StreamBuilder<CallerAccess>(
-      stream: access?.changes,
-      builder: (_, _) {
-        final admin =
-            access != null &&
-            visibleAdminSections(access.current, sections).isNotEmpty;
-        return NavigationShell(
-          destinations: destinations,
-          entries: admin ? entries : withoutAdmin,
-          activeServerName: active.displayName,
-          location: location,
-          deferBack: _backHeldAbove,
-          browserOwnsBack: widget.browserOwnsBack,
-          child: pages,
-        );
-      },
+    return SyncStatusScopeHost(
+      queue: queue,
+      onStatus: (owner, status) => status == null
+          ? _syncWaiting.release(owner)
+          // An unread count is no count: the strip shows one only above
+          // zero.
+          : _syncWaiting.report(owner, status.waiting ?? 0),
+      // One shape with an access to ask or without, so the shell keeps its
+      // state whichever a session has.
+      child: StreamBuilder<CallerAccess>(
+        stream: access?.changes,
+        builder: (_, _) {
+          final admin =
+              access != null &&
+              visibleAdminSections(access.current, sections).isNotEmpty;
+          return NavigationShell(
+            destinations: destinations,
+            entries: admin ? entries : withoutAdmin,
+            activeServerName: active.displayName,
+            location: location,
+            deferBack: _backHeldAbove,
+            browserOwnsBack: widget.browserOwnsBack,
+            drawerStatus: drawerStatus,
+            child: pages,
+          );
+        },
+      ),
     );
   }
 
@@ -2866,6 +2899,7 @@ class _BgeAppState extends State<BgeApp> {
     _reviewPreview.dispose();
     _crashFocus.dispose();
     _homeSession.dispose();
+    _syncWaiting.dispose();
     unawaited(_settingsControllerSub?.cancel());
     unawaited(_themeModeSub?.cancel());
     unawaited(_localeSub?.cancel());
@@ -3024,8 +3058,11 @@ class _BgeAppState extends State<BgeApp> {
         // the app. Outside the selection region, whose first-frame swap
         // would otherwise remount the host. Unconditional, as
         // `SessionRehydrateTrigger` is: the host handles a null service.
+        // #47: and, while offline, how many of the session's changes are
+        // waiting, which the session's host reports up from below.
         final content = OfflineStripHost(
           connectivity: _rootConnectivity(),
+          waiting: _syncWaiting,
           child: _selectable(context, child ?? const SizedBox.shrink()),
         );
         final reporter = widget.feedbackReporter;

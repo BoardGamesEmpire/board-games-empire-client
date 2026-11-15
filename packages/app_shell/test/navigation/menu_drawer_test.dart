@@ -54,7 +54,7 @@ const _destinations = [
 ];
 
 /// A [MenuDrawer] in a [Scaffold]'s drawer, whose app bar gives the menu
-/// button that opens it.
+/// button that opens it, laid out in [textDirection].
 Widget _app({
   required List<HomeMenuEntry> entries,
   List<NavDestination> destinations = const [],
@@ -63,10 +63,14 @@ Widget _app({
   ValueChanged<HomeMenuEntry>? onEntry,
   ValueChanged<NavDestination>? onDestination,
   ThemeData? theme,
+  Widget? status,
+  TextDirection textDirection = TextDirection.ltr,
 }) => MaterialApp(
   theme: theme,
   localizationsDelegates: ShellLocalizations.localizationsDelegates,
   supportedLocales: ShellLocalizations.supportedLocales,
+  builder: (context, child) =>
+      Directionality(textDirection: textDirection, child: child!),
   home: Scaffold(
     appBar: AppBar(),
     drawer: MenuDrawer(
@@ -76,6 +80,7 @@ Widget _app({
       activeServerName: activeServerName,
       onDestination: onDestination ?? (_) {},
       onEntry: onEntry ?? (_) {},
+      status: status,
     ),
     body: const SizedBox.shrink(),
   ),
@@ -89,6 +94,8 @@ Future<void> _pump(
   String? activeServerName,
   ValueChanged<HomeMenuEntry>? onEntry,
   ValueChanged<NavDestination>? onDestination,
+  Widget? status,
+  TextDirection textDirection = TextDirection.ltr,
 }) => tester.pumpWidget(
   _app(
     entries: entries,
@@ -97,6 +104,8 @@ Future<void> _pump(
     activeServerName: activeServerName,
     onEntry: onEntry,
     onDestination: onDestination,
+    status: status,
+    textDirection: textDirection,
   ),
 );
 
@@ -459,6 +468,86 @@ void main() {
       moreOrLessEquals(destination, epsilon: 0.5),
       reason: 'the header must line up with the destinations below it',
     );
+  });
+
+  // #47: the session's sync status, between the header and the first
+  // destination.
+  group('the status under the header (#47)', () {
+    const statusKey = Key('drawer_status');
+    final header = find.byWidgetPredicate(
+      (widget) => '${widget.runtimeType}' == '_DrawerHeader',
+    );
+    final firstDestination = find.byKey(MenuDrawer.entryKey('home'));
+
+    for (final direction in TextDirection.values) {
+      testWidgets('status sits under the header (${direction.name})', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          entries: _entries(),
+          destinations: _destinations,
+          activeServerName: 'My Server',
+          status: const Text('All changes synced', key: statusKey),
+          textDirection: direction,
+        );
+        await _openDrawer(tester);
+
+        final status = tester.getRect(find.byKey(statusKey));
+        expect(
+          status.top,
+          greaterThanOrEqualTo(tester.getRect(header).bottom),
+        );
+        expect(
+          tester.getRect(firstDestination).top,
+          greaterThanOrEqualTo(status.bottom),
+        );
+        // The start edge: the left in a left-to-right language, the right
+        // in a right-to-left one.
+        double startOf(Rect rect) =>
+            direction == TextDirection.ltr ? rect.left : rect.right;
+        expect(
+          startOf(status),
+          moreOrLessEquals(
+            startOf(tester.getRect(find.text('My Server'))),
+            epsilon: 0.5,
+          ),
+          reason: "at the header's start inset",
+        );
+      });
+    }
+
+    testWidgets('no status, no gap', (tester) async {
+      await _pump(
+        tester,
+        entries: _entries(),
+        destinations: _destinations,
+        activeServerName: 'My Server',
+        status: const Text('All changes synced', key: statusKey),
+      );
+      await _openDrawer(tester);
+      final withStatus = tester.getRect(header);
+
+      await _pump(
+        tester,
+        entries: _entries(),
+        destinations: _destinations,
+        activeServerName: 'My Server',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(statusKey), findsNothing);
+      expect(
+        tester.getRect(header),
+        withStatus,
+        reason: 'the header stays put as the status goes',
+      );
+      expect(
+        tester.getRect(firstDestination).top,
+        tester.getRect(header).bottom,
+        reason: 'no gap: the first destination starts where the header ends',
+      );
+    });
   });
 
   // The Admin entry comes and goes with the session's access, which can

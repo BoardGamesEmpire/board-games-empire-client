@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:app_shell/src/widgets/offline_strip_host.dart';
 import 'package:auth/auth.dart';
 import 'package:bge_test_support/access.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:bge_test_support/widgets.dart';
+import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:events/events.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter_test/flutter_test.dart';
@@ -13,14 +15,17 @@ import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart';
-import 'package:ui/ui.dart' show BgePage;
+import 'package:sync_queue/sync_queue.dart' show SyncQueueDrain, SyncStatusLine;
+import 'package:ui/ui.dart' show BgeOfflineStrip, BgePage, BgeSyncStatusScope;
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_connectivity.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/navigation.dart';
 import '../support/settings_storage.dart';
@@ -97,6 +102,34 @@ class _Sender implements SyncOperationSender {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+/// The session's sync queue, with [waiting] changes outstanding and none
+/// stuck, whose watches stay open, as Drift's do (#47). A watch reads
+/// [waiting] as it starts.
+class _Queue implements SyncQueueRepository {
+  _Queue({this.waiting = 0});
+
+  int waiting;
+
+  @override
+  Stream<int> watchPendingCount() =>
+      Stream.multi((stream) => stream.add(waiting));
+
+  @override
+  Stream<List<SyncQueueEntry>> watchStuckEntries() =>
+      Stream.multi((stream) => stream.add(const []));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// What a retry of a stuck change goes through. Nothing here retries.
+class _Drain implements SyncQueueDrain {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 class _MockUserRemote extends Mock implements UserRemoteDataSource {}
@@ -156,6 +189,8 @@ void main() {
     HouseholdRepository? households,
     SyncOperationSender? sender,
     UserRemoteDataSource? users,
+    SyncQueueRepository? queue,
+    SyncQueueDrain? drain,
   }) => buildActiveServer(
     auth ?? FakeAuthRepository(initialSession: testAuthResponse()),
     gameCollectionRepository: _Collection(),
@@ -167,7 +202,16 @@ void main() {
     householdRepository: households,
     syncOperationSender: sender,
     userRemoteDataSource: users,
+    syncQueueRepository: queue,
+    syncQueueDrain: drain,
   );
+
+  /// A household cache holding nothing.
+  HouseholdRepository noHouseholds() {
+    final households = _MockHouseholdRepository();
+    when(households.watchHouseholds).thenAnswer((_) => Stream.value(const []));
+    return households;
+  }
 
   /// Boots the app into [active]'s session, which lands on home.
   Future<AppBootstrapCubit> pumpApp(
@@ -176,6 +220,7 @@ void main() {
     List<ServerConfig> recoveredServers = const [],
     FeedbackUncaughtErrorReporter? feedbackReporter,
     Future<void> Function()? beforeBoot,
+    DependencyContainer? rootContainer,
   }) async {
     final cubit = AppBootstrapCubit(
       platformBootstrap: FakePlatformBootstrap(
@@ -191,7 +236,11 @@ void main() {
     );
     addTearDown(cubit.close);
     await tester.pumpWidget(
-      BgeApp(bootstrapCubit: cubit, feedbackReporter: feedbackReporter),
+      BgeApp(
+        bootstrapCubit: cubit,
+        feedbackReporter: feedbackReporter,
+        rootContainer: rootContainer,
+      ),
     );
     await beforeBoot?.call();
     await cubit.initialize();
@@ -302,6 +351,150 @@ void main() {
 
     expect(find.byType(AuthScreen), findsOneWidget);
     expect(find.byType(NavigationShell), findsNothing);
+  });
+
+  // #47: the session's sync status, under the drawer's header.
+  group("the session's sync status (#47)", () {
+    final status = find.descendant(
+      of: find.byType(MenuDrawer),
+      matching: find.byType(SyncStatusLine),
+    );
+
+    testWidgets('the drawer reads All changes synced for a session with an '
+        'empty queue', (tester) async {
+      await pumpApp(
+        tester,
+        session(queue: _Queue(), drain: _Drain(), households: noHouseholds()),
+      );
+      await goToDestination(tester, 'collection');
+      await openMenu(tester);
+
+      expect(status, findsOneWidget);
+      expect(
+        find.descendant(of: status, matching: find.text('All changes synced')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the drawer counts what is waiting', (tester) async {
+      await pumpApp(
+        tester,
+        session(
+          queue: _Queue(waiting: 2),
+          drain: _Drain(),
+          households: noHouseholds(),
+        ),
+      );
+      await openMenu(tester);
+
+      expect(
+        find.descendant(of: status, matching: find.text('2 changes waiting')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no status where the stuck changes cannot open', (
+      tester,
+    ) async {
+      // A queue, and no drain to retry through: the home notice's gate. No
+      // drawer line, and no scope reading the queue, so no row can say a
+      // change couldn't sync with no screen to fix it on, and the strip
+      // counts nothing.
+      await pumpApp(
+        tester,
+        session(queue: _Queue(waiting: 2), households: noHouseholds()),
+      );
+      await openMenu(tester);
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+      expect(status, findsNothing);
+      expect(find.text('All changes synced'), findsNothing);
+      final scope = tester.widget<BgeSyncStatusScope>(
+        find.byType(BgeSyncStatusScope),
+      );
+      expect(scope.waiting, isNull);
+      expect(scope.stuck, isNull);
+      expect(
+        tester
+            .widget<OfflineStripHost>(find.byType(OfflineStripHost))
+            .waiting!
+            .value,
+        isNull,
+      );
+    });
+
+    testWidgets("sign-out clears the strip's count", (tester) async {
+      final connectivity = FakeConnectivity();
+      addTearDown(connectivity.close);
+      await pumpApp(
+        tester,
+        session(
+          queue: _Queue(waiting: 2),
+          drain: _Drain(),
+          households: noHouseholds(),
+        ),
+        rootContainer: DependencyContainerImpl()
+          ..registerSingleton<ConnectivityService>(connectivity),
+      );
+      final waiting = tester
+          .widget<OfflineStripHost>(find.byType(OfflineStripHost))
+          .waiting!;
+      expect(waiting.value, 2);
+      connectivity.change(ConnectivityState.offline);
+      await tester.pump(Duration.zero);
+      await tester.pump(const Duration(seconds: 2));
+      final detail = find.byKey(BgeOfflineStrip.detailKey);
+      expect(tester.widget<Text>(detail).data, '2 changes waiting');
+
+      await openMenuEntry(tester, 'sign_out');
+
+      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(waiting.value, isNull);
+      expect(
+        find.text("You're offline. Changes will sync when you reconnect."),
+        findsOneWidget,
+      );
+      expect(detail, findsNothing);
+    });
+
+    testWidgets("a switch in place takes the departing user's count, and "
+        "the arriving user's replaces it", (tester) async {
+      final starting = Completer<void>();
+      final auth = FakeAuthRepository(initialSession: testAuthResponse());
+      final queue = _Queue(waiting: 2);
+      await pumpApp(
+        tester,
+        session(
+          auth: auth,
+          queue: queue,
+          drain: _Drain(),
+          households: noHouseholds(),
+          userSessionScope: _UserSessionScope(
+            hold: (userId) => userId == 'u2' ? starting.future : null,
+          ),
+        ),
+      );
+      final waiting = tester
+          .widget<OfflineStripHost>(find.byType(OfflineStripHost))
+          .waiting!;
+      expect(waiting.value, 2);
+
+      // What the arriving user's queue holds.
+      queue.waiting = 5;
+      auth.emitAuthState(
+        AuthStateAuthenticated(session: _sessionOf('u2', 'other')),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(SplashScreen), findsOneWidget);
+      expect(waiting.value, isNull, reason: 'no session has a count');
+
+      starting.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(waiting.value, 5);
+    });
   });
 
   testWidgets("the admin entry follows the caller's access", (tester) async {

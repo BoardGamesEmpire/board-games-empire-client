@@ -364,6 +364,16 @@
   "@shellOfflineMessage": {
     "description": "Shown in a thin strip at the top of the window once the device has had no connection for two seconds, on every screen (#49). Assistive technology reads it once, when it appears. Keep it to one short sentence pair: the strip sits above every screen and grows with the text."
   },
+  "shellOfflineWaiting": "{count, plural, =1{1 change waiting} other{{count} changes waiting}}",
+  "@shellOfflineWaiting": {
+    "description": "Second line under shellOfflineMessage in the same strip, counting the changes made on this device that haven't reached the server yet (#47). They send on their own once the connection returns. Shown only while offline and only when something is waiting. Assistive technology reads it with the strip, but doesn't announce it as the count changes. Says waiting, never pending.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "How many changes are waiting to be sent"
+      }
+    }
+  },
   "shellBackOnlineMessage": "Back online",
   "@shellBackOnlineMessage": {
     "description": "Replaces shellOfflineMessage in the same strip when the connection returns; shown for two seconds, then the strip closes (#49). Assistive technology reads it once, when it replaces the offline message."

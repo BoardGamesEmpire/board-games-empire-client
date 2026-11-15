@@ -12,6 +12,7 @@ import 'package:models/domain.dart';
 import 'package:sync_queue/sync_queue.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/navigation.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -85,6 +86,8 @@ void main() {
     queue = _MockQueue();
     when(() => queue.watchStuckEntries())
         .thenAnswer((_) => Stream.value(stuck));
+    // The navigation drawer's status line counts it (#47).
+    when(() => queue.watchPendingCount()).thenAnswer((_) => Stream.value(0));
     when(() => queue.getEntry('q1')).thenAnswer((_) async => _stuckAdd);
 
     collection = _MockGameCollectionRepository();
@@ -164,6 +167,49 @@ void main() {
 
     expect(find.byType(StuckSyncOpsScreen), findsOneWidget);
     expect(find.text('Add $_title to your collection'), findsOneWidget);
+  });
+
+  // #47: the drawer's status line counts what couldn't sync, and its
+  // Review opens the screen home's notice opens.
+  group("the drawer's Review", () {
+    // When it runs, once the drawer has gone, is pinned in
+    // `navigation_shell_test.dart`.
+    testWidgets('closes the drawer and opens the stuck changes', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+      await openMenu(tester);
+      expect(find.text("1 change couldn't sync"), findsOneWidget);
+
+      await tester.tap(find.byKey(SyncStatusLine.reviewKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(find.byType(StuckSyncOpsScreen), findsOneWidget);
+      expect(find.text('Add $_title to your collection'), findsOneWidget);
+    });
+
+    testWidgets('on the screen it opens, only closes the drawer', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+      await tester.tap(find.byKey(StuckSyncOpsNotice.reviewKey));
+      await tester.pumpAndSettle();
+      await openMenu(tester);
+
+      await tester.tap(find.byKey(SyncStatusLine.reviewKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+      expect(
+        find.byType(StuckSyncOpsScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'a second copy would only add a step to Back',
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
   });
 
   testWidgets('without a drain registered, the stuck-changes route is not '

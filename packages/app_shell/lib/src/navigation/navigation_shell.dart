@@ -13,6 +13,16 @@ import 'package:ui_tokens/ui_tokens.dart'
 /// What carries the destinations on screen.
 enum _Chrome { none, bar, rail }
 
+/// Builds the line under the navigation drawer's header, such as the
+/// session's sync status (#47): see [NavigationShell.drawerStatus].
+///
+/// `open` is a pick of the screen at a location, as a menu entry with a
+/// location makes (#643): it closes the drawer and, once the drawer has
+/// gone, pushes the screen, unless it is already the page on top.
+typedef DrawerStatusBuilder = Widget Function(
+  void Function(String location) open,
+);
+
 /// The navigation chrome above every signed-in page (#414).
 ///
 /// Shows [destinations] in a [NavigationBar] along the bottom of a compact
@@ -27,7 +37,8 @@ enum _Chrome { none, bar, rail }
 /// drawer and runs once the drawer has gone, so a pushed page's transition
 /// plays in full (#643). A destructive entry, sign out, runs at once. An
 /// entry that opens a screen pushes it, unless that screen is already the
-/// page on top.
+/// page on top. Under the drawer's header sits [drawerStatus]'s line, whose
+/// own actions are picks too (#47).
 ///
 /// Picking a destination is a `go` to its location, which replaces the
 /// stack, unless that destination's own screen is already the only page.
@@ -55,6 +66,7 @@ class NavigationShell extends StatefulWidget {
     required this.child,
     this.deferBack,
     this.browserOwnsBack = false,
+    this.drawerStatus,
     super.key,
   });
 
@@ -94,6 +106,16 @@ class NavigationShell extends StatefulWidget {
   /// pick still waiting for the drawer to go is dropped when the location
   /// changes under it instead, as System Back drops it.
   final bool browserOwnsBack;
+
+  /// Builds the line under the drawer's header, such as the session's sync
+  /// status (#47), or null for none.
+  ///
+  /// It is given `open`, a pick of the screen at a location, as a menu
+  /// entry with a location makes (#643), so an action on the line that
+  /// opens a page is a pick like any other: it plays its transition in
+  /// full, Back while the drawer closes drops it, and it pushes nothing
+  /// where its screen is already the page on top.
+  final DrawerStatusBuilder? drawerStatus;
 
   /// Key on the [NavigationBar], for tests.
   static const Key barKey = Key('nav_bar');
@@ -267,9 +289,17 @@ class _NavigationShellState extends State<NavigationShell> {
     final location = entry.location;
     if (location == null) {
       entry.onSelected!(context);
-    } else if (location != _path) {
-      unawaited(GoRouter.of(context).push<void>(location));
+    } else {
+      _open(location);
     }
+  }
+
+  /// Pushes the screen at [location], unless it is already the page on top:
+  /// the menu shows over every signed-in page (#414), and a second copy of
+  /// the page would only add a step to Back.
+  void _open(String location) {
+    if (location == _path) return;
+    unawaited(GoRouter.of(context).push<void>(location));
   }
 
   /// Closes the drawer for a pick, and runs [run] once it has gone, or at
@@ -473,6 +503,9 @@ class _NavigationShellState extends State<NavigationShell> {
               onDestination: (destination) => _pick(() => _go(destination)),
               onEntry: (entry) =>
                   _pick(() => _runEntry(entry), now: entry.isDestructive),
+              status: widget.drawerStatus?.call(
+                (location) => _pick(() => _open(location)),
+              ),
             ),
           ),
         ),
