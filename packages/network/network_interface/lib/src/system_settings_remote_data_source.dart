@@ -68,8 +68,8 @@ abstract class SystemSettingsRemoteDataSource {
   /// The most days a retention or reclaim count may be.
   static const int maxDays = 36500;
 
-  /// The reaches the server takes for who may be invited to a household or an
-  /// event.
+  /// The [Reach] values the server takes for who may be invited to a household
+  /// or an event.
   static const Set<Reach> inviteePolicies = {
     Reach.public,
     Reach.friendsOfFriends,
