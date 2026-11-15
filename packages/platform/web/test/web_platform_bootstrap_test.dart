@@ -7,6 +7,7 @@ library;
 
 import 'dart:async';
 
+import 'package:app_shell/app_shell.dart' show LocalDataInUseError;
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,10 +33,12 @@ class _FakeActiveServerScope implements ActiveServerScope {
 class _SpyContainer extends DependencyContainerImpl {
   int disposeCalls = 0;
   Future<void>? closing;
+  void Function()? onDispose;
 
   @override
   Future<void> dispose() async {
     disposeCalls++;
+    onDispose?.call();
     await closing;
     await super.dispose();
   }
@@ -59,20 +62,155 @@ class _FakeServerScope implements ActiveServerScope {
   Stream<ActiveServer?> watchActive() => Stream.value(active);
 }
 
+/// A [WebStorageReset] that records its calls.
+class _FakeStorageReset implements WebStorageReset {
+  _FakeStorageReset({this.answering, this.onDeleteAll});
+
+  final bool Function(Object error)? answering;
+  final Future<void> Function()? onDeleteAll;
+  int deleteAllCalls = 0;
+
+  @override
+  bool answers(Object error) => answering?.call(error) ?? false;
+
+  @override
+  Future<void> deleteAll() async {
+    deleteAllCalls++;
+    await onDeleteAll?.call();
+  }
+}
+
 void main() {
   group('WebPlatformBootstrap', () {
     final bootstrap = WebPlatformBootstrap();
-
-    test('never supports the destructive reset', () {
-      expect(bootstrap.supportsReset, isFalse);
-    });
 
     test("the browser's own Back is the way back (#611)", () {
       expect(bootstrap.browserOwnsBack, isTrue);
     });
 
-    test('reset() throws UnsupportedError', () async {
+    test('without a storage reset, it cannot reset, and reset throws '
+        'UnsupportedError', () async {
+      expect(bootstrap.supportsReset, isFalse);
+      expect(bootstrap.countsTowardReset(StateError('x')), isFalse);
       await expectLater(bootstrap.reset(), throwsUnsupportedError);
+    });
+
+    test('with one, it supports reset and counts only what the reset '
+        'answers', () {
+      final withReset = WebPlatformBootstrap(
+        storageReset: _FakeStorageReset(answering: (e) => e is FormatException),
+      );
+
+      expect(withReset.supportsReset, isTrue);
+      expect(withReset.countsTowardReset(const FormatException()), isTrue);
+      expect(withReset.countsTowardReset(StateError('x')), isFalse);
+    });
+  });
+
+  // #793
+  group('WebPlatformBootstrap.reset', () {
+    test('releases the held server, then deletes', () async {
+      final calls = <String>[];
+      final container = _SpyContainer()..onDispose = () => calls.add('release');
+      final storageReset = _FakeStorageReset(
+        onDeleteAll: () async => calls.add('deleteAll'),
+      );
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async => _FakeServerScope(container),
+        storageReset: storageReset,
+      );
+      await bootstrap.initialize();
+
+      await bootstrap.reset();
+
+      expect(calls, ['release', 'deleteAll']);
+      expect(container.disposeCalls, 1);
+    });
+
+    test('a delete that throws propagates, and leaves the bootstrap '
+        'usable', () async {
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async => _FakeServerScope(_SpyContainer()),
+        storageReset: _FakeStorageReset(
+          onDeleteAll: () async => throw StateError('the delete failed'),
+        ),
+      );
+      await bootstrap.initialize();
+
+      await expectLater(bootstrap.reset(), throwsStateError);
+
+      expect((await bootstrap.initialize()).hasServer, isTrue);
+      await bootstrap.dispose();
+    });
+
+    test('after a blocked reset, initialize deletes again first, and '
+        'fails the same way while the other tabs still hold on', () async {
+      var builds = 0;
+      var blocked = true;
+      final storageReset = _FakeStorageReset(
+        onDeleteAll: () async {
+          if (blocked) throw const LocalDataInUseError();
+        },
+      );
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async {
+          builds++;
+          return _FakeServerScope(_SpyContainer());
+        },
+        storageReset: storageReset,
+      );
+      addTearDown(bootstrap.dispose);
+
+      await expectLater(
+        bootstrap.reset(),
+        throwsA(isA<LocalDataInUseError>()),
+      );
+      // Pressing Retry with the tabs still open: an answer, not an open
+      // that waits behind the queued delete.
+      await expectLater(
+        bootstrap.initialize(),
+        throwsA(isA<LocalDataInUseError>()),
+      );
+      expect(builds, 0);
+      expect(storageReset.deleteAllCalls, 2);
+
+      blocked = false;
+      expect((await bootstrap.initialize()).hasServer, isTrue);
+      expect(storageReset.deleteAllCalls, 3);
+      expect(builds, 1);
+
+      // Once a delete went through, later attempts just open.
+      await bootstrap.initialize();
+      expect(storageReset.deleteAllCalls, 3);
+      expect(builds, 2);
+    });
+
+    test('after dispose throws StateError, without deleting', () async {
+      final storageReset = _FakeStorageReset();
+      final bootstrap = WebPlatformBootstrap(storageReset: storageReset);
+      await bootstrap.dispose();
+
+      await expectLater(bootstrap.reset(), throwsStateError);
+      expect(storageReset.deleteAllCalls, 0);
+    });
+
+    test('dispose waits for a reset in flight', () async {
+      final deleting = Completer<void>();
+      final bootstrap = WebPlatformBootstrap(
+        storageReset: _FakeStorageReset(onDeleteAll: () => deleting.future),
+      );
+
+      final reset = bootstrap.reset();
+      await pumpEventQueue();
+      var disposed = false;
+      final disposal = bootstrap.dispose().then((_) => disposed = true);
+      await pumpEventQueue();
+      expect(disposed, isFalse);
+
+      deleting.complete();
+      await reset;
+      await disposal;
+      expect(disposed, isTrue);
     });
   });
 

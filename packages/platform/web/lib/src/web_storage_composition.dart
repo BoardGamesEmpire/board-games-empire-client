@@ -1,6 +1,7 @@
 import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
+import 'package:app_shell/app_shell.dart' show LocalDataInUseError;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:models/domain.dart' show ServerIdentity;
@@ -15,6 +16,7 @@ import 'package:web_platform/src/session/web_session_bindings.dart';
 import 'package:web_platform/src/sync/web_cross_tab_lock.dart';
 import 'package:web_platform/src/web_platform_bootstrap.dart';
 import 'package:web_platform/src/web_root_module.dart';
+import 'package:web_platform/src/web_storage_reset.dart';
 import 'package:web_platform/src/web_user_scope_installers.dart';
 import 'package:web_storage/web_storage.dart';
 
@@ -127,13 +129,20 @@ void registerWebCrossTabLock(
 /// composition without the same-origin well-known fetch, and
 /// `bootstrapWebServerScope` has had the same two seams since #96. Production
 /// passes neither.
+///
+/// [storageReset] is what the failure screen's reset deletes (#793), and
+/// defaults to [WasmServerDatabaseReset]: every server database at the
+/// origin. Like [wellKnownClient], it is production API whose only caller is
+/// a test, there to keep the suite's deletes to its own database.
 WebPlatformBootstrap bgeWebPlatformBootstrap({
   WellKnownClient? wellKnownClient,
   String Function()? originProvider,
+  WebStorageReset? storageReset,
 }) {
   final providerSignIn = captureWebProviderSignIn();
   return WebPlatformBootstrap(
     rootModule: buildWebRootModule,
+    storageReset: storageReset ?? const WasmServerDatabaseReset(),
     // A closure rather than the tear-off, so that every attempt, a retry's
     // included, builds its scope over this page load's one capture.
     serverScopeBuilder: () => buildWebServerScope(
@@ -142,6 +151,31 @@ WebPlatformBootstrap bgeWebPlatformBootstrap({
       originProvider: originProvider,
     ),
   );
+}
+
+/// Deletes the server databases the drift/wasm layer stored in the browser
+/// (#793), and answers the failure that offers it: a stored database that
+/// would not open.
+///
+/// Only the server databases go: the sweep is by name prefix, so the
+/// HydratedBloc box and anything else at the origin survive.
+final class WasmServerDatabaseReset implements WebStorageReset {
+  /// [namePrefix] narrows the sweep; null deletes every server database. It is
+  /// there for a test to keep its deletes to its own database.
+  const WasmServerDatabaseReset({this.namePrefix});
+
+  /// Only names starting with this are deleted; null → every server database.
+  final String? namePrefix;
+
+  @override
+  bool answers(Object error) => error is WebDatabaseOpenFailure;
+
+  /// Throws [LocalDataInUseError] when another tab holds a database open.
+  @override
+  Future<void> deleteAll() async {
+    final deletion = await deleteServerDatabases(namePrefix: namePrefix);
+    if (deletion.blocked.isNotEmpty) throw const LocalDataInUseError();
+  }
 }
 
 /// The production web **root** module: [registerWebRootModule] with the

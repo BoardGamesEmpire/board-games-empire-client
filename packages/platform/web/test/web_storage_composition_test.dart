@@ -37,9 +37,9 @@ import 'support/web_origin.dart';
 
 void main() {
   group('bgeWebPlatformBootstrap', () {
-    test('is a WebPlatformBootstrap that cannot reset', () {
+    test('is a WebPlatformBootstrap that can reset its storage', () {
       expect(bgeWebPlatformBootstrap(), isA<WebPlatformBootstrap>());
-      expect(bgeWebPlatformBootstrap().supportsReset, isFalse);
+      expect(bgeWebPlatformBootstrap().supportsReset, isTrue);
     });
 
     test("leaves Back to the browser's own (#611)", () {

@@ -7,6 +7,7 @@ import 'package:url_strategy/url_strategy.dart';
 import 'package:web_network/web_network.dart';
 
 import 'package:web_platform/src/web_root_module.dart';
+import 'package:web_platform/src/web_storage_reset.dart';
 
 /// Installs path-based URLs (no `#` fragments) so the reserved deep-link
 /// paths (#10) are real browser URLs, and makes pushed screens show in them,
@@ -29,10 +30,18 @@ void configureWebUrlStrategy() {
 /// `web_storage`'s drift/wasm executor, but that composition is injected
 /// rather than built here — see `bgeWebPlatformBootstrap` in
 /// `web_storage_composition.dart` and the note on [_serverScopeBuilder].
+///
+/// It can reset (#793) when given a [WebStorageReset]: the browser's server
+/// databases are the local state the failure screen offers to delete. Without
+/// one it cannot, as before.
 class WebPlatformBootstrap implements PlatformBootstrap {
   /// Not const since #384: the instance holds the server [initialize] built,
   /// so that [dispose] can release it.
-  WebPlatformBootstrap({this._rootModule, this._serverScopeBuilder});
+  WebPlatformBootstrap({
+    this._rootModule,
+    this._serverScopeBuilder,
+    this._storageReset,
+  });
 
   /// Injectable root-module seam (#69); null → [registerWebRootModule].
   final Future<void> Function(DependencyContainer container)? _rootModule;
@@ -51,14 +60,22 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// only production caller.
   final Future<ActiveServerScope> Function()? _serverScopeBuilder;
 
+  /// What [reset] deletes (#793); null → this bootstrap cannot reset.
+  final WebStorageReset? _storageReset;
+
   /// The server [initialize] built, held so that [dispose] can release it.
   ActiveServer? _server;
 
   /// Set by the first [dispose] call and returned to every later one.
   Future<void>? _disposal;
 
-  /// Completes when the latest [initialize] attempt ends, however it ends.
+  /// Completes when the latest [initialize] or [reset] attempt ends, however
+  /// it ends.
   Future<void>? _attemptEnded;
+
+  /// Set when a [reset] was blocked by other tabs, and cleared once a delete
+  /// completes. While set, [initialize] deletes again before opening.
+  bool _resetPending = false;
 
   /// Builds the web root container (#72): a fresh, isolated
   /// [DependencyContainerImpl] populated by the injected root module
@@ -135,6 +152,11 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// Throws [StateError] once [dispose] has been called, the same rule as
   /// native (#384). An attempt that [dispose] lands on disposes the scope it
   /// built instead of committing it.
+  ///
+  /// After a [reset] that other tabs blocked, it deletes again first, and
+  /// throws `LocalDataInUseError` again while they still hold the databases.
+  /// The open would otherwise wait, with no limit, behind the delete the
+  /// browser still has queued (#793).
   @override
   Future<BootstrapResult> initialize() {
     final attempt = _initialize();
@@ -150,6 +172,7 @@ class WebPlatformBootstrap implements PlatformBootstrap {
     // Retry hygiene, as on native: release a server an earlier attempt
     // committed, or it would be dropped still holding its database.
     await _release();
+    if (_resetPending) await _deleteAll(_storageReset!);
     final scope = await (_serverScopeBuilder ?? bootstrapWebServerScope)();
     if (_disposal != null) {
       // Nothing is left to reach this scope, so it is released here.
@@ -200,18 +223,53 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   bool get browserOwnsBack => true;
 
   @override
-  bool get supportsReset => false;
+  bool get supportsReset => _storageReset != null;
 
-  /// Web offers no reset yet, so no failure counts toward one.
   @override
-  bool countsTowardReset(Object error) => false;
+  bool countsTowardReset(Object error) =>
+      _storageReset?.answers(error) ?? false;
 
+  /// Releases the held server, then deletes the browser's server databases
+  /// (#793). The release comes first: an open connection would block its own
+  /// delete.
+  ///
+  /// Throws `LocalDataInUseError` when another tab holds a database open. The
+  /// browser keeps that delete queued, and the user already confirmed it, so
+  /// the next [initialize] deletes again before it opens: it gets a bounded
+  /// answer instead of waiting behind the queued delete. The bootstrap stays
+  /// usable either way.
+  ///
+  /// Throws [UnsupportedError] without a [WebStorageReset], and [StateError]
+  /// once [dispose] has been called. Like an [initialize] attempt, it is
+  /// waited for by [dispose].
   @override
   Future<void> reset() async {
-    throw UnsupportedError(
-      'reset() is not supported on web: there is no device-local meta '
-      'database to delete.',
-    );
+    final storageReset = _storageReset;
+    if (storageReset == null) {
+      throw UnsupportedError(
+        'reset() is not supported on this web bootstrap: it was composed '
+        'without a storage reset.',
+      );
+    }
+    _throwIfDisposed();
+    final attempt = _reset(storageReset);
+    _attemptEnded = attempt.then<void>((_) {}, onError: (Object _) {});
+    await attempt;
+  }
+
+  Future<void> _reset(WebStorageReset storageReset) async {
+    await _release();
+    await _deleteAll(storageReset);
+  }
+
+  Future<void> _deleteAll(WebStorageReset storageReset) async {
+    try {
+      await storageReset.deleteAll();
+    } on LocalDataInUseError {
+      _resetPending = true;
+      rethrow;
+    }
+    _resetPending = false;
   }
 
   @override
