@@ -7,6 +7,7 @@ import 'package:ui/src/focus/bge_pointer_focus.dart';
 import 'package:ui/src/images/bge_cover_expansions.dart';
 import 'package:ui/src/images/bge_stack_marker.dart';
 import 'package:ui/src/images/bge_thumbnail.dart';
+import 'package:ui/src/sync/bge_sync_badge.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// A game's cover alone, as one tappable tile (#707).
@@ -14,9 +15,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// No title is drawn: the cover is the tile, and [label] is its whole
 /// accessible name, so a screen reader hears the game and a sighted user sees
 /// the picture. The tile is [shelfExtent] square on a shelf, at any text
-/// scale: only an expansions badge's count grows with the text, inside the
-/// tile. With a null [extent] it fills the width it is given as a square, for
-/// a grid's cells.
+/// scale: only an expansions badge's count and a sync mark grow with the
+/// text, inside the tile, the mark no wider than a quarter of the picture.
+/// With a null [extent] it fills the width it is given as a square, for a
+/// grid's cells.
 ///
 /// ## Feedback over the cover
 ///
@@ -74,6 +76,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// link at its top start, for an expansion shown without its base game
 /// (#711). It is drawn only, and adds nothing to the semantics: [label] says
 /// it.
+///
+/// ## A sync state
+///
+/// [syncState] puts a [BgeSyncMark] at the picture's bottom start, the one
+/// corner the other marks leave free on every tile: the missing part's is at
+/// the top start, a stack's count at the top end and the expansions badge at
+/// the bottom end (#47). On a stack it sits on the front copy's picture. It
+/// is drawn only, and adds nothing to the semantics: [label] says it.
 class BgeCoverTile extends StatefulWidget {
   const BgeCoverTile({
     required this.label,
@@ -84,6 +94,7 @@ class BgeCoverTile extends StatefulWidget {
     this.placeholderIcon = Icons.casino_outlined,
     this.expansions,
     this.marked = false,
+    this.syncState,
     super.key,
   });
 
@@ -95,6 +106,10 @@ class BgeCoverTile extends StatefulWidget {
 
   /// Finds the missing-part mark: the outline and its icon.
   static const Key markKey = Key('bge_cover_tile.mark');
+
+  /// Finds the sync mark: the box the picture holds it to, around the
+  /// [BgeSyncMark].
+  static const Key syncMarkKey = Key('bge_cover_tile.sync_mark');
 
   /// The game's name: the tile's whole accessible name.
   final String label;
@@ -128,6 +143,11 @@ class BgeCoverTile extends StatefulWidget {
   /// draws the missing-part mark (#711). The caller puts the words in
   /// [label].
   final bool marked;
+
+  /// Where a change to the cover's record stands on its way to the server,
+  /// which draws the sync mark (#47). Null, for a record the server has,
+  /// draws none. The caller puts the words in [label].
+  final BgeSyncState? syncState;
 
   @override
   State<BgeCoverTile> createState() => _BgeCoverTileState();
@@ -189,12 +209,16 @@ class _BgeCoverTileState extends State<BgeCoverTile>
     final onTap = widget.onTap;
     final stackCount = widget.stackCount;
     final expansions = widget.expansions;
-    Widget picture(double extent) => _MissingPartMark(
-      marked: widget.marked,
-      child: BgeThumbnail(
-        url: widget.imageUrl,
-        extent: extent,
-        placeholderIcon: widget.placeholderIcon,
+    Widget picture(double extent) => _SyncCorner(
+      state: widget.syncState,
+      extent: extent,
+      child: _MissingPartMark(
+        marked: widget.marked,
+        child: BgeThumbnail(
+          url: widget.imageUrl,
+          extent: extent,
+          placeholderIcon: widget.placeholderIcon,
+        ),
       ),
     );
     final radius = BorderRadius.circular(BgeTokens.of(context).radiusSm);
@@ -290,6 +314,62 @@ class _BgeCoverTileState extends State<BgeCoverTile>
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// The picture, with a [BgeSyncMark] at its bottom start while [state] is
+/// not null (#47).
+///
+/// Drawn over the missing-part outline, and under the ink and the expansions
+/// badge, which the tile draws after the picture.
+///
+/// The mark grows with the text and the picture doesn't, so the mark is held
+/// to [_share] of the picture's side and scaled down to fit, as a stack's
+/// count is: at 200% text it would otherwise span a third of a shelf's
+/// cover. Scaled rather than cut, so the disc and its glyph stay whole.
+///
+/// The picture is the same child either way, so it keeps its image as the
+/// mark comes and goes.
+class _SyncCorner extends StatelessWidget {
+  const _SyncCorner({
+    required this.state,
+    required this.extent,
+    required this.child,
+  });
+
+  /// The most of the picture's side the mark takes: a quarter, which holds
+  /// its whole size at 1.0 text on a shelf's cover.
+  static const double _share = 1 / 4;
+
+  final BgeSyncState? state;
+
+  /// The side of the picture.
+  final double extent;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = this.state;
+    final most = extent * _share;
+    return Stack(
+      children: [
+        child,
+        if (state != null)
+          PositionedDirectional(
+            key: BgeCoverTile.syncMarkKey,
+            start: 0,
+            bottom: 0,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: most, maxHeight: most),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: BgeSyncMark(state: state),
+              ),
+            ),
+          ),
       ],
     );
   }

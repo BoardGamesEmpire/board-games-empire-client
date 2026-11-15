@@ -46,6 +46,10 @@ enum BgeOfflineStripState {
 /// - `offline` and `backOnline` are the same element, so the change of label
 ///   is what announces. A fresh node would announce too, but a collapsed
 ///   strip would lose the user's place between the two.
+/// - [detail] is a node of its own after the live region, outside it, so a
+///   screen reader finds it but never announces it (#47). It changes far
+///   more often than the connection does, as each change is made and
+///   queued, and the live region would say the whole notice again for each.
 /// - Not focusable and no action: a notice, not a control. Nothing moves
 ///   focus.
 /// - Size changes resolve through `BgeMotion.durationOf`, so reduced motion
@@ -56,8 +60,12 @@ class BgeOfflineStrip extends StatelessWidget {
     required this.state,
     required this.offlineMessage,
     required this.backOnlineMessage,
+    this.detail,
     super.key,
   });
+
+  /// Finds the detail's text.
+  static const Key detailKey = Key('bge_offline_strip.detail');
 
   final BgeOfflineStripState state;
 
@@ -66,6 +74,12 @@ class BgeOfflineStrip extends StatelessWidget {
 
   /// Localized, e.g. "Back online".
   final String backOnlineMessage;
+
+  /// Localized, e.g. "3 changes waiting": a second line under the offline
+  /// message, in its style, read but not announced (#47).
+  ///
+  /// Shown only while `offline`. Null draws no second line.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -83,32 +97,53 @@ class BgeOfflineStrip extends StatelessWidget {
       final message = state == BgeOfflineStripState.offline
           ? offlineMessage
           : backOnlineMessage;
+      final style = theme.textTheme.bodyMedium?.copyWith(
+        color: statuses.offline,
+      );
+      final detail = this.detail;
       content = Padding(
         padding: EdgeInsets.symmetric(
           vertical: tokens.spaceSm,
           horizontal: tokens.spaceMd,
         ),
-        child: MergeSemantics(
-          child: Semantics(
-            liveRegion: true,
-            child: Row(
-              children: [
-                Icon(
-                  BgeStatusColors.iconFor(status),
-                  color: statuses.colorFor(status),
-                ),
-                const BgeGap.sm(axis: Axis.horizontal),
-                Expanded(
-                  child: Text(
-                    message,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: statuses.offline,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MergeSemantics(
+              child: Semantics(
+                liveRegion: true,
+                child: Row(
+                  children: [
+                    Icon(
+                      BgeStatusColors.iconFor(status),
+                      color: statuses.colorFor(status),
                     ),
+                    const BgeGap.sm(axis: Axis.horizontal),
+                    Expanded(child: Text(message, style: style)),
+                  ],
+                ),
+              ),
+            ),
+            // After the live region, never in it, and added with `if`, so
+            // that the live region keeps its element as the detail comes and
+            // goes (#47). Lined up under the message: past the icon, at the
+            // size the icon theme gives it, and the gap.
+            if (state == BgeOfflineStripState.offline && detail != null)
+              Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: IconTheme.of(context).size! + tokens.spaceSm,
+                ),
+                child: Semantics(
+                  container: true,
+                  child: Text(
+                    detail,
+                    key: BgeOfflineStrip.detailKey,
+                    style: style,
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+          ],
         ),
       );
     }

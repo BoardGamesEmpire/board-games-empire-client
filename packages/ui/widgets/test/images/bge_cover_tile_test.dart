@@ -1042,4 +1042,156 @@ void main() {
       }
     });
   });
+
+  group('a sync state (#47)', () {
+    /// The sync mark's box, where the cover places it.
+    final mark = find.byKey(BgeCoverTile.syncMarkKey);
+
+    /// The mark itself, inside its box.
+    final drawn = find.descendant(of: mark, matching: find.byType(BgeSyncMark));
+
+    for (final direction in TextDirection.values) {
+      testWidgets('syncState draws the mark at the bottom start '
+          '(${direction.name})', (tester) async {
+        final handle = tester.ensureSemantics();
+        try {
+          var opens = 0;
+          const label = 'Azul, not yet synced';
+          await tester.pumpWidget(
+            _host(
+              tester,
+              Directionality(
+                textDirection: direction,
+                child: BgeCoverTile(
+                  label: label,
+                  onTap: () => opens++,
+                  syncState: BgeSyncState.stuck,
+                ),
+              ),
+            ),
+          );
+
+          expect(drawn, findsOneWidget);
+          expect(tester.widget<BgeSyncMark>(drawn).state, BgeSyncState.stuck);
+          final picture = tester.getRect(find.byType(BgeThumbnail));
+          final box = tester.getRect(mark);
+          expect(picture.intersect(box), box, reason: 'inside the picture');
+          if (direction == TextDirection.ltr) {
+            expect(tester.getBottomLeft(mark), picture.bottomLeft);
+          } else {
+            expect(tester.getBottomRight(mark), picture.bottomRight);
+          }
+
+          // Drawn only: the label carries the words.
+          final tile = _tileNode(tester);
+          expect(tile, isSemantics(label: label, hasTapAction: true));
+          expect(tile.childrenCount, 0);
+
+          // The mark takes no press of its own.
+          await tester.tapAt(box.center);
+          expect(opens, 1);
+        } finally {
+          handle.dispose();
+        }
+      });
+    }
+
+    testWidgets('the mark scales down at 2.0 text on a 120 dp cover', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          const BgeCoverTile(label: 'Azul', syncState: BgeSyncState.waiting),
+          textScale: 2,
+        ),
+      );
+
+      expect(tester.takeException(), isNull, reason: 'nothing overflows');
+      final cover = tester.getRect(find.byType(BgeCoverTile));
+      expect(cover.size, const Size.square(BgeCoverTile.shelfExtent));
+      // getSize is the mark's own layout, scaled by the text; getRect is what
+      // the cover draws, after it fits the mark to its corner.
+      final own = tester.getSize(drawn);
+      final painted = tester.getRect(drawn);
+      expect(painted.width, lessThanOrEqualTo(cover.width / 4));
+      expect(painted.height, lessThanOrEqualTo(cover.width / 4));
+      expect(painted.width, lessThan(own.width), reason: 'scaled, not cut');
+      expect(painted.width, painted.height, reason: 'still a disc');
+      expect(cover.intersect(painted), painted, reason: 'inside the cover');
+    });
+
+    for (final direction in TextDirection.values) {
+      for (final scale in [1.0, 2.0]) {
+        testWidgets('a stack keeps its count badge at the top end and the '
+            'mark at the bottom start (${direction.name}, $scale text)', (
+          tester,
+        ) async {
+          await tester.pumpWidget(
+            _host(
+              tester,
+              Directionality(
+                textDirection: direction,
+                child: BgeCoverTile(
+                  label: 'Azul, 3 copies, not yet synced',
+                  stackCount: 3,
+                  onTap: () {},
+                  syncState: BgeSyncState.waiting,
+                ),
+              ),
+              textScale: scale,
+            ),
+          );
+
+          expect(tester.takeException(), isNull);
+          final tile = tester.getRect(find.byType(BgeCoverTile));
+          // The front copy's picture, which the stack's cards sit behind.
+          final picture = tester.getRect(find.byType(BgeThumbnail));
+          final count = tester.getRect(find.byKey(BgeStackMarker.badgeKey));
+          final box = tester.getRect(mark);
+
+          expect(count.center.dy, lessThan(tile.center.dy), reason: 'top');
+          if (direction == TextDirection.ltr) {
+            expect(count.center.dx, greaterThan(tile.center.dx), reason: 'end');
+            expect(tester.getBottomLeft(mark), picture.bottomLeft);
+          } else {
+            // The end is the left, and the start the right.
+            expect(count.center.dx, lessThan(tile.center.dx), reason: 'end');
+            expect(tester.getBottomRight(mark), picture.bottomRight);
+          }
+          expect(picture.intersect(box), box, reason: 'on the front picture');
+          expect(box.overlaps(count), isFalse);
+          expect(box.width, lessThanOrEqualTo(picture.width / 4));
+        });
+      }
+    }
+
+    testWidgets('no syncState, no mark', (tester) async {
+      await tester.pumpWidget(
+        _host(tester, BgeCoverTile(label: 'Azul', onTap: () {})),
+      );
+
+      expect(mark, findsNothing);
+      expect(find.byType(BgeSyncMark), findsNothing);
+    });
+
+    testWidgets('the picture keeps its element as the mark comes and goes', (
+      tester,
+    ) async {
+      Future<Element> show(BgeSyncState? state) async {
+        await tester.pumpWidget(
+          _host(
+            tester,
+            BgeCoverTile(label: 'Azul', onTap: () {}, syncState: state),
+          ),
+        );
+        return tester.element(find.byType(BgeThumbnail));
+      }
+
+      final before = await show(null);
+      for (final state in [BgeSyncState.waiting, BgeSyncState.stuck, null]) {
+        expect(identical(await show(state), before), isTrue, reason: '$state');
+      }
+    });
+  });
 }
