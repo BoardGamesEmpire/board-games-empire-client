@@ -135,6 +135,14 @@
   "@collectionListBaseGameMissing": {
     "description": "A note on the collection row of an expansion or DLC the user owns without owning its base game. Shown on the row, and read by screen readers with the row's other details, first among them."
   },
+  "collectionNotSynced": "Not yet synced",
+  "@collectionNotSynced": {
+    "description": "Badge under a collection row's details, and part of what a screen reader says for a cover in the collection grid, after its details and before Favorite, when the entry was added on this device or has changes the server hasn't had yet. It will send on its own once the server can be reached. On a game owned more than once, it means at least one of its copies is waiting."
+  },
+  "collectionCouldNotSync": "Couldn't sync",
+  "@collectionCouldNotSync": {
+    "description": "Badge under a collection row's details, and part of what a screen reader says for a cover in the collection grid, after its details and before Favorite, when the entry's change was refused by the server or ran out of attempts, so it won't send on its own: the user retries or discards it from the screen of changes that couldn't sync. On a game owned more than once, it means at least one of its copies is stuck; it wins over Not yet synced."
+  },
   "collectionExpansionsBadge": "{title} expansions, {count}",
   "@collectionExpansionsBadge": {
     "description": "What a screen reader says for the badge on a base game's cover in the collection grid, which counts the expansions the user owns for it and shows or hides them under the cover. The badge also says whether they are shown, so this doesn't. {title} is the base game's title, with its subtitle where it has one; {count} is how many of its expansions the user owns, at least one, an expansion owned more than once counting once.",
