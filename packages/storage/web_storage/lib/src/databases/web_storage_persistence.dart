@@ -29,11 +29,13 @@ enum WebStoragePersistence {
   /// take deliberately rather than a detail to slip in here.
   durable,
 
-  /// Data survives a reload, but a second tab can race it.
+  /// Data survives a reload, but a second tab can overwrite it.
   ///
-  /// `unsafeIndexedDb` — no worker is available to serialize access, so two
-  /// tabs writing at once can interleave. Drift names it "unsafe" for that
-  /// reason, and so does this.
+  /// `unsafeIndexedDb` — no shared worker is available to serialize access,
+  /// so each tab runs its own copy of the database, read from IndexedDB once
+  /// when it opened, and writes its changes back over the other tabs'. No
+  /// tab sees another's writes, and no lock can change that (#686). Drift
+  /// names it "unsafe" for that reason, and so does this.
   unsafe,
 
   /// Nothing is stored. A reload starts from empty.

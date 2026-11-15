@@ -269,10 +269,11 @@ final _logger = BgeLogger('bge.platform.web_storage');
 ///   * [WebStoragePersistence.durable] → `info`. Which of the durable
 ///     mechanisms was chosen is still worth recording: it is the first thing
 ///     to want when a report says "my data vanished".
-///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but a second
-///     tab can race it. The sync drain runs there too, under its cross-tab
-///     lock, but another tab's inline send takes no lock and can race it
-///     for an op (#447).
+///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but each tab
+///     works on its own copy and writes it back over the others', and no
+///     lock can change that. With a second tab open, the sync queue can
+///     deliver an op twice or out of order, and leave a row marked clean
+///     that disagrees with the server (#447, #686).
 ///   * [WebStoragePersistence.ephemeral] → `error`. Nothing is stored at all.
 ///     Not thrown, deliberately: a browser this limited can still run the
 ///     app against the server (web's server is the serving origin and is
@@ -291,9 +292,9 @@ void reportWebStorage(WebDatabaseOpening opening) {
       _logger.info(message, context: context);
     case WebStoragePersistence.unsafe:
       _logger.warn(
-        '$message — a second tab can race writes to this database; the '
-        "sync drain runs there, and another tab's send can deliver an op "
-        'twice',
+        '$message — each tab works on its own copy of this database, so a '
+        "second tab overwrites this one's writes, and the sync queue can "
+        'deliver an op twice or out of order',
         context: context,
       );
     case WebStoragePersistence.ephemeral:
