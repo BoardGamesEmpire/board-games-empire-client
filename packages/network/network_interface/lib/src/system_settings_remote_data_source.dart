@@ -19,8 +19,9 @@ import 'package:models/domain.dart';
 /// | [update] | `PATCH /api/system-settings/:id` | the changed fields; `{ settings: {...} }` |
 /// | [sendMailTest] | `POST /api/system-settings/mail-test` | 202 `{ queued: true }`. The body isn't read |
 ///
-/// The coded failures below arrive as `{ code, message }` with no `statusCode`
-/// or `error`, so an implementation reads the `code` whatever the envelope.
+/// The coded failures below arrive in the API's error envelope, with a `code`
+/// beside it. A coded body without the envelope is not the API's, and gets no
+/// coded failure.
 ///
 /// ## Failures
 ///
@@ -37,7 +38,11 @@ import 'package:models/domain.dart';
 ///   [SmtpSecurity.unknown] or [ProviderLinkingPolicy.unknown] in it, a
 ///   host, user, password or From longer than [maxMailSettingLength] by
 ///   `serverStringLength`, a port outside `minPort..maxPort`, or a link
-///   lifetime outside `minLinkLifetimeMinutes..maxLinkLifetimeMinutes`.
+///   lifetime outside `minLinkLifetimeMinutes..maxLinkLifetimeMinutes`, a
+///   name that is empty once trimmed or longer than [maxNameLength] by
+///   `serverStringLength`, a feedback retention, contribution reclaim or audit
+///   retention count outside `minDays..maxDays`, or an invitee policy outside
+///   [inviteePolicies].
 abstract class SystemSettingsRemoteDataSource {
   /// The longest host, user, password or From address the server takes.
   static const int maxMailSettingLength = 255;
@@ -53,6 +58,23 @@ abstract class SystemSettingsRemoteDataSource {
 
   /// The longest password reset link lifetime, in minutes.
   static const int maxLinkLifetimeMinutes = 10080;
+
+  /// The longest server name the server takes, once trimmed.
+  static const int maxNameLength = 100;
+
+  /// The fewest days a retention or reclaim count may be.
+  static const int minDays = 1;
+
+  /// The most days a retention or reclaim count may be.
+  static const int maxDays = 36500;
+
+  /// The [Reach] values the server takes for who may be invited to a household
+  /// or an event.
+  static const Set<Reach> inviteePolicies = {
+    Reach.public,
+    Reach.friendsOfFriends,
+    Reach.friends,
+  };
 
   /// The server's settings.
   Future<SystemSettings> fetch();

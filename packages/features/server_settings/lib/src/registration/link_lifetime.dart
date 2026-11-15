@@ -11,9 +11,9 @@ String describeLinkLifetime(int minutes, ServerSettingsLocalizations l10n) {
   final hours = minutes % Duration.minutesPerDay ~/ Duration.minutesPerHour;
   final rest = minutes % Duration.minutesPerHour;
   final parts = [
-    if (days > 0) l10n.mailLifetimeDays(days),
-    if (hours > 0) l10n.mailLifetimeHours(hours),
-    if (rest > 0 || minutes == 0) l10n.mailLifetimeMinutes(rest),
+    if (days > 0) l10n.registrationLifetimeDays(days),
+    if (hours > 0) l10n.registrationLifetimeHours(hours),
+    if (rest > 0 || minutes == 0) l10n.registrationLifetimeMinutes(rest),
   ];
   return parts.join(', ');
 }

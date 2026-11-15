@@ -112,7 +112,9 @@ class SystemSettingsRemoteDataSourceImpl
   }
 
   static bool _isQueueUnavailable(int status, Object? body) =>
-      status == 503 && apiErrorField(body, 'code') == _queueUnavailableCode;
+      status == 503 &&
+      isApiErrorEnvelope(body, status) &&
+      apiErrorField(body, 'code') == _queueUnavailableCode;
 
   static void _validate(SystemSettingsPatch patch) {
     if (patch.isEmpty) {
@@ -161,6 +163,54 @@ class SystemSettingsRemoteDataSourceImpl
             '${SystemSettingsRemoteDataSource.maxPort}',
       );
     }
+    final name = patch.name?.trim();
+    if (name != null &&
+        (name.isEmpty ||
+            serverStringLength(name) >
+                SystemSettingsRemoteDataSource.maxNameLength)) {
+      throw ArgumentError.value(
+        patch.name,
+        'patch.name',
+        'must be 1 to ${SystemSettingsRemoteDataSource.maxNameLength} '
+            'characters once trimmed',
+      );
+    }
+    final auditDays = patch.auditLogRetentionDays;
+    for (final (field, days) in [
+      ('feedbackReportRetentionDays', patch.feedbackReportRetentionDays),
+      ('contributionReclaimDays', patch.contributionReclaimDays),
+      (
+        'auditLogRetentionDays',
+        switch (auditDays) {
+          SettingSet<int>(:final value) => value,
+          _ => null,
+        },
+      ),
+    ]) {
+      if (days != null &&
+          (days < SystemSettingsRemoteDataSource.minDays ||
+              days > SystemSettingsRemoteDataSource.maxDays)) {
+        throw ArgumentError.value(
+          days,
+          'patch.$field',
+          'must be between ${SystemSettingsRemoteDataSource.minDays} and '
+              '${SystemSettingsRemoteDataSource.maxDays}',
+        );
+      }
+    }
+    for (final (field, policy) in [
+      ('householdInviteePolicy', patch.householdInviteePolicy),
+      ('eventInviteePolicy', patch.eventInviteePolicy),
+    ]) {
+      if (policy != null &&
+          !SystemSettingsRemoteDataSource.inviteePolicies.contains(policy)) {
+        throw ArgumentError.value(
+          policy,
+          'patch.$field',
+          'is not a policy the server takes',
+        );
+      }
+    }
     final lifetime = patch.passwordResetLinkLifetimeMinutes;
     if (lifetime != null &&
         (lifetime < SystemSettingsRemoteDataSource.minLinkLifetimeMinutes ||
@@ -177,9 +227,9 @@ class SystemSettingsRemoteDataSourceImpl
 
   /// Only the fields the patch changes: a [SettingClear] is JSON `null`.
   static Map<String, Object?> _bodyOf(SystemSettingsPatch patch) {
-    Object? read(SettingValue<String> value) => switch (value) {
-      SettingSet<String>(:final value) => value,
-      SettingClear<String>() => null,
+    Object? read<T extends Object>(SettingValue<T> value) => switch (value) {
+      SettingSet<T>(:final value) => value,
+      SettingClear<T>() => null,
     };
     return {
       if (patch.smtpHost case final value?) 'smtpHost': read(value),
@@ -194,6 +244,21 @@ class SystemSettingsRemoteDataSourceImpl
       'allowPasswordResets': ?patch.allowPasswordResets,
       if (patch.providerLinkingPolicy case final value?)
         'providerLinkingPolicy': value.wireName,
+      // The server trims the name, so it goes as given.
+      'name': ?patch.name,
+      'allowUserRegistration': ?patch.allowUserRegistration,
+      'allowUsernameChange': ?patch.allowUsernameChange,
+      'feedbackReportRetentionDays': ?patch.feedbackReportRetentionDays,
+      'feedbackReportServerRedactionEnabled':
+          ?patch.feedbackReportServerRedactionEnabled,
+      'requireContributionApproval': ?patch.requireContributionApproval,
+      'contributionReclaimDays': ?patch.contributionReclaimDays,
+      if (patch.auditLogRetentionDays case final value?)
+        'auditLogRetentionDays': read(value),
+      if (patch.householdInviteePolicy case final value?)
+        'householdInviteePolicy': value.toWire(),
+      if (patch.eventInviteePolicy case final value?)
+        'eventInviteePolicy': value.toWire(),
     };
   }
 
@@ -230,6 +295,19 @@ class SystemSettingsRemoteDataSourceImpl
       providerLinkingPolicy: ProviderLinkingPolicy.fromWire(
         json['providerLinkingPolicy'] as String,
       ),
+      name: json['name'] as String,
+      allowUserRegistration: json['allowUserRegistration'] as bool,
+      allowUsernameChange: json['allowUsernameChange'] as bool,
+      feedbackReportRetentionDays: json['feedbackReportRetentionDays'] as int,
+      feedbackReportServerRedactionEnabled:
+          json['feedbackReportServerRedactionEnabled'] as bool,
+      requireContributionApproval: json['requireContributionApproval'] as bool,
+      contributionReclaimDays: json['contributionReclaimDays'] as int,
+      auditLogRetentionDays: json['auditLogRetentionDays'] as int?,
+      householdInviteePolicy: Reach.fromWire(
+        json['householdInviteePolicy'] as String,
+      ),
+      eventInviteePolicy: Reach.fromWire(json['eventInviteePolicy'] as String),
     );
   }
 }
@@ -244,16 +322,17 @@ final class _SystemSettingsFailures
         permanent: SystemSettingsPermanentException.new,
       );
 
-  /// The coded refusals arrive as `{ code, message }` with no envelope, so the
-  /// code is read whatever [RemoteRefusal.fromApi] says. A 403 needs the
-  /// envelope: without it the shared rules already called it not the API, and
-  /// it never reaches here. A retryable 409 never reaches here either.
+  /// The coded refusals arrive in the API's error envelope,
+  /// `{ statusCode, error, message, code }` (backend#1260), so a code is read
+  /// only when [RemoteRefusal.fromApi] says the body is the API's. A bare coded
+  /// body is not the API's. A retryable 409 never reaches here.
   @override
   SystemSettingsRemoteException? refused(RemoteRefusal refusal) {
     final status = refusal.status;
     final code = apiErrorField(refusal.body, 'code');
     final message = refusal.message;
     final cause = refusal.cause;
+    if (!refusal.fromApi) return null;
     if (status == 400 && code == 'SMTP_PASSWORD_REQUIRED') {
       return SmtpPasswordRequiredException(
         message,
@@ -268,7 +347,7 @@ final class _SystemSettingsFailures
         cause: cause,
       );
     }
-    if (status == 403 && refusal.fromApi) {
+    if (status == 403) {
       return SystemSettingsForbiddenException(
         message,
         statusCode: status,

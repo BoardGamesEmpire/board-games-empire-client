@@ -49,8 +49,8 @@ bool settingsGroupMaySave(
 /// - **Offline.** Saving is a direct write (#49), so Save is disabled and
 ///   carries the reason as its hint. The reason is drawn once, under Save,
 ///   for Save and [trailing] alike.
-/// - **The other group saving.** Save is disabled, and carries why as its
-///   hint, with no line drawn: the other group's Save shows what is going
+/// - **Another group saving.** Save is disabled, and carries why as its
+///   hint, with no line drawn: that group's Save shows what is going
 ///   on. Offline, the offline reason is the hint instead.
 /// - **No [maySave].** No Save and no [trailing]. [focusNode] goes around
 ///   them, so the form can hand on the focus they had as they go; it must
@@ -83,7 +83,7 @@ class SettingsGroupActions extends StatelessWidget {
   /// Whether this group's save is in flight.
   final bool saving;
 
-  /// Whether the other group's save is in flight.
+  /// Whether another group's save is in flight.
   final bool otherGroupSaving;
 
   /// Whether this group's last save landed, until the group is edited.

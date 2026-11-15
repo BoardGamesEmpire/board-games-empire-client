@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import 'package:models/src/domain/common/reach.dart';
+
 /// How the server secures its connection to the mail server (#807).
 enum SmtpSecurity {
   startTls,
@@ -55,7 +57,7 @@ enum ProviderLinkingPolicy {
   };
 }
 
-/// The server's settings, as an admin reads them (#807).
+/// The server's settings, as an admin reads them (#807, #894).
 ///
 /// The SMTP password is never returned; [smtpPasswordSet] says whether one is
 /// stored.
@@ -71,6 +73,16 @@ final class SystemSettings extends Equatable {
     required this.passwordResetLinkLifetimeMinutes,
     required this.allowPasswordResets,
     required this.providerLinkingPolicy,
+    required this.name,
+    required this.allowUserRegistration,
+    required this.allowUsernameChange,
+    required this.feedbackReportRetentionDays,
+    required this.feedbackReportServerRedactionEnabled,
+    required this.requireContributionApproval,
+    required this.contributionReclaimDays,
+    required this.auditLogRetentionDays,
+    required this.householdInviteePolicy,
+    required this.eventInviteePolicy,
   });
 
   final String id;
@@ -83,6 +95,44 @@ final class SystemSettings extends Equatable {
   final int passwordResetLinkLifetimeMinutes;
   final bool allowPasswordResets;
   final ProviderLinkingPolicy providerLinkingPolicy;
+
+  /// The server display name. Clients label the server with it when a user is
+  /// choosing which server to add.
+  final String name;
+
+  /// Whether to allow new user registrations.
+  final bool allowUserRegistration;
+
+  /// Whether to allow users to change their usernames.
+  final bool allowUsernameChange;
+
+  /// How long to keep feedback reports, in days. Older reports are deleted
+  /// automatically.
+  final int feedbackReportRetentionDays;
+
+  /// Whether the server redacts feedback reports before storing them. If
+  /// false, it stores them as-is and relies on clients to redact.
+  final bool feedbackReportServerRedactionEnabled;
+
+  /// Whether a media contribution waits for staff approval before it is
+  /// published.
+  final bool requireContributionApproval;
+
+  /// How long the contributor of a rejected media contribution has to reclaim
+  /// it, in days.
+  final int contributionReclaimDays;
+
+  /// How long to keep audit log entries, in days. Null keeps them
+  /// indefinitely.
+  final int? auditLogRetentionDays;
+
+  /// Who may be invited to a household. A user's own preference can narrow
+  /// this, never widen it.
+  final Reach householdInviteePolicy;
+
+  /// Who may be placed on an event by id, at its creation or later. A user's
+  /// own preference can narrow this, never widen it.
+  final Reach eventInviteePolicy;
 
   /// Whether the server has what it needs to send mail: a host and a From.
   bool get mailConfigured => smtpHost != null && mailFromAddress != null;
@@ -99,5 +149,15 @@ final class SystemSettings extends Equatable {
     passwordResetLinkLifetimeMinutes,
     allowPasswordResets,
     providerLinkingPolicy,
+    name,
+    allowUserRegistration,
+    allowUsernameChange,
+    feedbackReportRetentionDays,
+    feedbackReportServerRedactionEnabled,
+    requireContributionApproval,
+    contributionReclaimDays,
+    auditLogRetentionDays,
+    householdInviteePolicy,
+    eventInviteePolicy,
   ];
 }

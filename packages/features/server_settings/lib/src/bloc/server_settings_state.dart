@@ -1,8 +1,16 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// A group of settings that is saved on its own (#807).
-enum SettingsGroup { mail, signIn }
+/// A group of settings that is saved on its own (#807, #894), in the order
+/// the screen lists them. Only one group saves at a time.
+enum SettingsGroup {
+  general,
+  registration,
+  mail,
+  invitations,
+  contributions,
+  retention,
+}
 
 /// Why a save of one group did not land.
 enum SettingsSaveFailure {
@@ -75,6 +83,10 @@ final class ServerSettingsLoaded extends ServerSettingsState {
   /// The group whose last save landed, until that group is edited or saved
   /// again.
   final SettingsGroup? savedGroup;
+
+  /// Whether a group other than [group] is being saved. One save at a time.
+  bool otherGroupSaving(SettingsGroup group) =>
+      saving != null && saving != group;
 
   /// Moves on every read and every save that landed. A form takes the
   /// settings' values again when it changes.

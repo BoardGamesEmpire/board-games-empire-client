@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:server_settings/l10n/server_settings_localizations.dart';
-import 'package:server_settings/src/mail/link_lifetime.dart';
+import 'package:server_settings/src/registration/link_lifetime.dart';
 
 void main() {
   final l10n = lookupServerSettingsLocalizations(const Locale('en'));

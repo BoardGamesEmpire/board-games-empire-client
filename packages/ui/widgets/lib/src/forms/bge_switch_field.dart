@@ -16,6 +16,14 @@ import 'package:reactive_forms/reactive_forms.dart';
 /// would toggle nothing. The keyboard's activation reaches the tile and does
 /// nothing; [IgnorePointer] takes the pointer and the semantic tap. It takes
 /// the focus action too, which the node here gives back, as `Focus` has it.
+///
+/// ## Focus through its control
+///
+/// It registers a reactive_forms `FocusController` with its control, on the
+/// node the tile takes focus with, as `BgeTextField` and `BgeDropdownField`
+/// do. So `control.focus()` reaches it, read-only or not, and a form can hand
+/// focus to it (#894). A control it no longer shows, or a switch that leaves,
+/// lets the controller go.
 class BgeSwitchField extends StatefulWidget {
   const BgeSwitchField({
     required this.formControlName,
@@ -47,10 +55,39 @@ class _BgeSwitchFieldState extends State<BgeSwitchField> {
   // takes while read-only.
   final FocusNode _focusNode = FocusNode(debugLabel: 'BgeSwitchField');
 
+  /// Registered with [_registeredWith], so `control.focus()` reaches
+  /// [_focusNode]. One per control, as `ReactiveFocusableFormField` makes
+  /// them: it holds the focus state of the control it was made for.
+  FocusController? _focusController;
+  FormControl<bool>? _registeredWith;
+
   static void _ignore(bool _) {}
+
+  /// Registers a focus controller with [control], the one the switch shows,
+  /// letting go of the control it showed before.
+  void _focusThrough(AbstractControl<bool> control) {
+    if (identical(control, _registeredWith)) return;
+    _letGoOfControl();
+    if (control is! FormControl<bool>) return;
+    // Made on the tile's node, which it leaves for this state to dispose.
+    final controller = FocusController(focusNode: _focusNode);
+    control.registerFocusController(controller);
+    _focusController = controller;
+    _registeredWith = control;
+  }
+
+  void _letGoOfControl() {
+    final controller = _focusController;
+    if (controller == null) return;
+    _registeredWith?.unregisterFocusController(controller);
+    controller.dispose();
+    _focusController = null;
+    _registeredWith = null;
+  }
 
   @override
   void dispose() {
+    _letGoOfControl();
     _focusNode.dispose();
     super.dispose();
   }
@@ -62,35 +99,41 @@ class _BgeSwitchFieldState extends State<BgeSwitchField> {
 
     return ReactiveValueListenableBuilder<bool>(
       formControlName: widget.formControlName,
-      // One node: the tile's merges into this one, which adds what read-only
-      // changes.
-      builder: (context, control, _) => MergeSemantics(
-        child: Semantics(
-          readOnly: readOnly,
-          // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
-          onFocus: readOnly && defaultTargetPlatform != TargetPlatform.iOS
-              ? _focusNode.requestFocus
-              : null,
-          child: IgnorePointer(
-            ignoring: readOnly,
-            child: SwitchListTile(
-              key: widget.switchKey,
-              focusNode: _focusNode,
-              value: control.value ?? false,
-              title: Text(widget.label),
-              subtitle: subtitle == null ? null : Text(subtitle),
-              contentPadding: EdgeInsets.zero,
-              // Set while read-only too, so the tile stays enabled and
-              // focusable; a toggle then changes nothing.
-              onChanged: readOnly
-                  ? _ignore
-                  : (value) => control
-                      ..value = value
-                      ..markAsTouched(),
+      builder: (context, control, _) {
+        // Here, where the control the switch shows is resolved: a new group
+        // under the same name moves the controller to its control. Only a
+        // listener is added, so nothing is notified mid-build.
+        _focusThrough(control);
+        // One node: the tile's merges into this one, which adds what
+        // read-only changes.
+        return MergeSemantics(
+          child: Semantics(
+            readOnly: readOnly,
+            // As `Focus` has it: withheld on iOS (flutter/flutter#150030).
+            onFocus: readOnly && defaultTargetPlatform != TargetPlatform.iOS
+                ? _focusNode.requestFocus
+                : null,
+            child: IgnorePointer(
+              ignoring: readOnly,
+              child: SwitchListTile(
+                key: widget.switchKey,
+                focusNode: _focusNode,
+                value: control.value ?? false,
+                title: Text(widget.label),
+                subtitle: subtitle == null ? null : Text(subtitle),
+                contentPadding: EdgeInsets.zero,
+                // Set while read-only too, so the tile stays enabled and
+                // focusable; a toggle then changes nothing.
+                onChanged: readOnly
+                    ? _ignore
+                    : (value) => control
+                        ..value = value
+                        ..markAsTouched(),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

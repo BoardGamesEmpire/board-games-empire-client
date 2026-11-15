@@ -2,31 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:server_settings/src/mail/mail_patch.dart';
 
-const _stored = SystemSettings(
-  id: 'settings-1',
+import 'support/fake_system_settings_remote.dart';
+
+final SystemSettings _stored = settingsFixture(
   smtpHost: 'smtp.example.com',
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
   smtpUser: 'mailer',
   smtpPasswordSet: true,
   mailFromAddress: 'games@example.com',
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
-  providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
 );
 
-const _noHost = SystemSettings(
-  id: 'settings-1',
-  smtpHost: null,
-  smtpPort: 587,
-  smtpSecurity: SmtpSecurity.startTls,
-  smtpUser: null,
-  smtpPasswordSet: false,
-  mailFromAddress: null,
-  passwordResetLinkLifetimeMinutes: 1440,
-  allowPasswordResets: true,
-  providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
-);
+final SystemSettings _noHost = settingsFixture();
 
 /// The form's values for [from] as it was read, with the changes given.
 MailFormValues _values(
@@ -38,8 +23,6 @@ MailFormValues _values(
   String password = '',
   PasswordEdit? passwordEdit,
   String? fromAddress,
-  bool? allowPasswordResets,
-  int? linkLifetimeMinutes,
 }) => MailFormValues(
   host: host ?? from.smtpHost ?? '',
   port: port ?? from.smtpPort,
@@ -50,9 +33,6 @@ MailFormValues _values(
       passwordEdit ??
       (from.smtpPasswordSet ? PasswordEdit.keep : PasswordEdit.replace),
   from: fromAddress ?? from.mailFromAddress ?? '',
-  allowPasswordResets: allowPasswordResets ?? from.allowPasswordResets,
-  linkLifetimeMinutes:
-      linkLifetimeMinutes ?? from.passwordResetLinkLifetimeMinutes,
 );
 
 void main() {
@@ -92,22 +72,10 @@ void main() {
       );
     });
 
-    test('the numbers and the switch are sent when they differ', () {
+    test('a port that differs is sent', () {
       expect(
-        mailPatch(
-          _stored,
-          _values(
-            _stored,
-            port: 465,
-            allowPasswordResets: false,
-            linkLifetimeMinutes: 60,
-          ),
-        ),
-        const SystemSettingsPatch(
-          smtpPort: 465,
-          allowPasswordResets: false,
-          passwordResetLinkLifetimeMinutes: 60,
-        ),
+        mailPatch(_stored, _values(_stored, port: 465)),
+        const SystemSettingsPatch(smtpPort: 465),
       );
     });
 

@@ -30,7 +30,7 @@
   },
   "mailGroupTitle": "Mail",
   "@mailGroupTitle": {
-    "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through, its sender address, and password reset links."
+    "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through and its sender address."
   },
   "mailGroupIntro": "The server sends password reset links and test emails through this mail server. Mail is off until a host and a From address are saved.",
   "@mailGroupIntro": {
@@ -146,94 +146,6 @@
       }
     }
   },
-  "mailPasswordResetsLabel": "Let people reset a forgotten password",
-  "@mailPasswordResetsLabel": {
-    "description": "Label of the switch that lets people ask for a password reset link by email."
-  },
-  "mailLinkLifetimeLabel": "Reset link lifetime, in minutes",
-  "@mailLinkLifetimeLabel": {
-    "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
-  },
-  "mailLinkLifetimeHelper": "{readout}. From {min} to {max}.",
-  "@mailLinkLifetimeHelper": {
-    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows, read the same way.",
-    "placeholders": {
-      "readout": {
-        "type": "String",
-        "example": "1 day, 1 hour"
-      },
-      "min": {
-        "type": "String",
-        "example": "15 minutes"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLinkLifetimeRange": "From {min} to {max}.",
-  "@mailLinkLifetimeRange": {
-    "description": "Helper text under the reset link lifetime field while what is entered can't be read as a lifetime: the limits the server allows, read in days, hours and minutes.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "15 minutes"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLinkLifetimeInvalid": "Enter a whole number of minutes from {minMinutes} to {maxMinutes} ({max}).",
-  "@mailLinkLifetimeInvalid": {
-    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range: the limits in minutes, then the upper limit read in days, hours and minutes.",
-    "placeholders": {
-      "minMinutes": {
-        "type": "int",
-        "example": "15"
-      },
-      "maxMinutes": {
-        "type": "int",
-        "example": "10080"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
-  "@mailLifetimeDays": {
-    "description": "A number of days, one part of the reset link lifetime's reading, such as '1 day' in '1 day, 1 hour'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "2"
-      }
-    }
-  },
-  "mailLifetimeHours": "{count, plural, =1{1 hour} other{{count} hours}}",
-  "@mailLifetimeHours": {
-    "description": "A number of hours, one part of the reset link lifetime's reading, such as '1 hour' in '1 day, 1 hour'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "3"
-      }
-    }
-  },
-  "mailLifetimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
-  "@mailLifetimeMinutes": {
-    "description": "A number of minutes, one part of the reset link lifetime's reading, such as '30 minutes' in '1 hour, 30 minutes'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "30"
-      }
-    }
-  },
   "mailSave": "Save mail settings",
   "@mailSave": {
     "description": "Button that saves the Mail group's settings to the server."
@@ -266,9 +178,9 @@
   "@settingsFailed": {
     "description": "Shown when saving the settings failed because the server could not be reached or did not answer usefully."
   },
-  "settingsOtherGroupSaving": "Available when the other save finishes.",
+  "settingsOtherGroupSaving": "Available when the save in progress finishes.",
   "@settingsOtherGroupSaving": {
-    "description": "Read by a screen reader with a group's disabled Save button while another group of settings is being saved: why it can't be pressed yet. Not drawn on screen."
+    "description": "Read by a screen reader with a group's disabled Save button while a save of another group of settings is in progress: why it can't be pressed yet. Not drawn on screen."
   },
   "mailTestSend": "Send test email",
   "@mailTestSend": {
@@ -356,9 +268,109 @@
   "@mailTestNotSentFailed": {
     "description": "Shown when asking the server for a test email failed because it could not be reached or did not answer usefully."
   },
-  "signInGroupTitle": "Sign-in",
-  "@signInGroupTitle": {
-    "description": "Heading of the group of server settings about how people sign in."
+  "registrationGroupTitle": "Registration and sign-in",
+  "@registrationGroupTitle": {
+    "description": "Heading of the group of server settings about how people join the server and sign in: whether they may create an account, change their username or reset a forgotten password, how long a reset link works, and how a sign-in provider is linked to an account."
+  },
+  "registrationSignUpsLabel": "Let people create an account",
+  "@registrationSignUpsLabel": {
+    "description": "Label of the switch that lets people create their own account on the server."
+  },
+  "registrationUsernameChangeLabel": "Let people change their username",
+  "@registrationUsernameChangeLabel": {
+    "description": "Label of the switch that lets people change the username of their account."
+  },
+  "registrationPasswordResetsLabel": "Let people reset a forgotten password",
+  "@registrationPasswordResetsLabel": {
+    "description": "Label of the switch that lets people ask for a password reset link by email."
+  },
+  "registrationPasswordResetsSubtitle": "Reset links go out by email, through the Mail settings.",
+  "@registrationPasswordResetsSubtitle": {
+    "description": "Second line of the switch that lets people reset a forgotten password: the reset link is sent by email, so it needs the mail server set up in the Mail group of these settings."
+  },
+  "registrationLinkLifetimeLabel": "Reset link lifetime, in minutes",
+  "@registrationLinkLifetimeLabel": {
+    "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
+  },
+  "registrationLinkLifetimeHelper": "{readout}. From {min} to {max}.",
+  "@registrationLinkLifetimeHelper": {
+    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows, read the same way.",
+    "placeholders": {
+      "readout": {
+        "type": "String",
+        "example": "1 day, 1 hour"
+      },
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLinkLifetimeRange": "From {min} to {max}.",
+  "@registrationLinkLifetimeRange": {
+    "description": "Helper text under the reset link lifetime field while what is entered can't be read as a lifetime: the limits the server allows, read in days, hours and minutes.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLinkLifetimeInvalid": "Enter a whole number of minutes from {minMinutes} to {maxMinutes} ({max}).",
+  "@registrationLinkLifetimeInvalid": {
+    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range: the limits in minutes, then the upper limit read in days, hours and minutes.",
+    "placeholders": {
+      "minMinutes": {
+        "type": "int",
+        "example": "15"
+      },
+      "maxMinutes": {
+        "type": "int",
+        "example": "10080"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@registrationLifetimeDays": {
+    "description": "A number of days, one part of the reset link lifetime's reading, such as '1 day' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "registrationLifetimeHours": "{count, plural, =1{1 hour} other{{count} hours}}",
+  "@registrationLifetimeHours": {
+    "description": "A number of hours, one part of the reset link lifetime's reading, such as '1 hour' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "registrationLifetimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
+  "@registrationLifetimeMinutes": {
+    "description": "A number of minutes, one part of the reset link lifetime's reading, such as '30 minutes' in '1 hour, 30 minutes'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "30"
+      }
+    }
   },
   "signInLinkingLabel": "Linking a sign-in provider",
   "@signInLinkingLabel": {
@@ -384,20 +396,248 @@
   "@signInLinkingAutomaticWarning": {
     "description": "Warning under the linking menu while automatic linking is chosen: whoever controls a user's verified email address at a sign-in provider can then sign in as that user, even as the server's Owner (its most powerful role)."
   },
-  "signInSave": "Save sign-in settings",
-  "@signInSave": {
-    "description": "Button that saves the Sign-in group's settings to the server."
+  "registrationSave": "Save registration and sign-in settings",
+  "@registrationSave": {
+    "description": "Button that saves the Registration and sign-in group's settings to the server."
   },
-  "signInSaving": "Saving…",
-  "@signInSaving": {
-    "description": "Label of the save button while the Sign-in group's settings are being saved."
+  "registrationSaving": "Saving…",
+  "@registrationSaving": {
+    "description": "Label of the save button while the Registration and sign-in group's settings are being saved."
   },
-  "signInSaved": "Sign-in settings saved.",
-  "@signInSaved": {
-    "description": "Shown above the save button once the server has stored the Sign-in group's settings, until they are edited again."
+  "registrationSaved": "Registration and sign-in settings saved.",
+  "@registrationSaved": {
+    "description": "Shown above the save button once the server has stored the Registration and sign-in group's settings, until they are edited again."
   },
-  "signInNotSavedTitle": "Sign-in settings not saved",
-  "@signInNotSavedTitle": {
-    "description": "Heading of the message above the save button when saving the Sign-in group's settings failed."
+  "registrationNotSavedTitle": "Registration and sign-in settings not saved",
+  "@registrationNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Registration and sign-in group's settings failed."
+  },
+  "settingsDaysHelper": "From {min} to {max} days.",
+  "@settingsDaysHelper": {
+    "description": "Helper text under a field that takes a number of days: the lowest and highest the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "settingsDaysInvalid": "Enter a whole number of days from {min} to {max}.",
+  "@settingsDaysInvalid": {
+    "description": "Validation message when a days field is blank, not a whole number, or out of range: the lowest and highest the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "generalGroupTitle": "General",
+  "@generalGroupTitle": {
+    "description": "Heading of the General group of the server settings."
+  },
+  "generalNameLabel": "Server name",
+  "@generalNameLabel": {
+    "description": "Label of the field for the name of the server."
+  },
+  "generalNameHelper": "People see this name when they choose which server to add.",
+  "@generalNameHelper": {
+    "description": "Helper text under the server name field."
+  },
+  "generalNameEmpty": "Enter a name for the server.",
+  "@generalNameEmpty": {
+    "description": "Validation message when the server name is blank."
+  },
+  "generalNameTooLong": "Use at most {max} characters.",
+  "@generalNameTooLong": {
+    "description": "Validation message when the server name is longer than the server takes: the limit.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "generalSave": "Save general settings",
+  "@generalSave": {
+    "description": "Button that saves the General group's settings to the server."
+  },
+  "generalSaving": "Saving…",
+  "@generalSaving": {
+    "description": "Label of the save button while the General group's settings are being saved."
+  },
+  "generalSaved": "General settings saved.",
+  "@generalSaved": {
+    "description": "Shown above the save button once the server has stored the General group's settings, until they are edited again."
+  },
+  "generalNotSavedTitle": "General settings not saved",
+  "@generalNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the General group's settings failed."
+  },
+  "contributionsGroupTitle": "Contributions",
+  "@contributionsGroupTitle": {
+    "description": "Heading of the Contributions group of the server settings."
+  },
+  "contributionsApprovalLabel": "Hold media contributions for staff approval",
+  "@contributionsApprovalLabel": {
+    "description": "Label of the switch that holds media contributions until staff approve them."
+  },
+  "contributionsApprovalSubtitle": "A contribution is published only once staff approve it.",
+  "@contributionsApprovalSubtitle": {
+    "description": "Explanation under the contribution approval switch."
+  },
+  "contributionsReclaimLabel": "Days to reclaim a rejected contribution",
+  "@contributionsReclaimLabel": {
+    "description": "Label of the field for how many days the person who contributed a rejected item may reclaim it."
+  },
+  "contributionsSave": "Save contribution settings",
+  "@contributionsSave": {
+    "description": "Button that saves the Contributions group's settings to the server."
+  },
+  "contributionsSaving": "Saving…",
+  "@contributionsSaving": {
+    "description": "Label of the save button while the Contributions group's settings are being saved."
+  },
+  "contributionsSaved": "Contribution settings saved.",
+  "@contributionsSaved": {
+    "description": "Shown above the save button once the server has stored the Contributions group's settings, until they are edited again."
+  },
+  "contributionsNotSavedTitle": "Contribution settings not saved",
+  "@contributionsNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Contributions group's settings failed."
+  },
+  "invitationsGroupTitle": "Invitations",
+  "@invitationsGroupTitle": {
+    "description": "Heading of the Invitations group of the server settings: who can be invited to a household and added to an event."
+  },
+  "invitationsHouseholdLabel": "Who can be invited to a household",
+  "@invitationsHouseholdLabel": {
+    "description": "Label of the menu that sets who can be invited to a household."
+  },
+  "invitationsEventLabel": "Who can be added to an event",
+  "@invitationsEventLabel": {
+    "description": "Label of the menu that sets who can be added to an event."
+  },
+  "invitationsReachPublic": "Everyone",
+  "@invitationsReachPublic": {
+    "description": "Menu item in the Invitations group: anyone can be invited or added."
+  },
+  "invitationsReachFriendsOfFriends": "Friends of friends",
+  "@invitationsReachFriendsOfFriends": {
+    "description": "Menu item in the Invitations group: the inviter's friends and their friends."
+  },
+  "invitationsReachFriends": "Friends",
+  "@invitationsReachFriends": {
+    "description": "Menu item in the Invitations group: only the inviter's friends."
+  },
+  "invitationsReachNotOffered": "A setting this app doesn't offer",
+  "@invitationsReachNotOffered": {
+    "description": "Shown in an Invitations menu when the server holds a policy the menu doesn't offer: Private, Extended network, or one this app doesn't know. Saving leaves it as it is unless another choice is picked."
+  },
+  "invitationsHouseholdPublicDescription": "Anyone can be invited. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdPublicDescription": {
+    "description": "Under the household menu while Everyone is chosen: says who can be invited and that a user can narrow it."
+  },
+  "invitationsHouseholdFriendsOfFriendsDescription": "The inviter's friends and their friends, unless a block stands between them. Each is invited from their account, and invites by email address are refused. Whether an invite goes through shows the inviter whether that user shares a friend with them. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdFriendsOfFriendsDescription": {
+    "description": "Under the household menu while Friends of friends is chosen: says who can be invited, that email invites are refused and what an invite's outcome shows."
+  },
+  "invitationsHouseholdFriendsDescription": "Only the inviter's friends. Each is invited from their account, and invites by email address are refused. A user's own preference can narrow this, never widen it.",
+  "@invitationsHouseholdFriendsDescription": {
+    "description": "Under the household menu while Friends is chosen: says who can be invited and that email invites are refused."
+  },
+  "invitationsEventPublicDescription": "Anyone can be added, when the event is created or later. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventPublicDescription": {
+    "description": "Under the event menu while Everyone is chosen: says who can be added and that a user can narrow it."
+  },
+  "invitationsEventFriendsOfFriendsDescription": "The inviter's friends and their friends, unless a block stands between them. Whether an addition goes through shows the inviter whether that user shares a friend with them. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventFriendsOfFriendsDescription": {
+    "description": "Under the event menu while Friends of friends is chosen: says who can be added and what an addition's outcome shows."
+  },
+  "invitationsEventFriendsDescription": "Only the inviter's friends. A user's own preference can narrow this, never widen it.",
+  "@invitationsEventFriendsDescription": {
+    "description": "Under the event menu while Friends is chosen: says who can be added and that a user can narrow it."
+  },
+  "invitationsSave": "Save invitation settings",
+  "@invitationsSave": {
+    "description": "Button that saves the Invitations group's settings to the server."
+  },
+  "invitationsSaving": "Saving…",
+  "@invitationsSaving": {
+    "description": "Label of the save button while the Invitations group's settings are being saved."
+  },
+  "invitationsSaved": "Invitation settings saved.",
+  "@invitationsSaved": {
+    "description": "Shown above the save button once the server has stored the Invitations group's settings, until they are edited again."
+  },
+  "invitationsNotSavedTitle": "Invitation settings not saved",
+  "@invitationsNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Invitations group's settings failed."
+  },
+  "retentionGroupTitle": "Data retention",
+  "@retentionGroupTitle": {
+    "description": "Heading of the Data retention group of the server settings: how long feedback reports and audit log entries are kept, and whether the server redacts feedback reports."
+  },
+  "retentionFeedbackDaysLabel": "Days to keep feedback reports",
+  "@retentionFeedbackDaysLabel": {
+    "description": "Label of the field for how many days the server keeps a feedback report before deleting it."
+  },
+  "retentionFeedbackDaysHelper": "Older reports are deleted automatically. From {min} to {max} days.",
+  "@retentionFeedbackDaysHelper": {
+    "description": "Helper text under the feedback report days field: that older reports are deleted, and the lowest and highest number of days the server accepts.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      },
+      "max": {
+        "type": "int",
+        "example": "36500"
+      }
+    }
+  },
+  "retentionRedactionLabel": "Redact feedback reports on the server",
+  "@retentionRedactionLabel": {
+    "description": "Label of the switch that has the server redact personal details from feedback reports as they arrive."
+  },
+  "retentionRedactionOffWarning": "Feedback reports are stored as they arrive, and the server relies on each app to redact them.",
+  "@retentionRedactionOffWarning": {
+    "description": "Warning under the redaction switch while it is off: the server stores reports unredacted and relies on each app to redact them."
+  },
+  "retentionAuditLabel": "Delete old audit log entries",
+  "@retentionAuditLabel": {
+    "description": "Label of the switch that has the server delete audit log entries older than a number of days."
+  },
+  "retentionAuditSubtitle": "While this is off, entries are kept indefinitely.",
+  "@retentionAuditSubtitle": {
+    "description": "Explanation under the audit log switch: with it off, the server never deletes audit log entries."
+  },
+  "retentionAuditDaysLabel": "Days to keep audit log entries",
+  "@retentionAuditDaysLabel": {
+    "description": "Label of the field for how many days the server keeps an audit log entry before deleting it. Shown only while the audit log switch is on."
+  },
+  "retentionSave": "Save data retention settings",
+  "@retentionSave": {
+    "description": "Button that saves the Data retention group's settings to the server."
+  },
+  "retentionSaving": "Saving…",
+  "@retentionSaving": {
+    "description": "Label of the save button while the Data retention group's settings are being saved."
+  },
+  "retentionSaved": "Data retention settings saved.",
+  "@retentionSaved": {
+    "description": "Shown above the save button once the server has stored the Data retention group's settings, until they are edited again."
+  },
+  "retentionNotSavedTitle": "Data retention settings not saved",
+  "@retentionNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Data retention group's settings failed."
   }
 }

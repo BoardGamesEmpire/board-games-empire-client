@@ -15,8 +15,8 @@ enum PasswordEdit {
 /// The Mail group's values, as the form holds them.
 ///
 /// The strings are as typed: [mailPatch] trims host, user and From, and never
-/// the password. Built for a patch only from a valid form, so [port] and
-/// [linkLifetimeMinutes] are whole numbers.
+/// the password. Built for a patch only from a valid form, so [port] is a
+/// whole number.
 final class MailFormValues {
   const MailFormValues({
     required this.host,
@@ -26,8 +26,6 @@ final class MailFormValues {
     required this.password,
     required this.passwordEdit,
     required this.from,
-    required this.allowPasswordResets,
-    required this.linkLifetimeMinutes,
   });
 
   final String host;
@@ -41,8 +39,6 @@ final class MailFormValues {
   final String password;
   final PasswordEdit passwordEdit;
   final String from;
-  final bool allowPasswordResets;
-  final int linkLifetimeMinutes;
 }
 
 /// The settings [values] change, against [from] as the server last sent it.
@@ -73,13 +69,6 @@ SystemSettingsPatch mailPatch(SystemSettings from, MailFormValues values) {
         values.password.isEmpty ? null : SettingValue.set(values.password),
     },
     mailFromAddress: _text(from.mailFromAddress, values.from),
-    passwordResetLinkLifetimeMinutes:
-        values.linkLifetimeMinutes == from.passwordResetLinkLifetimeMinutes
-        ? null
-        : values.linkLifetimeMinutes,
-    allowPasswordResets: values.allowPasswordResets == from.allowPasswordResets
-        ? null
-        : values.allowPasswordResets,
   );
 }
 

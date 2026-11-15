@@ -32,6 +32,32 @@ void main() {
       'providerLinkingPolicy': SystemSettingsPatch(
         providerLinkingPolicy: ProviderLinkingPolicy.signedIn,
       ),
+      'name': SystemSettingsPatch(name: 'Games'),
+      'allowUserRegistration': SystemSettingsPatch(
+        allowUserRegistration: false,
+      ),
+      'allowUsernameChange': SystemSettingsPatch(allowUsernameChange: false),
+      'feedbackReportRetentionDays': SystemSettingsPatch(
+        feedbackReportRetentionDays: 30,
+      ),
+      'feedbackReportServerRedactionEnabled': SystemSettingsPatch(
+        feedbackReportServerRedactionEnabled: false,
+      ),
+      'requireContributionApproval': SystemSettingsPatch(
+        requireContributionApproval: true,
+      ),
+      'contributionReclaimDays': SystemSettingsPatch(
+        contributionReclaimDays: 7,
+      ),
+      'auditLogRetentionDays': SystemSettingsPatch(
+        auditLogRetentionDays: SettingValue.clear(),
+      ),
+      'householdInviteePolicy': SystemSettingsPatch(
+        householdInviteePolicy: Reach.friends,
+      ),
+      'eventInviteePolicy': SystemSettingsPatch(
+        eventInviteePolicy: Reach.friendsOfFriends,
+      ),
     };
 
     test('each sets its own entry of props, and together they cover them', () {
@@ -53,6 +79,19 @@ void main() {
         expect(patch, isNot(const SystemSettingsPatch()), reason: field);
       }
     });
+  });
+
+  test('an audit retention patch compares by its choice and value', () {
+    expect(
+      const SystemSettingsPatch(auditLogRetentionDays: SettingValue.set(30)),
+      const SystemSettingsPatch(auditLogRetentionDays: SettingValue.set(30)),
+    );
+    expect(
+      const SystemSettingsPatch(auditLogRetentionDays: SettingValue.set(30)),
+      isNot(
+        const SystemSettingsPatch(auditLogRetentionDays: SettingValue.clear()),
+      ),
+    );
   });
 
   group('changesMailServer', () {

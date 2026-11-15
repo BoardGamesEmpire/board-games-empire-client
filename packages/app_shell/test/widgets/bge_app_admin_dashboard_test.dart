@@ -347,7 +347,9 @@ void main() {
     expect(
       find.descendant(
         of: settingsSection,
-        matching: find.text('Mail, and how people sign in'),
+        matching: find.text(
+          'Name, sign-in, mail, invitations, contributions and retention',
+        ),
       ),
       findsOneWidget,
     );

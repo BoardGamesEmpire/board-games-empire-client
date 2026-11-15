@@ -170,6 +170,65 @@ void main() {
       handle.dispose();
     });
 
+    for (final readOnly in [false, true]) {
+      testWidgets('focusing the control focuses the switch'
+          '${readOnly ? ', read-only too' : ''}', (tester) async {
+        final form = _form();
+        await tester.pumpWidget(_host(form, readOnly: readOnly));
+
+        form.control('on').focus();
+        await tester.pump();
+
+        expect(
+          Focus.of(tester.element(find.text('Let people reset'))).hasFocus,
+          isTrue,
+        );
+        expect(form.control('on').value, isFalse);
+      });
+    }
+
+    testWidgets("hands focus through the control's focus controller", (
+      tester,
+    ) async {
+      final form = _form();
+      await tester.pumpWidget(_host(form));
+      final control = form.control('on') as FormControl<bool>;
+
+      control.focusController!.focusNode.requestFocus();
+      await tester.pump();
+
+      expect(
+        Focus.of(tester.element(find.text('Let people reset'))).hasFocus,
+        isTrue,
+      );
+      expect(control.hasFocus, isTrue);
+    });
+
+    testWidgets('lets go of a control it no longer shows', (tester) async {
+      final first = _form();
+      final second = _form();
+      await tester.pumpWidget(_host(first));
+      final control = first.control('on') as FormControl<bool>;
+      expect(control.focusController, isNotNull);
+
+      // A new group under the same name.
+      await tester.pumpWidget(_host(second));
+
+      expect(control.focusController, isNull);
+      expect(
+        (second.control('on') as FormControl<bool>).focusController,
+        isNotNull,
+      );
+
+      // The switch leaves.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+      expect(
+        (second.control('on') as FormControl<bool>).focusController,
+        isNull,
+      );
+    });
+
     testWidgets('has no subtitle by default', (tester) async {
       await tester.pumpWidget(_host(_form()));
 

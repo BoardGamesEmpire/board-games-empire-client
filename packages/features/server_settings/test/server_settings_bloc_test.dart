@@ -18,7 +18,7 @@ CallerAccess _update(AccessExtent extent) => CallerAccess.known({
 });
 
 const _mailPatch = SystemSettingsPatch(smtpHost: SettingValue.set('smtp.x'));
-const _signInPatch = SystemSettingsPatch(allowPasswordResets: false);
+const _registrationPatch = SystemSettingsPatch(allowPasswordResets: false);
 
 void main() {
   late FakeSystemSettingsRemote remote;
@@ -134,14 +134,14 @@ void main() {
     await pumpEventQueue();
     bloc.add(
       const ServerSettingsGroupSaved(
-        SettingsGroup.signIn,
+        SettingsGroup.registration,
         SystemSettingsPatch(),
       ),
     );
     await pumpEventQueue();
     expect(loaded().failures, {
       SettingsGroup.mail: SettingsSaveFailure.failed,
-      SettingsGroup.signIn: SettingsSaveFailure.nothingChanged,
+      SettingsGroup.registration: SettingsSaveFailure.nothingChanged,
     });
 
     bloc.add(const ServerSettingsGroupSaved(SettingsGroup.mail, _mailPatch));
@@ -150,7 +150,7 @@ void main() {
     await pumpEventQueue();
 
     expect(loaded().failures, {
-      SettingsGroup.signIn: SettingsSaveFailure.nothingChanged,
+      SettingsGroup.registration: SettingsSaveFailure.nothingChanged,
     });
   });
 
@@ -202,7 +202,7 @@ void main() {
     expect(loaded().savedGroup, isNull);
   });
 
-  test('a sign-in save keeps the mail mark until it lands', () async {
+  test('a registration save keeps the mail mark until it lands', () async {
     await load();
     bloc.add(const ServerSettingsGroupSaved(SettingsGroup.mail, _mailPatch));
     await pumpEventQueue();
@@ -210,16 +210,67 @@ void main() {
     await pumpEventQueue();
 
     bloc.add(
-      const ServerSettingsGroupSaved(SettingsGroup.signIn, _signInPatch),
+      const ServerSettingsGroupSaved(
+        SettingsGroup.registration,
+        _registrationPatch,
+      ),
     );
     await pumpEventQueue();
-    expect(loaded().saving, SettingsGroup.signIn);
+    expect(loaded().saving, SettingsGroup.registration);
     expect(loaded().savedGroup, SettingsGroup.mail);
 
     remote.updates.last.complete(saved);
     await pumpEventQueue();
 
-    expect(loaded().savedGroup, SettingsGroup.signIn);
+    expect(loaded().savedGroup, SettingsGroup.registration);
+  });
+
+  test('a contributions save keeps an invitations failure', () async {
+    await load();
+    bloc.add(
+      const ServerSettingsGroupSaved(
+        SettingsGroup.invitations,
+        SystemSettingsPatch(),
+      ),
+    );
+    await pumpEventQueue();
+    expect(loaded().failures, {
+      SettingsGroup.invitations: SettingsSaveFailure.nothingChanged,
+    });
+
+    bloc.add(
+      const ServerSettingsGroupSaved(SettingsGroup.contributions, _mailPatch),
+    );
+    await pumpEventQueue();
+    remote.updates.single.complete(saved);
+    await pumpEventQueue();
+
+    expect(loaded().savedGroup, SettingsGroup.contributions);
+    expect(loaded().failures, {
+      SettingsGroup.invitations: SettingsSaveFailure.nothingChanged,
+    });
+  });
+
+  test('otherGroupSaving is true for every group but the one saving', () async {
+    await load();
+    expect(
+      [for (final g in SettingsGroup.values) loaded().otherGroupSaving(g)],
+      everyElement(isFalse),
+    );
+    expect(SettingsGroup.values, hasLength(6));
+
+    bloc.add(
+      const ServerSettingsGroupSaved(SettingsGroup.contributions, _mailPatch),
+    );
+    await pumpEventQueue();
+
+    for (final group in SettingsGroup.values) {
+      expect(
+        loaded().otherGroupSaving(group),
+        group != SettingsGroup.contributions,
+        reason: '$group',
+      );
+    }
   });
 
   group('a failed save', () {
@@ -271,7 +322,10 @@ void main() {
     await pumpEventQueue();
 
     bloc.add(
-      const ServerSettingsGroupSaved(SettingsGroup.signIn, _signInPatch),
+      const ServerSettingsGroupSaved(
+        SettingsGroup.registration,
+        _registrationPatch,
+      ),
     );
     await pumpEventQueue();
 
@@ -328,7 +382,7 @@ void main() {
     await load();
     bloc.add(
       const ServerSettingsGroupSaved(
-        SettingsGroup.signIn,
+        SettingsGroup.registration,
         SystemSettingsPatch(),
       ),
     );
@@ -343,7 +397,7 @@ void main() {
     await pumpEventQueue();
 
     expect(loaded().failures, {
-      SettingsGroup.signIn: SettingsSaveFailure.nothingChanged,
+      SettingsGroup.registration: SettingsSaveFailure.nothingChanged,
     });
   });
 
@@ -355,7 +409,7 @@ void main() {
     await pumpEventQueue();
     bloc.add(
       const ServerSettingsGroupSaved(
-        SettingsGroup.signIn,
+        SettingsGroup.registration,
         SystemSettingsPatch(),
       ),
     );
@@ -367,18 +421,18 @@ void main() {
 
     expect(loaded().savedGroup, isNull);
     expect(loaded().failures, {
-      SettingsGroup.signIn: SettingsSaveFailure.nothingChanged,
+      SettingsGroup.registration: SettingsSaveFailure.nothingChanged,
     });
   });
 
-  test('editing the other group keeps the saved mark', () async {
+  test('editing another group keeps the saved mark', () async {
     await load();
     bloc.add(const ServerSettingsGroupSaved(SettingsGroup.mail, _mailPatch));
     await pumpEventQueue();
     remote.updates.single.complete(saved);
     await pumpEventQueue();
 
-    bloc.add(const ServerSettingsGroupEdited(SettingsGroup.signIn));
+    bloc.add(const ServerSettingsGroupEdited(SettingsGroup.registration));
     await pumpEventQueue();
 
     expect(loaded().savedGroup, SettingsGroup.mail);
@@ -416,7 +470,7 @@ void main() {
       const ServerSettingsGroupSaved(SettingsGroup.mail, patch),
     );
     expect(
-      const ServerSettingsGroupSaved(SettingsGroup.signIn, patch),
+      const ServerSettingsGroupSaved(SettingsGroup.registration, patch),
       isNot(const ServerSettingsGroupSaved(SettingsGroup.mail, patch)),
     );
     expect(
@@ -424,7 +478,7 @@ void main() {
       const ServerSettingsGroupEdited(SettingsGroup.mail),
     );
     expect(
-      const ServerSettingsGroupEdited(SettingsGroup.signIn),
+      const ServerSettingsGroupEdited(SettingsGroup.registration),
       isNot(const ServerSettingsGroupEdited(SettingsGroup.mail)),
     );
   });
