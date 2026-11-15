@@ -45,6 +45,10 @@ class _HydratedSpy {
   }
 }
 
+class _Offline implements Exception {}
+
+class _Broken implements Exception {}
+
 void main() {
   final bootFailure = Exception('meta db open failed');
 
@@ -409,6 +413,121 @@ void main() {
 
         expect(hydrated.callCount, 2);
         expect(cubit.state, const AppBootstrapNeedsAuth());
+      });
+    });
+
+    group('which failures count toward the reset offer (#793)', () {
+      final offline = _Offline();
+      final broken = _Broken();
+      bool countsBroken(Object e) => e is! _Offline;
+
+      AppBootstrapFailed failedOf(AppBootstrapCubit cubit) =>
+          cubit.state as AppBootstrapFailed;
+
+      test(
+        "a failure the platform doesn't count never offers the reset",
+        () async {
+          final bootstrap = FakePlatformBootstrap(
+            outcomes: [offline],
+            countsTowardResetWhen: countsBroken,
+          );
+          final cubit = buildCubit(bootstrap: bootstrap);
+          addTearDown(cubit.close);
+
+          await cubit.initialize();
+          await cubit.retry();
+          await cubit.retry();
+
+          expect(failedOf(cubit).attemptCount, 3);
+          expect(failedOf(cubit).canOfferReset, isFalse);
+        },
+      );
+
+      test(
+        'an uncounted failure keeps the count and hides the offer',
+        () async {
+          final bootstrap = FakePlatformBootstrap(
+            outcomes: [broken, broken, offline, broken],
+            countsTowardResetWhen: countsBroken,
+          );
+          final cubit = buildCubit(bootstrap: bootstrap);
+          addTearDown(cubit.close);
+
+          await cubit.initialize();
+          await cubit.retry();
+          await cubit.retry();
+          expect(failedOf(cubit).canOfferReset, isFalse);
+
+          await cubit.retry();
+          expect(failedOf(cubit).canOfferReset, isTrue);
+        },
+      );
+
+      test(
+        'a reset blocked by other tabs fails with the in-use message',
+        () async {
+          final bootstrap = FakePlatformBootstrap(
+            outcomes: [broken],
+            countsTowardResetWhen: countsBroken,
+          );
+          final cubit = buildCubit(
+            bootstrap: bootstrap,
+            resetOfferThreshold: 2,
+          );
+          addTearDown(cubit.close);
+
+          await cubit.initialize();
+          await cubit.retry();
+          expect(failedOf(cubit).canOfferReset, isTrue);
+
+          bootstrap.resetError = const LocalDataInUseError();
+          await cubit.resetAndRetry();
+
+          expect(failedOf(cubit).error, isA<LocalDataInUseError>());
+          expect(failedOf(cubit).canOfferReset, isFalse);
+        },
+      );
+
+      test("a reset that fails with an error the platform doesn't count "
+          'keeps the offer', () async {
+        // Web counts only a database that won't open; a reset whose delete
+        // fails some other way must not take back the offer it came from.
+        final bootstrap = FakePlatformBootstrap(
+          outcomes: [broken],
+          countsTowardResetWhen: countsBroken,
+        );
+        final cubit = buildCubit(bootstrap: bootstrap, resetOfferThreshold: 2);
+        addTearDown(cubit.close);
+
+        await cubit.initialize();
+        await cubit.retry();
+        bootstrap.resetError = offline;
+        await cubit.resetAndRetry();
+
+        expect(failedOf(cubit).error, same(offline));
+        expect(failedOf(cubit).canOfferReset, isTrue);
+      });
+
+      test('a blocked reset keeps the count, so the next counted failure '
+          'brings the offer back', () async {
+        final bootstrap = FakePlatformBootstrap(
+          outcomes: [broken],
+          countsTowardResetWhen: countsBroken,
+        );
+        final cubit = buildCubit(bootstrap: bootstrap, resetOfferThreshold: 2);
+        addTearDown(cubit.close);
+
+        await cubit.initialize();
+        await cubit.retry();
+        bootstrap.resetError = const LocalDataInUseError();
+        await cubit.resetAndRetry();
+        expect(failedOf(cubit).canOfferReset, isFalse);
+
+        bootstrap.resetError = null;
+        await cubit.retry();
+
+        expect(failedOf(cubit).error, same(broken));
+        expect(failedOf(cubit).canOfferReset, isTrue);
       });
     });
 

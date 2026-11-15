@@ -32,6 +32,14 @@
   "@shellBootstrapErrorResetConfirmBody": {
     "description": "Body of the delete-local-data confirmation dialog; explains exactly what is lost and what is safe"
   },
+  "shellBootstrapErrorResetConfirmBodyWeb": "This permanently deletes the Board Games Empire data stored in this browser. Any changes that haven't reached your server yet are lost. Data on your server is not affected.",
+  "@shellBootstrapErrorResetConfirmBodyWeb": {
+    "description": "Body of the delete-local-data confirmation dialog on web; says unsent changes are lost with the browser's copy and that server data is safe"
+  },
+  "shellBootstrapErrorInUseBody": "Board Games Empire is open in another tab or window, which is keeping its data in this browser in use. Close the other tabs and windows, then try again.",
+  "@shellBootstrapErrorInUseBody": {
+    "description": "Body of the bootstrap failure screen after a delete of local data was blocked by other tabs or windows holding it open"
+  },
   "shellBootstrapErrorResetConfirmAction": "Delete and retry",
   "@shellBootstrapErrorResetConfirmAction": {
     "description": "Confirming action of the delete-local-data dialog"

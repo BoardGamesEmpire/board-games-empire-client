@@ -78,9 +78,10 @@ const _vmOnlyPackages = {
 /// named in the failure.
 const _webSafeLibrariesByPackage = {
   // Mirrors the allow-list in `drift_storage`'s guard, which #294 completed
-  // and verified against drift; re-verified against 2.34.3, whose library
-  // set is identical. `wasm.dart` matters most here: it is this package's
-  // whole point.
+  // and verified against drift; re-verified against 2.35.4, whose library
+  // set differs only by `extensions/fts5.dart`, which imports nothing but
+  // `drift.dart` and is unused here. `wasm.dart` matters most here: it is
+  // this package's whole point.
   'drift': {
     'drift.dart',
     'wasm.dart',

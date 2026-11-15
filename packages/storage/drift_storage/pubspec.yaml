@@ -12,7 +12,7 @@ dependencies:
   cuid2: ^4.1.0
   di:
     path: ../../core/di
-  drift: ^2.34.3
+  drift: ^2.35.4
   flutter:
     sdk: flutter
   get_it: ^9.2.1
@@ -32,7 +32,7 @@ dev_dependencies:
   bge_test_support:
     path: ../../testing/support
   build_runner: ^2.16.0
-  drift_dev: 2.34.5
+  drift_dev: 2.35.3
   flutter_test:
     sdk: flutter
   injectable_generator: ^3.1.3

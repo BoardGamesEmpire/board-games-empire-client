@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/bootstrap/local_data_in_use_error.dart';
 import 'package:app_shell/src/navigation/shell_modal_guard.dart';
 import 'package:app_shell/src/screens/bootstrap_error_screen.dart';
 import 'package:app_shell/src/screens/not_yet_available_screen.dart';
@@ -1526,6 +1527,7 @@ GoRouter buildAppRouter({
                 canOfferReset: failed?.canOfferReset ?? false,
                 onRetry: () => unawaited(bootstrapCubit.retry()),
                 onReset: () => unawaited(bootstrapCubit.resetAndRetry()),
+                localDataInUse: failed?.error is LocalDataInUseError,
               );
             },
           ),

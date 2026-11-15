@@ -9,11 +9,12 @@ environment:
 resolution: workspace
 
 dependencies:
-  # Bumped with the workspace to the analyzer-13 tier: 2.34.2 is the first
-  # release whose assets include sqlite3.wasm, which is what lets
-  # `tool/fetch_web_assets.dart` derive the release from the resolved
-  # version instead of pinning one.
-  drift: ^2.34.3
+  # 2.34.2 is the first release whose assets include sqlite3.wasm, which is
+  # what lets `tool/fetch_web_assets.dart` derive the release from the
+  # resolved version instead of pinning one. 2.35.2 or later is needed for a
+  # transaction's writes to reach IndexedDB and for nested transactions on
+  # OPFS (#950).
+  drift: ^2.35.4
   # The platform-neutral half of the drift layer (#287): the databases as
   # executor-agnostic classes plus every repository. This package supplies
   # the executor those take, and nothing else — deliberately NOT
@@ -26,6 +27,11 @@ dependencies:
     path: ../../core/interfaces
   models:
     path: ../../core/models
+  # For SqliteException: drift's worker sends one back typed (protocol v4),
+  # which is how a failed open tells a database fault from a failed engine
+  # load (#793).
+  sqlite3: ^3.5.2
+  web: ^1.1.1
 
 dev_dependencies:
   # Shared ServerIdentity and AuthResponse test builders (#409).

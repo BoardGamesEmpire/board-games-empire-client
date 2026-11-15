@@ -1,6 +1,7 @@
 import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
+import 'package:app_shell/app_shell.dart' show LocalDataInUseError;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:models/domain.dart' show ServerIdentity;
@@ -15,6 +16,7 @@ import 'package:web_platform/src/session/web_session_bindings.dart';
 import 'package:web_platform/src/sync/web_cross_tab_lock.dart';
 import 'package:web_platform/src/web_platform_bootstrap.dart';
 import 'package:web_platform/src/web_root_module.dart';
+import 'package:web_platform/src/web_storage_reset.dart';
 import 'package:web_platform/src/web_user_scope_installers.dart';
 import 'package:web_storage/web_storage.dart';
 
@@ -127,13 +129,20 @@ void registerWebCrossTabLock(
 /// composition without the same-origin well-known fetch, and
 /// `bootstrapWebServerScope` has had the same two seams since #96. Production
 /// passes neither.
+///
+/// [storageReset] is what the failure screen's reset deletes (#793), and
+/// defaults to [WasmServerDatabaseReset]: every server database at the
+/// origin. Like [wellKnownClient], it is production API whose only caller is
+/// a test, there to keep the suite's deletes to its own database.
 WebPlatformBootstrap bgeWebPlatformBootstrap({
   WellKnownClient? wellKnownClient,
   String Function()? originProvider,
+  WebStorageReset? storageReset,
 }) {
   final providerSignIn = captureWebProviderSignIn();
   return WebPlatformBootstrap(
     rootModule: buildWebRootModule,
+    storageReset: storageReset ?? const WasmServerDatabaseReset(),
     // A closure rather than the tear-off, so that every attempt, a retry's
     // included, builds its scope over this page load's one capture.
     serverScopeBuilder: () => buildWebServerScope(
@@ -142,6 +151,31 @@ WebPlatformBootstrap bgeWebPlatformBootstrap({
       originProvider: originProvider,
     ),
   );
+}
+
+/// Deletes the server databases the drift/wasm layer stored in the browser
+/// (#793), and answers the failure that offers it: a stored database that
+/// would not open.
+///
+/// Only the server databases go: the sweep is by name prefix, so the
+/// HydratedBloc box and anything else at the origin survive.
+final class WasmServerDatabaseReset implements WebStorageReset {
+  /// [namePrefix] narrows the sweep; null deletes every server database. It is
+  /// there for a test to keep its deletes to its own database.
+  const WasmServerDatabaseReset({this.namePrefix});
+
+  /// Only names starting with this are deleted; null → every server database.
+  final String? namePrefix;
+
+  @override
+  bool answers(Object error) => error is WebDatabaseOpenFailure;
+
+  /// Throws [LocalDataInUseError] when another tab holds a database open.
+  @override
+  Future<void> deleteAll() async {
+    final deletion = await deleteServerDatabases(namePrefix: namePrefix);
+    if (deletion.blocked.isNotEmpty) throw const LocalDataInUseError();
+  }
 }
 
 /// The production web **root** module: [registerWebRootModule] with the
@@ -235,10 +269,11 @@ final _logger = BgeLogger('bge.platform.web_storage');
 ///   * [WebStoragePersistence.durable] → `info`. Which of the durable
 ///     mechanisms was chosen is still worth recording: it is the first thing
 ///     to want when a report says "my data vanished".
-///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but a second
-///     tab can race it. The sync drain runs there too, under its cross-tab
-///     lock, but another tab's inline send takes no lock and can race it
-///     for an op (#447).
+///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but each tab
+///     works on its own copy and writes it back over the others', and no
+///     lock can change that. With a second tab open, the sync queue can
+///     deliver an op twice or out of order, and leave a row marked clean
+///     that disagrees with the server (#447, #686).
 ///   * [WebStoragePersistence.ephemeral] → `error`. Nothing is stored at all.
 ///     Not thrown, deliberately: a browser this limited can still run the
 ///     app against the server (web's server is the serving origin and is
@@ -257,9 +292,9 @@ void reportWebStorage(WebDatabaseOpening opening) {
       _logger.info(message, context: context);
     case WebStoragePersistence.unsafe:
       _logger.warn(
-        '$message — a second tab can race writes to this database; the '
-        "sync drain runs there, and another tab's send can deliver an op "
-        'twice',
+        '$message — each tab works on its own copy of this database, so a '
+        "second tab overwrites this one's writes, and the sync queue can "
+        'deliver an op twice or out of order',
         context: context,
       );
     case WebStoragePersistence.ephemeral:

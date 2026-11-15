@@ -134,11 +134,14 @@ class WebWasmExecutorFactory {
     this._open,
   });
 
-  static final Uri _defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
-  static final Uri _defaultDriftWorkerUri = Uri.parse('drift_worker.js');
+  /// Where the `sqlite3.wasm` asset is fetched from when no override is given.
+  static final Uri defaultSqlite3Uri = Uri.parse('sqlite3.wasm');
+
+  /// Where the drift worker asset is fetched from when no override is given.
+  static final Uri defaultDriftWorkerUri = Uri.parse('drift_worker.js');
 
   /// Prefix for every database name this factory produces.
-  static const _databaseNamePrefix = 'bge_server';
+  static const String databaseNamePrefix = 'bge_server';
 
   final Uri? _sqlite3Uri;
   final Uri? _driftWorkerUri;
@@ -158,8 +161,8 @@ class WebWasmExecutorFactory {
 
     final result = await (_open ?? _openWithDrift)(
       databaseName: databaseName(serverId),
-      sqlite3Uri: _sqlite3Uri ?? _defaultSqlite3Uri,
-      driftWorkerUri: _driftWorkerUri ?? _defaultDriftWorkerUri,
+      sqlite3Uri: _sqlite3Uri ?? defaultSqlite3Uri,
+      driftWorkerUri: _driftWorkerUri ?? defaultDriftWorkerUri,
     );
 
     return WebDatabaseOpening(
@@ -180,7 +183,7 @@ class WebWasmExecutorFactory {
   /// change here orphans every existing user's database.
   static String databaseName(String serverId) {
     final sanitized = serverId.replaceAll(RegExp('[^A-Za-z0-9_]'), '_');
-    return '${_databaseNamePrefix}_$sanitized';
+    return '${databaseNamePrefix}_$sanitized';
   }
 
   static Future<WasmDatabaseResult> _openWithDrift({

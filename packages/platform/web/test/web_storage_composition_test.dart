@@ -37,9 +37,9 @@ import 'support/web_origin.dart';
 
 void main() {
   group('bgeWebPlatformBootstrap', () {
-    test('is a WebPlatformBootstrap that cannot reset', () {
+    test('is a WebPlatformBootstrap that can reset its storage', () {
       expect(bgeWebPlatformBootstrap(), isA<WebPlatformBootstrap>());
-      expect(bgeWebPlatformBootstrap().supportsReset, isFalse);
+      expect(bgeWebPlatformBootstrap().supportsReset, isTrue);
     });
 
     test("leaves Back to the browser's own (#611)", () {
@@ -180,9 +180,10 @@ void main() {
 
       expect(records.single.level, Level.WARNING);
       expect(records.single.message, contains('second tab'));
-      // #447: the drain runs on this mode too, under the same lock, and can
-      // still race another tab's inline send.
-      expect(records.single.message, contains('sync drain'));
+      // #686: each tab has its own copy, so no lock keeps the sync queue
+      // from sending an op twice or out of order.
+      expect(records.single.message, contains('sync queue'));
+      expect(records.single.message, contains('twice or out of order'));
     });
 
     test('storage that persists nothing is an error, but does not throw', () {

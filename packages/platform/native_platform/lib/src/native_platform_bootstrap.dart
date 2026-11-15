@@ -279,6 +279,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   @override
   bool get supportsReset => true;
 
+  @override
+  bool countsTowardReset(Object error) => true;
+
   /// Builds the native root container (#72): a fresh, isolated
   /// [DependencyContainerImpl] populated by the injected root module
   /// (production default: [registerNativeRootModule] — [BuildInfo] via a

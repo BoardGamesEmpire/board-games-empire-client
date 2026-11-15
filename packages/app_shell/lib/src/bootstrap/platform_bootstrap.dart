@@ -171,19 +171,30 @@ abstract interface class PlatformBootstrap {
 
   /// Whether [reset] is meaningful on this platform.
   ///
-  /// `true` on native (a device-local MetaDB exists to delete), `false` on
-  /// web. When `false`, the shell never offers the destructive recovery
-  /// action, regardless of how many attempts have failed.
+  /// `true` on native (a device-local MetaDB exists to delete), and on web
+  /// when composed with storage (the server databases the browser holds).
+  /// When `false`, the shell never offers the destructive recovery action,
+  /// regardless of how many attempts have failed.
   bool get supportsReset;
 
-  /// Destroys the device-local meta state so the next [initialize] starts
-  /// clean: delete the meta encryption key **first**, then the meta
+  /// Whether [error] says something [reset] could fix.
+  ///
+  /// Native: every failure. Web: only a stored database that failed to
+  /// open. The shell counts only such failures toward the offer, and never
+  /// offers the reset for any other (#793).
+  bool countsTowardReset(Object error);
+
+  /// Destroys the device-local state so the next [initialize] starts clean.
+  ///
+  /// Native: delete the meta encryption key **first**, then the meta
   /// database file and its companions (matching the key-before-file
-  /// recovery ordering established in `StorageScopeInstaller`).
+  /// recovery ordering established in `StorageScopeInstaller`). Web: delete
+  /// this browser's server databases (#793).
   ///
   /// Only invoked after repeated [initialize] failures **and** explicit
   /// user confirmation — never automatically. Implementations where
-  /// [supportsReset] is `false` throw [UnsupportedError].
+  /// [supportsReset] is `false` throw [UnsupportedError]. Throws
+  /// `LocalDataInUseError` when other windows or tabs hold the data open (web).
   Future<void> reset();
 
   /// Where `HydratedBloc` persists bloc state on this platform.

@@ -108,11 +108,15 @@ home screen while anything is stuck.
 - `SyncQueueDrainInstaller` starts the drain. Both platforms run it, after
   the sender. On web each pass runs under a Web Lock named for the server and
   the user (`bge.sync_drain.<serverId>.<userId>`), so one tab at a time drains
-  each server database and user. On `unsafeIndexedDb` another tab's inline
-  send can still deliver an op twice; the creates carry `clientRequestId` and
-  a collection add is an idempotent upsert. A browser without Web Locks (a
-  plain-http origin) drains without the lock and logs one warning, and a
-  pass whose lock request fails before it is granted runs without it and
-  warns (#447).
+  each server database and user. On `unsafeIndexedDb` (Chrome on Android)
+  the lock can't help: each tab works on its own copy of the database, read
+  when it opened, and writes it back over the others', so no tab sees
+  another's claim. With two tabs open, an op can be delivered twice, one
+  entry's ops can reach the server out of order, and a row can be left
+  marked clean that disagrees with the server (#686). The creates carry
+  `clientRequestId` and a collection add is an idempotent upsert, which
+  covers the double delivery only. A browser without Web Locks (a plain-http
+  origin) drains without the lock and logs one warning, and a pass whose
+  lock request fails before it is granted runs without it and warns (#447).
 
 The class docs carry the rest.

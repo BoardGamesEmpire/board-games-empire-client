@@ -36,14 +36,25 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
+
 import 'package:bge_test_support/domain.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+// The library is @experimental for its wire protocol; its API, this type
+// included, is documented stable. drift/isolate.dart, the other export,
+// needs dart:isolate.
+// ignore: experimental_member_use
+import 'package:drift/remote.dart' show DriftRemoteException;
 import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:web/web.dart' as web;
 import 'package:web_storage/web_storage.dart';
 
 /// A distinct database per test, so IndexedDB state cannot leak between them.
@@ -68,6 +79,61 @@ Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
 /// derived from, and nothing else about the identity matters here.
 ServerIdentity _identity(String serverId) =>
     testServerIdentity().copyWith(serverId: serverId);
+
+/// The schema version and change counter as IndexedDB stores them, read from
+/// page 1 of the stored file: big-endian `uint32`s at offsets 60 and 24.
+///
+/// This reads storage, not the worker's memory. The shared worker keeps pages
+/// it hasn't flushed, so reopening in the same page would pass with or
+/// without a flush. Null for a missing or short file.
+Future<({int userVersion, int changeCounter})?> _storedHeader(
+  String databaseName,
+) async {
+  final probe = await WasmDatabase.probe(
+    sqlite3Uri: Uri.parse('sqlite3.wasm'),
+    driftWorkerUri: Uri.parse('drift_worker.js'),
+    databaseName: databaseName,
+  );
+  final bytes = await probe.exportDatabase((
+    WebStorageApi.indexedDb,
+    databaseName,
+  ));
+  if (bytes == null || bytes.length < 64) return null;
+  final header = ByteData.sublistView(bytes);
+  return (
+    userVersion: header.getUint32(60),
+    changeCounter: header.getUint32(24),
+  );
+}
+
+/// The #608 state: a stored file whose schema version reads 0 while its tables
+/// exist, so the next open runs `onCreate` over them and fails.
+Future<void> _breakStoredDatabase(String serverId) async {
+  final opening = await const WebWasmExecutorFactory().serverDatabase(serverId);
+  final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+  await db.customSelect('SELECT 1').get();
+  await db.customStatement('PRAGMA user_version = 0');
+  await db.close();
+}
+
+Future<List<String>> _indexedDbNames() async {
+  final infos = (await web.window.indexedDB.databases().toDart).toDart;
+  return [for (final info in infos) info.name];
+}
+
+/// Opens a raw IndexedDB connection that holds [name] open, as another tab's
+/// own copy would. Closed in teardown.
+Future<web.IDBDatabase> _holdConnection(String name) async {
+  final opened = Completer<web.IDBDatabase>();
+  final request = web.window.indexedDB.open(name);
+  request.onsuccess = ((web.Event _) {
+    opened.complete(request.result! as web.IDBDatabase);
+  }).toJS;
+  final held = await opened.future;
+  // ignore: unnecessary_lambdas, interop members can't be torn off.
+  addTearDown(() => held.close());
+  return held;
+}
 
 void main() {
   group('WebWasmExecutorFactory', () {
@@ -190,6 +256,251 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+  });
+
+  // #608: drift sets `user_version` after `beforeOpen`, and nothing flushes
+  // that write to IndexedDB. These read the stored bytes, so a database left
+  // without a later write still has to carry its version.
+  group('the stored schema version (#608)', () {
+    Future<ServerDatabase> open(String serverId) async {
+      final opening = await const WebWasmExecutorFactory().serverDatabase(
+        serverId,
+      );
+      final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+      addTearDown(db.close);
+      return db;
+    }
+
+    test(
+      'a fresh open that writes nothing stores the schema version',
+      () async {
+        final serverId = _uniqueServerId();
+        final db = await open(serverId);
+        await db.doWhenOpened((_) {});
+
+        final header = await _storedHeader(
+          WebWasmExecutorFactory.databaseName(serverId),
+        );
+        expect(header?.userVersion, db.schemaVersion);
+      },
+    );
+
+    test('an upgrade that writes nothing stores the new version', () async {
+      final serverId = _uniqueServerId();
+      final first = await open(serverId);
+      await first.customSelect('SELECT 1').get();
+      await first.customStatement(
+        'ALTER TABLE games DROP COLUMN base_games_json',
+      );
+      await first.customStatement('PRAGMA user_version = 17');
+      await first.close();
+
+      final second = await open(serverId);
+      await second.doWhenOpened((_) {});
+
+      final header = await _storedHeader(
+        WebWasmExecutorFactory.databaseName(serverId),
+      );
+      expect(header?.userVersion, second.schemaVersion);
+      expect(second.schemaVersion, 18);
+    });
+  });
+
+  // #950: drift 2.34.3 flushed a write to IndexedDB only outside a
+  // transaction, so a transaction's writes (its COMMIT included) stayed in the
+  // worker's memory until the next plain write. This reads storage.
+  group("a transaction's writes reach storage (#950)", () {
+    test("a transaction's writes are stored without a later write", () async {
+      final serverId = _uniqueServerId();
+      final name = WebWasmExecutorFactory.databaseName(serverId);
+      final opening = await const WebWasmExecutorFactory().serverDatabase(
+        serverId,
+      );
+      final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+      addTearDown(db.close);
+      await db.customSelect('SELECT 1').get();
+      await db.customStatement('CREATE TABLE probe_950 (x INTEGER)');
+      final before = (await _storedHeader(name))!.changeCounter;
+
+      await db.transaction(() async {
+        await db.customInsert(
+          'INSERT INTO probe_950 (x) VALUES (?)',
+          variables: [Variable.withInt(1)],
+        );
+      });
+
+      final after = (await _storedHeader(name))!.changeCounter;
+      expect(after, greaterThan(before));
+    });
+  });
+
+  group('deleteServerDatabases (#793)', () {
+    Future<ServerDatabase> open(String serverId) async {
+      final opening = await const WebWasmExecutorFactory().serverDatabase(
+        serverId,
+      );
+      return ServerDatabase(opening.executor, enableWriteAheadLog: false);
+    }
+
+    test('deletes a closed database, and the next open is fresh', () async {
+      final serverId = _uniqueServerId();
+      final name = WebWasmExecutorFactory.databaseName(serverId);
+      final first = await open(serverId);
+      await first.customStatement('CREATE TABLE marker (id INTEGER)');
+      await first.close();
+
+      final result = await deleteServerDatabases(namePrefix: name);
+      expect(result.deleted, [name]);
+      expect(result.blocked, isEmpty);
+
+      final second = await open(serverId);
+      addTearDown(second.close);
+      final tables = await second
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE name = 'marker'",
+          )
+          .get();
+      expect(tables, isEmpty);
+    });
+
+    test('deletes only names with the prefix', () async {
+      final firstId = _uniqueServerId();
+      final secondId = _uniqueServerId();
+      final firstName = WebWasmExecutorFactory.databaseName(firstId);
+      final secondName = WebWasmExecutorFactory.databaseName(secondId);
+      for (final id in [firstId, secondId]) {
+        final db = await open(id);
+        await db.customSelect('SELECT 1').get();
+        await db.close();
+      }
+      addTearDown(() => deleteServerDatabases(namePrefix: secondName));
+
+      final result = await deleteServerDatabases(namePrefix: firstName);
+
+      expect(result.deleted, [firstName]);
+      final names = await _indexedDbNames();
+      expect(names, isNot(contains(firstName)));
+      expect(names, contains(secondName));
+    });
+
+    test(
+      'a delete another connection holds reports it blocked, promptly',
+      () async {
+        final serverId = _uniqueServerId();
+        final name = WebWasmExecutorFactory.databaseName(serverId);
+        final db = await open(serverId);
+        await db.customSelect('SELECT 1').get();
+        await db.close();
+        await _holdConnection(name);
+
+        final result = await deleteServerDatabases(
+          namePrefix: name,
+        ).timeout(const Duration(seconds: 5));
+
+        expect(result.blocked, [name]);
+        expect(result.deleted, isEmpty);
+      },
+    );
+
+    test(
+      'a second delete behind a blocked one reports it blocked, too',
+      () async {
+        final serverId = _uniqueServerId();
+        final name = WebWasmExecutorFactory.databaseName(serverId);
+        final db = await open(serverId);
+        await db.customSelect('SELECT 1').get();
+        await db.close();
+        await _holdConnection(name);
+
+        final first = await deleteServerDatabases(namePrefix: name);
+        expect(first.blocked, [name]);
+
+        // The first request is still queued, so this one fires no event.
+        final second = await deleteServerDatabases(
+          namePrefix: name,
+          blockedAfter: const Duration(milliseconds: 300),
+        ).timeout(const Duration(seconds: 5));
+
+        expect(second.blocked, [name]);
+        expect(second.deleted, isEmpty);
+      },
+    );
+
+    test('deletes run together, so the time limit bounds them all', () async {
+      final base = _uniqueServerId();
+      final prefix = WebWasmExecutorFactory.databaseName(base);
+      final names = <String>[];
+      for (final id in ['${base}a', '${base}b', '${base}c']) {
+        final db = await open(id);
+        await db.customSelect('SELECT 1').get();
+        await db.close();
+        final name = WebWasmExecutorFactory.databaseName(id);
+        await _holdConnection(name);
+        names.add(name);
+      }
+      final first = await deleteServerDatabases(namePrefix: prefix);
+      expect(first.blocked, unorderedEquals(names));
+
+      // Each delete now waits behind a blocked one, so each one runs out
+      // its time limit. One after another, that would take three limits.
+      final watch = Stopwatch()..start();
+      final second = await deleteServerDatabases(
+        namePrefix: prefix,
+        blockedAfter: const Duration(seconds: 1),
+      );
+      watch.stop();
+
+      expect(second.blocked, unorderedEquals(names));
+      expect(watch.elapsed, lessThan(const Duration(milliseconds: 2500)));
+    });
+
+    test('without indexedDB.databases(), skips the IndexedDB half', () async {
+      // Firefox before 126 has no databases(). Drift's probe skips the
+      // listing there, and so does this, rather than throwing a TypeError.
+      final serverId = _uniqueServerId();
+      final name = WebWasmExecutorFactory.databaseName(serverId);
+      final db = await open(serverId);
+      await db.customSelect('SELECT 1').get();
+      await db.close();
+      addTearDown(() => deleteServerDatabases(namePrefix: name));
+
+      final prototype =
+          (globalContext['IDBFactory']! as JSObject)['prototype']! as JSObject;
+      final databases = prototype['databases'];
+      prototype.delete('databases'.toJS);
+      addTearDown(() => prototype['databases'] = databases);
+      expect(web.window.indexedDB.has('databases'), isFalse);
+
+      final result = await deleteServerDatabases(namePrefix: name);
+
+      expect(result.deleted, isEmpty);
+      expect(result.blocked, isEmpty);
+    });
+
+    test(
+      'the database that fails to open can be deleted, and then opens',
+      () async {
+        final serverId = _uniqueServerId();
+        final name = WebWasmExecutorFactory.databaseName(serverId);
+        await _breakStoredDatabase(serverId);
+
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+        await expectLater(
+          const WebStorageInstaller().install(container, _identity(serverId)),
+          throwsA(isA<WebDatabaseOpenFailure>()),
+        );
+
+        final result = await deleteServerDatabases(namePrefix: name);
+        expect(result.deleted, [name]);
+
+        await const WebStorageInstaller().install(
+          container,
+          _identity(serverId),
+        );
+        expect(container.isRegistered<ServerDatabase>(), isTrue);
+      },
+    );
   });
 
   group('WebStoragePersistence', () {
@@ -406,6 +717,79 @@ void main() {
         throwsA(anything),
         reason: 'a half-installed scope must not look installed',
       );
+    });
+
+    test('a stored database that fails to open throws '
+        'WebDatabaseOpenFailure, and registers nothing', () async {
+      final serverId = _uniqueServerId();
+      await _breakStoredDatabase(serverId);
+
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await expectLater(
+        const WebStorageInstaller().install(container, _identity(serverId)),
+        throwsA(
+          isA<WebDatabaseOpenFailure>().having(
+            (failure) => failure.cause,
+            'cause',
+            // The database lives in drift's shared worker, which sends the
+            // SqliteException back as its text (measured: a String, not the
+            // typed form protocol v4 can carry). The installer reads that
+            // text to tell a database fault from a failed engine, so this
+            // pins it.
+            isA<DriftRemoteException>().having(
+              (remote) => '${remote.remoteCause}',
+              'remoteCause',
+              startsWith('SqliteException('),
+            ),
+          ),
+        ),
+      );
+      expect(container.isRegistered<ServerDatabase>(), isFalse);
+    });
+
+    test('an engine that fails to load at the forced open is not a '
+        'WebDatabaseOpenFailure', () async {
+      // The worker loads sqlite3.wasm lazily, at the first query, so a
+      // missing or blocked asset fails the forced open too. Deleting the
+      // database can't fix that, so it must not count toward the reset.
+      var opened = false;
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await expectLater(
+        WebStorageInstaller(
+          factory: WebWasmExecutorFactory(
+            open:
+                ({
+                  required databaseName,
+                  required sqlite3Uri,
+                  required driftWorkerUri,
+                }) async {
+                  final result = await WasmDatabase.open(
+                    databaseName: databaseName,
+                    sqlite3Uri: Uri.parse('missing-sqlite3.wasm'),
+                    driftWorkerUri: driftWorkerUri,
+                  );
+                  opened = true;
+                  return result;
+                },
+          ),
+        ).install(container, _identity(_uniqueServerId())),
+        throwsA(
+          allOf(
+            isA<DriftRemoteException>().having(
+              (remote) => '${remote.remoteCause}',
+              'remoteCause',
+              isNot(startsWith('SqliteException(')),
+            ),
+            isNot(isA<WebDatabaseOpenFailure>()),
+          ),
+        ),
+      );
+      expect(opened, isTrue, reason: 'the failure must come from the open');
+      expect(container.isRegistered<ServerDatabase>(), isFalse);
     });
 
     test('a failed registration closes the database it just opened', () async {
