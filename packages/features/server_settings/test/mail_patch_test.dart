@@ -23,8 +23,6 @@ MailFormValues _values(
   String password = '',
   PasswordEdit? passwordEdit,
   String? fromAddress,
-  bool? allowPasswordResets,
-  int? linkLifetimeMinutes,
 }) => MailFormValues(
   host: host ?? from.smtpHost ?? '',
   port: port ?? from.smtpPort,
@@ -35,9 +33,6 @@ MailFormValues _values(
       passwordEdit ??
       (from.smtpPasswordSet ? PasswordEdit.keep : PasswordEdit.replace),
   from: fromAddress ?? from.mailFromAddress ?? '',
-  allowPasswordResets: allowPasswordResets ?? from.allowPasswordResets,
-  linkLifetimeMinutes:
-      linkLifetimeMinutes ?? from.passwordResetLinkLifetimeMinutes,
 );
 
 void main() {
@@ -77,22 +72,10 @@ void main() {
       );
     });
 
-    test('the numbers and the switch are sent when they differ', () {
+    test('a port that differs is sent', () {
       expect(
-        mailPatch(
-          _stored,
-          _values(
-            _stored,
-            port: 465,
-            allowPasswordResets: false,
-            linkLifetimeMinutes: 60,
-          ),
-        ),
-        const SystemSettingsPatch(
-          smtpPort: 465,
-          allowPasswordResets: false,
-          passwordResetLinkLifetimeMinutes: 60,
-        ),
+        mailPatch(_stored, _values(_stored, port: 465)),
+        const SystemSettingsPatch(smtpPort: 465),
       );
     });
 

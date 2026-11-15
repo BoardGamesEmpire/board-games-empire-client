@@ -3,26 +3,25 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
-import 'package:network_interface/network_interface.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:server_settings/l10n/server_settings_localizations.dart';
 import 'package:server_settings/src/bloc/server_settings_state.dart';
-import 'package:server_settings/src/mail/link_lifetime.dart';
 import 'package:server_settings/src/mail/mail_controls.dart';
 import 'package:server_settings/src/mail/mail_patch.dart';
 import 'package:server_settings/src/widgets/mail_password_section.dart';
 import 'package:server_settings/src/widgets/settings_group_actions.dart';
+import 'package:server_settings/src/widgets/settings_group_binding.dart';
 import 'package:server_settings/src/widgets/settings_seed.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// The Mail group of the server settings (#807): the SMTP connection, the
-/// From address, the password reset switch and the reset link lifetime.
+/// The Mail group of the server settings (#807): the SMTP connection and the
+/// From address. Whether password resets are offered, and how long a reset
+/// link works, are the Registration and sign-in group's (#894).
 ///
-/// Owns its [FormGroup], like `DataGatewayForm`, and hands [onSave] the
-/// patch of what changed, against [settings] as the server last sent it.
-/// Every edit calls [onEdited], so the caller can retire an outcome that
-/// describes the values being replaced.
+/// Owns its [FormGroup], like `DataGatewayForm`, and hands the [binding]'s
+/// `onSave` the patch of what changed, against the settings as the server
+/// last sent them. Every edit calls its `onEdited`.
 ///
 /// ## The saved password
 ///
@@ -36,30 +35,23 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## New values from the server
 ///
-/// [revision] moves whenever the server's settings were read or a save of
-/// any group landed. The form takes the new values when its own save just
-/// landed ([saved]), or when it holds no unsaved changes, so another group's
-/// save never discards the user's edits here. Taking them is not an edit.
+/// The binding's `revision` moves whenever the server's settings were read
+/// or a save of any group landed. The form takes the new values when its own
+/// save just landed (`saved`), or when it holds no unsaved changes, so
+/// another group's save never discards the user's edits here. Taking them is
+/// not an edit.
 ///
 /// ## Access
 ///
-/// When [maySave] is false the fields are read-only, and there is no Save,
+/// When `maySave` is false the fields are read-only, and there is no Save,
 /// no password buttons and no test panel. A control with keyboard focus that
-/// goes with them hands it to the field just before it. While [saving] the
+/// goes with them hands it to the field just before it. While `saving` the
 /// fields are read-only and the password buttons disabled; the save button's
-/// label and spinner say why. While [otherGroupSaving] Save is disabled,
+/// label and spinner say why. While `otherGroupSaving` Save is disabled,
 /// with the reason as its hint.
 class MailSettingsForm extends StatefulWidget {
   const MailSettingsForm({
-    required this.settings,
-    required this.revision,
-    required this.maySave,
-    required this.saving,
-    required this.otherGroupSaving,
-    required this.onSave,
-    required this.onEdited,
-    this.failure,
-    this.saved = false,
+    required this.binding,
     this.testPanelBuilder,
     super.key,
   });
@@ -74,39 +66,13 @@ class MailSettingsForm extends StatefulWidget {
   static const Key keepPasswordKey = MailPasswordSection.keepKey;
   static const Key keepSavedPasswordKey = MailPasswordSection.keepSavedKey;
   static const Key fromFieldKey = Key('mail_settings_form.from');
-  static const Key passwordResetsSwitchKey = Key(
-    'mail_settings_form.password_resets',
-  );
-  static const Key lifetimeFieldKey = Key('mail_settings_form.lifetime');
   static const Key saveKey = Key('mail_settings_form.save');
   static const Key savedKey = Key('mail_settings_form.saved');
   static const Key failureKey = Key('mail_settings_form.failure');
 
-  /// The settings as the server last sent them.
-  final SystemSettings settings;
-
-  /// Moves when [settings] were read again or a save landed.
-  final int revision;
-
-  /// Whether the caller may change the settings.
-  final bool maySave;
-
-  /// Whether this group's save is in flight.
-  final bool saving;
-
-  /// Whether another group's save is in flight. One save at a time.
-  final bool otherGroupSaving;
-
-  /// Why this group's last save didn't land, until the group is edited.
-  final SettingsSaveFailure? failure;
-
-  /// Whether this group's last save landed, until the group is edited.
-  final bool saved;
-
-  final void Function(SystemSettingsPatch patch) onSave;
-
-  /// Called on every edit by the user.
-  final VoidCallback onEdited;
+  /// The settings, where the group's save stands, and where its saves and
+  /// edits go.
+  final SettingsGroupBinding binding;
 
   /// Builds the test email panel under Save, told whether the group has
   /// unsaved changes. The screen supplies it, so the form knows no bloc.
@@ -129,17 +95,17 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
   /// The settings the form last took, which its edits are made against.
   ///
   /// A save, and what counts as unsaved, compare the form with these, not
-  /// with [MailSettingsForm.settings]: while the form keeps unsaved edits
-  /// out of newer values, the fields left alone still show these, and
-  /// comparing them with the newer ones would send them back over a change
-  /// made elsewhere.
+  /// with the binding's `settings`: while the form keeps unsaved edits out
+  /// of newer values, the fields left alone still show these, and comparing
+  /// them with the newer ones would send them back over a change made
+  /// elsewhere.
   late SystemSettings _base;
 
   late final FormGroup _form;
   late bool _hasUnsavedChanges;
   StreamSubscription<Object?>? _edits;
 
-  /// Around Save and the test panel, which go when [MailSettingsForm.maySave]
+  /// Around Save and the test panel, which go when the binding's `maySave`
   /// falls; the handle on their focus. It can't take focus itself.
   final FocusNode _actions = FocusNode(
     debugLabel: 'mail settings actions',
@@ -162,8 +128,6 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
     MailControls.user: settings.smtpUser ?? '',
     MailControls.password: '',
     MailControls.from: settings.mailFromAddress ?? '',
-    MailControls.allowPasswordResets: settings.allowPasswordResets,
-    MailControls.lifetime: '${settings.passwordResetLinkLifetimeMinutes}',
   };
 
   /// The password's check reads the edit and the saved password as they
@@ -172,13 +136,13 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
       checkMailPassword(
         control.value,
         edit: _passwordEdit,
-        passwordSaved: widget.settings.smtpPasswordSet,
+        passwordSaved: widget.binding.settings.smtpPasswordSet,
       );
 
   @override
   void initState() {
     super.initState();
-    _base = widget.settings;
+    _base = widget.binding.settings;
     _passwordEdit = _initialPasswordEdit(_base);
     final seed = _valuesOf(_base);
     _seed = SettingsSeed(seed, equals: mapEquals);
@@ -201,12 +165,6 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
         mailWithinLength,
         validMailFrom,
       ]),
-      MailControls.allowPasswordResets: control<bool>(
-        MailControls.allowPasswordResets,
-      ),
-      MailControls.lifetime: control<String>(MailControls.lifetime, [
-        validMailLinkLifetime,
-      ]),
     });
     _hasUnsavedChanges = _unsavedAgainst(_base);
     _edits = _form.valueChanges.listen(_onValueChanged);
@@ -216,25 +174,25 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
     if (!mounted) return;
     _refreshUnsaved();
     if (_seed.isEcho(value)) return;
-    widget.onEdited();
+    widget.binding.onEdited();
   }
 
   @override
   void didUpdateWidget(MailSettingsForm oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (SettingsSeed.takes(
-      revision: widget.revision,
-      previousRevision: oldWidget.revision,
-      saved: widget.saved,
+      revision: widget.binding.revision,
+      previousRevision: oldWidget.binding.revision,
+      saved: widget.binding.saved,
       unsaved: _unsavedAgainst(_base),
     )) {
       _takeSettings();
     }
-    if (widget.failure == SettingsSaveFailure.passwordRequired &&
-        oldWidget.failure != SettingsSaveFailure.passwordRequired) {
+    if (widget.binding.failure == SettingsSaveFailure.passwordRequired &&
+        oldWidget.binding.failure != SettingsSaveFailure.passwordRequired) {
       _askForPassword();
     }
-    if (oldWidget.maySave && !widget.maySave) {
+    if (oldWidget.binding.maySave && !widget.binding.maySave) {
       // A role that may not save sees what the server holds, not edits it
       // can no longer send. Taken first, so focus goes to what is left.
       _takeSettings();
@@ -243,10 +201,10 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
     _hasUnsavedChanges = _unsavedAgainst(_base);
   }
 
-  /// Takes the values of [MailSettingsForm.settings], and the password back
-  /// to its starting state.
+  /// Takes the values of the binding's `settings`, and the password back to
+  /// its starting state.
   void _takeSettings() {
-    final settings = _base = widget.settings;
+    final settings = _base = widget.binding.settings;
     _passwordEdit = _initialPasswordEdit(settings);
     _seed.take(_valuesOf(settings));
     _form.reset(value: _seed.values);
@@ -263,32 +221,25 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
 
   String _text(String name) => _form.control(name).value as String? ?? '';
 
-  /// The form's values, with the numbers given: built only from numbers
-  /// that parsed.
-  MailFormValues _values({required int port, required int lifetime}) =>
-      MailFormValues(
-        host: _text(MailControls.host),
-        port: port,
-        security: _form.control(MailControls.security).value as SmtpSecurity?,
-        user: _text(MailControls.user),
-        password: _text(MailControls.password),
-        passwordEdit: _passwordEdit,
-        from: _text(MailControls.from),
-        allowPasswordResets:
-            _form.control(MailControls.allowPasswordResets).value == true,
-        linkLifetimeMinutes: lifetime,
-      );
+  /// The form's values, with the port given: built only from a port that
+  /// parsed.
+  MailFormValues _values({required int port}) => MailFormValues(
+    host: _text(MailControls.host),
+    port: port,
+    security: _form.control(MailControls.security).value as SmtpSecurity?,
+    user: _text(MailControls.user),
+    password: _text(MailControls.password),
+    passwordEdit: _passwordEdit,
+    from: _text(MailControls.from),
+  );
 
-  /// Whether the form holds anything [settings] don't: a number that doesn't
+  /// Whether the form holds anything [settings] don't: a port that doesn't
   /// parse counts, as one that differs does.
   bool _unsavedAgainst(SystemSettings settings) {
     final port = mailWholeNumber(_form.control(MailControls.port).value);
-    final lifetime = mailWholeNumber(
-      _form.control(MailControls.lifetime).value,
-    );
-    if (port == null || lifetime == null) return true;
+    if (port == null) return true;
     return _passwordEdit != _initialPasswordEdit(settings) ||
-        !mailPatch(settings, _values(port: port, lifetime: lifetime)).isEmpty;
+        !mailPatch(settings, _values(port: port)).isEmpty;
   }
 
   void _refreshUnsaved() {
@@ -303,18 +254,18 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
       ?.focusNode
       .requestFocus();
 
-  /// Hands keyboard focus from a control this build takes away with
-  /// [MailSettingsForm.maySave] to the field just before it, as
-  /// `DataGatewayForm` does: Save and the test panel to the lifetime, the
-  /// last field, and a password button to the password field, or with none
-  /// shown, to the user name.
+  /// Hands keyboard focus from a control this build takes away with the
+  /// binding's `maySave` to the field just before it, as
+  /// `DataGatewayForm` does: Save and the test panel to the From address,
+  /// the last field, and a password button to the password field, or with
+  /// none shown, to the user name.
   ///
   /// Runs while building the frame that takes the controls away, while they
   /// still have focus.
   void _handOnFocus() {
     final String to;
     if (_actions.hasFocus) {
-      to = MailControls.lifetime;
+      to = MailControls.from;
     } else if (_passwordFocus.actions.hasFocus) {
       to = _passwordEdit == PasswordEdit.replace
           ? MailControls.password
@@ -332,9 +283,9 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
     // marking the form touched.
     if (!settingsGroupMaySave(
       context,
-      maySave: widget.maySave,
-      saving: widget.saving,
-      otherGroupSaving: widget.otherGroupSaving,
+      maySave: widget.binding.maySave,
+      saving: widget.binding.saving,
+      otherGroupSaving: widget.binding.otherGroupSaving,
     )) {
       return;
     }
@@ -343,18 +294,15 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
       return;
     }
     final port = mailWholeNumber(_form.control(MailControls.port).value)!;
-    final lifetime = mailWholeNumber(
-      _form.control(MailControls.lifetime).value,
-    )!;
-    final patch = mailPatch(_base, _values(port: port, lifetime: lifetime));
+    final patch = mailPatch(_base, _values(port: port));
     // Against the server's current settings: the rule is the server's, on
     // what it holds now.
-    if (mailPasswordNeeded(widget.settings, patch)) {
+    if (mailPasswordNeeded(widget.binding.settings, patch)) {
       setState(_askForPassword);
       _refreshUnsaved();
       return;
     }
-    widget.onSave(patch);
+    widget.binding.onSave(patch);
   }
 
   /// Opens the password field with the reason the server gives on it, and
@@ -393,7 +341,7 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
       ..reset(value: '')
       ..updateValueAndValidity();
     _refreshUnsaved();
-    widget.onEdited();
+    widget.binding.onEdited();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       switch (edit) {
@@ -410,7 +358,7 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
   @override
   Widget build(BuildContext context) {
     final l10n = ServerSettingsLocalizations.of(context);
-    final readOnly = widget.saving || !widget.maySave;
+    final readOnly = widget.binding.saving || !widget.binding.maySave;
     final testPanel = widget.testPanelBuilder;
     String tooLong(Object _) => mailTooLongMessage(l10n);
 
@@ -501,10 +449,10 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
           const BgeGap.md(),
           MailPasswordSection(
             edit: _passwordEdit,
-            passwordSaved: widget.settings.smtpPasswordSet,
-            maySave: widget.maySave,
+            passwordSaved: widget.binding.settings.smtpPasswordSet,
+            maySave: widget.binding.maySave,
             readOnly: readOnly,
-            buttonsEnabled: !widget.saving,
+            buttonsEnabled: !widget.binding.saving,
             focus: _passwordFocus,
             onEdit: _editPassword,
           ),
@@ -517,69 +465,24 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
             autocorrect: false,
             enableSuggestions: false,
             readOnly: readOnly,
+            // The last field: Enter saves.
+            textInputAction: TextInputAction.done,
+            onSubmitted: widget.binding.maySave ? _submit : null,
             validationMessages: {
               MailErrors.tooLong: tooLong,
               ValidationMessage.email: (_) => l10n.mailFromInvalid,
             },
           ),
-          const BgeGap.md(),
-          BgeSwitchField(
-            formControlName: MailControls.allowPasswordResets,
-            label: l10n.mailPasswordResetsLabel,
-            readOnly: readOnly,
-            switchKey: MailSettingsForm.passwordResetsSwitchKey,
-          ),
-          const BgeGap.md(),
-          ReactiveValueListenableBuilder<String>(
-            formControlName: MailControls.lifetime,
-            builder: (context, control, _) {
-              final minutes = mailLinkLifetime(control.value);
-              final min = describeLinkLifetime(
-                SystemSettingsRemoteDataSource.minLinkLifetimeMinutes,
-                l10n,
-              );
-              final max = describeLinkLifetime(
-                SystemSettingsRemoteDataSource.maxLinkLifetimeMinutes,
-                l10n,
-              );
-              return BgeTextField(
-                key: MailSettingsForm.lifetimeFieldKey,
-                formControlName: MailControls.lifetime,
-                label: l10n.mailLinkLifetimeLabel,
-                // The limits always show (#807), so the line doesn't come
-                // and go as the value is typed.
-                helper: minutes == null
-                    ? l10n.mailLinkLifetimeRange(min, max)
-                    : l10n.mailLinkLifetimeHelper(
-                        describeLinkLifetime(minutes, l10n),
-                        min,
-                        max,
-                      ),
-                keyboardType: TextInputType.number,
-                autocorrect: false,
-                enableSuggestions: false,
-                readOnly: readOnly,
-                textInputAction: TextInputAction.done,
-                onSubmitted: widget.maySave ? _submit : null,
-                validationMessages: {
-                  MailErrors.lifetime: (_) => l10n.mailLinkLifetimeInvalid(
-                    SystemSettingsRemoteDataSource.minLinkLifetimeMinutes,
-                    SystemSettingsRemoteDataSource.maxLinkLifetimeMinutes,
-                    max,
-                  ),
-                },
-              );
-            },
-          ),
           SettingsGroupActions(
-            maySave: widget.maySave,
-            saving: widget.saving,
-            otherGroupSaving: widget.otherGroupSaving,
-            saved: widget.saved,
+            maySave: widget.binding.maySave,
+            saving: widget.binding.saving,
+            otherGroupSaving: widget.binding.otherGroupSaving,
+            saved: widget.binding.saved,
             // The password field carries it.
-            failure: widget.failure == SettingsSaveFailure.passwordRequired
+            failure:
+                widget.binding.failure == SettingsSaveFailure.passwordRequired
                 ? null
-                : widget.failure,
+                : widget.binding.failure,
             focusNode: _actions,
             onSave: _submit,
             saveKey: MailSettingsForm.saveKey,
@@ -589,7 +492,7 @@ class _MailSettingsFormState extends State<MailSettingsForm> {
             savedMessage: l10n.mailSaved,
             failureKey: MailSettingsForm.failureKey,
             failureTitle: l10n.mailNotSavedTitle,
-            trailing: widget.maySave && testPanel != null
+            trailing: widget.binding.maySave && testPanel != null
                 ? testPanel(context, hasUnsavedChanges: _hasUnsavedChanges)
                 : null,
           ),

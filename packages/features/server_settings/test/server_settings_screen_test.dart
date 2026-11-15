@@ -7,7 +7,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:server_settings/server_settings.dart';
 import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
-import 'package:server_settings/src/widgets/sign_in_settings_form.dart';
+import 'package:server_settings/src/widgets/registration_settings_form.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -49,8 +49,9 @@ const _automaticLabel = 'Automatically, when both have verified the email';
 const _warningCopy =
     "Anyone who controls a registered user's verified email at a sign-in "
     'provider can sign in as that user, the Owner included.';
+const _registrationTitle = 'Registration and sign-in';
 const _mailSavedCopy = 'Mail settings saved.';
-const _signInSavedCopy = 'Sign-in settings saved.';
+const _registrationSavedCopy = 'Registration and sign-in settings saved.';
 const _waitingCopy =
     "Test email queued for your address. Waiting for the mail server's answer…";
 const _sentCopy = 'The test email was sent. Check your inbox.';
@@ -119,7 +120,7 @@ void main() {
   }
 
   Future<void> pickAutomatic(WidgetTester tester) async {
-    final policy = find.byKey(SignInSettingsForm.policyFieldKey);
+    final policy = find.byKey(RegistrationSettingsForm.policyFieldKey);
     await tester.ensureVisible(policy);
     await tester.pumpAndSettle();
     await tester.tap(policy);
@@ -160,8 +161,8 @@ void main() {
       .hasPrimaryFocus;
 
   group('loading', () {
-    testWidgets('waits for the read, then shows the Mail and Sign-in groups '
-        'under their headings', (tester) async {
+    testWidgets('waits for the read, then shows the Mail and Registration '
+        'and sign-in groups under their headings', (tester) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(_app(screen()));
       await tester.pump();
@@ -175,8 +176,8 @@ void main() {
 
       expect(find.byKey(ServerSettingsScreen.loadingKey), findsNothing);
       expect(find.byType(MailSettingsForm), findsOneWidget);
-      expect(find.byType(SignInSettingsForm), findsOneWidget);
-      for (final heading in ['Mail', 'Sign-in']) {
+      expect(find.byType(RegistrationSettingsForm), findsOneWidget);
+      for (final heading in ['Mail', _registrationTitle]) {
         expect(
           tester.getSemantics(find.text(heading)),
           isSemantics(isHeader: true, label: heading),
@@ -188,11 +189,11 @@ void main() {
       );
       expect(
         tester.getRect(find.byType(MailSettingsForm)).bottom,
-        lessThan(tester.getRect(find.text('Sign-in')).top),
+        lessThan(tester.getRect(find.text(_registrationTitle)).top),
       );
       expect(
-        tester.getRect(find.text('Sign-in')).bottom,
-        lessThan(tester.getRect(find.byType(SignInSettingsForm)).top),
+        tester.getRect(find.text(_registrationTitle)).bottom,
+        lessThan(tester.getRect(find.byType(RegistrationSettingsForm)).top),
       );
       expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
       handle.dispose();
@@ -240,7 +241,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(MailSettingsForm), findsOneWidget);
-      expect(find.byType(SignInSettingsForm), findsOneWidget);
+      expect(find.byType(RegistrationSettingsForm), findsOneWidget);
       // The title stays through the read, and focus with it.
       expect(focusIsOn(tester, find.text(_title)), isTrue);
     });
@@ -266,31 +267,38 @@ void main() {
         MailSettingsForm.portFieldKey,
         MailSettingsForm.userFieldKey,
         MailSettingsForm.fromFieldKey,
-        MailSettingsForm.lifetimeFieldKey,
+        RegistrationSettingsForm.lifetimeFieldKey,
       ]) {
         expect(editable(tester, key).readOnly, isTrue, reason: '$key');
       }
-      expect(
-        tester
-            .widget<BgeSwitchField>(
-              find.ancestor(
-                of: find.byKey(MailSettingsForm.passwordResetsSwitchKey),
-                matching: find.byType(BgeSwitchField),
-              ),
-            )
-            .readOnly,
-        isTrue,
-      );
+      for (final key in [
+        RegistrationSettingsForm.signUpsSwitchKey,
+        RegistrationSettingsForm.usernameChangeSwitchKey,
+        RegistrationSettingsForm.passwordResetsSwitchKey,
+      ]) {
+        expect(
+          tester
+              .widget<BgeSwitchField>(
+                find.ancestor(
+                  of: find.byKey(key),
+                  matching: find.byType(BgeSwitchField),
+                ),
+              )
+              .readOnly,
+          isTrue,
+          reason: '$key',
+        );
+      }
       expect(
         tester
             .widget<BgeDropdownField<ProviderLinkingPolicy>>(
-              find.byKey(SignInSettingsForm.policyFieldKey),
+              find.byKey(RegistrationSettingsForm.policyFieldKey),
             )
             .readOnly,
         isTrue,
       );
       expect(find.byKey(MailSettingsForm.saveKey), findsNothing);
-      expect(find.byKey(SignInSettingsForm.saveKey), findsNothing);
+      expect(find.byKey(RegistrationSettingsForm.saveKey), findsNothing);
       expect(find.byKey(MailTestPanel.sendKey), findsNothing);
       expect(find.text('Send test email'), findsNothing);
     });
@@ -303,7 +311,7 @@ void main() {
       expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
       expect(find.text(_readOnlyCopy), findsNothing);
       expect(find.byKey(MailSettingsForm.saveKey), findsNothing);
-      expect(find.byKey(SignInSettingsForm.saveKey), findsNothing);
+      expect(find.byKey(RegistrationSettingsForm.saveKey), findsNothing);
       expect(find.byKey(MailTestPanel.sendKey), findsNothing);
     });
 
@@ -313,7 +321,7 @@ void main() {
 
       expect(find.byKey(ServerSettingsScreen.readOnlyKey), findsNothing);
       expect(find.byKey(MailSettingsForm.saveKey), findsOneWidget);
-      expect(find.byKey(SignInSettingsForm.saveKey), findsOneWidget);
+      expect(find.byKey(RegistrationSettingsForm.saveKey), findsOneWidget);
       expect(find.byKey(MailTestPanel.sendKey), findsOneWidget);
     });
   });
@@ -326,7 +334,7 @@ void main() {
       await pickAutomatic(tester);
       expect(find.text(_warningCopy), findsOneWidget);
 
-      await press(tester, SignInSettingsForm.saveKey);
+      await press(tester, RegistrationSettingsForm.saveKey);
       expect(remote.updateCalls, hasLength(1));
       expect(remote.updateCalls.single.id, 'settings-1');
       expect(
@@ -342,7 +350,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 1));
 
-      expect(find.text(_signInSavedCopy), findsOneWidget);
+      expect(find.text(_registrationSavedCopy), findsOneWidget);
       expect(find.text(_warningCopy), findsOneWidget);
     });
 
@@ -368,38 +376,41 @@ void main() {
       );
     });
 
-    testWidgets('a Sign-in save that lands leaves unsaved Mail edits as '
+    testWidgets('a Registration save that lands leaves unsaved Mail edits as '
         'typed', (tester) async {
       await pumpScreen(tester);
       await enter(tester, MailSettingsForm.userFieldKey, 'relay');
       await pickAutomatic(tester);
 
-      await press(tester, SignInSettingsForm.saveKey);
+      await press(tester, RegistrationSettingsForm.saveKey);
       remote.updates.single.complete(
         _settings(linking: ProviderLinkingPolicy.automaticWhenVerified),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(_signInSavedCopy), findsOneWidget);
+      expect(find.text(_registrationSavedCopy), findsOneWidget);
       expect(
         editable(tester, MailSettingsForm.userFieldKey).controller.text,
         'relay',
       );
     });
 
-    testWidgets('a refused Sign-in save says so above its Save', (
+    testWidgets('a refused Registration save says so above its Save', (
       tester,
     ) async {
       await pumpScreen(tester);
       await pickAutomatic(tester);
 
-      await press(tester, SignInSettingsForm.saveKey);
+      await press(tester, RegistrationSettingsForm.saveKey);
       remote.updates.single.completeError(
         const SystemSettingsForbiddenException('no', statusCode: 403),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Sign-in settings not saved'), findsOneWidget);
+      expect(
+        find.text('Registration and sign-in settings not saved'),
+        findsOneWidget,
+      );
       expect(
         find.text("Your role can't change the server's settings."),
         findsOneWidget,
@@ -434,7 +445,7 @@ void main() {
       );
     });
 
-    testWidgets('saving Mail disables the Sign-in Save, and the reverse', (
+    testWidgets('saving Mail disables the Registration Save, and the reverse', (
       tester,
     ) async {
       await pumpScreen(tester);
@@ -443,17 +454,17 @@ void main() {
 
       await press(tester, MailSettingsForm.saveKey);
       expect(
-        saveButton(tester, SignInSettingsForm.saveKey).onPressed,
+        saveButton(tester, RegistrationSettingsForm.saveKey).onPressed,
         isNull,
       );
       remote.updates.last.complete(_settings(user: 'relay'));
       await tester.pumpAndSettle();
       expect(
-        saveButton(tester, SignInSettingsForm.saveKey).onPressed,
+        saveButton(tester, RegistrationSettingsForm.saveKey).onPressed,
         isNotNull,
       );
 
-      await press(tester, SignInSettingsForm.saveKey);
+      await press(tester, RegistrationSettingsForm.saveKey);
       expect(saveButton(tester, MailSettingsForm.saveKey).onPressed, isNull);
       remote.updates.last.complete(
         _settings(
@@ -527,32 +538,35 @@ void main() {
       expect(tester.state(bannerWith(_sentCopy)), isNot(same(firstState)));
     });
 
-    testWidgets('an edit to Mail retires the outcome, and an edit to Sign-in '
-        'does not', (tester) async {
-      notifications = FakeNotificationRemote([
-        <UnreadNotification>[],
-        [resultNotification('n1')],
-      ]);
-      await pumpScreen(tester);
-      await sendTest(tester);
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pump();
-      expect(find.text(_sentCopy), findsOneWidget);
+    testWidgets(
+      'an edit to Mail retires the outcome, and an edit to Registration '
+      'does not',
+      (tester) async {
+        notifications = FakeNotificationRemote([
+          <UnreadNotification>[],
+          [resultNotification('n1')],
+        ]);
+        await pumpScreen(tester);
+        await sendTest(tester);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump();
+        expect(find.text(_sentCopy), findsOneWidget);
 
-      await pickAutomatic(tester);
-      expect(find.text(_sentCopy), findsOneWidget);
+        await pickAutomatic(tester);
+        expect(find.text(_sentCopy), findsOneWidget);
 
-      await enter(tester, MailSettingsForm.userFieldKey, 'relay');
+        await enter(tester, MailSettingsForm.userFieldKey, 'relay');
 
-      expect(find.text(_sentCopy), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byType(MailTestPanel),
-          matching: find.byType(BgeInlineBanner),
-        ),
-        findsNothing,
-      );
-    });
+        expect(find.text(_sentCopy), findsNothing);
+        expect(
+          find.descendant(
+            of: find.byType(MailTestPanel),
+            matching: find.byType(BgeInlineBanner),
+          ),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('an edit to Mail while the test is out retires the outcome '
         'it comes to, so nothing is shown once the edit is saved', (

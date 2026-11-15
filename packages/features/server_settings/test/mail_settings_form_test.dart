@@ -5,6 +5,7 @@ import 'package:models/domain.dart';
 import 'package:server_settings/server_settings.dart';
 import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
+import 'package:server_settings/src/widgets/settings_group_binding.dart';
 import 'package:ui/ui.dart';
 
 import 'support/fake_system_settings_remote.dart';
@@ -18,8 +19,6 @@ SystemSettings _settings({
   String? user = 'mailer',
   bool passwordSet = true,
   String? from = 'games@example.com',
-  int lifetime = 1440,
-  bool allowPasswordResets = true,
   ProviderLinkingPolicy linking = ProviderLinkingPolicy.signedIn,
 }) => settingsFixture(
   smtpHost: host,
@@ -28,8 +27,6 @@ SystemSettings _settings({
   smtpUser: user,
   smtpPasswordSet: passwordSet,
   mailFromAddress: from,
-  passwordResetLinkLifetimeMinutes: lifetime,
-  allowPasswordResets: allowPasswordResets,
   providerLinkingPolicy: linking,
 );
 
@@ -78,15 +75,17 @@ void main() {
     await pumpOnPage(
       tester,
       MailSettingsForm(
-        settings: settings ?? _settings(),
-        revision: revision,
-        maySave: maySave,
-        saving: saving,
-        otherGroupSaving: otherGroupSaving,
-        failure: failure,
-        saved: saved,
-        onSave: saves.add,
-        onEdited: () => edits++,
+        binding: SettingsGroupBinding(
+          settings: settings ?? _settings(),
+          revision: revision,
+          maySave: maySave,
+          saving: saving,
+          otherGroupSaving: otherGroupSaving,
+          failure: failure,
+          saved: saved,
+          onSave: saves.add,
+          onEdited: () => edits++,
+        ),
         testPanelBuilder:
             testPanelBuilder ??
             (context, {required hasUnsavedChanges}) =>
@@ -512,65 +511,18 @@ void main() {
     });
   });
 
-  group('the reset link lifetime', () {
-    testWidgets('reads 1440 minutes as a day, with the limits', (
-      tester,
-    ) async {
-      await pumpForm(tester);
+  testWidgets('Mail has no reset switch or lifetime: they are the '
+      'Registration and sign-in group', (tester) async {
+    await pumpForm(tester);
 
-      expect(find.text('1 day. From 15 minutes to 7 days.'), findsOneWidget);
-    });
-
-    testWidgets('the reading follows what is typed', (tester) async {
-      await pumpForm(tester);
-
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '90');
-
-      expect(
-        find.text('1 hour, 30 minutes. From 15 minutes to 7 days.'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('the limits still show while what is typed has no reading', (
-      tester,
-    ) async {
-      await pumpForm(tester);
-
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '1');
-
-      expect(find.text('From 15 minutes to 7 days.'), findsOneWidget);
-    });
-
-    testWidgets('a lifetime out of range is refused on the form', (
-      tester,
-    ) async {
-      await pumpForm(tester);
-
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '14');
-      await save(tester);
-
-      expect(saves, isEmpty);
-      expect(
-        find.text('Enter a whole number of minutes from 15 to 10080 (7 days).'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('a changed lifetime and switch are saved', (tester) async {
-      await pumpForm(tester);
-
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '60');
-      await tapKey(tester, MailSettingsForm.passwordResetsSwitchKey);
-      await save(tester);
-
-      expect(saves, [
-        const SystemSettingsPatch(
-          passwordResetLinkLifetimeMinutes: 60,
-          allowPasswordResets: false,
-        ),
-      ]);
-    });
+    expect(
+      find.byKey(const Key('mail_settings_form.password_resets')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('mail_settings_form.lifetime')), findsNothing);
+    expect(find.byType(BgeSwitchField), findsNothing);
+    expect(find.text('Let people reset a forgotten password'), findsNothing);
+    expect(find.text('Reset link lifetime, in minutes'), findsNothing);
   });
 
   group('field checks', () {
@@ -695,7 +647,6 @@ void main() {
       MailSettingsForm.portFieldKey,
       MailSettingsForm.userFieldKey,
       MailSettingsForm.fromFieldKey,
-      MailSettingsForm.lifetimeFieldKey,
     ];
 
     testWidgets('a role that may not save sees every field read-only, and no '
@@ -719,17 +670,6 @@ void main() {
         tester
             .widget<BgeDropdownField<SmtpSecurity>>(
               find.byKey(MailSettingsForm.securityFieldKey),
-            )
-            .readOnly,
-        isTrue,
-      );
-      expect(
-        tester
-            .widget<BgeSwitchField>(
-              find.ancestor(
-                of: find.byKey(MailSettingsForm.passwordResetsSwitchKey),
-                matching: find.byType(BgeSwitchField),
-              ),
             )
             .readOnly,
         isTrue,
@@ -785,17 +725,6 @@ void main() {
         tester
             .widget<BgeDropdownField<SmtpSecurity>>(
               find.byKey(MailSettingsForm.securityFieldKey),
-            )
-            .readOnly,
-        isTrue,
-      );
-      expect(
-        tester
-            .widget<BgeSwitchField>(
-              find.ancestor(
-                of: find.byKey(MailSettingsForm.passwordResetsSwitchKey),
-                matching: find.byType(BgeSwitchField),
-              ),
             )
             .readOnly,
         isTrue,
@@ -931,8 +860,8 @@ void main() {
       expect(banner.bottom, lessThan(saveButton.top));
     });
 
-    testWidgets('Save with focus hands it to the last field when the role '
-        'may no longer save', (tester) async {
+    testWidgets('Save with focus hands it to the From address, the last '
+        'field, when the role may no longer save', (tester) async {
       await pumpForm(tester);
       final saveFocus = Focus.of(
         tester.element(find.text('Save mail settings')),
@@ -945,8 +874,28 @@ void main() {
 
       expect(
         focused(),
-        same(editable(tester, MailSettingsForm.lifetimeFieldKey).focusNode),
+        same(editable(tester, MailSettingsForm.fromFieldKey).focusNode),
       );
+    });
+
+    testWidgets('Enter in the From address, the last field, saves', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+      await enter(tester, MailSettingsForm.fromFieldKey, 'admin@example.com');
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(
+        editable(tester, MailSettingsForm.fromFieldKey).textInputAction,
+        TextInputAction.done,
+      );
+      expect(saves, [
+        const SystemSettingsPatch(
+          mailFromAddress: SettingValue.set('admin@example.com'),
+        ),
+      ]);
     });
 
     testWidgets('a password button with focus hands it to the field before '
@@ -984,10 +933,6 @@ void main() {
       await enter(tester, MailSettingsForm.portFieldKey, ' 587 ');
       expect(panelText(tester), 'unsaved: false');
 
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '');
-      expect(panelText(tester), 'unsaved: true');
-
-      await enter(tester, MailSettingsForm.lifetimeFieldKey, '1440');
       await enter(tester, MailSettingsForm.userFieldKey, ' mailer ');
       expect(panelText(tester), 'unsaved: false');
     });

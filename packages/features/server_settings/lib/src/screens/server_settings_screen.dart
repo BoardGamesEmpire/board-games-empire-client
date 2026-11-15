@@ -13,12 +13,14 @@ import 'package:server_settings/src/bloc/server_settings_event.dart';
 import 'package:server_settings/src/bloc/server_settings_state.dart';
 import 'package:server_settings/src/widgets/mail_settings_form.dart';
 import 'package:server_settings/src/widgets/mail_test_panel.dart';
-import 'package:server_settings/src/widgets/sign_in_settings_form.dart';
+import 'package:server_settings/src/widgets/registration_settings_form.dart';
+import 'package:server_settings/src/widgets/settings_group_binding.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The server's own settings, for staff (#807): the Mail group, with its
-/// test email, and the Sign-in group, each saved on its own.
+/// test email, and the Registration and sign-in group (#894), each saved on
+/// its own.
 ///
 /// Decoupled from DI like the admin households list: the caller resolves the
 /// per-server [SystemSettingsRemoteDataSource] and
@@ -212,6 +214,22 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     final settings = state.settings;
     final mayUpdate = state.mayUpdate;
 
+    /// What [group]'s form is told and where its saves and edits go.
+    SettingsGroupBinding bind(SettingsGroup group, {VoidCallback? onEdited}) =>
+        SettingsGroupBinding(
+          settings: settings,
+          revision: state.revision,
+          maySave: mayUpdate,
+          saving: state.saving == group,
+          otherGroupSaving: state.otherGroupSaving(group),
+          failure: state.failures[group],
+          saved: state.savedGroup == group,
+          onSave: (patch) =>
+              _settings.add(ServerSettingsGroupSaved(group, patch)),
+          onEdited:
+              onEdited ?? () => _settings.add(ServerSettingsGroupEdited(group)),
+        );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -227,17 +245,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
         _GroupHeading(l10n.mailGroupTitle),
         const BgeGap.sm(),
         MailSettingsForm(
-          settings: settings,
-          revision: state.revision,
-          maySave: mayUpdate,
-          saving: state.saving == SettingsGroup.mail,
-          otherGroupSaving: state.otherGroupSaving(SettingsGroup.mail),
-          failure: state.failures[SettingsGroup.mail],
-          saved: state.savedGroup == SettingsGroup.mail,
-          onSave: (patch) => _settings.add(
-            ServerSettingsGroupSaved(SettingsGroup.mail, patch),
-          ),
-          onEdited: _mailEdited,
+          binding: bind(SettingsGroup.mail, onEdited: _mailEdited),
           testPanelBuilder: mayUpdate
               ? (context, {required hasUnsavedChanges}) =>
                     BlocBuilder<MailTestBloc, MailTestState>(
@@ -251,23 +259,9 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
               : null,
         ),
         const BgeGap.xl(),
-        _GroupHeading(l10n.signInGroupTitle),
+        _GroupHeading(l10n.registrationGroupTitle),
         const BgeGap.sm(),
-        SignInSettingsForm(
-          settings: settings,
-          revision: state.revision,
-          maySave: mayUpdate,
-          saving: state.saving == SettingsGroup.registration,
-          otherGroupSaving: state.otherGroupSaving(SettingsGroup.registration),
-          failure: state.failures[SettingsGroup.registration],
-          saved: state.savedGroup == SettingsGroup.registration,
-          onSave: (patch) => _settings.add(
-            ServerSettingsGroupSaved(SettingsGroup.registration, patch),
-          ),
-          onEdited: () => _settings.add(
-            const ServerSettingsGroupEdited(SettingsGroup.registration),
-          ),
-        ),
+        RegistrationSettingsForm(binding: bind(SettingsGroup.registration)),
       ],
     );
   }

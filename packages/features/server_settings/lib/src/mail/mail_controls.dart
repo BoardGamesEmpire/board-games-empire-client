@@ -11,8 +11,6 @@ abstract final class MailControls {
   static const user = 'user';
   static const password = 'password';
   static const from = 'from';
-  static const allowPasswordResets = 'allowPasswordResets';
-  static const lifetime = 'lifetime';
 }
 
 /// The errors the Mail form's checks set (#807), beside reactive_forms'
@@ -20,9 +18,6 @@ abstract final class MailControls {
 abstract final class MailErrors {
   /// On a port that isn't a whole number in the server's range.
   static const port = 'port';
-
-  /// On a link lifetime that isn't a whole number of minutes in range.
-  static const lifetime = 'lifetime';
 
   /// On a host, user, password or From longer than the server takes.
   static const tooLong = 'tooLong';
@@ -45,16 +40,6 @@ int? mailWholeNumber(Object? value) {
   return _digits.hasMatch(text) ? int.tryParse(text) : null;
 }
 
-/// A link lifetime's value as minutes in the server's range, or null.
-int? mailLinkLifetime(Object? value) {
-  final minutes = mailWholeNumber(value);
-  return minutes == null ||
-          minutes < SystemSettingsRemoteDataSource.minLinkLifetimeMinutes ||
-          minutes > SystemSettingsRemoteDataSource.maxLinkLifetimeMinutes
-      ? null
-      : minutes;
-}
-
 /// The message for [MailErrors.tooLong].
 String mailTooLongMessage(ServerSettingsLocalizations l10n) =>
     l10n.mailFieldTooLong(SystemSettingsRemoteDataSource.maxMailSettingLength);
@@ -67,12 +52,6 @@ Map<String, dynamic>? validMailPort(AbstractControl<dynamic> control) {
       ? <String, dynamic>{MailErrors.port: true}
       : null;
 }
-
-Map<String, dynamic>? validMailLinkLifetime(
-  AbstractControl<dynamic> control,
-) => mailLinkLifetime(control.value) == null
-    ? <String, dynamic>{MailErrors.lifetime: true}
-    : null;
 
 /// At most the server's length, counted as the server counts it, once
 /// trimmed as the server trims it.

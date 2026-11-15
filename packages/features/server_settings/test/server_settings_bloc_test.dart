@@ -18,7 +18,7 @@ CallerAccess _update(AccessExtent extent) => CallerAccess.known({
 });
 
 const _mailPatch = SystemSettingsPatch(smtpHost: SettingValue.set('smtp.x'));
-const _signInPatch = SystemSettingsPatch(allowPasswordResets: false);
+const _registrationPatch = SystemSettingsPatch(allowPasswordResets: false);
 
 void main() {
   late FakeSystemSettingsRemote remote;
@@ -210,7 +210,10 @@ void main() {
     await pumpEventQueue();
 
     bloc.add(
-      const ServerSettingsGroupSaved(SettingsGroup.registration, _signInPatch),
+      const ServerSettingsGroupSaved(
+        SettingsGroup.registration,
+        _registrationPatch,
+      ),
     );
     await pumpEventQueue();
     expect(loaded().saving, SettingsGroup.registration);
@@ -319,7 +322,10 @@ void main() {
     await pumpEventQueue();
 
     bloc.add(
-      const ServerSettingsGroupSaved(SettingsGroup.registration, _signInPatch),
+      const ServerSettingsGroupSaved(
+        SettingsGroup.registration,
+        _registrationPatch,
+      ),
     );
     await pumpEventQueue();
 

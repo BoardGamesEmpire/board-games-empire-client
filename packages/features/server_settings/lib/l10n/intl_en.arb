@@ -30,7 +30,7 @@
   },
   "mailGroupTitle": "Mail",
   "@mailGroupTitle": {
-    "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through, its sender address, and password reset links."
+    "description": "Heading of the group of server settings about outgoing email: the mail server the server sends through and its sender address."
   },
   "mailGroupIntro": "The server sends password reset links and test emails through this mail server. Mail is off until a host and a From address are saved.",
   "@mailGroupIntro": {
@@ -143,94 +143,6 @@
       "max": {
         "type": "int",
         "example": "255"
-      }
-    }
-  },
-  "mailPasswordResetsLabel": "Let people reset a forgotten password",
-  "@mailPasswordResetsLabel": {
-    "description": "Label of the switch that lets people ask for a password reset link by email."
-  },
-  "mailLinkLifetimeLabel": "Reset link lifetime, in minutes",
-  "@mailLinkLifetimeLabel": {
-    "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
-  },
-  "mailLinkLifetimeHelper": "{readout}. From {min} to {max}.",
-  "@mailLinkLifetimeHelper": {
-    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows, read the same way.",
-    "placeholders": {
-      "readout": {
-        "type": "String",
-        "example": "1 day, 1 hour"
-      },
-      "min": {
-        "type": "String",
-        "example": "15 minutes"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLinkLifetimeRange": "From {min} to {max}.",
-  "@mailLinkLifetimeRange": {
-    "description": "Helper text under the reset link lifetime field while what is entered can't be read as a lifetime: the limits the server allows, read in days, hours and minutes.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "15 minutes"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLinkLifetimeInvalid": "Enter a whole number of minutes from {minMinutes} to {maxMinutes} ({max}).",
-  "@mailLinkLifetimeInvalid": {
-    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range: the limits in minutes, then the upper limit read in days, hours and minutes.",
-    "placeholders": {
-      "minMinutes": {
-        "type": "int",
-        "example": "15"
-      },
-      "maxMinutes": {
-        "type": "int",
-        "example": "10080"
-      },
-      "max": {
-        "type": "String",
-        "example": "7 days"
-      }
-    }
-  },
-  "mailLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
-  "@mailLifetimeDays": {
-    "description": "A number of days, one part of the reset link lifetime's reading, such as '1 day' in '1 day, 1 hour'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "2"
-      }
-    }
-  },
-  "mailLifetimeHours": "{count, plural, =1{1 hour} other{{count} hours}}",
-  "@mailLifetimeHours": {
-    "description": "A number of hours, one part of the reset link lifetime's reading, such as '1 hour' in '1 day, 1 hour'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "3"
-      }
-    }
-  },
-  "mailLifetimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
-  "@mailLifetimeMinutes": {
-    "description": "A number of minutes, one part of the reset link lifetime's reading, such as '30 minutes' in '1 hour, 30 minutes'.",
-    "placeholders": {
-      "count": {
-        "type": "int",
-        "example": "30"
       }
     }
   },
@@ -356,9 +268,109 @@
   "@mailTestNotSentFailed": {
     "description": "Shown when asking the server for a test email failed because it could not be reached or did not answer usefully."
   },
-  "signInGroupTitle": "Sign-in",
-  "@signInGroupTitle": {
-    "description": "Heading of the group of server settings about how people sign in."
+  "registrationGroupTitle": "Registration and sign-in",
+  "@registrationGroupTitle": {
+    "description": "Heading of the group of server settings about how people join the server and sign in: whether they may create an account, change their username or reset a forgotten password, how long a reset link works, and how a sign-in provider is linked to an account."
+  },
+  "registrationSignUpsLabel": "Let people create an account",
+  "@registrationSignUpsLabel": {
+    "description": "Label of the switch that lets people create their own account on the server."
+  },
+  "registrationUsernameChangeLabel": "Let people change their username",
+  "@registrationUsernameChangeLabel": {
+    "description": "Label of the switch that lets people change the username of their account."
+  },
+  "registrationPasswordResetsLabel": "Let people reset a forgotten password",
+  "@registrationPasswordResetsLabel": {
+    "description": "Label of the switch that lets people ask for a password reset link by email."
+  },
+  "registrationPasswordResetsSubtitle": "Reset links go out by email, through the Mail settings.",
+  "@registrationPasswordResetsSubtitle": {
+    "description": "Second line of the switch that lets people reset a forgotten password: the reset link is sent by email, so it needs the mail server set up in the Mail group of these settings."
+  },
+  "registrationLinkLifetimeLabel": "Reset link lifetime, in minutes",
+  "@registrationLinkLifetimeLabel": {
+    "description": "Label of the field for how long a password reset link works after it is sent, entered as a whole number of minutes."
+  },
+  "registrationLinkLifetimeHelper": "{readout}. From {min} to {max}.",
+  "@registrationLinkLifetimeHelper": {
+    "description": "Helper text under the reset link lifetime field: the entered number of minutes read in days, hours and minutes, then the limits the server allows, read the same way.",
+    "placeholders": {
+      "readout": {
+        "type": "String",
+        "example": "1 day, 1 hour"
+      },
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLinkLifetimeRange": "From {min} to {max}.",
+  "@registrationLinkLifetimeRange": {
+    "description": "Helper text under the reset link lifetime field while what is entered can't be read as a lifetime: the limits the server allows, read in days, hours and minutes.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "15 minutes"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLinkLifetimeInvalid": "Enter a whole number of minutes from {minMinutes} to {maxMinutes} ({max}).",
+  "@registrationLinkLifetimeInvalid": {
+    "description": "Validation message when the reset link lifetime field is blank, not a whole number, or out of range: the limits in minutes, then the upper limit read in days, hours and minutes.",
+    "placeholders": {
+      "minMinutes": {
+        "type": "int",
+        "example": "15"
+      },
+      "maxMinutes": {
+        "type": "int",
+        "example": "10080"
+      },
+      "max": {
+        "type": "String",
+        "example": "7 days"
+      }
+    }
+  },
+  "registrationLifetimeDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@registrationLifetimeDays": {
+    "description": "A number of days, one part of the reset link lifetime's reading, such as '1 day' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "registrationLifetimeHours": "{count, plural, =1{1 hour} other{{count} hours}}",
+  "@registrationLifetimeHours": {
+    "description": "A number of hours, one part of the reset link lifetime's reading, such as '1 hour' in '1 day, 1 hour'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "registrationLifetimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
+  "@registrationLifetimeMinutes": {
+    "description": "A number of minutes, one part of the reset link lifetime's reading, such as '30 minutes' in '1 hour, 30 minutes'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "30"
+      }
+    }
   },
   "signInLinkingLabel": "Linking a sign-in provider",
   "@signInLinkingLabel": {
@@ -384,20 +396,20 @@
   "@signInLinkingAutomaticWarning": {
     "description": "Warning under the linking menu while automatic linking is chosen: whoever controls a user's verified email address at a sign-in provider can then sign in as that user, even as the server's Owner (its most powerful role)."
   },
-  "signInSave": "Save sign-in settings",
-  "@signInSave": {
-    "description": "Button that saves the Sign-in group's settings to the server."
+  "registrationSave": "Save registration and sign-in settings",
+  "@registrationSave": {
+    "description": "Button that saves the Registration and sign-in group's settings to the server."
   },
-  "signInSaving": "Saving…",
-  "@signInSaving": {
-    "description": "Label of the save button while the Sign-in group's settings are being saved."
+  "registrationSaving": "Saving…",
+  "@registrationSaving": {
+    "description": "Label of the save button while the Registration and sign-in group's settings are being saved."
   },
-  "signInSaved": "Sign-in settings saved.",
-  "@signInSaved": {
-    "description": "Shown above the save button once the server has stored the Sign-in group's settings, until they are edited again."
+  "registrationSaved": "Registration and sign-in settings saved.",
+  "@registrationSaved": {
+    "description": "Shown above the save button once the server has stored the Registration and sign-in group's settings, until they are edited again."
   },
-  "signInNotSavedTitle": "Sign-in settings not saved",
-  "@signInNotSavedTitle": {
-    "description": "Heading of the message above the save button when saving the Sign-in group's settings failed."
+  "registrationNotSavedTitle": "Registration and sign-in settings not saved",
+  "@registrationNotSavedTitle": {
+    "description": "Heading of the message above the save button when saving the Registration and sign-in group's settings failed."
   }
 }
