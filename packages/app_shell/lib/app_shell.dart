@@ -20,6 +20,7 @@ export 'l10n/shell_localizations.dart';
 export 'src/admin/admin_section.dart';
 export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
+export 'src/bootstrap/local_data_in_use_error.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
 export 'src/bootstrap/run_bge_app.dart';
 export 'src/bootstrap/server_add_composition_error.dart';

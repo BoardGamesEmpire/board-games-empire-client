@@ -132,6 +132,9 @@ class _UnusedPlatformBootstrap implements PlatformBootstrap {
   bool get supportsReset => false;
 
   @override
+  bool countsTowardReset(Object error) => false;
+
+  @override
   Future<void> reset() => throw UnimplementedError();
 
   @override

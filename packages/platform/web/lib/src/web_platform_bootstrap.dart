@@ -202,6 +202,10 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   @override
   bool get supportsReset => false;
 
+  /// Web offers no reset yet, so no failure counts toward one.
+  @override
+  bool countsTowardReset(Object error) => false;
+
   @override
   Future<void> reset() async {
     throw UnsupportedError(

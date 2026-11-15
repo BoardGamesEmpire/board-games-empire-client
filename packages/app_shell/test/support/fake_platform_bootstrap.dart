@@ -41,6 +41,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
     List<Object> outcomes = const [],
     this.supportsReset = true,
     this.browserOwnsBack = false,
+    this.countsTowardResetWhen = _countsEveryFailure,
     this._orchestrator,
     this._activeServerScope,
     this.rootContainerOutcome,
@@ -58,6 +59,15 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   /// False by default, as on native (#611).
   @override
   final bool browserOwnsBack;
+
+  /// Decides [countsTowardReset]; every failure counts by default, as on
+  /// native.
+  final bool Function(Object error) countsTowardResetWhen;
+
+  static bool _countsEveryFailure(Object _) => true;
+
+  @override
+  bool countsTowardReset(Object error) => countsTowardResetWhen(error);
 
   /// Scripts [createRootContainer]; see the class docs.
   Object? rootContainerOutcome;

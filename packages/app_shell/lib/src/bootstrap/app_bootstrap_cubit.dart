@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/bootstrap/local_data_in_use_error.dart';
 import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
 import 'package:app_shell/src/bootstrap/server_add_composition_error.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -80,11 +81,12 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   bool _hydratedStorageReady = false;
   int _consecutiveFailures = 0;
 
-  /// The consecutive failures that count toward the reset offer: every
-  /// failure but a [ServerAddCompositionError], which zeroes it. That
-  /// error is raised only after `initialize` returned, so the meta
-  /// database opened on that attempt, and the failures before it say
-  /// nothing about the database any more (#218).
+  /// The failures that count toward the reset offer, maintained by
+  /// [_updateFailuresTowardReset]: those the platform says a reset could fix
+  /// (#793). A [ServerAddCompositionError] zeroes it: that error is raised
+  /// only after `initialize` returned, so the meta database opened on that
+  /// attempt, and the failures before it say nothing about the database any
+  /// more (#218).
   int _failuresTowardReset = 0;
   ServerOrchestrator? _orchestrator;
   ActiveServerScope? _activeServerScope;
@@ -126,13 +128,18 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     await _attempt();
   }
 
-  /// Destroys the device-local meta state via [PlatformBootstrap.reset],
-  /// then re-runs the bootstrap sequence with a fresh attempt counter.
+  /// Destroys the device-local data via [PlatformBootstrap.reset] (native's
+  /// meta state, web's server databases), then re-runs the bootstrap
+  /// sequence with a fresh attempt counter.
   ///
   /// Only valid while the reset offer is active
   /// ([AppBootstrapFailed.canOfferReset]); the calling UI must have
   /// obtained explicit user confirmation first. A no-op otherwise, for the
   /// same fire-and-forget reason as [retry].
+  ///
+  /// A reset that fails keeps the offer, since the data that failed is still
+  /// there, unless it failed with [LocalDataInUseError]: then the screen asks
+  /// the user to close the other tabs instead.
   Future<void> resetAndRetry() async {
     final current = state;
     if (isClosed || current is! AppBootstrapFailed || !current.canOfferReset) {
@@ -140,7 +147,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     }
     emit(const AppBootstrapInitializing());
     _logger.warn(
-      'User-confirmed destructive reset of device-local meta state',
+      'User-confirmed destructive reset of device-local data',
       context: {'failedAttempts': _consecutiveFailures},
     );
     try {
@@ -150,13 +157,13 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // window as _attempt, and the same reason to record nothing (#177).
       if (isClosed) return;
       _consecutiveFailures += 1;
-      _failuresTowardReset += 1;
+      _updateFailuresTowardReset(error);
       _logger.error(
         'Destructive reset failed',
         error: error,
         stackTrace: stackTrace,
       );
-      emit(_failedState(error));
+      emit(_failedState(error, failedReset: true));
       return;
     }
     _consecutiveFailures = 0;
@@ -318,9 +325,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // failure nobody can see or retry (#177).
       if (isClosed) return;
       _consecutiveFailures += 1;
-      _failuresTowardReset = error is ServerAddCompositionError
-          ? 0
-          : _failuresTowardReset + 1;
+      _updateFailuresTowardReset(error);
       _logger.error(
         'Bootstrap attempt failed',
         error: error,
@@ -350,17 +355,47 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     }
   }
 
+  /// Updates [_failuresTowardReset] for a failed attempt or a failed reset.
+  ///
+  /// A [ServerAddCompositionError] zeroes it (#218). A failure the platform
+  /// says a reset could fix adds one. Any other leaves it where it was, so
+  /// a failure that isn't about the stored data, such as being offline,
+  /// neither brings the offer closer nor throws away what was counted
+  /// (#793).
+  void _updateFailuresTowardReset(Object error) {
+    if (error is ServerAddCompositionError) {
+      _failuresTowardReset = 0;
+    } else if (_countsTowardReset(error)) {
+      _failuresTowardReset += 1;
+    }
+  }
+
+  /// A [LocalDataInUseError] is the reset's own failure: it says to close
+  /// the other tabs, so it neither counts nor offers the reset again on
+  /// that screen. Otherwise the platform decides.
+  bool _countsTowardReset(Object error) =>
+      error is! LocalDataInUseError &&
+      _platformBootstrap.countsTowardReset(error);
+
   /// A [ServerAddCompositionError] never offers the reset, whatever the
   /// count: deleting the meta database cannot fix a wiring defect (#218).
-  /// Nor does it count toward the offer; see [_failuresTowardReset].
-  AppBootstrapFailed _failedState(Object error) => AppBootstrapFailed(
-    error: error,
-    attemptCount: _consecutiveFailures,
-    canOfferReset:
-        error is! ServerAddCompositionError &&
-        _failuresTowardReset >= _resetOfferThreshold &&
-        _platformBootstrap.supportsReset,
-  );
+  /// Nor does any failure [PlatformBootstrap.countsTowardReset] rejects
+  /// (#793); see [_updateFailuresTowardReset]. A [failedReset] keeps the
+  /// offer whatever the platform says of its error, unless it is a
+  /// [LocalDataInUseError]: the reset was offered, and what it was offered
+  /// for is still there.
+  AppBootstrapFailed _failedState(Object error, {bool failedReset = false}) =>
+      AppBootstrapFailed(
+        error: error,
+        attemptCount: _consecutiveFailures,
+        canOfferReset:
+            error is! ServerAddCompositionError &&
+            (failedReset
+                ? error is! LocalDataInUseError
+                : _countsTowardReset(error)) &&
+            _failuresTowardReset >= _resetOfferThreshold &&
+            _platformBootstrap.supportsReset,
+      );
 
   static Future<void> _defaultHydratedStorageInitializer(
     PlatformBootstrap bootstrap,

@@ -154,12 +154,16 @@ void main() {
       bool canOfferReset = false,
       VoidCallback? onRetry,
       VoidCallback? onReset,
+      bool localDataInUse = false,
+      bool isWeb = false,
       ThemeData? theme,
     }) => _wrap(
       BootstrapErrorScreen(
         canOfferReset: canOfferReset,
         onRetry: onRetry ?? () {},
         onReset: onReset ?? () {},
+        localDataInUse: localDataInUse,
+        isWeb: isWeb,
       ),
       theme: theme,
     );
@@ -233,6 +237,44 @@ void main() {
 
       expect(resets, 1);
       expect(find.text('Delete local data?'), findsNothing);
+    });
+
+    testWidgets('with localDataInUse, says other tabs hold the data', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildScreen(localDataInUse: true));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('open in another tab or window'),
+        findsOneWidget,
+      );
+      expect(find.textContaining("couldn't finish starting"), findsNothing);
+    });
+
+    testWidgets('on web, the confirmation names unsent changes and not the '
+        'server list', (tester) async {
+      await tester.pumpWidget(buildScreen(canOfferReset: true, isWeb: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(BootstrapErrorScreen.resetButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining("changes that haven't reached your server yet"),
+        findsOneWidget,
+      );
+      expect(find.textContaining('list of servers'), findsNothing);
+    });
+
+    testWidgets('on native, the confirmation names the server list', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildScreen(canOfferReset: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(BootstrapErrorScreen.resetButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('list of servers'), findsOneWidget);
     });
 
     testWidgets('cancelling the confirmation performs no reset', (
