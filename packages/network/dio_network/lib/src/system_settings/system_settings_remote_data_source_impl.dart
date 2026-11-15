@@ -112,7 +112,9 @@ class SystemSettingsRemoteDataSourceImpl
   }
 
   static bool _isQueueUnavailable(int status, Object? body) =>
-      status == 503 && apiErrorField(body, 'code') == _queueUnavailableCode;
+      status == 503 &&
+      isApiErrorEnvelope(body, status) &&
+      apiErrorField(body, 'code') == _queueUnavailableCode;
 
   static void _validate(SystemSettingsPatch patch) {
     if (patch.isEmpty) {
@@ -244,16 +246,17 @@ final class _SystemSettingsFailures
         permanent: SystemSettingsPermanentException.new,
       );
 
-  /// The coded refusals arrive as `{ code, message }` with no envelope, so the
-  /// code is read whatever [RemoteRefusal.fromApi] says. A 403 needs the
-  /// envelope: without it the shared rules already called it not the API, and
-  /// it never reaches here. A retryable 409 never reaches here either.
+  /// The coded refusals arrive in the API's error envelope,
+  /// `{ statusCode, error, message, code }` (backend#1260), so a code is read
+  /// only when [RemoteRefusal.fromApi] says the body is the API's. A bare coded
+  /// body is not the API's. A retryable 409 never reaches here.
   @override
   SystemSettingsRemoteException? refused(RemoteRefusal refusal) {
     final status = refusal.status;
     final code = apiErrorField(refusal.body, 'code');
     final message = refusal.message;
     final cause = refusal.cause;
+    if (!refusal.fromApi) return null;
     if (status == 400 && code == 'SMTP_PASSWORD_REQUIRED') {
       return SmtpPasswordRequiredException(
         message,
@@ -268,7 +271,7 @@ final class _SystemSettingsFailures
         cause: cause,
       );
     }
-    if (status == 403 && refusal.fromApi) {
+    if (status == 403) {
       return SystemSettingsForbiddenException(
         message,
         statusCode: status,

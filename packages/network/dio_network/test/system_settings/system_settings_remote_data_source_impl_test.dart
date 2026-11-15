@@ -11,7 +11,19 @@ import 'package:network_interface/network_interface.dart';
 String _envelope(int status, String error, String message) =>
     jsonEncode({'statusCode': status, 'message': message, 'error': error});
 
-String _coded(String code) => jsonEncode({'code': code, 'message': 'x'});
+String _coded(String code, {required int status}) => jsonEncode({
+  'statusCode': status,
+  'error': switch (status) {
+    400 => 'Bad Request',
+    409 => 'Conflict',
+    503 => 'Service Unavailable',
+    _ => throw ArgumentError.value(status, 'status'),
+  },
+  'message': 'x',
+  'code': code,
+});
+
+String _bare(String code) => jsonEncode({'code': code, 'message': 'x'});
 
 Map<String, dynamic> _row({String smtpSecurity = 'StartTls'}) => {
   'id': 'row 1',
@@ -296,9 +308,12 @@ void main() {
     });
 
     test(
-      '400 SMTP_PASSWORD_REQUIRED, with no envelope, is its own failure',
+      '400 SMTP_PASSWORD_REQUIRED is its own failure',
       () {
-        final remote = answering(_coded('SMTP_PASSWORD_REQUIRED'), status: 400);
+        final remote = answering(
+          _coded('SMTP_PASSWORD_REQUIRED', status: 400),
+          status: 400,
+        );
 
         return expectLater(
           remote.update('r', const SystemSettingsPatch(smtpPort: 25)),
@@ -306,6 +321,15 @@ void main() {
         );
       },
     );
+
+    test('a bare 400 SMTP_PASSWORD_REQUIRED is not trusted', () {
+      final remote = answering(_bare('SMTP_PASSWORD_REQUIRED'), status: 400);
+
+      return expectLater(
+        remote.update('r', const SystemSettingsPatch(smtpPort: 25)),
+        throwsA(isA<SystemSettingsPermanentException>()),
+      );
+    });
 
     test('a validation envelope is permanent', () {
       final remote = answering(
@@ -383,7 +407,10 @@ void main() {
     });
 
     test('409 MAIL_NOT_CONFIGURED is its own failure', () {
-      final remote = answering(_coded('MAIL_NOT_CONFIGURED'), status: 409);
+      final remote = answering(
+        _coded('MAIL_NOT_CONFIGURED', status: 409),
+        status: 409,
+      );
 
       return expectLater(
         remote.sendMailTest(),
@@ -397,7 +424,7 @@ void main() {
         '${strict ? 'thrown' : 'returned'}',
         () {
           final remote = answering(
-            _coded('MAIL_QUEUE_UNAVAILABLE'),
+            _coded('MAIL_QUEUE_UNAVAILABLE', status: 503),
             status: 503,
             strict: strict,
           );
@@ -416,6 +443,34 @@ void main() {
       );
     }
 
+    test('a bare 409 MAIL_NOT_CONFIGURED is not trusted', () {
+      final remote = answering(_bare('MAIL_NOT_CONFIGURED'), status: 409);
+
+      return expectLater(
+        remote.sendMailTest(),
+        throwsA(isA<SystemSettingsPermanentException>()),
+      );
+    });
+
+    for (final strict in [false, true]) {
+      test(
+        'a bare 503 MAIL_QUEUE_UNAVAILABLE is not trusted, '
+        '${strict ? 'thrown' : 'returned'}',
+        () {
+          final remote = answering(
+            _bare('MAIL_QUEUE_UNAVAILABLE'),
+            status: 503,
+            strict: strict,
+          );
+
+          return expectLater(
+            remote.sendMailTest(),
+            throwsA(isA<SystemSettingsTransientException>()),
+          );
+        },
+      );
+    }
+
     test('a 503 without the code is transient', () {
       final remote = answering('<html>down</html>', status: 503);
 
@@ -426,7 +481,10 @@ void main() {
     });
 
     test('a 409 with another code is permanent', () {
-      final remote = answering(_coded('SOMETHING_ELSE'), status: 409);
+      final remote = answering(
+        _coded('SOMETHING_ELSE', status: 409),
+        status: 409,
+      );
 
       return expectLater(
         remote.sendMailTest(),

@@ -19,8 +19,9 @@ import 'package:models/domain.dart';
 /// | [update] | `PATCH /api/system-settings/:id` | the changed fields; `{ settings: {...} }` |
 /// | [sendMailTest] | `POST /api/system-settings/mail-test` | 202 `{ queued: true }`. The body isn't read |
 ///
-/// The coded failures below arrive as `{ code, message }` with no `statusCode`
-/// or `error`, so an implementation reads the `code` whatever the envelope.
+/// The coded failures below arrive in the API's error envelope, with a `code`
+/// beside it. A coded body without the envelope is not the API's, and gets no
+/// coded failure.
 ///
 /// ## Failures
 ///
