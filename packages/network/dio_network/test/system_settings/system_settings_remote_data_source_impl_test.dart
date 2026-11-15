@@ -43,9 +43,9 @@ Map<String, dynamic> _row({String smtpSecurity = 'StartTls'}) => {
   'feedbackReportServerRedactionEnabled': true,
   'requireContributionApproval': false,
   'contributionReclaimDays': 14,
-  'auditLogRetentionDays': null,
-  'householdInviteePolicy': 'Public',
-  'eventInviteePolicy': 'Public',
+  'auditLogRetentionDays': 30,
+  'householdInviteePolicy': 'FriendsOfFriends',
+  'eventInviteePolicy': 'Friends',
   'createdAt': '2026-10-01T10:30:00.000Z',
   'updatedAt': '2026-10-01T10:30:00.000Z',
 };
@@ -140,11 +140,29 @@ void main() {
           feedbackReportServerRedactionEnabled: true,
           requireContributionApproval: false,
           contributionReclaimDays: 14,
-          auditLogRetentionDays: null,
-          householdInviteePolicy: Reach.public,
-          eventInviteePolicy: Reach.public,
+          auditLogRetentionDays: 30,
+          householdInviteePolicy: Reach.friendsOfFriends,
+          eventInviteePolicy: Reach.friends,
         ),
       );
+    });
+
+    test('maps a null audit retention and an invitee policy it does not '
+        'offer', () async {
+      final remote = answering(
+        _settings({
+          ..._row(),
+          'auditLogRetentionDays': null,
+          'householdInviteePolicy': 'Private',
+          'eventInviteePolicy': 'Galaxy',
+        }),
+      );
+
+      final settings = await remote.fetch();
+
+      expect(settings.auditLogRetentionDays, isNull);
+      expect(settings.householdInviteePolicy, Reach.private);
+      expect(settings.eventInviteePolicy, Reach.unknown);
     });
 
     test('maps a security the client does not know to unknown', () async {
@@ -242,6 +260,16 @@ void main() {
           passwordResetLinkLifetimeMinutes: 15,
           allowPasswordResets: false,
           providerLinkingPolicy: ProviderLinkingPolicy.automaticWhenVerified,
+          name: 'Home',
+          allowUserRegistration: false,
+          allowUsernameChange: false,
+          feedbackReportRetentionDays: 7,
+          feedbackReportServerRedactionEnabled: false,
+          requireContributionApproval: true,
+          contributionReclaimDays: 3,
+          auditLogRetentionDays: SettingValue.set(30),
+          householdInviteePolicy: Reach.friendsOfFriends,
+          eventInviteePolicy: Reach.friends,
         ),
       );
 
@@ -252,7 +280,28 @@ void main() {
         'passwordResetLinkLifetimeMinutes': 15,
         'allowPasswordResets': false,
         'providerLinkingPolicy': 'AutomaticWhenVerified',
+        'name': 'Home',
+        'allowUserRegistration': false,
+        'allowUsernameChange': false,
+        'feedbackReportRetentionDays': 7,
+        'feedbackReportServerRedactionEnabled': false,
+        'requireContributionApproval': true,
+        'contributionReclaimDays': 3,
+        'auditLogRetentionDays': 30,
+        'householdInviteePolicy': 'FriendsOfFriends',
+        'eventInviteePolicy': 'Friends',
       });
+    });
+
+    test('a cleared audit retention is sent as null', () async {
+      final remote = answering(_settings());
+
+      await remote.update(
+        'r',
+        const SystemSettingsPatch(auditLogRetentionDays: SettingValue.clear()),
+      );
+
+      expect(adapter.sent.single.data, {'auditLogRetentionDays': null});
     });
 
     group('rejects, with nothing sent', () {
@@ -284,6 +333,32 @@ void main() {
         'a 256-character From': SystemSettingsPatch(
           mailFromAddress: SettingValue.set('a' * 256),
         ),
+        'an empty name': const SystemSettingsPatch(name: ''),
+        'a blank name': const SystemSettingsPatch(name: '   '),
+        'a 101-character name': SystemSettingsPatch(name: 'a' * 101),
+        for (final days in [0, 36501]) ...{
+          'feedback retention $days': SystemSettingsPatch(
+            feedbackReportRetentionDays: days,
+          ),
+          'reclaim days $days': SystemSettingsPatch(
+            contributionReclaimDays: days,
+          ),
+          'audit retention $days': SystemSettingsPatch(
+            auditLogRetentionDays: SettingValue.set(days),
+          ),
+        },
+        for (final reach in [
+          Reach.private,
+          Reach.extendedNetwork,
+          Reach.unknown,
+        ]) ...{
+          'household invitees ${reach.name}': SystemSettingsPatch(
+            householdInviteePolicy: reach,
+          ),
+          'event invitees ${reach.name}': SystemSettingsPatch(
+            eventInviteePolicy: reach,
+          ),
+        },
       };
       for (final entry in cases.entries) {
         test(entry.key, () async {
@@ -324,6 +399,25 @@ void main() {
         );
 
         expect(adapter.sent, hasLength(1));
+      });
+
+      test('accepts the new limits themselves', () async {
+        final remote = answering(_settings());
+
+        for (final patch in [
+          SystemSettingsPatch(name: 'a' * 100),
+          const SystemSettingsPatch(name: '  Home  '),
+          for (final days in [1, 36500])
+            SystemSettingsPatch(
+              feedbackReportRetentionDays: days,
+              contributionReclaimDays: days,
+              auditLogRetentionDays: SettingValue.set(days),
+            ),
+        ]) {
+          await remote.update('r', patch);
+        }
+
+        expect(adapter.sent, hasLength(4));
       });
     });
 
