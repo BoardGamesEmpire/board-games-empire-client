@@ -262,6 +262,9 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeStateSliver` | a hand-wrapped `SliverFillRemaining` around a state on a sliver page | Fills the rest of the page and centres the state; `hasScrollBody: false`, so a state taller than the room, at 200% text, scrolls with the page instead of overflowing it (#49) |
 | `BgeOfflineStrip` | nothing: the app showed no sign that it was offline, and an offline banner per page would have scrolled away and been rebuilt on every route | One strip at the top of the window, hosted by the shell, so it reaches every route; it takes the status-bar inset while it shows and no height while hidden; one merged live region whose label change announces; not focusable; motion through `BgeMotion.durationOf` (#49) |
 | `BgeOnlineOnly` (with `BgeOnlineOnlyLabel`, `BgeOnlineOnlyNote`, `BgeOnlineOnlyMenu`, `BgeOnlineOnlyPopupMenuItem`, and the `BgeConnectivityScope` they read) | a direct-write control that was live offline and failed on press, with only the failure banner to say why | Offline, the control is disabled and says why: the reason is its accessible hint, once, and drawn once per row or group; the same tree online and offline, so the control keeps its state; with no scope everything reads as online (#49) |
+| `BgeSyncBadge` | the household list's private "Not yet synced" badge and the offer page's plain-text reason, while collection and event rows said nothing of a change the server hadn't had (#47) | An icon and words, never colour alone: waiting in `BgeStatus.pending`'s colour and icon, stuck in `BgeStatus.conflict`'s; the icon is sized as the label's text is, and scales with it; the label wraps inside the row rather than overflowing it; drawn text with no node of its own, so the row's `MergeSemantics` reads it with the title. It goes under the row's details, never in `trailing`, which has no room for it at 200% text |
+| `BgeSyncMark` | nothing: a cover has no room for the badge's words (#47) | The badge's icon in its status colour, on a disc of `BgeStatusColors.onStatus` that keeps it legible over the picture; it adds nothing to the semantics tree, so the cover's own label carries the words, as it carries a stack's count |
+| `BgeSyncStatusScope` | nothing: a row knew only its own record's dirty and local-only flags, which can't say that a change will never send on its own (#47) | Plain data from the session's sync queue: the waiting and stuck counts, each null until its own read arrives and while its last read has failed, and the records the stuck changes name, which stand with the stuck count alone, so a row says stuck whatever the waiting count is doing. `stateOf` gives a row stuck, then waiting from its own flags, then nothing. A row depends on its record's id alone, so a count changing rebuilds no row, and a record getting stuck or unstuck rebuilds only that record's rows. With no scope, both counts are null and nothing is stuck, so a row still says waiting from its flags. A line that would say everything has synced needs both counts read as zero |
 
 ### Modals under the shell
 
@@ -826,6 +829,8 @@ legible body text on every surface role.
 - [ ] Arriving outcome banners are left to reveal themselves; `reveal: false`
       only for a persistent one
 - [ ] Status uses `BgeStatusColors` **with its icon**
+- [ ] Rows the sync queue owns show `BgeSyncBadge` from
+      `BgeSyncStatusScope.stateOf`
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast
 - [ ] A test file in the screen's package has a `group('accessibility audit')`
