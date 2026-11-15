@@ -19,7 +19,9 @@
 /// the executor is built.
 library;
 
+export 'src/composition/web_database_open_failure.dart';
 export 'src/composition/web_storage_installer.dart';
 
 export 'src/databases/wasm_executor_factory.dart';
+export 'src/databases/web_database_deletion.dart';
 export 'src/databases/web_storage_persistence.dart';

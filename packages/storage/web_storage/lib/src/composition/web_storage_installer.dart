@@ -1,8 +1,15 @@
+// The library is @experimental for its wire protocol; its API, this type
+// included, is documented stable. drift/isolate.dart, the other export,
+// needs dart:isolate.
+// ignore: experimental_member_use
+import 'package:drift/remote.dart' show DriftRemoteException;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:sqlite3/common.dart' show SqliteException;
 
+import 'package:web_storage/src/composition/web_database_open_failure.dart';
 import 'package:web_storage/src/databases/wasm_executor_factory.dart';
 
 /// Reports how much persistence the browser gave this session (#288).
@@ -51,7 +58,9 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 /// file, reopen, report) has no analogue here, because there is no key:
 /// web databases are plaintext by decision (#63, documented at
 /// [WebWasmExecutorFactory]). A corrupt web database is not a key mismatch
-/// and must not be silently deleted, so nothing is deleted here.
+/// and must not be silently deleted, so nothing is deleted here. A database
+/// that won't open throws [WebDatabaseOpenFailure]; deleting it is
+/// `deleteServerDatabases`, behind a confirmation the app layer owns (#793).
 class WebStorageInstaller {
   /// Creates the installer.
   ///
@@ -90,8 +99,13 @@ class WebStorageInstaller {
     // bootstrap and into a feature screen.
     try {
       await db.customSelect('SELECT 1').get();
-    } catch (_) {
+    } catch (error, stackTrace) {
       await _safeClose(db);
+      // Typed so the app layer can tell a database that won't open, which
+      // deleting it can fix, from any other failure (#793).
+      if (_isStoredDataFault(error)) {
+        Error.throwWithStackTrace(WebDatabaseOpenFailure(error), stackTrace);
+      }
       rethrow;
     }
 
@@ -133,6 +147,25 @@ class WebStorageInstaller {
       // Intentionally ignored; see above.
     }
   }
+
+  /// Whether [error], raised by the forced open, is about the stored database
+  /// rather than the engine (#793).
+  ///
+  /// The worker loads `sqlite3.wasm` and opens the storage lazily, on that
+  /// first query, so a missing or blocked wasm asset, or storage the browser
+  /// won't provide, fails there too, as a [DriftRemoteException]. Deleting
+  /// the database can't fix those. A database fault is a [SqliteException]
+  /// raised in the worker, which drift's shared worker sends back as its text
+  /// (measured on 2.35.4; protocol v4 can send it typed, so both count). An
+  /// error raised in this page, such as a `SchemaDowngradeError` from a
+  /// migration, or a [SqliteException] from a database hosted in the page, is
+  /// about the stored database too.
+  static bool _isStoredDataFault(Object error) => switch (error) {
+    DriftRemoteException(:final remoteCause) =>
+      remoteCause is SqliteException ||
+          '$remoteCause'.startsWith('SqliteException('),
+    _ => true,
+  };
 
   /// Closes a database whose open may have failed; drift can throw again from
   /// `close()` in that situation, which is irrelevant here.

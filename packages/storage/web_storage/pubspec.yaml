@@ -27,6 +27,11 @@ dependencies:
     path: ../../core/interfaces
   models:
     path: ../../core/models
+  # For SqliteException: drift's worker sends one back typed (protocol v4),
+  # which is how a failed open tells a database fault from a failed engine
+  # load (#793).
+  sqlite3: ^3.5.2
+  web: ^1.1.1
 
 dev_dependencies:
   # Shared ServerIdentity and AuthResponse test builders (#409).
