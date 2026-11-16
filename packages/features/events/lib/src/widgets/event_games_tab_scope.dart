@@ -438,6 +438,14 @@ class EventGamesTabController extends ChangeNotifier {
     final settled => settled,
   };
 
+  /// Whether the pool's [state] says what the viewer offers (#517): it holds
+  /// games read before, or a read of it has answered, as [drawnLoad] draws
+  /// it. Before a read has answered, an empty pool says nothing of what they
+  /// offer; while one is out, the last to end stands. Read by the
+  /// nominations' vote, on its rows and in a quick look (#957).
+  bool poolRead(EventGamesState state) =>
+      state.games.isNotEmpty || drawnLoad(state) == EventGamesLoad.loaded;
+
   /// Notes how the nominations' last read ended (#517), from [state] as the
   /// nominations' bloc emits it, whichever tab is showing then: what
   /// [drawnNominationsLoad] draws while the next read is out. A state with a
@@ -588,8 +596,10 @@ class EventGamesTabController extends ChangeNotifier {
   /// focus, or as the write on it that was out ends, or as the whole list's
   /// read after that write does, where the write's own read of the row
   /// failed ([_readsWhole]), hands focus on once
-  /// that frame has ended: to the first control of the next row shown that
-  /// has one, else of the one before it, else Filters, where it is built.
+  /// that frame has ended: to the first control of the next row shown past
+  /// its head (#957), as the rows are worked through one after another
+  /// (#946), or its head where it has nothing else; else of the one before
+  /// it; else Filters, where it is built.
   /// The writes that can take their row away are a vote, as one voted on
   /// under "Not voted yet" leaves, a withdrawal, and a host's approval,
   /// rejection or close of a vote (#518), each of which changes the row's
@@ -598,7 +608,7 @@ class EventGamesTabController extends ChangeNotifier {
   /// which moves no input focus, is handed on too. It moves focus only while
   /// focus is free then: on nothing, on the page, or still on the row that
   /// left. A row that stays keeps its own focus, as Withdraw's and a host's
-  /// decision's hand it to the row's lines. Only while the Nominations
+  /// decision's hand it to the row's head. Only while the Nominations
   /// sub-tab is chosen (#945): on Pool the nominations' rows aren't built,
   /// so nothing is handed on. Nor while a quick look is open (#957), where
   /// each row that leaves notes where it left from instead
@@ -693,12 +703,18 @@ class EventGamesTabController extends ChangeNotifier {
       if (_quickLooks > 0) return;
       if (!focusIsFree(context, untouched: held)) return;
       for (final nomination in _from(shownAfter, at)) {
-        final target =
-            _nominationAreas[nomination.id]?.traversalDescendants.firstOrNull;
-        if (target != null) {
-          target.requestFocus();
-          return;
-        }
+        final controls = [
+          ...?_nominationAreas[nomination.id]?.traversalDescendants,
+        ];
+        if (controls.isEmpty) continue;
+        // Past the row's head, which opens its quick look (#957), so the
+        // next row's vote or decision is a press away as the rows are worked
+        // through one after another (#946); the head where it has nothing
+        // else.
+        final head = _rowHeads[NominationEntry(nomination.id)];
+        (controls.where((node) => node != head).firstOrNull ?? controls.first)
+            .requestFocus();
+        return;
       }
       // Only where it is built: a node asked while it isn't would take focus
       // whenever it is built again, as the Games tab is shown again.

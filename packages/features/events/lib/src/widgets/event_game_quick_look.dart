@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/bloc/event_actions_bloc.dart';
@@ -113,12 +115,12 @@ Future<void> showEventGameQuickLook(
 /// needs the bounded box the pop-up gives it.
 ///
 /// Every form shares one frame: the cover and the name as its heading, the
-/// form's lines and controls, the outcome banners, then View game, which
-/// opens the game's page ([EventGamesTabController.openGame]) from the
-/// quick look's own context, as Home's does: the row it was opened from can
-/// leave while it is open. The quick look stays until the page has arrived
-/// over it (`showBgePopup`). Without a way to the page there is no View
-/// game.
+/// form's lines as one node and its controls, one online-only note for its
+/// writes while offline, the outcome banners, then View game, which opens
+/// the game's page ([EventGamesTabController.openGame]) from the quick
+/// look's own context, as Home's does: the row it was opened from can leave
+/// while it is open. The quick look stays until the page has arrived over it
+/// (`showBgePopup`). Without a way to the page there is no View game.
 ///
 /// ## An offered copy
 ///
@@ -135,23 +137,57 @@ Future<void> showEventGameQuickLook(
 /// Take back arms the tab's hand-off as the row's does
 /// ([EventGamesTabController.armTakeBack]).
 ///
+/// ## A nomination
+///
+/// The game's name; then, as one node, every line the nomination's row says
+/// under it ([nominationLines]): its platform, who nominated it, whose copy
+/// it is, whether it is for the whole event or one date, where it stands,
+/// its tally, spoken without the symbols between the counts, how the event
+/// counts Interested, the viewer's vote where no vote control shows it, when
+/// voting closes, and why it is paused. Under them, at full width, the
+/// viewer's vote while it is open ([nominationVoteControl]); then *Who
+/// voted*, Withdraw and a host's decisions, as the row builds them, from the
+/// same inputs ([nominationRowInputs]) and under the same rules: each write
+/// disabled offline, saying why, with one [BgeOnlineOnlyNote] under them
+/// where the vote's own doesn't say it, held through its own press, and sent
+/// only once a running detail read has ended ([withdrawNomination],
+/// [decideNomination], [sendVote]). *Who voted* opens its list over the
+/// quick look and takes focus back as it closes. What follows the clock, the
+/// deadline's line and the dates' names, moves on as the page does.
+///
+/// A write's answer takes the nomination's place, so the quick look stays,
+/// as Withdrawn or as decided, and the button whose write it was goes with
+/// it. Focus stays in the quick look: once the frame that took the button
+/// away has ended, the lines take it, as one node, which reads the new
+/// status, as the row's head does on the row. They take it only while focus
+/// is free then, on nothing, on the quick look, or still on the button, and
+/// however the button was pressed, a screen reader's activation included.
+/// They are no stop of their own: Tab goes on from them, and they can't
+/// take focus again until the next such write hands it to them. Their ring
+/// shows for focus a key press gave, and not for a press of a mouse or a
+/// trackpad on the button ([BgePointerFocus]). A write that leaves its
+/// button there, refused or failed, leaves focus on it.
+///
 /// ## Outcomes
 ///
 /// The page's footer says how a write went, under the pop-up's barrier,
 /// which hides it from a screen reader. So under its controls the quick
 /// look shows the same banners ([EventPoolOutcomeBanner],
 /// [EventNominationsOutcomeBanner]) for the outcomes that land while it is
-/// open: the pool's, for Take back, and the nominations', for Nominate. An
-/// outcome already showing as it opened isn't said again. The footer still
-/// shows each, under the barrier, so a screen reader hears it once.
+/// open. An offered copy's shows the pool's, for Take back, and the
+/// nominations', for Nominate; a nomination's, the nominations', its own
+/// list's. An outcome already showing as it opened isn't said again. The
+/// footer still shows each, under the barrier, so a screen reader hears it
+/// once.
 ///
 /// ## Its entry leaves
 ///
 /// Where the pool no longer holds the copy, taken back from here or by
-/// anyone else, or the event is no longer shown, it says so in a live
-/// region, under the heading, and offers nothing to press, as Home's does
-/// when its game goes (#707). As it closes, the tab hands focus to the row
-/// in the copy's place ([EventGamesTabController.focusAfterQuickLook]).
+/// anyone else, or the nominations no longer hold the nomination, as a read
+/// finds, or the event is no longer shown, it says so in a live region,
+/// under the heading, and offers nothing to press, as Home's does when its
+/// game goes (#707). As it closes, the tab hands focus to the row in the
+/// entry's place ([EventGamesTabController.focusAfterQuickLook]).
 class EventGameQuickLook extends StatefulWidget {
   const EventGameQuickLook({
     required this.entry,
@@ -178,6 +214,10 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
 
   /// The copy as the pool last held it, for the heading once it has gone.
   OfferedGame? _copy;
+
+  /// The nomination as the nominations last held it, for the heading once
+  /// it has gone.
+  EventNomination? _nomination;
 
   /// Holds the quick look's Take back, which the row's own area can't, as
   /// one node holds one control.
@@ -210,57 +250,67 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
 
   /// The form [EventGameQuickLook.entry] takes, built from the blocs as they
   /// stand.
-  Widget _blocs(BuildContext context) =>
-      BlocBuilder<EventDetailBloc, EventDetailState>(
-        builder: (context, detail) =>
-            BlocBuilder<EventGamesBloc, EventGamesState>(
-              builder: (context, games) =>
-                  BlocBuilder<EventNominationsBloc, EventNominationsState>(
-                    builder: (context, nominations) =>
-                        BlocBuilder<EventActionsBloc, EventActionsState>(
-                          builder: (context, actions) => switch (widget.entry) {
-                            OfferedCopyEntry(:final offeredGameId) =>
-                              _offeredCopy(
-                                context,
-                                offeredGameId,
-                                detail: detail,
-                                games: games,
-                                nominations: nominations,
-                                acting: eventScreenActing(actions),
-                              ),
-                            // Nothing opens one until its row has a head.
-                            NominationEntry() => throw UnimplementedError(
-                              "A nomination's quick look (#957)",
-                            ),
-                          },
-                        ),
-                  ),
-            ),
-      );
+  Widget _blocs(
+    BuildContext context,
+  ) => BlocBuilder<EventDetailBloc, EventDetailState>(
+    builder: (context, detail) => BlocBuilder<EventGamesBloc, EventGamesState>(
+      builder: (context, games) =>
+          BlocBuilder<EventNominationsBloc, EventNominationsState>(
+            builder: (context, nominations) =>
+                BlocBuilder<EventActionsBloc, EventActionsState>(
+                  builder: (context, actions) => switch (widget.entry) {
+                    OfferedCopyEntry(:final offeredGameId) => _offeredCopy(
+                      context,
+                      offeredGameId,
+                      detail: detail,
+                      games: games,
+                      nominations: nominations,
+                      acting: eventScreenActing(actions),
+                    ),
+                    NominationEntry(:final nominationId) => _nominationOf(
+                      context,
+                      nominationId,
+                      detail: detail,
+                      games: games,
+                      nominations: nominations,
+                      acting: eventScreenActing(actions),
+                    ),
+                  },
+                ),
+          ),
+    ),
+  );
 
-  /// The banners for the outcomes that landed since the quick look opened:
-  /// the pool's, then the nominations'.
-  List<Widget> _outcomes({
+  /// The pool's banner, for an outcome that landed since the quick look
+  /// opened, else null.
+  Widget? _poolOutcome({
     required EventGamesState games,
     required EventNominationsState nominations,
     required String? viewerId,
     required Map<String, String?> names,
   }) {
     final pool = games.outcome;
+    if (pool == null ||
+        identical(pool, _poolOpenedWith) ||
+        !EventPoolOutcomeBanner.says(pool)) {
+      return null;
+    }
+    return EventPoolOutcomeBanner(
+      outcome: pool,
+      nominations: nominations.nominations,
+      viewerId: viewerId,
+      names: names,
+    );
+  }
+
+  /// The nominations' banner, for an outcome that landed since the quick
+  /// look opened, else null.
+  Widget? _nominationsOutcome(EventNominationsState nominations) {
     final nominated = nominations.outcome;
-    return [
-      if (pool != null &&
-          !identical(pool, _poolOpenedWith) &&
-          EventPoolOutcomeBanner.says(pool))
-        EventPoolOutcomeBanner(
-          outcome: pool,
-          nominations: nominations.nominations,
-          viewerId: viewerId,
-          names: names,
-        ),
-      if (nominated != null && !identical(nominated, _nominationsOpenedWith))
-        EventNominationsOutcomeBanner(outcome: nominated),
-    ];
+    if (nominated == null || identical(nominated, _nominationsOpenedWith)) {
+      return null;
+    }
+    return EventNominationsOutcomeBanner(outcome: nominated);
   }
 
   /// The quick look of the offered copy [id].
@@ -403,12 +453,63 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
           ),
       ],
       note: notGoing,
-      outcomes: _outcomes(
-        games: games,
-        nominations: nominations,
-        viewerId: viewerId,
-        names: names,
+      // Both are writes.
+      offlineNote: nominate != null || takeBack != null,
+      // The pool's, for Take back, then the nominations', for Nominate.
+      outcomes: [
+        ?_poolOutcome(
+          games: games,
+          nominations: nominations,
+          viewerId: viewerId,
+          names: names,
+        ),
+        ?_nominationsOutcome(nominations),
+      ],
+      onOpenGame: openGame == null
+          ? null
+          : () => openGame(this.context, shown.gameId),
+    );
+  }
+
+  /// The quick look of the nomination [id].
+  Widget _nominationOf(
+    BuildContext context,
+    String id, {
+    required EventDetailState detail,
+    required EventGamesState games,
+    required EventNominationsState nominations,
+    required bool acting,
+  }) {
+    final l10n = EventsLocalizations.of(context);
+    final controller = EventGamesTabScope.of(context);
+    final shown = detail is EventDetailReady
+        ? nominations.nominations.where((each) => each.id == id).firstOrNull
+        : null;
+    final nomination = _nomination = shown ?? _nomination;
+    if (shown == null || detail is! EventDetailReady) {
+      return _QuickLookFrame(
+        thumbnail: nomination?.thumbnail,
+        name: nomination?.title ?? widget.title,
+        gone: l10n.eventsQuickLookNominationGone,
+      );
+    }
+
+    final openGame = controller.openGame;
+    return _NominationLook(
+      nomination: shown,
+      viewerId: detail.detail.attendance?.id,
+      names: poolNames(detail.detail),
+      inputs: nominationRowInputs(
+        nomination: shown,
+        detail: detail,
+        state: nominations,
+        pool: games.games,
+        poolRead: controller.poolRead(games),
+        acting: acting,
       ),
+      now: controller.clock(),
+      // Its own list's: every write in it is a nominations write.
+      outcomes: [?_nominationsOutcome(nominations)],
       onOpenGame: openGame == null
           ? null
           : () => openGame(this.context, shown.gameId),
@@ -416,21 +517,268 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   }
 }
 
+/// A nomination's quick look (#957): see "A nomination" on
+/// [EventGameQuickLook]. Built again with the nomination as each read or
+/// write leaves it, so it can tell when the write one of its buttons sent
+/// has ended, as the nomination's row does.
+class _NominationLook extends StatefulWidget {
+  const _NominationLook({
+    required this.nomination,
+    required this.viewerId,
+    required this.names,
+    required this.inputs,
+    required this.now,
+    required this.outcomes,
+    required this.onOpenGame,
+  });
+
+  final EventNomination nomination;
+
+  /// The viewer's roster row id, where they have one.
+  final String? viewerId;
+
+  /// The roster's names, by row id.
+  final Map<String, String?> names;
+
+  /// What it is built from, as the row is ([nominationRowInputs]).
+  final NominationRowInputs inputs;
+  final DateTime now;
+
+  /// The banners of the outcomes that landed while it is open.
+  final List<Widget> outcomes;
+
+  /// Opens the game's page.
+  final VoidCallback? onOpenGame;
+
+  /// Whether it carries the button that sends [write]: Withdraw, or one of
+  /// a host's decisions.
+  bool offers(NominationWrite write) => offersNominationWrite(
+    write,
+    nomination,
+    inputs.writes,
+    viewerId: viewerId,
+  );
+
+  @override
+  State<_NominationLook> createState() => _NominationLookState();
+}
+
+class _NominationLookState extends State<_NominationLook>
+    with BgePointerFocus<_NominationLook> {
+  /// The lines, as one node: where focus goes once the button whose write
+  /// just ended has gone with it. They take focus only then, and are no stop
+  /// of their own.
+  final FocusNode _lines = FocusNode(
+    debugLabel: 'Quick look nomination',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// Holds each write button, Withdraw and a host's decisions, by the write
+  /// it sends, so the quick look can tell whether one holds focus.
+  final Map<NominationWrite, FocusNode> _areas = {
+    for (final write in [
+      NominationWrite.withdraw,
+      for (final decision in NominationDecision.values) decision.write,
+    ])
+      write: FocusNode(
+        debugLabel: 'Quick look ${write.name}',
+        canRequestFocus: false,
+        skipTraversal: true,
+      ),
+  };
+
+  /// The write a button's press sent, which hasn't ended yet.
+  NominationWrite? _sent;
+
+  @override
+  void didUpdateWidget(_NominationLook oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Built again with no nominations write out: the write the press sent
+    // has ended, and its answer, if any, is in this quick look.
+    final sent = _sent;
+    if (sent == null || widget.inputs.writes.busy) return;
+    _sent = null;
+    // Its button stays, as after a refusal, and keeps its own focus.
+    if (widget.offers(sent)) return;
+    // The button is still built, and goes with this frame, as may the
+    // other write buttons.
+    final held = _areas.values.any((area) => area.hasFocus)
+        ? FocusManager.instance.primaryFocus
+        : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !focusIsFree(context, untouched: held)) return;
+      _lines
+        ..canRequestFocus = true
+        ..requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _lines.dispose();
+    for (final area in _areas.values) {
+      area.dispose();
+    }
+    super.dispose();
+  }
+
+  /// The press of the button that sends [write], Withdraw or a host's
+  /// decision: [send] asks, and sends it ([withdrawNomination],
+  /// [decideNomination]). Completes true when the write was sent, which arms
+  /// the hand-off as it ends.
+  Future<bool> _pressed(
+    NominationWrite write,
+    Future<bool> Function() send,
+  ) async {
+    final sent = await send();
+    if (sent && mounted) _sent = write;
+    return sent;
+  }
+
+  void _linesFocusChanged(bool focused) {
+    if (focused) return;
+    // A stop only while it holds the focus handed to it. Once this change
+    // has been told: a node marked while the focus manager tells its nodes
+    // is cleared with them, and its Focus never hears.
+    scheduleMicrotask(() {
+      if (mounted && !_lines.hasFocus) _lines.canRequestFocus = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nomination = widget.nomination;
+    final l10n = EventsLocalizations.of(context);
+    final tokens = BgeTokens.of(context);
+    final viewerId = widget.viewerId;
+    final inputs = widget.inputs;
+    final writes = inputs.writes;
+    final control = nominationVoteControl(
+      context,
+      nomination,
+      voting: inputs.voting,
+      viewerId: viewerId,
+    );
+    // The button that sends [write], labelled [label] and named to a
+    // screen reader [named], on [key].
+    Widget button(
+      NominationWrite write, {
+      required Key key,
+      required String label,
+      required String named,
+      required IconData icon,
+      required Future<bool> Function() send,
+    }) => NominationWriteButton(
+      // Keyed by its write, so each keeps its own state and focus as the
+      // others come and go.
+      key: ValueKey<NominationWrite>(write),
+      buttonKey: key,
+      label: label,
+      named: named,
+      icon: icon,
+      area: _areas[write]!,
+      enabled: writes.enabled,
+      runOver: !writes.busy,
+      onPressed: () => _pressed(write, send),
+      onPointerDown: notePointerPress,
+    );
+    final title = nomination.title;
+    // Withdraw, then a host's decisions (#518), as on the row.
+    final buttons = [
+      if (offersWithdraw(nomination, writes, viewerId: viewerId))
+        button(
+          NominationWrite.withdraw,
+          key: EventDetailScreen.quickLookWithdrawKey,
+          label: l10n.eventsWithdraw,
+          named: l10n.eventsWithdrawNamed(title),
+          icon: Icons.playlist_remove,
+          send: () => withdrawNomination(context, nomination),
+        ),
+      for (final decision in offeredDecisions(nomination, writes))
+        button(
+          decision.write,
+          key: decision.quickLookKey,
+          label: decision.label(l10n),
+          named: decision.named(l10n, title),
+          icon: decision.icon,
+          send: () => decideNomination(
+            context,
+            nomination,
+            decision,
+            interestedWeight: inputs.interestedWeight,
+          ),
+        ),
+    ];
+    final whoVoted = nomination.votes.isEmpty
+        ? null
+        : WhoVotedButton(
+            buttonKey: EventDetailScreen.quickLookVotersKey,
+            nomination: nomination,
+            names: widget.names,
+            rosterShown: inputs.rosterShown,
+            viewerId: viewerId,
+          );
+
+    return _QuickLookFrame(
+      thumbnail: nomination.thumbnail,
+      name: title,
+      lines: nominationLines(
+        context,
+        nomination,
+        inputs: inputs,
+        viewerId: viewerId,
+        names: widget.names,
+        voteShown: control != null,
+        now: widget.now,
+      ),
+      // Their own node, which takes focus only when handed it.
+      wrapLines: (lines) => BgeFocusRing(
+        borderRadius: BorderRadius.circular(tokens.radiusSm),
+        suppressed: pointerFocus,
+        builder: (context, onFocusChange) => Focus(
+          key: EventDetailScreen.quickLookLinesKey,
+          focusNode: _lines,
+          onFocusChange: (focused) {
+            onFocusChange(focused);
+            _linesFocusChanged(focused);
+          },
+          // Inset from the ring, which would otherwise run through the
+          // first letter of each line.
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spaceSm),
+            child: lines,
+          ),
+        ),
+      ),
+      vote: control,
+      controls: [?whoVoted, ...buttons],
+      // Once for its writes: the vote's says it where it is built.
+      offlineNote: buttons.isNotEmpty && control == null,
+      outcomes: widget.outcomes,
+      onOpenGame: widget.onOpenGame,
+    );
+  }
+}
+
 /// The frame every form of the quick look shares (#957): the cover beside
 /// the name, as its heading; then, while the entry is there, [lines] as one
-/// node, [controls] in a row that wraps, [note] under them, drawn only, as
-/// their hints say it, and one online-only note while offline, then
-/// [outcomes], then View game where [onOpenGame] is given. Where the entry
-/// has gone, [gone] in a live region in place of them all, so nothing is
-/// left to press.
+/// node, [vote] under them at full width, [controls] in a row that wraps,
+/// [note] under them, drawn only, as their hints say it, and one online-only
+/// note while offline where [offlineNote] asks for it, then [outcomes], then
+/// View game where [onOpenGame] is given. Where the entry has gone, [gone]
+/// in a live region in place of them all, so nothing is left to press.
 class _QuickLookFrame extends StatelessWidget {
   const _QuickLookFrame({
     required this.thumbnail,
     required this.name,
     this.gone,
     this.lines = const [],
+    this.wrapLines,
+    this.vote,
     this.controls = const [],
     this.note,
+    this.offlineNote = false,
     this.outcomes = const [],
     this.onOpenGame,
   });
@@ -443,11 +791,22 @@ class _QuickLookFrame extends StatelessWidget {
 
   final List<Widget> lines;
 
-  /// The entry's writes, each a node of its own.
+  /// Wraps the lines inside their one node, as a form whose lines take
+  /// focus gives them a node and a ring of their own.
+  final Widget Function(Widget lines)? wrapLines;
+
+  /// A nomination's vote, under the lines at full width.
+  final Widget? vote;
+
+  /// The entry's other controls, each a node of its own.
   final List<Widget> controls;
 
   /// Why one of [controls] can't be pressed, which its hint already says.
   final String? note;
+
+  /// Whether one online-only note goes under [controls] while offline: they
+  /// hold a write whose reason nothing else under them says.
+  final bool offlineNote;
 
   /// The banners of the outcomes that landed while it is open, each keyed
   /// by its own outcome.
@@ -463,8 +822,13 @@ class _QuickLookFrame extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final gone = this.gone;
     final note = this.note;
+    final vote = this.vote;
     final onOpenGame = this.onOpenGame;
     final offline = BgeConnectivityScope.offlineOf(context);
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines,
+    );
 
     return SingleChildScrollView(
       key: EventDetailScreen.quickLookKey,
@@ -500,12 +864,8 @@ class _QuickLookFrame extends StatelessWidget {
             )
           else ...[
             if (lines.isNotEmpty)
-              MergeSemantics(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: lines,
-                ),
-              ),
+              MergeSemantics(child: wrapLines?.call(column) ?? column),
+            ?vote,
             if (controls.isNotEmpty)
               Wrap(
                 spacing: tokens.spaceSm,
@@ -523,7 +883,7 @@ class _QuickLookFrame extends StatelessWidget {
                 ),
               ),
             // Once for its writes, which each carry it as their hint.
-            if (offline && controls.isNotEmpty) const BgeOnlineOnlyNote(),
+            if (offline && offlineNote) const BgeOnlineOnlyNote(),
             ...outcomes,
             if (onOpenGame != null)
               Align(

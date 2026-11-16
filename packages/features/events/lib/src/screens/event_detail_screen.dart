@@ -578,6 +578,36 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.quick_look_take_back',
   );
 
+  /// Key on a nomination row's cover and lines, the button that opens its
+  /// quick look (#957), by the nomination's id.
+  static Key nominationRowHeadKey(String nominationId) =>
+      Key('event_detail.nomination_row_head_$nominationId');
+
+  /// Key on a nomination's quick look's lines, the one node they are read
+  /// as, which takes focus when a write's button goes with its write (#957).
+  static const Key quickLookLinesKey = Key('event_detail.quick_look_lines');
+
+  /// Key on the Withdraw in a nomination's quick look (#957).
+  static const Key quickLookWithdrawKey = Key(
+    'event_detail.quick_look_withdraw',
+  );
+
+  /// Key on a host's Approve in a nomination's quick look (#957).
+  static const Key quickLookApproveKey = Key(
+    'event_detail.quick_look_approve',
+  );
+
+  /// Key on a host's Reject in a nomination's quick look (#957).
+  static const Key quickLookRejectKey = Key('event_detail.quick_look_reject');
+
+  /// Key on a host's Close vote in a nomination's quick look (#957).
+  static const Key quickLookCloseVoteKey = Key(
+    'event_detail.quick_look_close_vote',
+  );
+
+  /// Key on *Who voted* in a nomination's quick look (#957).
+  static const Key quickLookVotersKey = Key('event_detail.quick_look_voters');
+
   /// Key on one choice of the nominate dialog (#517): the date's id, or
   /// null for the whole event.
   static Key nominateScopeKey(String? occurrenceId) =>

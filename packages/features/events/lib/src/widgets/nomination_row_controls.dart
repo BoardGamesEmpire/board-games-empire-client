@@ -65,6 +65,13 @@ enum NominationDecision {
     resolve => EventDetailScreen.nominationCloseVoteKey(id),
   };
 
+  /// Its button's key in a nomination's quick look (#957).
+  Key get quickLookKey => switch (this) {
+    approve => EventDetailScreen.quickLookApproveKey,
+    reject => EventDetailScreen.quickLookRejectKey,
+    resolve => EventDetailScreen.quickLookCloseVoteKey,
+  };
+
   /// Its button's label.
   String label(EventsLocalizations l10n) => switch (this) {
     approve => l10n.eventsApprove,
@@ -92,6 +99,305 @@ enum NominationDecision {
     reject => l10n.eventsRejectConfirm,
     resolve => l10n.eventsCloseVoteConfirm,
   };
+}
+
+/// What the viewer's vote on an open nomination needs: the line above it,
+/// and whether it may be pressed now ([NominationVoteControl.enabled] and
+/// [NominationVoteControl.busy]).
+typedef NominationVoting = ({VoteHint? hint, bool enabled, bool busy});
+
+/// What a nomination's write buttons need, Withdraw (#517) and a host's
+/// decisions (#518): whether the viewer may withdraw their own nominations,
+/// the decisions their actions hold, whether these may be pressed now,
+/// connection aside ([NominationWriteButton.enabled]), and whether a
+/// nominations write is out.
+typedef NominationRowWrites = ({
+  bool withdraw,
+  Set<NominationDecision> decisions,
+  bool enabled,
+  bool busy,
+});
+
+/// What a nomination's row is built from, and its quick look (#957): the
+/// viewer's vote where they may vote, else null; the write buttons'
+/// arguments; the pool row the nominated copy comes from, or null where the
+/// pool doesn't hold it; the event's dates, one of which it may be for; how
+/// the event counts Interested, or null where its policy isn't known; and
+/// whether who voted may name the voters, false where the roster was read
+/// and withheld.
+typedef NominationRowInputs = ({
+  NominationVoting? voting,
+  NominationRowWrites writes,
+  OfferedGame? copy,
+  List<EventOccurrence> occurrences,
+  InterestedWeight? interestedWeight,
+  bool rosterShown,
+});
+
+/// What [nomination]'s row is built from (#957), from the detail, the
+/// nominations' [state], the [pool] as last read and whether it says what
+/// the viewer offers ([poolRead]), and whether the screen is [acting]
+/// (`eventScreenActing`): one place, so the row and its quick look offer
+/// the same votes and writes under the same rules.
+///
+/// A vote where the viewer's actions hold [EventAction.voteGame], they have
+/// a row on the roster and the event takes writes ([takesDateWrites]: not
+/// cancelled or archived), with the line [voteHintFor] gives above it: the
+/// one about offering a game only once [poolRead]. Withdraw where their
+/// actions hold [EventAction.nominateGame], on the same terms, and each of a
+/// host's decisions their actions hold, on an event that takes writes. As
+/// the tab's other writes are (#589), none may be pressed while a detail
+/// read runs or the screen is acting, and Withdraw and the decisions not
+/// while a nominations write is out either; a vote's control holds itself
+/// through the nominations' own writes.
+NominationRowInputs nominationRowInputs({
+  required EventNomination nomination,
+  required EventDetailReady detail,
+  required EventNominationsState state,
+  required List<OfferedGame> pool,
+  required bool poolRead,
+  required bool acting,
+}) {
+  final snapshot = detail.detail.snapshot;
+  final viewerId = detail.detail.attendance?.id;
+  // No vote, no Withdraw and no host decision on an event that takes no
+  // writes, cancelled or archived, as no Nominate.
+  final takesWrites = takesDateWrites(snapshot.event);
+  final mayVote =
+      takesWrites &&
+      detail.actions.contains(EventAction.voteGame) &&
+      viewerId != null;
+  final hint = voteHintFor(detail, pool: pool);
+
+  return (
+    voting: mayVote
+        ? (
+            hint: hint == VoteHint.countsWhenOffering && !poolRead
+                ? null
+                : hint,
+            // As the tab's other writes are (#589): not while a detail read
+            // runs, or the screen's own request is out or the event is
+            // deleted. The nominations' own writes are the control's to hold.
+            enabled: !detail.reading && !acting,
+            busy: state.busy,
+          )
+        : null,
+    // Withdraw (#517), on the viewer's own live rows, and a host's decisions
+    // (#518), on the rows they settle. As a vote is, not while a detail read
+    // runs or the screen's own request is out, nor while another
+    // nominations write is out.
+    writes: (
+      withdraw:
+          takesWrites &&
+          detail.actions.contains(EventAction.nominateGame) &&
+          viewerId != null,
+      decisions: {
+        if (takesWrites)
+          for (final decision in NominationDecision.values)
+            if (detail.actions.contains(decision.action)) decision,
+      },
+      enabled: !detail.reading && !acting && !state.busy,
+      busy: state.busy,
+    ),
+    copy: pool
+        .where((game) => game.id == nomination.suppliedFromId)
+        .firstOrNull,
+    occurrences: snapshot.occurrences,
+    interestedWeight: snapshot.policy?.interestedWeight,
+    // A roster read and withheld is an empty list; one not read yet is null,
+    // and withholds nothing.
+    rosterShown: !(snapshot.attendees?.isEmpty ?? false),
+  );
+}
+
+/// Whether [nomination] carries Withdraw (#517): the viewer, by their roster
+/// row [viewerId], may withdraw ([writes]), and it is their own live
+/// nomination.
+bool offersWithdraw(
+  EventNomination nomination,
+  NominationRowWrites writes, {
+  required String? viewerId,
+}) =>
+    writes.withdraw &&
+    viewerId != null &&
+    nomination.nominatedById == viewerId &&
+    nomination.status.isLive;
+
+/// The host's decisions [nomination] carries (#518): those the viewer's
+/// actions hold ([writes]) that settle the status it has.
+List<NominationDecision> offeredDecisions(
+  EventNomination nomination,
+  NominationRowWrites writes,
+) => [
+  for (final decision in NominationDecision.values)
+    if (writes.decisions.contains(decision) &&
+        nomination.status == decision.from)
+      decision,
+];
+
+/// Whether [nomination] carries the button that sends [write]: Withdraw
+/// ([offersWithdraw]), or one of a host's decisions ([offeredDecisions]).
+bool offersNominationWrite(
+  NominationWrite write,
+  EventNomination nomination,
+  NominationRowWrites writes, {
+  required String? viewerId,
+}) => write == NominationWrite.withdraw
+    ? offersWithdraw(nomination, writes, viewerId: viewerId)
+    : offeredDecisions(
+        nomination,
+        writes,
+      ).any((decision) => decision.write == write);
+
+/// The viewer's vote on [nomination] (#517), by their roster row [viewerId],
+/// where [voting] says they may vote; votes are taken while it is open, and
+/// only then. Null where there is none to build.
+NominationVoteControl? nominationVoteControl(
+  BuildContext context,
+  EventNomination nomination, {
+  required NominationVoting? voting,
+  required String? viewerId,
+}) {
+  if (voting == null ||
+      viewerId == null ||
+      nomination.status != NominationStatus.open) {
+    return null;
+  }
+  final vote = viewerVote(nomination, viewerId);
+  return NominationVoteControl(
+    nomination: nomination,
+    vote: vote,
+    hint: voting.hint,
+    enabled: voting.enabled,
+    busy: voting.busy,
+    onVote: (type) => voteOnNomination(context, nomination, type),
+    onEditNote: () => editVoteNote(context, nomination, note: vote?.comment),
+  );
+}
+
+/// What [nomination]'s lines say, top to bottom, under its title (#517), on
+/// its row and in its quick look (#957): its platform; who nominated it;
+/// whose copy it is; whether it is for the whole event or one date; where it
+/// stands; its tally of the votes that count, with how the event counts
+/// Interested where its policy says; the viewer's vote, and whether it
+/// counts, where no vote control shows it ([voteShown]); when voting
+/// closes, while it is open and has a deadline; and why it is paused, while
+/// it is. Read as one node by whoever builds them.
+///
+/// The viewer is named by their roster row [viewerId], and anyone else from
+/// the roster's [names]. A deadline is a fixed time as of [now], never a
+/// countdown, and past it, a line that it stays open until a host closes
+/// the vote, since nothing closes it on time yet (backend#797).
+List<Widget> nominationLines(
+  BuildContext context,
+  EventNomination nomination, {
+  required NominationRowInputs inputs,
+  required String? viewerId,
+  required Map<String, String?> names,
+  required bool voteShown,
+  required DateTime now,
+}) {
+  final l10n = EventsLocalizations.of(context);
+  final theme = Theme.of(context);
+  final quiet = theme.textTheme.bodyMedium?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  );
+  final tally = tallyOf(nomination);
+  final deadline = nomination.votingDeadline;
+  final supplier = nominationSupplierOf(
+    l10n,
+    copy: inputs.copy,
+    viewerId: viewerId,
+    names: names,
+  );
+  final scope = nominationScopeName(
+    context,
+    nomination.occurrenceId,
+    occurrences: inputs.occurrences,
+    now: now,
+  );
+  final interested = interestedLine(l10n, inputs.interestedWeight);
+  // A fixed line, not a countdown: passing it closes nothing (#517).
+  final closes = deadline == null || nomination.status != NominationStatus.open
+      ? null
+      : deadline.isBefore(now)
+      ? l10n.eventsNominationDeadlinePassed(
+          eventWhenLabel(context, deadline, now: now),
+        )
+      : l10n.eventsNominationDeadline(
+          eventWhenLabel(context, deadline, now: now),
+        );
+  // The server sets where it goes back to whenever it pauses one; a pause
+  // without it says Unknown rather than leave a gap.
+  final back = nominationStatusLabel(
+    l10n,
+    nomination.pausedFrom ?? NominationStatus.unknown,
+  );
+  final paused = nomination.status != NominationStatus.paused
+      ? null
+      : switch (supplier) {
+          NobodyNamedSupplier() => l10n.eventsNominationPausedUnknown(back),
+          ViewerSupplier() => l10n.eventsNominationPausedYours(back),
+          NamedSupplier(:final name) => l10n.eventsNominationPaused(
+            name,
+            back,
+          ),
+        };
+  final vote = viewerId == null ? null : viewerVote(nomination, viewerId);
+  // Where there's no control to show it chosen, the viewer's vote is still
+  // theirs to see (#517): on a paused or decided nomination, or once they
+  // can't vote.
+  final yours = voteShown || vote == null
+      ? null
+      : vote.eligible
+      ? l10n.eventsNominationYourVote(voteTypeLabel(l10n, vote.voteType))
+      : l10n.eventsNominationYourVoteNotCounting(
+          voteTypeLabel(l10n, vote.voteType),
+        );
+  // Who nominated it: the viewer, else their name on the roster, else the
+  // username the nomination carries, else "this person", as the pool names
+  // someone the roster doesn't.
+  final by = nomination.nominatedById;
+  final nominatedBy = viewerId != null && by == viewerId
+      ? l10n.eventsNominatedByYou
+      : l10n.eventsNominatedBy(
+          names[by] ??
+              personName(username: nomination.nominatedByUsername) ??
+              l10n.eventsAttendeeSomeone,
+        );
+
+  return [
+    Text(nomination.platformName, style: quiet),
+    Text(nominatedBy, style: quiet),
+    Text(switch (supplier) {
+      NobodyNamedSupplier() => l10n.eventsNominationFromUnknown,
+      ViewerSupplier() => l10n.eventsNominationFromYours,
+      NamedSupplier(:final name) => l10n.eventsNominationFrom(name),
+    }, style: quiet),
+    if (scope != null) Text(scope, style: quiet),
+    Text(
+      nominationStatusLabel(l10n, nomination.status),
+      style: theme.textTheme.labelLarge,
+    ),
+    Text(
+      l10n.eventsNominationTally(
+        tally.forCount,
+        tally.againstCount,
+        tally.interestedCount,
+      ),
+      // The symbol between the counts would be read out.
+      semanticsLabel: l10n.eventsNominationTallySpoken(
+        tally.forCount,
+        tally.againstCount,
+        tally.interestedCount,
+      ),
+      style: quiet,
+    ),
+    if (interested != null) Text(interested, style: quiet),
+    if (yours != null) Text(yours, style: quiet),
+    if (closes != null) Text(closes, style: quiet),
+    if (paused != null) Text(paused, style: quiet),
+  ];
 }
 
 /// A write button on a nomination's row: Withdraw on one of the viewer's
@@ -473,18 +779,23 @@ Future<bool> sendVote(
   return true;
 }
 
-/// *Who voted ({count})* on a row with votes (#517): opens
-/// [showNominationVoters], and puts focus back on itself once it has closed,
-/// however it was opened, since a screen reader's tap moves no focus. Named
-/// for its game to a screen reader.
+/// *Who voted ({count})* on a row with votes (#517), or in its quick look
+/// (#957): opens [showNominationVoters], and puts focus back on itself once
+/// it has closed, however it was opened, since a screen reader's tap moves
+/// no focus. Named for its game to a screen reader.
 class WhoVotedButton extends StatefulWidget {
   const WhoVotedButton({
     required this.nomination,
     required this.names,
     required this.rosterShown,
     required this.viewerId,
+    this.buttonKey,
     super.key,
   });
+
+  /// Key on the button itself: the row's
+  /// ([EventDetailScreen.nominationVotersKey]) where null.
+  final Key? buttonKey;
 
   final EventNomination nomination;
   final Map<String, String?> names;
@@ -523,7 +834,9 @@ class WhoVotedButtonState extends State<WhoVotedButton> {
     final count = nomination.votes.length;
 
     return TextButton.icon(
-      key: EventDetailScreen.nominationVotersKey(nomination.id),
+      key:
+          widget.buttonKey ??
+          EventDetailScreen.nominationVotersKey(nomination.id),
       focusNode: _focus,
       onPressed: () => unawaited(_open()),
       icon: const Icon(Icons.how_to_vote_outlined),

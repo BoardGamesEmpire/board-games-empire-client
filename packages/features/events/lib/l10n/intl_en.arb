@@ -1206,6 +1206,10 @@
   "@eventsQuickLookCopyGone": {
     "description": "Line in the quick look of a game in the games pool, the games people offer to bring, once that copy has left the pool while the quick look was open: taken back from the quick look, or by someone else. Nothing in the quick look can be pressed then."
   },
+  "eventsQuickLookNominationGone": "This nomination is no longer on the list.",
+  "@eventsQuickLookNominationGone": {
+    "description": "Line in the quick look of a game nominated for the event's lineup, the pop-up its row opens on the Games tab of an event's screen, once the nomination has left the list of nominations while the quick look was open, as when someone else's change is read. Nothing in the quick look can be pressed then."
+  },
   "eventsQuickLookSupplies": "Supplies a nomination: {scopes}",
   "@eventsQuickLookSupplies": {
     "description": "Line in the quick look of a game in the games pool, the games people offer to bring: this copy is the one a nomination for the event's lineup was made from, and the nomination is still being voted on, waiting for a host, or paused. {scopes} names what each such nomination is for, as the nominations list names it (eventsNominationWholeEvent, eventsNominationForDate), joined by eventsDetailSpokenSeparator.",
