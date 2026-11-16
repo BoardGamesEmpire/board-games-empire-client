@@ -176,6 +176,21 @@ void main() {
       expect(container.get<UserDataExportRegistry>(), isNotNull);
       expect(container.get<UserDataExportBundler>(), isNotNull);
     });
+
+    test('registers the collection exporter (#48)', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(
+        container.get<UserDataExportRegistry>().exporters.map((e) => e.key),
+        contains('gameCollection'),
+      );
+    });
   });
 
   group('DeviceInfoReader registration (#324)', () {

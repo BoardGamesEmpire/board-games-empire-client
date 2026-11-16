@@ -11,6 +11,10 @@
 // only pin; the sign-out test says which. The backgrounding test says why it
 // drives the context rather than the orchestrator.
 //
+// A fifth runs the root module's export bundler over the signed-in scopes
+// (#48): its exporter tests use a bare container, so only this one would
+// see the collection go missing from the file if the scopes changed.
+//
 // Plain `test()`, not `testWidgets`: drift and the real async work under the
 // root need real time, and the widget tester's fake async would stall them.
 
@@ -18,11 +22,14 @@ import 'dart:async';
 
 import 'package:bge_test_support/network.dart';
 import 'package:bge_test_support/waits.dart';
+import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:native_platform/native_platform.dart';
 import 'package:sync_queue/sync_queue.dart';
 
 import 'support/native_root_harness.dart';
@@ -39,6 +46,18 @@ const _createAnswer = {
     'updatedAt': '2026-01-15T10:30:00.000Z',
   },
 };
+
+class _StubBuildInfoReader implements BuildInfoReader {
+  const _StubBuildInfoReader();
+
+  @override
+  Future<BuildInfo> read() async => const BuildInfo(
+    version: '1.2.3',
+    buildNumber: '42',
+    appName: 'Board Games Empire',
+    packageName: 'com.boardgamesempire.app',
+  );
+}
 
 void main() {
   group('the native root (#435)', () {
@@ -274,6 +293,36 @@ void main() {
         isEmpty,
         reason: 'every request after the resume went through the new Dio',
       );
+    });
+
+    // The harness builds no root container, so the test runs the root
+    // module over one of its own: the bundler and exporter list the app
+    // ships, over the real server and user scopes, as the shell reads them.
+    test("the root module's bundler exports the signed-in user's collection "
+        '(#48)', () async {
+      await activated();
+      final root = DependencyContainerImpl();
+      addTearDown(root.dispose);
+      await registerNativeRootModule(
+        root,
+        buildInfoReader: const _StubBuildInfoReader(),
+      );
+      final active = OrchestratorActiveServerScope(
+        orchestrator: harness.orchestrator,
+      ).active!;
+
+      final bundle = await root.get<UserDataExportBundler>().assemble(active);
+
+      final categories = bundle.json['categories']! as Map<String, Object?>;
+      expect(
+        categories['gameCollection'],
+        isA<Map<String, Object?>>().having(
+          (category) => category['entries'],
+          'entries',
+          isA<List<Object?>>(),
+        ),
+      );
+      expect(bundle.json['userId'], NativeRootHarness.userId);
     });
   });
 }

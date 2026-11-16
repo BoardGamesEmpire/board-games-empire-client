@@ -1,6 +1,7 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
 import 'package:di/di.dart';
 import 'package:dio_network/dio_network.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
@@ -93,5 +94,8 @@ Future<void> registerNativeRootModule(
       () => ServerOnboardingDeps.from(container),
     );
   // #48: after BuildInfo, which the lazy bundler reads.
-  registerUserDataExport(container, exporters: const []);
+  registerUserDataExport(
+    container,
+    exporters: const [GameCollectionExporter()],
+  );
 }

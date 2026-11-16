@@ -700,5 +700,13 @@
         "example": "Physical"
       }
     }
+  },
+  "collectionExportName": "Game collection",
+  "@collectionExportName": {
+    "description": "Name of the game collection in the export screen's list of the categories a data export includes (#93)."
+  },
+  "collectionExportDescription": "Every game in your collection, with its copies, ratings, comments and play history.",
+  "@collectionExportDescription": {
+    "description": "One-line description under the game collection's name in the export screen's list of the categories a data export includes (#93)."
   }
 }

@@ -1,5 +1,6 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
 import 'package:di/di.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
@@ -110,5 +111,8 @@ Future<void> registerWebRootModule(
     container.registerSingleton<DeviceInfoReader>(deviceInfoReader);
   }
   // #48: after BuildInfo, which the lazy bundler reads.
-  registerUserDataExport(container, exporters: const []);
+  registerUserDataExport(
+    container,
+    exporters: const [GameCollectionExporter()],
+  );
 }
