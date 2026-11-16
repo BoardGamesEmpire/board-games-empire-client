@@ -573,6 +573,12 @@ class EventGamesTab extends StatelessWidget {
                     ? l10n.eventsNominateYouNotGoingHint
                     : l10n.eventsNominateSupplierNotGoingHint;
                 final name = names[game.attendeeId];
+                final already = nominating
+                    ? _alreadyTaken(l10n, [
+                        for (final each in scopes)
+                          nominateTaken(game, nominated, scope: each.scope),
+                      ])
+                    : null;
                 return _PoolRow(
                   game: game,
                   who: own
@@ -580,17 +586,18 @@ class EventGamesTab extends StatelessWidget {
                       : l10n.eventsGamesTheirs(
                           name ?? l10n.eventsAttendeeSomeoneStart,
                         ),
-                  nominated: suppliesLive(game, nominated),
+                  // Nominate says it where it can't be pressed for any choice;
+                  // otherwise the row's lines do (#947).
+                  nominatedLine:
+                      suppliesLive(game, nominated) &&
+                      (!nominating || already == null),
                   note: notGoing,
                   nominate: nominating
                       ? _NominateButton(
                           game: game,
                           unread: unread,
                           notGoing: notGoing,
-                          already: _alreadyTaken(l10n, [
-                            for (final each in scopes)
-                              nominateTaken(game, nominated, scope: each.scope),
-                          ]),
+                          already: already,
                           enabled: mayNominate,
                           runOver: !nominations.busy,
                           onPressed: () =>
@@ -1313,7 +1320,7 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
 
 /// One offered copy (#516): its picture, its name, the title with the
 /// subtitle where it has one ([gameName], #851), where it is played, who
-/// brings it and, where it supplies a live nomination, "Nominated" (#517),
+/// brings it and, where [nominatedLine] says so, "Nominated" (#517, #947),
 /// as one node. Then its controls, each a node of its own: [nominate] where
 /// the viewer is offered it, and [takeBack] where they may take it back.
 /// Then [note], why Nominate can't be pressed, which its hint already says.
@@ -1321,7 +1328,7 @@ class _PoolRow extends StatelessWidget {
   const _PoolRow({
     required this.game,
     required this.who,
-    required this.nominated,
+    required this.nominatedLine,
     this.note,
     this.nominate,
     this.takeBack,
@@ -1332,8 +1339,9 @@ class _PoolRow extends StatelessWidget {
   /// Who brings it, as its third line says it.
   final String who;
 
-  /// Whether it supplies a live nomination, which its marker says.
-  final bool nominated;
+  /// Whether its lines say Nominated: it supplies a live nomination and
+  /// Nominate, which says so where it can't be pressed, isn't there to (#947).
+  final bool nominatedLine;
 
   /// Drawn under the controls, and left out of the semantics tree.
   final String? note;
@@ -1389,27 +1397,11 @@ class _PoolRow extends StatelessWidget {
                           style: quiet,
                         ),
                       Text(who, style: quiet),
-                      if (nominated) ...[
-                        const BgeGap.xs(),
-                        // Read as the node's last line, as its words alone:
-                        // the chip's own node would add a selected state
-                        // that a marker doesn't have. A chip's label can't
-                        // wrap, so it scales down.
-                        Semantics(
-                          label: l10n.eventsPoolNominated,
-                          child: ExcludeSemantics(
-                            child: Chip(
-                              key: EventDetailScreen.poolNominatedKey(game.id),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              avatar: const Icon(Icons.playlist_add_check),
-                              label: GameFilterChipLabel(
-                                l10n.eventsPoolNominated,
-                              ),
-                            ),
-                          ),
+                      if (nominatedLine)
+                        Text(
+                          l10n.eventsPoolNominated,
+                          key: EventDetailScreen.poolNominatedKey(game.id),
                         ),
-                      ],
                     ],
                   ),
                 ),
@@ -1441,6 +1433,11 @@ class _PoolRow extends StatelessWidget {
 /// Nominate on a pool row (#517): a direct write, so disabled offline
 /// through [BgeOnlineOnly], with the connection's reason as its hint. Named
 /// for its game to a screen reader, as its row names it ([gameName], #851).
+///
+/// Where the row is nominated already, or its game in the lineup, for
+/// everything it offers ([already]), it reads Nominated with a check and is
+/// named "Nominated: " the game, so the row has one control, not a marker
+/// and a button that say the same thing (#947).
 ///
 /// Online it is disabled, with the reason as its hint, while the nominations
 /// couldn't be read or aren't shown to the viewer ([unread]), else while
@@ -1576,9 +1573,13 @@ class _NominateButtonState extends State<_NominateButton>
           hint: reason,
           child: BgeInertButton(
             inert: inert,
-            label: l10n.eventsNominateNamed(
-              gameName(l10n, widget.game.title, widget.game.subtitle),
-            ),
+            label: already == null
+                ? l10n.eventsNominateNamed(
+                    gameName(l10n, widget.game.title, widget.game.subtitle),
+                  )
+                : l10n.eventsNominatedNamed(
+                    gameName(l10n, widget.game.title, widget.game.subtitle),
+                  ),
             onPressed: available || inert
                 ? () => unawaited(holdPress(_press))
                 : null,
@@ -1589,8 +1590,12 @@ class _NominateButtonState extends State<_NominateButton>
               style: kept ? _unavailableStyle(context) : null,
               icon: held
                   ? const _HeldSpinner()
-                  : const Icon(Icons.playlist_add),
-              label: Text(l10n.eventsNominate),
+                  : Icon(already == null ? Icons.playlist_add : Icons.check),
+              label: Text(
+                already == null
+                    ? l10n.eventsNominate
+                    : l10n.eventsPoolNominated,
+              ),
             ),
           ),
         ),

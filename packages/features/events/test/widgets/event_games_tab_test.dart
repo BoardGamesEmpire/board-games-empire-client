@@ -4619,7 +4619,15 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(nominated(azul.id), findsOneWidget);
+      // Nominated for the one choice there is: the button says so.
+      expect(nominated(azul.id), findsNothing);
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Nominate on a multi-date event asks for the scope', (
@@ -4897,13 +4905,13 @@ void main() {
       expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: 'Already nominated',
           isButton: true,
           hasEnabledState: true,
         ),
       );
-      // The marker on the row already says it: not drawn again.
+      // The button already says it: the reason is not drawn again.
       expect(
         find.text('Already nominated', skipOffstage: false),
         findsNothing,
@@ -4933,7 +4941,7 @@ void main() {
         expect(
           tester.getSemantics(nominate(game.id)),
           matchesSemantics(
-            label: 'Nominate Azul',
+            label: 'Nominated: Azul',
             hint: 'Already in the lineup',
             isButton: true,
             hasEnabledState: true,
@@ -5046,7 +5054,7 @@ void main() {
         status: EventParticipationStatus.notAttending,
       );
       // Azul is nominated too, its nomination paused: not going comes
-      // first.
+      // first, as the hint; the button reads Nominated all the same.
       nominationsAnswer = (_) => [
         nominationOf('n-1', azul, status: NominationStatus.paused),
       ];
@@ -5060,7 +5068,7 @@ void main() {
       expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: notGoingHint,
           isButton: true,
           hasEnabledState: true,
@@ -5137,7 +5145,14 @@ void main() {
           occurrenceId: null,
         ),
       ]);
-      expect(nominated(wingspanMine.id), findsOneWidget);
+      expect(nominated(wingspanMine.id), findsNothing);
+      expect(
+        find.descendant(
+          of: nominate(wingspanMine.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets("Nominate says why after the nominations' first read failed, "
@@ -5314,19 +5329,107 @@ void main() {
 
       await showGames(tester);
 
-      expect(nominated(azul.id), findsOneWidget);
-      expect(nominated(catanAdas.id), findsOneWidget);
-      expect(nominated(root.id), findsNothing);
-      expect(nominated(catanMine.id), findsNothing);
-      // A chip's label can't wrap: it scales down instead.
+      // Nominate says it, for every choice there is, so no line does.
+      expect(nominated(azul.id), findsNothing);
+      expect(nominated(catanAdas.id), findsNothing);
+      for (final id in [azul.id, catanAdas.id]) {
+        expect(onPressed(tester, id), isNull, reason: id);
+      }
+      // Withdrawn leaves it to nominate; passed is in the lineup, which
+      // Nominate says too.
+      expect(onPressed(tester, root.id), isNotNull);
+      expect(onPressed(tester, catanMine.id), isNull);
+      handle.dispose();
+    });
+
+    testWidgets('a row nominated for every choice reads Nominated with a '
+        'check, disabled, its reason as hint, and draws no chip', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
       expect(
         find.descendant(
-          of: nominated(azul.id),
-          matching: find.byType(FittedBox),
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
         ),
         findsOneWidget,
       );
-      // Read with the row, as its last line.
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already nominated',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(
+        find.descendant(of: row(azul.id), matching: find.byType(Chip)),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a game in the lineup for every choice reads Nominated, its '
+        'hint saying it is in the lineup', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul, status: NominationStatus.approved),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already in the lineup',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('on an event of several dates, a row nominated for the whole '
+        'event keeps Nominate, and its lines say Nominated', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        find.descendant(of: nominate(azul.id), matching: find.text('Nominate')),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNotNull);
+      expect(tester.widget<Text>(nominated(azul.id)).data, 'Nominated');
       expect(
         tester.getSemantics(
           find.descendant(of: row(azul.id), matching: find.text('Azul')),
@@ -5335,6 +5438,23 @@ void main() {
           label: 'Azul\nTabletop, Physical\nAda is bringing this\nNominated',
         ),
       );
+      handle.dispose();
+    });
+
+    testWidgets('where the viewer is not offered Nominate, a nominated row '
+        'says Nominated in its lines', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.guest),
+        ),
+      );
+
+      expect(nominate(azul.id), findsNothing);
+      expect(tester.widget<Text>(nominated(azul.id)).data, 'Nominated');
       handle.dispose();
     });
 
@@ -5410,9 +5530,23 @@ void main() {
       await tester.ensureVisible(nominate(azul.id));
       await tester.pump();
       expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: 'Already nominated',
           isButton: true,
           hasEnabledState: true,
@@ -5737,8 +5871,13 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
+      // Nominated for the one choice there is: Nominate says it.
       expect(
         find.byKey(EventDetailScreen.poolNominatedKey('o-1')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominated')),
         findsOneWidget,
       );
       expect(

@@ -1122,6 +1122,16 @@
   "@eventsNominate": {
     "description": "Button under a game in the games pool on the Games tab of an event's screen, the games people offer to bring: it puts the game forward for the event's lineup, for everyone to vote on or a host to approve. On an event of more than one date it first asks which (eventsNominateTitle). Screen readers hear eventsNominateNamed instead."
   },
+  "eventsNominatedNamed": "Nominated: {title}",
+  "@eventsNominatedNamed": {
+    "description": "eventsPoolNominated as a screen reader reads it on the Nominate button of a game in the games pool, once the game is nominated or in the lineup for everything Nominate offers, naming the game so each game's button says which it is.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
   "eventsNominateNamed": "Nominate {title}",
   "@eventsNominateNamed": {
     "description": "eventsNominate as a screen reader reads it, naming the game, so each game's button says which it nominates.",
@@ -1176,7 +1186,7 @@
   },
   "eventsPoolNominated": "Nominated",
   "@eventsPoolNominated": {
-    "description": "Marker on a game in the games pool on the Games tab of an event's screen, the games people offer to bring: that copy of the game is nominated for the event's lineup, and the nomination is still being voted on, waiting for a host, or paused. It fits on one line, and shrinks rather than wraps."
+    "description": "Says a game in the games pool on the Games tab of an event's screen, the games people offer to bring, is nominated for the event's lineup, or already in it. It is the label of the game's disabled Nominate button once nothing is left to nominate it for (read as eventsNominatedNamed), and a line of the game's row where the button can't say it: the game is nominated for some date but not all, or the viewer isn't offered Nominate."
   },
   "eventsVoteDone": "Your vote on {title} is in.",
   "@eventsVoteDone": {
