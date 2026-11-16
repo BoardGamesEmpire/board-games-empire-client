@@ -452,7 +452,9 @@ The pages that pin, and this list is where a new one is added:
 - an event's screen, whose footer holds the line saying how many games a run
   of offers is offering and how the Games tab's last writes went, to the
   pool and to the nominations, on either tab, and the Games tab's stale-data
-  banners for the pool and the nominations (#516, #517, #851).
+  banners for the pool and the nominations (#516, #517, #851);
+- the game search screen, whose footer holds the note saying why a search
+  shows only this server's games (#795).
 
 The reasoning, and the measurements behind it, are on `BgePage.footer`:
 

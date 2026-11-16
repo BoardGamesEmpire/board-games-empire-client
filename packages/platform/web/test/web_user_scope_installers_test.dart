@@ -9,6 +9,7 @@ import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:models/domain.dart';
@@ -23,15 +24,25 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(8));
+      expect(installers, hasLength(9));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
       expect(installers[4], isA<EventHydrateInstaller>());
       expect(installers[5], isA<CallerAccessInstaller>());
-      expect(installers[6], isA<SyncSenderInstaller>());
-      expect(installers[7], isA<SyncQueueDrainInstaller>());
+      expect(installers[6], isA<DataGatewaySearchReachInstaller>());
+      expect(installers[7], isA<SyncSenderInstaller>());
+      expect(installers[8], isA<SyncQueueDrainInstaller>());
+    });
+
+    test('has one DataGatewaySearchReachInstaller, so a refusal ends with '
+        'the session (#795)', () {
+      expect(
+        buildWebUserScopeInstallers()
+            .whereType<DataGatewaySearchReachInstaller>(),
+        hasLength(1),
+      );
     });
 
     test('has one CallerAccessInstaller, after the rehydrator, asking for the '

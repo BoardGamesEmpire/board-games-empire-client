@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 
 import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
@@ -42,12 +43,14 @@ void main() {
     onImport,
     ValueListenable<bool>? offline,
     ThemeData? theme,
+    DataGatewaySearchReach? reach,
   }) async {
     await tester.pumpWidget(
       catalogApp(
         theme: theme,
         GameSearchScreen(
           remote: remote,
+          reach: reach,
           cache: cache,
           sourceNames: sourceNames,
           gone: gone,
@@ -1350,6 +1353,247 @@ void main() {
     },
   );
 
+  group('the DataGateways refused (#795)', () {
+    const message = 'Not for you, and the server says so.';
+    const copy =
+        'Searching beyond this server is not available to you. You can '
+        'still search the games this server knows about.';
+    const refused = GamesForbiddenException('403', apiMessage: message);
+
+    /// A search the server refuses the DataGateways, and answers without:
+    /// with [local], or one game of its own.
+    void refuseDataGateways([List<GameSearchHit>? local]) =>
+        remote.onSearch = (_, _, includeExternal) async => includeExternal
+        ? throw refused
+        : GameSearchResults(
+            local: local ?? [hit('g_catan', gameId: 'g_catan', title: 'Catan')],
+          );
+
+    /// The note in the page's footer: the one a screen reader hears.
+    Finder footerNote() =>
+        find.byKey(GameSearchScreen.footerDataGatewaysRefusedKey);
+
+    testWidgets("a refused search shows the server's message under the data "
+        'sources heading', (tester) async {
+      refuseDataGateways();
+
+      await show(tester);
+      await search(tester, 'catan');
+
+      final note = find.byKey(GameSearchScreen.dataGatewaysRefusedKey);
+      expect(tester.widget<Text>(note).data, message);
+      final heading = tester.getTopLeft(find.text('From data sources'));
+      expect(tester.getTopLeft(note).dy, greaterThan(heading.dy));
+      expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsOne);
+      // The server's own results stand, and no DataGateway row.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w.key.toString().contains('catalog_search.source_'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets("a refusal without a server message shows the client's copy, "
+        'in both places', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+
+      await show(tester, reach: DataGatewaySearchReach.signedOut());
+      await search(tester, 'catan');
+
+      expect(
+        tester.widget<Text>(
+          find.byKey(GameSearchScreen.dataGatewaysRefusedKey),
+        ),
+        isA<Text>().having((t) => t.data, 'data', copy),
+      );
+      expect(
+        find.descendant(of: footerNote(), matching: find.text(copy)),
+        findsOneWidget,
+      );
+      expect(remote.calls.single, contains('-external'));
+    });
+
+    testWidgets('the refusal is heard once, from the foot of the page, not '
+        'from the list', (tester) async {
+      final handle = tester.ensureSemantics();
+      final gone = StreamController<String>.broadcast();
+      addTearDown(gone.close);
+      refuseDataGateways([
+        hit('g_catan', gameId: 'g_catan', title: 'Catan'),
+        hit('g_azul', gameId: 'g_azul', title: 'Azul'),
+      ]);
+      await show(tester, gone: gone.stream);
+      final heard = _Heard()..listen();
+
+      await search(tester, 'catan');
+
+      // The count above the results, then the note at the foot of the page.
+      expect(heard.listen(), ['2 results', message]);
+      expect(
+        tester.getSemantics(footerNote()),
+        isSemantics(label: message, isLiveRegion: true),
+      );
+      // Where the DataGateways' rows would be, the note says the same,
+      // quietly.
+      expect(
+        tester.getSemantics(
+          find.byKey(GameSearchScreen.dataGatewaysRefusedKey),
+        ),
+        isSemantics(label: message, isLiveRegion: false),
+      );
+
+      // The answer shown again, less a game found gone: the count is heard,
+      // and the note isn't again.
+      gone.add('g_azul');
+      await tester.pumpAndSettle();
+
+      expect(heard.listen(), ['1 result']);
+      handle.dispose();
+    });
+
+    testWidgets('each refused search is heard once: the note goes as the next '
+        'search starts, and comes back with its answer', (tester) async {
+      final handle = tester.ensureSemantics();
+      refuseDataGateways();
+      await show(tester);
+      final heard = _Heard()..listen();
+      await search(tester, 'catan');
+      expect(heard.listen(), ['1 result', message]);
+      final first = tester.getSemantics(footerNote()).id;
+
+      // The next search waits on the server, and the note waits with it.
+      final answer = Completer<GameSearchResults>();
+      remote.onSearch = (_, _, _) => answer.future;
+      await tester.enterText(find.byKey(GameSearchScreen.fieldKey), 'azul');
+      await tester.pump(GameSearchBloc.defaultDebounce);
+      await tester.pump();
+      expect(find.byKey(GameSearchScreen.loadingKey), findsOneWidget);
+      expect(footerNote(), findsNothing);
+      heard.listen();
+
+      answer.complete(
+        GameSearchResults(local: [hit('g_azul', gameId: 'g_azul')]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(heard.listen(), ['1 result', message]);
+      expect(tester.getSemantics(footerNote()).id, isNot(first));
+
+      // Cleared, the page goes back to its start, and the note goes too.
+      await tester.tap(find.byKey(GameSearchScreen.clearKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(GameSearchScreen.idleKey), findsOneWidget);
+      expect(footerNote(), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets("a new text's refused answer is a new note, even with no "
+        'frame of loading before it', (tester) async {
+      final handle = tester.ensureSemantics();
+      refuseDataGateways();
+      await show(tester);
+      final heard = _Heard()..listen();
+      await search(tester, 'catan');
+      heard.listen();
+      final first = tester.getSemantics(footerNote()).id;
+
+      // The server answers within the frame the search starts in.
+      await search(tester, 'catan junior');
+
+      // The count reads as it did, so only the note is heard.
+      expect(heard.listen(), [message]);
+      expect(tester.getSemantics(footerNote()).id, isNot(first));
+      handle.dispose();
+    });
+
+    // Measured on review: the note among the results, after a page of this
+    // server's games, was out of the semantics tree as the answer landed, so
+    // it was never heard.
+    group("at phone sizes, under a page of this server's games", () {
+      final page = [
+        for (var n = 0; n < GamesRemoteDataSource.searchPageSize; n++)
+          hit('g_$n', gameId: 'g_$n', title: 'Server game $n'),
+      ];
+      const total = '${GamesRemoteDataSource.searchPageSize} results';
+
+      for (final (name, size, textScale) in const [
+        ('390dp', Size(390, 844), 1.0),
+        ('320dp at twice the text size', Size(320, 800), 2.0),
+      ]) {
+        testWidgets('$name: the note is heard as the answer lands, and stays '
+            'as the page scrolls', (tester) async {
+          useViewSize(tester, size);
+          tester.platformDispatcher.textScaleFactorTestValue = textScale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          final handle = tester.ensureSemantics();
+          refuseDataGateways(page);
+          await show(tester);
+          final heard = _Heard()..listen();
+
+          await search(tester, 'game');
+
+          expect(heard.listen(), [total, message]);
+          // In the tree, and not hidden, as it lands.
+          final note = tester.getSemantics(footerNote());
+          expect(note, isSemantics(label: message, isLiveRegion: true));
+          expect(note.getSemanticsData().flagsCollection.isHidden, isFalse);
+
+          // The user reads on, to the end of the page.
+          final position = tester
+              .state<ScrollableState>(
+                find
+                    .descendant(
+                      of: find.byType(CustomScrollView),
+                      matching: find.byType(Scrollable),
+                    )
+                    .first,
+              )
+              .position;
+          position.jumpTo(position.maxScrollExtent);
+          await tester.pump();
+
+          expect(position.pixels, greaterThan(0));
+          expect(heard.listen(), isEmpty);
+          final after = tester.getSemantics(footerNote());
+          expect(after.id, note.id);
+          expect(after.getSemanticsData().flagsCollection.isHidden, isFalse);
+          handle.dispose();
+        });
+      }
+    });
+
+    testWidgets('the page counts the rows it holds, not the note', (
+      tester,
+    ) async {
+      refuseDataGateways();
+
+      await show(tester);
+      await search(tester, 'catan');
+
+      final scrollView = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
+      );
+      expect(scrollView.semanticChildCount, 1);
+    });
+
+    testWidgets('a user the server allows sees no note, and the foot of the '
+        'page says nothing', (tester) async {
+      remote.onSearch = (_, _, _) async => results;
+
+      await show(tester);
+      await search(tester, 'catan');
+
+      expect(find.byKey(GameSearchScreen.dataGatewaysRefusedKey), findsNothing);
+      expect(footerNote(), findsNothing);
+      // The footer is passed on every build, and draws nothing here.
+      final footer = tester.widget<BgePage>(find.byType(BgePage)).footer;
+      expect(footer, isNotNull);
+      expect(tester.getSize(find.byWidget(footer!)).height, 0);
+    });
+  });
+
   testWidgets('a refusal says the user has no access, and searches nothing '
       'saved', (tester) async {
     remote.onSearch = (_, _, _) async =>
@@ -1462,6 +1706,25 @@ void main() {
         await scrollListToEnd(
           tester,
           find.byKey(GameSearchScreen.missingSourcesKey),
+        );
+      },
+    );
+
+    // Refused the DataGateways (#795): the note under their heading, and in
+    // the page's footer, in the client's copy, the longest it gets.
+    auditScreen(
+      'refused the data sources',
+      pump: (tester, theme) async {
+        remote.onSearch = (_, _, includeExternal) async => includeExternal
+            ? throw const GamesForbiddenException('403')
+            : GameSearchResults(local: many.local);
+        await showAudited(tester, theme);
+      },
+      arrange: (tester) async {
+        await search(tester, 'game');
+        expect(
+          find.byKey(GameSearchScreen.footerDataGatewaysRefusedKey),
+          findsOneWidget,
         );
       },
     );
@@ -1638,4 +1901,57 @@ void main() {
       expect(find.byKey(GameSearchScreen.filterSheetKey), findsNothing);
     });
   });
+}
+
+/// What a screen reader hears from the live regions in the semantics tree
+/// (#795), by the rule of each platform:
+///
+/// - **iOS** says a live region's words when it appears or becomes one, and
+///   again when they change while it is one, hidden or not.
+/// - **Android** says them by the same rule, but only while the node is not
+///   marked hidden: words that came while it was hidden aren't said when it
+///   shows, as they haven't changed by then (`BgePage.header`'s doc).
+/// - **The web** says them when they differ from the last words that node
+///   said, so a node that becomes a live region again with the same words
+///   says nothing (`LiveRegion.update` in Flutter's web engine).
+///
+/// A live region that has left the tree, as one among a page's slivers does
+/// past the cache extent, says nothing anywhere.
+class _Heard {
+  /// The live regions read last, by node id.
+  Map<int, String> _live = const {};
+
+  /// The last words each node said on the web, by node id.
+  final Map<int, String> _saidOnWeb = {};
+
+  /// Reads the live regions in the tree now, and returns what has been
+  /// heard since the last read, in the order they sit on screen.
+  ///
+  /// Where the platforms hear different things it returns each, labelled,
+  /// so that no test expecting one list passes.
+  List<String> listen() {
+    final nodes = [
+      for (final node
+          in find.semantics.byFlag(SemanticsFlag.isLiveRegion).evaluate())
+        (id: node.id, data: node.getSemanticsData()),
+    ];
+    final ios = [
+      for (final (:id, :data) in nodes)
+        if (_live[id] != data.label) data.label,
+    ];
+    final android = [
+      for (final (:id, :data) in nodes)
+        if (_live[id] != data.label && !data.flagsCollection.isHidden)
+          data.label,
+    ];
+    final web = [
+      for (final (:id, :data) in nodes)
+        if (_saidOnWeb[id] != data.label) data.label,
+    ];
+    _live = {for (final (:id, :data) in nodes) id: data.label};
+    _saidOnWeb.addAll(_live);
+    return listEquals(ios, android) && listEquals(ios, web)
+        ? ios
+        : ['Android: $android', 'iOS: $ios', 'web: $web'];
+  }
 }
