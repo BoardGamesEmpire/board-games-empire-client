@@ -13,6 +13,12 @@ void main() {
     location: '/server/s2/event/9',
   );
 
+  // Equal to `first` by value but never the same instance (non-const).
+  NormalizedDeepLink equalCopyOfFirst() => NormalizedDeepLink(
+    serverId: 's1',
+    location: ['/server', 's1', 'game', '1'].join('/'),
+  );
+
   group('PendingDeepLinkHolder', () {
     test('starts empty', () {
       final holder = PendingDeepLinkHolder();
@@ -65,6 +71,54 @@ void main() {
         ..take()
         ..set(second);
 
+      expect(holder.peek, second);
+    });
+
+    test('set notifies listeners', () {
+      var calls = 0;
+      PendingDeepLinkHolder()
+        ..addListener(() => calls++)
+        ..set(first);
+
+      expect(calls, 1);
+    });
+
+    test('set notifies again for an equal link', () {
+      var calls = 0;
+      PendingDeepLinkHolder()
+        ..set(first)
+        ..addListener(() => calls++)
+        ..set(equalCopyOfFirst());
+
+      expect(calls, 1, reason: 'an equal link re-delivered must land again');
+    });
+
+    test('take and clear do not notify', () {
+      var calls = 0;
+      PendingDeepLinkHolder()
+        ..set(first)
+        ..addListener(() => calls++)
+        ..take()
+        ..clear();
+
+      expect(calls, 0);
+    });
+
+    test('takeIf takes a link equal to the held one', () {
+      final holder = PendingDeepLinkHolder()..set(first);
+      final expected = equalCopyOfFirst();
+      expect(identical(first, expected), isFalse, reason: 'must not be const');
+
+      final taken = holder.takeIf(expected);
+
+      expect(taken, first);
+      expect(holder.peek, isNull);
+    });
+
+    test('takeIf leaves a different held link in place', () {
+      final holder = PendingDeepLinkHolder()..set(second);
+
+      expect(holder.takeIf(first), isNull);
       expect(holder.peek, second);
     });
   });
