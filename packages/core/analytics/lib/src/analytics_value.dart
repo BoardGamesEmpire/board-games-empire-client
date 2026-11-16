@@ -135,10 +135,13 @@ final class AnalyticsBool extends AnalyticsValue {
 /// [ArgumentError] otherwise, at runtime rather than through an assert,
 /// which release builds drop. An enum's `unknown` sentinel is a member like
 /// any other and is accepted.
+///
+/// The token keeps its own unmodifiable copy of `vocabulary`, so a caller
+/// that changes its list afterwards cannot change the token.
 final class AnalyticsToken<T extends Enum> extends AnalyticsValue {
   AnalyticsToken(this.value, {required List<T> vocabulary})
-    : _vocabulary = vocabulary {
-    if (!vocabulary.contains(value)) {
+    : _vocabulary = List.unmodifiable(vocabulary) {
+    if (!_vocabulary.contains(value)) {
       throw ArgumentError.value(
         value,
         'value',

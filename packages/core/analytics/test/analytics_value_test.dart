@@ -76,6 +76,15 @@ void main() {
       );
     });
 
+    test('keeps its vocabulary when the caller changes the list', () {
+      final vocabulary = [_Colour.red, _Colour.green];
+      final t = AnalyticsToken(_Colour.red, vocabulary: vocabulary);
+
+      vocabulary.clear();
+
+      expect(t.vocabularyNames, ['red', 'green']);
+    });
+
     test('rejects a member outside the vocabulary at runtime', () {
       expect(
         () => AnalyticsToken<Enum>(_Other.red, vocabulary: _Colour.values),
