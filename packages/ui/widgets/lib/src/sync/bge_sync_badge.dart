@@ -22,6 +22,11 @@ enum BgeSyncState {
 /// and icon, stuck is [BgeStatus.conflict]'s: never colour alone, which is
 /// the project's standing answer to colour-vision deficiency.
 ///
+/// The words take the status colour too, which clears 7:1 in high contrast
+/// only on `surface`, the ground of every row that uses this today. On a
+/// `surfaceContainer*` ground it falls short: put neutral words there, as
+/// the drawer's sync status line does.
+///
 /// [label] is drawn text with no semantics node of its own, so a row that
 /// merges its semantics reads it with the row's title. Put it under the
 /// row's details rather than in a `ListTile.trailing`, which has no room

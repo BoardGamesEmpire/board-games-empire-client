@@ -100,6 +100,17 @@ _Avoid_: Unsaved, draft, pending
 A record with local changes the server has not yet accepted.
 _Avoid_: Modified, stale, out of date
 
+**Waiting**:
+A change saved on this device that the app will still send on its own: a local-only
+or dirty record with no stuck change. Offline is the usual case; online, a change
+waits only while the server's errors make it back off.
+_Avoid_: Pending, syncing, in flight
+
+**Couldn't sync**:
+A change the server refused, or whose attempts ran out, so it will not send on its
+own. It stays until the user retries or discards it, and wins over waiting.
+_Avoid_: Failed, error, conflict
+
 ### Reach
 
 **Reach**:
