@@ -232,6 +232,14 @@ melos:
       run: dart run tool/check_a11y_audit.dart
       description: Fail if a screen under packages/*/lib has no accessibility-audit test group naming its class. Prints the exempt screens.
 
+    # ── Decision codes (#377) ─────────────────────────────────────
+    # A decision code (Dn) means something only beside its issue's text,
+    # so source, READMEs and YAML cite the issue alone. docs/agents/ is
+    # exempt: it documents the convention. CI runs this on every PR.
+    check:decision-codes:
+      run: dart run tool/check_decision_codes.dart
+      description: Fail if a Dart, Markdown or YAML file cites a decision code (Dn, or a decision cited by number) instead of the issue alone (#377).
+
     # ── Formatting (#173) ─────────────────────────────────────────
     # The work is in tool/format_workspace.dart, not inline here, for the
     # same reason check:constraints delegates to a script: CI runs the
