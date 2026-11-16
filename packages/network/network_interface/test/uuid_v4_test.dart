@@ -1,7 +1,7 @@
 import 'dart:math';
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:game_catalog/src/bloc/uuid_v4.dart';
+import 'package:network_interface/network_interface.dart';
+import 'package:test/test.dart';
 
 /// A [Random] that answers every byte with [byte].
 class _Constant implements Random {

@@ -14,4 +14,5 @@ export 'src/server_string_length.dart';
 export 'src/system_settings_remote_data_source.dart';
 export 'src/user_profile_remote_data_source.dart';
 export 'src/user_remote_data_source.dart';
+export 'src/uuid_v4.dart';
 export 'src/well_known_client.dart';
