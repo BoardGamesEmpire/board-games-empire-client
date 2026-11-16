@@ -15,7 +15,6 @@ import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_labels.dart';
-import 'package:events/src/widgets/event_section_states.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_vote_control.dart';
@@ -51,22 +50,23 @@ enum EventNominationsBody {
   rows,
 }
 
-/// The Nominations section at the head of an event's Games tab, above the
-/// pool (#517): the games nominated for the lineup, one row each, those the
-/// filter keeps, in the order chosen, newest first unless the viewer chose
-/// another.
+/// The Nominations section, what an event's Games tab shows on its
+/// Nominations sub-tab (#517, #945): the games nominated for the lineup, one
+/// row each, those the filter keeps, in the order chosen, newest first
+/// unless the viewer chose another.
 ///
-/// Its slivers, as one group: a heading ([EventGamesTabHeading]); then the
-/// header, while there is something to narrow or the filter narrows (see
-/// "Filters and sort"); then the rows ([BgeKeyedSliverList], keyed by the
-/// nomination's id) or one state; then the gap before the pool's own
-/// heading. Each state sits in a [SliverToBoxAdapter], not a
-/// [BgeStateSliver]: one would fill the rest of the view and push the pool
-/// below it. A first read that
-/// fails says so here, with Try again; one that fails over nominations read
-/// before leaves them and is the footer's to say. With none nominated, it
-/// points to the pool below only where the viewer is offered Nominate there
-/// ([nominateGate]).
+/// Its slivers, as one group under the sub-tabs' bar: a heading
+/// ([EventGamesTabHeading]); then the header, while there is something to
+/// narrow or the filter narrows (see "Filters and sort"); then the rows
+/// ([BgeKeyedSliverList], keyed by the nomination's id) or one state. A state
+/// is in a [BgeStateSliver], as the pool's are, which fills the rest of the
+/// page and centres it. The style guide keeps a section's state in a
+/// [SliverToBoxAdapter] only where something follows the section, whose room
+/// the state would take; on its own sub-tab (#945), nothing follows this one. A
+/// first read that fails says so here, with Try again; one that fails over
+/// nominations read before leaves them and is the footer's to say. With none
+/// nominated, it points to the Pool sub-tab only where the viewer is offered
+/// Nominate there ([nominateGate]).
 ///
 /// ## Filters and sort
 ///
@@ -332,54 +332,46 @@ class EventNominationsSection extends StatelessWidget {
             ),
           ),
         switch (body) {
-          EventNominationsBody.hidden => SliverToBoxAdapter(
-            child: _State(
-              child: BgeEmptyState(
-                icon: Icons.visibility_off_outlined,
-                title: l10n.eventsNominationsHiddenTitle,
-              ),
+          EventNominationsBody.hidden => BgeStateSliver(
+            child: BgeEmptyState(
+              icon: Icons.visibility_off_outlined,
+              title: l10n.eventsNominationsHiddenTitle,
             ),
           ),
-          EventNominationsBody.loading => SliverToBoxAdapter(
-            child: EventSectionSpinner(label: l10n.eventsNominationsLoading),
+          EventNominationsBody.loading => BgeStateSliver(
+            child: BgeLoadingState(label: l10n.eventsNominationsLoading),
           ),
-          EventNominationsBody.failed => SliverToBoxAdapter(
-            child: _State(
-              child: BgeErrorState(
-                icon: Icons.cloud_off_outlined,
-                title: l10n.eventsNominationsFailedTitle,
-                body: l10n.eventsGamesFailedBody,
-                retryLabel: l10n.eventsRefreshRetry,
-                retryProgressLabel: l10n.eventsRefreshInProgress,
-                retryKey: EventDetailScreen.nominationsRetryKey,
-                retrying: state.refreshing,
-                onRetry: () => retryEventNominations(context),
-              ),
+          EventNominationsBody.failed => BgeStateSliver(
+            child: BgeErrorState(
+              icon: Icons.cloud_off_outlined,
+              title: l10n.eventsNominationsFailedTitle,
+              body: l10n.eventsGamesFailedBody,
+              retryLabel: l10n.eventsRefreshRetry,
+              retryProgressLabel: l10n.eventsRefreshInProgress,
+              retryKey: EventDetailScreen.nominationsRetryKey,
+              retrying: state.refreshing,
+              onRetry: () => retryEventNominations(context),
             ),
           ),
-          EventNominationsBody.empty => SliverToBoxAdapter(
-            child: _State(
-              child: BgeEmptyState(
-                title: l10n.eventsNominationsEmptyTitle,
-                // Pointing to the pool only where the viewer is offered
-                // Nominate there.
-                body: nominateGate(detail) == NominateGate.open
-                    ? l10n.eventsNominationsEmptyBody
-                    : null,
-              ),
+          EventNominationsBody.empty => BgeStateSliver(
+            child: BgeEmptyState(
+              title: l10n.eventsNominationsEmptyTitle,
+              // Pointing to the Pool sub-tab only where the viewer is
+              // offered Nominate there.
+              body: nominateGate(detail) == NominateGate.open
+                  ? l10n.eventsNominationsEmptyBody
+                  : null,
             ),
           ),
-          EventNominationsBody.noMatches => SliverToBoxAdapter(
-            child: _State(
-              child: BgeEmptyState(
-                icon: Icons.search_off_outlined,
-                title: l10n.eventsNominationsNoMatches,
-                action: OutlinedButton(
-                  key: EventDetailScreen.nominationsClearFiltersKey,
-                  focusNode: controller.nominationsClearFiltersFocus,
-                  onPressed: () => controller.clearNominationFilters(context),
-                  child: Text(l10n.eventsNominationsClearFilters),
-                ),
+          EventNominationsBody.noMatches => BgeStateSliver(
+            child: BgeEmptyState(
+              icon: Icons.search_off_outlined,
+              title: l10n.eventsNominationsNoMatches,
+              action: OutlinedButton(
+                key: EventDetailScreen.nominationsClearFiltersKey,
+                focusNode: controller.nominationsClearFiltersFocus,
+                onPressed: () => controller.clearNominationFilters(context),
+                child: Text(l10n.eventsNominationsClearFilters),
               ),
             ),
           ),
@@ -402,15 +394,15 @@ class EventNominationsSection extends StatelessWidget {
             ),
           ),
         },
-        const SliverToBoxAdapter(child: BgeGap.lg()),
       ],
     );
   }
 }
 
-/// A heading on the Games tab (#517): the Nominations section's, and the
-/// pool's under it, so heading navigation finds each. Announced as a
-/// heading. Each list's count is its header's, under its controls.
+/// A heading on the Games tab (#517): the Nominations section's on the
+/// Nominations sub-tab, and the pool's on Pool (#945), so heading navigation
+/// finds each list. Announced as a heading. Each list's count is its
+/// header's, under its controls.
 class EventGamesTabHeading extends StatelessWidget {
   const EventGamesTabHeading({required this.title, super.key});
 
@@ -504,7 +496,10 @@ class _NominationsHeader extends StatelessWidget {
               focusNode: controller.nominationsFiltersFocus,
               onPressed: () => unawaited(_openFilters(context)),
               icon: const Icon(Icons.tune),
-              label: Text(l10n.eventsNominationsFilters),
+              label: Text(
+                l10n.eventsNominationsFilters,
+                semanticsLabel: l10n.eventsNominationsFiltersNamed,
+              ),
             ),
             _SortMenu(
               sort: controller.nominationSort,
@@ -730,20 +725,6 @@ String _sortName(EventsLocalizations l10n, NominationSort sort) =>
       NominationSort.mostSupport => l10n.eventsNominationsSortSupport,
       NominationSort.soonestDeadline => l10n.eventsNominationsSortDeadline,
     };
-
-/// A state in the rows' place, spaced from the heading above it and the pool
-/// below.
-class _State extends StatelessWidget {
-  const _State({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceMd),
-    child: Center(child: child),
-  );
-}
 
 /// What the viewer's vote on each open row needs: the line above it, and
 /// whether it may be pressed now ([NominationVoteControl.enabled] and

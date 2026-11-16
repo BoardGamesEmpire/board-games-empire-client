@@ -13,12 +13,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart' show CollectionFilter, EventNomination;
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the Games tab keeps across the screen's rebuilds (#516): its filter,
-/// whether it has been shown, the ids the pool was last asked with, how the
-/// pool's last read ended and how the nominations' did (#517), the
-/// nominations' own filter and order (#517), and the focus nodes a control
-/// that leaves hands focus on to.
+/// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
+/// controller (#945), its filter, whether it has been shown, the ids the pool
+/// was last asked with, how the pool's last read ended and how the nominations'
+/// did (#517), the nominations' own filter and order (#517), and the focus
+/// nodes a control that leaves hands focus on to.
+///
+/// It notifies its listeners when the chosen sub-tab changes, once for each
+/// change and as the change starts, and when the sub-tabs' controller is
+/// replaced, so the screen's page, which listens to it, builds on the new one.
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
@@ -33,6 +38,38 @@ class EventGamesTabController extends ChangeNotifier {
   bool _disposed = false;
   EventGamesLoad? _settled;
   EventNominationsLoad? _nominationsSettled;
+
+  late TabController _sections;
+
+  /// The Games tab's sub-tabs' controller (#945), one tab for each
+  /// [EventGamesSection]. [EventGamesTabScope] makes it before the first
+  /// build and replaces it when the motion duration changes, so read it from
+  /// here each build rather than keeping it.
+  TabController get sections => _sections;
+
+  /// The sub-tab chosen.
+  EventGamesSection get section => EventGamesSection.values[sections.index];
+
+  /// Starts the controller's life with [sections]. For the scope only.
+  // A setter would pair with the `sections` getter and read as anyone's to
+  // set; the scope's verbs, attach and replace, say which one tells the
+  // listeners.
+  // ignore: use_setters_to_change_properties
+  void attachSections(TabController sections) => _sections = sections;
+
+  /// Moves to [sections], which takes the place of the old controller at the
+  /// same index, and tells the listeners once so the page builds on it. For
+  /// the scope only.
+  void replaceSections(TabController sections) {
+    _sections = sections;
+    notifyListeners();
+  }
+
+  /// Tells the listeners the chosen sub-tab changed. For the scope only,
+  /// which calls it once for each change, as the change starts, the way the
+  /// screen's own tab bar tells the page: the page swaps the list under the
+  /// bar at once, not once the indicator has settled.
+  void sectionChanged() => notifyListeners();
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
@@ -300,7 +337,9 @@ class EventGamesTabController extends ChangeNotifier {
   /// Answers the pool going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it: Take back's hand-off (see
   /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
-  /// scope's.
+  /// scope's. Only while the Pool sub-tab is chosen (#945): on Nominations
+  /// the pool's rows aren't built, so the change disarms what it ends and
+  /// hands nothing on.
   void poolChanged(
     BuildContext context,
     EventGamesState previous,
@@ -324,13 +363,18 @@ class EventGamesTabController extends ChangeNotifier {
 
     int? left;
     FocusNode? held;
-    for (final (index, game) in shownBefore.indexed) {
-      if (stays.contains(game.id)) continue;
-      final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
-      if (!focused && !_armed.contains(game.id)) continue;
-      left = index;
-      held = focused ? FocusManager.instance.primaryFocus : null;
-      break;
+    // Keeps the hand-off off a sub-tab that isn't shown (#945): with
+    // Nominations chosen, a take-back that ends hands nothing on, and focus
+    // stays where the user put it.
+    if (section == EventGamesSection.pool) {
+      for (final (index, game) in shownBefore.indexed) {
+        if (stays.contains(game.id)) continue;
+        final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
+        if (!focused && !_armed.contains(game.id)) continue;
+        left = index;
+        held = focused ? FocusManager.instance.primaryFocus : null;
+        break;
+      }
     }
 
     // Disarm and let go what has left the pool, the nodes once their rows
@@ -417,7 +461,9 @@ class EventGamesTabController extends ChangeNotifier {
   /// which moves no input focus, is handed on too. It moves focus only while
   /// focus is free then: on nothing, on the page, or still on the row that
   /// left. A row that stays keeps its own focus, as Withdraw's and a host's
-  /// decision's hand it to the row's lines.
+  /// decision's hand it to the row's lines. Only while the Nominations
+  /// sub-tab is chosen (#945): on Pool the nominations' rows aren't built,
+  /// so nothing is handed on.
   void nominationsChanged(
     BuildContext context,
     EventNominationsState previous,
@@ -461,13 +507,15 @@ class EventGamesTabController extends ChangeNotifier {
 
     int? left;
     FocusNode? held;
-    for (final (index, nomination) in shownBefore.indexed) {
-      if (stays.contains(nomination.id)) continue;
-      final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
-      if (!focused && nomination.id != written) continue;
-      left = index;
-      held = focused ? FocusManager.instance.primaryFocus : null;
-      break;
+    if (section == EventGamesSection.nominations) {
+      for (final (index, nomination) in shownBefore.indexed) {
+        if (stays.contains(nomination.id)) continue;
+        final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
+        if (!focused && nomination.id != written) continue;
+        left = index;
+        held = focused ? FocusManager.instance.primaryFocus : null;
+        break;
+      }
     }
 
     // Let go the nodes of nominations no longer held, once their rows have
@@ -535,10 +583,15 @@ class EventGamesTabController extends ChangeNotifier {
 /// Holds the Games tab's [EventGamesTabController] above the detail's
 /// builder (#516), under the screen's `DefaultTabController` and its blocs.
 ///
-/// It tells [onFirstShown] the first time the Games tab is chosen, which
-/// reads the pool and the nominations (#517) and answers whether the tab
-/// showed on a ready detail; only then is the tab
-/// [EventGamesTabController.shown].
+/// It tells [onFirstShown] whenever the Games tab is chosen and hasn't yet
+/// shown: as it is chosen; after the scope's first frame, as the screen's
+/// location can open it on Games (#856); and on each of the detail's states, so
+/// Games chosen while the detail loads shows once the detail is ready on the
+/// server. An event only this device knows has no Games tab to show, and the
+/// screen takes its tabs back to Details (#856), so Games doesn't wait on it
+/// for the event to reach the server. [onFirstShown] reads the pool and the
+/// nominations (#517) and answers whether the tab showed on a ready detail;
+/// only then is the tab [EventGamesTabController.shown].
 ///
 /// It watches the pool, and tells the controller each state as the pool
 /// emits it, before the frame that builds it and on either tab: how the last
@@ -570,16 +623,23 @@ class EventGamesTabController extends ChangeNotifier {
 /// Where the tab has nothing left to take focus, as when the pool turns
 /// hidden and the header goes with the rows, nothing is focused: focus
 /// stays on the page, where Flutter leaves it when a focused control goes.
+///
+/// Each list hands focus on only while its sub-tab is chosen (#945): a
+/// take-back that ends while Nominations is shown, or a nominations write
+/// that ends while Pool is, hands nothing on, then or when its sub-tab is
+/// chosen again. Focus stays where the user put it, on the sub-tab chosen.
 class EventGamesTabScope extends StatefulWidget {
   const EventGamesTabScope({
     required this.onFirstShown,
     required this.child,
+    this.initialSection = EventGamesSection.nominations,
     super.key,
   });
 
   /// Reads the pool and the nominations for the tab's first showing, and
-  /// answers whether it showed on a ready detail. Given the scope's
-  /// controller, which its context, above the scope's own, can't look up.
+  /// answers whether it showed on a ready detail. Asked again, as above,
+  /// until it does. Given the scope's controller, which its context, above
+  /// the scope's own, can't look up.
   final bool Function(
     BuildContext context,
     EventGamesTabController controller,
@@ -587,6 +647,11 @@ class EventGamesTabScope extends StatefulWidget {
   onFirstShown;
 
   final Widget child;
+
+  /// The sub-tab the Games tab opens on (#945): the one the screen's
+  /// location names, if it names one (#856). Read once, as the sub-tabs'
+  /// controller is made.
+  final EventGamesSection initialSection;
 
   /// The controller of the scope above [context].
   static EventGamesTabController of(BuildContext context) => context
@@ -597,9 +662,14 @@ class EventGamesTabScope extends StatefulWidget {
   State<EventGamesTabScope> createState() => _EventGamesTabScopeState();
 }
 
-class _EventGamesTabScopeState extends State<EventGamesTabScope> {
+class _EventGamesTabScopeState extends State<EventGamesTabScope>
+    with TickerProviderStateMixin {
   final _controller = EventGamesTabController();
   TabController? _tabs;
+  TabController? _sections;
+  int _notifiedSection = 0;
+  EventDetailBloc? _detailBloc;
+  StreamSubscription<EventDetailState>? _detail;
   EventGamesBloc? _bloc;
   StreamSubscription<EventGamesState>? _pool;
   EventGamesState _last = const EventGamesState();
@@ -608,12 +678,34 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
   EventNominationsState _lastNominations = const EventNominationsState();
 
   @override
+  void initState() {
+    super.initState();
+    // The screen can open on Games (#856), with no tab change to say so.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _firstShowing());
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final tabs = DefaultTabController.of(context);
     if (tabs != _tabs) {
-      _tabs?.removeListener(_tabChanged);
-      _tabs = tabs..addListener(_tabChanged);
+      _tabs?.removeListener(_firstShowing);
+      _tabs = tabs..addListener(_firstShowing);
+    }
+    _useSections(
+      BgeMotion.durationOf(context, BgeTokens.of(context).motionMedium),
+    );
+    final detail = context.read<EventDetailBloc>();
+    if (detail != _detailBloc) {
+      unawaited(_detail?.cancel());
+      _detailBloc = detail;
+      // Games chosen before the detail is ready shows once it is. This rests on
+      // the bloc's first Ready of an event the server knows carrying
+      // `reading: true`, as every open starts a read: the first showing then
+      // reads neither the pool nor the nominations, and leaves them to that
+      // read's end (the screen's `_readPoolAgain`), rather than reading them
+      // beside it.
+      _detail = detail.stream.listen((_) => _firstShowing());
     }
     final bloc = context.read<EventGamesBloc>();
     if (bloc != _bloc) {
@@ -637,7 +729,40 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
     }
   }
 
-  void _tabChanged() {
+  /// Makes the sub-tabs' controller, and when [duration] differs from the
+  /// one it has, replaces it by one at the same index, as
+  /// `DefaultTabController` does, and lets the old one go after the frame.
+  void _useSections(Duration duration) {
+    final old = _sections;
+    if (old != null && old.animationDuration == duration) return;
+    final sections = TabController(
+      length: EventGamesSection.values.length,
+      initialIndex: old?.index ?? widget.initialSection.index,
+      animationDuration: duration,
+      vsync: this,
+    );
+    _sections = sections;
+    _notifiedSection = sections.index;
+    sections.addListener(_sectionChanged);
+    if (old == null) {
+      _controller.attachSections(sections);
+      return;
+    }
+    old.removeListener(_sectionChanged);
+    _controller.replaceSections(sections);
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+  }
+
+  void _sectionChanged() {
+    final index = _sections!.index;
+    if (index == _notifiedSection) return;
+    _notifiedSection = index;
+    _controller.sectionChanged();
+  }
+
+  /// Asks [EventGamesTabScope.onFirstShown] for the Games tab's first
+  /// showing, where Games is chosen and hasn't yet shown on a ready detail.
+  void _firstShowing() {
     if (_controller.shown ||
         _tabs?.index != EventDetailTab.games.index ||
         !mounted) {
@@ -672,7 +797,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
 
   @override
   void dispose() {
-    _tabs?.removeListener(_tabChanged);
+    _tabs?.removeListener(_firstShowing);
+    _sections?.dispose();
+    unawaited(_detail?.cancel());
     unawaited(_pool?.cancel());
     unawaited(_nominations?.cancel());
     _controller.dispose();

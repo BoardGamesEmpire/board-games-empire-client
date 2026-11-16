@@ -1184,6 +1184,50 @@ void main() {
       expect(tabs().animation!.value, details.index);
     });
 
+    testWidgets('under reduced motion the sub-tabs switch at once, and turning '
+        'it on keeps the chosen sub-tab (#945)', (tester) async {
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      Finder section(EventGamesSection which) =>
+          find.byKey(EventDetailScreen.sectionTabKey(which));
+      // The controller the bar draws, which the scope replaces as the
+      // setting changes.
+      TabController sections() => tester
+          .widget<TabBar>(
+            find.descendant(
+              of: find.byKey(EventDetailScreen.sectionBarKey),
+              matching: find.byType(TabBar),
+            ),
+          )
+          .controller!;
+      final poolHeading = find.text('Games pool', skipOffstage: false);
+      await showTabbed(tester, hosted());
+      await choose(tester, games);
+      expect(sections().animationDuration, isNot(Duration.zero));
+      await tester.tap(section(EventGamesSection.pool));
+      await animate(tester);
+      expect(poolHeading, findsOneWidget);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pump();
+
+      expect(poolHeading, findsOneWidget);
+      expect(sections().index, EventGamesSection.pool.index);
+      expect(sections().animationDuration, Duration.zero);
+
+      // One frame, with no time passing: the indicator is already there.
+      await tester.tap(section(EventGamesSection.nominations));
+      await tester.pump();
+      expect(poolHeading, findsNothing);
+      expect(sections().indexIsChanging, isFalse);
+      expect(sections().animation!.value, EventGamesSection.nominations.index);
+      // The old controller, let go after the frame, left nothing behind.
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('an outcome is heard as it lands, however far down the page '
         'is', (tester) async {
       // A long roster at 320dp, scrolled to its end: the banners are many
@@ -1438,7 +1482,8 @@ void main() {
     /// nominations are Catan alone, unless [nominations] says otherwise. A
     /// nominate answers Catan, a vote goes through, a withdrawal answers
     /// Catan withdrawn, an approval and a rejection answer Catan so decided,
-    /// and a resolve answers Catan [passed], unless a test says otherwise.
+    /// a resolve answers Catan [passed], and a batch offer offers each game
+    /// asked for, unless a test says otherwise.
     FakeEventRemote serving(
       EventDetail detail, {
       FutureOr<EventSnapshot> Function(String id)? read,
@@ -1453,16 +1498,20 @@ void main() {
       rejected,
       FutureOr<ResolveAnswer> Function(NominationDecisionRequest request)?
       resolved,
+      FutureOr<List<GameOfferResult>> Function(OfferGamesRequest request)?
+      offeredBatch,
     }) => FakeEventRemote.detail(
       read ?? (_) => detail.snapshot,
       pool: pool ?? (_) => const [],
-      offeredBatch: (request) => [
-        for (final id in request.collectionIds)
-          GameOfferResult.offered(
-            collectionId: id,
-            alreadyOffered: false,
-          ),
-      ],
+      offeredBatch:
+          offeredBatch ??
+          (request) => [
+            for (final id in request.collectionIds)
+              GameOfferResult.offered(
+                collectionId: id,
+                alreadyOffered: false,
+              ),
+          ],
       takenBack: (_) {},
       nominations: nominations ?? (_) => [catan],
       nomination: (_) => catan,
@@ -1504,6 +1553,15 @@ void main() {
       blocOf(tester).add(const EventDetailRetryRequested());
       await settle(tester);
       await settle(tester);
+    }
+
+    /// Chooses the Games tab's sub-tab [which] (#945).
+    Future<void> chooseSection(
+      WidgetTester tester,
+      EventGamesSection which,
+    ) async {
+      await tester.tap(find.byKey(EventDetailScreen.sectionTabKey(which)));
+      await animate(tester);
     }
 
     /// The screen's nominations bloc. The provider is inside the screen, so
@@ -1881,9 +1939,11 @@ void main() {
       expect(stale(), findsNothing);
     });
 
-    testWidgets("the refresh banner follows the pool's, and keeps its place "
-        "and its retry's focus as the pool's goes", (tester) async {
+    testWidgets("the refresh banner shows on Nominations, the pool's on "
+        "Pool, and it keeps its place and its retry's focus as the pool's "
+        'write lines above it come and go (#945)', (tester) async {
       var fails = false;
+      final offered = Completer<List<GameOfferResult>>();
       final detail = hosted();
       final remote = serving(
         detail,
@@ -1893,20 +1953,27 @@ void main() {
         nominations: (_) => fails
             ? throw const EventRemoteTransientException('offline')
             : [catan],
+        offeredBatch: (_) => offered.future,
       );
       await showTabbed(tester, detail, remote);
       await choose(tester, games);
       final poolStale = find.byKey(EventDetailScreen.poolRefreshBannerKey);
+      final progress = find.byKey(EventDetailScreen.poolProgressKey);
+      final poolOutcome = find.byKey(EventDetailScreen.poolOutcomeKey);
 
       fails = true;
       await readEvent(tester);
 
-      expectInFooter(tester, poolStale);
+      // Each list's banner with its own sub-tab: the nominations' on
+      // Nominations, where Games opens, and the pool's on Pool.
       expectInFooter(tester, stale());
-      expect(
-        tester.getRect(poolStale).top,
-        lessThan(tester.getRect(stale()).top),
-      );
+      expect(poolStale, findsNothing);
+      await chooseSection(tester, EventGamesSection.pool);
+      expectInFooter(tester, poolStale);
+      expect(stale(), findsNothing);
+      await chooseSection(tester, EventGamesSection.nominations);
+      expectInFooter(tester, stale());
+
       FocusNode retryFocus() => tester
           .widget<ButtonStyleButton>(
             find.byKey(EventDetailScreen.nominationsRetryKey),
@@ -1916,15 +1983,44 @@ void main() {
       await tester.pump();
       expect(retry.hasPrimaryFocus, isTrue);
 
-      // The pool's read again goes through, and its banner leaves.
-      fails = false;
+      /// The nominations' banner is still in the footer, under [above], with
+      /// the same Try again holding focus.
+      void keptUnder(Finder above) {
+        expectInFooter(tester, above);
+        expectInFooter(tester, stale());
+        expect(
+          tester.getRect(above).top,
+          lessThan(tester.getRect(stale()).top),
+        );
+        expect(retryFocus(), same(retry));
+        expect(retry.hasPrimaryFocus, isTrue);
+      }
+
+      // A run of offers starts: the pool's line saying so comes above the
+      // banner, on every tab.
       tester
           .element(find.byType(Scaffold).first)
           .read<EventGamesBloc>()
-          .add(const EventGamesRetryRequested('e-1', ['att-me', 'att-2']));
-      await animate(tester);
+          .add(offerCatan);
+      await tester.pump();
+      await tester.pump();
+      keptUnder(progress);
 
-      expect(poolStale, findsNothing);
+      // It ends: the line goes, and the banner saying how it went comes.
+      offered.complete(const [
+        GameOfferResult.offered(collectionId: 'col-1', alreadyOffered: false),
+      ]);
+      await animate(tester);
+      expect(progress, findsNothing);
+      keptUnder(poolOutcome);
+
+      // That banner goes too.
+      tester
+          .element(find.byType(Scaffold).first)
+          .read<EventGamesBloc>()
+          .add(const EventGamesOutcomeDismissed());
+      await animate(tester);
+      expect(poolOutcome, findsNothing);
       expectInFooter(tester, stale());
       expect(retryFocus(), same(retry));
       expect(retry.hasPrimaryFocus, isTrue);
@@ -2050,7 +2146,7 @@ void main() {
               answered: NominationStatus.open,
               copy:
                   'An error occurred while nominating Catan. Check the '
-                  'nominations above before nominating it again.',
+                  'Nominations tab before nominating it again.',
               tone: error,
             ),
             (
@@ -10723,8 +10819,18 @@ void main() {
       build: screen(remote: nominating),
       arrange: (tester) async {
         await showNominations(tester);
+        // The heading, not the sub-tab of the same words above it (#945).
         await Scrollable.ensureVisible(
-          tester.element(find.text('Nominations', skipOffstage: false)),
+          tester.element(
+            find.ancestor(
+              of: find.text('Nominations', skipOffstage: false),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Semantics && (widget.properties.header ?? false),
+                skipOffstage: false,
+              ),
+            ),
+          ),
         );
         await tester.pumpAndSettle();
         expect(

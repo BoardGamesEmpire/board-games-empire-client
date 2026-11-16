@@ -16,6 +16,7 @@ import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
@@ -84,66 +85,65 @@ typedef _NominationsShown = ({
   EventNominationsState state,
 });
 
-/// What the Games tab shows, worked out once per build (#517): the
-/// Nominations section's body and rows, if it has a nominations' state, the
-/// pool's, and the roster's names that both name people from. Each list's
-/// rows are the ones its filter keeps, the nominations' in the order chosen.
-/// The screen counts its rows for the page's `semanticChildCount`, and the
-/// tab draws the same value, so the two can't disagree.
-final class _GamesBody {
-  const _GamesBody({
-    required this.pool,
-    required this.poolRows,
-    required this.nominations,
-    required this.names,
-  });
+/// What the pool shows: its body, and the games the filter keeps when it
+/// shows rows, none otherwise.
+typedef _PoolShown = ({_Body body, List<OfferedGame> rows});
 
-  /// What the tab shows for [games] and [nominations] on [detail].
+/// What the Games tab shows, worked out once per build (#517): the sub-tab
+/// shown (#945), that sub-tab's body and rows, and the roster's names that
+/// both lists name people from. Only the sub-tab shown is worked out: the
+/// Nominations section's where it is chosen, else the pool's. Its rows are
+/// the ones its filter keeps, the nominations' in the order chosen. The
+/// screen counts them for the page's `semanticChildCount`, and the tab draws
+/// the same value, so the two can't disagree.
+final class _GamesBody {
+  const _GamesBody({required this.names, this.pool, this.nominations});
+
+  /// What the tab shows for [games] and [nominations] on [detail], on the
+  /// [controller]'s sub-tab. With no nominations' state it is the pool
+  /// alone (#945).
   factory _GamesBody.of(
     EventDetailReady detail,
     EventGamesState games,
     EventNominationsState? nominations,
     EventGamesTabController controller,
   ) {
-    final (:body, :rows) = _poolOf(detail, games, controller);
+    final names = poolNames(detail.detail);
+    if (nominations == null || controller.section == EventGamesSection.pool) {
+      return _GamesBody(
+        names: names,
+        pool: _poolOf(detail, games, controller),
+      );
+    }
     return _GamesBody(
-      pool: body,
-      poolRows: rows,
-      nominations: nominations == null
-          ? null
-          : _nominationsOf(detail, nominations, controller),
-      names: poolNames(detail.detail),
+      names: names,
+      nominations: _nominationsOf(detail, nominations, controller),
     );
   }
 
-  /// What the pool shows under its header, if it has one.
-  final _Body pool;
+  /// What the pool shows, while the tab shows the pool; null otherwise.
+  final _PoolShown? pool;
 
-  /// The games the filter keeps, while [pool] is rows; none otherwise.
-  final List<OfferedGame> poolRows;
-
-  /// What the Nominations section shows, or null for no section.
+  /// What the Nominations section shows, while the tab shows it; null
+  /// otherwise.
   final _NominationsShown? nominations;
 
   /// The roster's names, by row id: none where it is withheld or not read.
   final Map<String, String?> names;
 
-  /// How many nominations the section shows as rows, those its filter
-  /// keeps: none while it shows a state. The pool's rows are counted on from
-  /// them.
-  int get nominationRowCount => switch (nominations) {
-    (body: EventNominationsBody.rows, :final rows, state: _) => rows.length,
+  /// The rows the sub-tab shown holds, those its filter keeps, and none
+  /// while it shows a state: the page's `semanticChildCount` while it shows
+  /// the tab (#945).
+  int get rowCount => switch ((pool, nominations)) {
+    ((body: _Body.rows, :final rows), _) => rows.length,
+    (_, (body: EventNominationsBody.rows, :final rows, state: _)) =>
+      rows.length,
     _ => 0,
   };
 
-  /// The rows the tab shows, the nominations' and the pool's: the page's
-  /// `semanticChildCount` while it shows the tab.
-  int get rowCount =>
-      nominationRowCount + (pool == _Body.rows ? poolRows.length : 0);
-
   /// What the pool shows for [games] on [detail], and the rows when it shows
   /// rows.
-  static ({_Body body, List<OfferedGame> rows}) _poolOf(
+  static _PoolShown _poolOf(
     EventDetailReady detail,
     EventGamesState games,
     EventGamesTabController controller,
@@ -227,24 +227,29 @@ final class _GamesBody {
   }
 }
 
-/// The Games tab of an event's screen (#516): the games nominated for the
-/// lineup ([EventNominationsSection], #517), narrowed and ordered by its own
-/// filters and sort, then the games its attendees offer to bring, one row
-/// per offered copy, under a header with Offer games, a search, a filter by
-/// person, "Not mine" and the shared filter sheet, as Offer games has it
-/// ([eventGameFilterOptions], #851). Each row names its game with
-/// its subtitle where it has one ([gameName], #851), as do its Take back and
-/// Nominate, the dialogs they ask with, and their outcomes. A
-/// row that supplies a live nomination says "Nominated" (#517). Each row
-/// ends with Nominate where the viewer is offered it ([nominateGate]), and
-/// the viewer's own rows with Take back ([offerGamesGate]); every other row
-/// too where the viewer may take back anyone's game ([canTakeBackAnyGame],
-/// #518).
+/// The Games tab of an event's screen (#516), in two sub-tabs (#945):
+/// Nominations, the games nominated for the lineup ([EventNominationsSection],
+/// #517), narrowed and ordered by its own filters and sort; and Pool, the games
+/// its attendees offer to bring, one row per offered copy, under a header with
+/// Offer games, a search, a filter by person, "Not mine" and the shared filter
+/// sheet, as Offer games has it ([eventGameFilterOptions], #851). Each pool row
+/// names its game with its subtitle where it has one ([gameName], #851), as do
+/// its Take back and Nominate, the dialogs they ask with, and their outcomes. A
+/// row that supplies a live nomination says "Nominated" (#517). Each row ends
+/// with Nominate where the viewer is offered it ([nominateGate]), and the
+/// viewer's own rows with Take back ([offerGamesGate]); every other row too
+/// where the viewer may take back anyone's game ([canTakeBackAnyGame], #518).
 ///
-/// Its slivers, as one group under the tab bar: the Nominations section,
-/// where there is a nominations' state; then the pool's heading, "Games
-/// pool", in every state, so heading navigation finds the pool as it finds
-/// the section ([EventGamesTabHeading]); then the pool's header, then its
+/// Its slivers, as one group under the tab bar: first the sub-tabs' bar
+/// ([EventGamesSectionBar]), Material's secondary [TabBar], whose controller is
+/// the [controller]'s [EventGamesTabController.sections]; then the chosen
+/// sub-tab's slivers alone, which the bar swaps, keeping its own place, so
+/// focus stays on the sub-tab chosen. Games opens on Nominations. Where there
+/// is no nominations' state, the tab is the pool alone, with no bar.
+///
+/// Nominations is the Nominations section. Pool is the pool's heading,
+/// "Games pool", in every state, so heading navigation finds it as it finds
+/// the section's ([EventGamesTabHeading]); then the pool's header, then its
 /// rows ([BgeKeyedSliverList], keyed by the offered game's id) or one state
 /// in a [BgeStateSliver]. The header stays above every state but the wait
 /// for a first answer (or for the event's read after the pool found it
@@ -253,17 +258,18 @@ final class _GamesBody {
 /// for the event's read to bring it, and if that read fails, the tab says
 /// it couldn't load the games, with Try again reading the event. The
 /// nominations need no roster, so the section shows in every state of the
-/// pool, hidden included.
+/// pool, hidden included. Each sub-tab's filter, and the search typed in
+/// the pool's, are the [controller]'s, so they outlive a switch to the
+/// other sub-tab or to Details.
 ///
 /// What it shows is worked out once, as the tab is made, from the detail,
-/// both states and the [controller] (#517). The page's `semanticChildCount`
-/// is [rowCount], from that same value: the nominations' rows and the
-/// pool's, the pool's counted on from the nominations' so a screen reader
-/// numbers them as one list. The line saying how many games a run of offers
-/// is offering and how the pool's last write went are [EventGamesFooter]'s,
-/// in the page's footer on either tab; so is the stale-data banner after a
-/// failed read of games still shown, while this tab is selected, and the
-/// nominations' own.
+/// the chosen sub-tab's state and the [controller] (#517). The page's
+/// `semanticChildCount` is [rowCount], from that same value: the rows of
+/// the sub-tab shown, numbered from its first. The line saying how many
+/// games a run of offers is offering and how the pool's last write went are
+/// [EventGamesFooter]'s, in the page's footer on either tab; so is the
+/// stale-data banner of the sub-tab shown, after a failed read of what it
+/// still shows, while this tab is selected.
 ///
 /// ## Writes
 ///
@@ -358,8 +364,11 @@ class EventGamesTab extends StatelessWidget {
   /// What the tab shows, worked out once as it is made.
   final _GamesBody _body;
 
-  /// Key on the Nominations section, so the pool's header after it keeps
-  /// its place.
+  /// Key on the sliver that holds the sub-tabs' bar (#945).
+  static const _sectionBarKey = ValueKey<String>('event_games.section_bar');
+
+  /// Key on the Nominations section, so the pool's slivers never take its
+  /// place as the sub-tabs swap (#945).
   static const _nominationsKey = ValueKey<String>('event_games.nominations');
 
   /// Key on the pool's heading, so it keeps its place as the header under
@@ -370,17 +379,15 @@ class EventGamesTab extends StatelessWidget {
   /// focus, as what is under it changes.
   static const _headerKey = ValueKey<String>('event_games.header');
 
-  /// How many rows the tab shows: the nominations' and the pool's, none of
-  /// either while it shows a state. The `semanticChildCount` of the page
-  /// while it shows the tab.
+  /// How many rows the tab shows: those of the sub-tab shown (#945), none
+  /// while it shows a state. The `semanticChildCount` of the page while it
+  /// shows the tab.
   int get rowCount => _body.rowCount;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final now = this.now();
-    final body = _body.pool;
-    final rows = _body.poolRows;
     final names = _body.names;
     final gate = offerGamesGate(detail);
     // Take back on someone else's row (#518), where the viewer may take
@@ -434,6 +441,25 @@ class EventGamesTab extends StatelessWidget {
 
     return SliverMainAxisGroup(
       slivers: [
+        // The sub-tabs' bar (#945), where there are two to show: with no
+        // nominations' state the pool shows alone, with no bar. Keyed, so it
+        // keeps its place, and the sub-tab chosen its focus, as the sub-tabs
+        // swap under it. The controller is read as the tab is made: the
+        // scope replaces it when the motion setting changes.
+        if (nominations != null)
+          SliverToBoxAdapter(
+            key: _sectionBarKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EventGamesSectionBar(
+                  key: EventDetailScreen.sectionBarKey,
+                  controller: controller.sections,
+                ),
+                const BgeGap.lg(),
+              ],
+            ),
+          ),
         if (_body.nominations case final shown?)
           EventNominationsSection(
             key: _nominationsKey,
@@ -453,149 +479,149 @@ class EventGamesTab extends StatelessWidget {
             acting: acting,
             now: now,
           ),
-        // In every state of the pool, as the section's is in every state of
-        // its own, so heading navigation finds both (#517). No count: the
-        // header's says how many games the filter keeps while it narrows,
-        // and a second would say it twice.
-        SliverToBoxAdapter(
-          key: _poolHeadingKey,
-          child: EventGamesTabHeading(title: l10n.eventsGamesPoolHeading),
-        ),
-        if (body != _Body.hidden && body != _Body.loading)
+        if (_body.pool case (:final body, :final rows)) ...[
+          // In every state of the pool, as the section's is in every state of
+          // its own, so heading navigation finds the list (#517). No count: the
+          // header's says how many games the filter keeps while it narrows,
+          // and a second would say it twice.
           SliverToBoxAdapter(
-            key: _headerKey,
-            child: _PoolHeader(
-              controller: controller,
-              games: games,
-              gate: gate,
-              anyGame: anyGame,
-              viewerId: viewerId,
-              names: names,
-              writable: writable,
-              shown: rows.length,
-              onOfferGames: onOfferGames,
-            ),
+            key: _poolHeadingKey,
+            child: EventGamesTabHeading(title: l10n.eventsGamesPoolHeading),
           ),
-        switch (body) {
-          _Body.hidden => BgeStateSliver(
-            child: BgeEmptyState(
-              icon: Icons.visibility_off_outlined,
-              title: l10n.eventsGamesHiddenTitle,
-            ),
-          ),
-          _Body.loading => BgeStateSliver(
-            child: BgeLoadingState(label: l10n.eventsGamesLoading),
-          ),
-          _Body.failed => BgeStateSliver(
-            child: BgeErrorState(
-              icon: Icons.cloud_off_outlined,
-              title: l10n.eventsGamesFailedTitle,
-              body: l10n.eventsGamesFailedBody,
-              retryLabel: l10n.eventsRefreshRetry,
-              retryProgressLabel: l10n.eventsRefreshInProgress,
-              retryKey: EventDetailScreen.poolRetryKey,
-              retrying: games.refreshing,
-              onRetry: () => retryEventGamesPool(context),
-            ),
-          ),
-          _Body.rosterFailed => BgeStateSliver(
-            child: BgeErrorState(
-              icon: Icons.cloud_off_outlined,
-              title: l10n.eventsGamesFailedTitle,
-              body: l10n.eventsGamesFailedBody,
-              retryLabel: l10n.eventsRefreshRetry,
-              retryProgressLabel: l10n.eventsRefreshInProgress,
-              retryKey: EventDetailScreen.poolRetryKey,
-              retrying: detail.refreshing,
-              // The event's read brings the roster, whose end reads the pool.
-              onRetry: () => context.read<EventDetailBloc>().add(
-                const EventDetailRetryRequested(),
+          if (body != _Body.hidden && body != _Body.loading)
+            SliverToBoxAdapter(
+              key: _headerKey,
+              child: _PoolHeader(
+                controller: controller,
+                games: games,
+                gate: gate,
+                anyGame: anyGame,
+                viewerId: viewerId,
+                names: names,
+                writable: writable,
+                shown: rows.length,
+                onOfferGames: onOfferGames,
               ),
             ),
-          ),
-          _Body.empty => BgeStateSliver(
-            child: BgeEmptyState(
-              icon: Icons.casino_outlined,
-              title: l10n.eventsGamesEmptyTitle,
-              body: l10n.eventsGamesEmptyBody,
-            ),
-          ),
-          _Body.noMatches => BgeStateSliver(
-            child: BgeEmptyState(
-              icon: Icons.search_off_outlined,
-              title: l10n.eventsGamesNoMatchesTitle,
-              action: OutlinedButton(
-                key: EventDetailScreen.poolClearFiltersKey,
-                focusNode: controller.clearFiltersFocus,
-                onPressed: () => controller.clearFilters(context),
-                child: Text(l10n.eventsGamesClearFilters),
+          switch (body) {
+            _Body.hidden => BgeStateSliver(
+              child: BgeEmptyState(
+                icon: Icons.visibility_off_outlined,
+                title: l10n.eventsGamesHiddenTitle,
               ),
             ),
-          ),
-          _Body.rows => BgeKeyedSliverList<OfferedGame>(
-            items: rows,
-            keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
-            // Counted on from the nominations' rows above.
-            semanticIndexOffset: _body.nominationRowCount,
-            itemBuilder: (context, game) {
-              final own = viewerId != null && game.attendeeId == viewerId;
-              // In the second person on the viewer's own rows, as the row's
-              // third line is.
-              final notGoing =
-                  !nominating || !_supplierNotGoing(detail.detail, game)
-                  ? null
-                  : own
-                  ? l10n.eventsNominateYouNotGoingHint
-                  : l10n.eventsNominateSupplierNotGoingHint;
-              final name = names[game.attendeeId];
-              return _PoolRow(
-                game: game,
-                who: own
-                    ? l10n.eventsGamesYours
-                    : l10n.eventsGamesTheirs(
-                        name ?? l10n.eventsAttendeeSomeoneStart,
-                      ),
-                nominated: suppliesLive(game, nominated),
-                note: notGoing,
-                nominate: nominating
-                    ? _NominateButton(
-                        game: game,
-                        unread: unread,
-                        notGoing: notGoing,
-                        already: _alreadyTaken(l10n, [
-                          for (final each in scopes)
-                            nominateTaken(game, nominated, scope: each.scope),
-                        ]),
-                        enabled: mayNominate,
-                        runOver: !nominations.busy,
-                        onPressed: () =>
-                            _nominate(context, game, clock: this.now),
-                      )
-                    : null,
-                takeBack: (own ? gate != OfferGamesGate.hidden : anyGame)
-                    ? _TakeBackButton(
-                        game: game,
-                        area: controller.takeBackArea(game.id),
-                        inert: games.takingBack == game.id,
-                        enabled: writable,
-                        runOver: !games.busy,
-                        onPressed: () {
-                          // Armed by the press itself, however it came.
-                          controller.armTakeBack(game.id);
-                          return _takeBack(
-                            context,
-                            controller,
-                            game,
-                            viewerId: viewerId,
-                            names: names,
-                          );
-                        },
-                      )
-                    : null,
-              );
-            },
-          ),
-        },
+            _Body.loading => BgeStateSliver(
+              child: BgeLoadingState(label: l10n.eventsGamesLoading),
+            ),
+            _Body.failed => BgeStateSliver(
+              child: BgeErrorState(
+                icon: Icons.cloud_off_outlined,
+                title: l10n.eventsGamesFailedTitle,
+                body: l10n.eventsGamesFailedBody,
+                retryLabel: l10n.eventsRefreshRetry,
+                retryProgressLabel: l10n.eventsRefreshInProgress,
+                retryKey: EventDetailScreen.poolRetryKey,
+                retrying: games.refreshing,
+                onRetry: () => retryEventGamesPool(context),
+              ),
+            ),
+            _Body.rosterFailed => BgeStateSliver(
+              child: BgeErrorState(
+                icon: Icons.cloud_off_outlined,
+                title: l10n.eventsGamesFailedTitle,
+                body: l10n.eventsGamesFailedBody,
+                retryLabel: l10n.eventsRefreshRetry,
+                retryProgressLabel: l10n.eventsRefreshInProgress,
+                retryKey: EventDetailScreen.poolRetryKey,
+                retrying: detail.refreshing,
+                // The event's read brings the roster, whose end reads the pool.
+                onRetry: () => context.read<EventDetailBloc>().add(
+                  const EventDetailRetryRequested(),
+                ),
+              ),
+            ),
+            _Body.empty => BgeStateSliver(
+              child: BgeEmptyState(
+                icon: Icons.casino_outlined,
+                title: l10n.eventsGamesEmptyTitle,
+                body: l10n.eventsGamesEmptyBody,
+              ),
+            ),
+            _Body.noMatches => BgeStateSliver(
+              child: BgeEmptyState(
+                icon: Icons.search_off_outlined,
+                title: l10n.eventsGamesNoMatchesTitle,
+                action: OutlinedButton(
+                  key: EventDetailScreen.poolClearFiltersKey,
+                  focusNode: controller.clearFiltersFocus,
+                  onPressed: () => controller.clearFilters(context),
+                  child: Text(l10n.eventsGamesClearFilters),
+                ),
+              ),
+            ),
+            _Body.rows => BgeKeyedSliverList<OfferedGame>(
+              items: rows,
+              keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
+              itemBuilder: (context, game) {
+                final own = viewerId != null && game.attendeeId == viewerId;
+                // In the second person on the viewer's own rows, as the row's
+                // third line is.
+                final notGoing =
+                    !nominating || !_supplierNotGoing(detail.detail, game)
+                    ? null
+                    : own
+                    ? l10n.eventsNominateYouNotGoingHint
+                    : l10n.eventsNominateSupplierNotGoingHint;
+                final name = names[game.attendeeId];
+                return _PoolRow(
+                  game: game,
+                  who: own
+                      ? l10n.eventsGamesYours
+                      : l10n.eventsGamesTheirs(
+                          name ?? l10n.eventsAttendeeSomeoneStart,
+                        ),
+                  nominated: suppliesLive(game, nominated),
+                  note: notGoing,
+                  nominate: nominating
+                      ? _NominateButton(
+                          game: game,
+                          unread: unread,
+                          notGoing: notGoing,
+                          already: _alreadyTaken(l10n, [
+                            for (final each in scopes)
+                              nominateTaken(game, nominated, scope: each.scope),
+                          ]),
+                          enabled: mayNominate,
+                          runOver: !nominations.busy,
+                          onPressed: () =>
+                              _nominate(context, game, clock: this.now),
+                        )
+                      : null,
+                  takeBack: (own ? gate != OfferGamesGate.hidden : anyGame)
+                      ? _TakeBackButton(
+                          game: game,
+                          area: controller.takeBackArea(game.id),
+                          inert: games.takingBack == game.id,
+                          enabled: writable,
+                          runOver: !games.busy,
+                          onPressed: () {
+                            // Armed by the press itself, however it came.
+                            controller.armTakeBack(game.id);
+                            return _takeBack(
+                              context,
+                              controller,
+                              game,
+                              viewerId: viewerId,
+                              names: names,
+                            );
+                          },
+                        )
+                      : null,
+                );
+              },
+            ),
+          },
+        ],
       ],
     );
   }
@@ -1010,6 +1036,7 @@ class _PoolHeader extends StatelessWidget {
               ),
             GameFiltersButton(
               count: facets,
+              semanticsLabel: l10n.eventsGamesFiltersNamed(facets),
               focusNode: controller.filtersFocus,
               onPressed: () => unawaited(_openFilters(context)),
             ),

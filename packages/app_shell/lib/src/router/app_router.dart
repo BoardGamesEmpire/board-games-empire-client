@@ -217,12 +217,28 @@ abstract final class AppRoutes {
 
   static const _eventDetailSegment = ':$eventIdParam';
 
-  /// The location of one event's detail screen.
+  /// The query parameter of [eventDetail] that names the tab the screen
+  /// shows (#856): `nominations` or `pool` for a sub-tab of Games, `games`
+  /// for Games on its first, and none or `details` for Details. The screen
+  /// reads it, so a value it doesn't know opens Details.
+  static const eventTabParam = 'tab';
+
+  /// The [eventTabParam] value of the Games tab's Pool sub-tab, where Offer
+  /// games is (#856).
+  static const eventPoolTab = 'pool';
+
+  /// The location of one event's detail screen, on the tab [tab] names as
+  /// its [eventTabParam] (#856). Null leaves the parameter out, which is
+  /// Details.
   ///
   /// Ids are path-safe in practice, as [householdDetailOf]'s are; the encode
   /// is here for the id that one day is not.
-  static String eventDetailOf(String eventId) =>
-      '$events/${Uri.encodeComponent(eventId)}';
+  static String eventDetailOf(String eventId, {String? tab}) {
+    final location = '$events/${Uri.encodeComponent(eventId)}';
+    return tab == null
+        ? location
+        : '$location?$eventTabParam=${Uri.encodeQueryComponent(tab)}';
+  }
 
   /// Who answered one event's availability poll (#507), beneath its detail.
   /// Build a concrete location with [eventAvailabilityOf].
@@ -253,7 +269,7 @@ abstract final class AppRoutes {
   ///
   /// The page is opened only from the detail's Games tab, which hands it
   /// what to leave out as the push's `extra`. A deep link carries none, and
-  /// is sent to the detail: see [EventOfferGamesScreenBuilder].
+  /// is sent to the detail's Pool: see [EventOfferGamesScreenBuilder].
   static const eventOfferGames = '$eventDetail/$_eventOfferGamesSegment';
 
   static const _eventOfferGamesSegment = 'games/offer';
@@ -615,14 +631,17 @@ typedef EventCreateScreenBuilder = Widget? Function(
 );
 
 /// Builds one event's detail screen (#498) for the [AppRoutes.eventDetail]
-/// route, given the `:eventId` the path carried. Same null contract as
-/// [EventOverviewScreenBuilder].
+/// route, given the `:eventId` the path carried and the tab its
+/// [AppRoutes.eventTabParam] names (#856), or null where it names none.
+/// Same null contract as [EventOverviewScreenBuilder].
 ///
 /// The id reaches the builder unvalidated. The screen answers one that names
-/// no event with its not-found state.
+/// no event with its not-found state. The tab reaches it unvalidated too,
+/// and the screen opens Details for a value it doesn't know.
 typedef EventDetailScreenBuilder = Widget? Function(
   BuildContext context,
   String eventId,
+  String? tab,
 );
 
 /// Builds the page of who answered one event's availability poll (#507) for
@@ -672,11 +691,12 @@ typedef EventAddAttendeeScreenBuilder = Widget? Function(
 ///
 /// Everything else is [EventAddAttendeeScreenBuilder]'s: [args] is `Object`
 /// so this file stays free of feature packages; a location that carries no
-/// `extra`, a deep link or a `go`, is redirected to the event's detail; the
-/// page's own browser history entry, restored once the page has closed,
-/// builds nothing and leaves for the detail beneath it at once, in that
-/// entry's place; and only `extra` the builder doesn't recognise, which
-/// nothing pushes, falls back to [NotYetAvailableScreen].
+/// `extra`, a deep link or a `go`, is redirected to the event's detail, on
+/// the Pool its Offer games is on (#856); the page's own browser history
+/// entry, restored once the page has closed, builds nothing and leaves for
+/// the detail beneath it at once, in that entry's place, or for its Pool
+/// where nothing is beneath it; and only `extra` the builder doesn't
+/// recognise, which nothing pushes, falls back to [NotYetAvailableScreen].
 typedef EventOfferGamesScreenBuilder = Widget? Function(
   BuildContext context,
   String eventId,
@@ -1295,12 +1315,21 @@ GoRouter buildAppRouter({
                   ),
                   GoRoute(
                     path: AppRoutes._eventDetailSegment,
+                    // #856: the tab the screen shows is the location's
+                    // `tab` parameter, not a path segment. go_router keys a
+                    // page by its route, so a route per tab would build the
+                    // screen anew, blocs and all, on every change. The
+                    // screen's own tab changes come back here as a replace
+                    // that keeps this page and its key (see
+                    // [EventDetailScreenBuilder]).
                     pageBuilder: (context, state) {
                       final id =
                           state.pathParameters[AppRoutes.eventIdParam] ?? '';
+                      final tab =
+                          state.uri.queryParameters[AppRoutes.eventTabParam];
                       return _materialPage(
                         state,
-                        eventDetailBuilder?.call(context, id) ??
+                        eventDetailBuilder?.call(context, id, tab) ??
                             const NotYetAvailableScreen(),
                       );
                     },
@@ -1315,7 +1344,9 @@ GoRouter buildAppRouter({
                     // [EventAddAttendeeScreenBuilder]).
                     //
                     // #516: the Offer games page, nested and built as Add
-                    // people's is (see [EventOfferGamesScreenBuilder]).
+                    // people's is (see [EventOfferGamesScreenBuilder]). Where
+                    // it has nothing to build from, it lands on the event's
+                    // Pool, where Offer games is (#856).
                     routes: [
                       GoRoute(
                         path: AppRoutes._eventAvailabilitySegment,
@@ -1364,6 +1395,7 @@ GoRouter buildAppRouter({
                             ? AppRoutes.eventDetailOf(
                                 state.pathParameters[AppRoutes.eventIdParam] ??
                                     '',
+                                tab: AppRoutes.eventPoolTab,
                               )
                             : null,
                         pageBuilder: (context, state) {
@@ -1376,7 +1408,10 @@ GoRouter buildAppRouter({
                           if (args == null) {
                             return _passThroughPage(
                               state,
-                              _LeaveForEvent(eventId: id),
+                              _LeaveForEvent(
+                                eventId: id,
+                                tab: AppRoutes.eventPoolTab,
+                              ),
                             );
                           }
                           return _materialPage(
@@ -1599,9 +1634,15 @@ Page<void> _passThroughPage(GoRouterState state, Widget child) => _page(
 /// Reported as a new entry instead, the event would follow the restored one
 /// in the history, and Back from it would come straight back here.
 class _LeaveForEvent extends StatefulWidget {
-  const _LeaveForEvent({required this.eventId});
+  const _LeaveForEvent({required this.eventId, this.tab});
 
   final String eventId;
+
+  /// The tab the `go` opens the event on, as its [AppRoutes.eventTabParam]
+  /// (#856): the Offer games route's is the pool, where the page was opened
+  /// from. Null opens Details. A pop leaves the event on the tab it was left
+  /// on.
+  final String? tab;
 
   @override
   State<_LeaveForEvent> createState() => _LeaveForEventState();
@@ -1622,7 +1663,7 @@ class _LeaveForEventState extends State<_LeaveForEvent> {
         if (navigator.canPop()) {
           navigator.pop();
         } else {
-          context.go(AppRoutes.eventDetailOf(widget.eventId));
+          context.go(AppRoutes.eventDetailOf(widget.eventId, tab: widget.tab));
         }
       });
     });

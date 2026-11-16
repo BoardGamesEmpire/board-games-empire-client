@@ -2255,12 +2255,23 @@ class _BgeAppState extends State<BgeApp> {
   /// the same way (#516), with what the page leaves out as the push's
   /// `extra`, and the detail sends the games the page pops with. Offered
   /// only where the session has the collection the page lists.
-  Widget? _buildEventDetailRoute(BuildContext context, String eventId) {
+  ///
+  /// The screen opens on the tab its location's [AppRoutes.eventTabParam]
+  /// names, [tab], and each tab it settles on replaces the location
+  /// (#856): see [_replaceEventTab], which replaces it only while the
+  /// router's top location is still this event's detail.
+  Widget? _buildEventDetailRoute(
+    BuildContext context,
+    String eventId,
+    String? tab,
+  ) {
     final container = _eventsContainer();
     if (container == null) return null;
 
     return EventDetailScreen(
       eventId: eventId,
+      tab: tab,
+      onTabChanged: (ctx, chosen) => _replaceEventTab(ctx, eventId, chosen),
       repository: container.get<EventRepository>(),
       session: _sessionLease(container),
       remote: _eventRemote(container),
@@ -4269,3 +4280,41 @@ void _leaveIfCurrent(BuildContext context, VoidCallback leave) {
 /// changes nothing there.
 void _replaceSpentForm(BuildContext context, String location) =>
     Router.neglect(context, () => context.pushReplacement(location));
+
+/// Puts [tab], the tab the screen of the event [eventId] at [context] has
+/// settled on, in the event's location in place of the one it has (#856).
+///
+/// A replace keeps the event's page and its key, so the screen, its blocs
+/// and the stack beneath it stay, and Back still returns to wherever the
+/// event was opened from. A `go` would build the stack anew from the
+/// location. Under [Router.neglect], so on the web it takes the event's
+/// browser history entry rather than adding one, and Back leaves the event.
+///
+/// Only while the router's top location is still this event's detail: its
+/// route, and the id its path carries, compared decoded, so a link that
+/// spells the id another way than [AppRoutes.eventDetailOf] does still
+/// counts. The screen tells a tab only while its route is on top of its own
+/// navigator, which is the navigation shell's. While a page outside the
+/// shell comes in over the whole of it, such as the not-found page, the
+/// event's route is still on top there, and a replace would put the event's
+/// location in place of wherever the app went. The top is read from the
+/// router's current configuration: [GoRouterState.of] at [context] is the
+/// event's own route's, not the top one's.
+void _replaceEventTab(
+  BuildContext context,
+  String eventId,
+  EventScreenTab tab,
+) {
+  final router = GoRouter.of(context);
+  // The not-found page matches no route, so there is no top to read.
+  if (router.routerDelegate.currentConfiguration.isEmpty) return;
+  final top = router.state;
+  if (top.fullPath != AppRoutes.eventDetail ||
+      top.pathParameters[AppRoutes.eventIdParam] != eventId) {
+    return;
+  }
+  Router.neglect(
+    context,
+    () => context.replace(AppRoutes.eventDetailOf(eventId, tab: tab.query)),
+  );
+}

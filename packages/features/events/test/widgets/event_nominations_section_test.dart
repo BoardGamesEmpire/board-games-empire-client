@@ -325,9 +325,10 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
-  /// Shows [detail] (the viewer's, by default) and opens the Games tab, with
-  /// the reads that starts ended. [householdRole] answers the viewer's role
-  /// in the event's household.
+  /// Shows [detail] (the viewer's, by default) and opens the Games tab, on
+  /// its Nominations sub-tab, the one it opens on (#945), with the reads that
+  /// starts ended. [householdRole] answers the viewer's role in the event's
+  /// household.
   Future<void> showGames(
     WidgetTester tester, {
     EventDetail? detail,
@@ -343,6 +344,32 @@ void main() {
     );
     await animate(tester);
   }
+
+  /// Chooses the Games tab's sub-tab [which] (#945), its bar brought on
+  /// screen first.
+  Future<void> chooseSection(
+    WidgetTester tester,
+    EventGamesSection which,
+  ) async {
+    final tab = find.byKey(
+      EventDetailScreen.sectionTabKey(which),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(tab);
+    await tester.pump();
+    await tester.tap(tab);
+    await animate(tester);
+  }
+
+  /// The heading [title] on the Games tab, not the sub-tab of the same words
+  /// above it (#945).
+  Finder heading(String title) => find.ancestor(
+    of: find.text(title),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Semantics && (widget.properties.header ?? false),
+      description: 'a heading',
+    ),
+  );
 
   /// The screen's blocs. Their providers are inside the screen, so the
   /// lookup starts from a widget it builds.
@@ -442,7 +469,7 @@ void main() {
       );
       // Under a heading, which counts the rows shown.
       expect(
-        tester.getSemantics(find.text('Nominations')),
+        tester.getSemantics(heading('Nominations')),
         matchesSemantics(label: 'Nominations', isHeader: true),
       );
       expect(find.text('1 nomination'), findsOneWidget);
@@ -760,9 +787,10 @@ void main() {
 
       await showGames(tester);
 
-      expect(find.text('Nominations'), findsOneWidget);
+      expect(heading('Nominations'), findsOneWidget);
       expect(find.bySemanticsLabel('Loading nominations'), findsOneWidget);
-      expect(scrollViewOf(tester).semanticChildCount, 2);
+      // A spinner, not a row: the sub-tab holds none yet (#945).
+      expect(scrollViewOf(tester).semanticChildCount, 0);
 
       read.complete([_nomination('n-1')]);
       await animate(tester);
@@ -815,7 +843,7 @@ void main() {
 
       expect(find.text('Nothing nominated yet'), findsOneWidget);
       expect(
-        find.text('Nominate a game from the games pool below.'),
+        find.text('Nominate a game from the Pool tab.'),
         findsOneWidget,
       );
       // Nothing to count.
@@ -836,7 +864,7 @@ void main() {
 
       expect(find.text('Nothing nominated yet'), findsOneWidget);
       expect(
-        find.text('Nominate a game from the games pool below.'),
+        find.text('Nominate a game from the Pool tab.'),
         findsNothing,
       );
     });
@@ -860,6 +888,41 @@ void main() {
       await settle(tester);
     });
 
+    // The section is all its sub-tab holds (#945), so a state fills the rest
+    // of the page and centres there, as the pool's do.
+    for (final (name, answer, state)
+        in <(String, FutureOr<List<EventNomination>> Function(String), Type)>[
+          (
+            'the wait for a first read',
+            (_) => Completer<List<EventNomination>>().future,
+            BgeLoadingState,
+          ),
+          ('a first read that failed', (_) => throw _offline, BgeErrorState),
+          (
+            'nominations hidden',
+            (_) => throw const EventRemoteForbiddenException(
+              'no',
+              statusCode: 403,
+            ),
+            BgeEmptyState,
+          ),
+          ('none nominated', (_) => const [], BgeEmptyState),
+        ]) {
+      testWidgets('$name fills the rest of the sub-tab', (tester) async {
+        nominationsAnswer = answer;
+
+        await showGames(tester);
+
+        expect(
+          find.ancestor(
+            of: find.byType(state),
+            matching: find.byType(BgeStateSliver),
+          ),
+          findsOneWidget,
+        );
+      });
+    }
+
     testWidgets('nominations show where the games are hidden', (tester) async {
       // A roster read and withheld, with no row of the viewer's: nobody to
       // read the pool for. The nominations are the event's.
@@ -870,11 +933,14 @@ void main() {
         detail: detailOf(roster: const [], viewerGiven: false),
       );
 
-      expect(find.text("The games aren't shown to you"), findsOneWidget);
       expect(row('n-1'), findsOneWidget);
       // Nobody named, and no pool to find the game in.
       expect(inRow('n-1', 'Nominated by this person'), findsOneWidget);
       expect(inRow('n-1', 'From whoever brings it'), findsOneWidget);
+
+      // The pool's own sub-tab says so (#945).
+      await chooseSection(tester, EventGamesSection.pool);
+      expect(find.text("The games aren't shown to you"), findsOneWidget);
     });
   });
 
@@ -2333,8 +2399,9 @@ void main() {
         ),
         findsOneWidget,
       );
-      // The rows shown: two nominations, then the pool's two.
-      expect(scrollViewOf(tester).semanticChildCount, 4);
+      // The rows shown: the two nominations, the Nominations sub-tab's
+      // alone (#945).
+      expect(scrollViewOf(tester).semanticChildCount, 2);
       // Back on Filters as the filters close.
       expect(filtersFocus(tester).hasPrimaryFocus, isTrue);
 
@@ -2553,6 +2620,25 @@ void main() {
       expect(focus.hasPrimaryFocus, isTrue);
     });
 
+    testWidgets('No nominations match fills the rest of the sub-tab, as the '
+        "pool's does (#945)", (tester) async {
+      await showSpread(tester);
+      await filterBy(tester, [
+        EventDetailScreen.nominationsMineKey,
+        EventDetailScreen.nominationsStatusKey(
+          NominationStatusGroup.awaitingApproval,
+        ),
+      ]);
+
+      expect(
+        find.ancestor(
+          of: find.text('No nominations match'),
+          matching: find.byType(BgeStateSliver),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('Clear filters brings every nomination back and takes focus '
         'to Filters', (tester) async {
       await showSpread(tester);
@@ -2567,8 +2653,8 @@ void main() {
       expect(find.text('No nominations match'), findsOneWidget);
       expect(rowsShown(tester), isEmpty);
       expect(find.text('0 of 5 nominations'), findsOneWidget);
-      // The pool's rows alone.
-      expect(scrollViewOf(tester).semanticChildCount, 2);
+      // No rows: the pool's are on their own sub-tab (#945).
+      expect(scrollViewOf(tester).semanticChildCount, 0);
 
       await tester.ensureVisible(clearFilters());
       await tester.pump();

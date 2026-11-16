@@ -5,7 +5,8 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/l10n/events_localizations_en.dart';
-import 'package:flutter/foundation.dart' show SynchronousFuture;
+import 'package:flutter/foundation.dart'
+    show SynchronousFuture, ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,7 +44,8 @@ class _LongDetailsLabelDelegate
 }
 
 /// The tab bar on `EventDetailScreen` (#516), where it is narrowest and its
-/// labels are largest: at 320dp and 200% text.
+/// labels are largest: at 320dp and 200% text; and the tab the screen's
+/// location names, and the changes it reports (#856).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -98,33 +100,71 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// Ada's Azul, offered to the pool, where a test serves a pool.
+  const azul = OfferedGame(
+    id: 'o-1',
+    attendeeId: 'att-2',
+    collectionId: 'col-1',
+    platformGameId: 'pg-1',
+    gameId: 'g-1',
+    title: 'Azul',
+    platformName: 'Tabletop',
+    medium: GameMedium.physical,
+  );
+
   /// The screen with a server and a way back, as the app opens it, so it
   /// shows the tabs; with [longLabel], a Details label too long for its tab.
-  Widget app({ThemeData? theme, bool longLabel = false}) => MaterialApp(
-    theme: theme ?? BgeTheme.light(),
-    locale: const Locale('en', 'US'),
-    // The first delegate for a type wins.
-    localizationsDelegates: [
-      if (longLabel) const _LongDetailsLabelDelegate(),
-      ...EventsLocalizations.localizationsDelegates,
-      // The Games tab's Filters, its sheet and its chips (#851).
-      GameFiltersLocalizations.delegate,
-    ],
-    supportedLocales: EventsLocalizations.supportedLocales,
-    home: EventDetailScreen(
+  /// The pool is [pool], none unless a test says otherwise, served by
+  /// [remote] where a test holds one.
+  ///
+  /// The screen's `tab` is [location]'s value, and the screen is built again
+  /// with each new one, as the router builds it for a new location (#856).
+  /// Each tab change the screen reports goes to [onTabChanged].
+  Widget app({
+    ThemeData? theme,
+    bool longLabel = false,
+    List<OfferedGame> pool = const [],
+    FakeEventRemote? remote,
+    ValueListenable<String?>? location,
+    void Function(BuildContext context, EventScreenTab tab)? onTabChanged,
+  }) {
+    // Nobody has offered a game, unless a test says otherwise: the pool is
+    // the empty state, under its header. Its rows are audited with the tab's
+    // own suite.
+    final server =
+        remote ??
+        FakeEventRemote.detail((_) => hosted.snapshot, pool: (_) => pool);
+    final lease = FakeSessionLease();
+    Widget screen(String? tab) => EventDetailScreen(
       eventId: 'e-1',
       repository: repository,
-      session: FakeSessionLease(),
-      // Nobody has offered a game: the Games tab is the empty state, under
-      // its header. Its rows are audited with the tab's own suite.
-      remote: FakeEventRemote.detail(
-        (_) => hosted.snapshot,
-        pool: (_) => const [],
-      ),
+      session: lease,
+      remote: server,
       onBack: (_) {},
       now: () => now,
-    ),
-  );
+      tab: tab,
+      onTabChanged: onTabChanged,
+    );
+
+    return MaterialApp(
+      theme: theme ?? BgeTheme.light(),
+      locale: const Locale('en', 'US'),
+      // The first delegate for a type wins.
+      localizationsDelegates: [
+        if (longLabel) const _LongDetailsLabelDelegate(),
+        ...EventsLocalizations.localizationsDelegates,
+        // The Games tab's Filters, its sheet and its chips (#851).
+        GameFiltersLocalizations.delegate,
+      ],
+      supportedLocales: EventsLocalizations.supportedLocales,
+      home: location == null
+          ? screen(null)
+          : ValueListenableBuilder<String?>(
+              valueListenable: location,
+              builder: (_, tab, _) => screen(tab),
+            ),
+    );
+  }
 
   /// [app] as it opens, in [theme].
   Widget harness([ThemeData? theme]) => app(theme: theme);
@@ -138,6 +178,16 @@ void main() {
 
   Finder tab(EventDetailTab which) =>
       find.byKey(EventDetailScreen.tabKey(which));
+
+  /// One of the Games tab's sub-tabs (#945).
+  Finder section(EventGamesSection which) =>
+      find.byKey(EventDetailScreen.sectionTabKey(which));
+
+  /// Each sub-tab's label.
+  const sectionLabels = {
+    EventGamesSection.nominations: 'Nominations',
+    EventGamesSection.pool: 'Pool',
+  };
 
   /// The Games tab's body (#516). A sliver group, which a finder that skips
   /// what isn't on screen would pass over.
@@ -157,6 +207,28 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await tester.pumpWidget(app(longLabel: longLabel));
       await showing(tester);
+    }
+
+    /// [label] in the tab [control], a top tab or a sub-tab, is whole: on
+    /// one line, not cut short, and drawn inside its tab, scaled down to fit
+    /// rather than clipped.
+    void expectWholeLabel(WidgetTester tester, Finder control, String label) {
+      final text = find.descendant(of: control, matching: find.text(label));
+      expect(text, findsOneWidget, reason: label);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: text, matching: find.byType(RichText)),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+      final tabRect = tester.getRect(control);
+      final textRect = tester.getRect(text);
+      expect(textRect.left, greaterThanOrEqualTo(tabRect.left), reason: label);
+      expect(textRect.right, lessThanOrEqualTo(tabRect.right), reason: label);
+      expect(textRect.top, greaterThanOrEqualTo(tabRect.top), reason: label);
+      expect(
+        textRect.bottom,
+        lessThanOrEqualTo(tabRect.bottom),
+        reason: label,
+      );
     }
 
     testWidgets('the bar lays out with no overflow at 320dp and 200% text', (
@@ -183,31 +255,26 @@ void main() {
         (EventDetailTab.details, 'Details'),
         (EventDetailTab.games, 'Games'),
       ]) {
-        final text = find.descendant(
-          of: tab(which),
-          matching: find.text(label),
-        );
-        expect(text, findsOneWidget, reason: label);
-        // One line, not cut short, and drawn inside its tab: scaled down to
-        // fit rather than clipped.
-        final paragraph = tester.renderObject<RenderParagraph>(
-          find.descendant(of: text, matching: find.byType(RichText)),
-        );
-        expect(paragraph.didExceedMaxLines, isFalse, reason: label);
-        final tabRect = tester.getRect(tab(which));
-        final textRect = tester.getRect(text);
-        expect(
-          textRect.left,
-          greaterThanOrEqualTo(tabRect.left),
-          reason: label,
-        );
-        expect(textRect.right, lessThanOrEqualTo(tabRect.right), reason: label);
-        expect(textRect.top, greaterThanOrEqualTo(tabRect.top), reason: label);
-        expect(
-          textRect.bottom,
-          lessThanOrEqualTo(tabRect.bottom),
-          reason: label,
-        );
+        expectWholeLabel(tester, tab(which), label);
+      }
+    });
+
+    testWidgets('the sub-tab bar lays out with no overflow and whole labels '
+        'at 320dp and 200% text', (tester) async {
+      await showNarrow(tester);
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final bar = tester.getRect(find.byKey(EventDetailScreen.sectionBarKey));
+      expect(bar.left, greaterThanOrEqualTo(0));
+      expect(bar.right, lessThanOrEqualTo(320));
+      for (final which in EventGamesSection.values) {
+        final label = sectionLabels[which]!;
+        final tabRect = tester.getRect(section(which));
+        expect(tabRect.left, greaterThanOrEqualTo(bar.left), reason: label);
+        expect(tabRect.right, lessThanOrEqualTo(bar.right), reason: label);
+        expectWholeLabel(tester, section(which), label);
       }
     });
 
@@ -289,18 +356,555 @@ void main() {
       }
     });
 
-    // Details with the bar is audited with the rest of the event, in the
-    // screen's own suite. This is the Games tab with nobody's games on it
-    // (#516); with a pool it is audited in the tab's own suite.
-    auditScreen(
-      'ready, on the Games tab',
-      build: harness,
-      arrange: (tester) async {
+    testWidgets('Games opens on Nominations', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(app(pool: const [azul]));
         await showing(tester);
+
         await tester.tap(tab(EventDetailTab.games));
         await tester.pumpAndSettle();
-        expect(gamesBody(), findsOneWidget);
-      },
-    );
+
+        expect(
+          tester.getSemantics(section(EventGamesSection.nominations)),
+          isSemantics(isSelected: true),
+        );
+        expect(
+          tester.getSemantics(section(EventGamesSection.pool)),
+          isSemantics(isSelected: false),
+        );
+        // The pool's rows are the Pool sub-tab's alone.
+        Finder azulRow() => find.byKey(
+          EventDetailScreen.poolRowKey(azul.id),
+          skipOffstage: false,
+        );
+        expect(azulRow(), findsNothing);
+
+        await tester.tap(section(EventGamesSection.pool));
+        await tester.pumpAndSettle();
+        expect(azulRow(), findsOneWidget);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('focus stays on Pool after it is activated with the '
+        'keyboard', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await showNarrow(tester);
+        await activateByKeyboard(tester, tab(EventDetailTab.games));
+        final pool = Focus.of(
+          tester.element(section(EventGamesSection.pool)),
+        );
+        expect(
+          find.text("Couldn't load nominations", skipOffstage: false),
+          findsOneWidget,
+        );
+
+        await activateByKeyboard(tester, section(EventGamesSection.pool));
+
+        // The pool under the bar, and the nominations gone from it.
+        expect(find.text('Games pool', skipOffstage: false), findsOneWidget);
+        expect(
+          find.text("Couldn't load nominations", skipOffstage: false),
+          findsNothing,
+        );
+        expect(FocusManager.instance.primaryFocus, same(pool));
+        expect(
+          tester.getSemantics(section(EventGamesSection.pool)),
+          isSemantics(isSelected: true, isFocused: true),
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    // Details with the bar is audited with the rest of the event, in the
+    // screen's own suite. This is each of the Games tab's sub-tabs (#945)
+    // with nobody's games on it (#516); with a pool it is audited in the
+    // tab's own suite.
+    for (final which in EventGamesSection.values) {
+      auditScreen(
+        'ready, on the Games tab, ${which.name}',
+        build: harness,
+        arrange: (tester) async {
+          await showing(tester);
+          await tester.tap(tab(EventDetailTab.games));
+          await tester.pumpAndSettle();
+          await tester.tap(section(which));
+          await tester.pumpAndSettle();
+          expect(gamesBody(), findsOneWidget);
+          expect(
+            tester.getSemantics(section(which)),
+            isSemantics(isSelected: true),
+          );
+        },
+      );
+    }
+  });
+
+  group('EventScreenTab (#856)', () {
+    // Each value the location can carry, the tab it opens and the value a
+    // report of that tab puts back.
+    for (final (value, opens, query) in [
+      (null, EventScreenTab.details, null),
+      ('details', EventScreenTab.details, null),
+      ('games', EventScreenTab.nominations, 'nominations'),
+      ('nominations', EventScreenTab.nominations, 'nominations'),
+      ('pool', EventScreenTab.pool, 'pool'),
+      // Not a tab until the lineup is one (#519).
+      ('lineup', EventScreenTab.details, null),
+      // Case matters.
+      ('POOL', EventScreenTab.details, null),
+    ]) {
+      test('$value opens ${opens.name}, whose query is $query', () {
+        final tab = EventScreenTab.parse(value);
+
+        expect(tab, opens);
+        expect(tab.query, query);
+        expect(EventScreenTab.parse(tab.query), tab);
+      });
+    }
+
+    // Each tab's place in the screen's bar and the Games tab's, and back.
+    for (final (screenTab, tab, section)
+        in <
+          (
+            EventScreenTab,
+            EventDetailTab,
+            EventGamesSection?,
+          )
+        >[
+          (EventScreenTab.details, EventDetailTab.details, null),
+          (
+            EventScreenTab.nominations,
+            EventDetailTab.games,
+            EventGamesSection.nominations,
+          ),
+          (EventScreenTab.pool, EventDetailTab.games, EventGamesSection.pool),
+        ]) {
+      test('${screenTab.name} is ${tab.name}, on ${section?.name}', () {
+        expect(screenTab.tab, tab);
+        expect(screenTab.section, section);
+        if (section != null) {
+          expect(EventScreenTab.of(tab, section), screenTab);
+        }
+      });
+    }
+
+    test('the bar on Details is Details, whatever the sub-tabs stand on', () {
+      for (final section in EventGamesSection.values) {
+        expect(
+          EventScreenTab.of(EventDetailTab.details, section),
+          EventScreenTab.details,
+          reason: section.name,
+        );
+      }
+    });
+  });
+
+  group('the location (#856)', () {
+    late ValueNotifier<String?> location;
+    late List<EventScreenTab> reports;
+
+    /// Opens the screen on the location's [tab], and keeps each tab change
+    /// it reports in [reports].
+    Future<void> open(
+      WidgetTester tester,
+      String? tab, {
+      FakeEventRemote? remote,
+      List<OfferedGame> pool = const [],
+    }) async {
+      location = ValueNotifier(tab);
+      addTearDown(location.dispose);
+      reports = [];
+      await tester.pumpWidget(
+        app(
+          location: location,
+          remote: remote,
+          pool: pool,
+          onTabChanged: (_, tab) => reports.add(tab),
+        ),
+      );
+    }
+
+    /// The screen's own tab bar's controller, and the Games tab's sub-tabs'.
+    TabController tabs(WidgetTester tester) => tester
+        .widget<TabBar>(
+          find.descendant(
+            of: find.byKey(EventDetailScreen.tabBarKey),
+            matching: find.byType(TabBar),
+          ),
+        )
+        .controller!;
+    TabController sections(WidgetTester tester) => tester
+        .widget<TabBar>(
+          find.descendant(
+            of: find.byKey(EventDetailScreen.sectionBarKey),
+            matching: find.byType(TabBar),
+          ),
+        )
+        .controller!;
+
+    /// The tab the bars stand on, and under Games the sub-tab.
+    EventScreenTab shown(WidgetTester tester) {
+      final tab = EventDetailTab.values[tabs(tester).index];
+      return EventScreenTab.of(
+        tab,
+        // The sub-tabs' bar is built on Games alone.
+        tab == EventDetailTab.games
+            ? EventGamesSection.values[sections(tester).index]
+            : EventGamesSection.nominations,
+      );
+    }
+
+    /// Shows the hosted event on whichever tab is chosen, and lets the read
+    /// it starts end.
+    Future<void> showingOnAnyTab(WidgetTester tester) async {
+      cache.add(hosted);
+      await tester.pumpAndSettle();
+      expect(find.byKey(EventDetailScreen.tabBarKey), findsOneWidget);
+    }
+
+    /// Taps [control], then lets one frame and a third of the indicator's
+    /// move run: mid-change.
+    Future<void> tapAndHold(WidgetTester tester, Finder control) async {
+      await tester.tap(control);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets('tab: pool opens Games on Pool', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await open(tester, 'pool', pool: const [azul]);
+        await showingOnAnyTab(tester);
+
+        expect(
+          tester.getSemantics(tab(EventDetailTab.games)),
+          isSemantics(isSelected: true),
+        );
+        expect(
+          tester.getSemantics(tab(EventDetailTab.details)),
+          isSemantics(isSelected: false),
+        );
+        expect(
+          tester.getSemantics(section(EventGamesSection.pool)),
+          isSemantics(isSelected: true),
+        );
+        expect(
+          tester.getSemantics(section(EventGamesSection.nominations)),
+          isSemantics(isSelected: false),
+        );
+        expect(
+          find.byKey(
+            EventDetailScreen.poolRowKey(azul.id),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(reports, isEmpty);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('tab: pool reads the pool and the nominations once the '
+        'detail is ready', (tester) async {
+      final remote = FakeEventRemote.detail(
+        (_) => hosted.snapshot,
+        pool: (_) => const [azul],
+      );
+      await open(tester, 'pool', remote: remote);
+      // Past the first frame. The loading spinner never settles.
+      await tester.pump();
+      await tester.pump();
+
+      // Nothing to read them for while the detail loads.
+      expect(remote.poolRequests, isEmpty);
+      expect(remote.nominationReads, isEmpty);
+
+      await showingOnAnyTab(tester);
+
+      // No tab was pressed.
+      expect(remote.poolRequests, hasLength(1));
+      expect(remote.poolRequests.single.eventId, 'e-1');
+      expect(remote.nominationReads, ['e-1']);
+    });
+
+    testWidgets('an unknown tab opens Details', (tester) async {
+      await open(tester, 'lineup');
+      await showing(tester);
+
+      expect(shown(tester), EventScreenTab.details);
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(gamesBody(), findsNothing);
+      expect(reports, isEmpty);
+    });
+
+    testWidgets('a local-only event with tab: pool shows Details with no '
+        'bar, drops the tab at once, and shows Details once it reaches the '
+        'server', (tester) async {
+      final remote = FakeEventRemote.detail(
+        (_) => hosted.snapshot,
+        pool: (_) => const [azul],
+      );
+      final moved = StreamController<EventDetail?>.broadcast();
+      addTearDown(moved.close);
+      when(
+        () => repository.watchEvent('srv-1'),
+      ).thenAnswer((_) => moved.stream);
+      EventDetail withEvent(Event Function(Event event) change) =>
+          hosted.copyWith(
+            snapshot: hosted.snapshot.copyWith(
+              event: change(hosted.snapshot.event),
+            ),
+          );
+
+      await open(tester, 'pool', remote: remote);
+      cache.add(withEvent((event) => event.copyWith(isLocalOnly: true)));
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(EventDetailScreen.tabBarKey), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(gamesBody(), findsNothing);
+      // The tab it can't show is dropped, not held for later: the screen
+      // stands on Details, with no move to watch, and says so, so the
+      // location loses it.
+      expect(tester.hasRunningAnimations, isFalse);
+      expect(reports, [EventScreenTab.details]);
+      location.value = null;
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.details]);
+      expect(remote.poolRequests, isEmpty);
+      expect(remote.nominationReads, isEmpty);
+
+      // The create reaches the server, which knows the event by its own id,
+      // and the detail follows it there (#499).
+      when(() => repository.reconciledEventId('e-1')).thenReturn('srv-1');
+      cache.add(null);
+      await tester.pump();
+      moved.add(withEvent((event) => event.copyWith(id: 'srv-1')));
+      await tester.pumpAndSettle();
+
+      // The bar shows, on Details, and nothing was read for Games.
+      expect(tester.takeException(), isNull);
+      expect(shown(tester), EventScreenTab.details);
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(gamesBody(), findsNothing);
+      expect(remote.poolRequests, isEmpty);
+      expect(remote.nominationReads, isEmpty);
+      expect(reports, [EventScreenTab.details]);
+
+      // Games opens on its first sub-tab, not the one the location named.
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      expect(shown(tester), EventScreenTab.nominations);
+      expect(reports, [EventScreenTab.details, EventScreenTab.nominations]);
+    });
+
+    testWidgets('choosing a tab reports it once it settles', (tester) async {
+      await open(tester, null);
+      await showing(tester);
+
+      await tapAndHold(tester, tab(EventDetailTab.games));
+      expect(tabs(tester).indexIsChanging, isTrue);
+      expect(reports, isEmpty);
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations]);
+
+      await tapAndHold(tester, section(EventGamesSection.pool));
+      expect(sections(tester).indexIsChanging, isTrue);
+      expect(reports, [EventScreenTab.nominations]);
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+
+      await tapAndHold(tester, tab(EventDetailTab.details));
+      expect(tabs(tester).indexIsChanging, isTrue);
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+      await tester.pumpAndSettle();
+      expect(reports, [
+        EventScreenTab.nominations,
+        EventScreenTab.pool,
+        EventScreenTab.details,
+      ]);
+    });
+
+    testWidgets('a new tab from the location moves the bars, and reports '
+        'nothing', (tester) async {
+      final remote = FakeEventRemote.detail(
+        (_) => hosted.snapshot,
+        pool: (_) => const [azul],
+      );
+      await open(tester, null, remote: remote);
+      await showing(tester);
+
+      location.value = 'pool';
+      await tester.pumpAndSettle();
+
+      expect(shown(tester), EventScreenTab.pool);
+      expect(
+        find.byKey(EventDetailScreen.poolRowKey(azul.id), skipOffstage: false),
+        findsOneWidget,
+      );
+      // Games' first showing, as a press of it would be.
+      expect(remote.poolRequests, hasLength(1));
+      expect(remote.nominationReads, hasLength(1));
+
+      location.value = null;
+      await tester.pumpAndSettle();
+
+      expect(shown(tester), EventScreenTab.details);
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(reports, isEmpty);
+    });
+
+    testWidgets('the tab the screen reported, given back, changes nothing', (
+      tester,
+    ) async {
+      await open(tester, null);
+      await showing(tester);
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      await tester.tap(section(EventGamesSection.pool));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+
+      location.value = 'pool';
+      await tester.pump();
+
+      expect(tester.hasRunningAnimations, isFalse);
+      expect(tabs(tester).indexIsChanging, isFalse);
+      expect(sections(tester).indexIsChanging, isFalse);
+      expect(shown(tester), EventScreenTab.pool);
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+    });
+
+    // Until the location a report asks for comes back, the screen is built
+    // with the one it had, as when the motion setting changes meanwhile.
+    testWidgets('built again with the location it had, the screen keeps the '
+        'tab chosen', (tester) async {
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await open(tester, null);
+      await showing(tester);
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations]);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pumpAndSettle();
+
+      expect(location.value, isNull);
+      expect(shown(tester), EventScreenTab.nominations);
+      expect(reports, [EventScreenTab.nominations]);
+    });
+
+    // The location a report asked for can come back after the user has
+    // already chosen again: it is the report's echo, not a new location.
+    testWidgets('a report given back mid-change leaves the newer choice', (
+      tester,
+    ) async {
+      await open(tester, null);
+      await showing(tester);
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations]);
+
+      await tester.tap(section(EventGamesSection.pool));
+      await tester.pump();
+      expect(sections(tester).indexIsChanging, isTrue);
+      location.value = 'nominations';
+      await tester.pumpAndSettle();
+
+      expect(shown(tester), EventScreenTab.pool);
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+    });
+
+    // The scope replaces the sub-tabs' controller when the motion setting
+    // changes, and the screen's tab controller is replaced too; a change
+    // either was making ends on the new one, which never says it settled.
+    testWidgets('a change the motion setting cuts short is still reported', (
+      tester,
+    ) async {
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await open(tester, null);
+      await showing(tester);
+
+      await tapAndHold(tester, tab(EventDetailTab.games));
+      expect(tabs(tester).indexIsChanging, isTrue);
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pumpAndSettle();
+      expect(reports, [EventScreenTab.nominations]);
+
+      tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      await tester.pumpAndSettle();
+      await tapAndHold(tester, section(EventGamesSection.pool));
+      expect(sections(tester).indexIsChanging, isTrue);
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pumpAndSettle();
+
+      expect(shown(tester), EventScreenTab.pool);
+      expect(reports, [EventScreenTab.nominations, EventScreenTab.pool]);
+    });
+
+    // A report puts the tab in the location on top, which is another
+    // route's while one covers the screen, and while the screen leaves.
+    testWidgets('a change that settles under a dialog is reported once the '
+        'screen is on top again', (tester) async {
+      await open(tester, null);
+      await showing(tester);
+
+      await tapAndHold(tester, tab(EventDetailTab.games));
+      expect(tabs(tester).indexIsChanging, isTrue);
+      unawaited(
+        showDialog<void>(
+          context: tester.element(tab(EventDetailTab.games)),
+          builder: (_) => const AlertDialog(content: Text('Over the event')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tabs(tester).indexIsChanging, isFalse);
+      expect(reports, isEmpty);
+
+      Navigator.of(tester.element(find.text('Over the event'))).pop();
+      await tester.pumpAndSettle();
+
+      expect(reports, [EventScreenTab.nominations]);
+    });
+
+    testWidgets('a change that settles as the screen leaves reports nothing', (
+      tester,
+    ) async {
+      await open(tester, null);
+      await showing(tester);
+
+      await tapAndHold(tester, tab(EventDetailTab.games));
+      expect(tabs(tester).indexIsChanging, isTrue);
+      Navigator.of(tester.element(tab(EventDetailTab.games))).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => const Text('Elsewhere')),
+      );
+      // The screen stays built while it leaves, and its change settles
+      // before it goes.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.byType(EventDetailScreen), findsOneWidget);
+      expect(tabs(tester).indexIsChanging, isFalse);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EventDetailScreen), findsNothing);
+      expect(reports, isEmpty);
+    });
   });
 }

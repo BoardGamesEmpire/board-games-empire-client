@@ -588,6 +588,14 @@
   "@eventsDetailGames": {
     "description": "Label of the second tab on an event's screen, beside the Details tab (eventsDetailTabDetails). The tab holds the games the people coming to the event offer to bring. Keep it short: two tabs share the width of a phone."
   },
+  "eventsGamesSectionNominations": "Nominations",
+  "@eventsGamesSectionNominations": {
+    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup, under the heading eventsNominationsHeading. Keep it short: two sub-tabs share the width of a phone."
+  },
+  "eventsGamesSectionPool": "Pool",
+  "@eventsGamesSectionPool": {
+    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring, under the heading eventsGamesPoolHeading. Keep it short: two sub-tabs share the width of a phone."
+  },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {
     "description": "Label of the search field on the Games tab of an event's screen, which narrows the games people offer to bring by their title or subtitle as the user types."
@@ -599,6 +607,16 @@
   "eventsGamesPeople": "{count, plural, =0{People} =1{People: 1} other{People: {count}}}",
   "@eventsGamesPeople": {
     "description": "Button on the Games tab of an event's screen that opens a list of the people offering games, to show only some people's games or leave some out. The number is how many people are chosen there; with none chosen it is the word alone.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsGamesFiltersNamed": "{count, plural, =0{Filters for games} other{Filters ({count}) for games}}",
+  "@eventsGamesFiltersNamed": {
+    "description": "What a screen reader calls the Filters button of the games pool on the Games tab of an event's screen, so it differs from the Nominations section's button, eventsNominationsFiltersNamed. Starts with the button's text, Filters with the number of filters in use in brackets once there are any. {count} is how many are in use.",
     "placeholders": {
       "count": {
         "type": "int",
@@ -762,11 +780,11 @@
   },
   "eventsGamesFailedBody": "Check your connection and try again.",
   "@eventsGamesFailedBody": {
-    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, in the Nominations section on the same tab."
+    "description": "Under eventsGamesFailedTitle, above the Try again button (eventsRefreshRetry). Also under eventsNominationsFailedTitle, on the Nominations sub-tab of the same Games tab."
   },
   "eventsGamesRefreshFailed": "Couldn't update the games. These may be out of date.",
   "@eventsGamesRefreshFailed": {
-    "description": "Banner on the Games tab of an event's screen, above the games read before, when reading them again failed."
+    "description": "Banner at the foot of an event's screen while its Games tab shows the Pool sub-tab (eventsGamesSectionPool), with a Try again button (eventsRefreshRetry), when reading the games pool again failed: the games shown are the ones read before."
   },
   "eventsGamesTakenBack": "{title} is off your games.",
   "@eventsGamesTakenBack": {
@@ -790,7 +808,7 @@
   },
   "eventsGamesStillSuppliesYours": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination first.",
   "@eventsGamesStillSuppliesYours": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination in the Nominations section above the games).",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab).",
     "placeholders": {
       "title": {
         "type": "String",
@@ -800,7 +818,7 @@
   },
   "eventsGamesStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off your games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
   "@eventsGamesStillSuppliesYoursAndTheirs": {
-    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination in the Nominations section above the games), but the game comes off only once the others' nominations are withdrawn too, which only those people can do.",
+    "description": "Banner at the foot of an event's screen when a game the user tried to take back stays on the games they're bringing because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -848,7 +866,7 @@
   },
   "eventsGamesTheirsStillSuppliesYours": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination first.",
   "@eventsGamesTheirsStillSuppliesYours": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination in the Nominations section above the games). eventsGamesStillSuppliesYours, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because the user themself put it forward for the event: they can take it back once they withdraw that nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab). eventsGamesStillSuppliesYours, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -862,7 +880,7 @@
   },
   "eventsGamesTheirsStillSuppliesYoursAndTheirs": "{title} is nominated, so it can't come off {name}'s games yet. Withdraw your nomination, and whoever else nominated it has to withdraw theirs.",
   "@eventsGamesTheirsStillSuppliesYoursAndTheirs": {
-    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination in the Nominations section above the games), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. eventsGamesStillSuppliesYoursAndTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
+    "description": "Banner at the foot of an event's screen when a game someone else offered to bring, which the user tried to take back for them, stays on that person's games because both the user and someone else put it forward for the event: the user can withdraw their own nomination (eventsWithdraw, on the nomination on the Nominations sub-tab of the Games tab), but the game comes off only once the others' nominations are withdrawn too, which only those people can do. eventsGamesStillSuppliesYoursAndTheirs, for another person's game. {name} is the name of the person bringing the game, or eventsAttendeeSomeone for someone with none.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1080,9 +1098,9 @@
       }
     }
   },
-  "eventsNominateFailed": "An error occurred while nominating {title}. Check the nominations above before nominating it again.",
+  "eventsNominateFailed": "An error occurred while nominating {title}. Check the Nominations tab before nominating it again.",
   "@eventsNominateFailed": {
-    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. It must not say the game wasn't nominated. The title is the game's.",
+    "description": "Banner at the foot of an event's screen when nominating a game failed for any other reason, such as no connection. It may have gone through all the same, and nominating it again would nominate it twice, so the copy asks the user to look at the nominations first, which the screen reads again as the banner shows. They are on the Games tab's Nominations sub-tab, labelled eventsGamesSectionNominations, so the two should match; a game is nominated from the Pool sub-tab beside it. It must not say the game wasn't nominated. The title is the game's.",
     "placeholders": {
       "title": {
         "type": "String",
@@ -1134,9 +1152,9 @@
   "@eventsNominateAlreadyOrInLineup": {
     "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: for each choice it could be nominated for (the whole event, or a date), that copy is nominated already or the game is in the event's lineup already, some one and some the other."
   },
-  "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again to check.",
+  "eventsNominateUnsettled": "Your last nomination may have gone through. Load the nominations again on the Nominations tab to check.",
   "@eventsNominateUnsettled": {
-    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The banner eventsNominationsRefreshFailed, with its Try again button, is on the same tab."
+    "description": "Read to a screen reader as the hint of the Nominate button (eventsNominate) of a game in the games pool, which can't be pressed: the answer to the user's last nomination was lost, and reading the nominations again to see whether it was saved failed. The copy points to the Nominations sub-tab of the same Games tab, labelled eventsGamesSectionNominations, so the two should match: the nominations' Try again button (eventsRefreshRetry) is there, in the banner eventsNominationsRefreshFailed or under eventsNominationsFailedTitle, and not beside this button, which is on the Pool sub-tab."
   },
   "eventsNominateTitle": "Nominate {title}",
   "@eventsNominateTitle": {
@@ -1598,7 +1616,7 @@
   },
   "eventsNominationsHeading": "Nominations",
   "@eventsNominationsHeading": {
-    "description": "Heading of the section at the top of the Games tab of an event's screen that lists the games people have nominated for the event's lineup. It sits above the games pool, the games people offer to bring."
+    "description": "Heading of the Nominations sub-tab (eventsGamesSectionNominations) of the Games tab of an event's screen, which lists the games people have nominated for the event's lineup. The games pool, the games people offer to bring, is on the Pool sub-tab beside it."
   },
   "eventsNominationsCount": "{count, plural, =1{1 nomination} other{{count} nominations}}",
   "@eventsNominationsCount": {
@@ -1626,13 +1644,17 @@
   "@eventsNominationsEmptyTitle": {
     "description": "In the Nominations section of an event's Games tab when nobody has nominated a game for the event's lineup."
   },
-  "eventsNominationsEmptyBody": "Nominate a game from the games pool below.",
+  "eventsNominationsEmptyBody": "Nominate a game from the Pool tab.",
   "@eventsNominationsEmptyBody": {
-    "description": "Under eventsNominationsEmptyTitle, shown only to someone who can nominate a game there. The games pool is the list of games people offer to bring, below the Nominations section on the same tab, and a game is nominated from its row there (eventsNominate)."
+    "description": "Under eventsNominationsEmptyTitle on the Nominations sub-tab of an event's Games tab, shown only to someone who can nominate a game there. The Pool tab is the sub-tab beside it, labelled eventsGamesSectionPool, so the two should match: it lists the games pool, the games people offer to bring, and a game is nominated from its row there (eventsNominate)."
   },
   "eventsNominationsFilters": "Filters",
   "@eventsNominationsFilters": {
     "description": "Button under the Nominations heading on the Games tab of an event's screen that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
+  },
+  "eventsNominationsFiltersNamed": "Filters for nominations",
+  "@eventsNominationsFiltersNamed": {
+    "description": "What a screen reader calls the Filters button under the Nominations heading on the Games tab of an event's screen (eventsNominationsFilters is its text), so it differs from the games pool's button, eventsGamesFiltersNamed. Starts with the button's text."
   },
   "eventsNominationsSort": "Sort: {sort}",
   "@eventsNominationsSort": {
@@ -1718,7 +1740,7 @@
   },
   "eventsGamesPoolHeading": "Games pool",
   "@eventsGamesPoolHeading": {
-    "description": "Heading of the games pool on the Games tab of an event's screen: the games people offer to bring, one row per copy, below the Nominations section (eventsNominationsHeading). eventsNominationsEmptyBody calls it the games pool, so the two should match."
+    "description": "Heading of the games pool on the Pool sub-tab (eventsGamesSectionPool) of the Games tab of an event's screen: the games people offer to bring, one row per copy. The nominations are on the Nominations sub-tab beside it (eventsNominationsHeading)."
   },
   "eventsNominatedBy": "Nominated by {name}",
   "@eventsNominatedBy": {
@@ -1990,7 +2012,7 @@
   },
   "eventsVoteHintOffering": "Your vote counts once you offer a game.",
   "@eventsVoteHintOffering": {
-    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people bringing a game, and the user isn't bringing any. They can still vote, but their vote isn't counted until they offer a game from their collection on the same tab."
+    "description": "Above the vote control under a nominated game in the Nominations section of an event's Games tab, when this event counts only the votes of people bringing a game, and the user isn't bringing any. They can still vote, but their vote isn't counted until they offer a game from their collection, from the Pool sub-tab of the same Games tab."
   },
   "eventsVoteAddNote": "Add a note",
   "@eventsVoteAddNote": {

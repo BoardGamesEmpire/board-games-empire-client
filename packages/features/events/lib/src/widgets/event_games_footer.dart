@@ -10,6 +10,7 @@ import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
+import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
@@ -23,23 +24,23 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// saying how many games a run of offers is offering while one is out, then as
 /// the banner saying how it went; then the viewer's last nominations write, a
 /// nominate, a vote or a withdrawal, or a host's approval, rejection or close
-/// of a vote (#518), as the banner saying how it went; then, with [showStale],
-/// the stale-data banners: the pool's while the games shown may be out of date,
-/// then the nominations' while those shown may be. Each when there is one;
-/// nothing otherwise. Passed on every build, on either tab, so the page keeps
-/// one shape.
+/// of a vote (#518), as the banner saying how it went; then the stale-data
+/// banner of the Games tab's sub-tab shown ([staleFor], #945): the pool's
+/// while the games shown may be out of date, or the nominations' while those
+/// shown may be. Each when there is one; nothing otherwise. Passed on every
+/// build, on either tab, so the page keeps one shape.
 ///
 /// All of them answer a list, which moves on: a run's end, a vote's, or a
 /// read that fails after a write or a detail read, lands while the user may
 /// be far down it. In the footer each is on screen and heard as it arrives,
 /// and moves no row. The writes' lines and banners are drawn first, the
-/// pool's before the nominations', and the stale-data banners under them,
-/// in the same order. Each write's banner has its own Dismiss.
+/// pool's before the nominations', and the stale-data banner under them.
+/// Each write's banner has its own Dismiss.
 ///
 /// The writes' lines and banners show on either tab: a run of offers can
 /// outlast the stay on Games, and its line is a live region that a footer
-/// left out on Details would silence. The stale-data banners are about what
-/// the tab shows, so they show only while Games is selected ([showStale]),
+/// left out on Details would silence. A stale-data banner is about the list
+/// shown, so each shows only while Games shows its sub-tab ([staleFor]),
 /// and only over something read before: a first read that fails has nothing
 /// stale to warn of.
 ///
@@ -70,7 +71,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 class EventGamesFooter extends StatelessWidget {
   const EventGamesFooter({
     required this.state,
-    required this.showStale,
+    required this.staleFor,
     required this.names,
     this.nominations,
     this.viewerId,
@@ -94,8 +95,11 @@ class EventGamesFooter extends StatelessWidget {
   /// everyone "this person".
   final Map<String, String?> names;
 
-  /// Whether the Games tab is selected, so the stale-data banners may show.
-  final bool showStale;
+  /// The Games tab's sub-tab shown (#945), whose stale-data banner may
+  /// show: the pool's on [EventGamesSection.pool], the nominations' on
+  /// [EventGamesSection.nominations], and neither where it is null, as on
+  /// the Details tab.
+  final EventGamesSection? staleFor;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +194,9 @@ class EventGamesFooter extends StatelessWidget {
               ),
             ),
           ),
-        if (showStale && state.refreshFailed && state.games.isNotEmpty)
+        if (staleFor == EventGamesSection.pool &&
+            state.refreshFailed &&
+            state.games.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: gap),
             child: BgeRefreshBanner(
@@ -203,13 +209,14 @@ class EventGamesFooter extends StatelessWidget {
               onRetry: () => retryEventGamesPool(context),
             ),
           ),
-        if (showStale &&
+        if (staleFor == EventGamesSection.nominations &&
             nominations != null &&
             nominations.refreshFailed &&
             nominations.nominations.isNotEmpty)
           Padding(
-            // Keyed, so the pool's banner coming or going above it never
-            // takes its place, and a Try again with focus keeps it.
+            // Keyed, so it never takes the pool's banner's place as the
+            // sub-tabs swap, nor a banner above it coming or going its own,
+            // and a Try again with focus keeps it.
             key: const ValueKey<String>('nominations_stale'),
             padding: EdgeInsets.only(top: gap),
             child: BgeRefreshBanner(

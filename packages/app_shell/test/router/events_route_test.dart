@@ -58,7 +58,8 @@ void main() {
                 Scaffold(body: SizedBox(key: _createKey(householdId)))
           : null,
       eventDetailBuilder: withBuilders && withDetailBuilder
-          ? (_, eventId) => Scaffold(body: SizedBox(key: _detailKey(eventId)))
+          ? (_, eventId, _) =>
+                Scaffold(body: SizedBox(key: _detailKey(eventId)))
           : null,
       eventAvailabilityBuilder: withBuilders && withAvailabilityBuilder
           ? (_, eventId) =>
