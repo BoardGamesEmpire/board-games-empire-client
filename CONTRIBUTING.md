@@ -384,6 +384,14 @@ regenerate the lockfile from inside that directory.
   `tool/check_decision_codes.dart` (#377).
 - **Platform differences go behind an interface**, as paired implementations
   (`drift_storage` ↔ `web_storage`), not conditionals in feature code.
+- **A bloc's operation handler uses `transformer: droppable()`,** which drops a
+  repeat while one is in flight, rather than an `if (state is …Submitting)
+  return;` guard. Handlers that must not be dropped by a running operation,
+  such as clearing a failure, are separate registrations (#196). A state guard
+  stays where `droppable()`, which sees only its own handler's run, can't
+  express the rule: a busy flag several handlers share or one kept per item
+  (`EventActionsBloc`, `HouseholdMemberActionsBloc`), or a state that outlives
+  the run, such as a leave already accepted (`LeaveHouseholdBloc`).
 - Analysis uses one rule set for every package: the root `analysis_options.yaml`, which is [very_good_analysis](https://pub.dev/packages/very_good_analysis) with `public_member_api_docs` and `one_member_abstracts` off. Each package's `analysis_options.yaml` includes it and changes none of its rules (checked by `tool/check_sdk_constraints.dart`).
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:events/src/bloc/create_event_event.dart';
 import 'package:events/src/bloc/create_event_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -85,7 +86,7 @@ class CreateEventBloc extends Bloc<CreateEventEvent, CreateEventState> {
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.events.create'),
        super(const CreateEventInitial()) {
-    on<CreateEventSubmitted>(_onSubmitted);
+    on<CreateEventSubmitted>(_onSubmitted, transformer: droppable());
     on<CreateEventFailureCleared>(_onFailureCleared);
   }
 
@@ -117,8 +118,6 @@ class CreateEventBloc extends Bloc<CreateEventEvent, CreateEventState> {
     CreateEventSubmitted event,
     Emitter<CreateEventState> emit,
   ) async {
-    // Re-entrancy guard: ignore submits while one is in flight.
-    if (state is CreateEventSubmitting) return;
     emit(const CreateEventSubmitting());
 
     if (_parked case final parked?) {

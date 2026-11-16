@@ -8,8 +8,9 @@ environment:
 resolution: workspace
 
 dependencies:
-  # droppable() for the invite send (#455) and the household edit (#476): a
-  # submit while one is on its way is dropped, so a double tap sends once.
+  # droppable() for the invite send (#455), the household edit (#476) and
+  # the create (#196): a submit while one is on its way is dropped, so a
+  # double tap sends once.
   bloc_concurrency: ^0.3.0
   equatable: ^2.1.0
   flutter:

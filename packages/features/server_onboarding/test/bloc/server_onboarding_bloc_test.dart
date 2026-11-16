@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bge_test_support/domain.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -429,5 +431,45 @@ void main() {
         ],
       );
     });
+
+    // The second submit arrives while the first's discovery is still held,
+    // not in the same turn as the first.
+    late Completer<ServerIdentity> heldFetch;
+    blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+      'a second submit while one is in flight is dropped',
+      build: () {
+        heldFetch = Completer<ServerIdentity>();
+        when(
+          () => wellKnown.fetchIdentity(any()),
+        ).thenAnswer((_) => heldFetch.future);
+        return build();
+      },
+      act: (bloc) async {
+        bloc.add(const ServerOnboardingSubmitted(url: _kUrl));
+        await bloc.stream.firstWhere((s) => s is ServerOnboardingInProgress);
+        bloc.add(const ServerOnboardingSubmitted(url: _kUrl));
+        await pumpEventQueue();
+        heldFetch.complete(_identity());
+        await pumpEventQueue();
+      },
+      expect: () => const [
+        ServerOnboardingInProgress(),
+        ServerOnboardingSucceeded(
+          serverId: 'local-id-1',
+          displayName: 'Home BGE',
+        ),
+      ],
+      verify: (_) {
+        verify(() => wellKnown.fetchIdentity(any())).called(1);
+        verify(
+          () => orchestrator.addAndActivateServer(
+            displayName: any(named: 'displayName'),
+            serverUrl: any(named: 'serverUrl'),
+            bgeServerId: any(named: 'bgeServerId'),
+            identity: any(named: 'identity'),
+          ),
+        ).called(1);
+      },
+    );
   });
 }
