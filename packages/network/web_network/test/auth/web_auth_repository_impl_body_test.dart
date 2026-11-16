@@ -279,8 +279,8 @@ void main() {
 
   group('the reconcile fallback covers every indeterminate fault', () {
     // The malformed-2xx case is already pinned in
-    // `web_auth_repository_impl_test.dart` (#180 D9). These add the status
-    // classes around it, driven through a real Dio.
+    // `web_auth_repository_impl_test.dart` (#180). These add the status classes
+    // around it, driven through a real Dio.
     //
     // Indeterminate means this client could not DETERMINE whether a session
     // exists — "the response is definitively broken" is not "the session is

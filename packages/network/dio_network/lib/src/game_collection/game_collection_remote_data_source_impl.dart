@@ -5,7 +5,7 @@ import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-/// What a 404 means for the request that produced it (#253 **D6**).
+/// What a 404 means for the request that produced it (#253).
 ///
 /// The API collapses missing, foreign and out-of-scope rows into one 404, so
 /// the status alone cannot say whether the operation failed, had already
@@ -203,7 +203,7 @@ class GameCollectionRemoteDataSourceImpl
     // while the client's own contract is that null means leave-unchanged.
     // `playCount` / `lastPlayed` / `platformGameId` / `medium` are absent from
     // this method's parameters entirely — the server rejects them under
-    // `forbidNonWhitelisted`, so there is nothing to omit here (#253 D3, #258).
+    // `forbidNonWhitelisted`, so there is nothing to omit here (#253, #258).
     final body = <String, dynamic>{
       'quantity': ?quantity,
       'rating': ?rating,

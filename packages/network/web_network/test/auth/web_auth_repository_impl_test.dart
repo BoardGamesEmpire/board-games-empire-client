@@ -1130,11 +1130,11 @@ void main() {
     });
 
     group('getCachedSession()', () {
-      // #284 D1. It used to delegate to getSession(), which broke both
-      // halves of the interface's contract — "no network call" and "a pure
-      // read that never mutates the in-memory auth state" — and cost a
-      // second full round trip on every cold-start check, because
-      // AuthBloc uses it as a cheap local probe before the real call.
+      // #284. It used to delegate to getSession(), which broke both halves of
+      // the interface's contract — "no network call" and "a pure read that
+      // never mutates the in-memory auth state" — and cost a second full round
+      // trip on every cold-start check, because AuthBloc uses it as a cheap
+      // local probe before the real call.
       //
       // httpOnly cookies are opaque to Dart, so web has nothing it can
       // vouch for without a request. Null is the honest answer, and the
@@ -1244,7 +1244,7 @@ void main() {
         ).called(1);
       });
 
-      // ── #285 D1: the epoch does not bound a LATER getSession ──────────
+      // ── #285: the epoch does not bound a LATER getSession ─────────────
       //
       // The epoch answers "did this response outlive its intent?" — it
       // discards a session response that was already in flight when the
@@ -1265,7 +1265,7 @@ void main() {
       // web, which needs no user action to land inside it.
 
       test('a getSession STARTED after the sign-out bump is refused, and '
-          'makes no request (#285 D1)', () async {
+          'makes no request (#285)', () async {
         final signOutGate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
@@ -1294,7 +1294,7 @@ void main() {
       });
 
       test('the refusal does not re-assert authenticated on the state '
-          'stream (#285 D1)', () async {
+          'stream (#285)', () async {
         final signOutGate = Completer<Response<String>>();
         when(
           () => mockDio.post<String>(
@@ -1333,7 +1333,7 @@ void main() {
       // successful sign-in surfaced as AuthServerException("the server
       // reported no session"). It also made #280's AuthBloc guard dead on
       // web, since the authenticated state it protects became unreachable.
-      test('a sign-in inside the sign-out window still succeeds (#285 D1 / '
+      test('a sign-in inside the sign-out window still succeeds (#285 / '
           '#280)', () async {
         final signOutGate = Completer<Response<String>>();
         when(
@@ -1383,7 +1383,7 @@ void main() {
       // and this class cannot see that property of its caller, which is the
       // same shape of latent bug #285 itself was about.
       test('an overlapping sign-out keeps the latch raised until the last '
-          'revocation settles (#285 D1, raised in review)', () async {
+          'revocation settles (#285, raised in review)', () async {
         final first = Completer<Response<String>>();
         final second = Completer<Response<String>>();
         final gates = <Completer<Response<String>>>[first, second];
@@ -1421,7 +1421,7 @@ void main() {
       });
 
       test('the latch is released once the sign-out resolves — a later '
-          'getSession works normally (#285 D1)', () async {
+          'getSession works normally (#285)', () async {
         when(() => mockDio.post<String>(any(), options: any(named: 'options')))
             .thenAnswer(
               (_) async => Response(

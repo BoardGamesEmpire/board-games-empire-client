@@ -32,9 +32,9 @@ import 'package:observability/observability.dart' show BgeLogger;
 /// ## What it does not do
 ///
 /// It extracts no samples and records none: `ClockSkewInterceptor` stays
-/// silent and unchanged on both platforms (#118 D4), and this class only
-/// observes. What it does repeat, deliberately, is that interceptor's
-/// readability check — see [_hasReadableDate].
+/// silent and unchanged on both platforms (#118), and this class only observes.
+/// What it does repeat, deliberately, is that interceptor's readability check —
+/// see [_hasReadableDate].
 ///
 /// `onError` is deliberately not overridden, for the same reason
 /// `ClockSkewInterceptor` does not: the per-server Dio sets
