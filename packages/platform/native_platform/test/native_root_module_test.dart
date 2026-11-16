@@ -6,6 +6,7 @@ import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
+import 'package:native_platform/src/data_export/file_picker_user_data_export_sink.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
@@ -113,6 +114,21 @@ void main() {
       expect(
         container.get<UserDataExportRegistry>().exporters.map((e) => e.key),
         contains('gameCollection'),
+      );
+    });
+
+    test('registers the platform export sink (#92)', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(
+        container.get<UserDataExportSink>(),
+        isA<FilePickerUserDataExportSink>(),
       );
     });
   });

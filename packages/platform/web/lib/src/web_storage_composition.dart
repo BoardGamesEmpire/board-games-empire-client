@@ -9,6 +9,7 @@ import 'package:network_interface/network_interface.dart' show WellKnownClient;
 import 'package:observability/observability.dart' show BgeLogger, FeedbackSink;
 import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart';
+import 'package:web_platform/src/data_export/download_user_data_export_sink.dart';
 import 'package:web_platform/src/device_info/web_device_info_reader.dart';
 import 'package:web_platform/src/feedback/indexed_db_feedback_sink.dart';
 import 'package:web_platform/src/session/web_provider_sign_in_bindings.dart';
@@ -179,8 +180,8 @@ final class WasmServerDatabaseReset implements WebStorageReset {
 }
 
 /// The production web **root** module: [registerWebRootModule] with the
-/// durable feedback sink (#292) and the browser's device reader (#324)
-/// composed in.
+/// durable feedback sink (#292), the browser's device reader (#324) and
+/// the export's download sink (#92) composed in.
 ///
 /// Here for the same reason [buildWebServerScope] is: `web_root_module.dart`
 /// is on the VM-compilable side of this package and cannot name a type that
@@ -197,6 +198,7 @@ Future<void> buildWebRootModule(DependencyContainer container) async {
       container,
       feedbackSink: opening,
       deviceInfoReader: _browserDeviceInfoReader(),
+      userDataExportSink: DownloadUserDataExportSink(),
     );
   } on Object {
     // Ownership transfers at registration, and this throw means it never

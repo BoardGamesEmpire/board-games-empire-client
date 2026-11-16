@@ -19,6 +19,7 @@ import 'package:drift/wasm.dart' show WasmStorageImplementation;
 import 'package:drift_storage/drift_storage.dart' show ServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart' show UserSessionScope;
+import 'package:interfaces/portability.dart' show UserDataExportSink;
 import 'package:interfaces/repositories.dart' show AuthRepository;
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart' show CrossTabLock;
@@ -140,6 +141,18 @@ void main() {
       // This suite only runs in Chrome.
       expect(info['browserEngine'], 'blink');
       expect(info['browser'], startsWith('Chrome '));
+    });
+
+    test("registers the export's download sink (#92)", () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await buildWebRootModule(container);
+
+      expect(
+        container.get<UserDataExportSink>(),
+        isA<DownloadUserDataExportSink>(),
+      );
     });
   });
 

@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,6 +51,16 @@ class _FixedDeviceInfoReader implements DeviceInfoReader {
 
   @override
   Map<String, String> read() => _info;
+}
+
+class _FakeExportSink implements UserDataExportSink {
+  const _FakeExportSink();
+
+  @override
+  Future<UserDataExportSaveResult> save({
+    required String fileName,
+    required Uint8List bytes,
+  }) async => UserDataExportSaveResult.downloaded;
 }
 
 const _info = BuildInfo(
@@ -190,6 +201,32 @@ void main() {
         container.get<UserDataExportRegistry>().exporters.map((e) => e.key),
         contains('gameCollection'),
       );
+    });
+
+    test('registers the platform export sink (#92)', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      const sink = _FakeExportSink();
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        userDataExportSink: sink,
+      );
+
+      expect(container.get<UserDataExportSink>(), same(sink));
+    });
+
+    test('registers no export sink when none is passed (#92)', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.isRegistered<UserDataExportSink>(), isFalse);
     });
   });
 

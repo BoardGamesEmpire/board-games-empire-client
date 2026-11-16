@@ -92,6 +92,7 @@ dev_dependencies:
   # level the storage report emits, and needs drift's storage enum to build
   # the cases.
   drift: ^2.35.4
+  fake_async: ^1.3.3
   flutter_test:
     sdk: flutter
   logging: ^1.2.0
