@@ -220,12 +220,14 @@ Map<String, dynamic> _gatewayHit({
   String? gameId,
   String contentType = 'CONTENT_TYPE_EXPANSION',
   String thumbnailUrl = '',
+  String? summary,
 }) => {
   'externalId': externalId,
   'title': title,
   'contentType': contentType,
   'yearPublished': 1996,
   'thumbnailUrl': thumbnailUrl,
+  'summary': ?summary,
   'sourceUrl': 'https://boardgamegeek.com/boardgame/$externalId',
   'minPlayers': 2,
   'maxPlayers': 6,
@@ -949,6 +951,30 @@ void main() {
         expect(hits[1].isOnServer, isFalse);
       },
     );
+
+    Future<GameSearchHit> hitWith({String? summary}) async {
+      final remote = answering(
+        jsonEncode({
+          'correlationId': 'c-1',
+          'resultsBySource': {
+            'dg_bgg': [_gatewayHit(summary: summary)],
+          },
+        }),
+      );
+      return (await remote.search('catan')).byDataGateway['dg_bgg']!.single;
+    }
+
+    test("search reads a DataGateway result's summary", () async {
+      expect((await hitWith(summary: '**Big** box')).summary, '**Big** box');
+    });
+
+    test('search reads no summary as null', () async {
+      expect((await hitWith()).summary, isNull);
+    });
+
+    test('search reads an empty summary as null', () async {
+      expect((await hitWith(summary: '')).summary, isNull);
+    });
 
     test('names every source that did not answer, by how', () async {
       final remote = answering(searchBody());

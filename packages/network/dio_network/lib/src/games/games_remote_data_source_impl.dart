@@ -450,6 +450,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     maxPlayers: json['maxPlayers'] as int?,
     // A DataGateway's unset proto string arrives as "", not absent.
     thumbnailUrl: nonEmptyString(json['thumbnailUrl']),
+    summary: nonEmptyString(json['summary']),
     platforms: [
       for (final p
           in (json['platforms'] as List? ?? const [])

@@ -66,8 +66,9 @@ typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 ///   is a full replace, so caching one would empty the lists a detail fetch
 ///   wrote. Nothing shows them yet.
 /// - **A search result keeps** what a row shows and what opening it needs
-///   ([GameSearchHit]). It drops the rating, the source URL, the base game's
-///   id, each platform's id and the releases.
+///   ([GameSearchHit]), the summary a DataGateway sends included (#558). It
+///   drops the rating, the source URL, the base game's id, each platform's
+///   id and the releases.
 ///
 /// Search results name content and platform types two ways: local results
 /// use the stored names (`BaseGame`, `Tabletop`) and DataGateway results the
