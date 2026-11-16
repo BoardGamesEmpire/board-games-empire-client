@@ -2146,7 +2146,7 @@ void main() {
               answered: NominationStatus.open,
               copy:
                   'An error occurred while nominating Catan. Check the '
-                  'nominations above before nominating it again.',
+                  'Nominations tab before nominating it again.',
               tone: error,
             ),
             (

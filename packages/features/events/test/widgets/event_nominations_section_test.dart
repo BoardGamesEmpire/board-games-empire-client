@@ -843,7 +843,7 @@ void main() {
 
       expect(find.text('Nothing nominated yet'), findsOneWidget);
       expect(
-        find.text('Nominate a game from the games pool below.'),
+        find.text('Nominate a game from the Pool tab.'),
         findsOneWidget,
       );
       // Nothing to count.
@@ -864,7 +864,7 @@ void main() {
 
       expect(find.text('Nothing nominated yet'), findsOneWidget);
       expect(
-        find.text('Nominate a game from the games pool below.'),
+        find.text('Nominate a game from the Pool tab.'),
         findsNothing,
       );
     });

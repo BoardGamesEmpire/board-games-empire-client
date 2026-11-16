@@ -97,9 +97,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## The Games tab
 ///
-/// The games the attendees offer to bring, one row per offered copy, with a
-/// search, a filter by person, the shared filter sheet (#851), and Take back
-/// on the viewer's own rows ([EventGamesTab], #516). The pool isn't cached:
+/// Two sub-tabs (#945): Nominations, where it opens, then Pool, the games
+/// the attendees offer to bring, one row per offered copy, with a search, a
+/// filter by person, the shared filter sheet (#851), and Take back on the
+/// viewer's own rows ([EventGamesTab], #516). The pool isn't cached:
 /// the [EventGamesBloc] holds what was read last, and the tab filters it on
 /// the device.
 ///
@@ -133,10 +134,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// that changes reads nothing. The viewer's own writes change their rows
 /// through the writes' answers, and the stale-data banner's Try again reads
 /// them as the user asks. A read that finds the event gone reads the event
-/// again, as the pool's does. They show above the pool, in the tab's
-/// Nominations section, in every state of the pool: a first read that fails
-/// says so there, with Try again, and one that fails over nominations read
-/// before leaves them, for the footer's stale-data banner to say.
+/// again, as the pool's does. They show on the tab's Nominations sub-tab, in
+/// every state of the pool: a first read that fails says so there, with Try
+/// again, and one that fails over nominations read before leaves them, for
+/// the footer's stale-data banner to say.
 ///
 /// The page's footer holds what answers the lists: how many games a run of
 /// offers is offering while it is out, or how the pool's last write went, a run
@@ -144,17 +145,18 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// a nominate, a vote or a withdrawal, or a host's approval, rejection or close
 /// of a vote (#518), each with its own Dismiss, on either tab, since a run can
 /// outlast the stay on Games; then, while Games is selected, the stale-data
-/// banners, the pool's and the nominations', while what each shows may be out
-/// of date. There each is on screen and heard however far down the list the
-/// user is; what answers the whole screen stays in the header.
+/// banner of the sub-tab shown (#945), the pool's on Pool or the
+/// nominations' on Nominations, while what it shows may be out of date.
+/// There each is on screen and heard however far down the list the user is;
+/// what answers the whole screen stays in the header.
 ///
 /// *Offer games* is built where [onOfferGames] is given, the role table gives
 /// the viewer `offerGame`, they have a row on the roster and the event takes
-/// writes (`offerGamesGate`). It sits at the head of the tab, so it is there
-/// in every state of the tab but the wait for a first answer and the games
-/// being hidden. Where the viewer has answered Not going it is disabled,
-/// saying why, and offline it is disabled, each throughout, its own run
-/// included. It is disabled too while a read of the event runs, while the
+/// writes (`offerGamesGate`). It sits at the head of the Pool sub-tab, so it
+/// is there in every state of the pool but the wait for a first answer and
+/// the games being hidden. Where the viewer has answered Not going it is
+/// disabled, saying why, and offline it is disabled, each throughout, its own
+/// run included. It is disabled too while a read of the event runs, while the
 /// screen's own request is out and while another of the pool's writes is,
 /// except through the run its own press sent (below). Take back
 /// is built wherever the gate isn't hidden, so a viewer who answered Not

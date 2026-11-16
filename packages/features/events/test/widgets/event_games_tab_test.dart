@@ -132,7 +132,7 @@ void main() {
   late Future<List<OfferPick>?> Function(BuildContext context) pageAnswer;
 
   /// What each nominations read answers (#517): none, unless a test says
-  /// otherwise, so the section above the pool says nothing is nominated.
+  /// otherwise, so the Nominations sub-tab says nothing is nominated.
   late FutureOr<List<EventNomination>> Function(String eventId)
   nominationsAnswer;
 
@@ -460,7 +460,7 @@ void main() {
   /// The footer's stale-data banner.
   Finder stale() => find.byKey(EventDetailScreen.poolRefreshBannerKey);
 
-  /// The pool's spinner, not the Nominations section's above it (#517).
+  /// The pool's spinner, not the Nominations section's (#517).
   Finder poolSpinner() => find.byWidgetPredicate(
     (widget) =>
         widget is BgeLoadingState && widget.label == 'Loading the games',
@@ -485,8 +485,8 @@ void main() {
     );
   }
 
-  /// Brings [finder] on screen, then taps it: the Nominations section above
-  /// the pool (#517) can leave what a test presses below the fold.
+  /// Brings [finder] on screen, then taps it: the tab bars and the pool's
+  /// header above the rows can leave what a test presses below the fold.
   Future<void> press(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
     await tester.pump();
@@ -1007,7 +1007,7 @@ void main() {
         await tester.pump();
         await tester.enterText(search(), 'wingspan');
         await animate(tester);
-        // Below the Nominations section (#517).
+        // Under the tab bars and the pool's header.
         await tester.ensureVisible(
           find.byKey(
             EventDetailScreen.poolClearFiltersKey,
@@ -1550,7 +1550,7 @@ void main() {
         'as one node', (tester) async {
       final handle = tester.ensureSemantics();
       await showGames(tester);
-      // Below the Nominations section (#517).
+      // Under the tab bars and the pool's header.
       await tester.ensureVisible(row(root.id));
       await tester.pump();
 
@@ -1617,7 +1617,7 @@ void main() {
       for (final game in [azul, catanAdas, root]) {
         expect(takeBack(game.id), findsNothing, reason: game.title);
       }
-      // On screen, below the Nominations section (#517): a node scrolled
+      // On screen, under the tab bars and the pool's header: a node scrolled
       // out of view is hidden.
       await tester.ensureVisible(takeBack(catanMine.id));
       await tester.pump();
@@ -3197,7 +3197,7 @@ void main() {
       for (final game in [catanMine, azul, catanAdas, root]) {
         expect(takeBack(game.id), findsOneWidget, reason: game.title);
       }
-      // On screen, below the Nominations section (#517): a node scrolled
+      // On screen, under the tab bars and the pool's header: a node scrolled
       // out of view is hidden.
       await tester.ensureVisible(takeBack(azul.id));
       await tester.pump();
@@ -4887,7 +4887,7 @@ void main() {
         nominationOf('n-1', azul),
         nominationOf('n-2', root, occurrenceId: 'o-1'),
       ];
-      // Tall enough that the pool is built below the two nominations.
+      // Tall enough that every pool row is built.
       useViewSize(tester, const Size(800, 2400));
       await showGames(tester);
 
@@ -5015,7 +5015,7 @@ void main() {
             label: 'Nominate ${game.title}',
             hint:
                 'Your last nomination may have gone through. Load the '
-                'nominations again to check.',
+                'nominations again on the Nominations tab to check.',
             isButton: true,
             hasEnabledState: true,
           ),
@@ -5050,7 +5050,7 @@ void main() {
       nominationsAnswer = (_) => [
         nominationOf('n-1', azul, status: NominationStatus.paused),
       ];
-      // Tall enough that the pool is built below the nomination.
+      // Tall enough that every pool row is built.
       useViewSize(tester, const Size(800, 2400));
       await showGames(tester, detail: detailOf(roster: [me, adaOut, bo]));
 
@@ -5309,7 +5309,7 @@ void main() {
         nominationOf('n-3', root, status: NominationStatus.withdrawn),
         nominationOf('n-4', catanMine, status: NominationStatus.passed),
       ];
-      // Tall enough that every row is built, below the four nominations.
+      // Tall enough that every row is built.
       useViewSize(tester, const Size(800, 3200));
 
       await showGames(tester);
@@ -5405,7 +5405,7 @@ void main() {
       await animate(tester);
 
       // Nominated for the one scope there is: unavailable, still focused,
-      // and saying why. The new nomination above can have pushed it down.
+      // and saying why.
       expect(focus.hasPrimaryFocus, isTrue);
       await tester.ensureVisible(nominate(azul.id));
       await tester.pump();
@@ -5676,7 +5676,7 @@ void main() {
       served = [_game('o-1', 'att-me', _longTitle), azul, root];
 
       await showGames(tester);
-      // Below the Nominations section (#517).
+      // Under the tab bars and the pool's header.
       await tester.ensureVisible(row('o-1'));
       await tester.pump();
 
@@ -5767,8 +5767,8 @@ void main() {
           viewer: _row('att-me', name: 'Me', role: EventRole.host),
         ),
       );
-      // Far below the Nominations section (#517) at this size: built once
-      // scrolled to, then brought out of the cache extent into view.
+      // Under the tab bars and the pool's header, at this size perhaps past
+      // the cache extent: scrolled to, then brought into view.
       await tester.scrollUntilVisible(
         takeBack(long.id),
         100,
@@ -5834,7 +5834,7 @@ void main() {
           _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
         ];
         await showGames(tester);
-        // Below the Nominations section (#517): built once scrolled to.
+        // Under the tab bars, at this size perhaps below the fold.
         await tester.scrollUntilVisible(
           notMine(),
           100,
@@ -5905,7 +5905,7 @@ void main() {
       build: (theme) => harness(detail: detailOf(), theme: theme),
       arrange: (tester) async {
         await arrangeGames(tester);
-        // Below the Nominations section (#517), and audited there.
+        // Under the tab bars and the pool's header, and audited there.
         await tester.scrollUntilVisible(
           row(catanMine.id),
           100,
@@ -5940,7 +5940,7 @@ void main() {
         await settle(tester);
         await settle(tester);
         await chooseGames(tester);
-        // Below the Nominations section (#517).
+        // Under the tab bars and the pool's header.
         await tester.scrollUntilVisible(
           takeBack(azul.id),
           100,
@@ -5968,7 +5968,7 @@ void main() {
           _game('o-2', 'att-ada', 'Azul', platformType: PlatformType.tabletop),
         ];
         await arrangeGames(tester);
-        // Below the Nominations section (#517): built once scrolled to.
+        // Under the tab bars, at this size perhaps below the fold.
         await tester.scrollUntilVisible(
           notMine(),
           100,
@@ -6010,7 +6010,7 @@ void main() {
         await arrangeGames(tester);
         await tester.enterText(search(), 'gloomhaven');
         await tester.pump();
-        // Below the Nominations section (#517), and audited there.
+        // Under the tab bars and the pool's header, and audited there.
         await tester.ensureVisible(
           find.text('No games match', skipOffstage: false),
         );
@@ -6025,7 +6025,7 @@ void main() {
       arrange: (tester) async {
         poolAnswer = (_) => throw _offline;
         await arrangeGames(tester);
-        // Below the Nominations section (#517), and audited there.
+        // Under the tab bars and the pool's header, and audited there.
         await tester.ensureVisible(
           find.text("Couldn't load the games", skipOffstage: false),
         );

@@ -50,10 +50,10 @@ enum EventNominationsBody {
   rows,
 }
 
-/// The Nominations section at the head of an event's Games tab, above the
-/// pool (#517): the games nominated for the lineup, one row each, those the
-/// filter keeps, in the order chosen, newest first unless the viewer chose
-/// another.
+/// The Nominations section, what an event's Games tab shows on its
+/// Nominations sub-tab (#517, #945): the games nominated for the lineup, one
+/// row each, those the filter keeps, in the order chosen, newest first
+/// unless the viewer chose another.
 ///
 /// Its slivers, as one group under the sub-tabs' bar: a heading
 /// ([EventGamesTabHeading]); then the header, while there is something to
@@ -399,9 +399,10 @@ class EventNominationsSection extends StatelessWidget {
   }
 }
 
-/// A heading on the Games tab (#517): the Nominations section's, and the
-/// pool's under it, so heading navigation finds each. Announced as a
-/// heading. Each list's count is its header's, under its controls.
+/// A heading on the Games tab (#517): the Nominations section's on the
+/// Nominations sub-tab, and the pool's on Pool (#945), so heading navigation
+/// finds each list. Announced as a heading. Each list's count is its
+/// header's, under its controls.
 class EventGamesTabHeading extends StatelessWidget {
   const EventGamesTabHeading({required this.title, super.key});
 
