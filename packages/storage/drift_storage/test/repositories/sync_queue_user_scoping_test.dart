@@ -10,13 +10,14 @@ import '../support/fixed_clock.dart';
 
 /// #147 acceptance: the sync queue is data-scoped to the enqueuing user.
 ///
-/// The table is server-wide (that per-server storage is what makes D8
-/// survival work — see `../composition/sync_queue_rejection_survival_test`),
-/// but every repository instance is built for one user and can neither
-/// observe nor mutate another user's rows. These tests run two repository
-/// instances over ONE in-memory database — the shared-device shape the
-/// defect was filed against — and pin each method's scoping plus the
-/// #138 close-on-dispose contract for `watchPendingCount`.
+/// The table is server-wide (that per-server storage is what makes the
+/// rejection-survival rule (#98) work — see
+/// `../composition/sync_queue_rejection_survival_test`), but every repository
+/// instance is built for one user and can neither observe nor mutate another
+/// user's rows. These tests run two repository instances over ONE in-memory
+/// database — the shared-device shape the defect was filed against — and pin
+/// each method's scoping plus the #138 close-on-dispose contract for
+/// `watchPendingCount`.
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
 
@@ -77,7 +78,7 @@ void main() {
       expect(await repoB.getPendingEntries(), isEmpty);
       expect(await repoB.getAllEntries(), isEmpty);
 
-      // The rows themselves are untouched — dormant, not discarded (D8).
+      // The rows themselves are untouched — dormant, not discarded (#98).
       expect(await rawRows(), hasLength(2));
       expect((await rawRows()).map((r) => r.userId), everyElement(_kUserA));
     });

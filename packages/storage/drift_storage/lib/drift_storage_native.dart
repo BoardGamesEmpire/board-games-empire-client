@@ -3,10 +3,10 @@
 ///
 /// `drift_storage.dart` is the platform-neutral entry point — the databases
 /// as executor-agnostic classes, every repository implementation, and the
-/// user-session installer — and a web target imports only that (#63 D2).
-/// This library is the complement: the executor factory that opens an
-/// encrypted file-backed database (#16), the per-server storage installer
-/// that resolves paths on disk, and the in-memory helper VM tests use.
+/// user-session installer — and a web target imports only that (#63). This
+/// library is the complement: the executor factory that opens an encrypted
+/// file-backed database (#16), the per-server storage installer that resolves
+/// paths on disk, and the in-memory helper VM tests use.
 ///
 /// A native composition root imports **both**; nothing on web imports this
 /// one. The split is a plain second entry point rather than conditional

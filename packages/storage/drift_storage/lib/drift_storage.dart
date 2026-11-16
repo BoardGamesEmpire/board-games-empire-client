@@ -1,4 +1,4 @@
-/// The platform-neutral half of `drift_storage` (#287, #63 D2).
+/// The platform-neutral half of `drift_storage` (#287, #63).
 ///
 /// Everything exported here is executor-agnostic pure drift and compiles for
 /// web: the two databases take their `QueryExecutor` from the caller, and the
