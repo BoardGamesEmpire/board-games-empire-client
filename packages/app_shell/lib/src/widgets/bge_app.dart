@@ -5,6 +5,7 @@ import 'package:app_shell/src/admin/admin_section.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
 import 'package:app_shell/src/data_export/export_label_resolvers.dart';
+import 'package:app_shell/src/deep_links/deep_link_consumer.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
@@ -191,9 +192,12 @@ const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
 /// discard, a prompt the user can't see.
 ///
 /// Seams left deliberately open for sibling issues:
-/// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
-///   #83 (auth-gate drain) can reach the pending slot from the widget
-///   layer; nothing in the shell reads it yet.
+/// - [pendingDeepLinkHolder] (#10) — drained by a [DeepLinkConsumer] this
+///   widget starts (#82): on each link that arrives, and on the shell's
+///   authenticated signal, which is also how the app enters Ready. #83 keeps
+///   web's half, holding a
+///   cold load's location through bootstrap and sign-in; web has no link
+///   source, so nothing fills the slot there yet.
 ///
 /// Deliberately free of process-global side effects: `ErrorWidget.builder`
 /// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,
@@ -414,6 +418,11 @@ class _BgeAppState extends State<BgeApp> {
   /// navigation shell ([_navigationFor]), reports up to it here.
   final _syncWaiting = SessionSyncWaiting();
 
+  /// Drains [BgeApp.pendingDeepLinkHolder] (#82): on each link that
+  /// arrives, and on the shell's authenticated signal ([_onAuthenticated]).
+  /// Null when there is no holder.
+  DeepLinkConsumer? _deepLinkConsumer;
+
   @override
   void initState() {
     super.initState();
@@ -475,6 +484,18 @@ class _BgeAppState extends State<BgeApp> {
       serverSettingsBuilder: _buildServerSettingsRoute,
       adminHouseholdDetailBuilder: _buildAdminHouseholdDetailRoute,
     );
+    // #82: the lookup and the orchestrator exist only once bootstrap has
+    // succeeded, so they are read when a drain runs, not captured now.
+    final holder = widget.pendingDeepLinkHolder;
+    if (holder != null) {
+      _deepLinkConsumer = DeepLinkConsumer(
+        holder: holder,
+        isReady: () => widget.bootstrapCubit.state is AppBootstrapReady,
+        lookup: () => widget.bootstrapCubit.knownServerLookup,
+        orchestrator: () => widget.bootstrapCubit.orchestrator,
+        go: _router.go,
+      )..start();
+    }
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
     final reporter = widget.feedbackReporter;
@@ -641,13 +662,27 @@ class _BgeAppState extends State<BgeApp> {
   /// `MaterialApp.router` is not reachable from go_router's Navigator).
   Widget _buildAuthScope(BuildContext context, Widget child) => _AuthScope(
     scope: widget.bootstrapCubit.activeServerScope,
-    onAuthenticated: widget.bootstrapCubit.onAuthenticated,
+    onAuthenticated: _onAuthenticated,
     onSignedOut: widget.bootstrapCubit.onSignedOut,
     connectivity: _rootConnectivity(),
     unsentChanges: _unsentChanges,
     homeSession: _homeSession,
     child: child,
   );
+
+  /// The shell's authenticated signal: advances the bootstrap gate, then
+  /// drains a held link (#82). It is the one drain trigger besides a link
+  /// arriving. The cubit enters Ready only here, so it covers a link held
+  /// through bootstrap and sign-in. A server switch signs in while the app
+  /// is already Ready, and this is the sign-in outcome the consumer waits
+  /// for before landing on the new server.
+  ///
+  /// The cubit goes first: the drain asks whether the app is ready, and the
+  /// cubit is what makes it so.
+  void _onAuthenticated() {
+    widget.bootstrapCubit.onAuthenticated();
+    unawaited(_deepLinkConsumer?.drain());
+  }
 
   /// Resolves an **optional** device-global service from
   /// [BgeApp.rootContainer], or null when there is no container, [T] is not
@@ -2975,6 +3010,10 @@ class _BgeAppState extends State<BgeApp> {
 
   @override
   void dispose() {
+    // Ahead of the router, which a drain in flight would otherwise route
+    // through. The holder is not this widget's to dispose: `runBgeApp`
+    // creates it.
+    _deepLinkConsumer?.dispose();
     _router.dispose();
     _refreshListenable.dispose();
     final reporter = widget.feedbackReporter;
