@@ -53,8 +53,8 @@ void main() {
       ).deleteAll();
     });
 
-    test('deleteAll throws LocalDataInUseError, promptly, when another '
-        'connection holds a database open', () async {
+    test('deleteAll throws LocalDataInUseError, within its time limit, when '
+        'another connection holds a database open', () async {
       final name = WebWasmExecutorFactory.databaseName(
         freshIdentity('web-reset-held').serverId,
       );

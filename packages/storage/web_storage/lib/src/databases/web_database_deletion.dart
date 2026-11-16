@@ -32,15 +32,16 @@ final class WebDatabaseDeletion {
 /// IndexedDB half is skipped there, as drift's probe skips it. Firefox stores
 /// its databases in OPFS, which the second half still sweeps.
 ///
-/// A delete another connection holds is reported in
-/// [WebDatabaseDeletion.blocked] rather than waited for, and stays queued in
-/// the browser. IndexedDB queues requests per name, so later opens and
-/// deletes of that name, in any tab, wait behind it, and a later delete fires
-/// no `blocked` event of its own. That is why each delete also gives up after
-/// [blockedAfter] and reports the name blocked. The deletes run together, so
-/// the limit bounds the whole IndexedDB half, however many databases there
-/// are. A real delete of a server database completes in milliseconds; a slow
-/// one reported blocked costs a retry, which then finds it done.
+/// Each delete waits up to [blockedAfter] for another connection to let go,
+/// then reports the name in [WebDatabaseDeletion.blocked] and leaves the
+/// request queued in the browser. The wait is what lets drift's shared
+/// worker close a database the page has only just closed. IndexedDB queues
+/// requests per name, so later opens and deletes of that name, in any tab,
+/// wait behind a queued one, and a later delete fires no event of its own;
+/// the limit bounds those too. The deletes run together, so the limit bounds
+/// the whole IndexedDB half, however many databases there are. A real delete
+/// of a server database completes in milliseconds; a slow one reported
+/// blocked costs a retry, which then finds it done.
 ///
 /// OPFS databases come from `WasmDatabase.probe(...).existingDatabases` and
 /// are deleted through that probe. drift swallows the errors OPFS raises for
@@ -104,14 +105,22 @@ Future<WebDatabaseDeletion> deleteServerDatabases({
   return WebDatabaseDeletion(deleted: deleted, blocked: blocked);
 }
 
-/// True once [name] is deleted, false when it is blocked: another connection
-/// holds it, or nothing arrived within [blockedAfter] because an earlier
-/// blocked delete of the name is still queued ahead of this one.
+/// True once [name] is deleted, false when it is still blocked after
+/// [blockedAfter]: another connection holds it, or an earlier blocked delete
+/// of the name is still queued ahead of this one.
 ///
-/// Completes once. A blocked request stays queued in the browser, outliving
-/// this call and the page, and fires `success` later, when the other
-/// connection closes; by then the call has returned, so that event, and any
-/// later `error`, is ignored.
+/// A `blocked` event is not the answer. It fires while any other connection
+/// is open, and drift closes ours late: `close()` on the page only posts a
+/// disconnect to the shared worker, which closes its IndexedDB connection
+/// when it gets to that message. A delete right after a close, such as the
+/// one after a failed open, can find the worker still holding the database.
+/// The request stays queued and succeeds once the holder lets go, so this
+/// waits for `success` until the time limit, whatever `blocked` said.
+///
+/// Completes once. A request still blocked at the limit stays queued in the
+/// browser, outliving this call and the page, and fires `success` later,
+/// when the other connection closes; by then the call has returned, so that
+/// event, and any later `error`, is ignored.
 Future<bool> _deleteIndexedDb(String name, Duration blockedAfter) {
   final done = Completer<bool>();
   final timer = Timer(blockedAfter, () {
@@ -121,9 +130,6 @@ Future<bool> _deleteIndexedDb(String name, Duration blockedAfter) {
   request
     ..onsuccess = ((web.Event _) {
       if (!done.isCompleted) done.complete(true);
-    }).toJS
-    ..onblocked = ((web.Event _) {
-      if (!done.isCompleted) done.complete(false);
     }).toJS
     ..onerror = ((web.Event _) {
       if (!done.isCompleted) {
