@@ -4,6 +4,7 @@ import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -3569,6 +3570,34 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets("the pool's outcome landing while it is open is said inside "
+        "the pop-up, and the footer's banner of it is no live region", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [_nomination('n-1')];
+      await showGames(tester);
+      await openQuickLook(tester, 'n-1');
+      final poolOutcome = find.byKey(EventDetailScreen.poolOutcomeKey);
+      expect(inQuickLook(poolOutcome), findsNothing);
+
+      // A take-back begun on the pool before the quick look opened ends.
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesWriteDropped(EventGamesWrite.takeBack, title: 'Azul'),
+      );
+      await animate(tester);
+
+      BgeInlineBanner banner(Finder finder) =>
+          tester.widget<BgeInlineBanner>(finder);
+      final inFooter = find.descendant(
+        of: find.byType(EventGamesFooter),
+        matching: poolOutcome,
+      );
+      expect(banner(inQuickLook(poolOutcome)).announce, isTrue);
+      expect(banner(inFooter).announce, isFalse);
+      handle.dispose();
     });
 
     testWidgets("at 320×640 and 200% text, a host's quick look with every "

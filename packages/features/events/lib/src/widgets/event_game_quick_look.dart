@@ -181,9 +181,10 @@ Future<void> showEventGameQuickLook(
 /// which hides it from a screen reader. So under its controls the quick
 /// look shows the same banners ([EventPoolOutcomeBanner],
 /// [EventNominationsOutcomeBanner]) for the outcomes that land while it is
-/// open. An offered copy's shows the pool's, for Take back, and the
-/// nominations', for Nominate; a nomination's, the nominations', its own
-/// list's. An outcome already showing as it opened isn't said again. The
+/// open: the pool's, then the nominations'. Each kind of quick look shows
+/// both, since a write begun before it opened can end while it is open: a
+/// nomination's shows the pool's for a take-back or a run of offers begun
+/// on the pool. An outcome already showing as it opened isn't said again. The
 /// footer still shows each, under the barrier, but not as a live region
 /// ([EventGamesTabController.saidInQuickLook]): one coming back into the
 /// tree as the barrier lifts would be read out again, so a screen reader
@@ -477,8 +478,21 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         ? nominations.nominations.where((each) => each.id == id).firstOrNull
         : null;
     final nomination = _nomination = shown ?? _nomination;
-    // Its own list's: every write in it is a nominations write.
-    final outcomes = [?_nominationsOutcome(nominations)];
+    final ready = detail is EventDetailReady ? detail : null;
+    // The pool's too, though no write in it is a pool write: one begun on
+    // the pool before it opened can end while it is open, and the footer
+    // that would say it is under the barrier.
+    final outcomes = [
+      ?_poolOutcome(
+        games: games,
+        nominations: nominations,
+        viewerId: ready?.detail.attendance?.id,
+        names: ready == null
+            ? const <String, String?>{}
+            : poolNames(ready.detail),
+      ),
+      ?_nominationsOutcome(nominations),
+    ];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
         thumbnail: nomination?.thumbnail,
