@@ -101,10 +101,10 @@ retrofit-hard infrastructure.
 - #10 Deep-link URL scheme + manifests — **interface/manifest-only**
 - #11 UserDataExporter interface — **interface-only**
 - #15 Push notification interface — **interface-only**
-- #17 Analytics interface — **interface-only**. Anything beyond the interface
-  slice is blocked on backend #78 (tier-2 discovery endpoint) and #49
-  (advertise sinks), both open; routing (client-direct vs. backend-mediated)
-  is under review on backend #49.
+- #17 Analytics interface — **interface-only**: the `analytics` package
+  (closed event catalog, typed values, `DisabledAnalyticsService`). Routing is
+  backend-mediated (backend #49, decided 2026-11-16); everything past the
+  interface waits on backend #49's ingest route and recipient field.
 
 ### P1 — Server discovery & add flow (#24)
 
