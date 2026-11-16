@@ -125,6 +125,19 @@ A user's accepted friends and everyone up to three friendship steps from them,
 unless a block stands between them.
 _Avoid_: third degree, network on its own
 
+### Analytics
+
+**Analytics Event**:
+A "user did X" fact from the closed catalog, carrying only typed values: numbers,
+booleans, enum tokens and opaque ids, never free text. Distinct from a log record or a
+feedback report.
+_Avoid_: Tracking event, telemetry (for this)
+
+**Analytics Catalog**:
+The fixed set of analytics events the client can record. An event outside it cannot be
+expressed.
+_Avoid_: Event list, schema
+
 ### Servers
 
 **Server**:

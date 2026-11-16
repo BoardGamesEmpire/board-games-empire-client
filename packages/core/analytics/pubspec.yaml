@@ -1,0 +1,16 @@
+name: analytics
+description: "Analytics event catalog and service contract"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+resolution: workspace
+
+dependencies:
+  # `@immutable`, which the value classes need to override `==`.
+  meta: ^1.12.0
+  models:
+    path: ../models
+
+dev_dependencies:
+  test: ^1.31.1

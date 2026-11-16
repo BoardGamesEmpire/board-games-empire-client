@@ -1,0 +1,79 @@
+{
+  "collection.game_added": {
+    "medium": {
+      "kind": "token",
+      "vocabulary": [
+        "physical",
+        "digital"
+      ]
+    },
+    "platformGameId": {
+      "kind": "id"
+    }
+  },
+  "collection.game_removed": {
+    "medium": {
+      "kind": "token",
+      "vocabulary": [
+        "physical",
+        "digital"
+      ]
+    },
+    "platformGameId": {
+      "kind": "id"
+    }
+  },
+  "event.created": {
+    "schedulingMode": {
+      "kind": "token",
+      "vocabulary": [
+        "fixed",
+        "poll",
+        "multiDay",
+        "unknown"
+      ]
+    },
+    "type": {
+      "kind": "token",
+      "vocabulary": [
+        "adultsOnly",
+        "casualGathering",
+        "competitivePlay",
+        "familyNight",
+        "kidFriendly",
+        "learningSession",
+        "longGameDay",
+        "mixedAges",
+        "partyGames",
+        "strategyNight",
+        "unknown"
+      ]
+    }
+  },
+  "event.game_nominated": {},
+  "event.rsvp_changed": {
+    "status": {
+      "kind": "token",
+      "vocabulary": [
+        "attending",
+        "invited",
+        "maybe",
+        "notAttending",
+        "unknown"
+      ]
+    }
+  },
+  "household.created": {},
+  "household.invite_accepted": {
+    "role": {
+      "kind": "token",
+      "vocabulary": [
+        "householdOwner",
+        "householdAdmin",
+        "householdMember",
+        "householdGuest",
+        "unknown"
+      ]
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:analytics/analytics.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/platform_bootstrap.dart';
 import 'package:app_shell/src/bootstrap/shell_teardown.dart';
@@ -271,6 +272,15 @@ Future<void> runBgeApp({
   // rootContainer.get<FeedbackService>() returns, not the one composed
   // just above.
   final registeredFeedbackService = rootContainer.get<FeedbackService>();
+
+  // #17: analytics is interface-only. The null object is registered
+  // resolve-or-default, on the fallback container too, so a platform module
+  // or test seam can provide its own.
+  if (!rootContainer.isRegistered<AnalyticsService>()) {
+    rootContainer.registerSingleton<AnalyticsService>(
+      const DisabledAnalyticsService(),
+    );
+  }
 
   // Explicit override wins and owns reporting; otherwise the shell's
   // feedback reporter feeds both the hooks and the prompt overlay.
