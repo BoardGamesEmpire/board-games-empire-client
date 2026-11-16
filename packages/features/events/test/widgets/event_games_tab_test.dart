@@ -593,6 +593,18 @@ void main() {
   FocusNode takeBackFocus(WidgetTester tester, String id) =>
       tester.widget<ButtonStyleButton>(takeBack(id)).focusNode!;
 
+  FocusNode nominateFocus(WidgetTester tester, String id) =>
+      tester.widget<ButtonStyleButton>(nominateOn(id)).focusNode!;
+
+  /// Reads the pool again, as a write from another device is found.
+  Future<void> readPool(WidgetTester tester) async {
+    blocOf<EventGamesBloc>(tester).add(
+      const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+    );
+    await animate(tester);
+    await animate(tester);
+  }
+
   FocusNode peopleFocus(WidgetTester tester) =>
       tester.widget<ButtonStyleButton>(people()).focusNode!;
 
@@ -3310,18 +3322,6 @@ void main() {
   });
 
   group('a row that leaves while focus is in it (#946)', () {
-    /// Reads the pool again, as a write from another device is found.
-    Future<void> readPool(WidgetTester tester) async {
-      blocOf<EventGamesBloc>(tester).add(
-        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
-      );
-      await animate(tester);
-      await animate(tester);
-    }
-
-    FocusNode nominateFocus(WidgetTester tester, String id) =>
-        tester.widget<ButtonStyleButton>(nominateOn(id)).focusNode!;
-
     testWidgets("from its head, to the next row's head", (tester) async {
       served = [catanMine, azul, wingspanMine];
       await showGames(tester);
@@ -3428,18 +3428,6 @@ void main() {
   });
 
   group('two rows to a line in a wide window (#949)', () {
-    /// Reads the pool again, as a write from another device is found.
-    Future<void> readPool(WidgetTester tester) async {
-      blocOf<EventGamesBloc>(tester).add(
-        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
-      );
-      await animate(tester);
-      await animate(tester);
-    }
-
-    FocusNode nominateFocus(WidgetTester tester, String id) =>
-        tester.widget<ButtonStyleButton>(nominateOn(id)).focusNode!;
-
     /// The rows of [ids], as a screen reader comes to their heads.
     List<String> readingOrder(WidgetTester tester, List<String> ids) {
       final heads = {

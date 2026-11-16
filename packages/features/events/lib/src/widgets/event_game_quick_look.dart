@@ -234,12 +234,12 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     // Built again as the screen's clock passes a boundary, which no bloc
     // says: a date starting, a deadline passing (#957).
     listenable: EventGamesTabScope.of(context).clockTicks,
-    builder: (context, _) => _blocs(context),
+    builder: (context, _) => _entryForm(context),
   );
 
   /// The form [EventGameQuickLook.entry] takes, built from the blocs as they
   /// stand.
-  Widget _blocs(
+  Widget _entryForm(
     BuildContext context,
   ) => BlocBuilder<EventDetailBloc, EventDetailState>(
     builder: (context, detail) => BlocBuilder<EventGamesBloc, EventGamesState>(
@@ -384,9 +384,19 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
               nominationsKnown(nominations, controller)
         ? l10n.eventsQuickLookSuppliesNone
         : null;
-    final nominate = gates.nominate;
-    final takeBack = gates.takeBack;
-    final notGoing = nominate?.notGoing;
+    final buttons = poolRowButtons(
+      context,
+      game: shown,
+      gates: gates,
+      controller: controller,
+      viewerId: viewerId,
+      names: names,
+      clock: controller.clock,
+      nominateKey: EventDetailScreen.quickLookNominateKey,
+      takeBackKey: EventDetailScreen.quickLookTakeBackKey,
+    );
+    final nominate = buttons.nominate;
+    final takeBack = buttons.takeBack;
     final openGame = controller.openGame;
 
     return _QuickLookFrame(
@@ -407,40 +417,10 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         Text(gates.who, style: quiet),
         if (supplies != null) Text(supplies, style: quiet),
       ],
-      controls: [
-        if (nominate != null)
-          NominateButton(
-            buttonKey: EventDetailScreen.quickLookNominateKey,
-            game: shown,
-            unread: nominate.unread,
-            notGoing: notGoing,
-            already: nominate.already,
-            enabled: nominate.enabled,
-            runOver: nominate.runOver,
-            onPressed: () =>
-                nominateGame(context, shown, clock: controller.clock),
-          ),
-        if (takeBack != null)
-          TakeBackButton(
-            buttonKey: EventDetailScreen.quickLookTakeBackKey,
-            game: shown,
-            inert: takeBack.inert,
-            enabled: takeBack.enabled,
-            runOver: takeBack.runOver,
-            onPressed: () {
-              // Armed by the press itself, however it came, as the row's is.
-              controller.armTakeBack(shown.id);
-              return takeBackGame(
-                context,
-                controller,
-                shown,
-                viewerId: viewerId,
-                names: names,
-              );
-            },
-          ),
-      ],
-      note: notGoing,
+      // Nominate and Take back, each where the row's rules offer it: both,
+      // where the row has room for one (#946).
+      controls: [?nominate, ?takeBack],
+      note: gates.nominate?.notGoing,
       // Both are writes.
       offlineNote: nominate != null || takeBack != null,
       // The pool's, for Take back, then the nominations', for Nominate.
@@ -492,7 +472,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         detail: detail,
         state: nominations,
         pool: games.games,
-        poolRead: controller.poolRead(games),
+        poolRead: controller.isPoolRead(games),
         acting: acting,
       ),
       now: controller.clock(),

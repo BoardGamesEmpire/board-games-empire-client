@@ -127,33 +127,24 @@ class EventGamesFooter extends StatelessWidget {
               text: l10n.eventsGamesOffering(sending),
             ),
           )
-        else if (outcome != null && EventPoolOutcomeBanner.says(outcome))
-          // Keyed, so a banner above or below it coming or going never
-          // builds it anew, which would say it again.
-          KeyedSubtree(
-            key: ObjectKey(outcome),
-            child: Padding(
-              padding: EdgeInsets.only(top: gap),
-              child: EventPoolOutcomeBanner(
-                outcome: outcome,
-                nominations: nominations?.nominations ?? const [],
-                viewerId: viewerId,
-                names: names,
-              ),
-            ),
+        else if (outcome != null && EventPoolOutcomeBanner.says(outcome)) ...[
+          const BgeGap.sm(),
+          // A child of the column itself, keyed by its outcome, so a banner
+          // above or below it coming or going never builds it anew, which
+          // would say it again.
+          EventPoolOutcomeBanner(
+            outcome: outcome,
+            nominations: nominations?.nominations ?? const [],
+            viewerId: viewerId,
+            names: names,
           ),
+        ],
         // The nominations' own, beside the pool's: nothing holds one bloc's
-        // write back for the other's, so both can end.
-        if (nominationsOutcome != null)
-          KeyedSubtree(
-            key: ObjectKey(nominationsOutcome),
-            child: Padding(
-              padding: EdgeInsets.only(top: gap),
-              child: EventNominationsOutcomeBanner(
-                outcome: nominationsOutcome,
-              ),
-            ),
-          ),
+        // write back for the other's, so both can end. Keyed as the pool's.
+        if (nominationsOutcome != null) ...[
+          const BgeGap.sm(),
+          EventNominationsOutcomeBanner(outcome: nominationsOutcome),
+        ],
         if (staleFor == EventGamesSection.pool &&
             state.refreshFailed &&
             state.games.isNotEmpty)
@@ -214,7 +205,8 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     required this.nominations,
     required this.viewerId,
     required this.names,
-  }) : super(key: ObjectKey(outcome));
+  }) : assert(says(outcome), 'Build it only where it says something.'),
+       super(key: ObjectKey(outcome));
 
   final EventGamesOutcome outcome;
 
@@ -246,7 +238,6 @@ class EventPoolOutcomeBanner extends StatelessWidget {
       outcome,
       _suppliedBy(outcome, nominations: nominations, viewerId: viewerId),
     );
-    if (message == null) return const SizedBox.shrink();
 
     // In the words it landed with, which the nominations' changes leave as
     // they were.
@@ -282,9 +273,9 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     );
   }
 
-  /// The banner's copy, by the write it answers, or null for none. A
-  /// take-back's 409 names what to do by [supplied] (#517).
-  String? _message(
+  /// The banner's copy, by the write it answers. A take-back's 409 names
+  /// what to do by [supplied] (#517).
+  String _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
     StillSuppliedBy supplied,
@@ -335,10 +326,10 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   }
 
   /// A take-back's copy, naming its game by its title and subtitle
-  /// ([gameName], #851); the tab always names it, so one with no title has
-  /// none. A 409 says what to do by [supplied] (#517): where nobody holds a
-  /// live nomination of the row, it is in the lineup, or nominated in a way
-  /// the nominations held don't show.
+  /// ([gameName], #851): the banner is built only where [says], where the
+  /// outcome names one. A 409 says what to do by [supplied] (#517): where
+  /// nobody holds a live nomination of the row, it is in the lineup, or
+  /// nominated in a way the nominations held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -346,14 +337,12 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   /// pool's row names them, or "this person" where the roster gives no
   /// name. A refusal, a failure and a drop say no one's, and a drop names no
   /// row.
-  String? _takeBackMessage(
+  String _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
     StillSuppliedBy supplied,
   ) {
-    final title = outcome.title;
-    if (title == null) return null;
-    final name = gameName(l10n, title, outcome.subtitle);
+    final name = gameName(l10n, outcome.title!, outcome.subtitle);
     final id = outcome.attendeeId;
     final theirs = id != null && id != viewerId;
     String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;

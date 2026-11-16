@@ -434,7 +434,7 @@ class EventGamesTab extends StatelessWidget {
             state: shown.state,
             controller: controller,
             pool: games.games,
-            poolRead: controller.poolRead(games),
+            poolRead: controller.isPoolRead(games),
             acting: acting,
             now: now,
           ),
@@ -527,48 +527,26 @@ class EventGamesTab extends StatelessWidget {
                   acting: acting,
                   now: now,
                 );
-                final nominate = gates.nominate;
-                final takeBack = gates.takeBack;
+                final buttons = poolRowButtons(
+                  context,
+                  game: game,
+                  gates: gates,
+                  controller: controller,
+                  viewerId: viewerId,
+                  names: names,
+                  clock: this.now,
+                );
                 return _PoolRow(
                   game: game,
                   area: controller.poolRowArea(game.id),
                   head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
                   who: gates.who,
                   nominated: gates.nominatedLine,
-                  note: nominate?.notGoing,
+                  note: gates.nominate?.notGoing,
                   // One main action (#946): Nominate where the viewer is
                   // offered it, else Take back where they may take it back.
                   // Take back beside Nominate is the quick look's.
-                  action: switch ((nominate, takeBack)) {
-                    (final nominate?, _) => NominateButton(
-                      game: game,
-                      unread: nominate.unread,
-                      notGoing: nominate.notGoing,
-                      already: nominate.already,
-                      enabled: nominate.enabled,
-                      runOver: nominate.runOver,
-                      onPressed: () =>
-                          nominateGame(context, game, clock: this.now),
-                    ),
-                    (null, final takeBack?) => TakeBackButton(
-                      game: game,
-                      inert: takeBack.inert,
-                      enabled: takeBack.enabled,
-                      runOver: takeBack.runOver,
-                      onPressed: () {
-                        // Armed by the press itself, however it came.
-                        controller.armTakeBack(game.id);
-                        return takeBackGame(
-                          context,
-                          controller,
-                          game,
-                          viewerId: viewerId,
-                          names: names,
-                        );
-                      },
-                    ),
-                    (null, null) => null,
-                  },
+                  action: buttons.nominate ?? buttons.takeBack,
                 );
               },
             ),

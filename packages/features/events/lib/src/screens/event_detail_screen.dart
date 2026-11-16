@@ -1761,28 +1761,22 @@ class _ReadyPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = state.detail.snapshot;
-
-    if (!hasActions) {
-      return _ClockedPage(
-        event: snapshot.event,
-        occurrences: snapshot.occurrences,
-        nominations: const [],
-        now: now,
-        builder: _page,
-      );
-    }
     // Each tick told to the Games tab's quick looks too, which sit on the
-    // root navigator, outside the page (#957).
-    final games = EventGamesTabScope.of(context);
+    // root navigator, outside the page (#957). Without actions there is no
+    // Games tab, and no scope to tell.
+    final onTick = hasActions
+        ? EventGamesTabScope.of(context).clockTicked
+        : null;
     Widget clocked(List<EventNomination> nominations) => _ClockedPage(
       event: snapshot.event,
       occurrences: snapshot.occurrences,
       nominations: nominations,
       now: now,
-      onTick: games.clockTicked,
+      onTick: onTick,
       builder: _page,
     );
 
+    if (!hasActions) return clocked(const []);
     // Built again as the nominations change, so the page moves on at the
     // next deadline among them too (#517).
     return BlocSelector<

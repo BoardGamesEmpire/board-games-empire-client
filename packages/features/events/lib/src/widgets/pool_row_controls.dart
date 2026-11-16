@@ -310,6 +310,63 @@ PoolRowGates poolRowGates(
   );
 }
 
+/// Nominate and Take back on [game], for its row and its quick look (#957),
+/// each built from its gates in [gates] ([poolRowGates]) where it is
+/// offered, and null where it isn't. Nominate nominates by [clock]
+/// ([nominateGame]). Take back's press, however it came, arms [controller]'s
+/// hand-off, then takes the game back ([takeBackGame]), naming whoever
+/// offered it from [names], by the viewer's roster row [viewerId]. Each
+/// button carries the row's key unless [nominateKey] or [takeBackKey] gives
+/// it another.
+({NominateButton? nominate, TakeBackButton? takeBack}) poolRowButtons(
+  BuildContext context, {
+  required OfferedGame game,
+  required PoolRowGates gates,
+  required EventGamesTabController controller,
+  required String? viewerId,
+  required Map<String, String?> names,
+  required DateTime Function() clock,
+  Key? nominateKey,
+  Key? takeBackKey,
+}) {
+  final nominate = gates.nominate;
+  final takeBack = gates.takeBack;
+  return (
+    nominate: nominate == null
+        ? null
+        : NominateButton(
+            buttonKey: nominateKey,
+            game: game,
+            unread: nominate.unread,
+            notGoing: nominate.notGoing,
+            already: nominate.already,
+            enabled: nominate.enabled,
+            runOver: nominate.runOver,
+            onPressed: () => nominateGame(context, game, clock: clock),
+          ),
+    takeBack: takeBack == null
+        ? null
+        : TakeBackButton(
+            buttonKey: takeBackKey,
+            game: game,
+            inert: takeBack.inert,
+            enabled: takeBack.enabled,
+            runOver: takeBack.runOver,
+            onPressed: () {
+              // Armed by the press itself, however it came.
+              controller.armTakeBack(game.id);
+              return takeBackGame(
+                context,
+                controller,
+                game,
+                viewerId: viewerId,
+                names: names,
+              );
+            },
+          ),
+  );
+}
+
 /// Why Nominate waits with no nominations to go on, where the wait won't
 /// end by itself (#517): a first read that failed, nominations this viewer
 /// isn't shown, or a nominate's lost answer whose read failed. A read that
