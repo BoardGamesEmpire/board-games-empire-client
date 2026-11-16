@@ -451,6 +451,10 @@ fields are laid out. The order the controls are declared in the `FormGroup`
 does not matter, and an invalid control with no field built for it is passed
 over.
 
+**Required text uses `Validators.required`.** It already rejects text that is
+only whitespace, because reactive_forms trims a String before checking, so a
+form needs no required-after-trim helper of its own (#196).
+
 ### Where the primary action goes
 
 Inline, at the end of the form, unless the page is a **flow step**, a **long

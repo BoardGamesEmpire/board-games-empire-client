@@ -71,11 +71,11 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
   late final FormGroup _form = FormGroup({
     'name': FormControl<String>(
       value: widget.initial?.name,
-      validators: [Validators.delegate(_requiredTrimmed)],
+      validators: [Validators.required],
     ),
     'address': FormControl<String>(
       value: widget.initial?.connectionUrl,
-      validators: [Validators.delegate(_requiredTrimmed)],
+      validators: [Validators.required],
     ),
     'port': FormControl<String>(
       value: widget.initial?.connectionPort.toString(),
@@ -94,18 +94,6 @@ class _DataGatewayFormState extends State<DataGatewayForm> {
     debugLabel: 'data gateway form actions',
     canRequestFocus: false,
   );
-
-  /// Required after trimming, as `CreateHouseholdForm` does it, so a value of
-  /// spaces fails here rather than on the server.
-  static Map<String, dynamic>? _requiredTrimmed(
-    AbstractControl<dynamic> control,
-  ) {
-    final value = control.value;
-    final trimmed = value is String ? value.trim() : '';
-    return trimmed.isEmpty
-        ? <String, dynamic>{ValidationMessage.required: true}
-        : null;
-  }
 
   /// Digits only. `int.tryParse` alone also takes a sign and a `0x` prefix,
   /// so "0x50" would pass and save port 80.

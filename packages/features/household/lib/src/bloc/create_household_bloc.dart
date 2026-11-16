@@ -1,3 +1,4 @@
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:household/src/bloc/create_household_event.dart';
 import 'package:household/src/bloc/create_household_state.dart';
@@ -39,7 +40,7 @@ class CreateHouseholdBloc
   }) : _repo = repository,
        _logger = logger ?? BgeLogger('bge.household.create'),
        super(const CreateHouseholdInitial()) {
-    on<CreateHouseholdSubmitted>(_onSubmitted);
+    on<CreateHouseholdSubmitted>(_onSubmitted, transformer: droppable());
     on<CreateHouseholdFailureCleared>(_onFailureCleared);
   }
 
@@ -60,8 +61,6 @@ class CreateHouseholdBloc
     CreateHouseholdSubmitted event,
     Emitter<CreateHouseholdState> emit,
   ) async {
-    // Re-entrancy guard: ignore submits while one is in flight.
-    if (state is CreateHouseholdSubmitting) return;
     emit(const CreateHouseholdSubmitting());
 
     final ({

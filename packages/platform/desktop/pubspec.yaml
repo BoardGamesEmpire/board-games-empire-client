@@ -9,23 +9,10 @@ environment:
 resolution: workspace
 
 dependencies:
-  app_shell:
-    path: ../../app_shell
-  # Desktop-specific
-  connectivity_plus: ^7.3.1        # Desktop connectivity
-  di:
-    path: ../../core/di
   flutter:
     sdk: flutter
-  interfaces:
-    path: ../../core/interfaces
-  models:
-    path: ../../core/models
   native_platform:
     path: ../native_platform
-  # Desktop-specific
-  tray_manager: ^0.5.2             # System tray
-  window_manager: ^0.5.2           # Window management
 
 dev_dependencies:
   flutter_test:

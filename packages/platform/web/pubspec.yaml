@@ -13,6 +13,8 @@ dependencies:
     path: ../../core/access
   app_shell:
     path: ../../app_shell
+  build_info_platform:
+    path: ../build_info_platform
   connectivity_platform:
     path: ../connectivity_platform
   data_gateway:
@@ -54,8 +56,6 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-  # Web-specific
-  package_info_plus: ^10.2.1
   server_settings:
     path: ../../features/server_settings
   # The sync queue feature, for the shared `SyncSenderInstaller` the create

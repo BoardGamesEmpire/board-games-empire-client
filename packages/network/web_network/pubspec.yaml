@@ -17,10 +17,7 @@ dependencies:
     path: ../dio_network
   flutter:
     sdk: flutter
-  # DI
-  get_it: ^9.2.1
   http_status: ^3.3.3
-  injectable: ^3.0.0
   interfaces:
     path: ../../core/interfaces
   models:
@@ -29,7 +26,6 @@ dependencies:
     path: ../network_interface
   observability:
     path: ../../core/observability
-  web_socket_channel: ^3.0.3
   # Web-specific networking
   # dart:html is automatically available on web
 
@@ -39,12 +35,10 @@ dev_dependencies:
   # `domain.dart` model builders.
   bge_test_support:
     path: ../../testing/support
-  build_runner: ^2.16.0
   # Test-only: elapsing the provider sign-in's page-leave grace (#583).
   fake_async: ^1.3.3
   flutter_test:
     sdk: flutter
-  injectable_generator: ^3.1.3
   # Test-only: asserting log records emitted through BgeLogger, matching
   # dio_network's dev-dependency on it for the same reason.
   logging: ^1.3.0

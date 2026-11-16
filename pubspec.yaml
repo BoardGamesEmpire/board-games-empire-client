@@ -122,7 +122,6 @@ workspace:
   - packages/storage/drift_storage
   - packages/storage/key_storage
   - packages/storage/storage_interface
-  - packages/storage/memory_storage
   - packages/storage/web_storage
   - packages/network/dio_network
   - packages/network/network_interface
@@ -131,6 +130,7 @@ workspace:
   - packages/platform/desktop
   - packages/platform/native_platform
   - packages/platform/connectivity_platform
+  - packages/platform/build_info_platform
   - packages/platform/web
   - packages/testing/l10n
   - packages/testing/support

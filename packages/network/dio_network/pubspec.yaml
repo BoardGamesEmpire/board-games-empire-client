@@ -16,20 +16,15 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.0.0
-  get_it: ^9.2.1
   http_status: ^3.3.3
-  injectable: ^3.0.0
   interfaces:
     path: ../../core/interfaces
   models:
     path: ../../core/models
   network_interface:
     path: ../network_interface
-  oauth2: ^2.0.2
   observability:
     path: ../../core/observability
-  retry: ^3.1.2
-  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   # Shared test helpers (#354, #213, #257, #409): canned Dio transports and/or
@@ -37,10 +32,8 @@ dev_dependencies:
   # `domain.dart` model builders.
   bge_test_support:
     path: ../../testing/support
-  build_runner: ^2.16.0
   flutter_test:
     sdk: flutter
-  injectable_generator: ^3.1.3
   logging: ^1.3.0
   mocktail: ^1.0.5
 

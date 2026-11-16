@@ -1,3 +1,4 @@
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -35,7 +36,7 @@ class ServerOnboardingBloc
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.onboarding'),
        super(const ServerOnboardingIdle()) {
-    on<ServerOnboardingSubmitted>(_onSubmitted);
+    on<ServerOnboardingSubmitted>(_onSubmitted, transformer: droppable());
     on<ServerOnboardingFailureCleared>(_onFailureCleared);
   }
 
@@ -62,11 +63,6 @@ class ServerOnboardingBloc
     ServerOnboardingSubmitted event,
     Emitter<ServerOnboardingState> emit,
   ) async {
-    // Re-entrancy: ignore submits while one is in flight (the form
-    // disables its button, but a race between tap and rebuild is cheap
-    // to close here too).
-    if (state is ServerOnboardingInProgress) return;
-
     // 1. Local validation — never touches the network.
     final urlResult = normalizeServerUrl(event.url);
     if (urlResult is ServerUrlInvalid) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -148,8 +150,8 @@ void main() {
 
     // The claim is the one thing the sender lets throw (a queue disposed with
     // its session). The household is written and queued all the same, so it
-    // must not strand the bloc in Submitting, where the guard drops every
-    // resubmit.
+    // must not strand the bloc in Submitting, where the screen would show the
+    // submit under way for good.
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
       'a delivery that throws -> Success(queued), not stuck in '
       'Submitting',
@@ -229,18 +231,18 @@ void main() {
       },
     );
 
-    // #132: the re-entrancy guard in _onSubmitted. The disabled submit
-    // button is a *different* defense living in the form; this covers the
-    // bloc's own, which is what protects the keyboard "done" path and any
-    // future caller that dispatches the event directly.
+    // #132: the bloc drops a submit while one is in flight (#196 made it
+    // `droppable()`). The disabled submit button is a *different* defense
+    // living in the form; this covers the bloc's own, which is what protects
+    // the keyboard "done" path and any future caller that dispatches the
+    // event directly.
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
-      'a second submit while one is in flight is dropped: one Submitting, '
-      'one local write, one delivery',
+      'a second submit in the same turn as the first is dropped: one '
+      'Submitting, one local write, one delivery',
       build: build,
       act: (bloc) {
-        // The first handler runs synchronously up to its first await (past
-        // the guard and the Submitting emit), so the second event is
-        // delivered into the Submitting state.
+        // Both arrive in the same turn: the second is delivered while the
+        // first's handler is still running, so it is dropped.
         bloc
           ..add(const CreateHouseholdSubmitted(name: 'HQ'))
           ..add(const CreateHouseholdSubmitted(name: 'HQ'));
@@ -257,11 +259,11 @@ void main() {
       },
     );
 
-    // #132: the guard must not latch. A failure returns the bloc to a
-    // non-Submitting state, so the user's retry has to be accepted — the
-    // screen keeps the form mounted precisely so they can retry.
+    // #132: the drop must not latch. Once a submit has failed, nothing is in
+    // flight, so the user's retry has to be accepted — the screen keeps the
+    // form mounted precisely so they can retry.
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
-      'a retry after a local failure is accepted (the guard does not latch)',
+      'a retry after a local failure is accepted (the drop does not latch)',
       setUp: () {
         var attempt = 0;
         when(
@@ -293,6 +295,41 @@ void main() {
       ],
       verify: (_) {
         verify(() => repo.create(name: 'HQ')).called(2);
+      },
+    );
+
+    // The second submit arrives while the first's local write is still
+    // held, not in the same turn as the first.
+    late Completer<_Draft> heldCreate;
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a second submit sent after the first reaches Submitting is dropped',
+      build: () {
+        heldCreate = Completer<_Draft>();
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenAnswer((_) => heldCreate.future);
+        return build();
+      },
+      act: (bloc) async {
+        bloc.add(const CreateHouseholdSubmitted(name: 'HQ'));
+        await bloc.stream.firstWhere((s) => s is CreateHouseholdSubmitting);
+        bloc.add(const CreateHouseholdSubmitted(name: 'HQ'));
+        await pumpEventQueue();
+        heldCreate.complete(_draft());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_server')
+            .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
+      ],
+      verify: (_) {
+        verify(() => repo.create(name: 'HQ')).called(1);
+        verify(() => sender.deliver(any(), any())).called(1);
       },
     );
   });

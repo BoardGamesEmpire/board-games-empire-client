@@ -2,23 +2,27 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// Native (mobile + desktop) [BuildInfoReader], backed by
-/// `package_info_plus` — Android manifest / macOS bundle values, both
-/// derived from the app pubspec `version:` (#35).
+/// The [BuildInfoReader] for native and web alike, backed by
+/// `package_info_plus` (#35). The plugin is federated, so one class serves
+/// both composition roots (#196). Its source is the Android manifest or
+/// macOS bundle on native, and Flutter's generated `version.json` on web
+/// (wasm-safe, through `js_interop`). Both are derived from the app
+/// pubspec's `version:`.
 ///
 /// `packageInfoReader` is the injectable source seam for tests (the same
-/// constructor-injection shape `SecureStorageEncryptionKeyService` uses
-/// for its storage); production uses [PackageInfo.fromPlatform].
+/// constructor-injection shape as `ConnectivityPlusService`); production
+/// uses [PackageInfo.fromPlatform].
 ///
 /// Honors the [BuildInfoReader] fail-closed contract in both dimensions:
-/// **never throws** — any source failure (missing plugin, channel error)
-/// resolves to [BuildInfo.unknown] — and **never hangs** — the read is
-/// bounded by [readTimeout], since it blocks `createRootContainer` on
-/// the boot hot path and a wedged platform read must degrade, not stall
-/// the boot. The catch is deliberately silent: the degraded value is
-/// itself the visible signal (feedback reports and the about screen
-/// render "Unknown …" directly), and logging here would force an
-/// observability dependency the web twin of this class cannot mirror.
+/// **never throws** — any source failure (a missing plugin, a channel
+/// error, a missing or unreachable `version.json`) resolves to
+/// [BuildInfo.unknown] — and **never hangs** — the read is bounded by
+/// [readTimeout]. The read blocks `createRootContainer` on the boot hot
+/// path, so a wedged method-channel read or `version.json` fetch (no
+/// error, no completion) must degrade, not stall the boot. The catch is
+/// deliberately silent: this package has no observability dependency to
+/// log through, and the degraded value is itself the visible signal
+/// (feedback reports and the about screen render "Unknown …" directly).
 class PackageInfoBuildInfoReader implements BuildInfoReader {
   PackageInfoBuildInfoReader({
     Future<PackageInfo> Function()? packageInfoReader,
@@ -26,7 +30,8 @@ class PackageInfoBuildInfoReader implements BuildInfoReader {
   }) : _packageInfoReader = packageInfoReader ?? PackageInfo.fromPlatform;
 
   /// Default upper bound on the platform read: generous against a slow
-  /// device (the read is a local method-channel call, normally
+  /// device or a slow connection serving `version.json` (a local
+  /// method-channel call or a same-origin static file, normally
   /// milliseconds) while still bounding a pathological hang on the boot
   /// hot path.
   static const Duration defaultReadTimeout = Duration(seconds: 5);

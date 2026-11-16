@@ -43,7 +43,7 @@ class FeedbackComposeFormModel {
       ),
       messageControlName: FormControl<String>(
         value: '',
-        validators: [Validators.delegate(_requiredTrimmed)],
+        validators: [Validators.required],
       ),
       titleControlName: FormControl<String>(value: ''),
     });
@@ -53,21 +53,6 @@ class FeedbackComposeFormModel {
   static const String severityControlName = 'severity';
   static const String messageControlName = 'message';
   static const String titleControlName = 'title';
-
-  /// Required-after-trim (PR #110 review): `Validators.required` admits
-  /// whitespace-only input, which [buildResult] trims to the empty string
-  /// that [FeedbackComposeResult] asserts against — validity must match
-  /// the trimmed hand-off value. Emits the standard required error key so
-  /// the widget's existing localized message applies.
-  static Map<String, dynamic>? _requiredTrimmed(
-    AbstractControl<dynamic> control,
-  ) {
-    final value = control.value;
-    final trimmed = value is String ? value.trim() : '';
-    return trimmed.isEmpty
-        ? <String, dynamic>{ValidationMessage.required: true}
-        : null;
-  }
 
   late final FormGroup form;
 

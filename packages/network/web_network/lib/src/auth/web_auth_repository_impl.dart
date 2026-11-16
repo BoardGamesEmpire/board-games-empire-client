@@ -1428,13 +1428,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // credential POST that preceded it — a deliberate bound, not an
     // oversight: every dispatcher of `AuthSignOutRequested` is either
     // unreachable while that POST is in flight or causally downstream of
-    // it. The two UI dispatchers are home-menu entries
-    // (`home_placeholder_screen.dart:93`, `bge_app.dart:552`), reachable
-    // only from an authenticated shell — and `AuthBloc._onSignIn` holds the
-    // form on `AuthLoading` for the whole call, including the body decode
-    // #352 added. The one programmatic dispatcher
-    // (`bge_app.dart:1561`) fires when `UserSessionScope.activate` fails,
-    // which cannot run until this reconcile has already emitted. (Web has
+    // it. The one UI dispatcher is the home menu's `sign_out` entry
+    // (`HomeMenuEntry` in `bge_app.dart`), reachable only from the
+    // authenticated shell — and `AuthBloc._onSignIn` holds the form on
+    // `AuthLoading` for the whole call, including the body decode #352
+    // added. The one programmatic dispatcher,
+    // `_AuthScopeState._handleAuthenticated` (`bge_app.dart`), dispatches
+    // `AuthSignOutRequested(cause: SignOutCause.sessionLost)` when
+    // `UserSessionScope.activate` fails, which cannot happen until this
+    // reconcile has already emitted. (Web has
     // registered a `UserSessionScope` since #137; the bound above is what
     // holds, not its absence.)
     //

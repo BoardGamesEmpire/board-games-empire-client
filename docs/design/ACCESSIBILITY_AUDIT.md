@@ -741,7 +741,6 @@ doesn't count them; they are listed after the audited screens.
 | `GameCollectionListScreen` | `packages/features/collection/test/widgets/game_collection_list_screen_test.dart` | audited |
 | `GameDetailScreen` | `packages/features/catalog/test/widgets/game_detail_screen_test.dart` | audited |
 | `GameSearchScreen` | `packages/features/catalog/test/widgets/game_search_screen_test.dart` | audited |
-| `HomePlaceholderScreen` | `packages/app_shell/test/screens/home_placeholder_screen_test.dart` | audited |
 | `HomeScreen` | `packages/app_shell/test/screens/home_screen_test.dart` | audited |
 | `HouseholdDetailScreen` | `packages/features/household/test/widgets/household_detail_screen_test.dart` and `packages/features/household/test/widgets/household_detail_leave_test.dart` | audited |
 | `HouseholdInviteListScreen` | `packages/features/household/test/widgets/household_invite_list_screen_test.dart` | audited |

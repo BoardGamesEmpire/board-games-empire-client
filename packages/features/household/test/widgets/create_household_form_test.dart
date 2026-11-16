@@ -6,10 +6,10 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// Pins the #40 create-household form: labelled (never hint-only) fields,
-/// required-after-trim name validation surfacing the localized message
-/// without invoking the callback, the trimmed hand-off, and the disabled +
-/// progress submit state. All copy resolves from [HouseholdLocalizations]
-/// (assertions match the English template).
+/// a required name, where a whitespace-only one is refused too, surfacing
+/// the localized message without invoking the callback, the trimmed
+/// hand-off, and the disabled + progress submit state. All copy resolves
+/// from [HouseholdLocalizations] (assertions match the English template).
 ///
 /// The `accessibility` group is #132: it asserts the *semantics tree* and
 /// the real IME action paths rather than rendered text and widget

@@ -2,10 +2,9 @@ import 'package:models/domain.dart';
 
 /// Reads the client's own [BuildInfo] from the platform (#35).
 ///
-/// Implementations live in the platform packages
-/// (`native_platform` / `web_platform`, both backed by
-/// `package_info_plus`) and are consumed by the per-platform root-module
-/// registration: the value is read once during
+/// The implementation lives in `build_info_platform`, backed by
+/// `package_info_plus` and shared by native and web, and is consumed by
+/// the per-platform root-module registration: the value is read once during
 /// `PlatformBootstrap.createRootContainer` and registered as a singleton
 /// — the manual analog of injectable's `@preResolve` (#61).
 ///

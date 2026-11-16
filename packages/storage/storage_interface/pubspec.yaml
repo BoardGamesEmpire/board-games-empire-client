@@ -6,11 +6,5 @@ environment:
   sdk: ^3.13.0
 resolution: workspace
 
-dependencies:
-  interfaces:
-    path: ../../core/interfaces
-  models:
-    path: ../../core/models
-
 dev_dependencies:
   test: ^1.31.1

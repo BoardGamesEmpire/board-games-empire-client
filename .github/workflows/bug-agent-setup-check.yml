@@ -23,6 +23,7 @@ on:
       - tool/install_flutter.sh
       - tool/format_workspace.dart
       - tool/check_test_files.dart
+      - tool/src/**
       - tool/generate_l10n.sh
       - pubspec.lock
       - .gitignore
@@ -45,6 +46,7 @@ on:
       - tool/install_flutter.sh
       - tool/format_workspace.dart
       - tool/check_test_files.dart
+      - tool/src/**
       - tool/generate_l10n.sh
       - pubspec.lock
       - .gitignore

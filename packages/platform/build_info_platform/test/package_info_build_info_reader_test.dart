@@ -1,18 +1,19 @@
 import 'dart:async';
 
+import 'package:build_info_platform/build_info_platform.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
-import 'package:native_platform/native_platform.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// The reader maps `package_info_plus`'s `PackageInfo` onto `BuildInfo`,
-/// with the plugin source injected for tests — the same constructor-
-/// injection seam `SecureStorageEncryptionKeyService` uses for
-/// `FlutterSecureStorage`. Its defining contract is that it **never
-/// throws into bootstrap**: any source failure resolves to
-/// `BuildInfo.unknown`, so the root-module registration can't fail the
-/// boot.
+/// with the platform source injected for tests. That source is the Android
+/// manifest or macOS bundle on native and Flutter's generated
+/// `version.json` on web, and the mapping and the fallback are the same on
+/// both. Its defining contract is that it **never throws into bootstrap**
+/// and **never hangs**: a source that fails, or never answers, resolves to
+/// `BuildInfo.unknown`, so the root-module registration can't fail or stall
+/// the boot.
 void main() {
   PackageInfo packageInfo({
     String appName = 'Board Games Empire',
@@ -26,7 +27,7 @@ void main() {
     buildNumber: buildNumber,
   );
 
-  group('PackageInfoBuildInfoReader (native)', () {
+  group('PackageInfoBuildInfoReader', () {
     test('is a BuildInfoReader', () {
       expect(PackageInfoBuildInfoReader(), isA<BuildInfoReader>());
     });
@@ -48,7 +49,7 @@ void main() {
         'throws into bootstrap', () async {
       final reader = PackageInfoBuildInfoReader(
         packageInfoReader: () async =>
-            throw StateError('platform channel unavailable'),
+            throw StateError('the platform source is unavailable'),
       );
 
       await expectLater(reader.read(), completion(BuildInfo.unknown));

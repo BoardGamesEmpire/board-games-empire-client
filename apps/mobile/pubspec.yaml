@@ -15,7 +15,6 @@ resolution: workspace
 dependencies:
   app_shell:
     path: ../../packages/app_shell
-  cupertino_icons: ^1.0.9
   flutter:
     sdk: flutter
   mobile_platform:

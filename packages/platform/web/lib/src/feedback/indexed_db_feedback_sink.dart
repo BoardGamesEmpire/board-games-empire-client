@@ -167,7 +167,7 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// How long an open may take before the sink gives up on this browser.
   ///
   /// Matches `PackageInfoBuildInfoReader.defaultReadTimeout`, the other
-  /// bootstrap-time platform read in this package, and for the same reason:
+  /// bootstrap-time platform read on web, and for the same reason:
   /// the root-module contract is that a registration never throws *and never
   /// hangs*, and a bounded failure is the only way to keep the second half.
   static const Duration defaultOpenTimeout = Duration(seconds: 5);

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
-import 'package:dio_network/dio_network.dart' show DioFactory;
+import 'package:dio_network/dio_network.dart'
+    show DefaultDioFactory, DioFactory;
 
 /// Web [DioFactory]: cookie-based transport.
 ///
@@ -30,7 +31,7 @@ class WebDioFactory implements DioFactory {
   }) {
     final dio = Dio(
       BaseOptions(
-        baseUrl: _normalizeBaseUrl(baseUrl),
+        baseUrl: DefaultDioFactory.normalizeBaseUrl(baseUrl),
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
         headers: const {'Accept': 'application/json'},
@@ -57,7 +58,4 @@ class WebDioFactory implements DioFactory {
     dio.interceptors.addAll(interceptors);
     return dio;
   }
-
-  static String _normalizeBaseUrl(String url) =>
-      url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 }

@@ -30,7 +30,7 @@ for why, and how to bump it.
 dart pub global activate melos ^8.5.0   # match the pinned version, see CONTRIBUTING.md
 flutter pub get
 melos run generate               # required — generated code is gitignored
-melos run test --no-select       # all 22 packages with tests
+melos run test --no-select       # every package with tests
 ```
 
 `melos run generate` is not optional on a fresh checkout. Generated sources
@@ -77,8 +77,8 @@ installed APK first, and its data with it.
 
 ## Repository layout
 
-A [pub workspace](https://dart.dev/tools/pub/workspaces) of 28 members — 25
-packages plus the 3 apps — orchestrated with [melos](https://melos.invertase.dev).
+A [pub workspace](https://dart.dev/tools/pub/workspaces) of the packages below
+plus the 3 apps, orchestrated with [melos](https://melos.invertase.dev).
 
 ```text
 apps/{mobile,desktop,browser}   thin main.dart wrappers, 6-11 lines each
@@ -86,8 +86,8 @@ packages/
   app_shell                     bootstrap, routing, shell screens
   core/{models,interfaces,di,observability}
   features/{auth,feedback,household,server_onboarding}
-  platform/{mobile,desktop,web,native_platform,connectivity_platform}
-  storage/{drift_storage,web_storage,key_storage,memory_storage,storage_interface}
+  platform/{mobile,desktop,web,native_platform,connectivity_platform,build_info_platform}
+  storage/{drift_storage,web_storage,key_storage,storage_interface}
   network/{dio_network,web_network,network_interface}
   ui/{tokens,widgets}
   testing/{l10n,support}

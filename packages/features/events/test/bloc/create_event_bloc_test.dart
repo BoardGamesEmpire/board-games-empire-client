@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -248,8 +250,8 @@ void main() {
 
     // The claim is the one thing the sender lets throw (a queue disposed
     // with its session). The event is written and queued all the same, so
-    // it must not strand the bloc in Submitting, where the guard drops every
-    // resubmit.
+    // it must not strand the bloc in Submitting, where the screen would show
+    // the submit under way for good.
     blocTest<CreateEventBloc, CreateEventState>(
       'a delivery that throws -> Success(queued)',
       setUp: () {
@@ -767,14 +769,45 @@ void main() {
     // bloc's, which covers the keyboard's "done" and any other caller that
     // dispatches the event directly.
     blocTest<CreateEventBloc, CreateEventState>(
-      'a submit while submitting is ignored',
+      'a second submit in the same turn as the first is dropped',
       build: build,
       act: (bloc) {
-        // The first handler runs up to its first await, past the guard and
-        // the Submitting emit, so the second event finds Submitting.
+        // Both arrive in the same turn: the second is delivered while the
+        // first's handler is still running, so it is dropped.
         bloc
           ..add(const CreateEventSubmitted(_draft))
           ..add(const CreateEventSubmitted(_draft));
+      },
+      expect: () => const [
+        CreateEventSubmitting(),
+        CreateEventSuccess(eventId: 'ev_server', sync: CreateEventSync.synced),
+      ],
+      verify: (_) {
+        verify(() => repo.create(any())).called(1);
+        verify(() => sender.deliver(any(), any())).called(1);
+      },
+    );
+
+    // The second submit arrives while the first's local write is still
+    // held, not in the same turn as the first.
+    late Completer<_Created> heldCreate;
+    blocTest<CreateEventBloc, CreateEventState>(
+      'a second submit sent after the first reaches Submitting is dropped',
+      build: () {
+        heldCreate = Completer<_Created>();
+        when(() => repo.create(any())).thenAnswer((invocation) {
+          answerCreate(invocation);
+          return heldCreate.future;
+        });
+        return build();
+      },
+      act: (bloc) async {
+        bloc.add(const CreateEventSubmitted(_draft));
+        await bloc.stream.firstWhere((s) => s is CreateEventSubmitting);
+        bloc.add(const CreateEventSubmitted(_draft));
+        await pumpEventQueue();
+        heldCreate.complete(created.first);
+        await pumpEventQueue();
       },
       expect: () => const [
         CreateEventSubmitting(),

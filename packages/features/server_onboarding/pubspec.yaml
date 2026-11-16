@@ -8,6 +8,9 @@ environment:
 resolution: workspace
 
 dependencies:
+  # droppable() for the add submit (#196): a submit while one is on its
+  # way is dropped, so a double tap sends once.
+  bloc_concurrency: ^0.3.0
   equatable: ^2.1.0
   flutter:
     sdk: flutter

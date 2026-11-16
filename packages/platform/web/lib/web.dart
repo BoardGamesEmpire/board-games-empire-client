@@ -11,7 +11,6 @@
 /// nothing else does (#288).
 library;
 
-export 'src/build_info/package_info_build_info_reader.dart';
 export 'src/device_info/web_device_info_reader.dart';
 export 'src/web_platform_bootstrap.dart';
 export 'src/web_root_module.dart';

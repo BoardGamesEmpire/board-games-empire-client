@@ -48,6 +48,10 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:yaml/yaml.dart';
 
+import 'src/flutter_run.dart';
+import 'src/self_test.dart';
+import 'src/workspace_root.dart';
+
 const _app = 'apps/mobile';
 
 const _package = 'com.boardgamesempire.app';
@@ -118,7 +122,14 @@ Future<void> main(List<String> args) async {
   }
 
   final requireReleaseSigning = args.contains(_requireReleaseSigning);
-  final app = Directory('${_workspaceRoot().path}/$_app');
+  final Directory root;
+  try {
+    root = workspaceRoot();
+  } on WorkspaceRootNotFound catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+  final app = Directory('${root.path}/$_app');
 
   final pubspec = File('${app.path}/pubspec.yaml');
   final version = (loadYaml(pubspec.readAsStringSync()) as YamlMap)['version']
@@ -142,24 +153,13 @@ Future<void> main(List<String> args) async {
     ..._flags,
     if (buildNumber != null) '$_buildNumberFlag=$buildNumber',
   ];
-  final flutter = await Process.start(
-    'flutter',
+  await runFlutter(
     flutterArgs,
     workingDirectory: app.path,
     environment: {
       if (requireReleaseSigning) 'BGE_REQUIRE_RELEASE_SIGNING': 'true',
     },
-    mode: ProcessStartMode.inheritStdio,
-    // `flutter` is a batch file on Windows, which needs a shell to start.
-    runInShell: Platform.isWindows,
   );
-  final code = await flutter.exitCode;
-  if (code != 0) {
-    stderr.writeln(
-      'flutter ${flutterArgs.join(' ')} failed with exit code $code.',
-    );
-    exit(code);
-  }
 
   final apk = File('${app.path}/$_builtApk');
   if (!apk.existsSync()) {
@@ -236,27 +236,6 @@ Future<void> main(List<String> args) async {
   File('${output.path}/$name.sha256')
       .writeAsStringSync(_sha256Line(bytes, name));
   stdout.writeln('$_app/$_uploadDir: $name and its .sha256, ready to upload.');
-}
-
-/// The workspace root, identified by reading its pubspec rather than by
-/// assuming the working directory, as tool/build_web.dart does.
-Directory _workspaceRoot() {
-  var dir = Directory.current;
-  for (var i = 0; i < 8; i++) {
-    final pubspec = File('${dir.path}/pubspec.yaml');
-    if (pubspec.existsSync() &&
-        pubspec.readAsStringSync().contains('\nworkspace:')) {
-      return dir;
-    }
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  stderr.writeln(
-    'Could not locate the workspace root from ${Directory.current.path}. '
-    'Run this from the repository.',
-  );
-  exit(1);
 }
 
 /// Runs [executable] and returns its stdout, or ends the build with its
@@ -475,29 +454,26 @@ String? _sdkDir(Map<String, String> env, String? localProperties) {
 /// meets the tree's own APK, so the shapes each must accept and refuse are
 /// pinned here. Run by CI's `build-android` job.
 void _selfTest() {
-  var failures = 0;
+  final selfTest = SelfTest('build_android');
 
   // Compared as JSON so the problem lists are pinned the same way as the
   // strings.
   void expect(String name, Object? actual, Object? expected) {
-    if (jsonEncode(actual) == jsonEncode(expected)) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout
-        ..writeln('  FAIL $name')
-        ..writeln('       expected: ${jsonEncode(expected)}')
-        ..writeln('       actual:   ${jsonEncode(actual)}');
-    }
+    final want = jsonEncode(expected);
+    final got = jsonEncode(actual);
+    selfTest.record(
+      name,
+      passed: got == want,
+      detail: '\n       expected: $want\n       actual:   $got',
+    );
   }
 
   void expectFormatException(String name, void Function() body) {
     try {
       body();
-      failures++;
-      stdout.writeln('  FAIL $name: no FormatException');
+      selfTest.record(name, passed: false, detail: ': no FormatException');
     } on FormatException {
-      stdout.writeln('  ok   $name');
+      selfTest.record(name, passed: true);
     }
   }
 
@@ -792,9 +768,5 @@ void _selfTest() {
     '37.0.0-rc10',
   );
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('build_android self-test passed.');
+  selfTest.finish();
 }

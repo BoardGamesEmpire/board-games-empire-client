@@ -9,17 +9,8 @@ environment:
 resolution: workspace
 
 dependencies:
-  app_shell:
-    path: ../../app_shell
-  connectivity_plus: ^7.3.1
-  di:
-    path: ../../core/di
   flutter:
     sdk: flutter
-  interfaces:
-    path: ../../core/interfaces
-  models:
-    path: ../../core/models
   native_platform:
     path: ../native_platform
 
