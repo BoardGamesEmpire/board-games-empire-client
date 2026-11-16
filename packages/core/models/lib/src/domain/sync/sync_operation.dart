@@ -36,6 +36,31 @@ sealed class SyncOperation {
 
   Map<String, dynamic> toJson();
 
+  /// The id of the row this op changes: the local id of one it creates, the
+  /// collection id of one it updates or removes.
+  ///
+  /// #47 matches a stuck queue entry to the list row it concerns by this id,
+  /// and a discard maps an op to its row the same way.
+  String get recordId;
+
+  /// The [recordId] of the op [payload] holds, read from its `local_id`, else
+  /// its `collection_id`, without decoding the rest. Null when [payload] is
+  /// not JSON, not an object, or holds neither as a string.
+  ///
+  /// For an entry whose `SyncQueueEntry.operation` throws: one a newer build
+  /// queued still names the row it concerns.
+  static String? recordIdOf(String payload) {
+    try {
+      return switch (jsonDecode(payload)) {
+        {'local_id': final String id} => id,
+        {'collection_id': final String id} => id,
+        _ => null,
+      };
+    } on FormatException {
+      return null;
+    }
+  }
+
   String get serialized => jsonEncode(toJson());
 }
 
@@ -102,6 +127,9 @@ final class AddToCollectionOperation extends SyncOperation {
   final bool? raised;
 
   @override
+  String get recordId => localId;
+
+  @override
   Map<String, dynamic> toJson() => {
     'type': type,
     'local_id': localId,
@@ -147,6 +175,9 @@ final class UpdateCollectionOperation extends SyncOperation {
   final String? comment;
 
   @override
+  String get recordId => collectionId;
+
+  @override
   Map<String, dynamic> toJson() => {
     'type': type,
     'collection_id': collectionId,
@@ -169,6 +200,9 @@ final class RemoveFromCollectionOperation extends SyncOperation {
   static const String type = 'remove_from_collection';
 
   final String collectionId;
+
+  @override
+  String get recordId => collectionId;
 
   @override
   Map<String, dynamic> toJson() => {
@@ -243,6 +277,9 @@ final class CreateHouseholdOperation extends SyncOperation {
   /// its enum — to avoid a premature client-side `Visibility` enum. `null`
   /// lets the server apply its default. Deferred from the alpha UI (#123).
   final String? visibility;
+
+  @override
+  String get recordId => localId;
 
   @override
   Map<String, dynamic> toJson() => {
@@ -352,6 +389,9 @@ final class CreateEventOperation extends SyncOperation {
   /// null is left out of the JSON and of the request, so the server's
   /// default applies.
   final EventDraft draft;
+
+  @override
+  String get recordId => localId;
 
   @override
   Map<String, dynamic> toJson() => {

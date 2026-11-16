@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
@@ -20,6 +21,7 @@ void main() {
     EventRow row, {
     bool alwaysUse24HourFormat = false,
     TextScaler textScaler = TextScaler.noScaling,
+    Set<String> stuck = const {},
   }) => tester.pumpWidget(
     MaterialApp(
       theme: BgeTheme.light(),
@@ -31,7 +33,11 @@ void main() {
           alwaysUse24HourFormat: alwaysUse24HourFormat,
           textScaler: textScaler,
         ),
-        child: child!,
+        child: BgeSyncStatusScope(
+          stuck: stuck.length,
+          stuckRecordIds: stuck,
+          child: child!,
+        ),
       ),
       home: Scaffold(
         body: ListView(
@@ -62,6 +68,47 @@ void main() {
 
   String semanticsLabel(WidgetTester tester) =>
       tester.getSemantics(find.byKey(EventOverviewScreen.rowKey('e-1'))).label;
+
+  group('sync state (#47)', () {
+    EventRow synced({bool localOnly = false, bool dirty = false}) => EventRow(
+      event: item(
+        'e-1',
+      ).event.copyWith(isLocalOnly: localOnly, isDirty: dirty),
+      group: EventGroup.planning,
+    );
+
+    testWidgets('a local-only event says Not yet synced', (tester) async {
+      await pumpRow(tester, synced(localOnly: true));
+
+      expect(find.text('Not yet synced'), findsOneWidget);
+    });
+
+    testWidgets("a stuck event create says Couldn't sync", (tester) async {
+      await pumpRow(tester, synced(localOnly: true), stuck: {'e-1'});
+
+      expect(find.text("Couldn't sync"), findsOneWidget);
+      expect(find.text('Not yet synced'), findsNothing);
+    });
+
+    testWidgets('a synced event shows no badge', (tester) async {
+      await pumpRow(tester, synced());
+
+      expect(find.byType(BgeSyncBadge), findsNothing);
+    });
+
+    testWidgets('the badge is read with the row', (tester) async {
+      await pumpRow(tester, synced(dirty: true));
+
+      expect(semanticsLabel(tester), contains('Not yet synced'));
+    });
+
+    testWidgets('the stuck badge is read with the row', (tester) async {
+      await pumpRow(tester, synced(localOnly: true), stuck: {'e-1'});
+
+      expect(semanticsLabel(tester), contains("Couldn't sync"));
+      expect(semanticsLabel(tester), isNot(contains('Not yet synced')));
+    });
+  });
 
   group('the time follows the 24-hour setting', () {
     // An en_US device is 12-hour by default. A user who switched it to 24-hour

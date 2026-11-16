@@ -515,12 +515,18 @@ class _HouseholdRow extends StatelessWidget {
   /// local-only until the queue delivers it, which can be indefinitely when
   /// the server refused it and its op is parked for a retry by hand (#121),
   /// and a list that silently shows a household the server has never heard
-  /// of is worse than no list. The pending-count plumbing and the shared
-  /// indicator are #47's.
-  bool get _pending => household.isLocalOnly || household.isDirty;
+  /// of is worse than no list. [BgeSyncBadge] says it (#47), and says
+  /// "Couldn't sync" instead when the household's queued op is stuck.
+  bool get _unsynced => household.isLocalOnly || household.isDirty;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+    final syncState = BgeSyncStatusScope.stateOf(
+      context,
+      recordId: household.id,
+      unsynced: _unsynced,
+    );
     final description = household.description;
     final hasDescription = description != null && description.isNotEmpty;
     final open = onOpen;
@@ -558,15 +564,18 @@ class _HouseholdRow extends StatelessWidget {
         // truncated the words, which is the one thing this badge cannot
         // afford to lose: it is the whole reason the state is not conveyed
         // by colour.
-        subtitle: hasDescription || _pending
+        subtitle: hasDescription || syncState != null
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (hasDescription) Text(description),
-                  if (_pending) ...[
+                  if (syncState != null) ...[
                     if (hasDescription) const BgeGap.xs(),
-                    const _PendingBadge(),
+                    BgeSyncBadge(
+                      state: syncState,
+                      label: _syncLabel(l10n, syncState),
+                    ),
                   ],
                 ],
               )
@@ -576,44 +585,12 @@ class _HouseholdRow extends StatelessWidget {
   }
 }
 
-/// "Not yet synced", as an icon plus words.
-///
-/// The colour is [BgeStatus.pending] and the icon is the one paired with
-/// it — never colour alone, which is the project's standing answer to
-/// colour-vision deficiency and the issue's explicit accessibility ask.
-class _PendingBadge extends StatelessWidget {
-  const _PendingBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = HouseholdLocalizations.of(context);
-    final theme = Theme.of(context);
-    final color = BgeStatusColors.of(context).pending;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          // Scales with its label: an icon pinned to a fixed size beside
-          // 200%-scaled text stops reading as part of the same badge.
-          BgeStatusColors.iconFor(BgeStatus.pending),
-          size: MediaQuery.textScalerOf(context)
-              .scale(theme.textTheme.labelMedium?.fontSize ?? 0),
-          color: color,
-        ),
-        const BgeGap.xs(axis: Axis.horizontal),
-        // Flexible, so the label wraps inside the row rather than
-        // overflowing it on a narrow window.
-        Flexible(
-          child: Text(
-            l10n.householdListNotSynced,
-            style: theme.textTheme.labelMedium?.copyWith(color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
+/// The words for [state] on a household row's badge (#47).
+String _syncLabel(HouseholdLocalizations l10n, BgeSyncState state) =>
+    switch (state) {
+      BgeSyncState.waiting => l10n.householdListNotSynced,
+      BgeSyncState.stuck => l10n.householdListCouldNotSync,
+    };
 
 class _EmptySliver extends StatelessWidget {
   const _EmptySliver({this.onCreate});

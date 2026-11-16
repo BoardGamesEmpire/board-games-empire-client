@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:app_shell/src/widgets/offline_strip_host.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
@@ -29,13 +30,18 @@ final Finder _liveRegion = find.descendant(
 );
 
 /// The host as the app wires it: in `MaterialApp`'s builder, above the
-/// navigator, with the shell's strings.
-Widget _app(ConnectivityService? connectivity) => MaterialApp(
+/// navigator, with the shell's strings, and the session's count of waiting
+/// changes where a test gives one (#47).
+Widget _app(
+  ConnectivityService? connectivity, {
+  ValueListenable<int?>? waiting,
+}) => MaterialApp(
   theme: BgeTheme.light(),
   localizationsDelegates: ShellLocalizations.localizationsDelegates,
   supportedLocales: ShellLocalizations.supportedLocales,
   builder: (context, child) => OfflineStripHost(
     connectivity: connectivity,
+    waiting: waiting,
     child: _Below(child: child!),
   ),
   home: const SizedBox.expand(key: _contentKey),
@@ -445,5 +451,123 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
 
     expect(connectivity.listened, isFalse);
+  });
+
+  // #47: the session's changes waiting to go out, read with the strip and
+  // never announced, as #49's live region announces the connection alone.
+  group('the count of waiting changes (#47)', () {
+    late ValueNotifier<int?> waiting;
+
+    setUp(() => waiting = ValueNotifier<int?>(null));
+    tearDown(() => waiting.dispose());
+
+    final detail = find.byKey(BgeOfflineStrip.detailKey);
+    String? detailText(WidgetTester tester) => tester.widget<Text>(detail).data;
+
+    /// Mounts the host with [waiting] and has the strip say it is offline.
+    Future<void> showOffline(WidgetTester tester) async {
+      await tester.pumpWidget(_app(connectivity, waiting: waiting));
+      await go(tester, ConnectivityState.offline);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text(_offlineText), findsOneWidget);
+    }
+
+    testWidgets('offline with waiting shows the count under the message', (
+      tester,
+    ) async {
+      waiting.value = 3;
+      await showOffline(tester);
+
+      expect(detailText(tester), '3 changes waiting');
+      expect(
+        tester.getTopLeft(detail).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(find.text(_offlineText)).dy),
+        reason: 'the count is a line under the message',
+      );
+
+      waiting.value = 1;
+      await tester.pump();
+      expect(detailText(tester), '1 change waiting');
+    });
+
+    testWidgets("offline with zero or null waiting shows #49's copy alone", (
+      tester,
+    ) async {
+      await showOffline(tester);
+      expect(detail, findsNothing, reason: 'nothing reported');
+
+      waiting.value = 0;
+      await tester.pump();
+      expect(find.text(_offlineText), findsOneWidget);
+      expect(detail, findsNothing, reason: 'nothing waiting');
+
+      waiting.value = 2;
+      await tester.pump();
+      expect(detail, findsOneWidget);
+      waiting.value = null;
+      await tester.pump();
+      expect(detail, findsNothing, reason: 'the session went');
+
+      // No count to read at all, as before a session's host exists.
+      await tester.pumpWidget(_app(connectivity));
+      expect(find.text(_offlineText), findsOneWidget);
+      expect(detail, findsNothing);
+    });
+
+    testWidgets('online shows no count', (tester) async {
+      waiting.value = 3;
+      await tester.pumpWidget(_app(connectivity, waiting: waiting));
+      expect(detail, findsNothing, reason: 'online');
+
+      await go(tester, ConnectivityState.offline);
+      await tester.pump(const Duration(seconds: 1));
+      expect(detail, findsNothing, reason: 'inside the wait');
+      await tester.pump(const Duration(seconds: 1));
+      expect(detail, findsOneWidget, reason: 'offline');
+
+      await go(tester, ConnectivityState.online);
+      expect(find.text(_backText), findsOneWidget);
+      expect(detail, findsNothing, reason: 'back online');
+
+      waiting.value = 4;
+      await tester.pump();
+      expect(detail, findsNothing, reason: 'a change while back online');
+    });
+
+    testWidgets('a count change while offline does not change the live '
+        "region's label", (tester) async {
+      final handle = tester.ensureSemantics();
+      waiting.value = 2;
+      await showOffline(tester);
+      final announcer = tester.element(_liveRegion);
+      final below = tester.state(find.byType(_Below));
+
+      for (final count in [3, null, 1]) {
+        waiting.value = count;
+        await tester.pump();
+
+        expect(
+          tester.getSemantics(find.text(_offlineText)),
+          matchesSemantics(label: _offlineText, isLiveRegion: true),
+          reason: 'count $count',
+        );
+        expect(
+          identical(tester.element(_liveRegion), announcer),
+          isTrue,
+          reason: 'the live region keeps its element: count $count',
+        );
+        expect(
+          identical(tester.state(find.byType(_Below)), below),
+          isTrue,
+          reason: 'the app below stays mounted: count $count',
+        );
+      }
+      // The count is read on its own node, outside the live region.
+      expect(
+        tester.getSemantics(detail),
+        matchesSemantics(label: '1 change waiting'),
+      );
+      handle.dispose();
+    });
   });
 }

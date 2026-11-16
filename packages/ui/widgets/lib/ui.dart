@@ -76,6 +76,12 @@
 /// and the event attendee rows, which name a person the same way (#603).
 /// `BgeFieldNote` came with #547 for two call sites at once, the line under
 /// the reach menu on the event form and on the profile form.
+/// `BgeSyncBadge` and `BgeSyncStatusScope` came with #47 for every row the
+/// sync queue owns at once: the household list's private badge, generalised,
+/// the offer page's not-synced reason, and the collection and event rows,
+/// which said nothing before. `BgeSyncMark` is part of them: `BgeCoverTile`
+/// draws it, for a cover in the Collection grid, which has no room for the
+/// badge's words.
 library;
 
 export 'src/banners/bge_inline_banner.dart';
@@ -121,3 +127,5 @@ export 'src/states/bge_empty_state.dart';
 export 'src/states/bge_error_state.dart';
 export 'src/states/bge_loading_state.dart';
 export 'src/states/bge_state_sliver.dart';
+export 'src/sync/bge_sync_badge.dart';
+export 'src/sync/bge_sync_status_scope.dart';

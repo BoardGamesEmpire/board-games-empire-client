@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:flutter/material.dart';
 import 'package:game_filters/game_filters.dart';
@@ -391,10 +392,13 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
               return _OfferRow(
                 item: item,
                 checked: offered || _picked.contains(id),
-                reason: offered
-                    ? l10n.eventsOfferAlready
-                    : item.entry.isLocalOnly
-                    ? l10n.eventsOfferNotSynced
+                reason: offered ? l10n.eventsOfferAlready : null,
+                syncState: !offered && item.entry.isLocalOnly
+                    ? BgeSyncStatusScope.stateOf(
+                        context,
+                        recordId: id,
+                        unsynced: true,
+                      )
                     : null,
                 onChanged: (picked) => _toggle(id, picked: picked),
               );
@@ -504,26 +508,35 @@ class _OfferGamesPageState extends State<_OfferGamesPage> {
 
 /// One collection entry (#516): its picture, its title with its subtitle
 /// where it has one ([gameName]), where it is played and, where it can't be
-/// picked, why, with its checkbox, as one node. A null [reason] is a row
-/// that can be picked.
+/// picked, why, with its checkbox, as one node. A row can be picked only
+/// when both [reason] and [syncState] are null.
 ///
 /// A row that can't be picked is a disabled tile: its title and platform
 /// line, the control's own label, take the disabled look, which WCAG 1.4.3
-/// exempts. Its reason is what the user reads to know why, so it is drawn
-/// legibly, as `BgeOnlineOnlyLabel` draws its reason on a disabled item:
-/// `bodySmall` in `onSurfaceVariant`, which the scheme tests hold to AA on
-/// every surface role.
+/// exempts. Why is what the user reads to know it can't be picked, so it is
+/// drawn in a colour of its own, not the disabled look. A [reason] is drawn
+/// as `BgeOnlineOnlyLabel` draws its reason on a disabled item: `bodySmall`
+/// in `onSurfaceVariant`, which the scheme tests hold to AA on every surface
+/// role. A [syncState] is the `BgeSyncBadge` every row the sync queue owns
+/// shows, an icon and words in the state's status colour (#47).
 class _OfferRow extends StatelessWidget {
   const _OfferRow({
     required this.item,
     required this.checked,
     required this.reason,
+    required this.syncState,
     required this.onChanged,
   });
 
   final GameCollectionListItem item;
   final bool checked;
+
+  /// Plain words for why the row can't be picked, or null.
   final String? reason;
+
+  /// Set when the row can't be picked because its add hasn't reached the
+  /// server: waiting, or stuck when its queued op never will (#47).
+  final BgeSyncState? syncState;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -534,11 +547,14 @@ class _OfferRow extends StatelessWidget {
       GameMedium.digital => l10n.eventsGamesMediumDigital,
     };
     final reason = this.reason;
+    final syncState = this.syncState;
     final theme = Theme.of(context);
 
     return CheckboxListTile(
       value: checked,
-      onChanged: reason != null ? null : (value) => onChanged(value ?? false),
+      onChanged: reason != null || syncState != null
+          ? null
+          : (value) => onChanged(value ?? false),
       contentPadding: EdgeInsets.zero,
       // The intra-control step either side of the text, not the tile's
       // 16dp: at 320dp and 200% text the picture and the checkbox leave
@@ -563,6 +579,11 @@ class _OfferRow extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+            ),
+          if (syncState != null)
+            BgeSyncBadge(
+              state: syncState,
+              label: eventSyncLabel(l10n, syncState),
             ),
         ],
       ),

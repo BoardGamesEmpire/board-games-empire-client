@@ -81,6 +81,16 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Games are added from a game's detail, so the empty state offers
 /// [onBrowse], which opens the catalog. Null, it offers nothing to press, as
 /// the household list offers no create without a way to send one.
+///
+/// ## Entries the server hasn't had (#47)
+///
+/// A row whose entry has a change the server hasn't had says so in a
+/// [BgeSyncBadge] under its details, and a cover with a mark and its label,
+/// which says the words where the row reads them: "Not yet synced" while the
+/// change waits, "Couldn't sync" once its queued op is stuck and won't send
+/// on its own. Only the [BgeSyncStatusScope] above the screen knows an op is
+/// stuck; without one, an entry still says it is waiting, from its own flags.
+/// A stack says the worst of its copies' states, once.
 class GameCollectionListScreen extends StatelessWidget {
   const GameCollectionListScreen({
     required this.repository,
@@ -526,8 +536,8 @@ class GameCollectionListSliver extends StatelessWidget {
   }
 }
 
-/// One entry (#44): the thumbnail, the title line, the detail line and
-/// the favorite, as one semantics node.
+/// One entry (#44): the thumbnail, the title line, the detail line with its
+/// sync badge under it (#47) and the favorite, as one semantics node.
 class _CollectionRow extends StatelessWidget {
   const _CollectionRow({
     required this.item,
@@ -580,15 +590,18 @@ class _CollectionRow extends StatelessWidget {
             title,
             semanticsLabel: _spokenTitle(l10n, title, expansionOf),
           ),
-          // Joined differently for the eye and the ear: a screen reader
-          // would read the visual separator's symbol out.
-          subtitle: Text(
-            details
-                .map((d) => d.shown)
-                .join(l10n.collectionListDetailSeparator),
-            semanticsLabel: details
-                .map((d) => d.spoken)
-                .join(l10n.collectionListDetailSpokenSeparator),
+          subtitle: _RowDetails(
+            items: [item],
+            // Joined differently for the eye and the ear: a screen reader
+            // would read the visual separator's symbol out.
+            details: Text(
+              details
+                  .map((d) => d.shown)
+                  .join(l10n.collectionListDetailSeparator),
+              semanticsLabel: details
+                  .map((d) => d.spoken)
+                  .join(l10n.collectionListDetailSpokenSeparator),
+            ),
           ),
           trailing: entry.hasFavorited
               ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
@@ -660,6 +673,79 @@ List<({String shown, String spoken})> _details(
     if (lastPlayed != null)
       _same(l10n.collectionListLastPlayed(lastPlayed.toLocal())),
   ];
+}
+
+/// Where the changes to [items] stand on their way to the server (#47): the
+/// worst of their states, stuck, then waiting, then none. One entry's row or
+/// cover passes the entry alone; a stack passes its copies, and says the
+/// state that most needs the user once, not once per copy.
+///
+/// Each copy is looked up by its entry's id, which its queued op names: an
+/// add names its local id, the entry's id while it is local-only. Every copy
+/// is looked up, so the caller rebuilds when any of them gets stuck or
+/// unstuck.
+BgeSyncState? _syncStateOf(
+  BuildContext context,
+  List<GameCollectionListItem> items,
+) {
+  final states = {
+    for (final item in items)
+      BgeSyncStatusScope.stateOf(
+        context,
+        recordId: item.entry.id,
+        unsynced: item.entry.isLocalOnly || item.entry.isDirty,
+      ),
+  };
+  if (states.contains(BgeSyncState.stuck)) return BgeSyncState.stuck;
+  if (states.contains(BgeSyncState.waiting)) return BgeSyncState.waiting;
+  return null;
+}
+
+/// The words for [state], drawn in a row's badge and spoken in a cover's
+/// label in the same place, after the details and before the favourite
+/// (#47).
+String _syncLabel(GameCollectionLocalizations l10n, BgeSyncState state) =>
+    switch (state) {
+      BgeSyncState.waiting => l10n.collectionNotSynced,
+      BgeSyncState.stuck => l10n.collectionCouldNotSync,
+    };
+
+/// A row's detail line, with a [BgeSyncBadge] under it while [items], the
+/// row's entry or a stack's copies, have a change the server hasn't had
+/// (#47).
+///
+/// Under the details rather than in the tile's `trailing`, as on the
+/// household list: "Not yet synced" at 200% text is wider than a phone row's
+/// trailing slot has to spare, and a badge cut to fit would lose the words
+/// that keep the state from resting on colour alone. The badge is drawn text
+/// with no node of its own, so the row's `MergeSemantics` reads it after the
+/// details.
+///
+/// One shape with the badge or without it: the details stay in the same
+/// column and the badge is added after them, so they keep their element as
+/// the entry syncs.
+class _RowDetails extends StatelessWidget {
+  const _RowDetails({required this.items, required this.details});
+
+  final List<GameCollectionListItem> items;
+  final Widget details;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCollectionLocalizations.of(context);
+    final syncState = _syncStateOf(context, items);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        details,
+        if (syncState != null) ...[
+          const BgeGap.xs(),
+          BgeSyncBadge(state: syncState, label: _syncLabel(l10n, syncState)),
+        ],
+      ],
+    );
+  }
 }
 
 /// The collection as a grid of covers (#710): the top-level games alone,
@@ -802,6 +888,10 @@ class _CollectionStrip extends StatelessWidget {
 /// In a strip under its base game, a shelf's size, and named as an
 /// expansion of it, as its nested row is (#711). In the grid, a cell's size,
 /// marked when [missingBase].
+///
+/// While the server hasn't had the entry's change, the cover carries the
+/// sync mark, and its label says the words the row's badge shows where the
+/// row reads them: after the details, before the favourite (#47).
 class _CollectionTile extends StatelessWidget {
   const _CollectionTile({
     required this.item,
@@ -830,16 +920,19 @@ class _CollectionTile extends StatelessWidget {
     final entry = item.entry;
     final open = onOpen;
     final title = _title(l10n, item);
+    final syncState = _syncStateOf(context, [item]);
     return BgeCoverTile(
       extent: expansionOf == null ? null : BgeCoverTile.shelfExtent,
       label: [
         _spokenTitle(l10n, title, expansionOf) ?? title,
         if (missingBase) l10n.collectionListBaseGameMissing,
         ..._details(l10n, item).map((d) => d.spoken),
+        if (syncState != null) _syncLabel(l10n, syncState),
         if (entry.hasFavorited) l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: item.thumbnail,
       marked: missingBase,
+      syncState: syncState,
       expansions: expansions,
       onTap: open == null ? null : () => open(context, entry.id),
     );
@@ -869,7 +962,8 @@ class _CollectionTile extends StatelessWidget {
 /// The entries of one game owned more than once, as one row (#709): the
 /// thumbnail marked with their count, the title line, and the copies in
 /// place of an entry's details. The heart shows when any of them is a
-/// favourite. A tap opens the picker of the entries, and takes focus first
+/// favourite, and the sync badge says the worst state among them (#47). A
+/// tap opens the picker of the entries, and takes focus first
 /// ([_RingedListTile]).
 class _StackRow extends StatelessWidget {
   const _StackRow({
@@ -930,12 +1024,15 @@ class _StackRow extends StatelessWidget {
               expansionOf,
             ),
           ),
-          subtitle: Text(
-            [?missing, copies.shown].join(l10n.collectionListDetailSeparator),
-            semanticsLabel: [
-              ?missing,
-              copies.spoken,
-            ].join(l10n.collectionListDetailSpokenSeparator),
+          subtitle: _RowDetails(
+            items: items,
+            details: Text(
+              [?missing, copies.shown].join(l10n.collectionListDetailSeparator),
+              semanticsLabel: [
+                ?missing,
+                copies.spoken,
+              ].join(l10n.collectionListDetailSpokenSeparator),
+            ),
           ),
           trailing: items.any((item) => item.entry.hasFavorited)
               ? Icon(Icons.favorite, semanticLabel: l10n.collectionListFavorite)
@@ -1046,6 +1143,10 @@ class _RingedListTileState extends State<_RingedListTile>
 ///
 /// In a strip, in the grid, marked and with a badge as [_CollectionTile] is
 /// (#711).
+///
+/// The sync mark says the worst state among the copies, and the label says
+/// it once, where the row reads its badge: after the copies, before the
+/// favourite (#47).
 class _StackTile extends StatelessWidget {
   const _StackTile({
     required this.items,
@@ -1074,6 +1175,7 @@ class _StackTile extends StatelessWidget {
     final open = onOpen;
     final first = items.first;
     final title = _title(l10n, first);
+    final syncState = _syncStateOf(context, items);
     return BgeCoverTile(
       extent: expansionOf == null ? null : BgeCoverTile.shelfExtent,
       stackCount: items.length,
@@ -1081,11 +1183,13 @@ class _StackTile extends StatelessWidget {
         _spokenTitle(l10n, title, expansionOf) ?? title,
         if (missingBase) l10n.collectionListBaseGameMissing,
         _copies(l10n, items).spoken,
+        if (syncState != null) _syncLabel(l10n, syncState),
         if (items.any((item) => item.entry.hasFavorited))
           l10n.collectionListFavorite,
       ].join(l10n.collectionListDetailSpokenSeparator),
       imageUrl: first.thumbnail,
       marked: missingBase,
+      syncState: syncState,
       expansions: expansions,
       // The tile takes focus on a tap before this runs, so the picker hands
       // it back when it closes.

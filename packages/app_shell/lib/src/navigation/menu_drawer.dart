@@ -21,6 +21,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// A destructive entry (sign out) keeps the error colour and sits apart,
 /// below a divider.
 ///
+/// [status], where given, sits under the header, before the destinations:
+/// the session's sync status (#47).
+///
 /// Accessibility: the drawer is keyboard-traversable and each control has its
 /// label as its name. The no-active-server case is handled defensively by
 /// omitting the header.
@@ -32,6 +35,7 @@ class MenuDrawer extends StatefulWidget {
     required this.activeServerName,
     required this.onDestination,
     required this.onEntry,
+    this.status,
     super.key,
   });
 
@@ -55,6 +59,11 @@ class MenuDrawer extends StatefulWidget {
 
   /// Called with the entry that was tapped.
   final ValueChanged<HomeMenuEntry> onEntry;
+
+  /// A line under the header, such as the session's sync status (#47), or
+  /// null for none, which leaves no gap. It is not a destination or an
+  /// entry, so the drawer neither selects it nor reports a pick of it.
+  final Widget? status;
 
   /// Key on the [NavigationDrawer], for tests.
   static const Key drawerKey = Key('home_navigation_drawer');
@@ -210,6 +219,7 @@ class _MenuDrawerState extends State<MenuDrawer> {
             activeServerName: widget.activeServerName,
             serverLabel: l10n.homeActiveServerLabel,
           ),
+          _DrawerStatus(status: widget.status),
           for (final destination in destinations)
             NavigationDrawerDestination(
               key: MenuDrawer.entryKey(destination.id),
@@ -274,7 +284,9 @@ class _DrawerHeader extends StatelessWidget {
     return Padding(
       // Start inset is spaceLg (24) to match the drawer's content inset —
       // `tilePadding` (spaceSm) plus the 16 gutter inside each destination.
-      padding: EdgeInsets.fromLTRB(
+      // Directional, as `tilePadding` is, so it matches in a right-to-left
+      // language too.
+      padding: EdgeInsetsDirectional.fromSTEB(
         BgeTokens.of(context).spaceLg,
         BgeTokens.of(context).spaceMd,
         BgeTokens.of(context).spaceMd,
@@ -291,6 +303,36 @@ class _DrawerHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// [status] under the drawer header, at the header's start inset, or nothing
+/// at all, gap included, without one (#47).
+///
+/// Always in the drawer's children, as the header is, so a status that
+/// comes or goes changes nothing around it.
+class _DrawerStatus extends StatelessWidget {
+  const _DrawerStatus({required this.status});
+
+  final Widget? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = this.status;
+    if (status == null) return const SizedBox.shrink();
+
+    final tokens = BgeTokens.of(context);
+    return Padding(
+      // The header's start and end insets; the header's own bottom inset is
+      // the gap above, and the same again parts it from the destinations.
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spaceLg,
+        0,
+        tokens.spaceMd,
+        tokens.spaceSm,
+      ),
+      child: status,
     );
   }
 }

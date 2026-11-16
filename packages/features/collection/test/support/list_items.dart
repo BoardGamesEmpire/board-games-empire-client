@@ -23,6 +23,8 @@ GameCollectionListItem listItem(
   int? maxPlayers,
   int? minPlayTime,
   int? maxPlayTime,
+  bool isDirty = false,
+  bool isLocalOnly = false,
 }) => GameCollectionListItem(
   entry: GameCollection(
     id: id,
@@ -35,6 +37,8 @@ GameCollectionListItem listItem(
     lastPlayed: lastPlayed,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
+    isDirty: isDirty,
+    isLocalOnly: isLocalOnly,
   ),
   gameId: gameId ?? 'g-$id',
   title: title,

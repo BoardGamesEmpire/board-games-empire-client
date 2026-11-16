@@ -137,5 +137,31 @@
   "syncStuckNoticeAction": "Review",
   "@syncStuckNoticeAction": {
     "description": "Button on the stuck-changes notice that opens the screen where each one can be retried or discarded (#190)."
+  },
+  "syncStatusAllSynced": "All changes synced",
+  "@syncStatusAllSynced": {
+    "description": "Line in the navigation menu when every change made on this device has reached the server (#47). Paired with an icon, so the state isn't conveyed by colour alone."
+  },
+  "syncStatusWaiting": "{count, plural, =1{1 change waiting} other{{count} changes waiting}}",
+  "@syncStatusWaiting": {
+    "description": "Line in the navigation menu counting the changes made on this device that haven't reached the server yet (#47). They send on their own once the server can be reached. Says waiting, never pending.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStatusStuck": "{count, plural, =1{1 change couldn't sync} other{{count} changes couldn't sync}}",
+  "@syncStatusStuck": {
+    "description": "Line in the navigation menu counting the changes the server refused or that ran out of attempts (#47). They won't send on their own, and wait for the user to retry or discard them. Must not read as an error the user caused, and must not say anything was lost.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStatusReview": "Review",
+  "@syncStatusReview": {
+    "description": "Button beside the navigation menu's count of changes that couldn't sync, opening the screen where each one can be retried or discarded (#47)."
   }
 }

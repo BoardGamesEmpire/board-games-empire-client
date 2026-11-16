@@ -380,4 +380,64 @@ void main() {
       );
     });
   });
+
+  group('recordId', () {
+    const add = AddToCollectionOperation(
+      localId: 'col_local_1',
+      platformGameId: 'pg_1',
+      medium: 'Physical',
+      quantity: 1,
+    );
+    const update = UpdateCollectionOperation(collectionId: 'col_2', rating: 7);
+
+    test('each operation names its record', () {
+      expect(add.recordId, equals('col_local_1'));
+      expect(update.recordId, equals('col_2'));
+      expect(
+        const RemoveFromCollectionOperation(collectionId: 'col_3').recordId,
+        equals('col_3'),
+      );
+      expect(
+        const CreateHouseholdOperation(
+          localId: 'hh_local_1',
+          name: 'Game Night HQ',
+        ).recordId,
+        equals('hh_local_1'),
+      );
+      expect(
+        const CreateEventOperation(
+          localId: 'ev_local_1',
+          draft: EventDraft(title: 'Game night'),
+        ).recordId,
+        equals('ev_local_1'),
+      );
+    });
+
+    test("recordIdOf reads an add's local id", () {
+      expect(SyncOperation.recordIdOf(add.serialized), equals(add.localId));
+    });
+
+    test("recordIdOf reads an update's collection id", () {
+      expect(
+        SyncOperation.recordIdOf(update.serialized),
+        equals(update.collectionId),
+      );
+    });
+
+    test('recordIdOf reads an id from a payload this build cannot decode', () {
+      expect(
+        SyncOperation.recordIdOf('{"type":"future_op","local_id":"x1"}'),
+        equals('x1'),
+      );
+    });
+
+    test('recordIdOf is null for unreadable payloads', () {
+      expect(SyncOperation.recordIdOf('not json'), isNull);
+      expect(SyncOperation.recordIdOf('[]'), isNull);
+      expect(
+        SyncOperation.recordIdOf('{"type":"add_to_collection"}'),
+        isNull,
+      );
+    });
+  });
 }

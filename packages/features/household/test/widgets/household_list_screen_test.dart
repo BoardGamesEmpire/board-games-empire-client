@@ -11,6 +11,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
@@ -31,6 +32,7 @@ Household _household(
 
 const _emptyTitleCopy = 'No households yet';
 const _notSyncedCopy = 'Not yet synced';
+const _couldNotSyncCopy = "Couldn't sync";
 const _refreshFailedCopy =
     "This list may be out of date — we couldn't refresh it.";
 const _errorCopy = "We couldn't open your households.";
@@ -360,6 +362,50 @@ void main() {
       await tester.pump();
 
       expect(find.text(_notSyncedCopy), findsOneWidget);
+    });
+
+    testWidgets("a stuck household create says Couldn't sync", (tester) async {
+      // A stuck op never sends on its own, so "not yet synced" would
+      // promise what will not happen (#47).
+      await tester.pumpWidget(
+        harness(
+          onOpen: (_, _) {},
+          builder: (context, child) => BgeSyncStatusScope(
+            stuck: 1,
+            stuckRecordIds: const {'h-1'},
+            child: child!,
+          ),
+        ),
+      );
+      households.add([
+        _household('h-1', isLocalOnly: true, isDirty: true),
+        _household('h-2', isLocalOnly: true, isDirty: true),
+      ]);
+      await tester.pump();
+
+      expect(find.text(_couldNotSyncCopy), findsOneWidget);
+      expect(find.text(_notSyncedCopy), findsOneWidget);
+      final stuck = find.descendant(
+        of: find.byKey(HouseholdListScreen.rowKey('h-1')),
+        matching: find.text(_couldNotSyncCopy),
+      );
+      expect(stuck, findsOneWidget);
+      // Read inside the row control's one merged node, as the waiting
+      // badge is, and in place of it.
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+      );
+      expect(semantics, isSemantics(isButton: true));
+      expect(semantics.label, contains(_couldNotSyncCopy));
+      expect(semantics.label, isNot(contains(_notSyncedCopy)));
+    });
+
+    testWidgets('the badge is BgeSyncBadge', (tester) async {
+      await tester.pumpWidget(harness());
+      households.add([_household('h-1', isLocalOnly: true)]);
+      await tester.pump();
+
+      expect(find.byType(BgeSyncBadge), findsOneWidget);
     });
 
     testWidgets('does not badge a synced household', (tester) async {

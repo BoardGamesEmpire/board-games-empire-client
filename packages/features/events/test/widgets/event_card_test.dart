@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
@@ -57,6 +58,7 @@ void main() {
     double maxWidth = 1000,
     double textScale = 1,
     TextScaler? textScaler,
+    Set<String> stuck = const {},
     void Function(BuildContext context, String eventId)? onOpen,
   }) {
     const size = Size(1200, 800);
@@ -72,6 +74,11 @@ void main() {
           locale: const Locale('en', 'US'),
           localizationsDelegates: EventsLocalizations.localizationsDelegates,
           supportedLocales: EventsLocalizations.supportedLocales,
+          builder: (context, child) => BgeSyncStatusScope(
+            stuck: stuck.length,
+            stuckRecordIds: stuck,
+            child: child!,
+          ),
           // In a page that scrolls, as home is: at 2.0 text a long title runs
           // taller than the window.
           home: Scaffold(
@@ -167,6 +174,62 @@ void main() {
       expect(find.text('No date yet'), findsOneWidget);
     },
   );
+
+  group('sync state (#47)', () {
+    EventRow row({bool localOnly = false, bool dirty = false}) => EventRow(
+      event: item(
+        'e-1',
+      ).event.copyWith(isLocalOnly: localOnly, isDirty: dirty),
+      group: EventGroup.planning,
+    );
+
+    testWidgets('a local-only event says Not yet synced', (tester) async {
+      await pumpCard(tester, row(localOnly: true));
+
+      expect(find.text('Not yet synced'), findsOneWidget);
+    });
+
+    testWidgets("a stuck event create says Couldn't sync", (tester) async {
+      await pumpCard(tester, row(localOnly: true), stuck: {'e-1'});
+
+      expect(find.text("Couldn't sync"), findsOneWidget);
+      expect(find.text('Not yet synced'), findsNothing);
+    });
+
+    testWidgets('a synced event shows no badge', (tester) async {
+      await pumpCard(tester, row());
+
+      expect(find.byType(BgeSyncBadge), findsNothing);
+    });
+
+    testWidgets('the badge is read with the card', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpCard(tester, row(dirty: true), onOpen: (_, _) {});
+
+      final card = tester.getSemantics(find.byType(EventCard));
+      expect(card.getSemanticsData().label, contains('Not yet synced'));
+      handle.dispose();
+    });
+
+    testWidgets('the stuck badge is read with the card', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpCard(
+        tester,
+        row(localOnly: true),
+        stuck: {'e-1'},
+        onOpen: (_, _) {},
+      );
+
+      final card = tester.getSemantics(find.byType(EventCard));
+      final label = card.getSemanticsData().label;
+      expect(label, contains("Couldn't sync"));
+      expect(label, isNot(contains('Not yet synced')));
+      // The card's own node, the one a tap opens, not a node of its own.
+      expect(card.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      expect(tester.getSemantics(find.text("Couldn't sync")).id, card.id);
+      handle.dispose();
+    });
+  });
 
   testWidgets('is one semantics node, with the spoken separator', (
     tester,

@@ -20,6 +20,10 @@
   "@householdListNotSynced": {
     "description": "Badge on a household row that exists only on this device, or has local changes the server has not confirmed."
   },
+  "householdListCouldNotSync": "Couldn't sync",
+  "@householdListCouldNotSync": {
+    "description": "Badge on a household row whose change the server refused or that ran out of attempts, so it will not send on its own; the user retries or discards it from the stuck changes screen."
+  },
   "householdListRefreshFailed": "This list may be out of date \u2014 we couldn't refresh it.",
   "@householdListRefreshFailed": {
     "description": "Banner shown when the household list could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The cached households are still shown. Deliberately does not name a cause \u2014 the screen does not know which one it was."

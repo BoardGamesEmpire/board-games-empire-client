@@ -199,6 +199,7 @@ Future<_Harness> _pump(
   ThemeData? themeData,
   GlobalKey? boundary,
   bool inOuterShell = false,
+  DrawerStatusBuilder? drawerStatus,
 }) async {
   final theme =
       themeData ?? (underRegion ? pointerPlatformTheme() : BgeTheme.light());
@@ -213,6 +214,7 @@ Future<_Harness> _pump(
       location: state.uri.toString(),
       deferBack: deferBack,
       browserOwnsBack: browserOwnsBack,
+      drawerStatus: drawerStatus,
       child: child,
     ),
     routes: [
@@ -616,6 +618,87 @@ void main() {
       expect(shell.scaffold.isDrawerOpen, isFalse);
       await tester.pumpAndSettle();
       expect(shell.runs, ['sign_out']);
+    });
+
+    // #47: the session's sync status in the drawer, and its Review.
+    group("the drawer status's open", () {
+      const reviewKey = Key('review');
+
+      Widget review(void Function(String location) open) => TextButton(
+        key: reviewKey,
+        onPressed: () => open('/feedback'),
+        child: const Text('Review'),
+      );
+
+      testWidgets('closes the drawer, then pushes the screen', (tester) async {
+        final shell = await _pump(tester, drawerStatus: review);
+        await shell.openMenu();
+        expect(
+          find.descendant(
+            of: find.byType(MenuDrawer),
+            matching: find.byKey(reviewKey),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(reviewKey));
+        expect(shell.scaffold.isDrawerOpen, isFalse);
+        // Mid-close: the drawer is still on screen, sliding out, and nothing
+        // has been pushed yet.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byKey(MenuDrawer.drawerKey), findsOneWidget);
+        expect(shell.location, '/home');
+
+        await tester.pumpAndSettle();
+        expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+        expect(shell.location, '/feedback');
+        expect(await shell.back(), isTrue);
+        expect(shell.location, '/home');
+      });
+
+      // As an entry for the screen on top does: a second copy would only
+      // add a step to Back.
+      testWidgets('on the screen it opens, only closes the drawer', (
+        tester,
+      ) async {
+        final shell = await _pump(
+          tester,
+          platform: TargetPlatform.android,
+          drawerStatus: review,
+        );
+        await shell.push('/feedback');
+        final page = shell.page('/feedback');
+        var navigations = 0;
+        shell.router.routeInformationProvider.addListener(() => navigations++);
+        await shell.openMenu();
+
+        await tester.tap(find.byKey(reviewKey));
+        await tester.pumpAndSettle();
+
+        expect(navigations, 0);
+        expect(shell.page('/feedback'), same(page));
+        expect(find.byKey(MenuDrawer.drawerKey), findsNothing);
+        expect(await shell.back(), isTrue);
+        expect(shell.location, '/home');
+      });
+    });
+
+    testWidgets('no drawer status, nothing between the header and the first '
+        'entry', (tester) async {
+      final shell = await _pump(tester);
+      await shell.openMenu();
+      final header = find.byWidgetPredicate(
+        (widget) => '${widget.runtimeType}' == '_DrawerHeader',
+      );
+
+      // Compact, with the bar showing the destinations: the drawer goes
+      // straight from its header to its entries.
+      expect(find.text('Test server'), findsOneWidget);
+      expect(
+        tester.getRect(_entry('feedback')).top,
+        tester.getRect(header).bottom,
+      );
     });
 
     testWidgets('once a pick has run, the next one is taken', (

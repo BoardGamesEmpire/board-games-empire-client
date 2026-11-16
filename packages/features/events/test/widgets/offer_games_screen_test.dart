@@ -125,35 +125,43 @@ void main() {
 
   /// The page, pushed above a page of its own as the shell pushes it, so
   /// that what it pops with can be read.
-  Widget harness({OfferGamesArgs args = _args, ThemeData? theme}) =>
-      MaterialApp(
-        theme: theme ?? BgeTheme.light(),
-        localizationsDelegates: const [
-          ...EventsLocalizations.localizationsDelegates,
-          GameFiltersLocalizations.delegate,
-        ],
-        supportedLocales: EventsLocalizations.supportedLocales,
-        home: Builder(
-          builder: (context) {
-            Future<void> open() async {
-              popResult = await Navigator.of(context).push<List<OfferPick>>(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      OfferGamesScreen(collection: collection, args: args),
-                ),
-              );
-              popped = true;
-            }
+  Widget harness({
+    OfferGamesArgs args = _args,
+    ThemeData? theme,
+    Set<String> stuck = const {},
+  }) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    builder: (context, child) => BgeSyncStatusScope(
+      stuck: stuck.length,
+      stuckRecordIds: stuck,
+      child: child!,
+    ),
+    localizationsDelegates: const [
+      ...EventsLocalizations.localizationsDelegates,
+      GameFiltersLocalizations.delegate,
+    ],
+    supportedLocales: EventsLocalizations.supportedLocales,
+    home: Builder(
+      builder: (context) {
+        Future<void> open() async {
+          popResult = await Navigator.of(context).push<List<OfferPick>>(
+            MaterialPageRoute(
+              builder: (_) =>
+                  OfferGamesScreen(collection: collection, args: args),
+            ),
+          );
+          popped = true;
+        }
 
-            return Scaffold(
-              body: TextButton(
-                onPressed: () => unawaited(open()),
-                child: const Text('open'),
-              ),
-            );
-          },
-        ),
-      );
+        return Scaffold(
+          body: TextButton(
+            onPressed: () => unawaited(open()),
+            child: const Text('open'),
+          ),
+        );
+      },
+    ),
+  );
 
   /// Opens the page; with [items], the collection answers with them, and
   /// without, the page waits.
@@ -316,6 +324,76 @@ void main() {
     expect(collection.watches, 1);
   });
 
+  testWidgets(
+    "a local-only entry's reason reads Not yet synced with the waiting icon",
+    (tester) async {
+      await open(tester);
+      await reveal(tester, row('c-wing'));
+
+      final badge = find.descendant(
+        of: row('c-wing'),
+        matching: find.byType(BgeSyncBadge),
+      );
+      expect(badge, findsOneWidget);
+      expect(tester.widget<BgeSyncBadge>(badge).state, BgeSyncState.waiting);
+      expect(
+        find.descendant(of: badge, matching: find.text('Not yet synced')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets("a stuck local-only entry's reason reads Couldn't sync", (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(harness(stuck: {'c-wing'}));
+    await reach(tester, items: _five);
+    await reveal(tester, row('c-wing'));
+
+    final badge = find.descendant(
+      of: row('c-wing'),
+      matching: find.byType(BgeSyncBadge),
+    );
+    expect(tester.widget<BgeSyncBadge>(badge).state, BgeSyncState.stuck);
+    expect(
+      find.descendant(of: badge, matching: find.text("Couldn't sync")),
+      findsOneWidget,
+    );
+    expect(tile(tester, 'c-wing').onChanged, isNull);
+    // Read inside the row's one node, as its reason.
+    expect(
+      tester.getSemantics(
+        find.descendant(
+          of: row('c-wing'),
+          matching: find.byType(CheckboxListTile),
+        ),
+      ),
+      isSemantics(
+        label: "Wingspan\nTabletop, Physical\nCouldn't sync",
+        hasEnabledState: true,
+        isEnabled: false,
+      ),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('a synced entry not yet offered has no sync badge', (
+    tester,
+  ) async {
+    await open(tester);
+
+    for (final id in ['c-ark', 'c-azul', 'c-root']) {
+      await reveal(tester, row(id));
+      expect(row(id), findsOneWidget, reason: id);
+      expect(
+        find.descendant(of: row(id), matching: find.byType(BgeSyncBadge)),
+        findsNothing,
+        reason: id,
+      );
+    }
+  });
+
   testWidgets('an offered entry is checked, disabled and says so; an unsynced '
       'one is disabled and says so', (tester) async {
     await open(tester);
@@ -333,7 +411,7 @@ void main() {
     expect(tile(tester, 'c-wing').value, isFalse);
     expect(tile(tester, 'c-wing').onChanged, isNull);
     expect(
-      find.descendant(of: row('c-wing'), matching: find.text('Not synced yet')),
+      find.descendant(of: row('c-wing'), matching: find.text('Not yet synced')),
       findsOneWidget,
     );
     expect(tile(tester, 'c-azul').onChanged, isNotNull);
@@ -952,7 +1030,7 @@ void main() {
 
         for (final (id, reason) in [
           ('c-catan', 'Already offered'),
-          ('c-wing', 'Not synced yet'),
+          ('c-wing', 'Not yet synced'),
         ]) {
           await reveal(tester, row(id));
           final text = find.descendant(
@@ -1027,7 +1105,7 @@ void main() {
       expect(
         node('c-wing'),
         isSemantics(
-          label: 'Wingspan\nTabletop, Physical\nNot synced yet',
+          label: 'Wingspan\nTabletop, Physical\nNot yet synced',
           hasCheckedState: true,
           isChecked: false,
           hasEnabledState: true,

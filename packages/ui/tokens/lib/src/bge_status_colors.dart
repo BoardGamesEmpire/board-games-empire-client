@@ -72,7 +72,7 @@ class BgeStatusColors extends ThemeExtension<BgeStatusColors> {
   /// A change needs the user to resolve it.
   final Color conflict;
 
-  /// Foreground for a filled status chip.
+  /// Foreground on a status-colored fill, or the fill behind a status glyph.
   final Color onStatus;
 
   /// The ambient status colors, or a set derived from the ambient

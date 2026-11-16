@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/l10n/shell_localizations.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/services.dart';
 import 'package:observability/observability.dart';
@@ -52,10 +53,18 @@ import 'package:ui/ui.dart'
 /// modal barrier whose [BlockSemantics] drops the semantics of whatever was
 /// painted before it, up to the nearest container. Without one here the
 /// strip, painted first, would never reach a screen reader.
+///
+/// ## Waiting changes
+///
+/// While the strip says the connection is lost, it also counts the session's
+/// changes waiting to go out, from [waiting], on a line under the message
+/// that is read but not announced (#47). Only the strip listens to it, so a
+/// count that changes rebuilds the strip alone, never [child].
 class OfflineStripHost extends StatefulWidget {
   const OfflineStripHost({
     required this.connectivity,
     required this.child,
+    this.waiting,
     this.showAfter = const Duration(seconds: 2),
     this.backOnlineHold = const Duration(seconds: 2),
     super.key,
@@ -64,6 +73,12 @@ class OfflineStripHost extends StatefulWidget {
   /// The root container's service. Null on a composition without one, or
   /// before it is registered: online, with nothing drawn.
   final ConnectivityService? connectivity;
+
+  /// How many of the session's changes are waiting to go out (#47). Its
+  /// value is null while there is nothing to count, as with no session, and
+  /// a host given none counts nothing. The strip shows a count above zero,
+  /// and only while it says the connection is lost.
+  final ValueListenable<int?>? waiting;
 
   /// How long the connection must stay lost before the strip shows.
   final Duration showAfter;
@@ -187,10 +202,23 @@ class _OfflineStripHostState extends State<OfflineStripHost> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          BgeOfflineStrip(
-            state: strip,
-            offlineMessage: l10n.shellOfflineMessage,
-            backOnlineMessage: l10n.shellBackOnlineMessage,
+          // Around the strip alone, so a count that changes rebuilds nothing
+          // else. Built with or without [OfflineStripHost.waiting], so the
+          // strip keeps its element, and its live region, as a session's
+          // count comes and goes (#47).
+          ValueListenableBuilder<int?>(
+            valueListenable: widget.waiting ?? const _NoCount(),
+            builder: (context, waiting, _) => BgeOfflineStrip(
+              state: strip,
+              offlineMessage: l10n.shellOfflineMessage,
+              backOnlineMessage: l10n.shellBackOnlineMessage,
+              detail:
+                  strip == BgeOfflineStripState.offline &&
+                      waiting != null &&
+                      waiting > 0
+                  ? l10n.shellOfflineWaiting(waiting)
+                  : null,
+            ),
           ),
           Expanded(
             child: Semantics(
@@ -207,4 +235,18 @@ class _OfflineStripHostState extends State<OfflineStripHost> {
       ),
     );
   }
+}
+
+/// No count, for a host given none: a listenable that never changes.
+class _NoCount implements ValueListenable<int?> {
+  const _NoCount();
+
+  @override
+  int? get value => null;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }
