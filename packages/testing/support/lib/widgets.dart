@@ -8,7 +8,7 @@
 /// that render a screen under the app's text-selection region (#338).
 ///
 /// Needs `flutter_test`, which is why it is a separate library from
-/// `network.dart` (#354 D1).
+/// `network.dart` (#354).
 library;
 
 // One cell's body is for the package's own test, which watches a cell fail.
