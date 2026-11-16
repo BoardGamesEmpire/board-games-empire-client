@@ -1655,26 +1655,44 @@ void main() {
         tester,
       ) async {
         // What the page offers comes from the open detail, which a link, a
-        // refresh or a history entry doesn't carry.
+        // refresh or a history entry doesn't carry. It lands on the pool,
+        // where Offer games is (#856).
         final history = FakeBrowserHistory.install(tester);
-        await openGames(
-          tester,
-          remote: hosting(),
-          collection: _Collection([azul]),
-        );
+        final handle = tester.ensureSemantics();
+        try {
+          await openGames(
+            tester,
+            remote: hosting(),
+            collection: _Collection([azul]),
+          );
 
-        routerOf(tester).go(AppRoutes.eventOfferGamesOf('e-0'));
-        await tester.pumpAndSettle();
+          routerOf(tester).go(AppRoutes.eventOfferGamesOf('e-0'));
+          await tester.pumpAndSettle();
 
-        expect(find.byType(OfferGamesScreen), findsNothing);
-        expect(find.byType(NotYetAvailableScreen), findsNothing);
-        expect(
-          tester
-              .widget<EventDetailScreen>(find.byType(EventDetailScreen))
-              .eventId,
-          'e-0',
-        );
-        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+          expect(find.byType(OfferGamesScreen), findsNothing);
+          expect(find.byType(NotYetAvailableScreen), findsNothing);
+          expect(
+            tester
+                .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+                .eventId,
+            'e-0',
+          );
+          expect(
+            history.locations.last,
+            AppRoutes.eventDetailOf('e-0', tab: 'pool'),
+          );
+          expect(
+            tester.getSemantics(
+              find.byKey(
+                EventDetailScreen.sectionTabKey(EventGamesSection.pool),
+              ),
+            ),
+            isSemantics(isSelected: true),
+          );
+          expect(find.byKey(EventDetailScreen.offerGamesKey), findsOneWidget);
+        } finally {
+          handle.dispose();
+        }
       });
 
       testWidgets('with args and a collection it builds the page', (
@@ -1704,7 +1722,10 @@ void main() {
 
         expect(find.byType(OfferGamesScreen), findsNothing);
         expect(find.byType(EventDetailScreen), findsOneWidget);
-        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'pool'),
+        );
         verify(
           () => remote.offerGames('e-0', 'att-me', collectionIds: ['c-azul']),
         ).called(1);
@@ -1726,7 +1747,8 @@ void main() {
         expect(find.byType(OfferGamesScreen), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();
-        final detail = AppRoutes.eventDetailOf('e-0');
+        // The event's entry names the pool it was left on (#856).
+        final detail = AppRoutes.eventDetailOf('e-0', tab: 'pool');
         final page = AppRoutes.eventOfferGamesOf('e-0');
         final before = history.allLocations;
         expect(before.sublist(before.length - 3), [detail, page, detail]);
@@ -1760,6 +1782,288 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(OfferGamesScreen), findsNothing);
         expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      });
+    });
+
+    group('its tab in the location (#856)', () {
+      GoRouter routerOf(WidgetTester tester) =>
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+
+      /// Pumps home with e-0 hosted by the viewer, alone on its roster, and
+      /// a server that reads it with nothing offered and nothing nominated:
+      /// enough for the Games tab and its sub-tabs. The pool is read for the
+      /// roster, so an empty one would never read it. Who answered its poll
+      /// reads as nobody, for the page that lists them. [id] names the event
+      /// in place of e-0.
+      Future<void> pumpHosted(WidgetTester tester, {String id = 'e-0'}) {
+        final me = _hosting(id);
+        final hosted = EventSnapshot(
+          event: _upcoming(id).event,
+          occurrences: _upcoming(id).occurrences,
+          attendees: [me],
+        );
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.fetchGamesPool(
+            any(),
+            attendeeIds: any(named: 'attendeeIds'),
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) async => const []);
+        when(() => remote.fetchNominations(any()))
+            .thenAnswer((_) async => const []);
+        when(() => remote.fetchAvailabilitySummary(any())).thenAnswer(
+          (_) async => const AvailabilitySummary(occurrences: []),
+        );
+        return pumpHome(
+          tester,
+          remote: remote,
+          detailCache: Stream.multi(
+            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+          ),
+        );
+      }
+
+      Future<void> choose(WidgetTester tester, Finder control) async {
+        await tester.tap(control);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('choosing Pool on an event opened from Home replaces its '
+          'location, keeps its screen and keeps Back', (tester) async {
+        // Home pushes the event, so the stack beneath it isn't the one its
+        // location would build. A tab change that built the stack again
+        // from the location would lose the screen's state, and Back would
+        // land on the events list instead of Home.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester);
+        await choose(tester, find.byKey(UpcomingEventsSection.rowKey('e-0')));
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        final entries = history.allLocations.length;
+        // EventDetailScreen is stateless; the first state beneath it holds
+        // the screen's blocs.
+        final blocs = find
+            .descendant(
+              of: find.byType(EventDetailScreen),
+              matching: find.byWidgetPredicate((w) => w is StatefulWidget),
+            )
+            .first;
+        final state = tester.state(blocs);
+
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'pool'),
+        );
+        // Each change took the event's entry; none was added.
+        expect(history.allLocations, hasLength(entries));
+        expect(state.mounted, isTrue);
+        expect(tester.state(blocs), same(state));
+        expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EventDetailScreen), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.home);
+      });
+
+      testWidgets('choosing Pool on an event opened by a link replaces its '
+          'location and keeps its screen', (tester) async {
+        // A link builds the event's page from its location, as a replace
+        // would build it again: the screen's state stays only because the
+        // replace keeps the page and its key.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester);
+        routerOf(tester).go('/events/e-0');
+        await tester.pumpAndSettle();
+        expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
+        final entries = history.allLocations.length;
+        // EventDetailScreen is stateless; the first state beneath it holds
+        // the screen's blocs.
+        final blocs = find
+            .descendant(
+              of: find.byType(EventDetailScreen),
+              matching: find.byWidgetPredicate((w) => w is StatefulWidget),
+            )
+            .first;
+        final state = tester.state(blocs);
+
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e-0', tab: 'pool'),
+        );
+        // Each change took the event's entry; none was added.
+        expect(history.allLocations, hasLength(entries));
+        expect(state.mounted, isTrue);
+        expect(tester.state(blocs), same(state));
+        expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+      });
+
+      testWidgets('choosing Pool on an event whose link spells its id '
+          'another way replaces its location', (tester) async {
+        // A link may leave raw what eventDetailOf escapes: here the id's
+        // colon, which a path may carry as it is. The event is still the top
+        // location, so the tab still goes into it.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester, id: 'e:0');
+        routerOf(tester).go('/events/e:0');
+        await tester.pumpAndSettle();
+        expect(AppRoutes.eventDetailOf('e:0'), isNot('/events/e:0'));
+
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await choose(
+          tester,
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+
+        expect(
+          history.locations.last,
+          AppRoutes.eventDetailOf('e:0', tab: 'pool'),
+        );
+        expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+      });
+
+      testWidgets('a tab told while a page of its own covers the event leaves '
+          'that page and its location', (tester) async {
+        // The screen tells a tab only while its route is current, which the
+        // router doesn't rely on: it replaces only while the top location is
+        // still the event's. Told here while Availability, the event's own
+        // child, is on top, a replace would put the event in its place.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester);
+        routerOf(tester).go('/events/e-0');
+        await tester.pumpAndSettle();
+        unawaited(
+          routerOf(tester).push<void>(AppRoutes.eventAvailabilityOf('e-0')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(EventAvailabilityScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.eventAvailabilityOf('e-0'));
+        final entries = history.allLocations.length;
+
+        final screen = find.byType(EventDetailScreen, skipOffstage: false);
+        tester.widget<EventDetailScreen>(screen).onTabChanged!(
+          tester.element(
+            find
+                .descendant(
+                  of: screen,
+                  matching: find.byType(Scaffold, skipOffstage: false),
+                  skipOffstage: false,
+                )
+                .first,
+          ),
+          EventScreenTab.pool,
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EventAvailabilityScreen), findsOneWidget);
+        expect(history.locations.last, AppRoutes.eventAvailabilityOf('e-0'));
+        expect(history.allLocations, hasLength(entries));
+      });
+
+      testWidgets('a link to ?tab=pool opens the event on Pool', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await pumpHosted(tester);
+
+          routerOf(tester).go('/events/e-0?tab=pool');
+          await tester.pumpAndSettle();
+
+          expect(
+            tester.getSemantics(
+              find.byKey(
+                EventDetailScreen.sectionTabKey(EventGamesSection.pool),
+              ),
+            ),
+            isSemantics(isSelected: true),
+          );
+          expect(find.byKey(EventDetailScreen.poolSearchKey), findsOneWidget);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('a link with an unknown tab opens Details', (tester) async {
+        final handle = tester.ensureSemantics();
+        try {
+          await pumpHosted(tester);
+
+          routerOf(tester).go('/events/e-0?tab=scores');
+          await tester.pumpAndSettle();
+
+          expect(
+            tester.getSemantics(
+              find.byKey(EventDetailScreen.tabKey(EventDetailTab.details)),
+            ),
+            isSemantics(isSelected: true),
+          );
+          expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('a tab that settles once the location has gone elsewhere '
+          'leaves it there', (tester) async {
+        // The screen tells a tab only while its route is on top of its own
+        // navigator, the navigation shell's. A page that comes in over the
+        // whole shell leaves that route on top there until it has come in:
+        // here an unknown location's not-found page, which matches no route,
+        // so there is no event to replace and the router has no location to
+        // report. Nothing writes the tab into the event's entry, or any
+        // other.
+        final history = FakeBrowserHistory.install(tester);
+        await pumpHosted(tester);
+        await choose(tester, find.byKey(UpcomingEventsSection.rowKey('e-0')));
+        // Games is chosen, and the location moves before it settles.
+        await tester.tap(
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await tester.pump();
+        routerOf(tester).go('/nowhere');
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EventDetailScreen), findsNothing);
+        expect(find.byType(RouteNotFoundScreen), findsOneWidget);
+        // No entry of the history names the tab, the event's own included.
+        expect(
+          history.allLocations.where(
+            (location) => Uri.parse(
+              location,
+            ).queryParameters.containsKey(AppRoutes.eventTabParam),
+          ),
+          isEmpty,
+        );
+      });
+
+      test("AppRoutes.eventPoolTab is the screen's own value", () {
+        expect(AppRoutes.eventPoolTab, EventScreenTab.pool.query);
       });
     });
   });

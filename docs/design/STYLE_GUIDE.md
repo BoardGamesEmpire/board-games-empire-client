@@ -377,7 +377,17 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   tick sets it back. A `DefaultTabController` does that, and its
   `animationDuration` goes through `BgeMotion.durationOf`, so under reduced
   motion the indicator moves at once; it keeps the tab when that setting
-  changes. The tab isn't in the route: a screen opens on its first.
+  changes.
+- **The chosen tab is in the location.** The location's `tab` query
+  parameter names the tab shown or, under a tab with a second bar, the
+  sub-tab, which names its tab too: one parameter, not one per bar. The
+  screen opens on the tab its location names, and on its first where the
+  value names none. Each change the user makes replaces the location under
+  `Router.neglect`, so it adds no history entry and Back leaves the screen.
+  The replace keeps the page, so the screen's state stays. It is a query
+  parameter, not a path segment, because go_router keys a page by its
+  route, and a route per tab would build the screen anew on every change
+  (#856).
 - **A screen that can't show a tab shows none.** Where one tab would have
   nothing to hold, the page is the other alone, with no bar, rather than a
   bar with one tab or a dead one.
