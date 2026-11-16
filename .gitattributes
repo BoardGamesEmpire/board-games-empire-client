@@ -4,3 +4,7 @@
 # sha256sum and install_flutter.sh read the archive name with \r on it.
 tool/flutter_sdk.sha256 text eol=lf
 *.sh text eol=lf
+
+# Compared byte-for-byte with LF output, on every platform, by
+# catalog_governance_test (#17). A CRLF checkout fails the test unchanged.
+packages/core/analytics/test/catalog_snapshot.json text eol=lf
