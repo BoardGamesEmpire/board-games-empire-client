@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 /// resolved to the builder rather than the [NotYetAvailableScreen]
 /// fallback.
 const _settingsMarkerKey = Key('settings_route_marker');
+const _exportMarkerKey = Key('export_route_marker');
 
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -23,6 +26,7 @@ void main() {
     WidgetTester tester, {
     required AppBootstrapState initialState,
     SettingsScreenBuilder? settingsBuilder,
+    DataExportScreenBuilder? dataExportBuilder,
   }) async {
     whenListen(
       cubit,
@@ -34,6 +38,7 @@ void main() {
       bootstrapCubit: cubit,
       refreshListenable: listenable,
       settingsBuilder: settingsBuilder,
+      dataExportBuilder: dataExportBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -108,6 +113,63 @@ void main() {
 
       expect(find.byKey(_settingsMarkerKey), findsNothing);
       expect(find.text('Sign in'), findsOneWidget);
+    });
+  });
+
+  group('buildAppRouter — export route (#93)', () {
+    testWidgets('/settings/export builds the export screen when the builder '
+        'answers', (tester) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        dataExportBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _exportMarkerKey)),
+      );
+
+      router.go(AppRoutes.settingsExport);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_exportMarkerKey), findsOneWidget);
+    });
+
+    testWidgets('falls back to NotYetAvailableScreen when it returns null', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        dataExportBuilder: (_) => null,
+      );
+
+      router.go(AppRoutes.settingsExport);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+
+    testWidgets('Back from /settings/export returns to Settings', (
+      tester,
+    ) async {
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        settingsBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _settingsMarkerKey)),
+        dataExportBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _exportMarkerKey)),
+      );
+
+      router.go(AppRoutes.settings);
+      await tester.pumpAndSettle();
+      unawaited(router.push(AppRoutes.settingsExport));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_exportMarkerKey), findsOneWidget);
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_settingsMarkerKey), findsOneWidget);
+      expect(find.byKey(_exportMarkerKey), findsNothing);
     });
   });
 }

@@ -1,10 +1,13 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
 import 'package:di/di.dart';
 import 'package:dio_network/dio_network.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/src/build_info/package_info_build_info_reader.dart';
+import 'package:native_platform/src/data_export/file_picker_user_data_export_sink.dart';
 import 'package:native_platform/src/device_info/native_device_info_reader.dart';
 import 'package:native_platform/src/feedback/file_feedback_sink.dart';
 import 'package:network_interface/network_interface.dart';
@@ -52,10 +55,13 @@ import 'package:observability/observability.dart';
 /// unit server-add resolves. It is lazy, so registering it runs no
 /// member's factory early, and the four individual registrations stay for
 /// their other consumers. Web registers none, as it registers no
-/// [WellKnownClient]. The [FeedbackService] itself
-/// is composed and registered by `runBgeApp` — it needs shell-side
-/// collaborators (breadcrumb ring, locale, the transport resolver) that
-/// don't exist at this altitude.
+/// [WellKnownClient]. The export pipeline (#48): the
+/// [UserDataExportRegistry] with the collection exporter, the lazy
+/// [UserDataExportBundler], and the lazy [UserDataExportSink] (#92), the
+/// save dialog, which touches its plugin only on a save. The
+/// [FeedbackService] itself is composed and registered by `runBgeApp` — it
+/// needs shell-side collaborators (breadcrumb ring, locale, the transport
+/// resolver) that don't exist at this altitude.
 ///
 /// [buildInfoReader], [deviceInfoReader] and [connectivityFactory] are
 /// injectable for tests; production uses the concrete
@@ -92,4 +98,13 @@ Future<void> registerNativeRootModule(
     ..registerLazySingleton<ServerOnboardingDeps>(
       () => ServerOnboardingDeps.from(container),
     );
+  // #48: after BuildInfo, which the lazy bundler reads.
+  registerUserDataExport(
+    container,
+    exporters: const [GameCollectionExporter()],
+  );
+  // #92: the save dialog; the plugin is only touched on a save.
+  container.registerLazySingleton<UserDataExportSink>(
+    FilePickerUserDataExportSink.new,
+  );
 }

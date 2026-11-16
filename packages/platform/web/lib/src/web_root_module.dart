@@ -1,6 +1,8 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
 import 'package:di/di.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
@@ -55,6 +57,13 @@ import 'package:web_platform/src/build_info/package_info_build_info_reader.dart'
 /// investigation (#113). The [FeedbackService] itself is composed and
 /// registered by `runBgeApp`.
 ///
+/// The export pipeline (#48): the [UserDataExportRegistry] with the
+/// collection exporter, the lazy [UserDataExportBundler], and, when
+/// [userDataExportSink] supplies one, the [UserDataExportSink] (#92) that
+/// saves a finished bundle. The sink is a composition seam like
+/// [feedbackSink]: the browser's download sink reaches `package:web`. A caller
+/// that passes none, as every VM test does, registers none.
+///
 /// [buildInfoReader] and [connectivityFactory] are injectable for tests;
 /// production uses the concrete [PackageInfoBuildInfoReader] and
 /// [ConnectivityPlusService]. [feedbackSink] is a **composition** seam
@@ -79,6 +88,7 @@ Future<void> registerWebRootModule(
   ConnectivityService Function()? connectivityFactory,
   Future<FeedbackSink?>? feedbackSink,
   DeviceInfoReader? deviceInfoReader,
+  UserDataExportSink? userDataExportSink,
 }) async {
   final reader = buildInfoReader ?? PackageInfoBuildInfoReader();
   // Resolved before the read is awaited, so a caller's in-flight open is not
@@ -108,5 +118,14 @@ Future<void> registerWebRootModule(
     ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new);
   if (deviceInfoReader != null) {
     container.registerSingleton<DeviceInfoReader>(deviceInfoReader);
+  }
+  // #48: after BuildInfo, which the lazy bundler reads.
+  registerUserDataExport(
+    container,
+    exporters: const [GameCollectionExporter()],
+  );
+  // #92: a download sink reaches `package:web`, which this library cannot name.
+  if (userDataExportSink != null) {
+    container.registerSingleton<UserDataExportSink>(userDataExportSink);
   }
 }

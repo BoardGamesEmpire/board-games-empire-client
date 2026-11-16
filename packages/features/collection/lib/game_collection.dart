@@ -19,6 +19,8 @@ export 'src/entry/collection_entry_screen.dart';
 export 'src/entry/collection_entry_state.dart';
 export 'src/entry/edit_collection_entry_sheet.dart';
 export 'src/entry/remove_from_collection_dialog.dart';
+export 'src/export/game_collection_export_labels.dart';
+export 'src/export/game_collection_exporter.dart';
 export 'src/home/stats_card.dart';
 export 'src/home/stats_cubit.dart';
 export 'src/picker/collection_entry_picker.dart';

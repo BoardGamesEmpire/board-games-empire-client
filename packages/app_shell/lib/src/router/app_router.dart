@@ -25,6 +25,10 @@ abstract final class AppRoutes {
   static const feedback = '/feedback';
   static const settings = '/settings';
 
+  /// Export your data (#93): a child of [settings], so Back returns there.
+  static const settingsExport = '$settings/$_settingsExportSegment';
+  static const _settingsExportSegment = 'export';
+
   /// The household list (#269). Singular, consistent with
   /// [householdCreate] and with the reserved
   /// `/server/:serverId/household/:householdId/invite/:token` deep link.
@@ -434,6 +438,15 @@ typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 /// from it.
 typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the export-your-data screen (#93) for the
+/// [AppRoutes.settingsExport] route. Supplied by `BgeApp`; returns null when
+/// there is no active server or the root container lacks the export
+/// services, in which case the route falls back to [NotYetAvailableScreen].
+///
+/// The Settings entry that opens it is offered under the same conditions, so
+/// the entry is never shown for a route that would fall back.
+typedef DataExportScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by `BgeApp`; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -817,6 +830,7 @@ GoRouter buildAppRouter({
   NavigationShellBuilder? navigationShellBuilder,
   FeedbackScreenBuilder? feedbackBuilder,
   SettingsScreenBuilder? settingsBuilder,
+  DataExportScreenBuilder? dataExportBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
@@ -1013,6 +1027,18 @@ GoRouter buildAppRouter({
                         const NotYetAvailableScreen(),
                   ),
                 ),
+                routes: [
+                  // #93: export your data. Not a top-level destination, so no
+                  // [BgeTopLevelRoute]: Back pops to settings.
+                  GoRoute(
+                    path: AppRoutes._settingsExportSegment,
+                    pageBuilder: (context, state) => _materialPage(
+                      state,
+                      dataExportBuilder?.call(context) ??
+                          const NotYetAvailableScreen(),
+                    ),
+                  ),
+                ],
               ),
               // ── The household routes: why they nest, and their order ──
               //

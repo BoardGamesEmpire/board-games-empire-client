@@ -16,7 +16,10 @@ final class _StubExporter implements UserDataExporter {
   String get descriptionKey => '${key}Description';
 
   @override
-  Future<Map<String, Object?>?> export(ServerContext context) async => null;
+  Future<UserDataExport?> export(
+    ActiveServer server, {
+    bool refresh = false,
+  }) async => null;
 }
 
 void main() {

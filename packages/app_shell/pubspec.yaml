@@ -11,6 +11,8 @@ resolution: workspace
 dependencies:
   auth:
     path: ../features/auth
+  data_export:
+    path: ../features/data_export
   data_gateway:
     path: ../features/data_gateway
   di:

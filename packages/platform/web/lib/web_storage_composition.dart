@@ -30,8 +30,12 @@
 /// `sessionStorage`, the address the provider sends the user back to, and the
 /// navigation away to the provider. `package:web` again, composed by the same
 /// caller.
+///
+/// Since #92 it also carries the export's download sink, which clicks an
+/// anchor through `package:web`.
 library;
 
+export 'src/data_export/download_user_data_export_sink.dart';
 export 'src/feedback/indexed_db_feedback_sink.dart';
 export 'src/session/web_provider_sign_in_bindings.dart';
 export 'src/session/web_session_bindings.dart';

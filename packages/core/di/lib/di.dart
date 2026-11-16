@@ -1,6 +1,7 @@
 export 'src/clock/local_clock_service.dart';
 export 'src/clock/server_skew_clock_service.dart';
 export 'src/container_lookups.dart';
+export 'src/data_export/register_user_data_export.dart';
 export 'src/data_export/user_data_export_bundler.dart';
 export 'src/data_export/user_data_export_registry_impl.dart';
 export 'src/dependency_container_impl.dart';

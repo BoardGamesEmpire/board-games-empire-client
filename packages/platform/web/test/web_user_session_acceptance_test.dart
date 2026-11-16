@@ -22,6 +22,10 @@
 // runs the real bootstrap. The VM-side wiring is pinned by
 // `web_network/test/orchestration/bootstrap_web_server_scope_test.dart`.
 //
+// One test also runs the root module's export bundler over the signed-in
+// scope (#48): its exporter tests use a bare container, so only this one
+// would see the collection go missing from the file if the scope changed.
+//
 // Needs `sqlite3.wasm` and `drift_worker.js` beside this file — fetch them
 // with `melos run web:assets` (gitignored; #288). Run with
 // `melos run test:web`, or `flutter test --platform chrome` in this package.
@@ -38,6 +42,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:web_network/web_network.dart';
+import 'package:web_platform/web.dart';
 import 'package:web_storage/web_storage.dart';
 
 const _kUserA = 'user-a';
@@ -60,7 +65,10 @@ class _FakeAuthRepository implements AuthRepository {
   Future<AuthResponse?> getSession() => throw UnimplementedError();
 
   @override
-  Future<AuthResponse?> getCachedSession() => throw UnimplementedError();
+  Future<AuthResponse?> getCachedSession() async => switch (authState) {
+    AuthStateAuthenticated(:final session) => session,
+    _ => null,
+  };
 
   @override
   Future<ProviderSignInOutcome> signInWithProvider(OidcStrategy strategy) =>
@@ -108,6 +116,18 @@ AuthState _authenticated(String userId) => AuthStateAuthenticated(
         email: '$userId@example.com',
       ),
 );
+
+class _StubBuildInfoReader implements BuildInfoReader {
+  const _StubBuildInfoReader();
+
+  @override
+  Future<BuildInfo> read() async => const BuildInfo(
+    version: '1.2.3',
+    buildNumber: '42',
+    appName: 'Board Games Empire',
+    packageName: 'com.boardgamesempire.app',
+  );
+}
 
 /// Frozen clock. Web's real one is the skew-corrected estimator from #118,
 /// registered in the origin scope; the installers only ever read `nowUtc`.
@@ -300,5 +320,68 @@ void main() {
     );
     // A fresh watch on the disposed instance closes immediately.
     await expectLater(repoA.watchHouseholds(), emitsDone);
+  });
+
+  test("the root module's bundler exports the signed-in user's collection "
+      '(#48)', () async {
+    final root = DependencyContainerImpl();
+    addTearDown(root.dispose);
+    await registerWebRootModule(
+      root,
+      buildInfoReader: const _StubBuildInfoReader(),
+    );
+    await signIn(_kUserA);
+    final active = ActiveServer(
+      serverId: _server.serverId,
+      displayName: _server.displayName,
+      identity: testServerIdentity(),
+      container: container,
+    );
+    // An entry stored through the signed-in user's repository, so the
+    // bundle can only hold it if the exporter reads that user's rows.
+    final now = DateTime.utc(2026, 8, 29);
+    await database
+        .into(database.gamesTable)
+        .insert(
+          GamesTableCompanion.insert(
+            id: 'game-export',
+            title: 'Exported Game',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+    await database
+        .into(database.platformGamesTable)
+        .insert(
+          PlatformGamesTableCompanion.insert(
+            id: 'pg-export',
+            gameId: 'game-export',
+            platformId: 'plat-1',
+            platformName: 'Tabletop',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+    await container.get<GameCollectionRepository>().addToCollection(
+      platformGameId: 'pg-export',
+      medium: GameMedium.physical,
+    );
+
+    final bundle = await root.get<UserDataExportBundler>().assemble(active);
+
+    final categories = bundle.json['categories']! as Map<String, Object?>;
+    expect(
+      categories['gameCollection'],
+      isA<Map<String, Object?>>().having(
+        (category) => category['entries'],
+        'entries',
+        [
+          isA<Map<String, Object?>>()
+              .having((e) => e['platformGameId'], 'platformGameId', 'pg-export')
+              .having((e) => e['title'], 'title', 'Exported Game'),
+        ],
+      ),
+    );
+    expect(bundle.json['userId'], _kUserA);
   });
 }
