@@ -1177,6 +1177,41 @@ void main() {
       expect(adapter.sent, isEmpty);
     });
 
+    test('search sends includeExternal=false only when asked', () async {
+      final remote = answering(searchBody());
+
+      await remote.search('catan', includeExternal: false);
+      await remote.search('catan');
+
+      expect(
+        adapter.sent.first.query,
+        containsPair('includeExternal', 'false'),
+      );
+      expect(adapter.sent.last.query, isNot(contains('includeExternal')));
+    });
+
+    test("a 403 keeps the server's message as apiMessage", () {
+      final remote = answering(
+        jsonEncode({
+          'statusCode': 403,
+          'message': 'Searching beyond this server is not available to you.',
+          'error': 'Forbidden',
+        }),
+        status: 403,
+      );
+
+      expect(
+        remote.search('catan'),
+        throwsA(
+          isA<GamesForbiddenException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            'Searching beyond this server is not available to you.',
+          ),
+        ),
+      );
+    });
+
     test('a 404 from the search route is transient, envelope or not', () {
       final remote = answering(_envelope(404, 'Not Found'), status: 404);
 

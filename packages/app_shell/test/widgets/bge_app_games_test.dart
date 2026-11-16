@@ -204,6 +204,7 @@ class _GamesRemote implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
     GameSearchFilter filter = const GameSearchFilter(),
+    bool includeExternal = true,
   }) async => const GameSearchResults(
     local: [
       GameSearchHit(

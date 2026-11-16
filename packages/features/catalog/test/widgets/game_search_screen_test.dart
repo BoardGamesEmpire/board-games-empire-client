@@ -171,7 +171,7 @@ void main() {
 
   testWidgets('search no-results is announced', (tester) async {
     final handle = tester.ensureSemantics();
-    remote.onSearch = (_, _) async => const GameSearchResults();
+    remote.onSearch = (_, _, _) async => const GameSearchResults();
     await show(tester);
     await search(tester, 'zzz');
 
@@ -184,7 +184,7 @@ void main() {
   testWidgets('shows this server first, then what data sources found', (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester);
     await search(tester, 'catan');
@@ -210,7 +210,7 @@ void main() {
   testWidgets('a DataGateway row shows its summary as plain text', (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => const GameSearchResults(
+    remote.onSearch = (_, _, _) async => const GameSearchResults(
       byDataGateway: {
         'dg_bgg': [
           GameSearchHit(
@@ -231,7 +231,7 @@ void main() {
   });
 
   testWidgets("this server's rows show no summary line", (tester) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester);
     await search(tester, 'catan');
@@ -247,7 +247,7 @@ void main() {
 
   testWidgets('announces the result count when results arrive', (tester) async {
     final handle = tester.ensureSemantics();
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester);
     await search(tester, 'catan');
@@ -261,7 +261,7 @@ void main() {
 
   testWidgets('counts the result rows, not the headings, for a screen '
       'reader', (tester) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester);
     await search(tester, 'catan');
@@ -275,7 +275,7 @@ void main() {
   testWidgets('a game the server holds opens, from either section', (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
     final opened = <String>[];
 
     await show(tester, onOpen: (_, id) => opened.add(id));
@@ -287,7 +287,7 @@ void main() {
   });
 
   testWidgets('a game found gone is taken down', (tester) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
     final gone = StreamController<String>.broadcast();
     addTearDown(gone.close);
 
@@ -306,7 +306,7 @@ void main() {
   testWidgets('a game the server does not hold goes to the import', (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
     final imported = <String>[];
 
     await show(
@@ -333,7 +333,7 @@ void main() {
 
     testWidgets('the import row is disabled and says why', (tester) async {
       final handle = tester.ensureSemantics();
-      remote.onSearch = (_, _) async => const GameSearchResults(
+      remote.onSearch = (_, _, _) async => const GameSearchResults(
         byDataGateway: {
           'dg_bgg': [
             GameSearchHit(
@@ -382,7 +382,7 @@ void main() {
     });
 
     testWidgets('a game the server holds still opens', (tester) async {
-      remote.onSearch = (_, _) async => results;
+      remote.onSearch = (_, _, _) async => results;
       final opened = <String>[];
 
       await show(
@@ -402,7 +402,7 @@ void main() {
     testWidgets('an online scope lays the rows out as no scope does', (
       tester,
     ) async {
-      remote.onSearch = (_, _) async => results;
+      remote.onSearch = (_, _, _) async => results;
       await show(tester, onOpen: (_, _) {}, onImport: (_, _, _) {});
       await search(tester, 'catan');
       final before = tester.getSize(importRow);
@@ -427,7 +427,7 @@ void main() {
   testWidgets("the import's context is the screen's, not the row's", (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
     BuildContext? importedFrom;
 
     await show(tester, onImport: (context, _, _) => importedFrom = context);
@@ -435,7 +435,7 @@ void main() {
     await tester.tap(
       find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
     );
-    remote.onSearch = (_, _) async => const GameSearchResults();
+    remote.onSearch = (_, _, _) async => const GameSearchResults();
     await search(tester, 'zzz');
 
     expect(
@@ -449,7 +449,7 @@ void main() {
     tester,
   ) async {
     final handle = tester.ensureSemantics();
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester, onOpen: (_, _) {});
     await search(tester, 'catan');
@@ -465,7 +465,7 @@ void main() {
 
   group('the data sources that did not answer', () {
     testWidgets('are counted where they cannot be named', (tester) async {
-      remote.onSearch = (_, _) async => results;
+      remote.onSearch = (_, _, _) async => results;
 
       await show(tester);
       await search(tester, 'catan');
@@ -481,7 +481,7 @@ void main() {
     testWidgets('are named where they can be, as are the results', (
       tester,
     ) async {
-      remote.onSearch = (_, _) async => results;
+      remote.onSearch = (_, _, _) async => results;
 
       await show(
         tester,
@@ -518,7 +518,7 @@ void main() {
     testWidgets('get a note naming the filter and the way back', (
       tester,
     ) async {
-      remote.onSearch = (_, filter) async => GameSearchResults(
+      remote.onSearch = (_, filter, _) async => GameSearchResults(
         unfilterableDataGateways: {if (filter.playerCount.narrows) 'dg_bgg'},
       );
 
@@ -538,7 +538,7 @@ void main() {
     });
 
     testWidgets('are counted where they cannot be named', (tester) async {
-      remote.onSearch = (_, _) async => const GameSearchResults(
+      remote.onSearch = (_, _, _) async => const GameSearchResults(
         unfilterableDataGateways: {'dg_bgg', 'dg_igdb'},
       );
 
@@ -557,7 +557,7 @@ void main() {
   });
 
   group('the range controls', () {
-    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
+    setUp(() => remote.onSearch = (_, _, _) async => const GameSearchResults());
 
     /// Shows the screen with "catan" searched for and the filter sheet open.
     Future<void> showSheet(WidgetTester tester) async {
@@ -934,7 +934,7 @@ void main() {
 
   testWidgets('a source both ranges skipped asks for both kinds of game '
       'back', (tester) async {
-    remote.onSearch = (_, _) async =>
+    remote.onSearch = (_, _, _) async =>
         const GameSearchResults(unfilterableDataGateways: {'dg_bgg'});
 
     await show(tester, sourceNames: () async => {'dg_bgg': 'BoardGameGeek'});
@@ -962,7 +962,7 @@ void main() {
   testWidgets('offline, a platform-type filter says why nothing matches', (
     tester,
   ) async {
-    remote.onSearch = (_, _) async => throw unreachable();
+    remote.onSearch = (_, _, _) async => throw unreachable();
 
     await show(
       tester,
@@ -986,7 +986,7 @@ void main() {
   });
 
   group('the filter sheet', () {
-    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
+    setUp(() => remote.onSearch = (_, _, _) async => const GameSearchResults());
 
     testWidgets('offers every content type and every platform type', (
       tester,
@@ -1251,7 +1251,7 @@ void main() {
   });
 
   group('at 320dp and twice the text size', () {
-    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
+    setUp(() => remote.onSearch = (_, _, _) async => const GameSearchResults());
 
     void narrowScreen(WidgetTester tester) {
       tester.view.physicalSize = const Size(320, 640);
@@ -1336,7 +1336,7 @@ void main() {
   testWidgets(
     'when the server fails, searches the games saved on this device',
     (tester) async {
-      remote.onSearch = (_, _) async => throw unreachable();
+      remote.onSearch = (_, _, _) async => throw unreachable();
 
       await show(
         tester,
@@ -1352,7 +1352,7 @@ void main() {
 
   testWidgets('a refusal says the user has no access, and searches nothing '
       'saved', (tester) async {
-    remote.onSearch = (_, _) async =>
+    remote.onSearch = (_, _, _) async =>
         throw const GamesForbiddenException('403');
 
     await show(
@@ -1366,7 +1366,7 @@ void main() {
   });
 
   testWidgets('clearing the field returns to the start', (tester) async {
-    remote.onSearch = (_, _) async => results;
+    remote.onSearch = (_, _, _) async => results;
 
     await show(tester);
     await search(tester, 'catan');
@@ -1427,7 +1427,7 @@ void main() {
       pump: (tester, theme) async {
         final pending = Completer<GameSearchResults>();
         addTearDown(() => pending.complete(const GameSearchResults()));
-        remote.onSearch = (_, _) => pending.future;
+        remote.onSearch = (_, _, _) => pending.future;
         await showAudited(tester, theme);
       },
       arrange: (tester) async {
@@ -1442,7 +1442,7 @@ void main() {
     auditScreen(
       'ready',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => many;
+        remote.onSearch = (_, _, _) async => many;
         await showAudited(tester, theme, sourceNames: () async => names);
       },
       arrange: (tester) async {
@@ -1454,7 +1454,7 @@ void main() {
     auditScreen(
       'ready, scrolled to the end',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => many;
+        remote.onSearch = (_, _, _) async => many;
         await showAudited(tester, theme, sourceNames: () async => names);
       },
       arrange: (tester) async {
@@ -1469,7 +1469,7 @@ void main() {
     auditScreen(
       'empty',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => const GameSearchResults();
+        remote.onSearch = (_, _, _) async => const GameSearchResults();
         await showAudited(tester, theme);
       },
       arrange: (tester) async {
@@ -1481,7 +1481,7 @@ void main() {
     auditScreen(
       'failure, saved games under a banner',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => throw unreachable();
+        remote.onSearch = (_, _, _) async => throw unreachable();
         await showAudited(
           tester,
           theme,
@@ -1497,7 +1497,7 @@ void main() {
     auditScreen(
       'failure',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => throw unreachable();
+        remote.onSearch = (_, _, _) async => throw unreachable();
         // No saved games to fall back on: an empty cache reads as no hits.
         await showAudited(tester, theme);
       },
@@ -1510,7 +1510,7 @@ void main() {
     auditScreen(
       'denied',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async =>
+        remote.onSearch = (_, _, _) async =>
             throw const GamesForbiddenException('403');
         await showAudited(tester, theme, cache: FakeGamesCache());
       },
@@ -1528,7 +1528,7 @@ void main() {
       pump: (tester, theme) async {
         final offline = ValueNotifier(true);
         addTearDown(offline.dispose);
-        remote.onSearch = (_, _) async => results;
+        remote.onSearch = (_, _, _) async => results;
         await showAudited(tester, theme, offline: offline);
       },
       arrange: (tester) async {
@@ -1541,7 +1541,7 @@ void main() {
     auditScreen(
       'filter sheet',
       pump: (tester, theme) async {
-        remote.onSearch = (_, _) async => const GameSearchResults();
+        remote.onSearch = (_, _, _) async => const GameSearchResults();
         await showAudited(tester, theme);
       },
       arrange: (tester) async {
@@ -1564,7 +1564,7 @@ void main() {
             6000,
           ),
         );
-        remote.onSearch = (_, _) async => const GameSearchResults();
+        remote.onSearch = (_, _, _) async => const GameSearchResults();
         await showAudited(tester, theme);
       },
       arrange: (tester) async {
@@ -1590,7 +1590,7 @@ void main() {
     /// Results in both sections, each row a control: a game on the server
     /// opens, one only a data source holds is an import.
     Future<void> showResults(WidgetTester tester) async {
-      remote.onSearch = (_, _) async => results;
+      remote.onSearch = (_, _, _) async => results;
       await show(
         tester,
         sourceNames: () async => {'dg_bgg': 'BoardGameGeek'},

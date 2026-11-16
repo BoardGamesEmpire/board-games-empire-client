@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:dio_network/src/games/game_summary_json.dart';
+import 'package:dio_network/src/network/api_error_envelope.dart';
 import 'package:dio_network/src/network/non_empty_string.dart';
 import 'package:dio_network/src/network/remote_failure.dart';
 import 'package:models/domain.dart';
@@ -154,6 +155,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
     GameSearchFilter filter = const GameSearchFilter(),
+    bool includeExternal = true,
   }) async {
     _checkLimit(limit);
     if (offset < 0 || offset > GamesRemoteDataSource.maxDepth) {
@@ -205,6 +207,9 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
           'query': query,
           'limit': limit,
           'offset': offset,
+          // Sent only when false, so a server older than the parameter sees
+          // the request it always has (#795).
+          if (!includeExternal) 'includeExternal': 'false',
           // Comma-separated: the server's list transform reads that and the
           // repeated form alike, and this one does not depend on how the
           // injected Dio formats a list.
@@ -661,6 +666,7 @@ final class _GamesFailures extends RemoteFailureFamily<GamesRemoteException> {
         refusal.message,
         statusCode: status,
         cause: refusal.cause,
+        apiMessage: apiErrorField(refusal.body, 'message'),
       ),
       (404, _Row.game) => GameNotFoundException(
         refusal.message,

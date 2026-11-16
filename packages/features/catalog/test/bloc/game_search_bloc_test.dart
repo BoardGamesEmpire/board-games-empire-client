@@ -64,7 +64,8 @@ void main() {
   group('the query', () {
     blocTest<GameSearchBloc, GameSearchState>(
       'a burst of typing searches once, for the last text',
-      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      setUp: () =>
+          remote.onSearch = (_, _, _) async => const GameSearchResults(),
       build: () => GameSearchBloc(
         remote: remote,
         debounce: const Duration(milliseconds: 20),
@@ -98,7 +99,7 @@ void main() {
       'clearing the text drops the answer still on its way',
       setUp: () {
         final slow = Completer<GameSearchResults>();
-        remote.onSearch = (_, _) => slow.future;
+        remote.onSearch = (_, _, _) => slow.future;
         addTearDown(() => slow.complete(const GameSearchResults()));
       },
       build: build,
@@ -120,7 +121,7 @@ void main() {
 
     setUp(() {
       slow = Completer<GameSearchResults>();
-      remote.onSearch = (_, _) => slow.future;
+      remote.onSearch = (_, _, _) => slow.future;
     });
 
     blocTest<GameSearchBloc, GameSearchState>(
@@ -150,7 +151,7 @@ void main() {
     setUp: () {
       final first = Completer<GameSearchResults>();
       var calls = 0;
-      remote.onSearch = (_, _) =>
+      remote.onSearch = (_, _, _) =>
           calls++ == 0 ? first.future : Future.value(const GameSearchResults());
       addTearDown(() {
         if (!first.isCompleted) first.complete(const GameSearchResults());
@@ -173,7 +174,7 @@ void main() {
 
   blocTest<GameSearchBloc, GameSearchState>(
     'retyping the text already answered searches nothing',
-    setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+    setUp: () => remote.onSearch = (_, _, _) async => const GameSearchResults(),
     build: build,
     act: (bloc) async {
       bloc.add(const GameSearchQueryChanged('catan'));
@@ -205,7 +206,7 @@ void main() {
     blocTest<GameSearchBloc, GameSearchState>(
       'lists this server first, then what DataGateways found that it does '
       'not already list',
-      setUp: () => remote.onSearch = (_, _) async => results,
+      setUp: () => remote.onSearch = (_, _, _) async => results,
       build: build,
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -232,7 +233,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'names every DataGateway that did not answer, however it failed',
-      setUp: () => remote.onSearch = (_, _) async => results,
+      setUp: () => remote.onSearch = (_, _, _) async => results,
       build: build,
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -254,7 +255,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'names each DataGateway once its names arrive',
-      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
         byDataGateway: {
           'dg_bgg': [hit('926')],
         },
@@ -288,7 +289,7 @@ void main() {
     blocTest<GameSearchBloc, GameSearchState>(
       'names the DataGateways the filter skipped, apart from those that did '
       'not answer',
-      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(
+      setUp: () => remote.onSearch = (_, _, _) async => const GameSearchResults(
         unfilterableDataGateways: {'dg_bgg'},
         unavailableDataGateways: {'dg_down'},
       ),
@@ -312,7 +313,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'names results already on screen when the names arrive late',
-      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
         byDataGateway: {
           'dg_bgg': [hit('926')],
         },
@@ -348,7 +349,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'a failed read of the names leaves every DataGateway unnamed',
-      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
         byDataGateway: {
           'dg_bgg': [hit('926')],
         },
@@ -373,7 +374,8 @@ void main() {
   group('the filter', () {
     blocTest<GameSearchBloc, GameSearchState>(
       'searches the current text again, narrowed',
-      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      setUp: () =>
+          remote.onSearch = (_, _, _) async => const GameSearchResults(),
       build: build,
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -392,7 +394,8 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'sends platform types too',
-      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      setUp: () =>
+          remote.onSearch = (_, _, _) async => const GameSearchResults(),
       build: build,
       act: (bloc) async {
         bloc
@@ -413,7 +416,8 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'a change that narrows nothing new is kept without searching again',
-      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      setUp: () =>
+          remote.onSearch = (_, _, _) async => const GameSearchResults(),
       build: build,
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -434,7 +438,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'a change that narrows nothing new keeps everything the answer showed',
-      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+      setUp: () => remote.onSearch = (_, _, _) async => GameSearchResults(
         local: [hit('catan')],
         failedDataGateways: const {'dg_down'},
         unfilterableDataGateways: const {'dg_bgg'},
@@ -465,7 +469,7 @@ void main() {
       Future<void> changeWhilePending(GameSearchBloc bloc, Object error) async {
         // Made inside the test's zone: an error can't cross into another.
         final pending = Completer<GameSearchResults>();
-        remote.onSearch = (_, _) => pending.future;
+        remote.onSearch = (_, _, _) => pending.future;
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
         bloc.add(const GameSearchFilterChanged(keepUndated));
@@ -520,7 +524,7 @@ void main() {
       'an older answer that lands last does not replace the newer one',
       setUp: () {
         unfiltered = Completer<GameSearchResults>();
-        remote.onSearch = (_, filter) => filter.contentTypes.isEmpty
+        remote.onSearch = (_, filter, _) => filter.contentTypes.isEmpty
             ? unfiltered.future
             : Future.value(GameSearchResults(local: [hit('newer')]));
       },
@@ -550,7 +554,7 @@ void main() {
     'a refusal says the user may not search, rather than searching the '
     'cache',
     setUp: () =>
-        remote.onSearch = (_, _) async =>
+        remote.onSearch = (_, _, _) async =>
             throw const GamesForbiddenException('403'),
     build: () {
       final db = inMemoryServerDatabase();
@@ -583,7 +587,7 @@ void main() {
 
     /// What a search over [cache] shows when the server can't be reached.
     Future<GameSearchState> searchOffline() async {
-      remote.onSearch = (_, _) async => throw unreachable();
+      remote.onSearch = (_, _, _) async => throw unreachable();
       final search = build(cache: cache);
       addTearDown(search.close);
       search.add(const GameSearchQueryChanged('catan'));
@@ -593,12 +597,12 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'forgets the catalog, so a later failed search finds nothing cached',
-      setUp: () => remote.onSearch = (_, _) async => throw refused,
+      setUp: () => remote.onSearch = (_, _, _) async => throw refused,
       build: () => build(cache: cache),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
-        remote.onSearch = (_, _) async => throw unreachable();
+        remote.onSearch = (_, _, _) async => throw unreachable();
         bloc.add(const GameSearchQueryChanged('cata'));
         await settle();
       },
@@ -611,7 +615,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'still says the user may not search when forgetting fails',
-      setUp: () => remote.onSearch = (_, _) async => throw refused,
+      setUp: () => remote.onSearch = (_, _, _) async => throw refused,
       build: () => build(cache: _FailingForgetCache()),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -624,7 +628,7 @@ void main() {
     );
 
     test('in search leaves a new search nothing cached', () async {
-      remote.onSearch = (_, _) async => throw refused;
+      remote.onSearch = (_, _, _) async => throw refused;
       final first = build(cache: cache)
         ..add(const GameSearchQueryChanged('catan'));
       await first.stream.firstWhere((s) => s is GameSearchDenied);
@@ -637,7 +641,7 @@ void main() {
     });
 
     test('in search leaves browse nothing cached', () async {
-      remote.onSearch = (_, _) async => throw refused;
+      remote.onSearch = (_, _, _) async => throw refused;
       final search = build(cache: cache)
         ..add(const GameSearchQueryChanged('catan'));
       await search.stream.firstWhere((s) => s is GameSearchDenied);
@@ -684,7 +688,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'is heard of wherever it was found',
-      setUp: () => remote.onSearch = (_, _) async => results,
+      setUp: () => remote.onSearch = (_, _, _) async => results,
       build: () => build(gone: gone.stream),
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -714,7 +718,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'is taken down from either section, and the rest stays',
-      setUp: () => remote.onSearch = (_, _) async => results,
+      setUp: () => remote.onSearch = (_, _, _) async => results,
       build: build,
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
@@ -752,7 +756,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       "stays down when the DataGateways' names arrive after it",
-      setUp: () => remote.onSearch = (_, _) async => results,
+      setUp: () => remote.onSearch = (_, _, _) async => results,
       build: () {
         final names = Completer<Map<String, String>>();
         addTearDown(() {
@@ -783,7 +787,7 @@ void main() {
 
     blocTest<GameSearchBloc, GameSearchState>(
       'is taken down from what this device found, too',
-      setUp: () => remote.onSearch = (_, _) async => throw unreachable(),
+      setUp: () => remote.onSearch = (_, _, _) async => throw unreachable(),
       build: () {
         final db = inMemoryServerDatabase();
         addTearDown(db.close);
@@ -818,7 +822,7 @@ void main() {
     setUp(() {
       db = inMemoryServerDatabase();
       cache = GameRepositoryImpl(db, userId: 'user-a');
-      remote.onSearch = (_, _) async => throw unreachable();
+      remote.onSearch = (_, _, _) async => throw unreachable();
     });
     tearDown(() => db.close());
 
@@ -939,7 +943,7 @@ void main() {
       act: (bloc) async {
         bloc.add(const GameSearchQueryChanged('catan'));
         await settle();
-        remote.onSearch = (_, _) async => const GameSearchResults();
+        remote.onSearch = (_, _, _) async => const GameSearchResults();
         bloc.add(const GameSearchRetryRequested());
         await settle();
       },
