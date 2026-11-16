@@ -385,7 +385,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       controller: controller,
       names: names,
       acting: acting,
-      now: now,
+      scopes: nominateScopes(detail.detail, now: now),
     );
     final medium = switch (shown.medium) {
       GameMedium.physical => l10n.eventsGamesMediumPhysical,

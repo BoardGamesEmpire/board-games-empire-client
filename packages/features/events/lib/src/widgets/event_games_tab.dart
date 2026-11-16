@@ -392,6 +392,8 @@ class EventGamesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final now = this.now();
+    // Nominate's choices, the same for every row.
+    final scopes = nominateScopes(detail.detail, now: now);
     final names = _body.names;
     final gate = offerGamesGate(detail);
     // Take back on someone else's row (#518), where the viewer may take
@@ -525,7 +527,7 @@ class EventGamesTab extends StatelessWidget {
                   controller: controller,
                   names: names,
                   acting: acting,
-                  now: now,
+                  scopes: scopes,
                 );
                 final buttons = poolRowButtons(
                   context,

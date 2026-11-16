@@ -185,6 +185,14 @@ class EventNominationsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final viewerId = detail.detail.attendance?.id;
+    // Every row's vote, under the rules its quick look builds by too (#957).
+    final voting = nominationVoting(
+      detail: detail,
+      state: state,
+      pool: pool,
+      poolRead: poolRead,
+      acting: acting,
+    );
     // Over what can be narrowed, and wherever the filter narrows, so its
     // chips and Clear filters can't be stranded; never over the first wait
     // or nominations hidden.
@@ -262,15 +270,7 @@ class EventNominationsSection extends StatelessWidget {
               head: controller.rowHeadFocus(NominationEntry(nomination.id)),
               nomination: nomination,
               viewerId: viewerId,
-              // The row's rules, which its quick look builds by too (#957).
-              voting: nominationRowInputs(
-                nomination: nomination,
-                detail: detail,
-                state: state,
-                pool: pool,
-                poolRead: poolRead,
-                acting: acting,
-              ).voting,
+              voting: voting,
             ),
           ),
         },
@@ -614,7 +614,7 @@ class _NominationRow extends StatelessWidget {
   /// The viewer's roster row id, where they have one.
   final String? viewerId;
 
-  /// The viewer's vote, where they may vote ([nominationRowInputs]).
+  /// The viewer's vote, where they may vote ([nominationVoting]).
   final NominationVoting? voting;
 
   @override

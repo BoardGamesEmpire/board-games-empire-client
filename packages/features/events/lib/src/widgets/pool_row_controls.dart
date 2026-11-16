@@ -220,8 +220,10 @@ typedef PoolRowGates = ({
 /// What the row of [game] says and builds (#957), from the detail, the
 /// pool's and the nominations' states, the tab's [controller], the
 /// roster's [names], whether the screen is [acting]
-/// (`eventScreenActing`), and the clock's [now]: one place, so the row and
-/// its quick look build the same controls under the same rules.
+/// (`eventScreenActing`), and Nominate's [scopes] as of the clock
+/// ([nominateScopes]), the same for every row, so a list makes them once:
+/// one place, so the row and its quick look build the same controls under
+/// the same rules.
 ///
 /// Nominate, where the viewer is offered it ([nominateGate]), on an event
 /// with a nominations' state. Disabled, saying why, where the nominations
@@ -246,7 +248,7 @@ PoolRowGates poolRowGates(
   required EventGamesTabController controller,
   required Map<String, String?> names,
   required bool acting,
-  required DateTime now,
+  required List<NominateScope> scopes,
 }) {
   final viewerId = detail.detail.attendance?.id;
   final own = viewerId != null && game.attendeeId == viewerId;
@@ -255,7 +257,7 @@ PoolRowGates poolRowGates(
       nominations != null && nominateGate(detail) == NominateGate.open;
   final already = nominating
       ? alreadyTaken(l10n, [
-          for (final each in nominateScopes(detail.detail, now: now))
+          for (final each in scopes)
             nominateTaken(game, nominated, scope: each.scope),
         ])
       : null;

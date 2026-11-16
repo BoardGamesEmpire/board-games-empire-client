@@ -158,25 +158,15 @@ NominationRowInputs nominationRowInputs({
   // No vote, no Withdraw and no host decision on an event that takes no
   // writes, cancelled or archived, as no Nominate.
   final takesWrites = takesDateWrites(snapshot.event);
-  final mayVote =
-      takesWrites &&
-      detail.actions.contains(EventAction.voteGame) &&
-      viewerId != null;
-  final hint = voteHintFor(detail, pool: pool);
 
   return (
-    voting: mayVote
-        ? (
-            hint: hint == VoteHint.countsWhenOffering && !poolRead
-                ? null
-                : hint,
-            // As the tab's other writes are (#589): not while a detail read
-            // runs, or the screen's own request is out or the event is
-            // deleted. The nominations' own writes are the control's to hold.
-            enabled: !detail.reading && !acting,
-            busy: state.busy,
-          )
-        : null,
+    voting: nominationVoting(
+      detail: detail,
+      state: state,
+      pool: pool,
+      poolRead: poolRead,
+      acting: acting,
+    ),
     // Withdraw (#517), on the viewer's own live rows, and a host's decisions
     // (#518), on the rows they settle. As a vote is, not while a detail read
     // runs or the screen's own request is out, nor while another
@@ -202,6 +192,32 @@ NominationRowInputs nominationRowInputs({
     // A roster read and withheld is an empty list; one not read yet is null,
     // and withholds nothing.
     rosterShown: !(snapshot.attendees?.isEmpty ?? false),
+  );
+}
+
+/// The viewer's vote on every open nomination of the event, as
+/// [nominationRowInputs] gives it: the same for each, so a list builds it
+/// once for all its rows.
+NominationVoting? nominationVoting({
+  required EventDetailReady detail,
+  required EventNominationsState state,
+  required List<OfferedGame> pool,
+  required bool poolRead,
+  required bool acting,
+}) {
+  final mayVote =
+      takesDateWrites(detail.detail.snapshot.event) &&
+      detail.actions.contains(EventAction.voteGame) &&
+      detail.detail.attendance?.id != null;
+  if (!mayVote) return null;
+  final hint = voteHintFor(detail, pool: pool);
+  return (
+    hint: hint == VoteHint.countsWhenOffering && !poolRead ? null : hint,
+    // As the tab's other writes are (#589): not while a detail read runs, or
+    // the screen's own request is out or the event is deleted. The
+    // nominations' own writes are the control's to hold.
+    enabled: !detail.reading && !acting,
+    busy: state.busy,
   );
 }
 

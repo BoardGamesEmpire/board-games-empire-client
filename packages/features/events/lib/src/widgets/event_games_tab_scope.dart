@@ -45,8 +45,8 @@ class EventGamesTabController extends ChangeNotifier {
   late TabController _sections;
 
   /// The screen's clock, which a quick look reads as the tab does (#957).
-  /// For the scope to set.
-  DateTime Function() clock = DateTime.now;
+  DateTime Function() get clock => _clock;
+  DateTime Function() _clock = DateTime.now;
 
   /// Tells its listeners each time the screen's clock passes one of the
   /// page's time boundaries (#957): the event's start or end, a proposed
@@ -62,9 +62,19 @@ class EventGamesTabController extends ChangeNotifier {
   void clockTicked() => _clockTicks.tick();
 
   /// Opens a game's page from a quick look's View game (#957):
-  /// [EventDetailScreen.onOpenGame]. Null offers no View game. For the scope
-  /// to set.
-  OpenEventGame? openGame;
+  /// [EventDetailScreen.onOpenGame]. Null offers no View game.
+  OpenEventGame? get openGame => _openGame;
+  OpenEventGame? _openGame;
+
+  /// Takes the screen's [clock] and its way to a game's page, [openGame],
+  /// as the scope is built with them. For the scope only.
+  void useScreen({
+    required DateTime Function() clock,
+    required OpenEventGame? openGame,
+  }) {
+    _clock = clock;
+    _openGame = openGame;
+  }
 
   /// The Games tab's sub-tabs' controller (#945), one tab for each
   /// [EventGamesSection]. [EventGamesTabScope] makes it before the first
@@ -993,9 +1003,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   @override
   void initState() {
     super.initState();
-    _controller
-      ..clock = widget.now
-      ..openGame = widget.onOpenGame;
+    _useScreen();
     // The screen can open on Games (#856), with no tab change to say so.
     WidgetsBinding.instance.addPostFrameCallback((_) => _firstShowing());
   }
@@ -1003,10 +1011,11 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   @override
   void didUpdateWidget(EventGamesTabScope oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _controller
-      ..clock = widget.now
-      ..openGame = widget.onOpenGame;
+    _useScreen();
   }
+
+  void _useScreen() =>
+      _controller.useScreen(clock: widget.now, openGame: widget.onOpenGame);
 
   @override
   void didChangeDependencies() {
