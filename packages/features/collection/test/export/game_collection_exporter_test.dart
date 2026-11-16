@@ -205,6 +205,46 @@ void main() {
       test('no status registered', () async {
         expect((await exporter.export(server))!.confirmed, isFalse);
       });
+
+      group('as it read before the rows', () {
+        void passDuringRead(void Function() pass) {
+          when(() => repository.watchCollectionListItems()).thenAnswer((_) {
+            calls.add('read');
+            pass();
+            return Stream.value(const []);
+          });
+        }
+
+        test('a pass that lands during the read does not confirm rows '
+            'read before it', () async {
+          final status = registerStatus()
+            ..finished(CollectionHydrateOutcome.failed);
+          passDuringRead(() {
+            status
+              ..started()
+              ..finished(CollectionHydrateOutcome.complete);
+          });
+
+          final export = await exporter.export(server);
+
+          expect(calls, ['read']);
+          expect(status.state, HydrationState.refreshed);
+          expect(export!.confirmed, isFalse);
+        });
+
+        test('a pass that starts during the read does not unconfirm rows a '
+            'recent one landed', () async {
+          final status = registerStatus()
+            ..finished(CollectionHydrateOutcome.complete);
+          passDuringRead(status.started);
+
+          final export = await exporter.export(server);
+
+          expect(calls, ['read']);
+          expect(status.state, HydrationState.running);
+          expect(export!.confirmed, isTrue);
+        });
+      });
     });
 
     test('waits for a running pass before reading', () async {

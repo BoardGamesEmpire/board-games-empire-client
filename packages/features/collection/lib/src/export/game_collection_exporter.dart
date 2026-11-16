@@ -83,20 +83,25 @@ class GameCollectionExporter implements UserDataExporter {
     var gaveUp = false;
     await pass?.timeout(passWait, onTimeout: () => gaveUp = true);
 
+    // Decided before the read, from the status as it stands: a pass marks
+    // the status only once its rows are written, so rows read after a
+    // `refreshed` are at least as new as that pass. A pass that lands
+    // during the read could not vouch for rows read before it. One that
+    // starts during the read does not undo the one that already landed.
+    // A pass given up on is unconfirmed, and so is one still running or
+    // closed mid-pass, which reads `running`. So is a last pass that aged
+    // out with no refresher to run another.
+    final confirmed =
+        !gaveUp &&
+        status != null &&
+        status.state == HydrationState.refreshed &&
+        !_agedOut(status);
     final items = await repository.watchCollectionListItems().first;
     return UserDataExport(
       {
         'entries': [for (final item in items) _entry(item)],
       },
-      // A pass given up on is unconfirmed even if it lands during the read
-      // above: the rows may predate it. One still running or closed
-      // mid-pass reads `running`: unconfirmed. So does a last pass that
-      // aged out with no refresher to run another.
-      confirmed:
-          !gaveUp &&
-          status != null &&
-          status.state == HydrationState.refreshed &&
-          !_agedOut(status),
+      confirmed: confirmed,
     );
   }
 
