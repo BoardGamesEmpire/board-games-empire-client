@@ -98,9 +98,26 @@ void main() {
     unawaited(cache.close());
   });
 
+  /// Ada's Azul, offered to the pool, where a test serves a pool.
+  const azul = OfferedGame(
+    id: 'o-1',
+    attendeeId: 'att-2',
+    collectionId: 'col-1',
+    platformGameId: 'pg-1',
+    gameId: 'g-1',
+    title: 'Azul',
+    platformName: 'Tabletop',
+    medium: GameMedium.physical,
+  );
+
   /// The screen with a server and a way back, as the app opens it, so it
   /// shows the tabs; with [longLabel], a Details label too long for its tab.
-  Widget app({ThemeData? theme, bool longLabel = false}) => MaterialApp(
+  /// The pool is [pool], none unless a test says otherwise.
+  Widget app({
+    ThemeData? theme,
+    bool longLabel = false,
+    List<OfferedGame> pool = const [],
+  }) => MaterialApp(
     theme: theme ?? BgeTheme.light(),
     locale: const Locale('en', 'US'),
     // The first delegate for a type wins.
@@ -115,11 +132,12 @@ void main() {
       eventId: 'e-1',
       repository: repository,
       session: FakeSessionLease(),
-      // Nobody has offered a game: the Games tab is the empty state, under
-      // its header. Its rows are audited with the tab's own suite.
+      // Nobody has offered a game, unless a test says otherwise: the pool is
+      // the empty state, under its header. Its rows are audited with the
+      // tab's own suite.
       remote: FakeEventRemote.detail(
         (_) => hosted.snapshot,
-        pool: (_) => const [],
+        pool: (_) => pool,
       ),
       onBack: (_) {},
       now: () => now,
@@ -139,6 +157,16 @@ void main() {
   Finder tab(EventDetailTab which) =>
       find.byKey(EventDetailScreen.tabKey(which));
 
+  /// One of the Games tab's sub-tabs (#945).
+  Finder section(EventGamesSection which) =>
+      find.byKey(EventDetailScreen.sectionTabKey(which));
+
+  /// Each sub-tab's label.
+  const sectionLabels = {
+    EventGamesSection.nominations: 'Nominations',
+    EventGamesSection.pool: 'Pool',
+  };
+
   /// The Games tab's body (#516). A sliver group, which a finder that skips
   /// what isn't on screen would pass over.
   Finder gamesBody() =>
@@ -157,6 +185,28 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await tester.pumpWidget(app(longLabel: longLabel));
       await showing(tester);
+    }
+
+    /// [label] in the tab [control], a top tab or a sub-tab, is whole: on
+    /// one line, not cut short, and drawn inside its tab, scaled down to fit
+    /// rather than clipped.
+    void expectWholeLabel(WidgetTester tester, Finder control, String label) {
+      final text = find.descendant(of: control, matching: find.text(label));
+      expect(text, findsOneWidget, reason: label);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: text, matching: find.byType(RichText)),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+      final tabRect = tester.getRect(control);
+      final textRect = tester.getRect(text);
+      expect(textRect.left, greaterThanOrEqualTo(tabRect.left), reason: label);
+      expect(textRect.right, lessThanOrEqualTo(tabRect.right), reason: label);
+      expect(textRect.top, greaterThanOrEqualTo(tabRect.top), reason: label);
+      expect(
+        textRect.bottom,
+        lessThanOrEqualTo(tabRect.bottom),
+        reason: label,
+      );
     }
 
     testWidgets('the bar lays out with no overflow at 320dp and 200% text', (
@@ -183,31 +233,26 @@ void main() {
         (EventDetailTab.details, 'Details'),
         (EventDetailTab.games, 'Games'),
       ]) {
-        final text = find.descendant(
-          of: tab(which),
-          matching: find.text(label),
-        );
-        expect(text, findsOneWidget, reason: label);
-        // One line, not cut short, and drawn inside its tab: scaled down to
-        // fit rather than clipped.
-        final paragraph = tester.renderObject<RenderParagraph>(
-          find.descendant(of: text, matching: find.byType(RichText)),
-        );
-        expect(paragraph.didExceedMaxLines, isFalse, reason: label);
-        final tabRect = tester.getRect(tab(which));
-        final textRect = tester.getRect(text);
-        expect(
-          textRect.left,
-          greaterThanOrEqualTo(tabRect.left),
-          reason: label,
-        );
-        expect(textRect.right, lessThanOrEqualTo(tabRect.right), reason: label);
-        expect(textRect.top, greaterThanOrEqualTo(tabRect.top), reason: label);
-        expect(
-          textRect.bottom,
-          lessThanOrEqualTo(tabRect.bottom),
-          reason: label,
-        );
+        expectWholeLabel(tester, tab(which), label);
+      }
+    });
+
+    testWidgets('the sub-tab bar lays out with no overflow and whole labels '
+        'at 320dp and 200% text', (tester) async {
+      await showNarrow(tester);
+      await tester.tap(tab(EventDetailTab.games));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final bar = tester.getRect(find.byKey(EventDetailScreen.sectionBarKey));
+      expect(bar.left, greaterThanOrEqualTo(0));
+      expect(bar.right, lessThanOrEqualTo(320));
+      for (final which in EventGamesSection.values) {
+        final label = sectionLabels[which]!;
+        final tabRect = tester.getRect(section(which));
+        expect(tabRect.left, greaterThanOrEqualTo(bar.left), reason: label);
+        expect(tabRect.right, lessThanOrEqualTo(bar.right), reason: label);
+        expectWholeLabel(tester, section(which), label);
       }
     });
 
@@ -289,18 +334,91 @@ void main() {
       }
     });
 
-    // Details with the bar is audited with the rest of the event, in the
-    // screen's own suite. This is the Games tab with nobody's games on it
-    // (#516); with a pool it is audited in the tab's own suite.
-    auditScreen(
-      'ready, on the Games tab',
-      build: harness,
-      arrange: (tester) async {
+    testWidgets('Games opens on Nominations', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(app(pool: const [azul]));
         await showing(tester);
+
         await tester.tap(tab(EventDetailTab.games));
         await tester.pumpAndSettle();
-        expect(gamesBody(), findsOneWidget);
-      },
-    );
+
+        expect(
+          tester.getSemantics(section(EventGamesSection.nominations)),
+          isSemantics(isSelected: true),
+        );
+        expect(
+          tester.getSemantics(section(EventGamesSection.pool)),
+          isSemantics(isSelected: false),
+        );
+        // The pool's rows are the Pool sub-tab's alone.
+        Finder azulRow() => find.byKey(
+          EventDetailScreen.poolRowKey(azul.id),
+          skipOffstage: false,
+        );
+        expect(azulRow(), findsNothing);
+
+        await tester.tap(section(EventGamesSection.pool));
+        await tester.pumpAndSettle();
+        expect(azulRow(), findsOneWidget);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('focus stays on Pool after it is activated with the '
+        'keyboard', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await showNarrow(tester);
+        await activateByKeyboard(tester, tab(EventDetailTab.games));
+        final pool = Focus.of(
+          tester.element(section(EventGamesSection.pool)),
+        );
+        expect(
+          find.text("Couldn't load nominations", skipOffstage: false),
+          findsOneWidget,
+        );
+
+        await activateByKeyboard(tester, section(EventGamesSection.pool));
+
+        // The pool under the bar, and the nominations gone from it.
+        expect(find.text('Games pool', skipOffstage: false), findsOneWidget);
+        expect(
+          find.text("Couldn't load nominations", skipOffstage: false),
+          findsNothing,
+        );
+        expect(FocusManager.instance.primaryFocus, same(pool));
+        expect(
+          tester.getSemantics(section(EventGamesSection.pool)),
+          isSemantics(isSelected: true, isFocused: true),
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    // Details with the bar is audited with the rest of the event, in the
+    // screen's own suite. This is each of the Games tab's sub-tabs (#945)
+    // with nobody's games on it (#516); with a pool it is audited in the
+    // tab's own suite.
+    for (final which in EventGamesSection.values) {
+      auditScreen(
+        'ready, on the Games tab, ${which.name}',
+        build: harness,
+        arrange: (tester) async {
+          await showing(tester);
+          await tester.tap(tab(EventDetailTab.games));
+          await tester.pumpAndSettle();
+          await tester.tap(section(which));
+          await tester.pumpAndSettle();
+          expect(gamesBody(), findsOneWidget);
+          expect(
+            tester.getSemantics(section(which)),
+            isSemantics(isSelected: true),
+          );
+        },
+      );
+    }
   });
 }

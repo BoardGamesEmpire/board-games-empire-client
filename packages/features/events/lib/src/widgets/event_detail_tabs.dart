@@ -58,6 +58,44 @@ class EventDetailTabBar extends StatelessWidget {
   }
 }
 
+/// The Games tab's sub-tab bar (#945): Nominations, then Pool, under the
+/// screen's own bar.
+///
+/// Material's secondary [TabBar], not scrollable, so each sub-tab has the
+/// tab role, says whether it is selected and where it stands, and takes half
+/// the bar. Its labels scale down as the screen's own bar's do, rather than
+/// being cut.
+///
+/// Choosing a sub-tab moves no focus: the Games tab swaps what is under the
+/// bar and keeps the bar, so focus stays on the sub-tab pressed.
+class EventGamesSectionBar extends StatelessWidget {
+  const EventGamesSectionBar({required this.controller, super.key});
+
+  /// Length 2: [EventGamesSection.nominations], then
+  /// [EventGamesSection.pool].
+  final TabController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+
+    return TabBar.secondary(
+      controller: controller,
+      tabs: [
+        for (final section in EventGamesSection.values)
+          Tab(
+            key: EventDetailScreen.sectionTabKey(section),
+            child: _TabLabel(switch (section) {
+              EventGamesSection.nominations =>
+                l10n.eventsGamesSectionNominations,
+              EventGamesSection.pool => l10n.eventsGamesSectionPool,
+            }),
+          ),
+      ],
+    );
+  }
+}
+
 /// A tab's label, scaled down to fit its tab where it would otherwise be cut,
 /// and at its own size everywhere else.
 class _TabLabel extends StatelessWidget {

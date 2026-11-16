@@ -452,6 +452,14 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on one tab of the bar (#516).
   static Key tabKey(EventDetailTab tab) => Key('event_detail.tab_${tab.name}');
 
+  /// Key on the Games tab's sub-tab bar (#945), Nominations and Pool, where
+  /// the tab shows it.
+  static const Key sectionBarKey = Key('event_detail.section_bar');
+
+  /// Key on one sub-tab of the Games tab's bar (#945).
+  static Key sectionTabKey(EventGamesSection section) =>
+      Key('event_detail.section_${section.name}');
+
   /// Key on what the Games tab shows under the bar (#516).
   static const Key gamesBodyKey = Key('event_detail.games_body');
 
@@ -1586,18 +1594,18 @@ class _ReadyPage extends StatelessWidget {
           ),
       ],
       width: BgePageWidth.pane,
-      // Details holds no list. The Games tab holds the rows it shows, the
-      // nominations' and the pool's, and none of either while it shows a
-      // state (#516, #517).
+      // Details holds no list. The Games tab holds the rows of the sub-tab
+      // it shows, the nominations' or the pool's, and none while that shows
+      // a state (#516, #517, #945).
       semanticChildCount: gamesTab?.rowCount,
       // How many games a run of offers is offering (#851) or how the pool's
       // last write went (#516), then how the viewer's last nominations write
       // went (#517), on either tab, then, on the Games tab, the stale-data
-      // banners: answers on a long list, so on screen and heard wherever the
-      // list is scrolled. A run can outlast the stay on Games, and a footer
-      // left out on Details would silence its live region. Passed on every
-      // build where there is a games bloc, so the page keeps one shape as the
-      // tabs swap.
+      // banner of the sub-tab shown (#945): answers on a long list, so on
+      // screen and heard wherever the list is scrolled. A run can outlast
+      // the stay on Games, and a footer left out on Details would silence
+      // its live region. Passed on every build where there is a games bloc,
+      // so the page keeps one shape as the tabs swap.
       footer: gamesState == null
           ? null
           : EventGamesFooter(
@@ -1607,7 +1615,9 @@ class _ReadyPage extends StatelessWidget {
               // Whose games a take-back of someone else's was about (#518),
               // named as the pool's rows name them.
               names: poolNames(state.detail),
-              showStale: tab == EventDetailTab.games,
+              staleFor: tab == EventDetailTab.games
+                  ? EventGamesTabScope.of(context).section
+                  : null,
             ),
       // Above the tabs, and in the semantics tree however far down the page
       // is, so a banner that lands while the user is far down is heard as it

@@ -1617,7 +1617,8 @@ void main() {
         return remote;
       }
 
-      /// Opens e-0's detail, which the viewer hosts, on its Games tab.
+      /// Opens e-0's detail, which the viewer hosts, on its Games tab's Pool
+      /// sub-tab, where Offer games is (#945).
       Future<void> openGames(
         WidgetTester tester, {
         required EventRemoteDataSource remote,
@@ -1635,6 +1636,10 @@ void main() {
         await openRow(tester, 'e-0');
         await tester.tap(
           find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
         );
         await tester.pumpAndSettle();
       }

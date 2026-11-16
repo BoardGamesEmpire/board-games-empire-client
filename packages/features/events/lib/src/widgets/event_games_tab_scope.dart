@@ -337,7 +337,9 @@ class EventGamesTabController extends ChangeNotifier {
   /// Answers the pool going from [previous] to [current], as the bloc
   /// emits it and before the frame that builds it: Take back's hand-off (see
   /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
-  /// scope's.
+  /// scope's. Only while the Pool sub-tab is chosen (#945): on Nominations
+  /// the pool's rows aren't built, so the change disarms what it ends and
+  /// hands nothing on.
   void poolChanged(
     BuildContext context,
     EventGamesState previous,
@@ -361,13 +363,18 @@ class EventGamesTabController extends ChangeNotifier {
 
     int? left;
     FocusNode? held;
-    for (final (index, game) in shownBefore.indexed) {
-      if (stays.contains(game.id)) continue;
-      final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
-      if (!focused && !_armed.contains(game.id)) continue;
-      left = index;
-      held = focused ? FocusManager.instance.primaryFocus : null;
-      break;
+    // Keeps the hand-off off a sub-tab that isn't shown (#945): with
+    // Nominations chosen, a take-back that ends hands nothing on, and focus
+    // stays where the user put it.
+    if (section == EventGamesSection.pool) {
+      for (final (index, game) in shownBefore.indexed) {
+        if (stays.contains(game.id)) continue;
+        final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
+        if (!focused && !_armed.contains(game.id)) continue;
+        left = index;
+        held = focused ? FocusManager.instance.primaryFocus : null;
+        break;
+      }
     }
 
     // Disarm and let go what has left the pool, the nodes once their rows
@@ -454,7 +461,9 @@ class EventGamesTabController extends ChangeNotifier {
   /// which moves no input focus, is handed on too. It moves focus only while
   /// focus is free then: on nothing, on the page, or still on the row that
   /// left. A row that stays keeps its own focus, as Withdraw's and a host's
-  /// decision's hand it to the row's lines.
+  /// decision's hand it to the row's lines. Only while the Nominations
+  /// sub-tab is chosen (#945): on Pool the nominations' rows aren't built,
+  /// so nothing is handed on.
   void nominationsChanged(
     BuildContext context,
     EventNominationsState previous,
@@ -498,13 +507,15 @@ class EventGamesTabController extends ChangeNotifier {
 
     int? left;
     FocusNode? held;
-    for (final (index, nomination) in shownBefore.indexed) {
-      if (stays.contains(nomination.id)) continue;
-      final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
-      if (!focused && nomination.id != written) continue;
-      left = index;
-      held = focused ? FocusManager.instance.primaryFocus : null;
-      break;
+    if (section == EventGamesSection.nominations) {
+      for (final (index, nomination) in shownBefore.indexed) {
+        if (stays.contains(nomination.id)) continue;
+        final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
+        if (!focused && nomination.id != written) continue;
+        left = index;
+        held = focused ? FocusManager.instance.primaryFocus : null;
+        break;
+      }
     }
 
     // Let go the nodes of nominations no longer held, once their rows have
@@ -607,6 +618,11 @@ class EventGamesTabController extends ChangeNotifier {
 /// Where the tab has nothing left to take focus, as when the pool turns
 /// hidden and the header goes with the rows, nothing is focused: focus
 /// stays on the page, where Flutter leaves it when a focused control goes.
+///
+/// Each list hands focus on only while its sub-tab is chosen (#945): a
+/// take-back that ends while Nominations is shown, or a nominations write
+/// that ends while Pool is, hands nothing on, then or when its sub-tab is
+/// chosen again. Focus stays where the user put it, on the sub-tab chosen.
 class EventGamesTabScope extends StatefulWidget {
   const EventGamesTabScope({
     required this.onFirstShown,

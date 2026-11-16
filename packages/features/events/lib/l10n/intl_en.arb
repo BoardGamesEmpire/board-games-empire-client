@@ -588,6 +588,14 @@
   "@eventsDetailGames": {
     "description": "Label of the second tab on an event's screen, beside the Details tab (eventsDetailTabDetails). The tab holds the games the people coming to the event offer to bring. Keep it short: two tabs share the width of a phone."
   },
+  "eventsGamesSectionNominations": "Nominations",
+  "@eventsGamesSectionNominations": {
+    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup, under the heading eventsNominationsHeading. Keep it short: two sub-tabs share the width of a phone."
+  },
+  "eventsGamesSectionPool": "Pool",
+  "@eventsGamesSectionPool": {
+    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring, under the heading eventsGamesPoolHeading. Keep it short: two sub-tabs share the width of a phone."
+  },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {
     "description": "Label of the search field on the Games tab of an event's screen, which narrows the games people offer to bring by their title or subtitle as the user types."

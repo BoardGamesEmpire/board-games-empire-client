@@ -101,11 +101,12 @@ List<GameOfferResult> _refusedAll(OfferGamesRequest request) => [
     ),
 ];
 
-/// The Games tab of an event's screen (#516): when the pool is read, what
-/// it shows in each state, its rows, the filter and the people sheet, Take
-/// back and its outcomes in the page's footer, Take back on someone else's
-/// row and the dialog it asks with (#518), the Offer games button, and each
-/// row's Nominate and "Nominated" marker (#517).
+/// The Games tab of an event's screen (#516), on its Pool sub-tab unless a
+/// test chooses Nominations (#945): when the pool is read, what it shows in
+/// each state, its rows, the filter and the people sheet, Take back and its
+/// outcomes in the page's footer, Take back on someone else's row and the
+/// dialog it asks with (#518), the Offer games button, each row's Nominate
+/// and "Nominated" marker (#517), and what follows the sub-tab chosen.
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -372,12 +373,34 @@ void main() {
   Finder tab(EventDetailTab which) =>
       find.byKey(EventDetailScreen.tabKey(which));
 
-  Future<void> chooseGames(WidgetTester tester) async {
-    await tester.tap(tab(EventDetailTab.games));
+  /// One of the Games tab's sub-tabs (#945).
+  Finder sectionTab(EventGamesSection which) => find.byKey(
+    EventDetailScreen.sectionTabKey(which),
+    skipOffstage: false,
+  );
+
+  /// Chooses the Games tab's sub-tab [which] (#945), its bar brought on
+  /// screen first.
+  Future<void> chooseSection(
+    WidgetTester tester,
+    EventGamesSection which,
+  ) async {
+    await tester.ensureVisible(sectionTab(which));
+    await tester.pump();
+    await tester.tap(sectionTab(which));
     await animate(tester);
   }
 
-  /// Shows [detail] and opens the Games tab, with the pool's read ended.
+  /// Opens the Games tab on its Pool sub-tab (#945), which this suite tests:
+  /// the Nominations sub-tab has a suite of its own.
+  Future<void> chooseGames(WidgetTester tester) async {
+    await tester.tap(tab(EventDetailTab.games));
+    await animate(tester);
+    await chooseSection(tester, EventGamesSection.pool);
+  }
+
+  /// Shows [detail] and opens the Games tab on Pool, with the pool's read
+  /// ended.
   Future<void> showGames(
     WidgetTester tester, {
     EventDetail? detail,
@@ -1180,63 +1203,83 @@ void main() {
     });
   });
 
-  group('the Nominations section (#517)', () {
-    /// A nomination by Ada of [game], open for votes.
-    EventNomination nominationOf(String id, OfferedGame game) =>
-        EventNomination(
-          id: id,
-          eventId: 'e-1',
-          platformGameId: game.platformGameId,
-          gameId: game.gameId,
-          title: game.title,
-          platformName: game.platformName,
-          status: NominationStatus.open,
-          nominatedById: 'att-ada',
-          suppliedFromId: game.id,
-          createdAt: kItemInstant,
-        );
+  /// A nomination by Ada of [game], open for votes.
+  EventNomination nominationOf(String id, OfferedGame game) => EventNomination(
+    id: id,
+    eventId: 'e-1',
+    platformGameId: game.platformGameId,
+    gameId: game.gameId,
+    title: game.title,
+    platformName: game.platformName,
+    status: NominationStatus.open,
+    nominatedById: 'att-ada',
+    suppliedFromId: game.id,
+    createdAt: kItemInstant,
+  );
 
-    Finder nomination(String id) => find.byKey(
-      EventDetailScreen.nominationRowKey(id),
+  Finder nomination(String id) =>
+      find.byKey(EventDetailScreen.nominationRowKey(id), skipOffstage: false);
+
+  /// The index a screen reader counts [finder]'s row by, on screen or built
+  /// past its edge.
+  int semanticIndexOf(WidgetTester tester, Finder finder) => tester
+      .widget<IndexedSemantics>(
+        find.ancestor(
+          of: finder,
+          matching: find.byType(IndexedSemantics, skipOffstage: false),
+        ),
+      )
+      .index;
+
+  /// The heading [title] on the Games tab, not a sub-tab's label of the
+  /// same words (#945).
+  Finder heading(String title) => find.ancestor(
+    of: find.text(title, skipOffstage: false),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Semantics && (widget.properties.header ?? false),
+      description: 'a heading',
       skipOffstage: false,
-    );
+    ),
+  );
 
-    /// The index a screen reader counts [finder]'s row by, on screen or
-    /// built past its edge.
-    int semanticIndexOf(WidgetTester tester, Finder finder) => tester
-        .widget<IndexedSemantics>(
-          find.ancestor(
-            of: finder,
-            matching: find.byType(IndexedSemantics, skipOffstage: false),
-          ),
-        )
-        .index;
-
-    testWidgets('the section sits above the pool header', (tester) async {
+  group('the Nominations section (#517)', () {
+    testWidgets('each sub-tab sits under the sub-tab bar: the nominations '
+        'under their heading, the pool under its header (#945)', (
+      tester,
+    ) async {
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
-      // Tall enough that the pool's first row is built, under the section's
-      // header.
+      // Tall enough that the pool's first row is built, under its header.
       useViewSize(tester, const Size(800, 2400));
-
-      await showGames(tester);
-
-      final heading = find.text('Nominations', skipOffstage: false);
+      final bar = find.byKey(EventDetailScreen.sectionBarKey);
       final offer = find.byKey(
         EventDetailScreen.offerGamesKey,
         skipOffstage: false,
       );
+
+      await showGames(tester);
+      await chooseSection(tester, EventGamesSection.nominations);
+
       expect(
-        tester.getRect(heading).bottom,
-        lessThanOrEqualTo(tester.getRect(nomination('n-1')).top),
+        tester.getRect(bar).bottom,
+        lessThanOrEqualTo(tester.getRect(heading('Nominations')).top),
       );
       expect(
-        tester.getRect(nomination('n-1')).bottom,
+        tester.getRect(heading('Nominations')).bottom,
+        lessThanOrEqualTo(tester.getRect(nomination('n-1')).top),
+      );
+      expect(offer, findsNothing);
+
+      await chooseSection(tester, EventGamesSection.pool);
+
+      expect(
+        tester.getRect(bar).bottom,
         lessThanOrEqualTo(tester.getRect(offer).top),
       );
       expect(
         tester.getRect(offer).bottom,
         lessThanOrEqualTo(tester.getRect(row(catanMine.id)).top),
       );
+      expect(nomination('n-1'), findsNothing);
     });
 
     testWidgets("a nomination's lines start where the pool's do", (
@@ -1255,11 +1298,14 @@ void main() {
             ),
           )
           .dx;
-      expect(titleStart(nomination('n-1')), titleStart(row(azul.id)));
+      // Each on its own sub-tab (#945).
+      final poolStart = titleStart(row(azul.id));
+      await chooseSection(tester, EventGamesSection.nominations);
+      expect(titleStart(nomination('n-1')), poolStart);
     });
 
-    testWidgets('the pool has a heading of its own, under the section, with '
-        'no count of its own, in every state of the pool', (tester) async {
+    testWidgets('the pool has a heading of its own, with no count of its '
+        'own, in every state of the pool', (tester) async {
       final handle = tester.ensureSemantics();
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
 
@@ -1277,15 +1323,11 @@ void main() {
         matchesSemantics(label: 'Games pool', isHeader: true),
       );
       expect(
-        tester.getRect(nomination('n-1')).bottom,
-        lessThanOrEqualTo(tester.getRect(heading).top),
-      );
-      expect(
         tester.getRect(heading).bottom,
         lessThanOrEqualTo(tester.getRect(offer).top),
       );
-      // A heading, not a row.
-      expect(scrollView(tester).semanticChildCount, 5);
+      // A heading, not a row: the pool's rows alone (#945).
+      expect(scrollView(tester).semanticChildCount, 4);
 
       // While the filter narrows, the header's count is the one count.
       await tester.ensureVisible(
@@ -1317,9 +1359,8 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('semanticChildCount counts nomination and pool rows', (
-      tester,
-    ) async {
+    testWidgets("semanticChildCount counts the sub-tab's rows its filter "
+        'keeps, each numbered from the first (#945)', (tester) async {
       nominationsAnswer = (_) => [
         nominationOf('n-1', azul),
         nominationOf('n-2', root),
@@ -1330,12 +1371,9 @@ void main() {
 
       await showGames(tester);
 
-      expect(scrollView(tester).semanticChildCount, 6);
-      // The pool's rows count on from the nominations'.
-      expect(semanticIndexOf(tester, nomination('n-1')), 0);
-      expect(semanticIndexOf(tester, nomination('n-2')), 1);
-      expect(semanticIndexOf(tester, row(catanMine.id)), 2);
-      expect(semanticIndexOf(tester, row(root.id)), 5);
+      expect(scrollView(tester).semanticChildCount, 4);
+      expect(semanticIndexOf(tester, row(catanMine.id)), 0);
+      expect(semanticIndexOf(tester, row(root.id)), 3);
 
       // The pool narrowed: the rows it keeps.
       await tester.ensureVisible(
@@ -1345,9 +1383,9 @@ void main() {
       await tester.tap(notMine());
       await tester.pump();
 
-      expect(scrollView(tester).semanticChildCount, 5);
+      expect(scrollView(tester).semanticChildCount, 3);
 
-      // The pool in a state of its own: the nominations alone.
+      // The pool in a state of its own: no rows.
       await tester.ensureVisible(
         find.byKey(EventDetailScreen.poolSearchKey, skipOffstage: false),
       );
@@ -1356,7 +1394,14 @@ void main() {
       await tester.pump();
 
       expect(find.text('No games match'), findsOneWidget);
+      expect(scrollView(tester).semanticChildCount, 0);
+
+      // The nominations, numbered from their own first.
+      await chooseSection(tester, EventGamesSection.nominations);
+
       expect(scrollView(tester).semanticChildCount, 2);
+      expect(semanticIndexOf(tester, nomination('n-1')), 0);
+      expect(semanticIndexOf(tester, nomination('n-2')), 1);
     });
 
     testWidgets('a section in a state of its own counts no rows', (
@@ -1366,9 +1411,14 @@ void main() {
 
       await showGames(tester);
 
-      expect(find.text("Couldn't load nominations"), findsOneWidget);
+      // The pool's rows, numbered from its first (#945).
       expect(scrollView(tester).semanticChildCount, 4);
       expect(semanticIndexOf(tester, row(catanMine.id)), 0);
+
+      await chooseSection(tester, EventGamesSection.nominations);
+
+      expect(find.text("Couldn't load nominations"), findsOneWidget);
+      expect(scrollView(tester).semanticChildCount, 0);
     });
 
     testWidgets('the two Filters buttons are named for what they filter, and '
@@ -1382,20 +1432,16 @@ void main() {
       await showGames(tester);
       final nominations = find.byKey(EventDetailScreen.nominationsFiltersKey);
       final pool = find.byKey(GameFilterKeys.button, skipOffstage: false);
-      // The Nominations section is at the top, and the pool below it.
+      // Each on its own sub-tab (#945): the nominations', then the pool's.
+      await chooseSection(tester, EventGamesSection.nominations);
       expect(nominations, findsOneWidget);
       final nominationsLabel = tester.getSemantics(nominations).label;
       expect(nominationsLabel, 'Filters for nominations');
-      await tester.scrollUntilVisible(
-        pool,
-        100,
-        scrollable: find
-            .descendant(
-              of: find.byType(CustomScrollView),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
+
+      await chooseSection(tester, EventGamesSection.pool);
+      expect(nominations, findsNothing);
+      await tester.ensureVisible(pool);
+      await tester.pump();
       final unfiltered = tester.getSemantics(pool).label;
       expect(unfiltered, 'Filters for games');
       expect(unfiltered, isNot(nominationsLabel));
@@ -1419,6 +1465,83 @@ void main() {
       expect(filtered, 'Filters (1) for games');
       expect(filtered, isNot(nominationsLabel));
       handle.dispose();
+    });
+  });
+
+  group('the sub-tabs (#945)', () {
+    Finder nominationsStale() =>
+        find.byKey(EventDetailScreen.nominationsRefreshBannerKey);
+
+    testWidgets("the page counts only the chosen sub-tab's rows", (
+      tester,
+    ) async {
+      served = [catanMine, azul, root];
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', root),
+      ];
+      // Tall enough that every row is built.
+      useViewSize(tester, const Size(800, 2400));
+
+      await showGames(tester);
+
+      expect(scrollView(tester).semanticChildCount, 3);
+      expect(semanticIndexOf(tester, row(catanMine.id)), 0);
+      expect(nomination('n-1'), findsNothing);
+
+      await chooseSection(tester, EventGamesSection.nominations);
+
+      expect(scrollView(tester).semanticChildCount, 2);
+      expect(row(catanMine.id), findsNothing);
+    });
+
+    testWidgets('the stale banners follow the sub-tab', (tester) async {
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      await showGames(tester);
+      expect(nomination('n-1'), findsNothing);
+      poolAnswer = (_) => throw _offline;
+      nominationsAnswer = (_) => throw _offline;
+
+      // A take-back that lands, with the read after it failing over the
+      // games shown; then the nominations' read failing over theirs.
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await animate(tester);
+
+      // On Pool, the pool's.
+      expectInFooter(tester, outcome());
+      expectInFooter(tester, stale());
+      expect(nominationsStale(), findsNothing);
+
+      // On Nominations, the nominations'.
+      await chooseSection(tester, EventGamesSection.nominations);
+      expectInFooter(tester, outcome());
+      expect(stale(), findsNothing);
+      expectInFooter(tester, nominationsStale());
+
+      // On Details, neither: the outcome answers every tab.
+      await tester.ensureVisible(
+        find.byKey(
+          EventDetailScreen.tabKey(EventDetailTab.details),
+          skipOffstage: false,
+        ),
+      );
+      await tester.pump();
+      await tester.tap(tab(EventDetailTab.details));
+      await animate(tester);
+      expectInFooter(tester, outcome());
+      expect(stale(), findsNothing);
+      expect(nominationsStale(), findsNothing);
+
+      // Back on Games, the sub-tab chosen, and its banner.
+      await tester.tap(tab(EventDetailTab.games));
+      await animate(tester);
+      expect(nomination('n-1'), findsOneWidget);
+      expect(stale(), findsNothing);
+      expectInFooter(tester, nominationsStale());
     });
   });
 
@@ -2061,6 +2184,46 @@ void main() {
 
         expect(rowsShown(tester), ['o-1', 'o-2']);
         expect(find.text('Filters (1)'), findsOneWidget);
+      });
+
+      testWidgets("the pool's search, people and filters survive Nominations "
+          'and Details (#945)', (tester) async {
+        servePlatforms();
+        await showGames(tester);
+        await tester.enterText(search(), 'cat');
+        await tester.pump();
+        await choosePeople(tester, ['att-me']);
+        await filterBy(tester, PlatformType.tabletop);
+        expect(rowsShown(tester), ['o-1']);
+        final count = find.descendant(
+          of: find.byKey(EventDetailScreen.poolCountKey),
+          matching: find.byType(Text),
+        );
+        final counted = tester.widget<Text>(count).data;
+        expect(counted, '1 game of 4');
+
+        await chooseSection(tester, EventGamesSection.nominations);
+        expect(search(), findsNothing);
+        await tester.ensureVisible(
+          find.byKey(
+            EventDetailScreen.tabKey(EventDetailTab.details),
+            skipOffstage: false,
+          ),
+        );
+        await tester.pump();
+        await tester.tap(tab(EventDetailTab.details));
+        await animate(tester);
+        await tester.tap(tab(EventDetailTab.games));
+        await animate(tester);
+        // Games comes back on the sub-tab last chosen.
+        expect(search(), findsNothing);
+        await chooseSection(tester, EventGamesSection.pool);
+
+        expect(tester.widget<TextField>(search()).controller!.text, 'cat');
+        expect(inUse('att-me'), findsOneWidget);
+        expect(filterChip('platform_tabletop'), findsOneWidget);
+        expect(tester.widget<Text>(count).data, counted);
+        expect(rowsShown(tester), ['o-1']);
       });
 
       testWidgets('nothing chosen, the chips add no space under the people', (
@@ -3621,6 +3784,48 @@ void main() {
         expect(takeBackFocus(tester, catanAdas.id).hasPrimaryFocus, isTrue);
         handle.dispose();
       });
+
+      testWidgets('a take-back that ends while Nominations is shown takes no '
+          'focus, then or on returning to Pool (#945)', (tester) async {
+        /// Chooses the sub-tab [which] from the keyboard, focused and
+        /// activated with Enter, and answers its node.
+        Future<FocusNode> chooseByKeyboard(EventGamesSection which) async {
+          await tester.ensureVisible(sectionTab(which));
+          await tester.pump();
+          final node = Focus.of(tester.element(sectionTab(which)))
+            ..requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await animate(tester);
+          return node;
+        }
+
+        final answer = Completer<void>();
+        takeBackAnswer = (_) => answer.future;
+        await showGames(tester, detail: detailOf(viewer: host));
+        served = [catanMine, catanAdas, root];
+
+        await takeBackByKeyboard(tester, azul.id);
+        expect(remote.takeBacks, hasLength(1));
+        final nominations = await chooseByKeyboard(
+          EventGamesSection.nominations,
+        );
+        expect(row(catanAdas.id), findsNothing);
+        expect(FocusManager.instance.primaryFocus, same(nominations));
+
+        answer.complete();
+        await animate(tester);
+        await animate(tester);
+
+        expect(blocOf<EventGamesBloc>(tester).state.takingBack, isNull);
+        expect(FocusManager.instance.primaryFocus, same(nominations));
+
+        final pool = await chooseByKeyboard(EventGamesSection.pool);
+
+        expect(row(azul.id), findsNothing);
+        expect(row(catanAdas.id), findsOneWidget);
+        expect(FocusManager.instance.primaryFocus, same(pool));
+      });
     });
   });
 
@@ -4818,14 +5023,14 @@ void main() {
         );
       }
 
-      // A retry that loads settles it.
-      await tester.ensureVisible(
-        find.byKey(EventDetailScreen.nominationsRetryKey),
-      );
+      // A retry that loads settles it: the Nominations sub-tab's, which
+      // shows the failed read (#945).
+      await chooseSection(tester, EventGamesSection.nominations);
       await press(tester, find.byKey(EventDetailScreen.nominationsRetryKey));
       await animate(tester);
 
       expect(reads, 3);
+      await chooseSection(tester, EventGamesSection.pool);
       await tester.ensureVisible(nominate(azul.id));
       await tester.pump();
       expect(onPressed(tester, azul.id), isNotNull);
