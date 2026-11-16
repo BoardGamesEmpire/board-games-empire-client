@@ -207,6 +207,44 @@ void main() {
     expect(find.text('3 results'), findsOneWidget);
   });
 
+  testWidgets('a DataGateway row shows its summary as plain text', (
+    tester,
+  ) async {
+    remote.onSearch = (_, _) async => const GameSearchResults(
+      byDataGateway: {
+        'dg_bgg': [
+          GameSearchHit(
+            externalId: '926',
+            title: 'Catan: Seafarers',
+            contentType: ContentType.expansion,
+            summary: '**Settle** the _seas_.\n\n- ships',
+          ),
+        ],
+      },
+    );
+
+    await show(tester);
+    await search(tester, 'catan');
+
+    expect(find.text('Settle the seas. ships'), findsOneWidget);
+    expect(find.textContaining('**'), findsNothing);
+  });
+
+  testWidgets("this server's rows show no summary line", (tester) async {
+    remote.onSearch = (_, _) async => results;
+
+    await show(tester);
+    await search(tester, 'catan');
+
+    final row = find.byKey(GameSearchScreen.serverRowKey('g_catan'));
+    final lines = find.descendant(of: row, matching: find.byType(Text));
+    // Title and facts only: no summary.
+    expect(
+      tester.widgetList<Text>(lines).where((t) => t.maxLines == 1),
+      isEmpty,
+    );
+  });
+
   testWidgets('announces the result count when results arrive', (tester) async {
     final handle = tester.ensureSemantics();
     remote.onSearch = (_, _) async => results;

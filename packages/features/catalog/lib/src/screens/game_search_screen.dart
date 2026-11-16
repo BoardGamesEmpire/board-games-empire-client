@@ -7,6 +7,7 @@ import 'package:game_catalog/src/bloc/game_search_state.dart';
 import 'package:game_catalog/src/widgets/catalog_facts.dart';
 import 'package:game_catalog/src/widgets/catalog_game_row.dart';
 import 'package:game_catalog/src/widgets/catalog_slivers.dart';
+import 'package:game_catalog/src/widgets/summary_text.dart';
 import 'package:game_filters/game_filters.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -491,6 +492,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
               : () => import(this.context, result.source.id, hit));
 
     final sourceName = result.source.name;
+    final summary = hit.summary == null ? null : summaryPlainText(hit.summary!);
     return CatalogGameRow(
       key: GameSearchScreen.sourceRowKey(result.source.id, hit.externalId),
       title: hit.title,
@@ -499,6 +501,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         ..._facts(l10n, hit),
         if (sourceName != null) sameFact(sourceName),
       ],
+      summary: summary == null || summary.isEmpty ? null : summary,
       onTap: onTap,
       // Only an import writes; opening a game the server holds does not.
       onlineOnly: gameId == null && import != null,
