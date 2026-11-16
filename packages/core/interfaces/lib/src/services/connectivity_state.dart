@@ -22,7 +22,6 @@ enum ConnectivityState {
   /// Reserved for forward-compat (a platform that genuinely cannot
   /// report state). The current `connectivity_plus` implementation
   /// never emits it: construction seeds [online] optimistically and an
-  /// eager check corrects to the true state moments later (#9 design
-  /// decision 4).
+  /// eager check corrects to the true state moments later (#9).
   unknown,
 }

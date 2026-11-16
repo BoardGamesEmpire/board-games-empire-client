@@ -320,7 +320,7 @@ void main() {
       // same instance both times, so `didUpdateWidget` never fires. Only the
       // inherited dependency on the group can see it, which is why that
       // dependency is registered despite firing on every keystroke — the cache
-      // in `_BgeTextFieldState.build` is what pays for it (#186, D2).
+      // in `_BgeTextFieldState.build` is what pays for it (#186).
       final forms = await _pumpSwap(tester, () => _constField);
 
       await tester.enterText(find.byType(TextField), 'const@example.com');
@@ -404,10 +404,10 @@ void main() {
   });
 
   group('BgeTextField build caching', () {
-    // The group dependency that makes swaps visible (#186, D2) fires on every
-    // value change anywhere in the form, so `build` serves a cached subtree
-    // unless the resolved control changed. These pin both halves: the cache
-    // holds when nothing relevant moved, and it is dropped when it must be.
+    // The group dependency that makes swaps visible (#186) fires on every value
+    // change anywhere in the form, so `build` serves a cached subtree unless
+    // the resolved control changed. These pin both halves: the cache holds when
+    // nothing relevant moved, and it is dropped when it must be.
 
     testWidgets('a keystroke in one field does not rebuild its siblings', (
       tester,
@@ -483,9 +483,9 @@ void main() {
     // This pins the answer to "should a missing control be asserted or logged
     // so it fails loudly in development?" — it already does, from upstream,
     // with a more specific message than this widget could add. Resolution
-    // failing is deliberately not softened into a silent no-op field (#186,
-    // D3): a field bound to nothing the form holds would take the user's input
-    // and drop it.
+    // failing is deliberately not softened into a silent no-op field (#186): a
+    // field bound to nothing the form holds would take the user's input and
+    // drop it.
     //
     // The sibling case — a control removed from the group while its field is
     // mounted — behaves the same way and is deliberately *not* pinned here. It

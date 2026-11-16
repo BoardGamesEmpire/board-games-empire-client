@@ -30,7 +30,7 @@ void main() {
   void add(String key, _Entry entry) =>
       rehydrator.register(key, isStale: entry.isStale, run: entry.run);
 
-  group('SessionRehydratorImpl — what a pass re-runs (#302 D4)', () {
+  group('SessionRehydratorImpl — what a pass re-runs (#302)', () {
     test('runs an entry that reports itself stale', () async {
       final entry = _Entry();
       add('household', entry);
@@ -78,7 +78,7 @@ void main() {
     });
   });
 
-  group('SessionRehydratorImpl — one pass at a time (#302 D3)', () {
+  group('SessionRehydratorImpl — one pass at a time (#302)', () {
     test('a pass triggered while one is in flight joins it rather than '
         'running the entries twice', () async {
       final entry = _Entry()..gate = Completer<void>();

@@ -527,7 +527,7 @@ void main() {
     });
 
     test('a store fault is skipped, not reaped — unreadability is never a '
-        'reason to delete (#292 D6)', () async {
+        'reason to delete (#292)', () async {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       await sink.persist(record('survivor'));

@@ -26,14 +26,14 @@ import 'package:interfaces/services.dart';
 /// the estimate is only (re)established when **two consecutive samples
 /// agree** within [stepAgreementTolerance] — one anomalous `Date` (a
 /// misconfigured intermediary, a transient server fault, or a
-/// hostile-but-bounded response under locked decision D3's trust
-/// model) cannot yank the estimate on its own. Once established,
+/// hostile-but-bounded response from a server the client already trusts for
+/// auth, per #12) cannot yank the estimate on its own. Once established,
 /// samples within [outlierGate] of the estimate are folded in with an
-/// exponentially-weighted moving average ([smoothingFactor]) to damp
-/// latency noise; samples outside the gate are quarantined and only
-/// take effect if the next sample agrees with them (a genuine server
-/// clock change re-steps after two confirming responses; a lone spike
-/// is discarded when normal traffic resumes).
+/// exponentially-weighted moving average ([smoothingFactor]) to damp latency
+/// noise; samples outside the gate are quarantined and only take effect if the
+/// next sample agrees with them (a genuine server clock change re-steps after
+/// two confirming responses; a lone spike is discarded when normal traffic
+/// resumes).
 ///
 /// ## Sample hygiene
 ///

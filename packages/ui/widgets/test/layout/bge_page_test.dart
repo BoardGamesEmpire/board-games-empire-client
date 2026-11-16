@@ -245,7 +245,7 @@ void main() {
     });
   });
 
-  // ── #231 D1: the footer/FAB exclusion is a real runtime guard ──────
+  // ── #231: the footer/FAB exclusion is a real runtime guard ─────────
   //
   // It used to be an `assert`, which compiles away outside debug — so the
   // invariant was unenforced in exactly the builds users run. It is now a

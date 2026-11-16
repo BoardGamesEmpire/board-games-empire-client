@@ -15,7 +15,7 @@ class _Entry {
   final Future<void> Function() run;
 }
 
-/// Session-scoped [SessionRehydrator] (#302 D2).
+/// Session-scoped [SessionRehydrator] (#302).
 ///
 /// Registered by a leading `UserScopeInstaller` and disposed with the
 /// session scope, so the "no re-run without an active session" rule is

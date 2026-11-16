@@ -2,7 +2,7 @@ import 'package:di/src/session/session_rehydrator_impl.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
-/// Installs the session's [SessionRehydrator] (#302 D2).
+/// Installs the session's [SessionRehydrator] (#302).
 ///
 /// Must run **first** in the user-scope installer list: the hydrating
 /// installers after it resolve this to register themselves, and installers
