@@ -453,8 +453,8 @@ class _DataExportViewState extends State<_DataExportView>
     ];
   }
 
-  /// The names of the categories [keys] name, in order. A key no exporter
-  /// here has is shown as it is.
+  /// The names of the categories [keys] name, in order. A key with no
+  /// exporter here is shown as it is.
   String _categoryNames(BuildContext context, List<String> keys) => [
     for (final key in keys)
       switch (_screen.exporters
