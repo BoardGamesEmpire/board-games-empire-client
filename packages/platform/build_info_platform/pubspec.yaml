@@ -1,0 +1,25 @@
+name: build_info_platform
+description: "Shared build metadata: package_info_plus-backed BuildInfoReader (#196)"
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  package_info_plus: ^10.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

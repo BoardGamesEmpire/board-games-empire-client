@@ -10,9 +10,9 @@ import 'package:interfaces/src/services/connectivity_state.dart';
 /// it.
 ///
 /// The concrete implementation lives in
-/// `packages/platform/connectivity_platform` (shared across native and
-/// web — `connectivity_plus` is federated, so the twin-package split
-/// used for `BuildInfoReader` is unnecessary here).
+/// `packages/platform/connectivity_platform`, shared across native and
+/// web because `connectivity_plus` is federated. `BuildInfoReader`'s
+/// implementation follows the same shape in `build_info_platform`.
 abstract interface class ConnectivityService {
   /// Current connectivity state.
   ///

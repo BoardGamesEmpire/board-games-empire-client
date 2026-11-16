@@ -129,6 +129,7 @@ workspace:
   - packages/platform/desktop
   - packages/platform/native_platform
   - packages/platform/connectivity_platform
+  - packages/platform/build_info_platform
   - packages/platform/web
   - packages/testing/l10n
   - packages/testing/support

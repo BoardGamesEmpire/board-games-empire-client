@@ -14,6 +14,8 @@ dependencies:
   app_links: ^7.2.1
   app_shell:
     path: ../../app_shell
+  build_info_platform:
+    path: ../build_info_platform
   connectivity_platform:
     path: ../connectivity_platform
   data_gateway:
@@ -47,7 +49,6 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
-  package_info_plus: ^10.2.1
   path_provider: ^2.1.3
   server_settings:
     path: ../../features/server_settings

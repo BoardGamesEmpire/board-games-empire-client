@@ -86,7 +86,7 @@ packages/
   app_shell                     bootstrap, routing, shell screens
   core/{models,interfaces,di,observability}
   features/{auth,feedback,household,server_onboarding}
-  platform/{mobile,desktop,web,native_platform,connectivity_platform}
+  platform/{mobile,desktop,web,native_platform,connectivity_platform,build_info_platform}
   storage/{drift_storage,web_storage,key_storage,storage_interface}
   network/{dio_network,web_network,network_interface}
   ui/{tokens,widgets}

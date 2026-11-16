@@ -6,11 +6,11 @@ Provides `ConnectivityPlusService`, the concrete implementation of the
 `ConnectivityService` contract from `interfaces`, backed by the
 `connectivity_plus` plugin.
 
-Unlike `BuildInfoReader` — which is split into native and web twins to keep
-platform dependencies out of the wrong build — this package is **shared** by
-both the native and web composition roots. `connectivity_plus` is a federated
-plugin (js_interop on web), so a single package resolves to the right
-platform implementation at build time without dependency bleed.
+This package is **shared** by both the native and web composition roots.
+`connectivity_plus` is a federated plugin (js_interop on web), so a single
+package resolves to the right platform implementation at build time without
+dependency bleed. `BuildInfoReader` follows the same shape in
+`build_info_platform`.
 
 ## Behaviour
 

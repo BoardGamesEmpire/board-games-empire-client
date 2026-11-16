@@ -1,3 +1,4 @@
+import 'package:build_info_platform/build_info_platform.dart';
 import 'package:connectivity_platform/connectivity_platform.dart';
 import 'package:di/di.dart';
 import 'package:game_collection/game_collection.dart';
@@ -6,8 +7,6 @@ import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
-
-import 'package:web_platform/src/build_info/package_info_build_info_reader.dart';
 
 /// Registers the web device-global services into the root container
 /// (#72).
@@ -19,10 +18,10 @@ import 'package:web_platform/src/build_info/package_info_build_info_reader.dart'
 /// [ConnectivityService] maps to `@lazySingleton`).
 /// Aggregation-by-import in this web composition root (rather than
 /// injectable environments) is what keeps native modules out of web
-/// builds at compile time, and vice versa. `connectivity_platform` is
-/// the deliberate exception to the twin-package split: the plugin is
-/// federated (js_interop on web), so one shared package serves both
-/// composition roots without dependency bleed (#9).
+/// builds at compile time, and vice versa. `connectivity_platform` (#9)
+/// and `build_info_platform` (#196) are shared with native on purpose:
+/// each wraps a federated plugin (js_interop on web), so one package
+/// serves both composition roots without dependency bleed.
 ///
 /// Contract (see `PlatformBootstrap.createRootContainer`): registrations
 /// must be defensive — a recoverable platform-read failure registers a
