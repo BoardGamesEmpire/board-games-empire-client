@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:household/l10n/household_localizations.dart';
-import 'package:household/src/widgets/household_name_validator.dart';
 import 'package:models/domain.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
@@ -99,7 +98,9 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
     _form = FormGroup({
       'name': FormControl<String>(
         value: initial.name,
-        validators: [Validators.delegate(requiredTrimmed)],
+        // The server accepts a blank name (backend#884), so this validator
+        // is the only guard.
+        validators: [Validators.required],
       ),
       'description': FormControl<String>(value: initial.description),
       'policy': FormControl<MemberInvitePolicy>(

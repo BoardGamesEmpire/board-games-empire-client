@@ -169,6 +169,21 @@ void main() {
       expect(remote.calls, isEmpty);
     });
 
+    testWidgets('a name or address of spaces is refused inline, and nothing '
+        'is saved', (tester) async {
+      await pumpForm(tester);
+
+      await enter(tester, DataGatewayForm.nameFieldKey, '   ');
+      await enter(tester, DataGatewayForm.addressFieldKey, '   ');
+      await enter(tester, DataGatewayForm.portFieldKey, '50051');
+      await submit(tester);
+
+      expect(find.text('Enter a name.'), findsOneWidget);
+      expect(find.text('Enter a connection address.'), findsOneWidget);
+      expect(remote.calls, isEmpty);
+      expect(doneCount, 0);
+    });
+
     testWidgets('a name already in use is said so, and the form stays', (
       tester,
     ) async {

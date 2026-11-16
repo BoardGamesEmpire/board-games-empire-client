@@ -88,8 +88,7 @@ void main() {
       expect(model.validateForSubmit(), isTrue);
     });
 
-    test('whitespace-only message is invalid (required-after-trim, '
-        'PR #110 review)', () {
+    test('whitespace-only message is invalid', () {
       setSeverity(FeedbackSeverity.low);
       setMessage('   ');
       expect(
