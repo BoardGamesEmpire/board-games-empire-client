@@ -343,6 +343,28 @@ void main() {
         },
         timeout: const Timeout(Duration(seconds: 2)),
       );
+
+      test(
+        'a pass given up on that lands during the read leaves it '
+        'unconfirmed',
+        () async {
+          final status = registerStatus()..started();
+          // The read the give-up starts outlasts the pass: the rows it
+          // returns may predate what the pass lands.
+          when(() => repository.watchCollectionListItems()).thenAnswer((_) {
+            calls.add('read');
+            status.finished(CollectionHydrateOutcome.complete);
+            return Stream.value(const []);
+          });
+
+          final export = await short.export(server);
+
+          expect(calls, ['read']);
+          expect(status.state, HydrationState.refreshed);
+          expect(export!.confirmed, isFalse);
+        },
+        timeout: const Timeout(Duration(seconds: 2)),
+      );
     });
 
     test(
