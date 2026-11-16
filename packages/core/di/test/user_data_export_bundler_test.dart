@@ -8,23 +8,18 @@ import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
-class _MockServerContext extends Mock implements ServerContext {}
-
 class _MockDependencyContainer extends Mock implements DependencyContainer {}
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
-class _MockServerRepository extends Mock implements ServerRepository {}
-
 class _MockUserDataExporter extends Mock implements UserDataExporter {}
 
-const _localServerId = 'local-cuid-1';
 const _bgeServerId = 'bge-uuid-1234';
 
 // The locally-editable nickname deliberately differs from the
-// server-vended identity name, so the envelope test pins `serverName`
+// server-vended identity name, so the envelope tests pin `serverName`
 // to the vended source rather than the nickname.
-const _displayNameNickname = 'My Home Server';
+const _displayNameNickname = 'My nickname';
 const _vendedServerName = 'Example BGE';
 
 const _buildInfo = BuildInfo(
@@ -44,62 +39,66 @@ ServerIdentity _identity() => testServerIdentity().copyWith(
   name: _vendedServerName,
 );
 
-ServerConfig _serverConfig() => ServerConfig(
-  id: _localServerId,
-  displayName: _displayNameNickname,
-  serverUrl: 'https://bge.example.com',
-  connectionState: ConnectionState.active,
-  bgeServerId: _bgeServerId,
-  cachedIdentity: _identity(),
-  lastIdentityFetchedAt: DateTime.utc(2026, 7),
-);
-
 void main() {
+  late ActiveServer server;
+
   setUpAll(() {
-    registerFallbackValue(_MockServerContext());
+    registerFallbackValue(
+      ActiveServer(
+        serverId: 'fallback',
+        displayName: 'fallback',
+        identity: _identity(),
+        container: _MockDependencyContainer(),
+      ),
+    );
   });
 
   group('UserDataExportBundler', () {
-    late _MockServerContext context;
     late _MockDependencyContainer container;
     late _MockAuthRepository authRepository;
-    late _MockServerRepository serverRepository;
     late UserDataExportRegistryImpl registry;
 
     setUp(() {
-      context = _MockServerContext();
       container = _MockDependencyContainer();
       authRepository = _MockAuthRepository();
-      serverRepository = _MockServerRepository();
       registry = UserDataExportRegistryImpl();
+      server = ActiveServer(
+        serverId: 'local-1',
+        displayName: _displayNameNickname,
+        identity: _identity(),
+        container: container,
+      );
 
-      when(() => context.serverId).thenReturn(_localServerId);
-      when(() => context.container).thenReturn(container);
       when(() => container.get<AuthRepository>()).thenReturn(authRepository);
     });
 
     UserDataExportBundler bundler({DateTime Function()? now}) =>
         UserDataExportBundler(
           registry: registry,
-          serverRepository: serverRepository,
           buildInfo: _buildInfo,
           now: now ?? () => DateTime.utc(2026, 5, 17, 19, 33),
         );
 
     void stubAuthenticated() {
-      when(() => authRepository.getCachedSession())
-          .thenAnswer((_) async => _session);
-      when(() => serverRepository.getServer(_localServerId))
-          .thenAnswer((_) async => _serverConfig());
+      when(
+        () => authRepository.getCachedSession(),
+      ).thenAnswer((_) async => _session);
     }
 
     _MockUserDataExporter exporterReturning(
       String key,
-      Map<String, Object?>? payload,
-    ) {
+      Map<String, Object?>? payload, {
+      bool confirmed = true,
+    }) {
       final exporter = _MockUserDataExporter();
       when(() => exporter.key).thenReturn(key);
-      when(() => exporter.export(context)).thenAnswer((_) async => payload);
+      when(
+        () => exporter.export(server, refresh: any(named: 'refresh')),
+      ).thenAnswer(
+        (_) async => payload == null
+            ? null
+            : UserDataExport(payload, confirmed: confirmed),
+      );
       return exporter;
     }
 
@@ -111,17 +110,13 @@ void main() {
           exporterReturning('gameCollection', {'entries': <Object?>[]}),
         );
 
-      final bundle = await bundler().assemble(context);
+      final bundle = await bundler().assemble(server);
 
-      expect(bundle, {
+      expect(bundle.json, {
         'schemaVersion': 1,
         'bgeClientVersion': '0.1.0',
         'exportedAt': '2026-05-17T19:33:00.000Z',
-        // The stable server-vended id (data-controller identity),
-        // NOT the local ServerConfig.id the context is keyed by.
         'serverId': _bgeServerId,
-        // The server-vended identity name, NOT the locally-editable
-        // displayName nickname ('My Home Server').
         'serverName': _vendedServerName,
         'userId': 'user-1',
         'categories': {
@@ -129,16 +124,22 @@ void main() {
           'gameCollection': {'entries': <Object?>[]},
         },
       });
+      expect(bundle.unconfirmedKeys, isEmpty);
     });
 
-    test('serverName is the vended identity name, not the nickname', () async {
-      stubAuthenticated();
+    test(
+      'serverId and serverName come from the active server identity',
+      () async {
+        stubAuthenticated();
 
-      final bundle = await bundler().assemble(context);
+        final bundle = await bundler().assemble(server);
 
-      expect(bundle['serverName'], _vendedServerName);
-      expect(bundle['serverName'], isNot(_displayNameNickname));
-    });
+        expect(bundle.json['serverId'], server.identity.serverId);
+        expect(bundle.json['serverName'], server.identity.name);
+        expect(bundle.json['serverName'], isNot(_displayNameNickname));
+        expect(bundle.json['serverId'], isNot(server.serverId));
+      },
+    );
 
     test('categories preserve registration order', () async {
       stubAuthenticated();
@@ -146,61 +147,107 @@ void main() {
         ..register(exporterReturning('profile', {'a': 1}))
         ..register(exporterReturning('gameCollection', {'b': 2}));
 
-      final bundle = await bundler().assemble(context);
-      final categories = bundle['categories']! as Map<String, Object?>;
+      final bundle = await bundler().assemble(server);
+      final categories = bundle.json['categories']! as Map<String, Object?>;
 
       expect(categories.keys.toList(), ['profile', 'gameCollection']);
     });
 
-    test('a null payload omits the category entirely', () async {
+    test('a null export omits the category entirely', () async {
       stubAuthenticated();
       registry
         ..register(exporterReturning('empty', null))
         ..register(exporterReturning('profile', {'username': 'alice'}));
 
-      final bundle = await bundler().assemble(context);
-      final categories = bundle['categories']! as Map<String, Object?>;
+      final bundle = await bundler().assemble(server);
+      final categories = bundle.json['categories']! as Map<String, Object?>;
 
       expect(categories, hasLength(1));
       expect(categories, isNot(contains('empty')));
       expect(categories, contains('profile'));
+      expect(bundle.unconfirmedKeys, isEmpty);
     });
 
     test('an empty registry yields an empty categories object', () async {
       stubAuthenticated();
 
-      final bundle = await bundler().assemble(context);
+      final bundle = await bundler().assemble(server);
 
-      expect(bundle['categories'], equals(<String, Object?>{}));
+      expect(bundle.json['categories'], equals(<String, Object?>{}));
     });
 
-    test('a null cached session throws ExportNotAuthenticatedException '
-        'before any server lookup or exporter runs', () async {
-      when(() => authRepository.getCachedSession())
-          .thenAnswer((_) async => null);
+    test('unconfirmedKeys lists the categories whose export is not '
+        'confirmed, in registration order', () async {
+      stubAuthenticated();
+      registry
+        ..register(exporterReturning('a', {'a': 1}))
+        ..register(exporterReturning('b', {'b': 2}, confirmed: false))
+        ..register(exporterReturning('c', {'c': 3}, confirmed: false));
+
+      final bundle = await bundler().assemble(server);
+
+      expect(bundle.unconfirmedKeys, ['b', 'c']);
+      expect(
+        (bundle.json['categories']! as Map<String, Object?>).keys,
+        ['a', 'b', 'c'],
+      );
+      expect(() => bundle.unconfirmedKeys.add('d'), throwsUnsupportedError);
+    });
+
+    test('refresh is passed to every exporter', () async {
+      stubAuthenticated();
+      final first = exporterReturning('first', {'a': 1});
+      final second = exporterReturning('second', {'b': 2});
+      registry
+        ..register(first)
+        ..register(second);
+
+      await bundler().assemble(server, refresh: true);
+
+      verify(() => first.export(server, refresh: true)).called(1);
+      verify(() => second.export(server, refresh: true)).called(1);
+    });
+
+    test('refresh defaults to false', () async {
+      stubAuthenticated();
+      final exporter = exporterReturning('first', {'a': 1});
+      registry.register(exporter);
+
+      await bundler().assemble(server);
+
+      verify(() => exporter.export(server)).called(1);
+    });
+
+    test('no exporter runs before the session gate passes: a null cached '
+        'session throws ExportNotAuthenticatedException', () async {
+      when(
+        () => authRepository.getCachedSession(),
+      ).thenAnswer((_) async => null);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
       await expectLater(
-        () => bundler().assemble(context),
+        () => bundler().assemble(server),
         throwsA(isA<ExportNotAuthenticatedException>()),
       );
 
-      verifyNever(() => serverRepository.getServer(any()));
-      verifyNever(() => exporter.export(any()));
+      verifyNever(
+        () => exporter.export(any(), refresh: any(named: 'refresh')),
+      );
     });
 
     test('a session-read AuthException is wrapped as '
-        'ExportSessionUnavailableException (web-offline path) with the '
-        'cause preserved and no server lookup or exporter runs', () async {
+        'ExportSessionUnavailableException with the cause preserved and no '
+        'exporter runs', () async {
       const authFailure = AuthNetworkException(message: 'No connection.');
-      when(() => authRepository.getCachedSession())
-          .thenAnswer((_) async => throw authFailure);
+      when(
+        () => authRepository.getCachedSession(),
+      ).thenAnswer((_) async => throw authFailure);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
       await expectLater(
-        () => bundler().assemble(context),
+        () => bundler().assemble(server),
         throwsA(
           isA<ExportSessionUnavailableException>().having(
             (e) => e.cause,
@@ -210,72 +257,101 @@ void main() {
         ),
       );
 
-      verifyNever(() => serverRepository.getServer(any()));
-      verifyNever(() => exporter.export(any()));
-    });
-
-    test('a null server config throws ExportUnknownServerException '
-        'with the unresolved id, a null cause, and no exporter runs', () async {
-      when(() => authRepository.getCachedSession())
-          .thenAnswer((_) async => _session);
-      when(() => serverRepository.getServer(_localServerId))
-          .thenAnswer((_) async => null);
-      final exporter = exporterReturning('profile', {'a': 1});
-      registry.register(exporter);
-
-      await expectLater(
-        () => bundler().assemble(context),
-        throwsA(
-          isA<ExportUnknownServerException>()
-              .having((e) => e.serverId, 'serverId', _localServerId)
-              .having((e) => e.cause, 'cause', isNull),
-        ),
+      verifyNever(
+        () => exporter.export(any(), refresh: any(named: 'refresh')),
       );
-
-      verifyNever(() => exporter.export(any()));
-    });
-
-    test('a CorruptedServerIdentityException is wrapped as '
-        'ExportUnknownServerException with the cause preserved and no '
-        'exporter runs', () async {
-      when(() => authRepository.getCachedSession())
-          .thenAnswer((_) async => _session);
-      const corruption = CorruptedServerIdentityException(
-        _localServerId,
-        FormatException('bad identity blob'),
-      );
-      when(() => serverRepository.getServer(_localServerId))
-          .thenAnswer((_) async => throw corruption);
-      final exporter = exporterReturning('profile', {'a': 1});
-      registry.register(exporter);
-
-      await expectLater(
-        () => bundler().assemble(context),
-        throwsA(
-          isA<ExportUnknownServerException>()
-              .having((e) => e.serverId, 'serverId', _localServerId)
-              .having((e) => e.cause, 'cause', same(corruption)),
-        ),
-      );
-
-      verifyNever(() => exporter.export(any()));
     });
 
     test('an exporter failure fails the whole bundle fast', () async {
       stubAuthenticated();
       final failing = _MockUserDataExporter();
       when(() => failing.key).thenReturn('failing');
-      when(() => failing.export(context))
-          .thenAnswer((_) async => throw StateError('boom'));
+      when(
+        () => failing.export(server, refresh: any(named: 'refresh')),
+      ).thenAnswer((_) async => throw StateError('boom'));
       final later = exporterReturning('later', {'a': 1});
       registry
         ..register(failing)
         ..register(later);
 
-      await expectLater(() => bundler().assemble(context), throwsStateError);
+      await expectLater(() => bundler().assemble(server), throwsStateError);
 
-      verifyNever(() => later.export(any()));
+      verifyNever(() => later.export(any(), refresh: any(named: 'refresh')));
     });
+
+    // An exporter whose scope is torn down mid-export answers null, as
+    // the collection exporter does when its repository is gone; the
+    // session read after it reflects the change [change] made.
+    _MockUserDataExporter exporterEndingSession(void Function() change) {
+      final exporter = _MockUserDataExporter();
+      when(() => exporter.key).thenReturn('gameCollection');
+      when(
+        () => exporter.export(server, refresh: any(named: 'refresh')),
+      ).thenAnswer((_) async {
+        change();
+        return null;
+      });
+      return exporter;
+    }
+
+    test(
+      'a session that ends while the exporters run fails the export',
+      () async {
+        AuthResponse? current = _session;
+        when(
+          () => authRepository.getCachedSession(),
+        ).thenAnswer((_) async => current);
+        registry.register(exporterEndingSession(() => current = null));
+
+        await expectLater(
+          () => bundler().assemble(server),
+          throwsA(isA<ExportNotAuthenticatedException>()),
+        );
+      },
+    );
+
+    test('a different user by the end fails the export', () async {
+      AuthResponse? current = _session;
+      when(
+        () => authRepository.getCachedSession(),
+      ).thenAnswer((_) async => current);
+      registry.register(
+        exporterEndingSession(
+          () => current = _session.copyWith.user(id: 'user-2'),
+        ),
+      );
+
+      await expectLater(
+        () => bundler().assemble(server),
+        throwsA(isA<ExportNotAuthenticatedException>()),
+      );
+    });
+
+    test(
+      'a failing second session read is a session-unavailable failure',
+      () async {
+        const authFailure = AuthNetworkException(message: 'No connection.');
+        var reads = 0;
+        when(() => authRepository.getCachedSession()).thenAnswer((_) async {
+          reads += 1;
+          if (reads > 1) throw authFailure;
+          return _session;
+        });
+        registry.register(exporterReturning('profile', {'a': 1}));
+
+        await expectLater(
+          () => bundler().assemble(server),
+          throwsA(
+            isA<ExportSessionUnavailableException>().having(
+              (e) => e.cause,
+              'cause',
+              same(authFailure),
+            ),
+          ),
+        );
+        expect(reads, 2);
+      },
+    );
 
     test(
       'exportedAt converts an injected local clock to UTC ISO-8601',
@@ -283,9 +359,9 @@ void main() {
         stubAuthenticated();
         final local = DateTime(2026, 5, 17, 12);
 
-        final bundle = await bundler(now: () => local).assemble(context);
+        final bundle = await bundler(now: () => local).assemble(server);
 
-        expect(bundle['exportedAt'], local.toUtc().toIso8601String());
+        expect(bundle.json['exportedAt'], local.toUtc().toIso8601String());
       },
     );
 
@@ -295,11 +371,10 @@ void main() {
 
       final bundle = await UserDataExportBundler(
         registry: registry,
-        serverRepository: serverRepository,
         buildInfo: _buildInfo,
-      ).assemble(context);
+      ).assemble(server);
 
-      final exportedAt = DateTime.parse(bundle['exportedAt']! as String);
+      final exportedAt = DateTime.parse(bundle.json['exportedAt']! as String);
       expect(exportedAt.isUtc, isTrue);
       expect(
         exportedAt.isAfter(before.subtract(const Duration(seconds: 5))),

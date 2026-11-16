@@ -3,9 +3,9 @@
 ///
 /// Sealed so the export-confirmation UI (#93) can switch exhaustively
 /// and localize each failure. The bundler is responsible for mapping
-/// every foreseeable lower-layer failure (auth, server-config lookup)
-/// into this hierarchy — an untyped exception escaping here would break
-/// the UI's exhaustive handling.
+/// every foreseeable lower-layer failure (the session read) into this
+/// hierarchy — an untyped exception escaping here would break the UI's
+/// exhaustive handling.
 sealed class UserDataExportException implements Exception {
   const UserDataExportException({required this.message, this.cause});
 
@@ -40,41 +40,13 @@ final class ExportNotAuthenticatedException extends UserDataExportException {
 /// The session state could not be determined, so export cannot safely
 /// proceed.
 ///
-/// The per-server `AuthRepository.getCachedSession` is a local read on
-/// native but delegates to the network on web (httpOnly cookies are
-/// opaque). Offline on web it raises an `AuthException`; the bundler
-/// wraps that here rather than letting it escape the sealed hierarchy.
-/// [cause] is the originating `AuthException`.
+/// The per-server `AuthRepository.getCachedSession` raised an
+/// `AuthException` (for example an unreadable secure store); the
+/// bundler wraps it here rather than letting it escape the sealed
+/// hierarchy. [cause] is the originating `AuthException`.
 final class ExportSessionUnavailableException extends UserDataExportException {
   const ExportSessionUnavailableException({
     required Object super.cause,
-    super.message =
-        'Your session could not be verified. Check your connection and '
-        'try again.',
+    super.message = 'The cached session could not be read on this device.',
   });
-}
-
-/// The server for the `ServerContext.serverId` being exported could not
-/// be resolved, so the bundle's `serverId` / `serverName` metadata
-/// cannot be sourced.
-///
-/// Covers two cases the export flow treats identically — both are a
-/// dead end for producing this server's bundle:
-/// - no `ServerConfig` row exists for the id, or
-/// - the row exists but its cached identity is unreadable
-///   (`CorruptedServerIdentityException`), whose recovery is removing
-///   and re-adding the server.
-///
-/// [cause] carries the distinction (non-null for the corrupted-identity
-/// case) for callers that need it.
-final class ExportUnknownServerException extends UserDataExportException {
-  ExportUnknownServerException({required this.serverId, super.cause})
-    : super(
-        message:
-            'No server configuration could be resolved for id "$serverId". '
-            'It may be missing, or its stored identity may be unreadable.',
-      );
-
-  /// The local server id (`ServerConfig.id`) that failed to resolve.
-  final String serverId;
 }

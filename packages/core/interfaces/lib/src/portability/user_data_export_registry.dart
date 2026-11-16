@@ -6,7 +6,7 @@ import 'package:interfaces/src/portability/user_data_exporter.dart';
 /// GetIt has no multibinding, so registration is explicit and mutable:
 /// the concrete registry is registered once in the root container and
 /// features append to it. Exporters are stateless and receive the
-/// `ServerContext` at call time, so root-scoped registration is safe
+/// `ActiveServer` at call time, so root-scoped registration is safe
 /// across server switches.
 abstract interface class UserDataExportRegistry {
   /// Registers [exporter].

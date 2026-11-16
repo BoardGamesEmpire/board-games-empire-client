@@ -7,9 +7,10 @@ import 'package:models/dto.dart';
 /// Assembles the per-server user-data export bundle (GDPR Article 20,
 /// #11).
 ///
-/// Pure coordinator: no file IO and no new dependencies. Persistence of
-/// the returned bundle (file picker / web download) is #92; the
-/// confirmation UI is #93; merging the server-side bundle is #94.
+/// Pure coordinator over the registered exporters: no file IO. Saving the
+/// returned bundle is the platform's `UserDataExportSink` (#92), and the
+/// screen that drives it is the `data_export` feature (#93). Merging a
+/// server-side bundle is still #94.
 ///
 /// ## Envelope
 ///
@@ -27,131 +28,123 @@ import 'package:models/dto.dart';
 ///
 /// - `schemaVersion` versions the bundle *format*, independent of the
 ///   client version ([schemaVersion]).
-/// - `bgeClientVersion` is [BuildInfo.version] — the root-scope
-///   singleton read once at boot (#35).
-/// - `exportedAt` is ISO-8601 UTC from the injected `now` clock,
-///   injectable for deterministic tests.
-/// - `serverId` is the stable, server-vended [ServerConfig.bgeServerId]
-///   and `serverName` is the server-vended [ServerIdentity.name] from
-///   the cached identity — NOT the locally-editable
-///   [ServerConfig.displayName] nickname. Both name the *data
-///   controller*: the export is a legal-rights artifact, so its server
-///   identity must be the authoritative server-vended values, not a
-///   value the user can rename.
-/// - `userId` comes from the cached per-server session
-///   ([AuthRepository.getCachedSession]). Export requires an
+/// - `bgeClientVersion` is the client's version: [BuildInfo.version], the
+///   root-scope singleton read once at boot (#35).
+/// - `exportedAt` is ISO-8601 UTC, from the injected `now` clock
+///   (injectable for deterministic tests).
+/// - `serverId` and `serverName` are the server-vended identity of the
+///   *data controller*: [ServerIdentity.serverId] and
+///   [ServerIdentity.name] from [ActiveServer.identity], NOT the
+///   client-local [ActiveServer.serverId] key or the locally-editable
+///   [ActiveServer.displayName] nickname. The export is a legal-rights
+///   artifact, so its server identity must be the authoritative values,
+///   not one the user can rename.
+/// - `userId` is the signed-in user's id, from the cached per-server
+///   session ([AuthRepository.getCachedSession]). Export requires an
 ///   authenticated session.
 /// - Only exporters returning non-null appear under `categories`, in
-///   registration order.
+///   registration order. [UserDataExportBundle.unconfirmedKeys] names
+///   the ones whose data the server hasn't confirmed.
 ///
 /// ## Failure semantics
 ///
 /// Every foreseeable lower-layer failure is mapped into the sealed
 /// [UserDataExportException] hierarchy that #93's UI switches on:
-/// - No session ([AuthRepository.getCachedSession] returns null) →
-///   [ExportNotAuthenticatedException].
-/// - The session read itself fails (an `AuthException` — e.g. an
-///   unreadable secure store) → [ExportSessionUnavailableException],
-///   wrapping the originating `AuthException`.
+/// - No session → [ExportNotAuthenticatedException]. No exporter runs
+///   before this gate passes.
+/// - A session that ends while the exporters run, or that belongs to a
+///   different user by the time they finish → also
+///   [ExportNotAuthenticatedException], and no bundle. An exporter that
+///   finds the user's scope already torn down answers `null`, which would
+///   otherwise leave its category silently out of a bundle the screen
+///   reports as saved.
+/// - Either session read itself fails (an `AuthException`) →
+///   [ExportSessionUnavailableException], wrapping the originating
+///   failure with its stack trace preserved
+///   ([Error.throwWithStackTrace]).
 ///
-///   No longer reachable via web being offline: `getCachedSession` was a
-///   network call on web until #284, and is now the pure local read the
-///   contract always specified. Both platforms serve it from the in-memory
-///   session when there is one, so a signed-in user's export does not
-///   depend on connectivity — which is the right answer for a portability
-///   right (#11), since the bundle is assembled from local data.
-/// - No server config, or an unreadable cached identity
-///   (`CorruptedServerIdentityException`), for
-///   [ServerContext.serverId] → [ExportUnknownServerException].
-///
-/// Wrapping preserves the original stack trace via
-/// [Error.throwWithStackTrace]. Anything outside these anticipated
-/// failures (including exporter errors) propagates unchanged — a GDPR
-/// export must be complete or fail legibly, so a failing exporter fails
-/// the whole bundle fast rather than silently dropping a category.
-/// Sequencing is pinned by tests: no server lookup and no exporter runs
-/// before the session gate passes.
+/// Anything outside these anticipated failures (including exporter
+/// errors) propagates unchanged: a GDPR export must be complete or fail
+/// legibly, so a failing exporter fails the whole bundle fast rather
+/// than silently dropping a category.
 class UserDataExportBundler {
   UserDataExportBundler({
     required this._registry,
-    required this._serverRepository,
     required this._buildInfo,
     this._now = _defaultNow,
   });
-
-  static DateTime _defaultNow() => DateTime.now();
 
   /// Version of the bundle format itself, independent of the client
   /// version. Bump only on a breaking envelope-shape change.
   static const int schemaVersion = 1;
 
+  static DateTime _defaultNow() => DateTime.now();
+
   final UserDataExportRegistry _registry;
-  final ServerRepository _serverRepository;
   final BuildInfo _buildInfo;
   final DateTime Function() _now;
 
-  /// Assembles the export bundle for the server represented by
-  /// [context].
+  /// Assembles the export bundle for [server].
+  ///
+  /// [refresh] is passed to every exporter, asking it to bring its cache
+  /// up to date first.
   ///
   /// Throws a [UserDataExportException] for every anticipated failure
   /// (see the class doc's *Failure semantics*). Exporter failures
   /// propagate unchanged.
-  Future<Map<String, Object?>> assemble(ServerContext context) async {
-    final session = await _readCachedSession(context);
+  Future<UserDataExportBundle> assemble(
+    ActiveServer server, {
+    bool refresh = false,
+  }) async {
+    final session = await _readCachedSession(server);
     if (session == null) {
       throw const ExportNotAuthenticatedException();
     }
 
-    final config = await _resolveServerConfig(context.serverId);
-    if (config == null) {
-      throw ExportUnknownServerException(serverId: context.serverId);
-    }
-
     final categories = <String, Object?>{};
+    final unconfirmedKeys = <String>[];
     for (final exporter in _registry.exporters) {
-      final payload = await exporter.export(context);
-      if (payload != null) {
-        categories[exporter.key] = payload;
+      final export = await exporter.export(server, refresh: refresh);
+      if (export != null) {
+        categories[exporter.key] = export.data;
+        if (!export.confirmed) {
+          unconfirmedKeys.add(exporter.key);
+        }
       }
     }
 
-    return <String, Object?>{
-      'schemaVersion': schemaVersion,
-      'bgeClientVersion': _buildInfo.version,
-      'exportedAt': _now().toUtc().toIso8601String(),
-      'serverId': config.bgeServerId,
-      'serverName': config.cachedIdentity.name,
-      'userId': session.user.id,
-      'categories': categories,
-    };
+    // An exporter that found the user's scope torn down answered null;
+    // only a session still held by the same user vouches for the bundle.
+    final sessionAfter = await _readCachedSession(server);
+    if (sessionAfter == null || sessionAfter.user.id != session.user.id) {
+      throw const ExportNotAuthenticatedException();
+    }
+
+    return UserDataExportBundle(
+      json: <String, Object?>{
+        'schemaVersion': schemaVersion,
+        'bgeClientVersion': _buildInfo.version,
+        'exportedAt': _now().toUtc().toIso8601String(),
+        'serverId': server.identity.serverId,
+        'serverName': server.identity.name,
+        'userId': session.user.id,
+        'categories': categories,
+      },
+      unconfirmedKeys: List.unmodifiable(unconfirmedKeys),
+    );
   }
 
-  /// Reads the cached session, mapping any `AuthException` (e.g. a web
-  /// offline network failure) into [ExportSessionUnavailableException]
-  /// while preserving the original stack trace. A `null` return is a
-  /// settled "unauthenticated" answer and is handled by the caller.
-  Future<AuthResponse?> _readCachedSession(ServerContext context) async {
-    final authRepository = context.container.get<AuthRepository>();
+  /// Reads the cached session, mapping any `AuthException` into
+  /// [ExportSessionUnavailableException] while preserving the original
+  /// stack trace. A `null` return is a settled "unauthenticated" answer
+  /// and is handled by the caller.
+  Future<AuthResponse?> _readCachedSession(ActiveServer server) async {
+    final authRepository = server.container.get<AuthRepository>();
     try {
       return await authRepository.getCachedSession();
     } on AuthException catch (error, stackTrace) {
       Error.throwWithStackTrace(
         ExportSessionUnavailableException(cause: error),
-        stackTrace,
-      );
-    }
-  }
-
-  /// Resolves the [ServerConfig] for [serverId], mapping an unreadable
-  /// cached identity (`CorruptedServerIdentityException`) into
-  /// [ExportUnknownServerException] while preserving the original stack
-  /// trace. A `null` return (no such server) is handled by the caller.
-  Future<ServerConfig?> _resolveServerConfig(String serverId) async {
-    try {
-      return await _serverRepository.getServer(serverId);
-    } on CorruptedServerIdentityException catch (error, stackTrace) {
-      Error.throwWithStackTrace(
-        ExportUnknownServerException(serverId: serverId, cause: error),
         stackTrace,
       );
     }
