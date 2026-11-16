@@ -21,16 +21,16 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// ## The four surfaces
 ///
-/// Loading, empty, rows and error, from a sealed bloc state (#269 D6). The
-/// distinction that costs something is loading-versus-empty: the hydrate
-/// runs unawaited from sign-in (#267 D2), so this route can be reached with
-/// the cache empty and filling, and `watchHouseholds()` emits the same
-/// empty list either way. [hydration] is what tells them apart; absent, it
-/// reads as settled (#269 D1).
+/// Loading, empty, rows and error, from a sealed bloc state (#269). The
+/// distinction that costs something is loading-versus-empty: the hydrate runs
+/// unawaited from sign-in (#267), so this route can be reached with the cache
+/// empty and filling, and `watchHouseholds()` emits the same empty list either
+/// way. [hydration] is what tells them apart; absent, it reads as settled
+/// (#269).
 ///
 /// A failed refresh is a **banner over whatever we have**, not a state of
-/// its own (#269 D2) — including over the empty state, where it qualifies
-/// an emptiness we could not verify.
+/// its own (#269) — including over the empty state, where it qualifies an
+/// emptiness we could not verify.
 ///
 /// ## The retry, and what it does and does not announce (#300)
 ///
@@ -55,20 +55,19 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// stays on its empty state while a later one runs (#453).
 ///
 /// A pass **nobody asked for** — the #302 connectivity edge, an app resume
-/// — is not narrated (#300 D6). The banner simply clears when it succeeds,
-/// exactly as it did before. Announcing background work on a screen that
-/// otherwise says nothing is noise, and the user has no decision to make
-/// about it.
+/// — is not narrated (#300). The banner simply clears when it succeeds, exactly
+/// as it did before. Announcing background work on a screen that otherwise says
+/// nothing is noise, and the user has no decision to make about it.
 ///
 /// ## Rows navigate when there is somewhere to go (#270)
 ///
-/// #269 **D5** shipped rows as content rather than controls, because no
-/// household detail route existed and a tap target that leads nowhere is
-/// worse than none. #270 built that route, so a row with [onOpen] is a
-/// control: tappable, keyboard-activatable, and a focus stop.
+/// #269 shipped rows as content rather than controls, because no household
+/// detail route existed and a tap target that leads nowhere is worse than none.
+/// #270 built that route, so a row with [onOpen] is a control: tappable,
+/// keyboard-activatable, and a focus stop.
 ///
 /// The inert row is still what a caller gets without [onOpen], and that is
-/// not dead code — it is the same judgement D5 made, now expressed as a
+/// not dead code — it is the same judgement #269 made, now expressed as a
 /// condition instead of an era. A composition that cannot reach the detail
 /// screen should not offer a tap that does nothing.
 ///
@@ -146,7 +145,7 @@ class HouseholdListScreen extends StatelessWidget {
 
   /// Opens the create flow, or null where creating is not possible on this
   /// container — the create screen needs a `HouseholdRemoteDataSource` the
-  /// list itself does not (#269 D4).
+  /// list itself does not (#269).
   ///
   /// Called with this screen's own context, mirroring `HomeMenuEntry`: the
   /// feature package does not know the route table.
@@ -168,14 +167,13 @@ class HouseholdListScreen extends StatelessWidget {
   final Future<void> Function()? onRetry;
 
   /// Asks for a hydrate pass when this screen is entered, subject to the
-  /// staleness window (#300 D1, D13). Null where this composition has no
-  /// re-hydrate seam at all — the same #125 case that leaves [onRetry]
-  /// null.
+  /// staleness window (#300). Null where this composition has no re-hydrate
+  /// seam at all — the same #125 case that leaves [onRetry] null.
   ///
   /// Fire-and-forget by contract: the caller owns the error handling, and
-  /// nothing here waits on it. What it starts is **not narrated** (#300
-  /// D6) — the banner clears if it succeeds, and says nothing while it
-  /// runs, because nobody pressed anything.
+  /// nothing here waits on it. What it starts is **not narrated** (#300) — the
+  /// banner clears if it succeeds, and says nothing while it runs, because
+  /// nobody pressed anything.
   final VoidCallback? onEnter;
 
   @override
@@ -187,12 +185,12 @@ class HouseholdListScreen extends StatelessWidget {
           hydration: hydration,
           onRetry: onRetry,
         );
-        // #300 D14: here, and not in the route builder. `create` runs once
-        // per provider insertion — which is once per entry — whereas
-        // go_router re-runs a route's builder on every router rebuild and
-        // for every page in the match stack, so the same call there would
-        // fire on rebuilds and on pushing the detail route. That is a poll,
-        // which #300 D1 rejected by name.
+        // #300: here, and not in the route builder. `create` runs once per
+        // provider insertion — which is once per entry — whereas go_router
+        // re-runs a route's builder on every router rebuild and for every page
+        // in the match stack, so the same call there would fire on rebuilds and
+        // on pushing the detail route. That is a poll, which #300 rejected by
+        // name.
         //
         // After the bloc, so its subscription is in place before the pass
         // can report anything.
@@ -216,7 +214,7 @@ class _HouseholdListView extends StatefulWidget {
   final void Function(BuildContext context)? onCreate;
   final void Function(BuildContext context, String householdId)? onOpen;
 
-  /// Whether this composition can re-run the drain at all (#300 D5).
+  /// Whether this composition can re-run the drain at all (#300).
   final bool canRetry;
 
   @override
@@ -541,7 +539,7 @@ class _HouseholdRow extends StatelessWidget {
         // The tap target, the focus stop and the keyboard activation all
         // come from this one callback — ListTile builds an InkWell when it
         // has an onTap and nothing when it does not, which is exactly the
-        // inert row #269 D5 wanted.
+        // inert row #269 wanted.
         onTap: open == null ? null : () => open(context, household.id),
         title: Text(household.name),
         // The badge sits UNDER the name, not in `ListTile.trailing`.

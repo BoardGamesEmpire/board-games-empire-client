@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// What the household detail screen is showing (#270 D3).
+/// What the household detail screen is showing (#270).
 ///
 /// Four states, where the list has three. The extra one is
 /// [HouseholdDetailNotFound], and it is not an error: the repository
@@ -15,8 +15,8 @@ sealed class HouseholdDetailState extends Equatable {
 }
 
 /// Nothing to show yet. Either the cache has not answered, or it answered
-/// without this household while a hydrate is still filling it (#270 D3,
-/// the same distinction #269 D1 draws for the list).
+/// without this household while a hydrate is still filling it (#270, the same
+/// distinction #269 draws for the list).
 final class HouseholdDetailLoading extends HouseholdDetailState {
   const HouseholdDetailLoading();
 }
@@ -32,12 +32,12 @@ final class HouseholdDetailLoading extends HouseholdDetailState {
 ///
 /// [refreshFailed] says the last hydrate pass ended early, so this copy may
 /// be stale. Orthogonal to everything else here: a household can be shown
-/// and unverified at once, and the screen says both (#269 D2's reasoning,
-/// applied to one household).
+/// and unverified at once, and the screen says both (#269's reasoning, applied
+/// to one household).
 ///
-/// [refreshing] says a pass **the user asked for** is running (#300 D6) —
-/// not merely that a pass is running, which the #302 triggers cause
-/// without anyone asking.
+/// [refreshing] says a pass **the user asked for** is running (#300) — not
+/// merely that a pass is running, which the #302 triggers cause without anyone
+/// asking.
 final class HouseholdDetailReady extends HouseholdDetailState {
   const HouseholdDetailReady({
     required this.household,
@@ -84,9 +84,9 @@ final class HouseholdDetailReady extends HouseholdDetailState {
 /// couldn't find it" and "we couldn't check" together rather than
 /// presenting it as a settled one.
 ///
-/// A retry is offered here too (#300 D10) — this is the surface where
-/// asking again is worth the most, since a household missing from a cache
-/// whose last pass failed may well be on the server.
+/// A retry is offered here too (#300) — this is the surface where asking again
+/// is worth the most, since a household missing from a cache whose last pass
+/// failed may well be on the server.
 ///
 /// [refreshing] says a pass **the user asked for** is running, as on
 /// [HouseholdDetailReady]. An absence no pass has confirmed seldom shows

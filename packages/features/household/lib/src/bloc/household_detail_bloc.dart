@@ -11,7 +11,7 @@ import 'package:observability/observability.dart';
 /// Drives the household detail screen (#270): one household, its member
 /// count, and the current user's role in it.
 ///
-/// ## Where the household comes from (#270 D3)
+/// ## Where the household comes from (#270)
 ///
 /// `HouseholdRepository` has no `watchHousehold(id)` — only `getHousehold`
 /// (a Future) and `watchHouseholds()`. This filters the list stream rather
@@ -23,7 +23,7 @@ import 'package:observability/observability.dart';
 /// the id simply not being in the next emission.
 ///
 /// The cost is a rebuild when an unrelated household upserts. Households
-/// per user are single digits (#267 D13), so it is not a cost.
+/// per user are single digits (#267), so it is not a cost.
 ///
 /// ## Why absence waits on the hydrate
 ///
@@ -32,7 +32,7 @@ import 'package:observability/observability.dart';
 /// drain runs unawaited from session activation (#267), so this screen
 /// can be reached before the cache has been filled.
 /// Saying "we couldn't find this household" to someone who has it is the
-/// same failure #269 D1 built the list's loading state to avoid.
+/// same failure #269 built the list's loading state to avoid.
 ///
 /// So an absent household is *loading* while a pass is running, and
 /// not-found once one has settled — including when it settled by failing,
@@ -61,7 +61,7 @@ import 'package:observability/observability.dart';
 /// the pass settles is what gets rendered, including a count of zero. A
 /// spinner nothing can resolve is worse than a number that looks odd.
 ///
-/// ## The current user's role (#270 D4)
+/// ## The current user's role (#270)
 ///
 /// `getCurrentUserMember` resolves *who we are* once; the role itself is
 /// read off the roster on every emission. That is one query rather than
@@ -147,9 +147,9 @@ class HouseholdDetailBloc
   final BgeLogger _logger;
 
   /// Runs one hydrate pass, or null where this composition has none
-  /// (#300 D5). Invoked from the bloc rather than from the button for the
-  /// list bloc's reason: only the handler that started a pass knows the
-  /// user asked for it.
+  /// (#300). Invoked from the bloc rather than from the button for the list
+  /// bloc's reason: only the handler that started a pass knows the user asked
+  /// for it.
   final Future<void> Function()? _onRetry;
 
   late final HouseholdRepository _repository;
@@ -227,7 +227,7 @@ class HouseholdDetailBloc
   /// first.
   Hydration _hydration = const Hydration();
 
-  /// Whether a pass **this screen asked for** is still running (#300 D6).
+  /// Whether a pass **this screen asked for** is still running (#300).
   bool _retrying = false;
 
   /// Resolves who the current user is, so their row can be found in the
@@ -538,11 +538,11 @@ class HouseholdDetailBloc
       // justifies waiting on that.
       //
       // On that first read, an absence a completed pass has already
-      // confirmed is an answer rather than a gap (#300 D16): re-checking it
-      // must not return a rendered not-found page to a spinner, and #300
-      // D15 makes those re-checks routine. The seen-then-gone branch keeps
-      // waiting on any running pass regardless — that pass may be
-      // rewriting the very rows this screen is reading.
+      // confirmed is an answer rather than a gap (#300): re-checking it must
+      // not return a rendered not-found page to a spinner, and #300 makes those
+      // re-checks routine. The seen-then-gone branch keeps waiting on any
+      // running pass regardless — that pass may be rewriting the very rows this
+      // screen is reading.
       final couldStillArrive = _householdEverSeen
           ? _filling
           : _mightStillFill && !_hydration.everRefreshed;

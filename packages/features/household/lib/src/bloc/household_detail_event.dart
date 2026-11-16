@@ -4,10 +4,10 @@ import 'package:models/domain.dart';
 
 /// Events of `HouseholdDetailBloc`.
 ///
-/// As on the list (#269 D6), mostly *not* user events: the screen shows
-/// what its sources say, and these exist so the bloc's stream
-/// subscriptions have somewhere to land that can emit. The exception is
-/// [HouseholdDetailRetryRequested] (#300 D10).
+/// As on the list (#269), mostly *not* user events: the screen shows what its
+/// sources say, and these exist so the bloc's stream subscriptions have
+/// somewhere to land that can emit. The exception is
+/// [HouseholdDetailRetryRequested] (#300).
 sealed class HouseholdDetailEvent extends Equatable {
   const HouseholdDetailEvent();
 
@@ -47,10 +47,10 @@ final class HouseholdDetailMembersUpdated extends HouseholdDetailEvent {
 }
 
 /// The current user's own member row resolved, giving the bloc the user id
-/// it needs to find itself in the roster (#270 D4). [userId] is null when
-/// the row could not be read — the screen renders without a role rather
-/// than not at all. [householdId] is the id it was asked about, which a
-/// reconcile may have moved this screen off since (#442).
+/// it needs to find itself in the roster (#270). [userId] is null when the row
+/// could not be read — the screen renders without a role rather than not at
+/// all. [householdId] is the id it was asked about, which a reconcile may have
+/// moved this screen off since (#442).
 final class HouseholdDetailIdentityResolved extends HouseholdDetailEvent {
   const HouseholdDetailIdentityResolved(
     this.userId, {
@@ -114,7 +114,7 @@ final class HouseholdDetailHydrationEnded extends HouseholdDetailEvent {
   const HouseholdDetailHydrationEnded();
 }
 
-/// The hydrate reported a change (#269 D1).
+/// The hydrate reported a change (#269).
 final class HouseholdDetailHydrationUpdated extends HouseholdDetailEvent {
   const HouseholdDetailHydrationUpdated(this.hydration);
 
@@ -124,7 +124,7 @@ final class HouseholdDetailHydrationUpdated extends HouseholdDetailEvent {
   List<Object?> get props => [hydration];
 }
 
-/// The user asked for another hydrate pass (#300 D5, D10).
+/// The user asked for another hydrate pass (#300).
 ///
 /// The same event the list carries, on the screen that shares its banner
 /// and its status. A pass started by a #302 trigger arrives on

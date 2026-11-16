@@ -56,10 +56,10 @@ const _errorCopy =
 /// localized error and reports nothing, and the in-flight state disables
 /// submit.
 ///
-/// Where the created household is *shown* is not this seam's business (#271
-/// D2) — the screen takes an `onCreated` callback and the shell turns it into
-/// a route change. `bge_app_household_create_navigation_test.dart` pins that
-/// half, because only a real router has a back stack to assert against.
+/// Where the created household is *shown* is not this seam's business (#271) —
+/// the screen takes an `onCreated` callback and the shell turns it into a route
+/// change. `bge_app_household_create_navigation_test.dart` pins that half,
+/// because only a real router has a back stack to assert against.
 ///
 /// Finders are deliberately scoped by widget (#132): `createHouseholdTitle`
 /// and `createHouseholdSubmit` are the same English string, so a bare
@@ -97,8 +97,8 @@ void main() {
   /// where a list route sits beneath the form.
   ///
   /// What the test observes is the id handed to [onCreated] and the fact that
-  /// the screen does **not** navigate itself (#271 D2): the route change is
-  /// the shell's, so at this seam a success is a callback and nothing else.
+  /// the screen does **not** navigate itself (#271): the route change is the
+  /// shell's, so at this seam a success is a callback and nothing else.
   // Themed, like every other harness in the #213 sweep. This one was left
   // unthemed while the failure banner sat at the top of the page: with the
   // real typography, the #209 reveal case below had 243dp to travel back up
@@ -578,10 +578,10 @@ void main() {
       // defect: `maybePop` no-ops on a root route, so the user was told the
       // household was created while still sitting on the submitted form.
       //
-      // #271 D2 removes the situation instead of special-casing it. There is
-      // no pop and no "did we arrive here directly?" branch, so this entry is
-      // not a case the screen distinguishes at all — which is exactly what
-      // this test now asserts.
+      // #271 removes the situation instead of special-casing it. There is no
+      // pop and no "did we arrive here directly?" branch, so this entry is not
+      // a case the screen distinguishes at all — which is exactly what this
+      // test now asserts.
       String? created;
       await tester.pumpWidget(
         MaterialApp(

@@ -862,7 +862,7 @@ void main() {
     expect(members.hasListener, isFalse);
   });
 
-  group('a retry the user asked for (#300 D5, D6, D10)', () {
+  group('a retry the user asked for (#300)', () {
     late Completer<void> pass;
     late int calls;
 
@@ -933,7 +933,7 @@ void main() {
       );
     });
 
-    test('an unverified absence can be retried too (#300 D10)', () async {
+    test('an unverified absence can be retried too (#300)', () async {
       // The surface a retry is worth the most on: a household missing from
       // a cache whose last pass failed may well exist on the server. The
       // failure goes first: a status replays its reading on subscribe, and
@@ -1079,14 +1079,14 @@ void main() {
     });
   });
 
-  group('a confirmed-absent household survives a re-check (#300 D16)', () {
+  group('a confirmed-absent household survives a re-check (#300)', () {
     test('an absence a pass has confirmed stays not-found under the next '
         'pass', () async {
-      // The detail half of #300 D16. #270's rule is that an absence with a
-      // pass running is *unknown* rather than missing — true while nothing
-      // has confirmed it, and #300 D15 makes re-checks routine enough that
-      // re-confirming a known absence must not flash a spinner over the
-      // not-found page on every resume.
+      // The detail half of the confirmed-absence rule (#300). #270's rule is
+      // that an absence with a pass running is *unknown* rather than missing —
+      // true while nothing has confirmed it, and #300 makes re-checks routine
+      // enough that re-confirming a known absence must not flash a spinner over
+      // the not-found page on every resume.
       status.finished(HydrateOutcome.complete);
       final bloc = build();
       addTearDown(bloc.close);
@@ -1120,10 +1120,10 @@ void main() {
 
     test('a household that was shown and then vanished still waits on a '
         'running pass', () async {
-      // The branch #300 D16 deliberately does NOT touch. Once the household
-      // has been rendered, a pass in flight may be rewriting the very rows
-      // this screen reads, so its disappearance mid-pass is not yet an
-      // answer — #270's reasoning, unchanged.
+      // The branch #300 deliberately does NOT touch. Once the household has
+      // been rendered, a pass in flight may be rewriting the very rows this
+      // screen reads, so its disappearance mid-pass is not yet an answer —
+      // #270's reasoning, unchanged.
       status.finished(HydrateOutcome.complete);
       final bloc = build();
       addTearDown(bloc.close);

@@ -73,7 +73,7 @@ void main() {
   });
 
   test('an empty cache mid-hydrate is loading, not empty', () async {
-    // The distinction #269 D1 exists for: watchHouseholds() emits the same
+    // The loading-versus-empty rule (#269): watchHouseholds() emits the same
     // empty list for "no households" and "not hydrated yet".
     status.started();
     final bloc = build();
@@ -109,8 +109,8 @@ void main() {
   test(
     'an empty cache with no hydration at all is empty, not loading',
     () async {
-      // Absent status reads as idle (#269 D1) — web, and any composition
-      // without a household client. A spinner there would never resolve.
+      // Absent status reads as idle (#269) — web, and any composition without a
+      // household client. A spinner there would never resolve.
       final bloc = build(withHydration: false);
       addTearDown(bloc.close);
 
@@ -330,7 +330,7 @@ void main() {
     expect(bloc.state, isA<HouseholdListLoading>());
   });
 
-  group('a retry the user asked for (#300 D5, D6)', () {
+  group('a retry the user asked for (#300)', () {
     late Completer<void> pass;
     late int calls;
 
@@ -476,11 +476,11 @@ void main() {
 
     test('a retried EMPTY list goes back to loading, not to a banner over an '
         'emptiness nobody has confirmed', () async {
-      // #269 D1 outranks the retry treatment here. An empty cache with a
-      // pass running is unknown, not empty — so the screen must not put
-      // "no households yet" under a refreshing banner. The spinner is the
-      // feedback, exactly as it is on the detail screen's absent
-      // household (#270).
+      // The loading-versus-empty rule (#269) outranks the retry treatment
+      // here. An empty cache with a pass running is unknown, not empty — so
+      // the screen must not put "no households yet" under a refreshing
+      // banner. The spinner is the feedback, exactly as it is on the detail
+      // screen's absent household (#270).
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
 
@@ -531,14 +531,14 @@ void main() {
     });
   });
 
-  group('a confirmed-empty list survives a re-check (#300 D16)', () {
+  group('a confirmed-empty list survives a re-check (#300)', () {
     test('an empty list a pass has confirmed stays empty under the next '
         'pass', () async {
-      // #269 D1 exists to stop "no households yet" rendering over a cache
-      // that is about to fill *for the first time*. Once a pass has landed
-      // `refreshed`, the emptiness is confirmed — and #300 D1 makes a
-      // re-check routine, so re-confirming a known answer must not
-      // un-render the screen on every entry.
+      // The loading-versus-empty rule (#269) exists to stop "no households
+      // yet" rendering over a cache that is about to fill *for the first
+      // time*. Once a pass has landed `refreshed`, the emptiness is confirmed
+      // — and #300 makes a re-check routine, so re-confirming a known answer
+      // must not un-render the screen on every entry.
       final bloc = build();
       addTearDown(bloc.close);
 
@@ -555,15 +555,15 @@ void main() {
         isA<HouseholdListReady>()
             .having((s) => s.households, 'households', isEmpty)
             .having((s) => s.refreshFailed, 'refreshFailed', isFalse)
-            // Silent: nobody pressed anything (#300 D6).
+            // Silent: nobody pressed anything (#300).
             .having((s) => s.refreshing, 'refreshing', isFalse),
       );
     });
 
     test('an empty list only a failure has seen is still unknown', () async {
-      // The half of #269 D1 that does NOT narrow. A failed pass confirms
-      // nothing, so the emptiness is still unverified and a pass over it
-      // is #269 D1's spinner (#300 D12).
+      // The half of the loading-versus-empty rule (#269) that does NOT narrow.
+      // A failed pass confirms nothing, so the emptiness is still unverified
+      // and a pass over it gets the spinner (#300).
       final bloc = build();
       addTearDown(bloc.close);
 
@@ -580,12 +580,13 @@ void main() {
 
     test('a retry over a confirmed-empty list narrates instead of '
         'spinning', () async {
-      // D12 said an empty list with a pass running is always #269 D1's
-      // spinner. That holds while the emptiness is unverified; once a pass
-      // has confirmed it, the press has a known answer to annotate and
-      // throwing it away to spin would be the same loss D16 removes for
-      // the silent case. The press is still acknowledged — the banner says
-      // so, with a disabled button that keeps its name.
+      // The loading-versus-empty rule (#269) gives an empty list with a pass
+      // running the spinner. That holds while the emptiness is unverified;
+      // once a pass has confirmed it, the press has a known answer to
+      // annotate and throwing it away to spin would be the loss the
+      // confirmed-empty rule (#300) removes for the silent case. The press is
+      // still acknowledged — the banner says so, with a disabled button that
+      // keeps its name.
       final pass = Completer<void>();
       final bloc = HouseholdListBloc(
         repository: repository,
