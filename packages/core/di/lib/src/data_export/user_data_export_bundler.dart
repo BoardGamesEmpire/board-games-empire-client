@@ -50,11 +50,14 @@ import 'package:models/dto.dart';
 ///
 /// Every foreseeable lower-layer failure is mapped into the sealed
 /// [UserDataExportException] hierarchy that #93's UI switches on:
-/// - No session → [ExportNotAuthenticatedException]. No exporter runs
-///   before this gate passes.
+/// - No session → [ExportNotAuthenticatedException]: no cached session,
+///   or no live [SessionLease] in the server's container. No exporter
+///   runs before this gate passes.
 /// - A session that ends while the exporters run, or that belongs to a
 ///   different user by the time they finish → also
-///   [ExportNotAuthenticatedException], and no bundle. An exporter that
+///   [ExportNotAuthenticatedException], and no bundle. The session ends
+///   when the lease taken at the start does, even where its cached
+///   session survives, as a server switch leaves it. An exporter that
 ///   finds the user's scope already torn down answers `null`, which would
 ///   otherwise leave its category silently out of a bundle the screen
 ///   reports as saved.
@@ -96,8 +99,9 @@ class UserDataExportBundler {
     ActiveServer server, {
     bool refresh = false,
   }) async {
+    final lease = _sessionLease(server);
     final session = await _readCachedSession(server);
-    if (session == null) {
+    if (session == null || !lease.isLive) {
       throw const ExportNotAuthenticatedException();
     }
 
@@ -114,9 +118,13 @@ class UserDataExportBundler {
     }
 
     // An exporter that found the user's scope torn down answered null;
-    // only a session still held by the same user vouches for the bundle.
+    // only the session the export started in, still held by the same user,
+    // vouches for the bundle. The lease catches a session that ended while
+    // its cached session survives, as a server switch leaves it.
     final sessionAfter = await _readCachedSession(server);
-    if (sessionAfter == null || sessionAfter.user.id != session.user.id) {
+    if (!lease.isLive ||
+        sessionAfter == null ||
+        sessionAfter.user.id != session.user.id) {
       throw const ExportNotAuthenticatedException();
     }
 
@@ -134,6 +142,16 @@ class UserDataExportBundler {
     );
   }
 
+  /// The [SessionLease] of [server]'s open user session, taken when the
+  /// export starts. Without one no session is open, so the lease reads as
+  /// ended.
+  static SessionLease _sessionLease(ActiveServer server) {
+    final container = server.container;
+    return container.isRegistered<SessionLease>()
+        ? container.get<SessionLease>()
+        : const _EndedSessionLease();
+  }
+
   /// Reads the cached session, mapping any `AuthException` into
   /// [ExportSessionUnavailableException] while preserving the original
   /// stack trace. A `null` return is a settled "unauthenticated" answer
@@ -149,4 +167,13 @@ class UserDataExportBundler {
       );
     }
   }
+}
+
+/// The lease an export reads when no user session is open: ended from the
+/// start.
+final class _EndedSessionLease implements SessionLease {
+  const _EndedSessionLease();
+
+  @override
+  bool get isLive => false;
 }

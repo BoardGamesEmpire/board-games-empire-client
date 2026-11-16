@@ -1,4 +1,5 @@
 import 'package:bge_test_support/domain.dart';
+import 'package:bge_test_support/session.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -57,6 +58,7 @@ void main() {
     late _MockDependencyContainer container;
     late _MockAuthRepository authRepository;
     late UserDataExportRegistryImpl registry;
+    late FakeSessionLease lease;
 
     setUp(() {
       container = _MockDependencyContainer();
@@ -69,7 +71,10 @@ void main() {
         container: container,
       );
 
+      lease = FakeSessionLease();
       when(() => container.get<AuthRepository>()).thenReturn(authRepository);
+      when(() => container.isRegistered<SessionLease>()).thenReturn(true);
+      when(() => container.get<SessionLease>()).thenReturn(lease);
     });
 
     UserDataExportBundler bundler({DateTime Function()? now}) =>
@@ -319,6 +324,72 @@ void main() {
         exporterEndingSession(
           () => current = _session.copyWith.user(id: 'user-2'),
         ),
+      );
+
+      await expectLater(
+        () => bundler().assemble(server),
+        throwsA(isA<ExportNotAuthenticatedException>()),
+      );
+    });
+
+    test('no exporter runs while the session is ended: an ended lease with '
+        'a cached session throws ExportNotAuthenticatedException', () async {
+      stubAuthenticated();
+      lease.isLive = false;
+      final exporter = exporterReturning('profile', {'a': 1});
+      registry.register(exporter);
+
+      await expectLater(
+        () => bundler().assemble(server),
+        throwsA(isA<ExportNotAuthenticatedException>()),
+      );
+
+      verifyNever(
+        () => exporter.export(any(), refresh: any(named: 'refresh')),
+      );
+    });
+
+    test('no exporter runs with no lease registered: no session is open, '
+        'whatever the cache holds', () async {
+      stubAuthenticated();
+      when(() => container.isRegistered<SessionLease>()).thenReturn(false);
+      final exporter = exporterReturning('profile', {'a': 1});
+      registry.register(exporter);
+
+      await expectLater(
+        () => bundler().assemble(server),
+        throwsA(isA<ExportNotAuthenticatedException>()),
+      );
+
+      verifyNever(
+        () => exporter.export(any(), refresh: any(named: 'refresh')),
+      );
+      verifyNever(() => container.get<SessionLease>());
+    });
+
+    // A server switch ends the session's lease but leaves the server's
+    // cached session in place, so the same user still reads as signed in.
+    test('a session that ends while its cached session survives fails the '
+        'export', () async {
+      stubAuthenticated();
+      registry.register(exporterEndingSession(() => lease.isLive = false));
+
+      await expectLater(
+        () => bundler().assemble(server),
+        throwsA(isA<ExportNotAuthenticatedException>()),
+      );
+    });
+
+    test('the lease is the one taken at the start: a new live session by '
+        'the end does not vouch for the bundle', () async {
+      stubAuthenticated();
+      registry.register(
+        exporterEndingSession(() {
+          lease.isLive = false;
+          when(
+            () => container.get<SessionLease>(),
+          ).thenReturn(FakeSessionLease());
+        }),
       );
 
       await expectLater(
