@@ -3427,6 +3427,292 @@ void main() {
     });
   });
 
+  group('two rows to a line in a wide window (#949)', () {
+    /// Reads the pool again, as a write from another device is found.
+    Future<void> readPool(WidgetTester tester) async {
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await animate(tester);
+    }
+
+    FocusNode nominateFocus(WidgetTester tester, String id) =>
+        tester.widget<ButtonStyleButton>(nominateOn(id)).focusNode!;
+
+    /// The rows of [ids], as a screen reader comes to their heads.
+    List<String> readingOrder(WidgetTester tester, List<String> ids) {
+      final heads = {
+        for (final id in ids) tester.getSemantics(head(id)).id: id,
+      };
+      return [
+        for (final node in tester.semantics.simulatedAccessibilityTraversal())
+          ?heads[node.id],
+      ];
+    }
+
+    testWidgets('at expanded, pool rows go two to a line, in reading order '
+        'along each line', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+
+      final first = tester.getRect(row(catanMine.id));
+      final second = tester.getRect(row(azul.id));
+      final third = tester.getRect(row(catanAdas.id));
+      final fifth = tester.getRect(row(wingspanMine.id));
+      expect(second.top, first.top);
+      expect(second.left, greaterThan(first.left));
+      // Side by side, the same width each, a gap between them.
+      expect(second.width, first.width);
+      expect(second.left - first.right, BgeTokens.standard.spaceMd);
+      // The next line under the taller of the two, from the same edge.
+      expect(third.top, greaterThanOrEqualTo(first.bottom));
+      expect(third.top, greaterThanOrEqualTo(second.bottom));
+      expect(third.left, first.left);
+      // The last, alone on its line, keeps a row's width.
+      expect(fifth.left, first.left);
+      expect(fifth.width, first.width);
+      expect(
+        readingOrder(tester, [
+          for (final game in [catanMine, azul, catanAdas, root, wingspanMine])
+            game.id,
+        ]),
+        [catanMine.id, azul.id, catanAdas.id, root.id, wingspanMine.id],
+      );
+      handle.dispose();
+    });
+
+    testWidgets('at medium, one row to a line', (tester) async {
+      useViewSize(tester, const Size(800, 900));
+      served = [catanMine, azul, catanAdas];
+      await showGames(tester);
+
+      final first = tester.getRect(row(catanMine.id));
+      final second = tester.getRect(row(azul.id));
+      expect(second.top, greaterThanOrEqualTo(first.bottom));
+      expect(second.left, first.left);
+      expect(second.width, first.width);
+    });
+
+    testWidgets('the reader counts rows, not lines', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+
+      expect(scrollView(tester).semanticChildCount, 5);
+      // The third row, second line: its place among the rows.
+      expect(tester.getSemantics(row(catanAdas.id)).indexInParent, 2);
+      expect(tester.getSemantics(row(azul.id)).indexInParent, 1);
+      expect(tester.getSemantics(row(wingspanMine.id)).indexInParent, 4);
+      handle.dispose();
+    });
+
+    testWidgets('a row that moves to the line above as one before it leaves '
+        'keeps focus', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      // Take back is the main action on a host-only event (#946).
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+      final line = tester.getRect(row(catanAdas.id)).top;
+      final focus = headFocus(tester, catanAdas.id)..requestFocus();
+      await tester.pump();
+
+      served = [azul, catanAdas, root, wingspanMine];
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      // Second on the first line now.
+      expect(tester.getRect(row(catanAdas.id)).top, lessThan(line));
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(
+        tester.getSemantics(head(catanAdas.id)),
+        isSemantics(isFocused: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("a row's main action keeps focus as its row moves to the "
+        'line above', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      // The viewer's Wingspan, under their Catan, with Take back.
+      served = [catanMine, azul, wingspanMine, root];
+      await showGames(tester);
+      final focus = takeBackFocus(tester, wingspanMine.id)..requestFocus();
+      await tester.pump();
+
+      // The take-back of the row that leaves hands focus nowhere: it isn't
+      // free.
+      served = [azul, wingspanMine, root];
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(takeBackFocus(tester, wingspanMine.id), same(focus));
+    });
+
+    testWidgets('a row that leaves while its head has focus hands it to the '
+        'head of the row that moves up into its place', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, wingspanMine, root];
+      await showGames(tester);
+      headFocus(tester, azul.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, wingspanMine, root];
+      await readPool(tester);
+
+      expect(row(azul.id), findsNothing);
+      // Wingspan, from the line below, beside Catan now.
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(catanMine.id)).top,
+      );
+      expect(headFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a take-back from the keyboard hands focus to the Take back of '
+        'the row that moves up into its place', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      served = [azul, catanMine, wingspanMine, root];
+      await showGames(tester);
+      takeBackFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      served = [azul, wingspanMine, root];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a held Nominate keeps its spinner and its focus as its row '
+        'moves to the line above, and its outcome lands', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      final held = Completer<EventNomination>();
+      nominateAnswer = (request) => held.future;
+      served = [catanMine, azul, catanAdas, root];
+      await showGames(tester);
+      final focus = nominateFocus(tester, catanAdas.id)..requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await settle(tester);
+      expect(remote.nominates, hasLength(1));
+      Finder spinner() => find.descendant(
+        of: nominateOn(catanAdas.id),
+        matching: find.byType(CircularProgressIndicator),
+      );
+      expect(spinner(), findsOneWidget);
+
+      // Another device's take-back, found by a read.
+      served = [azul, catanAdas, root];
+      await readPool(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(catanAdas.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(spinner(), findsOneWidget);
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      held.complete(
+        EventNomination(
+          id: 'n-1',
+          eventId: 'e-1',
+          platformGameId: catanAdas.platformGameId,
+          gameId: catanAdas.gameId,
+          title: catanAdas.title,
+          platformName: catanAdas.platformName,
+          status: NominationStatus.open,
+          nominatedById: 'att-me',
+          suppliedFromId: catanAdas.id,
+          createdAt: kItemInstant,
+        ),
+      );
+      await animate(tester);
+
+      expect(spinner(), findsNothing);
+      expect(
+        find.byKey(EventDetailScreen.nominationsOutcomeKey),
+        findsOneWidget,
+      );
+      expect(focus.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('Tab goes along each line, then down', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root];
+      await showGames(tester);
+      headFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      final walked = <FocusNode?>[];
+      for (var i = 0; i < 7; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        walked.add(FocusManager.instance.primaryFocus);
+      }
+
+      // A row's head, then its Nominate; then the row beside it; then down.
+      expect(walked, [
+        nominateFocus(tester, catanMine.id),
+        headFocus(tester, azul.id),
+        nominateFocus(tester, azul.id),
+        headFocus(tester, catanAdas.id),
+        nominateFocus(tester, catanAdas.id),
+        headFocus(tester, root.id),
+        nominateFocus(tester, root.id),
+      ]);
+    });
+
+    testWidgets('Details keeps the pane measure while Games goes wide', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(1600, 900));
+      served = [catanMine, azul, catanAdas];
+      await show(tester);
+
+      final bar = tester.getRect(find.byKey(EventDetailScreen.tabBarKey));
+      final dates = tester.getRect(
+        find.byKey(EventDetailScreen.datesKey, skipOffstage: false),
+      );
+      expect(dates.width, lessThanOrEqualTo(BgeTokens.standard.paneMaxWidth));
+      // Centred under the bar.
+      expect(dates.center.dx, closeTo(bar.center.dx, 0.5));
+
+      await chooseGames(tester);
+
+      // The bar stays where it was as the tabs swap.
+      expect(tester.getRect(find.byKey(EventDetailScreen.tabBarKey)), bar);
+      final line = tester
+          .getRect(row(catanMine.id))
+          .expandToInclude(tester.getRect(row(azul.id)));
+      expect(line.width, greaterThan(BgeTokens.standard.paneMaxWidth));
+      expect(line.width, lessThanOrEqualTo(BgeTokens.standard.wideMaxWidth));
+    });
+  });
+
   group("Take back on someone else's row (#518)", () {
     // Take back is a row's main action only where Nominate isn't (#946): on a
     // host-only event nobody is offered Nominate, the host included.
@@ -6240,6 +6526,41 @@ void main() {
 
       expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
       handle.dispose();
+    });
+
+    testWidgets('a take-back from it whose answer lands after it closes, '
+        "before the next frame, puts focus on the next row's head", (
+      tester,
+    ) async {
+      final answer = Completer<void>();
+      takeBackAnswer = (_) => answer.future;
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      tester.widget<ButtonStyleButton>(takeBackIn).focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsOneWidget);
+
+      // Closed, and the close's own work done, with no frame since.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      // Then the answer lands, still before the next frame.
+      served = [azul, wingspanMine];
+      answer.complete();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await animate(tester);
+      await animate(tester);
+
+      expect(quickLook, findsNothing);
+      expect(row(catanMine.id), findsNothing);
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
     });
 
     testWidgets("another user's take-back, read while it is open, does the "

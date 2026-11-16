@@ -2835,6 +2835,33 @@ void main() {
         expect(headOf(tester, 'n-2').hasPrimaryFocus, isTrue);
       });
 
+      testWidgets('a withdrawal in the quick look whose answer lands after '
+          "it closes, before the next frame, hands focus to the next row's "
+          'head', (tester) async {
+        final answer = Completer<EventNomination>();
+        withdrawAnswer = (_) => answer.future;
+        await showVoting(tester, [azul, catan]);
+        await withdrawByKeyboard(tester);
+        expect(remote.withdrawals, hasLength(1));
+        expect(rowsShown(tester), ['n-1', 'n-2']);
+
+        // Closed, and the close's own work done, with no frame since.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.value();
+        }
+        // Then the answer lands, still before the next frame.
+        answer.complete(azul.copyWith(status: NominationStatus.withdrawn));
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.value();
+        }
+        await animate(tester);
+        await animate(tester);
+
+        expect(rowsShown(tester), ['n-2']);
+        expect(headOf(tester, 'n-2').hasPrimaryFocus, isTrue);
+      });
+
       testWidgets("a withdrawal by a screen reader's activation, with focus "
           'on nothing, hands it on too', (tester) async {
         final handle = tester.ensureSemantics();
@@ -3606,6 +3633,116 @@ void main() {
   });
 
   group('accessibility audit', () {
+    testWidgets('at 840×900 and 200% text, two nomination rows to a line lay '
+        'out with no overflow, vote control included', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      pool = [_game('o-1', 'att-ada', _longTitle), azulMine];
+      // The viewer's Interested chosen on both: the longest choice, beside
+      // its check.
+      nominationsAnswer = (_) => [
+        for (final id in ['n-1', 'n-2'])
+          _nomination(
+            id,
+            title: _longTitle,
+            votes: [_vote('att-me', VoteType.interested)],
+          ),
+      ];
+      const choices = [VoteType.forGame, VoteType.against, VoteType.interested];
+      Finder choice(String id, VoteType type) =>
+          find.byKey(EventDetailScreen.nominationVoteKey(id, type));
+      Finder label(String id, VoteType type) => find.descendant(
+        of: choice(id, type),
+        matching: find.byType(RichText),
+      );
+      Finder control(String id) => find.descendant(
+        of: row(id),
+        matching: find.byType(SegmentedButton<VoteType>),
+      );
+
+      /// How far [id]'s choice of [type] is scaled down to fit its segment:
+      /// 1 where it isn't.
+      double scaleOf(String id, VoteType type) =>
+          tester.getRect(label(id, type)).width /
+          tester.renderObject<RenderParagraph>(label(id, type)).size.width;
+
+      // On the narrowest phone first, one row to a line: what the vote
+      // control's labels are scaled to there, at the same text size.
+      useViewSize(tester, const Size(320, 640));
+      await showGames(tester);
+      await tester.scrollUntilVisible(
+        control('n-1'),
+        100,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.ensureVisible(control('n-1'));
+      await tester.pump();
+      final onPhone = {for (final type in choices) type: scaleOf('n-1', type)};
+
+      // The narrowest expanded window, where two rows to a line have the
+      // least room (#949).
+      useViewSize(tester, const Size(840, 900));
+      await tester.pump();
+      for (final id in ['n-1', 'n-2']) {
+        await tester.ensureVisible(control(id));
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: id);
+      }
+
+      final first = tester.getRect(row('n-1'));
+      final second = tester.getRect(row('n-2'));
+      // Two to a line, each within the window.
+      expect(second.top, first.top);
+      expect(second.left, greaterThan(first.right));
+      expect(second.right, lessThanOrEqualTo(840));
+      for (final id in ['n-1', 'n-2']) {
+        final rowRect = tester.getRect(row(id));
+        final title = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: inRow(id, _longTitle),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(title.didExceedMaxLines, isFalse, reason: id);
+        final controlRect = tester.getRect(control(id));
+        expect(rowRect.intersect(controlRect), controlRect, reason: id);
+        for (final type in choices) {
+          final reason = '$id ${type.name}';
+          final paragraph = tester.renderObject<RenderParagraph>(
+            label(id, type),
+          );
+          // One line, whole, inside its segment.
+          expect(paragraph.didExceedMaxLines, isFalse, reason: reason);
+          final segment = tester.getRect(
+            find.ancestor(
+              of: choice(id, type),
+              matching: find.byType(TextButton),
+            ),
+          );
+          final drawn = tester.getRect(label(id, type));
+          expect(
+            segment.contains(drawn.topLeft) &&
+                segment.contains(drawn.bottomRight - const Offset(1, 1)),
+            isTrue,
+            reason: reason,
+          );
+          // Legible: scaled down no further than on a phone, where each row
+          // has the window to itself.
+          expect(
+            scaleOf(id, type),
+            greaterThanOrEqualTo(onPhone[type]!),
+            reason: reason,
+          );
+        }
+      }
+    });
+
     testWidgets('a row fits at 320dp and 200% text with no overflow', (
       tester,
     ) async {

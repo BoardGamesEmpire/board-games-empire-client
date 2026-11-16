@@ -1083,6 +1083,42 @@ void main() {
       expectDetails();
     });
 
+    testWidgets('an event made offline keeps the pane measure in a wide '
+        'window, its banners with it (#949)', (tester) async {
+      useViewSize(tester, const Size(1600, 900));
+      final detail = hosted();
+      final offline = _detail(
+        event: _event().copyWith(isLocalOnly: true),
+        occurrences: detail.snapshot.occurrences,
+        attendees: detail.snapshot.attendees,
+        attendance: detail.attendance,
+      );
+      await showTabbed(
+        tester,
+        offline,
+        remote: serving(
+          offline,
+          deleted: (_) =>
+              throw const EventWriteRefusedException('no', statusCode: 403),
+        ),
+      );
+      tester
+          .element(dates())
+          .read<EventActionsBloc>()
+          .add(const EventDeleteRequested('e-1'));
+      await animate(tester);
+
+      // No tab bar: the page is Details alone, and nothing on it sets rows
+      // side by side, so the header's banners keep Details' measure.
+      expect(bar(), findsNothing);
+      expect(inOutcome(_refusedCopy), findsOneWidget);
+      final banner = tester.getRect(outcome());
+      final column = tester.getRect(dates());
+      expect(banner.width, lessThanOrEqualTo(BgeTokens.standard.paneMaxWidth));
+      expect(banner.left, closeTo(column.left, 0.5));
+      expect(banner.right, closeTo(column.right, 0.5));
+    });
+
     testWidgets(
       'choosing Games shows the games tab and hides the dates and the roster',
       (tester) async {

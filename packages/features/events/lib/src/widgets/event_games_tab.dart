@@ -18,6 +18,7 @@ import 'package:events/src/widgets/event_game_filter_options.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/event_nominations_section.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
@@ -254,9 +255,10 @@ final class _GamesBody {
 /// is no nominations' state, the tab is the pool alone, with no bar.
 ///
 /// Nominations is the Nominations section. Pool is the pool's header, then
-/// its rows ([BgeKeyedSliverList], keyed by the offered game's id) or one
-/// state in a [BgeStateSliver]. Neither has a heading of its own: each
-/// sub-tab's label, said as it is chosen, names its list (#946). The header
+/// its rows ([EventGamesRowLines], keyed by the offered game's id, two to a
+/// line in an expanded window, #949) or one state in a [BgeStateSliver].
+/// Neither has a heading of its own: each sub-tab's label, said as it is
+/// chosen, names its list (#946). The header
 /// stays above every state but the wait for a first answer (or for the
 /// event's read after the pool found it gone, or to bring a roster not read)
 /// and the games being hidden. A roster
@@ -508,9 +510,10 @@ class EventGamesTab extends StatelessWidget {
                 ),
               ),
             ),
-            _Body.rows => BgeKeyedSliverList<OfferedGame>(
+            _Body.rows => EventGamesRowLines<OfferedGame>(
               items: rows,
               keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
+              identityOf: (game) => OfferedCopyEntry(game.id),
               itemBuilder: (context, game) {
                 // The row's rules, which its quick look builds by too (#957).
                 final gates = poolRowGates(
@@ -1078,7 +1081,9 @@ class _PoolRow extends StatelessWidget {
                   Text(who, style: quiet),
               ],
             ),
-            // Under the line, where it sat beside the picture before (#957).
+            // Outside the head, whose one button can't hold another (#957),
+            // and inset past the cover, so the action and its note line up
+            // under the title and the status line.
             Padding(
               padding: EdgeInsetsDirectional.only(
                 start: BgeThumbnail.listExtent + tokens.spaceMd,

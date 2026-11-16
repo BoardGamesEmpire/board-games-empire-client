@@ -1921,7 +1921,13 @@ class _ReadyPage extends StatelessWidget {
             enabled: !state.reading && !acting,
           ),
       ],
-      width: BgePageWidth.pane,
+      // Wide on every tab where the screen shows its tabs, for the Games
+      // tab's rows two to a line in an expanded window, with Details held to
+      // the pane's measure within it, so the header and the tab bar stay
+      // where they are as the tabs swap (#949). Without the bar the page is
+      // Details alone, at the pane's measure, its banners with it. In a
+      // window narrower than the pane's measure neither binds.
+      width: shownTabs == null ? BgePageWidth.pane : BgePageWidth.wide,
       // Details holds no list. The Games tab holds the rows of the sub-tab
       // it shows, the nominations' or the pool's, and none while that shows
       // a state (#516, #517, #945).
@@ -1972,11 +1978,22 @@ class _ReadyPage extends StatelessWidget {
           EventDetailTab.details => [
             SliverToBoxAdapter(
               key: _detailsKey,
-              child: _details(
-                context,
-                actionsState,
-                pollState,
-                acting: acting,
+              // The pane's measure, centred in the page's wide one where the
+              // tabs show (#949).
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: BgePageWidth.pane.resolve(
+                      BgeTokens.of(context),
+                    ),
+                  ),
+                  child: _details(
+                    context,
+                    actionsState,
+                    pollState,
+                    acting: acting,
+                  ),
+                ),
               ),
             ),
           ],

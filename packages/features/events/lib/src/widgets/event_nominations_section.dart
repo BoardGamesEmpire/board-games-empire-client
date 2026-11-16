@@ -11,6 +11,7 @@ import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:events/src/widgets/event_game_row_head.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
@@ -51,10 +52,10 @@ enum EventNominationsBody {
 /// Its slivers, as one group under the sub-tabs' bar, with no heading of
 /// their own, as the sub-tab's label names the list (#946): the header,
 /// while there is something to narrow or the filter narrows (see "Filters
-/// and sort"); then the rows ([BgeKeyedSliverList], keyed by the
-/// nomination's id) or one state. A state
-/// is in a [BgeStateSliver], as the pool's are, which fills the rest of the
-/// page and centres it. The style guide keeps a section's state in a
+/// and sort"); then the rows ([EventGamesRowLines], keyed by the
+/// nomination's id, two to a line in an expanded window, #949) or one state.
+/// A state is in a [BgeStateSliver], as the pool's are, which fills the rest
+/// of the page and centres it. The style guide keeps a section's state in a
 /// [SliverToBoxAdapter] only where something follows the section, whose room
 /// the state would take; on its own sub-tab (#945), nothing follows this one. A
 /// first read that fails says so here, with Try again; one that fails over
@@ -251,10 +252,11 @@ class EventNominationsSection extends StatelessWidget {
               ),
             ),
           ),
-          EventNominationsBody.rows => BgeKeyedSliverList<EventNomination>(
+          EventNominationsBody.rows => EventGamesRowLines<EventNomination>(
             items: rows,
             keyOf: (nomination) =>
                 EventDetailScreen.nominationRowKey(nomination.id),
+            identityOf: (nomination) => NominationEntry(nomination.id),
             itemBuilder: (context, nomination) => _NominationRow(
               area: controller.nominationArea(nomination.id),
               head: controller.rowHeadFocus(NominationEntry(nomination.id)),
