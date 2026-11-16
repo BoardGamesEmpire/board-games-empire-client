@@ -16,11 +16,16 @@ enum BgePageWidth {
   /// A wider measure ([BgeTokens.paneMaxWidth]) for list and pane surfaces,
   /// whose rows are a label plus a trailing control rather than a line to be
   /// read. Still capped: no surface stretches to the width of a monitor.
-  pane;
+  pane,
+
+  /// The widest measure ([BgeTokens.wideMaxWidth]), for a list surface that
+  /// sets its rows side by side in an expanded window (#949). Still capped.
+  wide;
 
   /// This measure's width in [tokens].
   double resolve(BgeTokens tokens) => switch (this) {
     BgePageWidth.form => tokens.contentMaxWidth,
     BgePageWidth.pane => tokens.paneMaxWidth,
+    BgePageWidth.wide => tokens.wideMaxWidth,
   };
 }

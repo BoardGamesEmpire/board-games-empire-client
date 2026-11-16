@@ -36,6 +36,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     required this.accentBarWidth,
     required this.contentMaxWidth,
     required this.paneMaxWidth,
+    required this.wideMaxWidth,
     required this.breakpointMedium,
     required this.breakpointExpanded,
     required this.motionShort,
@@ -87,6 +88,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     accentBarWidth: 4,
     contentMaxWidth: 480,
     paneMaxWidth: 840,
+    wideMaxWidth: 1200,
     breakpointMedium: 600,
     breakpointExpanded: 840,
     motionShort: Duration(milliseconds: 150),
@@ -203,6 +205,19 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// move the other.
   final double paneMaxWidth;
 
+  /// Maximum width of a page's primary content column on a *list surface that
+  /// sets its rows side by side* in an expanded window (logical px, #949).
+  ///
+  /// [paneMaxWidth] is the width a row wants. Two to a line need room for
+  /// both: 1200 is Material's "large" threshold, so each of two rows gets
+  /// about 590, and on a 2560 monitor the content still stops short of the
+  /// edges. Still a cap, as the other measures are: nothing stretches to the
+  /// monitor. The whole page takes this measure: its header and its footer,
+  /// a tab bar, and the list's own header above its rows. Only content that
+  /// sets nothing side by side, such as another tab's, keeps the measure it
+  /// would have had, centred within this one.
+  final double wideMaxWidth;
+
   /// Width at or above which a layout may use its medium form (logical px).
   ///
   /// A threshold, never a width: see [breakpointExpanded].
@@ -212,10 +227,10 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   ///
   /// Breakpoints exist because desktop and browser are first-class targets
   /// here, not an afterthought. The measures ([contentMaxWidth],
-  /// [paneMaxWidth]) already stop a phone-shaped layout from stretching across
-  /// a desktop window, so a breakpoint never picks a width. It marks where a
-  /// layout should become a different one: a navigation rail, or a list with
-  /// its detail beside it.
+  /// [paneMaxWidth], [wideMaxWidth]) already stop a phone-shaped layout from
+  /// stretching across a desktop window, so a breakpoint never picks a width.
+  /// It marks where a layout should become a different one: a navigation
+  /// rail, or a list with its detail beside it.
   ///
   /// Read them through `BgeWindowClass`, not by comparing a width yourself.
   /// `docs/design/STYLE_GUIDE.md` §3 *Layout* lists what reads it.
@@ -259,6 +274,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     accentBarWidth,
     contentMaxWidth,
     paneMaxWidth,
+    wideMaxWidth,
     breakpointMedium,
     breakpointExpanded,
     motionShort,
@@ -293,6 +309,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     double? accentBarWidth,
     double? contentMaxWidth,
     double? paneMaxWidth,
+    double? wideMaxWidth,
     double? breakpointMedium,
     double? breakpointExpanded,
     Duration? motionShort,
@@ -317,6 +334,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       accentBarWidth: accentBarWidth ?? this.accentBarWidth,
       contentMaxWidth: contentMaxWidth ?? this.contentMaxWidth,
       paneMaxWidth: paneMaxWidth ?? this.paneMaxWidth,
+      wideMaxWidth: wideMaxWidth ?? this.wideMaxWidth,
       breakpointMedium: breakpointMedium ?? this.breakpointMedium,
       breakpointExpanded: breakpointExpanded ?? this.breakpointExpanded,
       motionShort: motionShort ?? this.motionShort,
@@ -354,6 +372,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       accentBarWidth: lerpDouble(accentBarWidth, other.accentBarWidth, t)!,
       contentMaxWidth: lerpDouble(contentMaxWidth, other.contentMaxWidth, t)!,
       paneMaxWidth: lerpDouble(paneMaxWidth, other.paneMaxWidth, t)!,
+      wideMaxWidth: lerpDouble(wideMaxWidth, other.wideMaxWidth, t)!,
       breakpointMedium: lerpDouble(
         breakpointMedium,
         other.breakpointMedium,

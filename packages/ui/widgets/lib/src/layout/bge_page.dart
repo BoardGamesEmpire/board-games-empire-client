@@ -33,9 +33,9 @@ const double _footerCacheViewports = 1;
 /// `Scaffold` → `SafeArea` → `Center` → `SingleChildScrollView` →
 /// `ConstrainedBox(maxWidth: 480)` — each with its own hand-typed padding and
 /// its own decision about whether to scroll. All 12 such screens now use
-/// this; the widths are [BgeTokens.contentMaxWidth] and
-/// [BgeTokens.paneMaxWidth] (see [BgePageWidth]) and the padding is on the
-/// spacing scale.
+/// this; the widths are [BgeTokens.contentMaxWidth],
+/// [BgeTokens.paneMaxWidth] and [BgeTokens.wideMaxWidth] (see
+/// [BgePageWidth]) and the padding is on the spacing scale.
 ///
 /// ```dart
 /// BgePage(
@@ -63,7 +63,7 @@ const double _footerCacheViewports = 1;
 ///
 /// ## Why the width variant is a cap, not a breakpoint
 ///
-/// [BgePageWidth] selects between two *measures*, and each is applied as a
+/// [BgePageWidth] selects among three *measures*, and each is applied as a
 /// maximum. A cap is already adaptive: on a 360dp phone a page capped at 840
 /// simply fills the window, and the same widget on a 2560px monitor stops at
 /// 840. No `LayoutBuilder`, no window-class check, no second layout path to

@@ -218,6 +218,51 @@ void main() {
       );
     });
 
+    testWidgets('BgePageWidth.wide caps the content at wideMaxWidth', (
+      tester,
+    ) async {
+      // For a list that sets rows side by side in a wide window (#949): wider
+      // than the pane measure, and still capped short of the monitor. On a
+      // box page and on a slivers page, whose measure is a gutter instead.
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          const BgePage(
+            width: BgePageWidth.wide,
+            child: SizedBox(
+              key: Key('greedy'),
+              width: double.infinity,
+              height: 20,
+            ),
+          ),
+          size: const Size(2000, 1200),
+        ),
+      );
+      expect(
+        tester.getSize(find.byKey(const Key('greedy'))).width,
+        BgeTokens.standard.wideMaxWidth,
+      );
+
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          const BgePage.slivers(
+            width: BgePageWidth.wide,
+            slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(key: Key('greedy row'), height: 20),
+              ),
+            ],
+          ),
+          size: const Size(2000, 1200),
+        ),
+      );
+      expect(
+        tester.getSize(find.byKey(const Key('greedy row'))).width,
+        BgeTokens.standard.wideMaxWidth,
+      );
+    });
+
     testWidgets('is inert on a phone at pane width too', (tester) async {
       await tester.pumpWidget(
         hostAtSize(
@@ -1598,11 +1643,12 @@ void main() {
       ),
     );
 
-    // A wide window, where the measure leaves a gutter each side, and a
-    // narrow one, where it leaves none; each way round, with a padding that
-    // differs on every side and follows the text direction.
+    // Wide windows, where the measure leaves a gutter each side (1600 for
+    // the wide measure, which spans 1200), and a narrow one, where it leaves
+    // none; each way round, with a padding that differs on every side and
+    // follows the text direction.
     for (final width in BgePageWidth.values) {
-      for (final window in [1200.0, 360.0]) {
+      for (final window in [1600.0, 1200.0, 360.0]) {
         for (final direction in TextDirection.values) {
           testWidgets(
             'on a ${width.name} page ${window.toInt()}dp wide, '
@@ -1646,6 +1692,10 @@ void main() {
               await pump(header: false);
               final alone = tester.getRect(find.byKey(contentKey));
               final aloneExtent = controller.position.maxScrollExtent;
+              // The content takes the measure where the window, less the
+              // padding's 56 across, has room for it, and the rest otherwise.
+              final measure = width.resolve(BgeTokens.standard);
+              expect(alone.width, math.min(measure, window - 56));
 
               await pump(header: true);
               final header = tester.getRect(find.byKey(headerKey));

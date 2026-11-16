@@ -2282,6 +2282,12 @@ class _BgeAppState extends State<BgeApp> {
   /// `extra`, and the detail sends the games the page pops with. Offered
   /// only where the session has the collection the page lists.
   ///
+  /// A Games tab quick look's *View game* (#957) opens the game's page
+  /// through [_openGame], from the quick look's own context, behind
+  /// [_catalogContainer]'s gate, as any catalog screen does. The page
+  /// arrives beneath the quick look, which sits over the navigation shell
+  /// and goes once the page has arrived.
+  ///
   /// The screen opens on the tab its location's [AppRoutes.eventTabParam]
   /// names, [tab], and each tab it settles on replaces the location
   /// (#856): see [_replaceEventTab], which replaces it only while the
@@ -2319,6 +2325,7 @@ class _BgeAppState extends State<BgeApp> {
               extra: args,
             )
           : null,
+      onOpenGame: _catalogContainer() == null ? null : _openGame,
     );
   }
 

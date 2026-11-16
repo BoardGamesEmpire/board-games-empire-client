@@ -49,6 +49,11 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+/// How a Games tab quick look opens a game's page (#957):
+/// [EventDetailScreen.onOpenGame], given the quick look's context and the
+/// game's id.
+typedef OpenEventGame = void Function(BuildContext context, String gameId);
+
 /// One event (#498): its header, its dates and who's coming, read reactively
 /// from the local cache and from the server once per open, and a tab for its
 /// games (#516).
@@ -130,7 +135,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// offered copy, with a search, a filter by person, the shared filter sheet
 /// (#851), and Take back on the viewer's own rows ([EventGamesTab], #516). The
 /// pool isn't cached: the [EventGamesBloc] holds what was read last, and the
-/// tab filters it on the device.
+/// tab filters it on the device. A pool row's cover and lines open its quick
+/// look (#957), a pop-up of the copy's place in this event, with its writes
+/// and, through [onOpenGame], View game.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
@@ -398,6 +405,7 @@ class EventDetailScreen extends StatelessWidget {
     this.onWhoAnswered,
     this.onAddAttendee,
     this.onOfferGames,
+    this.onOpenGame,
     this.now,
     this.tab,
     this.onTabChanged,
@@ -539,10 +547,67 @@ class EventDetailScreen extends StatelessWidget {
   static Key poolNominateKey(String offeredGameId) =>
       Key('event_detail.pool_nominate_$offeredGameId');
 
-  /// Key on a row's "Nominated" marker (#517), by the offered game's id: the
-  /// row supplies a live nomination.
+  /// Key on a row's status line while it says "Nominated" (#517, #946), by
+  /// the offered game's id: the row supplies a live nomination that its
+  /// Nominate doesn't say.
   static Key poolNominatedKey(String offeredGameId) =>
       Key('event_detail.pool_nominated_$offeredGameId');
+
+  /// Key on a row's cover and lines, the button that opens its quick look
+  /// (#957), by the offered game's id.
+  static Key poolRowHeadKey(String offeredGameId) =>
+      Key('event_detail.pool_row_head_$offeredGameId');
+
+  /// Key on the quick look's content (#957). One is open at a time.
+  static const Key quickLookKey = Key('event_detail.quick_look');
+
+  /// Key on the quick look's line saying its entry has left (#957).
+  static const Key quickLookGoneKey = Key('event_detail.quick_look_gone');
+
+  /// Key on the quick look's View game (#957).
+  static const Key quickLookOpenGameKey = Key(
+    'event_detail.quick_look_open_game',
+  );
+
+  /// Key on the Nominate in an offered copy's quick look (#957).
+  static const Key quickLookNominateKey = Key(
+    'event_detail.quick_look_nominate',
+  );
+
+  /// Key on the Take back in an offered copy's quick look (#957).
+  static const Key quickLookTakeBackKey = Key(
+    'event_detail.quick_look_take_back',
+  );
+
+  /// Key on a nomination row's cover and lines, the button that opens its
+  /// quick look (#957), by the nomination's id.
+  static Key nominationRowHeadKey(String nominationId) =>
+      Key('event_detail.nomination_row_head_$nominationId');
+
+  /// Key on a nomination's quick look's lines, the one node they are read
+  /// as, which takes focus when a write's button goes with its write (#957).
+  static const Key quickLookLinesKey = Key('event_detail.quick_look_lines');
+
+  /// Key on the Withdraw in a nomination's quick look (#957).
+  static const Key quickLookWithdrawKey = Key(
+    'event_detail.quick_look_withdraw',
+  );
+
+  /// Key on a host's Approve in a nomination's quick look (#957).
+  static const Key quickLookApproveKey = Key(
+    'event_detail.quick_look_approve',
+  );
+
+  /// Key on a host's Reject in a nomination's quick look (#957).
+  static const Key quickLookRejectKey = Key('event_detail.quick_look_reject');
+
+  /// Key on a host's Close vote in a nomination's quick look (#957).
+  static const Key quickLookCloseVoteKey = Key(
+    'event_detail.quick_look_close_vote',
+  );
+
+  /// Key on *Who voted* in a nomination's quick look (#957).
+  static const Key quickLookVotersKey = Key('event_detail.quick_look_voters');
 
   /// Key on one choice of the nominate dialog (#517): the date's id, or
   /// null for the whole event.
@@ -623,36 +688,11 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.nomination_note_save',
   );
 
-  /// Key on a nomination's *Who voted* button (#517), by the nomination's
-  /// id.
-  static Key nominationVotersKey(String nominationId) =>
-      Key('event_detail.nomination_voters_$nominationId');
-
-  /// Key on Withdraw on one of the viewer's own nominations (#517), by the
-  /// nomination's id.
-  static Key nominationWithdrawKey(String nominationId) =>
-      Key('event_detail.nomination_withdraw_$nominationId');
-
   /// Key on the withdraw dialog's Withdraw button (#517).
   static const Key withdrawConfirmKey = Key('event_detail.withdraw_confirm');
 
   /// Key on the withdraw dialog's Keep it button (#517).
   static const Key withdrawKeepKey = Key('event_detail.withdraw_keep');
-
-  /// Key on a host's Approve on a nomination awaiting approval (#518), by
-  /// the nomination's id.
-  static Key nominationApproveKey(String nominationId) =>
-      Key('event_detail.nomination_approve_$nominationId');
-
-  /// Key on a host's Reject on a nomination awaiting approval (#518), by the
-  /// nomination's id.
-  static Key nominationRejectKey(String nominationId) =>
-      Key('event_detail.nomination_reject_$nominationId');
-
-  /// Key on a host's Close vote on an open nomination (#518), by the
-  /// nomination's id.
-  static Key nominationCloseVoteKey(String nominationId) =>
-      Key('event_detail.nomination_close_vote_$nominationId');
 
   /// Key on the confirming button of the dialog that asks before a host's
   /// approval, rejection or close of a vote (#518): Approve, Reject or Close
@@ -862,6 +902,13 @@ class EventDetailScreen extends StatelessWidget {
   )?
   onOfferGames;
 
+  /// Opens a game's page from a Games tab quick look's View game (#957),
+  /// with the quick look's own context, which outlives the row it was
+  /// opened from, and the game's id: the feature package doesn't know the
+  /// route table. The quick look stays until the page has arrived over it
+  /// (`showBgePopup`). Null offers no View game.
+  final OpenEventGame? onOpenGame;
+
   /// The clock that decides whether a date is this year's, whether a
   /// proposed one has passed, and where the event stands as its dates pass,
   /// which picks the menu's status changes (#502, #655). Defaults to the
@@ -1043,6 +1090,7 @@ class _EventDetailBlocsState extends State<_EventDetailBlocs> {
         onWhoAnswered: screen.onWhoAnswered,
         onAddAttendee: screen.onAddAttendee,
         onOfferGames: screen.onOfferGames,
+        onOpenGame: screen.onOpenGame,
         now: screen.now ?? DateTime.now,
         hasActions: provided != null,
         say: _messenger.say,
@@ -1064,6 +1112,7 @@ class _EventDetailView extends StatelessWidget {
     this.onWhoAnswered,
     this.onAddAttendee,
     this.onOfferGames,
+    this.onOpenGame,
     this.onTabChanged,
   });
 
@@ -1072,6 +1121,7 @@ class _EventDetailView extends StatelessWidget {
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
   final OpenOfferGames? onOfferGames;
+  final OpenEventGame? onOpenGame;
 
   /// The tab [EventDetailScreen.tab] names (#856).
   final EventScreenTab screenTab;
@@ -1149,6 +1199,9 @@ class _EventDetailView extends StatelessWidget {
       child: EventGamesTabScope(
         onFirstShown: _gamesFirstShown,
         initialSection: screenTab.section ?? EventGamesSection.nominations,
+        // What the tab's quick looks reach the screen by (#957).
+        now: now,
+        onOpenGame: onOpenGame,
         child: _EventTabLocation(
           tab: screenTab,
           onTabChanged: onTabChanged,
@@ -1421,6 +1474,13 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   @override
   Widget build(BuildContext context) => widget.child;
 }
+
+/// Whether the screen is acting, from its actions' [state]: a request on its
+/// way, or a delete done and the screen leaving. Its writes wait meanwhile,
+/// on the page and in a Games tab quick look (#957). Null, with no actions'
+/// bloc, is never acting.
+bool eventScreenActing(EventActionsState? state) =>
+    state != null && (state.busy || _deleted(state));
 
 /// Whether [state] holds a delete the server accepted. The screen is leaving
 /// then, and offers nothing that would start another request.
@@ -1701,12 +1761,18 @@ class _ReadyPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = state.detail.snapshot;
-
+    // Each tick told to the Games tab's quick looks too, which sit on the
+    // root navigator, outside the page (#957). Without actions there is no
+    // Games tab, and no scope to tell.
+    final onTick = hasActions
+        ? EventGamesTabScope.of(context).clockTicked
+        : null;
     Widget clocked(List<EventNomination> nominations) => _ClockedPage(
       event: snapshot.event,
       occurrences: snapshot.occurrences,
       nominations: nominations,
       now: now,
+      onTick: onTick,
       builder: _page,
     );
 
@@ -1796,9 +1862,7 @@ class _ReadyPage extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final snapshot = state.detail.snapshot;
     final event = snapshot.event;
-    // A request on its way, or a delete done and the screen leaving.
-    final acting =
-        actionsState != null && (actionsState.busy || _deleted(actionsState));
+    final acting = eventScreenActing(actionsState);
     // As the event stands now, which its dates move on (#502).
     final writes = _statusWritesFor(
       eventStatusAt(event, snapshot.occurrences, now: now()),
@@ -1851,7 +1915,13 @@ class _ReadyPage extends StatelessWidget {
             enabled: !state.reading && !acting,
           ),
       ],
-      width: BgePageWidth.pane,
+      // Wide on every tab where the screen shows its tabs, for the Games
+      // tab's rows two to a line in an expanded window, with Details held to
+      // the pane's measure within it, so the header and the tab bar stay
+      // where they are as the tabs swap (#949). Without the bar the page is
+      // Details alone, at the pane's measure, its banners with it. In a
+      // window narrower than the pane's measure neither binds.
+      width: shownTabs == null ? BgePageWidth.pane : BgePageWidth.wide,
       // Details holds no list. The Games tab holds the rows of the sub-tab
       // it shows, the nominations' or the pool's, and none while that shows
       // a state (#516, #517, #945).
@@ -1876,6 +1946,7 @@ class _ReadyPage extends StatelessWidget {
               staleFor: tab == EventDetailTab.games
                   ? EventGamesTabScope.of(context).section
                   : null,
+              saidInQuickLook: EventGamesTabScope.of(context).saidInQuickLook,
             ),
       // Above the tabs, and in the semantics tree however far down the page
       // is, so a banner that lands while the user is far down is heard as it
@@ -1902,11 +1973,22 @@ class _ReadyPage extends StatelessWidget {
           EventDetailTab.details => [
             SliverToBoxAdapter(
               key: _detailsKey,
-              child: _details(
-                context,
-                actionsState,
-                pollState,
-                acting: acting,
+              // The pane's measure, centred in the page's wide one where the
+              // tabs show (#949).
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: BgePageWidth.pane.resolve(
+                      BgeTokens.of(context),
+                    ),
+                  ),
+                  child: _details(
+                    context,
+                    actionsState,
+                    pollState,
+                    acting: acting,
+                  ),
+                ),
               ),
             ),
           ],
@@ -2197,6 +2279,10 @@ typedef _OpenAddAttendee = Future<EventAttendeeAddition?> Function(
 /// The timer is set again whenever the event or its dates may have changed,
 /// and each time it fires. It waits a day at most, as the overview's does: a
 /// browser fires a timeout longer than about 24.8 days at once.
+///
+/// Each time it fires it tells [onTick] too, for what reads the clock
+/// outside the page: a Games tab quick look, on the root navigator, moves
+/// on at the page's boundaries, by the page's clock (#957).
 class _ClockedPage extends StatefulWidget {
   const _ClockedPage({
     required this.event,
@@ -2204,6 +2290,7 @@ class _ClockedPage extends StatefulWidget {
     required this.nominations,
     required this.now,
     required this.builder,
+    this.onTick,
   });
 
   final Event event;
@@ -2215,6 +2302,10 @@ class _ClockedPage extends StatefulWidget {
 
   /// The page, built again each time the timer fires.
   final WidgetBuilder builder;
+
+  /// Told each time the timer fires, after it is set again: the Games tab's
+  /// [EventGamesTabController.clockTicked]. Null tells nobody.
+  final VoidCallback? onTick;
 
   @override
   State<_ClockedPage> createState() => _ClockedPageState();
@@ -2267,6 +2358,7 @@ class _ClockedPageState extends State<_ClockedPage> {
     _arm();
     // The page reads the clock again as it builds.
     setState(() {});
+    widget.onTick?.call();
   }
 
   @override

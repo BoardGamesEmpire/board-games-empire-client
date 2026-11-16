@@ -404,8 +404,12 @@ void main() {
 
         await activateByKeyboard(tester, section(EventGamesSection.pool));
 
-        // The pool under the bar, and the nominations gone from it.
-        expect(find.text('Games pool', skipOffstage: false), findsOneWidget);
+        // The pool under the bar, its header over its empty state, and the
+        // nominations gone from it.
+        expect(
+          find.byKey(EventDetailScreen.poolSearchKey, skipOffstage: false),
+          findsOneWidget,
+        );
         expect(
           find.text("Couldn't load nominations", skipOffstage: false),
           findsNothing,

@@ -62,8 +62,9 @@ String nominationStatusGroupLabel(
 };
 
 /// What [scope] is called, in the filters and on the chip naming it while
-/// it is in use (#517): as a row says what it is for, from [dates] as of
-/// [now]. A date the event no longer has is still named, as gone.
+/// it is in use (#517), and in the quick looks (#957), a nomination's and an
+/// offered copy's: what it is for, from [dates] as of [now]. A date the
+/// event no longer has is still named, as gone.
 String nominationScopeLabel(
   BuildContext context,
   NominationScope scope, {

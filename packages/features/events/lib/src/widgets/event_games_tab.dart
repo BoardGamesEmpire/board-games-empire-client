@@ -7,25 +7,25 @@ import 'package:events/src/bloc/event_detail_state.dart';
 import 'package:events/src/bloc/event_games_bloc.dart';
 import 'package:events/src/bloc/event_games_event.dart';
 import 'package:events/src/bloc/event_games_state.dart';
-import 'package:events/src/bloc/event_nominations_bloc.dart';
-import 'package:events/src/bloc/event_nominations_event.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_game_offers.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
-import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
 import 'package:events/src/widgets/event_game_filter_options.dart';
+import 'package:events/src/widgets/event_game_quick_look.dart';
+import 'package:events/src/widgets/event_game_row_head.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
+import 'package:events/src/widgets/event_games_row_lines.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
-import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/event_nominations_section.dart';
 import 'package:events/src/widgets/event_pool_people_sheet.dart';
 import 'package:events/src/widgets/game_name.dart';
 import 'package:events/src/widgets/held_press.dart';
-import 'package:events/src/widgets/nominate_scope_dialog.dart';
+import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:game_filters/game_filters.dart'
@@ -232,13 +232,20 @@ final class _GamesBody {
 /// #517), narrowed and ordered by its own filters and sort; and Pool, the games
 /// its attendees offer to bring, one row per offered copy, under a header with
 /// Offer games, a search, a filter by person, "Not mine" and the shared filter
-/// sheet, as Offer games has it ([eventGameFilterOptions], #851). Each pool row
-/// names its game with its subtitle where it has one ([gameName], #851), as do
-/// its Take back and Nominate, the dialogs they ask with, and their outcomes. A
-/// row that supplies a live nomination says "Nominated" (#517). Each row ends
-/// with Nominate where the viewer is offered it ([nominateGate]), and the
-/// viewer's own rows with Take back ([offerGamesGate]); every other row too
-/// where the viewer may take back anyone's game ([canTakeBackAnyGame], #518).
+/// sheet, as Offer games has it ([eventGameFilterOptions], #851).
+///
+/// Each pool row is compact (#946): its cover, its name with its subtitle
+/// where it has one ([gameName], #851), one status line, and one main action.
+/// The line says who brings it, and "Nominated" after that where the copy
+/// supplies a live nomination and Nominate can't say it (#517, #947). The main
+/// action is Nominate where the viewer is offered it ([nominateGate]), else
+/// Take back on the viewer's own rows ([offerGamesGate]), and on every other
+/// row where they may take back anyone's game ([canTakeBackAnyGame], #518).
+/// The cover and the line are one button, which opens the copy's quick look
+/// ([EventGameRowHead], #957): where it is played, what it supplies, Nominate
+/// and Take back under the row's rules ([poolRowGates]), and View game. Take
+/// back, the dialogs Take back and Nominate ask with, and their outcomes name
+/// the game as the row does.
 ///
 /// Its slivers, as one group under the tab bar: first the sub-tabs' bar
 /// ([EventGamesSectionBar]), Material's secondary [TabBar], whose controller is
@@ -247,13 +254,14 @@ final class _GamesBody {
 /// focus stays on the sub-tab chosen. Games opens on Nominations. Where there
 /// is no nominations' state, the tab is the pool alone, with no bar.
 ///
-/// Nominations is the Nominations section. Pool is the pool's heading,
-/// "Games pool", in every state, so heading navigation finds it as it finds
-/// the section's ([EventGamesTabHeading]); then the pool's header, then its
-/// rows ([BgeKeyedSliverList], keyed by the offered game's id) or one state
-/// in a [BgeStateSliver]. The header stays above every state but the wait
-/// for a first answer (or for the event's read after the pool found it
-/// gone, or to bring a roster not read) and the games being hidden. A roster
+/// Nominations is the Nominations section. Pool is the pool's header, then
+/// its rows ([EventGamesRowLines], keyed by the offered game's id, two to a
+/// line in an expanded window, #949) or one state in a [BgeStateSliver].
+/// Neither has a heading of its own: each sub-tab's label, said as it is
+/// chosen, names its list (#946). The header
+/// stays above every state but the wait for a first answer (or for the
+/// event's read after the pool found it gone, or to bring a roster not read)
+/// and the games being hidden. A roster
 /// not read, as an event cached from the list has, is not hidden: it waits
 /// for the event's read to bring it, and if that read fails, the tab says
 /// it couldn't load the games, with Try again reading the event. The
@@ -284,7 +292,7 @@ final class _GamesBody {
 ///
 /// Take back is held, inert, from its press until its take-back is over,
 /// wherever it would otherwise be unavailable, so it keeps focus
-/// ([_TakeBackButton]). On the viewer's own row it sends at once; on
+/// ([TakeBackButton]). On the viewer's own row it sends at once; on
 /// someone else's it asks first, naming the game and whose it is, since
 /// only they can offer it again (#518). Then it waits for any running
 /// detail read to end ([readEnded]), and sends only if the viewer may still
@@ -311,9 +319,9 @@ final class _GamesBody {
 /// event of more than one date it asks first whether the nomination is for
 /// the whole event or for one date still to come; otherwise it is for the
 /// whole event. It sends as Take back does, once any running detail read
-/// has ended, and only if it still may ([_nominate]). It is held, inert,
+/// has ended, and only if it still may ([nominateGame]). It is held, inert,
 /// from its press through its nomination, as Offer games is through its
-/// run ([_NominateButton]).
+/// run ([NominateButton]).
 ///
 /// ## The filter
 ///
@@ -371,10 +379,6 @@ class EventGamesTab extends StatelessWidget {
   /// place as the sub-tabs swap (#945).
   static const _nominationsKey = ValueKey<String>('event_games.nominations');
 
-  /// Key on the pool's heading, so it keeps its place as the header under
-  /// it comes and goes.
-  static const _poolHeadingKey = ValueKey<String>('event_games.pool_heading');
-
   /// Key on the header's sliver, so it keeps its state, and its chips their
   /// focus, as what is under it changes.
   static const _headerKey = ValueKey<String>('event_games.header');
@@ -388,6 +392,8 @@ class EventGamesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final now = this.now();
+    // Nominate's choices, the same for every row.
+    final scopes = nominateScopes(detail.detail, now: now);
     final names = _body.names;
     final gate = offerGamesGate(detail);
     // Take back on someone else's row (#518), where the viewer may take
@@ -399,45 +405,6 @@ class EventGamesTab extends StatelessWidget {
     // of the pool's writes is out.
     final writable = !detail.reading && !acting && !games.busy;
     final nominations = this.nominations;
-    final nominated = nominations?.nominations ?? const <EventNomination>[];
-    // Nominate (#517), on every row, where the viewer is offered it.
-    final nominating =
-        nominations != null && nominateGate(detail) == NominateGate.open;
-    final scopes = nominating
-        ? _nominateScopes(detail.detail, now: now)
-        : const <_NominateScope>[];
-    // As the tab's other writes are, and not while another nominations
-    // write is out. Nor before the nominations are known: none held before a
-    // read has answered says nothing of what a row supplies, and nothing
-    // stops a second nomination of a row for one choice (backend#1214).
-    final mayNominate =
-        nominations != null &&
-        !detail.reading &&
-        !acting &&
-        !nominations.busy &&
-        _nominationsKnown(nominations, controller);
-    // Why Nominate waits with no nominations to go on, where the wait won't
-    // end by itself (#517): a first read that failed, nominations this
-    // viewer isn't shown, or a nominate's lost answer whose read failed. A
-    // read that is still out says nothing.
-    final drawn = nominations == null
-        ? null
-        : controller.drawnNominationsLoad(nominations);
-    final unread = nominations == null
-        ? null
-        : nominations.settling
-        ? switch (drawn) {
-            EventNominationsLoad.failed => l10n.eventsNominateUnsettled,
-            EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
-            _ => null,
-          }
-        : nominations.nominations.isNotEmpty
-        ? null
-        : switch (drawn) {
-            EventNominationsLoad.failed => l10n.eventsNominationsFailedTitle,
-            EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
-            _ => null,
-          };
 
     return SliverMainAxisGroup(
       slivers: [
@@ -469,25 +436,11 @@ class EventGamesTab extends StatelessWidget {
             state: shown.state,
             controller: controller,
             pool: games.games,
-            // Before a read has answered, an empty pool says nothing of
-            // what the viewer offers. While one is out, the last to end
-            // stands, as the pool's own body has it.
-            poolRead:
-                games.games.isNotEmpty ||
-                controller.drawnLoad(games) == EventGamesLoad.loaded,
-            names: names,
+            poolRead: controller.isPoolRead(games),
             acting: acting,
             now: now,
           ),
         if (_body.pool case (:final body, :final rows)) ...[
-          // In every state of the pool, as the section's is in every state of
-          // its own, so heading navigation finds the list (#517). No count: the
-          // header's says how many games the filter keeps while it narrows,
-          // and a second would say it twice.
-          SliverToBoxAdapter(
-            key: _poolHeadingKey,
-            child: EventGamesTabHeading(title: l10n.eventsGamesPoolHeading),
-          ),
           if (body != _Body.hidden && body != _Body.loading)
             SliverToBoxAdapter(
               key: _headerKey,
@@ -559,64 +512,43 @@ class EventGamesTab extends StatelessWidget {
                 ),
               ),
             ),
-            _Body.rows => BgeKeyedSliverList<OfferedGame>(
+            _Body.rows => EventGamesRowLines<OfferedGame>(
               items: rows,
               keyOf: (game) => EventDetailScreen.poolRowKey(game.id),
+              identityOf: (game) => OfferedCopyEntry(game.id),
               itemBuilder: (context, game) {
-                final own = viewerId != null && game.attendeeId == viewerId;
-                // In the second person on the viewer's own rows, as the row's
-                // third line is.
-                final notGoing =
-                    !nominating || !_supplierNotGoing(detail.detail, game)
-                    ? null
-                    : own
-                    ? l10n.eventsNominateYouNotGoingHint
-                    : l10n.eventsNominateSupplierNotGoingHint;
-                final name = names[game.attendeeId];
+                // The row's rules, which its quick look builds by too (#957).
+                final gates = poolRowGates(
+                  l10n,
+                  game: game,
+                  detail: detail,
+                  games: games,
+                  nominations: nominations,
+                  controller: controller,
+                  names: names,
+                  acting: acting,
+                  scopes: scopes,
+                );
+                final buttons = poolRowButtons(
+                  context,
+                  game: game,
+                  gates: gates,
+                  controller: controller,
+                  viewerId: viewerId,
+                  names: names,
+                  clock: this.now,
+                );
                 return _PoolRow(
                   game: game,
-                  who: own
-                      ? l10n.eventsGamesYours
-                      : l10n.eventsGamesTheirs(
-                          name ?? l10n.eventsAttendeeSomeoneStart,
-                        ),
-                  nominated: suppliesLive(game, nominated),
-                  note: notGoing,
-                  nominate: nominating
-                      ? _NominateButton(
-                          game: game,
-                          unread: unread,
-                          notGoing: notGoing,
-                          already: _alreadyTaken(l10n, [
-                            for (final each in scopes)
-                              nominateTaken(game, nominated, scope: each.scope),
-                          ]),
-                          enabled: mayNominate,
-                          runOver: !nominations.busy,
-                          onPressed: () =>
-                              _nominate(context, game, clock: this.now),
-                        )
-                      : null,
-                  takeBack: (own ? gate != OfferGamesGate.hidden : anyGame)
-                      ? _TakeBackButton(
-                          game: game,
-                          area: controller.takeBackArea(game.id),
-                          inert: games.takingBack == game.id,
-                          enabled: writable,
-                          runOver: !games.busy,
-                          onPressed: () {
-                            // Armed by the press itself, however it came.
-                            controller.armTakeBack(game.id);
-                            return _takeBack(
-                              context,
-                              controller,
-                              game,
-                              viewerId: viewerId,
-                              names: names,
-                            );
-                          },
-                        )
-                      : null,
+                  area: controller.poolRowArea(game.id),
+                  head: controller.rowHeadFocus(OfferedCopyEntry(game.id)),
+                  who: gates.who,
+                  nominated: gates.nominatedLine,
+                  note: gates.nominate?.notGoing,
+                  // One main action (#946): Nominate where the viewer is
+                  // offered it, else Take back where they may take it back.
+                  // Take back beside Nominate is the quick look's.
+                  action: buttons.nominate ?? buttons.takeBack,
                 );
               },
             ),
@@ -625,270 +557,6 @@ class EventGamesTab extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Takes [game] back once any running detail read has ended (#516), for the
-/// event, the viewer's row and the roster as the detail shows them then,
-/// whose ids a reconcile can have moved (#499). Completes true when the
-/// take-back was sent, and false when nothing was: Keep it, or as below.
-///
-/// Whose game it is comes from the row's attendee: the viewer's own, where
-/// it is their row [viewerId], goes at once. Someone else's asks first, as a
-/// destructive action, naming the game and whoever offered it from [names],
-/// the roster's names, as the row does ([gameName], #851): only they can
-/// offer it again (#518). It then goes for the row's attendee as the pool
-/// holds it then.
-///
-/// Nothing is sent if, by then, the viewer may no longer take that game
-/// back (their own: [offerGamesGate]; anyone else's: [canTakeBackAnyGame]),
-/// their own game is no longer theirs, or it has left the pool: the page
-/// already shows that, and the footer says the take-back was dropped, or a
-/// screen reader would hear nothing happen. Whatever sends nothing disarms
-/// [controller]'s hand-off from its Take back.
-Future<bool> _takeBack(
-  BuildContext context,
-  EventGamesTabController controller,
-  OfferedGame game, {
-  required String? viewerId,
-  required Map<String, String?> names,
-}) async {
-  // Read before anything is awaited: the row can leave meanwhile, and take
-  // the context with it, and the dialog covers it.
-  final l10n = EventsLocalizations.of(context);
-  final detail = context.read<EventDetailBloc>();
-  final games = context.read<EventGamesBloc>();
-  final own = viewerId != null && game.attendeeId == viewerId;
-  if (!own) {
-    final offeredBy = names[game.attendeeId] ?? l10n.eventsAttendeeSomeone;
-    final confirmed = await showConfirmDialog(
-      context,
-      title: l10n.eventsTakeBackTheirsConfirmTitle(
-        gameName(l10n, game.title, game.subtitle),
-        offeredBy,
-      ),
-      body: l10n.eventsTakeBackTheirsConfirmBody,
-      keepLabel: l10n.eventsTakeBackTheirsConfirmKeep,
-      confirmLabel: l10n.eventsTakeBackTheirsConfirm,
-      destructive: true,
-      keepKey: EventDetailScreen.poolTakeBackKeepKey,
-      confirmKey: EventDetailScreen.poolTakeBackConfirmKey,
-    );
-    if (!confirmed || games.isClosed) {
-      controller.disarmTakeBack(game.id);
-      return false;
-    }
-  }
-  final state = await readEnded(detail);
-  if (state is! EventDetailReady || games.isClosed) {
-    controller.disarmTakeBack(game.id);
-    return false;
-  }
-
-  final viewer = state.detail.attendance;
-  final shown = games.state.games
-      .where((each) => each.id == game.id)
-      .firstOrNull;
-  // Pressed as the viewer's own, it goes only while it is theirs: it never
-  // asked.
-  final attendeeId = own
-      ? (offerGamesGate(state) != OfferGamesGate.hidden &&
-                viewer != null &&
-                viewer.id == shown?.attendeeId
-            ? viewer.id
-            : null)
-      : (canTakeBackAnyGame(state) ? shown?.attendeeId : null);
-  if (attendeeId == null) {
-    controller.disarmTakeBack(game.id);
-    games.add(
-      EventGamesWriteDropped(
-        EventGamesWrite.takeBack,
-        title: game.title,
-        subtitle: game.subtitle,
-      ),
-    );
-    return false;
-  }
-  // One write at a time; the bloc would ignore this one.
-  if (games.state.busy) {
-    controller.disarmTakeBack(game.id);
-    return false;
-  }
-  games.add(
-    EventGameTakenBack(
-      state.detail.snapshot.event.id,
-      attendeeId,
-      game,
-      attendeeIds: poolReadIds(state.detail),
-    ),
-  );
-  return true;
-}
-
-/// One choice Nominate offers (#517): the scope it nominates for, and the
-/// date it names, or null for the whole event.
-typedef _NominateScope = ({NominationScope scope, EventOccurrence? date});
-
-/// What Nominate offers on [detail] as of [now] (#517): the whole event,
-/// then, on an event of more than one date, each date a game can still be
-/// nominated for ([nominatableDates]), in their order. With one choice,
-/// Nominate nominates for it; with more, it asks.
-List<_NominateScope> _nominateScopes(
-  EventDetail detail, {
-  required DateTime now,
-}) => [
-  (scope: const WholeEventScope(), date: null),
-  if (detail.snapshot.occurrences.length > 1)
-    for (final date in nominatableDates(detail, now: now))
-      (scope: DateScope(date.id), date: date),
-];
-
-/// Whether whoever brings [game] has answered Not going (#517), which the
-/// server refuses a nomination for: the viewer, by their own answer on
-/// [detail], as Offer games reads it; anyone else by their row on the
-/// roster. Where the roster is withheld the pool holds only the viewer's own
-/// games, so their answer decides.
-bool _supplierNotGoing(EventDetail detail, OfferedGame game) {
-  final viewer = detail.attendance;
-  final supplier = viewer != null && viewer.id == game.attendeeId
-      ? viewer
-      : detail.snapshot.attendees
-            ?.where((row) => row.id == game.attendeeId)
-            .firstOrNull;
-  return supplier?.status == EventParticipationStatus.notAttending;
-}
-
-/// Whether the nominations [state] holds say what a pool row supplies
-/// (#517): there are some, or the last read to end, as [controller] draws
-/// it, found none. None held otherwise says nothing: before a read has
-/// ended, or once one is failed, hidden or gone. Nor do any while a
-/// nominate's answer was lost and no read since has loaded
-/// ([EventNominationsState.settling]): the server may have saved it, and it
-/// takes the same row twice for one choice (backend#1214). Nominate waits
-/// until then, as its press does when it comes to send ([_nominate]).
-bool _nominationsKnown(
-  EventNominationsState state,
-  EventGamesTabController controller,
-) =>
-    !state.settling &&
-    (state.nominations.isNotEmpty ||
-        controller.drawnNominationsLoad(state) == EventNominationsLoad.loaded);
-
-/// Why a pool row can't be nominated for any choice, from what [taken] says
-/// of each, or null while one is left.
-String? _alreadyTaken(
-  EventsLocalizations l10n,
-  List<NominateTaken> taken,
-) {
-  if (taken.isEmpty || taken.contains(NominateTaken.no)) return null;
-  if (taken.every((each) => each == NominateTaken.nominated)) {
-    return l10n.eventsNominateAlready;
-  }
-  if (taken.every((each) => each == NominateTaken.inLineup)) {
-    return l10n.eventsNominateInLineup;
-  }
-  return l10n.eventsNominateAlreadyOrInLineup;
-}
-
-/// Nominates [game] (#517): for the whole event, or where there is more
-/// than one choice ([_nominateScopes]), for the one chosen in
-/// [showNominateScopeDialog], where a choice the row already supplies a
-/// live nomination for, or its game is in the lineup for, can't be chosen.
-/// The dialog, the nomination's outcome and a drop name the game as the row
-/// does, with its subtitle ([gameName], #851). Completes true when the
-/// nomination was sent, and false when nothing was: the dialog cancelled,
-/// or as below.
-///
-/// It goes once any running detail read has ended ([readEnded]), for the
-/// event as the detail shows it then, whose id a reconcile can have moved
-/// (#499). Nothing is sent if, by then, the viewer isn't offered Nominate,
-/// the game has left the pool, the choice is no longer offered, as a date
-/// cancelled meanwhile isn't, or one that started meanwhile isn't, or the
-/// row supplies a live nomination for it, or its game is in the lineup for
-/// it: the page already shows that, and
-/// the footer says the nomination was dropped, or a screen reader would hear
-/// nothing happen. So [clock] is read as it is pressed and again then: the
-/// server takes a nomination for a date that has started.
-Future<bool> _nominate(
-  BuildContext context,
-  OfferedGame game, {
-  required DateTime Function() clock,
-}) async {
-  // Read before anything is awaited: the dialog covers the row, and a
-  // rebuild can take this context with it.
-  final l10n = EventsLocalizations.of(context);
-  final detail = context.read<EventDetailBloc>();
-  final pool = context.read<EventGamesBloc>();
-  final nominations = context.read<EventNominationsBloc>();
-  final controller = EventGamesTabScope.of(context);
-  final shown = detail.state;
-  if (shown is! EventDetailReady) return false;
-
-  final now = clock();
-  final choices = _nominateScopes(shown.detail, now: now);
-  final NominationScope scope;
-  if (choices.length == 1) {
-    scope = choices.single.scope;
-  } else {
-    final chosen = await showNominateScopeDialog(
-      context,
-      title: gameName(l10n, game.title, game.subtitle),
-      choices: [
-        for (final choice in choices)
-          (
-            scope: choice.scope,
-            label: switch (choice.date) {
-              null => l10n.eventsNominationWholeEvent,
-              final date => l10n.eventsNominationForDate(
-                eventDateName(context, date, now: now),
-              ),
-            },
-            taken: nominateTaken(
-              game,
-              nominations.state.nominations,
-              scope: choice.scope,
-            ),
-          ),
-      ],
-    );
-    if (chosen == null || nominations.isClosed) return false;
-    scope = chosen;
-  }
-
-  final state = await readEnded(detail);
-  if (state is! EventDetailReady || nominations.isClosed) return false;
-  final inPool = pool.state.games.any((shown) => shown.id == game.id);
-  final offered = _nominateScopes(
-    state.detail,
-    now: clock(),
-  ).any((each) => each.scope == scope);
-  if (nominateGate(state) != NominateGate.open ||
-      !_nominationsKnown(nominations.state, controller) ||
-      !inPool ||
-      !offered ||
-      nominateTaken(game, nominations.state.nominations, scope: scope) !=
-          NominateTaken.no) {
-    nominations.add(
-      NominationWriteDropped(
-        NominationWrite.nominate,
-        title: game.title,
-        subtitle: game.subtitle,
-      ),
-    );
-    return false;
-  }
-  // One write at a time; the bloc would ignore this one.
-  if (nominations.state.busy) return false;
-  nominations.add(
-    GameNominated(
-      state.detail.snapshot.event.id,
-      game,
-      occurrenceId: switch (scope) {
-        WholeEventScope() => null,
-        DateScope(:final occurrenceId) => occurrenceId,
-      },
-    ),
-  );
-  return true;
 }
 
 /// The people offering games, as *Whose games* and the chips list them: the
@@ -1287,7 +955,7 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
                   key: EventDetailScreen.offerGamesKey,
                   focusNode: focusNode,
                   onPressed: onPressed,
-                  icon: inert ? const _HeldSpinner() : const Icon(Icons.add),
+                  icon: inert ? const HeldSpinner() : const Icon(Icons.add),
                   label: Text(label),
                 ),
               ),
@@ -1311,35 +979,49 @@ class _OfferGamesButtonState extends State<_OfferGamesButton>
   }
 }
 
-/// One offered copy (#516): its picture, its name, the title with the
-/// subtitle where it has one ([gameName], #851), where it is played, who
-/// brings it and, where it supplies a live nomination, "Nominated" (#517),
-/// as one node. Then its controls, each a node of its own: [nominate] where
-/// the viewer is offered it, and [takeBack] where they may take it back.
-/// Then [note], why Nominate can't be pressed, which its hint already says.
+/// One offered copy (#516), compact (#946): its picture, its name, the
+/// title with the subtitle where it has one ([gameName], #851), and one
+/// status line, who brings it ([who]) and, where [nominated] says so,
+/// "Nominated" after it (#947), spoken with a comma; as one button, which
+/// opens the copy's quick look (#957, [EventGameRowHead]), focused through
+/// [head]. Then its one main action, a node of its own ([action]): Nominate
+/// where the viewer is offered it, else Take back where they may take it
+/// back. Then [note], why Nominate can't be pressed, which its hint already
+/// says. Where it is played, what it supplies, and Take back beside
+/// Nominate, are the quick look's. The whole row is held by [area], so a row
+/// that leaves can say it held focus ([EventGamesTabController.poolChanged]).
 class _PoolRow extends StatelessWidget {
   const _PoolRow({
     required this.game,
+    required this.area,
+    required this.head,
     required this.who,
     required this.nominated,
     this.note,
-    this.nominate,
-    this.takeBack,
+    this.action,
   });
 
   final OfferedGame game;
 
-  /// Who brings it, as its third line says it.
+  /// Holds the row ([EventGamesTabController.poolRowArea]).
+  final FocusNode area;
+
+  /// The focus of the row's head ([EventGamesTabController.rowHeadFocus]).
+  final FocusNode head;
+
+  /// Who brings it, as its status line says it.
   final String who;
 
-  /// Whether it supplies a live nomination, which its marker says.
+  /// Whether its status line says Nominated: it supplies a live nomination
+  /// and Nominate, which says so where it can't be pressed, isn't there to
+  /// (#947).
   final bool nominated;
 
-  /// Drawn under the controls, and left out of the semantics tree.
+  /// Drawn under the main action, and left out of the semantics tree.
   final String? note;
 
-  final Widget? nominate;
-  final Widget? takeBack;
+  /// Its main action, Nominate or Take back, where it has one.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -1349,381 +1031,63 @@ class _PoolRow extends StatelessWidget {
     final quiet = theme.textTheme.bodyMedium?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final medium = switch (game.medium) {
-      GameMedium.physical => l10n.eventsGamesMediumPhysical,
-      GameMedium.digital => l10n.eventsGamesMediumDigital,
-      null => null,
-    };
-    final nominate = this.nominate;
-    final takeBack = this.takeBack;
+    final action = this.action;
     final note = this.note;
 
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          BgeThumbnail(url: game.thumbnail),
-          const BgeGap.md(axis: Axis.horizontal),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                MergeSemantics(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        gameName(l10n, game.title, game.subtitle),
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                      if (medium == null)
-                        Text(game.platformName, style: quiet)
-                      else
-                        Text(
-                          l10n.eventsGamesWhere(game.platformName, medium),
-                          semanticsLabel: l10n.eventsGamesWhereSpoken(
-                            game.platformName,
-                            medium,
-                          ),
-                          style: quiet,
-                        ),
-                      Text(who, style: quiet),
-                      if (nominated) ...[
-                        const BgeGap.xs(),
-                        // Read as the node's last line, as its words alone:
-                        // the chip's own node would add a selected state
-                        // that a marker doesn't have. A chip's label can't
-                        // wrap, so it scales down.
-                        Semantics(
-                          label: l10n.eventsPoolNominated,
-                          child: ExcludeSemantics(
-                            child: Chip(
-                              key: EventDetailScreen.poolNominatedKey(game.id),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              avatar: const Icon(Icons.playlist_add_check),
-                              label: GameFilterChipLabel(
-                                l10n.eventsPoolNominated,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (nominate != null || takeBack != null)
-                  Wrap(
-                    spacing: tokens.spaceSm,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [?nominate, ?takeBack],
-                  ),
-                if (note != null)
-                  // Nominate's hint already says it.
-                  ExcludeSemantics(
-                    child: Text(
-                      note,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+    return Focus(
+      focusNode: area,
+      includeSemantics: false,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EventGameRowHead(
+              key: EventDetailScreen.poolRowHeadKey(game.id),
+              thumbnail: game.thumbnail,
+              title: gameName(l10n, game.title, game.subtitle),
+              entry: OfferedCopyEntry(game.id),
+              focusNode: head,
+              lines: [
+                if (nominated)
+                  Text(
+                    l10n.eventsPoolStatusNominated(who),
+                    key: EventDetailScreen.poolNominatedKey(game.id),
+                    // The symbol between the two would be read out.
+                    semanticsLabel: l10n.eventsPoolStatusNominatedSpoken(who),
+                    style: quiet,
+                  )
+                else
+                  Text(who, style: quiet),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Nominate on a pool row (#517): a direct write, so disabled offline
-/// through [BgeOnlineOnly], with the connection's reason as its hint. Named
-/// for its game to a screen reader, as its row names it ([gameName], #851).
-///
-/// Online it is disabled, with the reason as its hint, while the nominations
-/// couldn't be read or aren't shown to the viewer ([unread]), else while
-/// whoever brings the game isn't going ([notGoing]), else while the row is
-/// nominated already, or its game in the lineup, for everything Nominate
-/// offers ([already]): a hint says
-/// one thing, and those come in that order. It is disabled with no hint
-/// while it may not be pressed for a while ([enabled]).
-///
-/// Its press can open the nominate dialog, which hands focus back to it as
-/// it closes, just before the nomination goes out, and a disabled button
-/// can't hold focus (#607). So, as Offer games is, it is held through
-/// [HeldPress] from its press until its nomination is over ([runOver]):
-/// enabled, ignoring presses and showing a spinner, wherever it would
-/// otherwise be unavailable. A nomination of its own that leaves the row
-/// nominated already for everything would disable it under the keyboard
-/// user who pressed it, so then it stays inert, drawn as a disabled button
-/// is and saying why, for as long as it holds focus, and is disabled once
-/// focus moves on.
-class _NominateButton extends StatefulWidget {
-  const _NominateButton({
-    required this.game,
-    required this.unread,
-    required this.notGoing,
-    required this.already,
-    required this.enabled,
-    required this.runOver,
-    required this.onPressed,
-  });
-
-  final OfferedGame game;
-
-  /// Why there are no nominations to go on, where waiting won't bring them:
-  /// a first read that failed, or nominations not shown to the viewer. Null
-  /// otherwise, a read still out included.
-  final String? unread;
-
-  /// Why it can't be pressed where whoever brings the game has answered Not
-  /// going: the viewer, or someone else. Null where they haven't.
-  final String? notGoing;
-
-  /// Why the row can't be nominated for any choice Nominate offers, each
-  /// taken already ([nominateTaken]). Null while one is left.
-  final String? already;
-
-  /// Whether it may be pressed now, connection and reasons aside: false
-  /// while a detail read runs, the screen's own request is out, a
-  /// nominations write is out, or the nominations haven't been read.
-  final bool enabled;
-
-  /// Whether no nominations write is out: once its own nomination went out,
-  /// that is over.
-  final bool runOver;
-
-  /// Asks for the choice where there is one, and sends the nomination.
-  /// Completes true when it was sent, and false when nothing was.
-  final Future<bool> Function() onPressed;
-
-  @override
-  State<_NominateButton> createState() => _NominateButtonState();
-}
-
-class _NominateButtonState extends State<_NominateButton>
-    with HeldPress<_NominateButton> {
-  /// Whether its own nomination went out since it was last available, with
-  /// focus not moved on from it since.
-  bool _nominated = false;
-
-  /// Whether it holds focus.
-  bool _focused = false;
-
-  @override
-  bool get heldActionOver => widget.runOver;
-
-  Future<bool> _press() async {
-    final sent = await widget.onPressed();
-    if (sent) _nominated = true;
-    return sent;
-  }
-
-  void _focusChanged(bool focused) {
-    if (!mounted) return;
-    setState(() {
-      _focused = focused;
-      if (!focused) _nominated = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final offline = BgeConnectivityScope.offlineOf(context);
-    final unread = widget.unread;
-    final notGoing = widget.notGoing;
-    final already = widget.already;
-    final available =
-        widget.enabled &&
-        !offline &&
-        unread == null &&
-        notGoing == null &&
-        already == null;
-    if (available) _nominated = false;
-    // Offline, with no nominations to go on, or not going, it is disabled,
-    // pressed or not: no press made it so (#49).
-    final held = heldInert(
-      available: available,
-      disabled: offline || unread != null || notGoing != null,
-    );
-    // Nominated already by its own press, which is all that keeps it from
-    // being pressed, and holding focus: inert, not disabled, or focus would
-    // go (#607).
-    final kept =
-        !held &&
-        _nominated &&
-        _focused &&
-        already != null &&
-        widget.enabled &&
-        !offline &&
-        unread == null &&
-        notGoing == null;
-    final inert = held || kept;
-    // One reason: offline [BgeOnlineOnly] gives its own.
-    final reason = offline ? null : unread ?? notGoing ?? already;
-
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      includeSemantics: false,
-      onFocusChange: _focusChanged,
-      child: BgeOnlineOnly(
-        showNote: false,
-        child: Semantics(
-          hint: reason,
-          child: BgeInertButton(
-            inert: inert,
-            label: l10n.eventsNominateNamed(
-              gameName(l10n, widget.game.title, widget.game.subtitle),
+            // Outside the head, whose one button can't hold another (#957),
+            // and inset past the cover, so the action and its note line up
+            // under the title and the status line.
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: BgeThumbnail.listExtent + tokens.spaceMd,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ?action,
+                  if (note != null)
+                    // Nominate's hint already says it.
+                    ExcludeSemantics(
+                      child: Text(
+                        note,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            onPressed: available || inert
-                ? () => unawaited(holdPress(_press))
-                : null,
-            builder: (context, focusNode, onPressed) => TextButton.icon(
-              key: EventDetailScreen.poolNominateKey(widget.game.id),
-              focusNode: focusNode,
-              onPressed: onPressed,
-              style: kept ? _unavailableStyle(context) : null,
-              icon: held
-                  ? const _HeldSpinner()
-                  : const Icon(Icons.playlist_add),
-              label: Text(l10n.eventsNominate),
-            ),
-          ),
+          ],
         ),
       ),
     );
   }
-
-  /// Drawn as a disabled button is, and with no answer to a press or a
-  /// hover. The focus overlay stays, since it is how a keyboard user sees
-  /// where they are.
-  ButtonStyle _unavailableStyle(BuildContext context) {
-    final color = Theme.of(context).disabledColor;
-    return ButtonStyle(
-      foregroundColor: WidgetStatePropertyAll(color),
-      iconColor: WidgetStatePropertyAll(color),
-      overlayColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.focused)
-            ? null
-            : color.withValues(alpha: 0),
-      ),
-      mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.basic),
-      splashFactory: NoSplash.splashFactory,
-      enableFeedback: false,
-    );
-  }
-}
-
-/// Take back on one of the viewer's rows (#516), or, for whoever may take
-/// back anyone's game, on someone else's (#518): a direct write, so
-/// disabled offline through [BgeOnlineOnly], saying why as its hint.
-/// Disabled while another write is out or a detail read runs ([enabled]).
-/// Named for its game to a screen reader, as its row names it ([gameName],
-/// #851).
-///
-/// It keeps focus through its own take-back (#607). On someone else's row
-/// its press opens a dialog first, which hands focus back to it as it
-/// closes, just before the take-back goes out, and a disabled button can't
-/// hold focus. So, as Withdraw is, it is held through [HeldPress] from its
-/// press until its take-back is over ([runOver]): enabled, ignoring presses
-/// and showing a spinner, wherever it would otherwise be unavailable. It is
-/// inert, too, while its row's take-back is out ([inert]), however that
-/// began.
-class _TakeBackButton extends StatefulWidget {
-  const _TakeBackButton({
-    required this.game,
-    required this.area,
-    required this.inert,
-    required this.enabled,
-    required this.runOver,
-    required this.onPressed,
-  });
-
-  final OfferedGame game;
-
-  /// Holds the button, so a row that leaves can say it held focus.
-  final FocusNode area;
-
-  /// Whether this row's take-back is out.
-  final bool inert;
-
-  /// Whether it may be pressed now, connection aside.
-  final bool enabled;
-
-  /// Whether none of the pool's writes is out: once its own take-back went
-  /// out, that is over.
-  final bool runOver;
-
-  /// Asks first where it asks, and sends the take-back. Completes true when
-  /// it was sent, and false when nothing was.
-  final Future<bool> Function() onPressed;
-
-  @override
-  State<_TakeBackButton> createState() => _TakeBackButtonState();
-}
-
-class _TakeBackButtonState extends State<_TakeBackButton>
-    with HeldPress<_TakeBackButton> {
-  @override
-  bool get heldActionOver => widget.runOver;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final offline = BgeConnectivityScope.offlineOf(context);
-    final game = widget.game;
-    final available = widget.enabled && !offline;
-    // Offline it is disabled, pressed or not: no press made it so (#49).
-    final inert =
-        heldInert(available: available, disabled: offline) ||
-        (widget.inert && !offline);
-
-    return Focus(
-      focusNode: widget.area,
-      includeSemantics: false,
-      child: BgeOnlineOnly(
-        showNote: false,
-        child: BgeInertButton(
-          inert: inert,
-          label: l10n.eventsGamesTakeBackNamed(
-            gameName(l10n, game.title, game.subtitle),
-          ),
-          onPressed: available || inert
-              ? () => unawaited(holdPress(widget.onPressed))
-              : null,
-          builder: (context, focusNode, onPressed) => TextButton.icon(
-            key: EventDetailScreen.poolTakeBackKey(game.id),
-            focusNode: focusNode,
-            onPressed: onPressed,
-            icon: inert
-                ? const _HeldSpinner()
-                : const Icon(Icons.remove_circle_outline),
-            label: Text(l10n.eventsGamesTakeBack),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A held button's icon while its write is out, Take back's, Offer games'
-/// or Nominate's: scaled with the label beside it, in the button's icon
-/// colour, as the screen's other held buttons'.
-class _HeldSpinner extends StatelessWidget {
-  const _HeldSpinner();
-
-  @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: BgeTextScale.clampedOf(
-      context,
-    ).scale(BgeTokens.of(context).spaceMd),
-    child: CircularProgressIndicator(
-      strokeWidth: 2,
-      color: IconTheme.of(context).color,
-    ),
-  );
 }

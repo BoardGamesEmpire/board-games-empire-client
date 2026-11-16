@@ -8,6 +8,7 @@ import 'package:events/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_catalog/game_catalog.dart';
 import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -71,6 +72,25 @@ class _DeliveringSender implements SyncOperationSender {
   @override
   Future<SyncDelivery> deliverEntry(SyncQueueEntry entry) =>
       deliver(entry.id, entry.operation);
+}
+
+/// A games server whose every game reads as one of its own, as the game's
+/// page reads it (#957). Nothing else of it is read here.
+class _GamesRemote implements GamesRemoteDataSource {
+  @override
+  Future<GameWithPlatformGames> fetchGame(String id) async => (
+    game: Game(
+      id: id,
+      title: 'Azul',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    ),
+    platformGames: const <PlatformGame>[],
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }
 
 /// A user scope that holds whoever the shell last activated.
@@ -217,7 +237,7 @@ void main() {
   /// [sender] and [users] are what the create form sends through and finds
   /// invitees with, and a create writes the event here as `ev_local`.
   /// [collection] is the session's collection cache, which the Offer games
-  /// page lists.
+  /// page lists, and [games] the games server, which a game's page reads.
   Future<void> pumpHome(
     WidgetTester tester, {
     int events = 1,
@@ -236,6 +256,7 @@ void main() {
     SyncOperationSender? sender,
     UserRemoteDataSource? users,
     GameCollectionRepository? collection,
+    GamesRemoteDataSource? games,
   }) async {
     when(repository.watchAttendingEventListItems).thenAnswer(
       (_) =>
@@ -331,6 +352,7 @@ void main() {
           syncOperationSender: sender,
           userRemoteDataSource: users,
           gameCollectionRepository: collection,
+          gamesRemoteDataSource: games,
         ),
       ),
     );
@@ -1782,6 +1804,144 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(OfferGamesScreen), findsNothing);
         expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      });
+    });
+
+    group('a quick look on the Games tab (#957)', () {
+      final at = DateTime.utc(2026);
+
+      // The viewer hosts e-0, alone on its roster, and offers Azul.
+      final me = EventAttendee(
+        id: 'att-me',
+        eventId: 'e-0',
+        userId: 'u1',
+        displayName: 'Sam',
+        status: EventParticipationStatus.attending,
+        role: EventRole.host,
+        createdAt: at,
+        updatedAt: at,
+      );
+      final hosted = EventSnapshot(
+        event: _upcoming('e-0').event,
+        occurrences: _upcoming('e-0').occurrences,
+        attendees: [me],
+      );
+      const azul = OfferedGame(
+        id: 'o-azul',
+        attendeeId: 'att-me',
+        collectionId: 'c-azul',
+        platformGameId: 'pg-azul',
+        gameId: 'g-azul',
+        title: 'Azul',
+        platformName: 'Tabletop',
+        medium: GameMedium.physical,
+      );
+
+      GoRouter routerOf(WidgetTester tester) =>
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+
+      testWidgets("a quick look's View game pushes /games/:id", (
+        tester,
+      ) async {
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.fetchGamesPool(
+            any(),
+            attendeeIds: any(named: 'attendeeIds'),
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) async => const [azul]);
+        await pumpHome(
+          tester,
+          remote: remote,
+          games: _GamesRemote(),
+          detailCache: Stream.multi(
+            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+          ),
+        );
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+        await tester.tap(
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+        await tester.pumpAndSettle();
+        final head = find.byKey(EventDetailScreen.poolRowHeadKey(azul.id));
+        await tester.ensureVisible(head);
+        await tester.pumpAndSettle();
+
+        await tester.tap(head);
+        await tester.pumpAndSettle();
+        expect(find.byKey(EventDetailScreen.quickLookKey), findsOneWidget);
+
+        await tester.tap(find.byKey(EventDetailScreen.quickLookOpenGameKey));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GameDetailScreen), findsOneWidget);
+        expect(
+          routerOf(tester).state.uri.toString(),
+          AppRoutes.gameDetailOf('g-azul'),
+        );
+        // Gone once the page has arrived, not just hidden under it.
+        expect(
+          find.byKey(EventDetailScreen.quickLookKey, skipOffstage: false),
+          findsNothing,
+        );
+
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GameDetailScreen), findsNothing);
+        expect(find.byKey(EventDetailScreen.quickLookKey), findsNothing);
+        expect(find.byType(EventDetailScreen), findsOneWidget);
+      });
+
+      testWidgets('without a games server the quick look offers no View game', (
+        tester,
+      ) async {
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any())).thenAnswer((_) async => hosted);
+        when(
+          () => remote.fetchGamesPool(
+            any(),
+            attendeeIds: any(named: 'attendeeIds'),
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) async => const [azul]);
+        await pumpHome(
+          tester,
+          remote: remote,
+          detailCache: Stream.multi(
+            (cache) => cache.add(EventDetail(snapshot: hosted, attendance: me)),
+          ),
+        );
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+        await tester.tap(
+          find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(EventDetailScreen.sectionTabKey(EventGamesSection.pool)),
+        );
+        await tester.pumpAndSettle();
+        final head = find.byKey(EventDetailScreen.poolRowHeadKey(azul.id));
+        await tester.ensureVisible(head);
+        await tester.pumpAndSettle();
+
+        await tester.tap(head);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(EventDetailScreen.quickLookKey), findsOneWidget);
+        expect(
+          find.byKey(EventDetailScreen.quickLookOpenGameKey),
+          findsNothing,
+        );
       });
     });
 

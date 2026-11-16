@@ -45,7 +45,13 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// stale to warn of.
 ///
 /// Each outcome is a banner of its own, built anew, so one that says what
-/// the last said is still heard as it lands.
+/// the last said is still heard as it lands. The writes' banners are
+/// [EventPoolOutcomeBanner] and [EventNominationsOutcomeBanner], which a
+/// quick look builds too, for the outcomes that land while it is open
+/// (#957), since its barrier hides the footer from a screen reader. The
+/// footer's banner of such an outcome ([saidInQuickLook]) is no live
+/// region: the quick look said it, and one coming back into the tree as the
+/// barrier lifts would be read out again.
 ///
 /// A host's close of a vote (#518) says how it came out with the counts the
 /// server gave as it settled it, which it stores nowhere: this banner is the
@@ -75,6 +81,7 @@ class EventGamesFooter extends StatelessWidget {
     required this.names,
     this.nominations,
     this.viewerId,
+    this.saidInQuickLook,
     super.key,
   });
 
@@ -101,6 +108,12 @@ class EventGamesFooter extends StatelessWidget {
   /// the Details tab.
   final EventGamesSection? staleFor;
 
+  /// Whether a quick look said an outcome as it landed (#957), whose banner
+  /// here is then no live region
+  /// ([EventGamesTabController.saidInQuickLook]). Null, as where no quick
+  /// look opens, says none was.
+  final bool Function(Object outcome)? saidInQuickLook;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
@@ -108,17 +121,6 @@ class EventGamesFooter extends StatelessWidget {
     final sending = state.sending;
     final outcome = state.outcome;
     final nominations = this.nominations;
-    final message = outcome == null
-        ? null
-        : _message(
-            l10n,
-            outcome,
-            _suppliedBy(
-              outcome,
-              nominations: nominations?.nominations ?? const [],
-              viewerId: viewerId,
-            ),
-          );
     final nominationsOutcome = nominations?.outcome;
 
     return Column(
@@ -135,65 +137,28 @@ class EventGamesFooter extends StatelessWidget {
               text: l10n.eventsGamesOffering(sending),
             ),
           )
-        else if (outcome != null && message != null)
-          KeyedSubtree(
-            key: ObjectKey(outcome),
-            child: Padding(
-              padding: EdgeInsets.only(top: gap),
-              // In the words it landed with, which the nominations' changes
-              // leave as they were.
-              child: _Landed(
-                message: message,
-                builder: (context, message) => BgeInlineBanner(
-                  key: EventDetailScreen.poolOutcomeKey,
-                  tone: switch (outcome) {
-                    EventOfferOutcome(:final result) => switch (result) {
-                      EventOfferResult.done => BgeBannerTone.success,
-                      EventOfferResult.partly ||
-                      EventOfferResult.none ||
-                      EventOfferResult.refused ||
-                      EventOfferResult.dropped => BgeBannerTone.warning,
-                      EventOfferResult.failed => BgeBannerTone.error,
-                    },
-                    EventTakeBackOutcome(:final result) => switch (result) {
-                      EventTakeBackResult.done => BgeBannerTone.success,
-                      EventTakeBackResult.stillSupplies ||
-                      EventTakeBackResult.refused ||
-                      EventTakeBackResult.dropped => BgeBannerTone.warning,
-                      EventTakeBackResult.failed => BgeBannerTone.error,
-                    },
-                  },
-                  message: message,
-                  action: TextButton(
-                    onPressed: () => context.read<EventGamesBloc>().add(
-                      const EventGamesOutcomeDismissed(),
-                    ),
-                    child: Text(l10n.eventsActionDismiss),
-                  ),
-                ),
-              ),
-            ),
+        else if (outcome != null && EventPoolOutcomeBanner.says(outcome)) ...[
+          const BgeGap.sm(),
+          // A child of the column itself, keyed by its outcome, so a banner
+          // above or below it coming or going never builds it anew, which
+          // would say it again.
+          EventPoolOutcomeBanner(
+            outcome: outcome,
+            nominations: nominations?.nominations ?? const [],
+            viewerId: viewerId,
+            names: names,
+            announce: !(saidInQuickLook?.call(outcome) ?? false),
           ),
+        ],
         // The nominations' own, beside the pool's: nothing holds one bloc's
-        // write back for the other's, so both can end.
-        if (nominationsOutcome != null)
-          KeyedSubtree(
-            key: ObjectKey(nominationsOutcome),
-            child: Padding(
-              padding: EdgeInsets.only(top: gap),
-              child: BgeInlineBanner(
-                key: EventDetailScreen.nominationsOutcomeKey,
-                tone: _nominationsTone(nominationsOutcome),
-                message: _nominationsMessage(l10n, nominationsOutcome),
-                action: TextButton(
-                  onPressed: () => context.read<EventNominationsBloc>().add(
-                    const EventNominationsOutcomeDismissed(),
-                  ),
-                  child: Text(l10n.eventsActionDismiss),
-                ),
-              ),
-            ),
+        // write back for the other's, so both can end. Keyed as the pool's.
+        if (nominationsOutcome != null) ...[
+          const BgeGap.sm(),
+          EventNominationsOutcomeBanner(
+            outcome: nominationsOutcome,
+            announce: !(saidInQuickLook?.call(nominationsOutcome) ?? false),
           ),
+        ],
         if (staleFor == EventGamesSection.pool &&
             state.refreshFailed &&
             state.games.isNotEmpty)
@@ -232,10 +197,105 @@ class EventGamesFooter extends StatelessWidget {
       ],
     );
   }
+}
 
-  /// The banner's copy, by the write it answers, or null for none. A
-  /// take-back's 409 names what to do by [supplied] (#517).
-  String? _message(
+/// The banner saying how the pool's last write went (#516), [outcome]: a
+/// run of offers, or a take-back. Built from the outcome and what names it
+/// alone, so the page's footer ([EventGamesFooter]) and a quick look (#957)
+/// build the same one. The class doc of [EventGamesFooter] says what it
+/// says.
+///
+/// Keyed by [outcome], so each outcome is a banner of its own, built anew,
+/// and one that says what the last said is still heard as it lands. It
+/// keeps the words it landed with: the nominations can change under it, as
+/// the viewer withdraws the one it names, and so can the roster, and words
+/// that changed would be read out again, saying what no longer holds. Its
+/// Dismiss clears the outcome from the pool's bloc, wherever it is shown.
+/// Build it only where [says]: a take-back that names no game has nothing
+/// to say.
+class EventPoolOutcomeBanner extends StatelessWidget {
+  EventPoolOutcomeBanner({
+    required this.outcome,
+    required this.nominations,
+    required this.viewerId,
+    required this.names,
+    this.announce = true,
+  }) : assert(says(outcome), 'Build it only where it says something.'),
+       super(key: ObjectKey(outcome));
+
+  final EventGamesOutcome outcome;
+
+  /// The nominations held, which say who to ask about a take-back's 409
+  /// (#517): none where they aren't read.
+  final List<EventNomination> nominations;
+
+  /// The viewer's roster row id, which says which nominations are theirs,
+  /// or null where they have none.
+  final String? viewerId;
+
+  /// The roster's names, by row id, which name whose games a take-back of
+  /// someone else's game was about (#518).
+  final Map<String, String?> names;
+
+  /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
+  /// quick look said the outcome (#957).
+  final bool announce;
+
+  /// Whether [outcome] has words to say: every outcome but a take-back
+  /// that names no game.
+  static bool says(EventGamesOutcome outcome) => switch (outcome) {
+    EventTakeBackOutcome(:final title) => title != null,
+    EventOfferOutcome() => true,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final outcome = this.outcome;
+    final message = _message(
+      l10n,
+      outcome,
+      _suppliedBy(outcome, nominations: nominations, viewerId: viewerId),
+    );
+
+    // In the words it landed with, which the nominations' changes leave as
+    // they were.
+    return _Landed(
+      message: message,
+      builder: (context, message) => BgeInlineBanner(
+        key: EventDetailScreen.poolOutcomeKey,
+        announce: announce,
+        tone: switch (outcome) {
+          EventOfferOutcome(:final result) => switch (result) {
+            EventOfferResult.done => BgeBannerTone.success,
+            EventOfferResult.partly ||
+            EventOfferResult.none ||
+            EventOfferResult.refused ||
+            EventOfferResult.dropped => BgeBannerTone.warning,
+            EventOfferResult.failed => BgeBannerTone.error,
+          },
+          EventTakeBackOutcome(:final result) => switch (result) {
+            EventTakeBackResult.done => BgeBannerTone.success,
+            EventTakeBackResult.stillSupplies ||
+            EventTakeBackResult.refused ||
+            EventTakeBackResult.dropped => BgeBannerTone.warning,
+            EventTakeBackResult.failed => BgeBannerTone.error,
+          },
+        },
+        message: message,
+        action: TextButton(
+          onPressed: () => context.read<EventGamesBloc>().add(
+            const EventGamesOutcomeDismissed(),
+          ),
+          child: Text(l10n.eventsActionDismiss),
+        ),
+      ),
+    );
+  }
+
+  /// The banner's copy, by the write it answers. A take-back's 409 names
+  /// what to do by [supplied] (#517).
+  String _message(
     EventsLocalizations l10n,
     EventGamesOutcome outcome,
     StillSuppliedBy supplied,
@@ -286,10 +346,10 @@ class EventGamesFooter extends StatelessWidget {
   }
 
   /// A take-back's copy, naming its game by its title and subtitle
-  /// ([gameName], #851); the tab always names it, so one with no title has
-  /// none. A 409 says what to do by [supplied] (#517): where nobody holds a
-  /// live nomination of the row, it is in the lineup, or nominated in a way
-  /// the nominations held don't show.
+  /// ([gameName], #851): the banner is built only where [says], where the
+  /// outcome names one. A 409 says what to do by [supplied] (#517): where
+  /// nobody holds a live nomination of the row, it is in the lineup, or
+  /// nominated in a way the nominations held don't show.
   ///
   /// Whose games it was about comes from the roster row the outcome names
   /// (#518): someone else's where that isn't the viewer's [viewerId], and
@@ -297,14 +357,12 @@ class EventGamesFooter extends StatelessWidget {
   /// pool's row names them, or "this person" where the roster gives no
   /// name. A refusal, a failure and a drop say no one's, and a drop names no
   /// row.
-  String? _takeBackMessage(
+  String _takeBackMessage(
     EventsLocalizations l10n,
     EventTakeBackOutcome outcome,
     StillSuppliedBy supplied,
   ) {
-    final title = outcome.title;
-    if (title == null) return null;
-    final name = gameName(l10n, title, outcome.subtitle);
+    final name = gameName(l10n, outcome.title!, outcome.subtitle);
     final id = outcome.attendeeId;
     final theirs = id != null && id != viewerId;
     String offeredBy() => names[id] ?? l10n.eventsAttendeeSomeone;
@@ -340,6 +398,44 @@ class EventGamesFooter extends StatelessWidget {
       EventTakeBackResult.dropped => l10n.eventsGamesTakeBackDropped(name),
       EventTakeBackResult.failed => l10n.eventsGamesTakeBackFailed(name),
     };
+  }
+}
+
+/// The banner saying how the viewer's last nominations write went (#517),
+/// [outcome]: a nominate, a vote or a withdrawal, or a host's approval,
+/// rejection or close of a vote (#518). Built from the outcome alone, so the
+/// page's footer ([EventGamesFooter]) and a quick look (#957) build the same
+/// one. The class doc of [EventGamesFooter] says what it says.
+///
+/// Keyed by [outcome], so each outcome is a banner of its own, built anew,
+/// and one that says what the last said is still heard as it lands. Its
+/// Dismiss clears the outcome from the nominations' bloc, wherever it is
+/// shown.
+class EventNominationsOutcomeBanner extends StatelessWidget {
+  EventNominationsOutcomeBanner({required this.outcome, this.announce = true})
+    : super(key: ObjectKey(outcome));
+
+  final EventNominationsOutcome outcome;
+
+  /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
+  /// quick look said the outcome (#957).
+  final bool announce;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    return BgeInlineBanner(
+      key: EventDetailScreen.nominationsOutcomeKey,
+      announce: announce,
+      tone: _nominationsTone(outcome),
+      message: _nominationsMessage(l10n, outcome),
+      action: TextButton(
+        onPressed: () => context.read<EventNominationsBloc>().add(
+          const EventNominationsOutcomeDismissed(),
+        ),
+        child: Text(l10n.eventsActionDismiss),
+      ),
+    );
   }
 
   /// A nominations write's tone (#517): success where it went through,

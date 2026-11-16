@@ -172,6 +172,16 @@ without a tokenized harness.
   that mixes rows *with* prose keeps 480: the prose decides, which is why
   `FeedbackReviewScreen` takes the reading measure and `SettingsScreen` does
   not.
+- `wideMaxWidth` (1200) — for a list surface that sets its rows side by side
+  at `expanded`, via `BgePage(width: BgePageWidth.wide)`. Two rows to a line
+  get about 590 each, and it is still capped: on a 2560 monitor the content
+  stops short of the edges. The window class decides that the rows go two to
+  a line; the measure only gives them the room. The whole page takes it: its
+  header and its footer, a tab bar, and the list's own header above the
+  rows. Only content that sets nothing side by side, such as another tab's,
+  keeps the measure it would have had, centred within this one, so switching
+  between that tab and the rows' tab moves nothing the two share, such as
+  the tab bar.
 - Dialogs take `contentMaxWidth` too, from the theme. `BgeTheme` caps every
   dialog at the reading measure, so a `showDialog` call site sets no width of
   its own. A dialog is a title, a sentence or two and its buttons: prose, so the
@@ -214,10 +224,11 @@ is expanded.
 
 The bar or rail shows only when there are two or more destinations and the page
 on screen is inside one of them. Everywhere else, and for whatever is not a
-destination, the menu drawer is the way in (#414). Three things read the window
+destination, the menu drawer is the way in (#414). Four things read the window
 class so far: `showBgePopup` (a sheet in `compact`, a dialog from `medium` up),
-`bgeGridColumns` (the column count of a cover grid) (#707, #710), and the
-navigation shell. The home page stopped setting its events and stats sections
+`bgeGridColumns` (the column count of a cover grid) (#707, #710), the
+navigation shell, and the event's Games tab, whose rows go two to a line at
+`expanded` (#949). The home page stopped setting its events and stats sections
 side by side (#669); the next readers are expected to be the width-aware list
 rows (#680) and the first two-pane layout (#46).
 
@@ -230,7 +241,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
 | `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness; its `header:` sits above the slivers, scrolls with them and stays in the semantics tree however far the page is scrolled, where a sliver among the content leaves the tree past the cache extent; a banner in the header is heard as it arrives on iOS at any depth, and on Android when the header is on screen or more than a cache extent (250dp, a viewport with a footer) above the view; in between, Android stays silent and the banner's reveal puts it on screen (#516) |
-| `BgeKeyedSliverList` | a `SliverList.builder` whose rows carried their key one level in, or keyed the child with no lookup (#549) | Each row is keyed and the sliver finds it by that key, so a row keeps its state — focus included — when rows above it leave or arrive |
+| `BgeKeyedSliverList` | a `SliverList.builder` whose rows carried their key one level in, or keyed the child with no lookup (#549) | Each row is keyed and the sliver finds it by that key, so a row keeps its state — focus included — when rows above it leave or arrive. A list whose rows go two to a line at `expanded` keeps the same for each row through a sliver that sets them in lines: its key, its index among the rows, and its state as it moves between lines (`EventGamesRowLines`, #949). That sliver is the events feature's own while it has one user: the second list to need it moves it into `packages/ui` beside this one, rather than copying it |
 | `BgeKeyedSliverGrid` (with `bgeGridColumns` and `bgeCoverGridDelegate`) | a `SliverGrid.builder` for a grid whose tiles can leave or move, which would lose a tile's focus with its position | The grid sibling of `BgeKeyedSliverList`: each tile is keyed by its id; the columns come from the window width, not the grid's own, so a cover grid reads the same breakpoints as everything else (#710) |
 | `BgeUnfoldingCoverGrid` | nothing: a strip under a grid row had no slot, as each screen drew its covers as one `SliverGrid` (#711) | A `BgeKeyedSliverGrid` of covers that opens a full-width strip under one item's row, padded `spaceSm` above and below as the rows are spaced; the rows up to the strip stay the first sliver, so the item whose strip it is keeps its element and its focus as the strip opens and closes; the covers after it count on from the ones before it, and the strip takes no index; another item's strip is a new one. A tile after the strip is built again as the strip comes and goes, so its focus goes through a `BgeFocusHandoff`. `BgeUnfoldingCovers` holds which item is open, for tiles that open their own: one at a time, folded once the item goes or has no strip, and kept by the item's id while its tile changes form |
 | `BgeCoverTile` | a cover wrapped in a hand-built tap target and a title below it | Cover only: the title is the accessible name, not drawn text; a fixed 120dp on a shelf, and `extent: null` fills a grid cell (#707, #710); `stackCount` marks the picture alone with a `BgeStackMarker`, so the tile stays one target of the same size and its label speaks the count (#709); `expansions` (`BgeCoverExpansions`) adds a badge at the picture's bottom end, in the tertiary container colours with a puzzle piece and the count, a button of its own after the cover with an expanded state, at least 48dp square, inside the cover and drawn as big as it takes presses, with the same toggle on the cover as a custom action; `marked` outlines the picture in tertiary with a broken link at its top start, drawn only, for the label to say (#711); `syncState` marks the picture's bottom start with `BgeSyncMark`, drawn only, for the label to say (#47) |
@@ -312,8 +323,11 @@ search screen actually has, with a query field above the results.
 **A list whose rows can leave or move while the user is on it** — rows from a
 cache, a purge, a discard — uses **`BgeKeyedSliverList`**, with the row's id as
 its key. A bare `SliverList.builder` matches rows by position, so a keyboard
-user on a row loses their place when a row above it leaves (#549). The key goes
-on a wrapper the list puts around each row, so the row does not carry it too:
+user on a row loses their place when a row above it leaves (#549). Where rows go
+two to a line at `expanded`, the list is a sliver that keeps the same for each
+row instead: its key, its index among the rows, and its state, focus included,
+as it moves between lines (`EventGamesRowLines`, #949). The key goes on a
+wrapper the list puts around each row, so the row does not carry it too:
 
 ```dart
 BgePage.slivers(
@@ -375,6 +389,10 @@ switch a mode: a `SegmentedButton` is for that, such as a layout or a filter.
   selected tab's slivers, which the bar swaps. `semanticChildCount` follows
   the selected tab: what its list holds, and null on a tab with no list. The
   bar keeps its place as the tabs swap, so focus stays on the tab chosen.
+- **One measure for every tab.** Where one tab's rows go side by side, the
+  page takes `BgePageWidth.wide` on every tab, and each other tab's content
+  keeps its own measure, centred. The header and the bar then stay where
+  they are as the tabs swap (#949).
 - **The selected tab outlives the screen's own rebuilds.** Hold the
   `TabController` above the screen's bloc builders, so no read, write or clock
   tick sets it back. A `DefaultTabController` does that, and its
@@ -802,8 +820,9 @@ legible body text on every surface role.
       `footer:`, as does an outcome on a long list; a page that pins is
       listed in "Where the primary action goes"
 - [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
-      trailing control; the default 480 for prose, and for a surface mixing
-      prose with rows
+      trailing control; `BgePageWidth.wide` for rows set side by side at
+      `expanded`; the default 480 for prose, and for a surface mixing prose
+      with rows
 - [ ] Dialogs set no width: the theme caps them at the reading measure. A
       calendar range picker is the exception, and lifts the cap
 - [ ] A breakpoint changes a layout's form, never its width, and is read
@@ -817,8 +836,11 @@ legible body text on every surface role.
 - [ ] A list surface passes `semanticChildCount` — the count it currently
       holds, grown as pages arrive, never left null on a known list
 - [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by
-      the row's id; the row itself does not carry the key (#549). A grid whose
-      tiles can leave or move is a `BgeKeyedSliverGrid`
+      the row's id; the row itself does not carry the key (#549). One whose
+      rows go two to a line at `expanded` keeps the same for each row: its
+      key, its index among the rows, and its state as it moves between lines
+      (`EventGamesRowLines`, #949). A grid whose tiles can leave or move is a
+      `BgeKeyedSliverGrid`
 - [ ] Tabs only for views that are each a destination: Material's `TabBar`,
       labels that scale down, banners above the bar in the page's `header:`,
       and a selected tab held above the screen's rebuilds (Tabs, above)

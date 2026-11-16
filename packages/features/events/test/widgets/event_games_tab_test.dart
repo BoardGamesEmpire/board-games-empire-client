@@ -4,6 +4,7 @@ import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -146,6 +147,14 @@ void main() {
   late FutureOr<EventNomination> Function(WithdrawRequest request)
   withdrawAnswer;
 
+  /// What a quick look's View game asked to open (#957): the route it was
+  /// asked from, and the game's id.
+  final openedGames = <(Route<Object?>?, String)>[];
+
+  /// What View game does once it has been recorded: nothing, unless a test
+  /// opens a page.
+  late void Function(BuildContext context, String gameId) openGameAnswer;
+
   /// A detail read held until a test completes it, while set.
   Completer<EventSnapshot>? heldRead;
   late FakeEventRemote remote;
@@ -171,11 +180,35 @@ void main() {
   final root = _game('o-4', 'att-bo', 'Root', medium: null);
   final wingspanMine = _game('o-5', 'att-me', 'Wingspan');
 
+  /// `e-1`'s rules, adding games as [mode] says.
+  EventPolicy policyOf(GameAdditionMode mode) => EventPolicy(
+    id: 'p-1',
+    eventId: 'e-1',
+    allowMemberInvites: true,
+    allowGuestInvites: false,
+    restrictToGameCategories: false,
+    requireHostApprovalToJoin: false,
+    allowSpectators: false,
+    strictCapacity: false,
+    gameAdditionMode: mode,
+    restrictToAttendeePool: false,
+    voteThresholdType: VoteThresholdType.unknown,
+    voteQuorumType: VoteQuorumType.unknown,
+    voteEligibility: VoteEligibility.allAttendees,
+    interestedWeight: InterestedWeight.asFor,
+    createdAt: kItemInstant,
+    updatedAt: kItemInstant,
+  );
+
+  /// The rules [detailOf] gives `e-1` where a test gives none: none, unless
+  /// a group's setUp says otherwise.
+  EventPolicy? defaultPolicy;
+
   /// Event `e-1`, Scheduled with a date ahead, as the viewer [viewer] sees
   /// it, with [roster] on it. [occurrences] replace its one date, and
-  /// [policy] is its rules, none by default. With [attending] false the
-  /// viewer has no row of their own, as a household owner or admin who
-  /// doesn't attend their household's event ([householdId]) has none.
+  /// [policy] is its rules, [defaultPolicy] by default. With [attending]
+  /// false the viewer has no row of their own, as a household owner or admin
+  /// who doesn't attend their household's event ([householdId]) has none.
   EventDetail detailOf({
     EventAttendee? viewer,
     List<EventAttendee>? roster,
@@ -203,7 +236,7 @@ void main() {
               ).copyWith(eventId: 'e-1'),
             ],
         attendees: rosterGiven ? (roster ?? [self, ada, bo]) : null,
-        policy: policy,
+        policy: policy ?? defaultPolicy,
       ),
       attendance: attending ? self : null,
     );
@@ -216,6 +249,7 @@ void main() {
 
   setUp(() {
     clock = now;
+    defaultPolicy = null;
     repository = _MockEventRepository();
     cache = StreamController<EventDetail?>.broadcast();
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
@@ -251,6 +285,8 @@ void main() {
           .copyWith(status: NominationStatus.withdrawn);
     };
     heldRead = null;
+    openedGames.clear();
+    openGameAnswer = (_, _) {};
   });
 
   tearDown(() {
@@ -324,6 +360,10 @@ void main() {
         householdRole: householdRole,
         onBack: (_) {},
         onOfferGames: offers ? recordOffer : null,
+        onOpenGame: (context, gameId) {
+          openedGames.add((ModalRoute.of(context), gameId));
+          openGameAnswer(context, gameId);
+        },
         now: () => clock,
       ),
     );
@@ -441,6 +481,26 @@ void main() {
   Finder takeBack(String id) =>
       find.byKey(EventDetailScreen.poolTakeBackKey(id), skipOffstage: false);
 
+  /// A row's Nominate (#517), its main action where the viewer is offered it
+  /// (#946).
+  Finder nominateOn(String id) =>
+      find.byKey(EventDetailScreen.poolNominateKey(id), skipOffstage: false);
+
+  /// A row's head, its cover and its lines as one button, which opens its
+  /// quick look (#957).
+  Finder head(String id) =>
+      find.byKey(EventDetailScreen.poolRowHeadKey(id), skipOffstage: false);
+
+  FocusNode headFocus(WidgetTester tester, String id) => tester
+      .widget<InkWell>(
+        find.descendant(
+          of: head(id),
+          matching: find.byType(InkWell, skipOffstage: false),
+          skipOffstage: false,
+        ),
+      )
+      .focusNode!;
+
   /// The pool reads made, as event id and attendee ids.
   List<(String, List<String>?)> poolReads() => [
     for (final (:eventId, :attendeeIds) in remote.poolRequests)
@@ -533,6 +593,18 @@ void main() {
 
   FocusNode takeBackFocus(WidgetTester tester, String id) =>
       tester.widget<ButtonStyleButton>(takeBack(id)).focusNode!;
+
+  FocusNode nominateFocus(WidgetTester tester, String id) =>
+      tester.widget<ButtonStyleButton>(nominateOn(id)).focusNode!;
+
+  /// Reads the pool again, as a write from another device is found.
+  Future<void> readPool(WidgetTester tester) async {
+    blocOf<EventGamesBloc>(tester).add(
+      const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+    );
+    await animate(tester);
+    await animate(tester);
+  }
 
   FocusNode peopleFocus(WidgetTester tester) =>
       tester.widget<ButtonStyleButton>(people()).focusNode!;
@@ -1244,9 +1316,7 @@ void main() {
 
   group('the Nominations section (#517)', () {
     testWidgets('each sub-tab sits under the sub-tab bar: the nominations '
-        'under their heading, the pool under its header (#945)', (
-      tester,
-    ) async {
+        'under their header, the pool under its own (#945)', (tester) async {
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
       // Tall enough that the pool's first row is built, under its header.
       useViewSize(tester, const Size(800, 2400));
@@ -1255,16 +1325,17 @@ void main() {
         EventDetailScreen.offerGamesKey,
         skipOffstage: false,
       );
+      final filters = find.byKey(EventDetailScreen.nominationsFiltersKey);
 
       await showGames(tester);
       await chooseSection(tester, EventGamesSection.nominations);
 
       expect(
         tester.getRect(bar).bottom,
-        lessThanOrEqualTo(tester.getRect(heading('Nominations')).top),
+        lessThanOrEqualTo(tester.getRect(filters).top),
       );
       expect(
-        tester.getRect(heading('Nominations')).bottom,
+        tester.getRect(filters).bottom,
         lessThanOrEqualTo(tester.getRect(nomination('n-1')).top),
       );
       expect(offer, findsNothing);
@@ -1302,61 +1373,6 @@ void main() {
       final poolStart = titleStart(row(azul.id));
       await chooseSection(tester, EventGamesSection.nominations);
       expect(titleStart(nomination('n-1')), poolStart);
-    });
-
-    testWidgets('the pool has a heading of its own, with no count of its '
-        'own, in every state of the pool', (tester) async {
-      final handle = tester.ensureSemantics();
-      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
-
-      await showGames(tester);
-
-      final heading = find.text('Games pool', skipOffstage: false);
-      final offer = find.byKey(
-        EventDetailScreen.offerGamesKey,
-        skipOffstage: false,
-      );
-      await tester.ensureVisible(heading);
-      await tester.pump();
-      expect(
-        tester.getSemantics(heading),
-        matchesSemantics(label: 'Games pool', isHeader: true),
-      );
-      expect(
-        tester.getRect(heading).bottom,
-        lessThanOrEqualTo(tester.getRect(offer).top),
-      );
-      // A heading, not a row: the pool's rows alone (#945).
-      expect(scrollView(tester).semanticChildCount, 4);
-
-      // While the filter narrows, the header's count is the one count.
-      await tester.ensureVisible(
-        find.byKey(EventDetailScreen.poolNotMineKey, skipOffstage: false),
-      );
-      await tester.pump();
-      await tester.tap(notMine());
-      await tester.pump();
-
-      expect(find.text('3 games of 4', skipOffstage: false), findsOneWidget);
-      await tester.ensureVisible(heading);
-      await tester.pump();
-      expect(
-        tester.getSemantics(heading),
-        matchesSemantics(label: 'Games pool', isHeader: true),
-      );
-
-      // With nobody to read the pool for, the heading stays over the state.
-      await tester.pumpWidget(const SizedBox());
-      await showGames(
-        tester,
-        detail: EventDetail(
-          snapshot: detailOf().snapshot.copyWith(attendees: const []),
-        ),
-      );
-
-      expect(find.text("The games aren't shown to you"), findsOneWidget);
-      expect(find.text('Games pool', skipOffstage: false), findsOneWidget);
-      handle.dispose();
     });
 
     testWidgets("semanticChildCount counts the sub-tab's rows its filter "
@@ -1495,9 +1511,59 @@ void main() {
       expect(row(catanMine.id), findsNothing);
     });
 
+    testWidgets('neither sub-tab draws a heading under its tab', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      final bar = find.byKey(EventDetailScreen.sectionBarKey);
+
+      await showGames(tester);
+
+      // Each sub-tab's label is said by its tab, chosen or not (#946): no
+      // heading under the bar says it again.
+      for (final section in [
+        EventGamesSection.pool,
+        EventGamesSection.nominations,
+      ]) {
+        await chooseSection(tester, section);
+        expect(
+          find.text('Games pool', skipOffstage: false),
+          findsNothing,
+          reason: section.name,
+        );
+        for (final label in ['Pool', 'Nominations']) {
+          expect(
+            find.text(label, skipOffstage: false),
+            findsOneWidget,
+            reason: '${section.name}: $label',
+          );
+          expect(
+            find.descendant(
+              of: bar,
+              matching: find.text(label, skipOffstage: false),
+            ),
+            findsOneWidget,
+            reason: '${section.name}: $label',
+          );
+          expect(
+            heading(label),
+            findsNothing,
+            reason: '${section.name}: $label',
+          );
+        }
+      }
+      handle.dispose();
+    });
+
     testWidgets('the stale banners follow the sub-tab', (tester) async {
       nominationsAnswer = (_) => [nominationOf('n-1', azul)];
-      await showGames(tester);
+      // With no Nominate on a host-only event, Take back is the row's own
+      // main action (#946).
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
       expect(nomination('n-1'), findsNothing);
       poolAnswer = (_) => throw _offline;
       nominationsAnswer = (_) => throw _offline;
@@ -1546,45 +1612,63 @@ void main() {
   });
 
   group('rows', () {
-    testWidgets("a row says the game, where it's played, and who brings it, "
-        'as one node', (tester) async {
+    /// What [finder] finds under offered game [id]'s row.
+    Finder under(String id, Finder finder) =>
+        find.descendant(of: row(id), matching: finder, skipOffstage: false);
+
+    testWidgets('a pool row is its cover, its name, one status line and '
+        'Nominate', (tester) async {
       final handle = tester.ensureSemantics();
       await showGames(tester);
       // Under the tab bars and the pool's header.
-      await tester.ensureVisible(row(root.id));
+      await tester.ensureVisible(row(catanAdas.id));
       await tester.pump();
 
+      for (final (game, who) in [
+        (catanMine, "You're bringing this"),
+        (catanAdas, 'Ada is bringing this'),
+        (root, 'Bo is bringing this'),
+      ]) {
+        final reason = game.id;
+        // The name once, and one line under it: who brings it (#946).
+        expect(
+          under(game.id, find.text(game.title, skipOffstage: false)),
+          findsOneWidget,
+          reason: reason,
+        );
+        expect(
+          under(game.id, find.text(who, skipOffstage: false)),
+          findsOneWidget,
+          reason: reason,
+        );
+        // Where it's played is the quick look's (#957).
+        expect(
+          under(game.id, find.textContaining(game.platformName)),
+          findsNothing,
+          reason: reason,
+        );
+        // Nominate is its one main action: Take back, where the viewer may
+        // take it back, is the quick look's too.
+        expect(nominateOn(game.id), findsOneWidget, reason: reason);
+        expect(takeBack(game.id), findsNothing, reason: reason);
+        // The name, the line, and Nominate's label: nothing else to read.
+        expect(
+          under(game.id, find.byType(Text, skipOffstage: false)),
+          findsNWidgets(3),
+          reason: reason,
+        );
+      }
       expect(
         tester.getSemantics(
           find.descendant(of: row(catanAdas.id), matching: find.text('Catan')),
         ),
         matchesSemantics(
-          label: 'Catan\nBoard Game Arena, Digital\nAda is bringing this',
+          label: 'Catan\nAda is bringing this',
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
-      );
-      expect(
-        find.descendant(
-          of: row(catanAdas.id),
-          matching: find.text('Board Game Arena · Digital'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        tester.getSemantics(
-          find.descendant(of: row(catanMine.id), matching: find.text('Catan')),
-        ),
-        matchesSemantics(
-          label: "Catan\nTabletop, Physical\nYou're bringing this",
-        ),
-      );
-      // No medium: the platform alone.
-      expect(
-        find.descendant(
-          of: row(root.id),
-          matching: find.text('Tabletop', skipOffstage: false),
-          skipOffstage: false,
-        ),
-        findsOneWidget,
       );
       handle.dispose();
     });
@@ -1610,29 +1694,58 @@ void main() {
       expect(find.text('This person is bringing this'), findsOneWidget);
     });
 
-    testWidgets("only the viewer's rows have Take back", (tester) async {
-      await showGames(tester);
-
-      expect(takeBack(catanMine.id), findsOneWidget);
-      for (final game in [azul, catanAdas, root]) {
-        expect(takeBack(game.id), findsNothing, reason: game.title);
-      }
-      // On screen, under the tab bars and the pool's header: a node scrolled
-      // out of view is hidden.
-      await tester.ensureVisible(takeBack(catanMine.id));
-      await tester.pump();
-      expect(
-        tester.getSemantics(takeBack(catanMine.id)),
-        matchesSemantics(
-          label: 'Take back Catan',
-          isButton: true,
-          hasEnabledState: true,
-          isEnabled: true,
-          isFocusable: true,
-          hasFocusAction: true,
-          hasTapAction: true,
-        ),
+    testWidgets('a pool row where Nominate is not offered ends with Take '
+        'back, where the viewer may take it back', (tester) async {
+      final handle = tester.ensureSemantics();
+      final anyButton = find.byWidgetPredicate(
+        (widget) => widget is ButtonStyleButton,
+        description: 'a button',
+        skipOffstage: false,
       );
+
+      // Nobody nominates on a host-only event, and a guest's role can't.
+      for (final detail in [
+        detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+        detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.guest),
+        ),
+      ]) {
+        await tester.pumpWidget(const SizedBox());
+        await showGames(tester, detail: detail);
+
+        // The viewer's own row: Take back is its main action.
+        expect(nominateOn(catanMine.id), findsNothing);
+        expect(takeBack(catanMine.id), findsOneWidget);
+        expect(
+          under(catanMine.id, find.text("You're bringing this")),
+          findsOneWidget,
+        );
+        // Anyone else's has nothing to press but its head.
+        for (final game in [azul, catanAdas, root]) {
+          expect(
+            under(game.id, anyButton),
+            findsNothing,
+            reason: game.title,
+          );
+        }
+        // On screen, under the tab bars and the pool's header: a node
+        // scrolled out of view is hidden.
+        await tester.ensureVisible(takeBack(catanMine.id));
+        await tester.pump();
+        expect(
+          tester.getSemantics(takeBack(catanMine.id)),
+          matchesSemantics(
+            label: 'Take back Catan',
+            isButton: true,
+            hasEnabledState: true,
+            isEnabled: true,
+            isFocusable: true,
+            hasFocusAction: true,
+            hasTapAction: true,
+          ),
+        );
+      }
+      handle.dispose();
     });
 
     testWidgets("a spectator's own rows have none", (tester) async {
@@ -2276,6 +2389,10 @@ void main() {
   });
 
   group('names with subtitles (#851)', () {
+    // Take back is a row's main action only where Nominate isn't (#946): on a
+    // host-only event nobody is offered Nominate.
+    setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
+
     final seafarers = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
 
     testWidgets('a row names its subtitle', (tester) async {
@@ -2293,7 +2410,11 @@ void main() {
       expect(
         tester.getSemantics(name),
         matchesSemantics(
-          label: "Catan: Seafarers\nTabletop, Physical\nYou're bringing this",
+          label: "Catan: Seafarers\nYou're bringing this",
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
       );
       // A subtitle searched for finds it.
@@ -2397,6 +2518,10 @@ void main() {
   });
 
   group('Take back', () {
+    // Take back is a row's main action only where Nominate isn't (#946): on a
+    // host-only event nobody is offered Nominate.
+    setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
+
     testWidgets('sends the viewer, the event and the game, and the footer says '
         "it's off", (tester) async {
       await showGames(tester);
@@ -2822,10 +2947,12 @@ void main() {
         await animate(tester);
       }
 
-      testWidgets("to the next row's Take back", (tester) async {
-        served = [catanMine, azul, wingspanMine];
+      testWidgets("to the next row's main action, its Take back", (
+        tester,
+      ) async {
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
-        served = [azul, wingspanMine];
+        served = [wingspanMine, azul];
 
         await takeBackByKeyboard(tester, catanMine.id);
 
@@ -2833,10 +2960,22 @@ void main() {
         expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
       });
 
-      testWidgets("to the previous row's, from the last", (tester) async {
+      testWidgets("to the next row's head, where it has no main action "
+          '(#946)', (tester) async {
         served = [catanMine, azul, wingspanMine];
         await showGames(tester);
-        served = [catanMine, azul];
+        served = [azul, wingspanMine];
+
+        await takeBackByKeyboard(tester, catanMine.id);
+
+        expect(row(catanMine.id), findsNothing);
+        expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+      });
+
+      testWidgets("to the previous row's, from the last", (tester) async {
+        served = [azul, catanMine, wingspanMine];
+        await showGames(tester);
+        served = [azul, catanMine];
 
         await takeBackByKeyboard(tester, wingspanMine.id);
 
@@ -2844,8 +2983,9 @@ void main() {
       });
 
       testWidgets('to Offer games, from the only one', (tester) async {
+        served = [catanMine];
         await showGames(tester);
-        served = [azul, catanAdas, root];
+        served = [];
 
         await takeBackByKeyboard(tester, catanMine.id);
 
@@ -2884,9 +3024,9 @@ void main() {
       testWidgets("by a screen reader's activation, with focus on nothing, "
           "to the next row's Take back", (tester) async {
         final handle = tester.ensureSemantics();
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
-        served = [azul, wingspanMine];
+        served = [wingspanMine, azul];
         await focusNothing(tester);
 
         screenReaderTap(tester, 'Take back Catan');
@@ -2901,9 +3041,9 @@ void main() {
 
       testWidgets("by pointer, with focus on nothing, to the next row's Take "
           'back', (tester) async {
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
-        served = [azul, wingspanMine];
+        served = [wingspanMine, azul];
         await focusNothing(tester);
 
         await press(tester, takeBack(catanMine.id));
@@ -2913,11 +3053,11 @@ void main() {
         expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
       });
 
-      testWidgets('to the search field, with no Offer games built', (
-        tester,
-      ) async {
+      testWidgets('to the search field, from the only one, with no Offer '
+          'games built', (tester) async {
+        served = [catanMine];
         await showGames(tester, offers: false);
-        served = [azul, catanAdas, root];
+        served = [];
 
         await takeBackByKeyboard(tester, catanMine.id);
 
@@ -2967,7 +3107,7 @@ void main() {
       // after it does can't keep the hand-off from running.
       testWidgets("to the next row's, by pointer with focus on nothing, when "
           'the take-back is done and the read after it fails', (tester) async {
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
         poolAnswer = (_) => throw _offline;
         await focusNothing(tester);
@@ -2990,7 +3130,7 @@ void main() {
       testWidgets("to the next row's, by pointer with focus on nothing, when "
           'the take-back is done over a failed read and the session stops '
           'the read after it', (tester) async {
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester, guarded: true);
         // A read that fails: the rows stay, under the stale banner.
         poolAnswer = (_) => throw _offline;
@@ -3018,7 +3158,7 @@ void main() {
           'the take-back is done over a failed read and the read after it '
           'takes the row away', (tester) async {
         final handle = tester.ensureSemantics();
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
         poolAnswer = (_) => throw _offline;
         blocOf<EventGamesBloc>(tester).add(
@@ -3026,7 +3166,7 @@ void main() {
         );
         await animate(tester);
         expect(stale(), findsOneWidget);
-        served = [azul, wingspanMine];
+        served = [wingspanMine, azul];
         poolAnswer = (_) => served;
         await focusNothing(tester);
 
@@ -3039,12 +3179,12 @@ void main() {
         handle.dispose();
       });
 
-      testWidgets("from the last of the viewer's rows, by a screen reader's "
-          'activation with focus on nothing, to Offer games', (tester) async {
+      testWidgets("from the only row, by a screen reader's activation with "
+          'focus on nothing, to Offer games', (tester) async {
         final handle = tester.ensureSemantics();
-        served = [catanMine, azul];
+        served = [catanMine];
         await showGames(tester);
-        served = [azul];
+        served = [];
         await focusNothing(tester);
 
         screenReaderTap(tester, 'Take back Catan');
@@ -3062,13 +3202,14 @@ void main() {
         handle.dispose();
       });
 
-      testWidgets("from the last of the viewer's rows, by a screen reader's "
-          'activation with focus on nothing, to the search field with no '
-          'Offer games', (tester) async {
+      testWidgets("from the only row, by a screen reader's activation with "
+          'focus on nothing, to the search field with no Offer games', (
+        tester,
+      ) async {
         final handle = tester.ensureSemantics();
-        served = [catanMine, azul];
+        served = [catanMine];
         await showGames(tester, offers: false);
-        served = [azul];
+        served = [];
         await focusNothing(tester);
 
         screenReaderTap(tester, 'Take back Catan');
@@ -3083,14 +3224,14 @@ void main() {
 
       testWidgets('on, from a focused Take back whose row a read of the pool '
           'takes away, with no press of its own', (tester) async {
-        served = [catanMine, azul, wingspanMine];
+        served = [catanMine, wingspanMine, azul];
         await showGames(tester);
         takeBackFocus(tester, catanMine.id).requestFocus();
         await tester.pump();
 
         // Taken back from another device: the next read of the pool, which
         // holds no control back, comes without it.
-        served = [azul, wingspanMine];
+        served = [wingspanMine, azul];
         blocOf<EventGamesBloc>(tester).add(
           const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
         );
@@ -3104,7 +3245,7 @@ void main() {
       testWidgets("by pointer on one row while keyboard focus is on another's "
           'Take back: that one is disabled for the write, drops focus, and '
           'takes it back once the pressed row has gone', (tester) async {
-        served = [catanMine, azul, wingspanMine];
+        served = [azul, catanMine, wingspanMine];
         await showGames(tester);
         final held = Completer<void>();
         takeBackAnswer = (_) => held.future;
@@ -3130,7 +3271,7 @@ void main() {
         );
 
         // Wingspan's row goes, and focus, free, goes to the one before it.
-        served = [catanMine, azul];
+        served = [azul, catanMine];
         held.complete();
         await animate(tester);
         await animate(tester);
@@ -3181,7 +3322,391 @@ void main() {
     });
   });
 
+  group('a row that leaves while focus is in it (#946)', () {
+    testWidgets("from its head, to the next row's head", (tester) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      headFocus(tester, azul.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, wingspanMine];
+      await readPool(tester);
+
+      expect(row(azul.id), findsNothing);
+      expect(headFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("from its Nominate, to the next row's Nominate", (
+      tester,
+    ) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await tester.ensureVisible(nominateOn(azul.id));
+      await tester.pump();
+      nominateFocus(tester, azul.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, wingspanMine];
+      await readPool(tester);
+
+      expect(row(azul.id), findsNothing);
+      expect(nominateFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("from its Take back, to the next row's head where that row "
+        'has no Take back', (tester) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+      takeBackFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      served = [azul, wingspanMine];
+      await readPool(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('from the last row, to the head of the row before', (
+      tester,
+    ) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      headFocus(tester, wingspanMine.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, azul];
+      await readPool(tester);
+
+      expect(row(wingspanMine.id), findsNothing);
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('from the only row, to Offer games, else the search field', (
+      tester,
+    ) async {
+      for (final offers in [true, false]) {
+        served = [azul];
+        await tester.pumpWidget(const SizedBox());
+        await showGames(tester, offers: offers);
+        headFocus(tester, azul.id).requestFocus();
+        await tester.pump();
+
+        served = [];
+        await readPool(tester);
+
+        expect(row(azul.id), findsNothing, reason: '$offers');
+        if (offers) {
+          expect(
+            tester
+                .widget<ButtonStyleButton>(offerGames())
+                .focusNode!
+                .hasPrimaryFocus,
+            isTrue,
+          );
+        } else {
+          expect(offerGames(), findsNothing);
+          expect(searchFocus(tester).hasPrimaryFocus, isTrue);
+        }
+      }
+    });
+
+    testWidgets('nowhere, while focus is outside it', (tester) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      headFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, wingspanMine];
+      await readPool(tester);
+
+      expect(row(azul.id), findsNothing);
+      expect(headFocus(tester, catanMine.id).hasPrimaryFocus, isTrue);
+    });
+  });
+
+  group('two rows to a line in a wide window (#949)', () {
+    /// The rows of [ids], as a screen reader comes to their heads.
+    List<String> readingOrder(WidgetTester tester, List<String> ids) {
+      final heads = {
+        for (final id in ids) tester.getSemantics(head(id)).id: id,
+      };
+      return [
+        for (final node in tester.semantics.simulatedAccessibilityTraversal())
+          ?heads[node.id],
+      ];
+    }
+
+    testWidgets('at expanded, pool rows go two to a line, in reading order '
+        'along each line', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+
+      final first = tester.getRect(row(catanMine.id));
+      final second = tester.getRect(row(azul.id));
+      final third = tester.getRect(row(catanAdas.id));
+      final fifth = tester.getRect(row(wingspanMine.id));
+      expect(second.top, first.top);
+      expect(second.left, greaterThan(first.left));
+      // Side by side, the same width each, a gap between them.
+      expect(second.width, first.width);
+      expect(second.left - first.right, BgeTokens.standard.spaceMd);
+      // The next line under the taller of the two, from the same edge.
+      expect(third.top, greaterThanOrEqualTo(first.bottom));
+      expect(third.top, greaterThanOrEqualTo(second.bottom));
+      expect(third.left, first.left);
+      // The last, alone on its line, keeps a row's width.
+      expect(fifth.left, first.left);
+      expect(fifth.width, first.width);
+      expect(
+        readingOrder(tester, [
+          for (final game in [catanMine, azul, catanAdas, root, wingspanMine])
+            game.id,
+        ]),
+        [catanMine.id, azul.id, catanAdas.id, root.id, wingspanMine.id],
+      );
+      handle.dispose();
+    });
+
+    testWidgets('at medium, one row to a line', (tester) async {
+      useViewSize(tester, const Size(800, 900));
+      served = [catanMine, azul, catanAdas];
+      await showGames(tester);
+
+      final first = tester.getRect(row(catanMine.id));
+      final second = tester.getRect(row(azul.id));
+      expect(second.top, greaterThanOrEqualTo(first.bottom));
+      expect(second.left, first.left);
+      expect(second.width, first.width);
+    });
+
+    testWidgets('the reader counts rows, not lines', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+
+      expect(scrollView(tester).semanticChildCount, 5);
+      // The third row, second line: its place among the rows.
+      expect(tester.getSemantics(row(catanAdas.id)).indexInParent, 2);
+      expect(tester.getSemantics(row(azul.id)).indexInParent, 1);
+      expect(tester.getSemantics(row(wingspanMine.id)).indexInParent, 4);
+      handle.dispose();
+    });
+
+    testWidgets('a row that moves to the line above as one before it leaves '
+        'keeps focus', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(1280, 900));
+      // Take back is the main action on a host-only event (#946).
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      served = [catanMine, azul, catanAdas, root, wingspanMine];
+      await showGames(tester);
+      final line = tester.getRect(row(catanAdas.id)).top;
+      final focus = headFocus(tester, catanAdas.id)..requestFocus();
+      await tester.pump();
+
+      served = [azul, catanAdas, root, wingspanMine];
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      // Second on the first line now.
+      expect(tester.getRect(row(catanAdas.id)).top, lessThan(line));
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(
+        tester.getSemantics(head(catanAdas.id)),
+        isSemantics(isFocused: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("a row's main action keeps focus as its row moves to the "
+        'line above', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      // The viewer's Wingspan, under their Catan, with Take back.
+      served = [catanMine, azul, wingspanMine, root];
+      await showGames(tester);
+      final focus = takeBackFocus(tester, wingspanMine.id)..requestFocus();
+      await tester.pump();
+
+      // The take-back of the row that leaves hands focus nowhere: it isn't
+      // free.
+      served = [azul, wingspanMine, root];
+      await press(tester, takeBack(catanMine.id));
+      await animate(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(focus.hasPrimaryFocus, isTrue);
+      expect(takeBackFocus(tester, wingspanMine.id), same(focus));
+    });
+
+    testWidgets('a row that leaves while its head has focus hands it to the '
+        'head of the row that moves up into its place', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, wingspanMine, root];
+      await showGames(tester);
+      headFocus(tester, azul.id).requestFocus();
+      await tester.pump();
+
+      served = [catanMine, wingspanMine, root];
+      await readPool(tester);
+
+      expect(row(azul.id), findsNothing);
+      // Wingspan, from the line below, beside Catan now.
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(catanMine.id)).top,
+      );
+      expect(headFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a take-back from the keyboard hands focus to the Take back of '
+        'the row that moves up into its place', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      defaultPolicy = policyOf(GameAdditionMode.hostOnly);
+      served = [azul, catanMine, wingspanMine, root];
+      await showGames(tester);
+      takeBackFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      served = [azul, wingspanMine, root];
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(wingspanMine.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(takeBackFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a held Nominate keeps its spinner and its focus as its row '
+        'moves to the line above, and its outcome lands', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      final held = Completer<EventNomination>();
+      nominateAnswer = (request) => held.future;
+      served = [catanMine, azul, catanAdas, root];
+      await showGames(tester);
+      final focus = nominateFocus(tester, catanAdas.id)..requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await settle(tester);
+      expect(remote.nominates, hasLength(1));
+      Finder spinner() => find.descendant(
+        of: nominateOn(catanAdas.id),
+        matching: find.byType(CircularProgressIndicator),
+      );
+      expect(spinner(), findsOneWidget);
+
+      // Another device's take-back, found by a read.
+      served = [azul, catanAdas, root];
+      await readPool(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester.getRect(row(catanAdas.id)).top,
+        tester.getRect(row(azul.id)).top,
+      );
+      expect(spinner(), findsOneWidget);
+      expect(focus.hasPrimaryFocus, isTrue);
+
+      held.complete(
+        EventNomination(
+          id: 'n-1',
+          eventId: 'e-1',
+          platformGameId: catanAdas.platformGameId,
+          gameId: catanAdas.gameId,
+          title: catanAdas.title,
+          platformName: catanAdas.platformName,
+          status: NominationStatus.open,
+          nominatedById: 'att-me',
+          suppliedFromId: catanAdas.id,
+          createdAt: kItemInstant,
+        ),
+      );
+      await animate(tester);
+
+      expect(spinner(), findsNothing);
+      expect(
+        find.byKey(EventDetailScreen.nominationsOutcomeKey),
+        findsOneWidget,
+      );
+      expect(focus.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('Tab goes along each line, then down', (tester) async {
+      useViewSize(tester, const Size(1280, 900));
+      served = [catanMine, azul, catanAdas, root];
+      await showGames(tester);
+      headFocus(tester, catanMine.id).requestFocus();
+      await tester.pump();
+
+      final walked = <FocusNode?>[];
+      for (var i = 0; i < 7; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        walked.add(FocusManager.instance.primaryFocus);
+      }
+
+      // A row's head, then its Nominate; then the row beside it; then down.
+      expect(walked, [
+        nominateFocus(tester, catanMine.id),
+        headFocus(tester, azul.id),
+        nominateFocus(tester, azul.id),
+        headFocus(tester, catanAdas.id),
+        nominateFocus(tester, catanAdas.id),
+        headFocus(tester, root.id),
+        nominateFocus(tester, root.id),
+      ]);
+    });
+
+    testWidgets('Details keeps the pane measure while Games goes wide', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(1600, 900));
+      served = [catanMine, azul, catanAdas];
+      await show(tester);
+
+      final bar = tester.getRect(find.byKey(EventDetailScreen.tabBarKey));
+      final dates = tester.getRect(
+        find.byKey(EventDetailScreen.datesKey, skipOffstage: false),
+      );
+      expect(dates.width, lessThanOrEqualTo(BgeTokens.standard.paneMaxWidth));
+      // Centred under the bar.
+      expect(dates.center.dx, closeTo(bar.center.dx, 0.5));
+
+      await chooseGames(tester);
+
+      // The bar stays where it was as the tabs swap.
+      expect(tester.getRect(find.byKey(EventDetailScreen.tabBarKey)), bar);
+      final line = tester
+          .getRect(row(catanMine.id))
+          .expandToInclude(tester.getRect(row(azul.id)));
+      expect(line.width, greaterThan(BgeTokens.standard.paneMaxWidth));
+      expect(line.width, lessThanOrEqualTo(BgeTokens.standard.wideMaxWidth));
+    });
+  });
+
   group("Take back on someone else's row (#518)", () {
+    // Take back is a row's main action only where Nominate isn't (#946): on a
+    // host-only event nobody is offered Nominate, the host included.
+    setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
+
     final host = _row('att-me', name: 'Me', role: EventRole.host);
     const askAzul = "Take Azul off Ada's games?";
     const askBody = 'Only they can offer it again.';
@@ -3830,6 +4355,11 @@ void main() {
   });
 
   group('Offer games', () {
+    // Take back, which some of these press, is a row's main action only
+    // where Nominate isn't (#946): on a host-only event nobody is offered
+    // Nominate.
+    setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
+
     testWidgets('is not built for a spectator', (tester) async {
       await showGames(
         tester,
@@ -3968,6 +4498,11 @@ void main() {
   });
 
   group('offering', () {
+    // Take back, which some of these press, is a row's main action only
+    // where Nominate isn't (#946): on a host-only event nobody is offered
+    // Nominate.
+    setUp(() => defaultPolicy = policyOf(GameAdditionMode.hostOnly));
+
     const picks = [
       OfferPick(collectionId: 'c-azul', title: 'Azul'),
       OfferPick(collectionId: 'c-root', title: 'Root'),
@@ -4525,26 +5060,6 @@ void main() {
   });
 
   group('Nominate (#517)', () {
-    /// `e-1`'s rules, adding games as [mode] says.
-    EventPolicy policyOf(GameAdditionMode mode) => EventPolicy(
-      id: 'p-1',
-      eventId: 'e-1',
-      allowMemberInvites: true,
-      allowGuestInvites: false,
-      restrictToGameCategories: false,
-      requireHostApprovalToJoin: false,
-      allowSpectators: false,
-      strictCapacity: false,
-      gameAdditionMode: mode,
-      restrictToAttendeePool: false,
-      voteThresholdType: VoteThresholdType.unknown,
-      voteQuorumType: VoteQuorumType.unknown,
-      voteEligibility: VoteEligibility.allAttendees,
-      interestedWeight: InterestedWeight.asFor,
-      createdAt: kItemInstant,
-      updatedAt: kItemInstant,
-    );
-
     /// Two dates ahead: Friday the 6th and Saturday the 7th, at seven.
     final twoDates = [
       confirmed('d-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1'),
@@ -4619,7 +5134,15 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(nominated(azul.id), findsOneWidget);
+      // Nominated for the one choice there is: the button says so.
+      expect(nominated(azul.id), findsNothing);
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Nominate on a multi-date event asks for the scope', (
@@ -4685,7 +5208,7 @@ void main() {
       );
 
       testWidgets('Nominate is named "Nominate Catan: Seafarers" to a screen '
-          'reader, as Take back on the same row is', (tester) async {
+          'reader', (tester) async {
         final handle = tester.ensureSemantics();
         final mine = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
         served = [mine, azul];
@@ -4696,10 +5219,6 @@ void main() {
         expect(
           tester.getSemantics(nominate(mine.id)),
           isSemantics(label: 'Nominate Catan: Seafarers', isButton: true),
-        );
-        expect(
-          tester.getSemantics(takeBack(mine.id)),
-          isSemantics(label: 'Take back Catan: Seafarers', isButton: true),
         );
         handle.dispose();
       });
@@ -4897,13 +5416,13 @@ void main() {
       expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: 'Already nominated',
           isButton: true,
           hasEnabledState: true,
         ),
       );
-      // The marker on the row already says it: not drawn again.
+      // The button already says it: the reason is not drawn again.
       expect(
         find.text('Already nominated', skipOffstage: false),
         findsNothing,
@@ -4933,7 +5452,7 @@ void main() {
         expect(
           tester.getSemantics(nominate(game.id)),
           matchesSemantics(
-            label: 'Nominate Azul',
+            label: 'Nominated: Azul',
             hint: 'Already in the lineup',
             isButton: true,
             hasEnabledState: true,
@@ -5046,7 +5565,7 @@ void main() {
         status: EventParticipationStatus.notAttending,
       );
       // Azul is nominated too, its nomination paused: not going comes
-      // first.
+      // first, as the hint; the button reads Nominated all the same.
       nominationsAnswer = (_) => [
         nominationOf('n-1', azul, status: NominationStatus.paused),
       ];
@@ -5060,7 +5579,7 @@ void main() {
       expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: notGoingHint,
           isButton: true,
           hasEnabledState: true,
@@ -5137,7 +5656,14 @@ void main() {
           occurrenceId: null,
         ),
       ]);
-      expect(nominated(wingspanMine.id), findsOneWidget);
+      expect(nominated(wingspanMine.id), findsNothing);
+      expect(
+        find.descendant(
+          of: nominate(wingspanMine.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets("Nominate says why after the nominations' first read failed, "
@@ -5314,26 +5840,166 @@ void main() {
 
       await showGames(tester);
 
-      expect(nominated(azul.id), findsOneWidget);
-      expect(nominated(catanAdas.id), findsOneWidget);
-      expect(nominated(root.id), findsNothing);
-      expect(nominated(catanMine.id), findsNothing);
-      // A chip's label can't wrap: it scales down instead.
+      // Nominate says it, for every choice there is, so no line does.
+      expect(nominated(azul.id), findsNothing);
+      expect(nominated(catanAdas.id), findsNothing);
+      for (final id in [azul.id, catanAdas.id]) {
+        expect(onPressed(tester, id), isNull, reason: id);
+      }
+      // Withdrawn leaves it to nominate; passed is in the lineup, which
+      // Nominate says too.
+      expect(onPressed(tester, root.id), isNotNull);
+      expect(onPressed(tester, catanMine.id), isNull);
+      handle.dispose();
+    });
+
+    testWidgets('a row nominated for every choice reads Nominated with a '
+        'check, disabled, its reason as hint, and draws no chip', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
       expect(
         find.descendant(
-          of: nominated(azul.id),
-          matching: find.byType(FittedBox),
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
         ),
         findsOneWidget,
       );
-      // Read with the row, as its last line.
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already nominated',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      expect(
+        find.descendant(of: row(azul.id), matching: find.byType(Chip)),
+        findsNothing,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a game in the lineup for every choice reads Nominated, its '
+        'hint saying it is in the lineup', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul, status: NominationStatus.approved),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester);
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNull);
+      expect(
+        tester.getSemantics(nominate(azul.id)),
+        matchesSemantics(
+          label: 'Nominated: Azul',
+          hint: 'Already in the lineup',
+          isButton: true,
+          hasEnabledState: true,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a nominated row with a choice left says "{who} · Nominated" '
+        'as its status line', (tester) async {
+      final handle = tester.ensureSemantics();
+      // Each for the whole event, with both dates left to nominate them for.
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', catanMine),
+      ];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(tester, detail: detailOf(occurrences: twoDates));
+
+      await tester.ensureVisible(nominate(azul.id));
+      await tester.pump();
+      expect(
+        find.descendant(of: nominate(azul.id), matching: find.text('Nominate')),
+        findsOneWidget,
+      );
+      expect(onPressed(tester, azul.id), isNotNull);
+      // Who brings it and that it is nominated, as one line (#946): no line
+      // of its own says Nominated.
+      expect(
+        tester.widget<Text>(nominated(azul.id)).data,
+        'Ada is bringing this · Nominated',
+      );
+      expect(
+        tester.widget<Text>(nominated(catanMine.id)).data,
+        "You're bringing this · Nominated",
+      );
+      expect(
+        find.descendant(of: row(azul.id), matching: find.text('Nominated')),
+        findsNothing,
+      );
+      // Spoken with a comma, after the name.
       expect(
         tester.getSemantics(
           find.descendant(of: row(azul.id), matching: find.text('Azul')),
         ),
         matchesSemantics(
-          label: 'Azul\nTabletop, Physical\nAda is bringing this\nNominated',
+          label: 'Azul\nAda is bringing this, nominated',
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
+      );
+      // A row that supplies none says who brings it alone.
+      expect(nominated(catanAdas.id), findsNothing);
+      expect(
+        find.descendant(
+          of: row(catanAdas.id),
+          matching: find.text('Ada is bringing this', skipOffstage: false),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('where the viewer is not offered Nominate, a nominated row '
+        'says Nominated in its status line', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      useViewSize(tester, const Size(800, 2400));
+      await showGames(
+        tester,
+        detail: detailOf(
+          viewer: _row('att-me', name: 'Me', role: EventRole.guest),
+        ),
+      );
+
+      expect(nominate(azul.id), findsNothing);
+      expect(
+        tester.widget<Text>(nominated(azul.id)).data,
+        'Ada is bringing this · Nominated',
       );
       handle.dispose();
     });
@@ -5410,9 +6076,23 @@ void main() {
       await tester.ensureVisible(nominate(azul.id));
       await tester.pump();
       expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.text('Nominated'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: nominate(azul.id),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
         tester.getSemantics(nominate(azul.id)),
         matchesSemantics(
-          label: 'Nominate Azul',
+          label: 'Nominated: Azul',
           hint: 'Already nominated',
           isButton: true,
           hasEnabledState: true,
@@ -5592,6 +6272,753 @@ void main() {
     });
   });
 
+  group('quick look (#957)', () {
+    final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+    Finder inQuickLook(Finder finder) =>
+        find.descendant(of: quickLook, matching: finder);
+    final gone = find.byKey(EventDetailScreen.quickLookGoneKey);
+    final nominate = find.byKey(EventDetailScreen.quickLookNominateKey);
+    final takeBackIn = find.byKey(EventDetailScreen.quickLookTakeBackKey);
+    final openGame = find.byKey(EventDetailScreen.quickLookOpenGameKey);
+    final anyButton = find.byWidgetPredicate(
+      (widget) => widget is ButtonStyleButton,
+      description: 'a button',
+    );
+
+    /// Opens [id]'s quick look with a tap on its row's head, brought on
+    /// screen first.
+    Future<void> openQuickLook(WidgetTester tester, String id) async {
+      await press(tester, head(id));
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+    }
+
+    /// Closes the quick look with Escape.
+    Future<void> closeQuickLook(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      expect(quickLook, findsNothing);
+    }
+
+    /// Starts a detail read that is held, and lets the bloc say it is
+    /// reading before any frame shows it.
+    Future<void> holdDetailRead(WidgetTester tester) async {
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      expect((detail.state as EventDetailReady).reading, isTrue);
+    }
+
+    Future<void> endDetailRead(WidgetTester tester) async {
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+    }
+
+    testWidgets("pressing a pool row's cover or title opens its quick look, "
+        'a sheet at compact and a dialog at medium', (tester) async {
+      useViewSize(tester, const Size(400, 800));
+      await showGames(tester);
+
+      // The cover.
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: head(catanMine.id),
+          matching: find.byType(BgeThumbnail),
+        ),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(BottomSheet)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(Dialog)),
+        findsNothing,
+      );
+      await closeQuickLook(tester);
+
+      // The title.
+      useViewSize(tester, const Size(700, 900));
+      await tester.pump();
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(of: head(catanMine.id), matching: find.text('Catan')),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(Dialog)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(BottomSheet)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the quick look of an offered copy holds its name, platform '
+        'and medium, who brings it, what it supplies, Nominate, Take back and '
+        'View game', (tester) async {
+      final handle = tester.ensureSemantics();
+      final seafarers = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+      served = [seafarers, azul];
+      nominationsAnswer = (_) => [nominationOf('n-1', seafarers)];
+      await showGames(tester);
+
+      // The row's head is one button, named by what it shows.
+      await tester.ensureVisible(head(seafarers.id));
+      await tester.pump();
+      expect(
+        tester.getSemantics(head(seafarers.id)),
+        isSemantics(
+          label: "Catan: Seafarers\nYou're bringing this",
+          isButton: true,
+          isFocusable: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await openQuickLook(tester, seafarers.id);
+
+      // Named for its game as it opens.
+      expect(
+        find.semantics.byPredicate(
+          (node) =>
+              node.label == 'Catan: Seafarers' &&
+              node.getSemanticsData().flagsCollection.namesRoute,
+          describeMatch: (_) => 'a route named "Catan: Seafarers"',
+        ),
+        findsOneWidget,
+      );
+      // The subtitle is in the name.
+      expect(inQuickLook(find.text('Catan: Seafarers')), findsOneWidget);
+      final where = inQuickLook(find.text('Tabletop · Physical'));
+      expect(where, findsOneWidget);
+      expect(
+        tester.getSemantics(where).getSemanticsData().label,
+        contains('Tabletop, Physical'),
+      );
+      expect(inQuickLook(find.text("You're bringing this")), findsOneWidget);
+      expect(
+        inQuickLook(find.text('Supplies a nomination: For the whole event')),
+        findsOneWidget,
+      );
+      expect(inQuickLook(nominate), findsOneWidget);
+      expect(inQuickLook(takeBackIn), findsOneWidget);
+      expect(inQuickLook(openGame), findsOneWidget);
+      expect(
+        tester.getSemantics(openGame),
+        isSemantics(label: 'View game: Catan: Seafarers', isButton: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("where it's played, in the quick look and not on the row "
+        '(#946): a digital copy, and one with no medium, its platform alone', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await showGames(tester);
+
+      for (final (game, where, spoken) in [
+        (catanAdas, 'Board Game Arena · Digital', 'Board Game Arena, Digital'),
+        (root, 'Tabletop', 'Tabletop'),
+      ]) {
+        expect(
+          find.descendant(
+            of: row(game.id),
+            matching: find.textContaining(game.platformName),
+            skipOffstage: false,
+          ),
+          findsNothing,
+          reason: game.id,
+        );
+        await openQuickLook(tester, game.id);
+        final line = inQuickLook(find.text(where));
+        expect(line, findsOneWidget, reason: game.id);
+        expect(
+          tester.getSemantics(line).getSemanticsData().label,
+          contains(spoken),
+          reason: game.id,
+        );
+        await closeQuickLook(tester);
+      }
+      handle.dispose();
+    });
+
+    testWidgets('it stays current: a read that changes who it supplies '
+        'redraws it while it is open', (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      expect(inQuickLook(find.text('Not nominated yet')), findsOneWidget);
+
+      // Nominated by someone else meanwhile, and read again.
+      nominationsAnswer = (_) => [nominationOf('n-1', catanMine)];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await animate(tester);
+
+      expect(quickLook, findsOneWidget);
+      expect(inQuickLook(find.text('Not nominated yet')), findsNothing);
+      expect(
+        inQuickLook(find.text('Supplies a nomination: For the whole event')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a take-back from it leaves it saying the copy has left, with '
+        "nothing to press; closing it puts focus on the next row's head", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      served = [azul, wingspanMine];
+
+      // By keyboard: the focused Take back goes with the copy, and leaves
+      // focus on nothing in that frame.
+      tester.widget<ButtonStyleButton>(takeBackIn).focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      expect(inQuickLook(gone), findsOneWidget);
+      expect(find.text('This copy is no longer in the pool.'), findsOneWidget);
+      expect(tester.getSemantics(gone), isSemantics(isLiveRegion: true));
+      // The take-back's outcome still shows under it, and its Dismiss is
+      // all there is to press.
+      expect(inQuickLook(outcome()), findsOneWidget);
+      expect(inQuickLook(anyButton), findsOneWidget);
+      expect(
+        find.descendant(of: inQuickLook(outcome()), matching: anyButton),
+        findsOneWidget,
+      );
+      // The quick look keeps the focus while it is open: the page's own
+      // hand-off takes nothing from under its barrier.
+      expect(headFocus(tester, azul.id).hasFocus, isFalse);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(nominateOn(azul.id))
+            .focusNode!
+            .hasFocus,
+        isFalse,
+      );
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('a take-back from it whose answer lands after it closes, '
+        "before the next frame, puts focus on the next row's head", (
+      tester,
+    ) async {
+      final answer = Completer<void>();
+      takeBackAnswer = (_) => answer.future;
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      tester.widget<ButtonStyleButton>(takeBackIn).focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsOneWidget);
+
+      // Closed, and the close's own work done, with no frame since.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      // Then the answer lands, still before the next frame.
+      served = [azul, wingspanMine];
+      answer.complete();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      await animate(tester);
+      await animate(tester);
+
+      expect(quickLook, findsNothing);
+      expect(row(catanMine.id), findsNothing);
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("another user's take-back, read while it is open, does the "
+        'same', (tester) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+
+      // Taken back from another device: the next read comes without it.
+      served = [catanMine, wingspanMine];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+
+      expect(remote.takeBacks, isEmpty);
+      expect(row(azul.id), findsNothing);
+      expect(inQuickLook(gone), findsOneWidget);
+      expect(inQuickLook(anyButton), findsNothing);
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('closing one whose copy left from the last row puts focus on '
+        "the row before's head, and from the only row on Offer games, the "
+        "sub-tab's first header control", (tester) async {
+      served = [catanMine, azul];
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+      served = [catanMine];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, catanMine.id).hasPrimaryFocus, isTrue);
+
+      await openQuickLook(tester, catanMine.id);
+      served = [];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(offerGames())
+            .focusNode!
+            .hasPrimaryFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('closing one whose copy left from the only row, with no Offer '
+        'games built, puts focus on the search field', (tester) async {
+      served = [catanMine];
+      await showGames(tester, offers: false);
+      await openQuickLook(tester, catanMine.id);
+      served = [];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(offerGames(), findsNothing);
+      expect(searchFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("it moves on with the page's clock: a date starting while it "
+        'is open leaves Nominate nothing to offer, with no reopen', (
+      tester,
+    ) async {
+      // The event's first date starts in a minute: one of the page's time
+      // boundaries.
+      final soon = confirmed(
+        'd-1',
+        now.add(const Duration(minutes: 1)),
+      ).copyWith(eventId: 'e-1');
+      final saturday = confirmed(
+        'd-2',
+        DateTime(2026, 11, 7, 19),
+        sortOrder: 1,
+      ).copyWith(eventId: 'e-1');
+      // Nominated for the whole event and for Saturday: the date starting
+      // soon is the one choice left.
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', azul).copyWith(occurrenceId: 'd-2'),
+      ];
+      await showGames(tester, detail: detailOf(occurrences: [soon, saturday]));
+      await openQuickLook(tester, azul.id);
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominate')),
+        findsOneWidget,
+      );
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNotNull);
+
+      // The date starts, and the page's clock passes it: no read, no write.
+      clock = now.add(const Duration(minutes: 2));
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominated')),
+        findsOneWidget,
+      );
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNull);
+    });
+
+    testWidgets('a write from it says its outcome inside the pop-up, once; an '
+        'outcome showing when it opened is not repeated', (tester) async {
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      served = [catanMine, wingspanMine];
+      // With no Nominate on a host-only event, Take back is the row's own
+      // main action (#946).
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+      // An outcome in the footer as the quick look opens.
+      await press(tester, takeBack(wingspanMine.id));
+      await animate(tester);
+      expect(outcome(), findsOneWidget);
+
+      await openQuickLook(tester, catanMine.id);
+      expect(inQuickLook(outcome()), findsNothing);
+
+      await tester.tap(takeBackIn);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(2));
+      expect(inQuickLook(outcome()), findsOneWidget);
+      expect(
+        find.descendant(
+          of: inQuickLook(outcome()),
+          matching: find.text(_stillSuppliesCopy),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("the footer's banner of an outcome said in it is no live "
+        'region, while it is open or after it closes', (tester) async {
+      final handle = tester.ensureSemantics();
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      served = [catanMine, wingspanMine];
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+      final inFooter = find.descendant(
+        of: find.byType(EventGamesFooter),
+        matching: outcome(),
+      );
+      BgeInlineBanner banner(Finder finder) =>
+          tester.widget<BgeInlineBanner>(finder);
+      // The banner's message, icon and text, whose node the live region is.
+      final message = find.descendant(
+        of: inFooter,
+        matching: find.byType(Icon),
+      );
+      // One that lands with no quick look open is a live region.
+      await press(tester, takeBack(wingspanMine.id));
+      await animate(tester);
+      expect(banner(inFooter).announce, isTrue);
+      expect(tester.getSemantics(message), isSemantics(isLiveRegion: true));
+
+      await openQuickLook(tester, catanMine.id);
+      await tester.tap(takeBackIn);
+      await animate(tester);
+
+      // Said in the quick look, and only there.
+      expect(banner(inQuickLook(outcome())).announce, isTrue);
+      expect(banner(inFooter).announce, isFalse);
+
+      await closeQuickLook(tester);
+
+      // Back in the tree as the barrier lifts, it isn't read out again.
+      expect(banner(inFooter).announce, isFalse);
+      expect(
+        tester.getSemantics(message),
+        isNot(isSemantics(isLiveRegion: true)),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('what it supplies names a date the event no longer has as '
+        'gone, once however many there are', (tester) async {
+      served = [catanMine, azul];
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', catanMine),
+        nominationOf('n-2', catanMine).copyWith(occurrenceId: 'd-gone'),
+        nominationOf('n-3', catanMine).copyWith(occurrenceId: 'd-gone-too'),
+        nominationOf('n-4', azul).copyWith(occurrenceId: 'd-gone'),
+      ];
+      await showGames(tester);
+
+      await openQuickLook(tester, catanMine.id);
+      expect(
+        inQuickLook(
+          find.text(
+            'Supplies a nomination: For the whole event, '
+            'For a date no longer on the event',
+          ),
+        ),
+        findsOneWidget,
+      );
+      await closeQuickLook(tester);
+
+      // Only for a date gone, it still says it is nominated.
+      await openQuickLook(tester, azul.id);
+      expect(
+        inQuickLook(
+          find.text('Supplies a nomination: For a date no longer on the event'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('View game opens the page once, however often it is pressed '
+        'while the page arrives', (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+
+      await tester.tap(openGame);
+      await tester.pump();
+      await tester.tap(openGame);
+      await tester.pump();
+
+      expect(openedGames, hasLength(1));
+    });
+
+    testWidgets('a nominate from it says its outcome inside the pop-up: the '
+        "nominations' banner", (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+
+      await tester.tap(nominate);
+      await animate(tester);
+
+      expect(remote.nominates, hasLength(1));
+      final banner = inQuickLook(
+        find.byKey(EventDetailScreen.nominationsOutcomeKey),
+      );
+      expect(banner, findsOneWidget);
+      // The footer's of it is no live region: the quick look said it.
+      expect(
+        tester
+            .widget<BgeInlineBanner>(
+              find.descendant(
+                of: find.byType(EventGamesFooter),
+                matching: find.byKey(EventDetailScreen.nominationsOutcomeKey),
+              ),
+            )
+            .announce,
+        isFalse,
+      );
+      expect(
+        find.descendant(
+          of: banner,
+          matching: find.text('Azul is nominated. Voting is open.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("closed after a screen reader's tap, focus is back on the row "
+        'head', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showGames(tester);
+      // Keyboard focus left on another control: the reader's tap moves none.
+      peopleFocus(tester).requestFocus();
+      await tester.pump();
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+
+      const label = "Catan\nYou're bringing this";
+      tester.semantics.tap(
+        find.semantics.byPredicate(
+          (node) =>
+              node.getSemanticsData().label == label &&
+              node.getSemanticsData().hasAction(SemanticsAction.tap),
+          describeMatch: (_) => 'the row head "$label"',
+        ),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, catanMine.id).hasPrimaryFocus, isTrue);
+      expect(
+        tester.getSemantics(head(catanMine.id)),
+        isSemantics(label: label, isFocused: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('offline while open, its writes disable in place and one '
+        'online-only note shows', (tester) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier<bool>(false);
+      addTearDown(offline.dispose);
+      await showGames(tester, offline: offline);
+      await openQuickLook(tester, catanMine.id);
+      final nominating = tester.element(nominate);
+      final takingBack = tester.element(takeBackIn);
+      expect(
+        tester.widget<ButtonStyleButton>(nominate).onPressed,
+        isNotNull,
+      );
+      expect(
+        tester.widget<ButtonStyleButton>(takeBackIn).onPressed,
+        isNotNull,
+      );
+      expect(inQuickLook(find.byType(BgeOnlineOnlyNote)), findsNothing);
+
+      offline.value = true;
+      await tester.pump();
+
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(takeBackIn).onPressed, isNull);
+      // The same controls, disabled where they are.
+      expect(tester.element(nominate), same(nominating));
+      expect(tester.element(takeBackIn), same(takingBack));
+      expect(inQuickLook(find.byType(BgeOnlineOnlyNote)), findsOneWidget);
+      expect(
+        tester.getSemantics(takeBackIn),
+        isSemantics(label: 'Take back Catan', hint: _onlineOnlyCopy),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("Nominate and Take back in it keep the row's rules: held "
+        'through their press, sent once a detail read has ended', (
+      tester,
+    ) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+
+      // A read starts, and the press lands before a frame shows it.
+      await holdDetailRead(tester);
+      await tester.tap(nominate);
+      await tester.pump();
+
+      expect(remote.nominates, isEmpty);
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNotNull);
+      expect(
+        find.descendant(
+          of: nominate,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      await endDetailRead(tester);
+      expect(remote.nominates, hasLength(1));
+
+      await holdDetailRead(tester);
+      await tester.tap(takeBackIn);
+      await tester.pump();
+
+      expect(remote.takeBacks, isEmpty);
+      expect(
+        tester.widget<ButtonStyleButton>(takeBackIn).onPressed,
+        isNotNull,
+      );
+      expect(
+        find.descendant(
+          of: takeBackIn,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      await endDetailRead(tester);
+      expect(remote.takeBacks, hasLength(1));
+    });
+
+    testWidgets("View game opens the game's page, and the quick look goes "
+        'once the page has arrived', (tester) async {
+      const page = Key('game page');
+      openGameAnswer = (context, _) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(key: page, body: Text('The game')),
+        ),
+      );
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      final popup = ModalRoute.of(tester.element(quickLook));
+
+      await tester.tap(openGame);
+      await tester.pump();
+
+      // Asked from the quick look's own context, for the copy's game.
+      expect(openedGames, [(popup, catanMine.gameId)]);
+      // Still there while the page arrives over it.
+      expect(
+        find.byKey(EventDetailScreen.quickLookKey, skipOffstage: false),
+        findsOneWidget,
+      );
+
+      await animate(tester);
+      await animate(tester);
+
+      expect(find.byKey(page), findsOneWidget);
+      expect(
+        find.byKey(EventDetailScreen.quickLookKey, skipOffstage: false),
+        findsNothing,
+      );
+      // The page has the focus: the tab hands none on under it.
+      expect(headFocus(tester, catanMine.id).hasFocus, isFalse);
+    });
+
+    testWidgets('at 320×640 and 200% text, the quick look and a row head lay '
+        'out with no overflow', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final long = _game('o-1', 'att-me', _longTitle, subtitle: 'Seafarers');
+      served = [long, azul];
+      nominationsAnswer = (_) => [nominationOf('n-1', long)];
+
+      await showGames(tester);
+      await tester.ensureVisible(head(long.id));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(head(long.id)).height,
+        greaterThanOrEqualTo(kMinInteractiveDimension),
+      );
+
+      await openQuickLook(tester, long.id);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(openGame);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: inQuickLook(find.text('$_longTitle: Seafarers')),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse);
+    });
+  });
+
   group('accessibility audit', () {
     testWidgets('at 320×640 and 200% text, the footer holds an outcome and '
         'the stale banner, and both their buttons are reached by pointer and '
@@ -5600,7 +7027,12 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue =
           BgeTextScale.maxScaleFactor;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await showGames(tester);
+      // With no Nominate on a host-only event, Take back is the row's own
+      // main action (#946).
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
       poolAnswer = (_) => throw _offline;
       takeBackAnswer = (_) => throw const EventWriteConflictException(
         'supplies',
@@ -5693,6 +7125,92 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('compact rows at 320×640 and 200% text, their status line '
+        'saying Nominated, with Nominate or Take back as their main action: '
+        'no overflow (#946)', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final mine = _game('o-1', 'att-me', _longTitle, subtitle: 'Seafarers');
+      final adas = _game('o-2', 'att-ada', _longTitle);
+      served = [mine, adas];
+      // Each nominated for the whole event, with a date left: the status
+      // line says it.
+      nominationsAnswer = (_) => [
+        for (final (id, game) in [('n-1', mine), ('n-2', adas)])
+          EventNomination(
+            id: id,
+            eventId: 'e-1',
+            platformGameId: game.platformGameId,
+            gameId: game.gameId,
+            title: game.title,
+            platformName: game.platformName,
+            status: NominationStatus.open,
+            nominatedById: 'att-bo',
+            suppliedFromId: game.id,
+            createdAt: kItemInstant,
+          ),
+      ];
+      final twoDates = [
+        confirmed('d-1', DateTime(2026, 11, 6, 19)).copyWith(eventId: 'e-1'),
+        confirmed(
+          'd-2',
+          DateTime(2026, 11, 7, 19),
+          sortOrder: 1,
+        ).copyWith(eventId: 'e-1'),
+      ];
+
+      for (final (policy, action) in [
+        (null, nominateOn),
+        (policyOf(GameAdditionMode.hostOnly), takeBack),
+      ]) {
+        await tester.pumpWidget(const SizedBox());
+        await showGames(
+          tester,
+          detail: detailOf(occurrences: twoDates, policy: policy),
+        );
+        expect(tester.takeException(), isNull);
+
+        for (final game in [mine, adas]) {
+          await tester.scrollUntilVisible(
+            row(game.id),
+            100,
+            scrollable: find
+                .descendant(
+                  of: find.byType(CustomScrollView),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          await tester.ensureVisible(row(game.id));
+          await tester.pump();
+          expect(tester.takeException(), isNull, reason: game.id);
+          final line = find.byKey(EventDetailScreen.poolNominatedKey(game.id));
+          expect(line, findsOneWidget, reason: game.id);
+          for (final text in [line, head(game.id)]) {
+            final rect = tester.getRect(text);
+            expect(rect.left, greaterThanOrEqualTo(0), reason: game.id);
+            expect(rect.right, lessThanOrEqualTo(320), reason: game.id);
+          }
+          expect(
+            tester
+                .renderObject<RenderParagraph>(
+                  find.descendant(of: line, matching: find.byType(RichText)),
+                )
+                .didExceedMaxLines,
+            isFalse,
+            reason: game.id,
+          );
+        }
+        // The viewer's own row's main action, on screen.
+        await tester.ensureVisible(action(mine.id));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(tester.getRect(action(mine.id)).right, lessThanOrEqualTo(320));
+      }
+    });
+
     testWidgets("a nominated row whose supplier isn't going, at 320×640 and "
         '200% text: no overflow, and the guidelines pass (#517)', (
       tester,
@@ -5737,15 +7255,22 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
+      // Nominated for the one choice there is: Nominate says it.
       expect(
         find.byKey(EventDetailScreen.poolNominatedKey('o-1')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominated')),
         findsOneWidget,
       );
       expect(
         tester.widget<ButtonStyleButton>(nominate).onPressed,
         isNull,
       );
-      expect(takeBack('o-1'), findsOneWidget);
+      // Nominate is the row's one main action: Take back is the quick
+      // look's (#946).
+      expect(takeBack('o-1'), findsNothing);
       await expectMeetsAccessibilityGuidelines(tester);
       handle.dispose();
     });
@@ -5761,10 +7286,13 @@ void main() {
       final long = _game('o-9', 'att-ada', _longTitle);
       served = [catanMine, long];
 
+      // A host-only event, where nobody is offered Nominate, so Take back is
+      // each row's main action (#946).
       await showGames(
         tester,
         detail: detailOf(
           viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          policy: policyOf(GameAdditionMode.hostOnly),
         ),
       );
       // Under the tab bars and the pool's header, at this size perhaps past
@@ -5925,9 +7453,12 @@ void main() {
     auditScreen(
       "EventDetailScreen, the Games tab asking before someone else's game "
       'is taken back (#518)',
+      // A host-only event, where nobody is offered Nominate, so Take back is
+      // each row's main action (#946).
       build: (theme) => harness(
         detail: detailOf(
           viewer: _row('att-me', name: 'Me', role: EventRole.host),
+          policy: policyOf(GameAdditionMode.hostOnly),
         ),
         theme: theme,
       ),
@@ -5935,6 +7466,7 @@ void main() {
         cache.add(
           detailOf(
             viewer: _row('att-me', name: 'Me', role: EventRole.host),
+            policy: policyOf(GameAdditionMode.hostOnly),
           ),
         );
         await settle(tester);
