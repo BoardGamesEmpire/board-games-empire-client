@@ -52,6 +52,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'src/workspace_root.dart';
+
 /// Files to fetch from the drift release.
 const _assets = <String>['sqlite3.wasm', 'drift_worker.js'];
 
@@ -115,7 +117,13 @@ Future<void> main(List<String> args) async {
     exit(64);
   }
 
-  final root = _workspaceRoot();
+  final Directory root;
+  try {
+    root = workspaceRoot();
+  } on WorkspaceRootNotFound catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
   final release = 'drift-${_resolvedDriftVersion(root)}';
   final digests = _checksums[release];
   if (digests == null || !_assets.every(digests.containsKey)) {
@@ -159,28 +167,6 @@ Future<void> main(List<String> args) async {
       ..writeln('Run `melos run web:assets` to fetch them.');
     exit(1);
   }
-}
-
-/// The workspace root, identified by reading its pubspec rather than by
-/// assuming the working directory — the same rule the boundary and
-/// design-system tests follow.
-Directory _workspaceRoot() {
-  var dir = Directory.current;
-  for (var i = 0; i < 8; i++) {
-    final pubspec = File('${dir.path}/pubspec.yaml');
-    if (pubspec.existsSync() &&
-        pubspec.readAsStringSync().contains('\nworkspace:')) {
-      return dir;
-    }
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  stderr.writeln(
-    'Could not locate the workspace root from ${Directory.current.path}. '
-    'Run this from the repository.',
-  );
-  exit(1);
 }
 
 /// Reads the resolved `drift` version out of `pubspec.lock`.

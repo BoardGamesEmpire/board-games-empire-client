@@ -40,9 +40,8 @@
 
 import 'dart:io';
 
-/// git's `-z` separator. Written as a code unit rather than an escape so
-/// the byte is unambiguous in source.
-final _nul = String.fromCharCode(0);
+import 'src/git_files.dart';
+import 'src/self_test.dart';
 
 /// A top-level `main(`, bare or after a return type such as `void` or
 /// `Future<void>`.
@@ -62,21 +61,15 @@ void main(List<String> args) {
     return;
   }
 
-  final top = _git(['rev-parse', '--show-toplevel']).trim();
-  // From [top], because `git ls-files` scopes its pathspec to the working
-  // directory: run from inside a package it would list only that package.
-  final underTest = _git(
-    [
-      'ls-files',
-      '-z',
-      '--cached',
-      '--others',
-      '--exclude-standard',
-      '--',
-      '*.dart',
-    ],
-    workingDirectory: top,
-  ).split(_nul).where((p) => p.isNotEmpty && _isUnderTest(p)).toList();
+  final ({String top, List<String> paths}) listing;
+  try {
+    listing = checkoutFiles(['*.dart']);
+  } on GitFailed catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+  final (:top, :paths) = listing;
+  final underTest = paths.where(_isUnderTest).toList();
 
   final misnamed = <String>[];
   var checked = 0;
@@ -121,20 +114,6 @@ void main(List<String> args) {
   exit(1);
 }
 
-/// Runs git and returns its stdout, exiting with git's error if it fails.
-String _git(List<String> args, {String? workingDirectory}) {
-  final result = Process.runSync(
-    'git',
-    args,
-    workingDirectory: workingDirectory,
-  );
-  if (result.exitCode != 0) {
-    stderr.writeln('git ${args.first} failed:\n${result.stderr}');
-    exit(1);
-  }
-  return result.stdout as String;
-}
-
 /// Whether [path] sits anywhere below a directory named `test`.
 ///
 /// git separates paths with `/` on every platform, Windows included.
@@ -158,21 +137,18 @@ bool _isMisnamedSuite(String path, String source) =>
 /// catch, and the ones it must leave alone, are pinned here. Run by the
 /// `test-files` CI job.
 void _selfTest() {
-  var failures = 0;
+  final selfTest = SelfTest('check_test_files');
 
   void expect(
     String name,
     String path,
     String source, {
     required bool misnamed,
-  }) {
-    if (_isMisnamedSuite(path, source) == misnamed) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout.writeln('  FAIL $name: expected misnamed=$misnamed');
-    }
-  }
+  }) => selfTest.record(
+    name,
+    passed: _isMisnamedSuite(path, source) == misnamed,
+    detail: ': expected misnamed=$misnamed',
+  );
 
   const suite = 'void main() {\n  test("x", () {});\n}\n';
 
@@ -242,9 +218,5 @@ void _selfTest() {
     misnamed: false,
   );
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('check_test_files self-test passed.');
+  selfTest.finish();
 }

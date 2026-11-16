@@ -26,6 +26,9 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
+import 'src/self_test.dart';
+import 'src/workspace_root.dart';
+
 const _commitFlag = '--commit';
 
 const _selfTestFlag = '--self-test';
@@ -219,9 +222,15 @@ int _compare(List<int> a, List<int> b) {
 ///
 /// Parsed as YAML, as tool/check_sdk_constraints.dart reads it, so a value
 /// the constraints check accepts, quoted or not, is one this reads too.
-String _rootVersion() => _versionOf(
-  File('${_workspaceRoot().path}/pubspec.yaml').readAsStringSync(),
-);
+String _rootVersion() {
+  final Directory root;
+  try {
+    root = workspaceRoot();
+  } on WorkspaceRootNotFound catch (e) {
+    throw ReleaseTagException(e.message);
+  }
+  return _versionOf(File('${root.path}/pubspec.yaml').readAsStringSync());
+}
 
 String _versionOf(String pubspec) {
   final Object? yaml;
@@ -241,39 +250,17 @@ String _versionOf(String pubspec) {
   return m.group(1)!;
 }
 
-/// The workspace root, identified by reading its pubspec rather than by
-/// assuming the working directory, as tool/build_android.dart does.
-Directory _workspaceRoot() {
-  var dir = Directory.current;
-  for (var i = 0; i < 8; i++) {
-    final pubspec = File('${dir.path}/pubspec.yaml');
-    if (pubspec.existsSync() &&
-        pubspec.readAsStringSync().contains('\nworkspace:')) {
-      return dir;
-    }
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  throw ReleaseTagException(
-    'Could not locate the workspace root from ${Directory.current.path}. '
-    'Run this from the repository.',
-  );
-}
-
 void _selfTest() {
-  var failures = 0;
+  final selfTest = SelfTest('release_tags');
 
   void expect(String name, Object? actual, Object? expected) {
-    if (jsonEncode(actual) == jsonEncode(expected)) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout
-        ..writeln('  FAIL $name')
-        ..writeln('       expected: ${jsonEncode(expected)}')
-        ..writeln('       actual:   ${jsonEncode(actual)}');
-    }
+    final want = jsonEncode(expected);
+    final got = jsonEncode(actual);
+    selfTest.record(
+      name,
+      passed: got == want,
+      detail: '\n       expected: $want\n       actual:   $got',
+    );
   }
 
   void expectReleaseTagException(
@@ -283,22 +270,19 @@ void _selfTest() {
   ) {
     try {
       body();
-      failures++;
-      stdout.writeln('  FAIL $name: no ReleaseTagException');
+      selfTest.record(name, passed: false, detail: ': no ReleaseTagException');
     } on ReleaseTagException catch (e) {
       final missing = [
         for (final part in messageHas)
           if (!e.message.contains(part)) part,
       ];
-      if (missing.isEmpty) {
-        stdout.writeln('  ok   $name');
-      } else {
-        failures++;
-        stdout
-          ..writeln('  FAIL $name')
-          ..writeln('       message lacks: ${jsonEncode(missing)}')
-          ..writeln('       message:       ${jsonEncode(e.message)}');
-      }
+      selfTest.record(
+        name,
+        passed: missing.isEmpty,
+        detail:
+            '\n       message lacks: ${jsonEncode(missing)}'
+            '\n       message:       ${jsonEncode(e.message)}',
+      );
     }
   }
 
@@ -417,9 +401,5 @@ void _selfTest() {
     ['version'],
   );
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('release_tags self-test passed.');
+  selfTest.finish();
 }

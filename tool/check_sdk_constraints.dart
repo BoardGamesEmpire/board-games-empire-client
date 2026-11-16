@@ -152,6 +152,8 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
+import 'src/self_test.dart';
+
 void main(List<String> args) {
   final setVersionAt = args.indexOf('--set-version');
   final setVersion = setVersionAt == -1
@@ -725,20 +727,18 @@ YamlMap? _parsePubspec(String source) {
 void _selfTest() {
   const sdk = '^3.12.0';
   const flutter = '>=3.44.4';
-  var failures = 0;
+  final selfTest = SelfTest('check_sdk_constraints');
 
   // Compared as JSON so the manifest checks' problem lists can be pinned
   // the same way as the rewriters' strings.
   void expect(String name, Object? actual, Object? expected) {
-    if (jsonEncode(actual) == jsonEncode(expected)) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout
-        ..writeln('  FAIL $name')
-        ..writeln('       expected: ${jsonEncode(expected)}')
-        ..writeln('       actual:   ${jsonEncode(actual)}');
-    }
+    final want = jsonEncode(expected);
+    final got = jsonEncode(actual);
+    selfTest.record(
+      name,
+      passed: got == want,
+      detail: '\n       expected: $want\n       actual:   $got',
+    );
   }
 
   expect(
@@ -1580,11 +1580,7 @@ void _selfTest() {
         'only the root file may',
   );
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('check_sdk_constraints self-test passed.');
+  selfTest.finish();
 }
 
 /// The web implementations, which only apps/browser may compile in (#51).

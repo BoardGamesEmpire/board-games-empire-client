@@ -35,6 +35,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'src/flutter_run.dart';
+import 'src/self_test.dart';
+import 'src/workspace_root.dart';
+
 const _app = 'apps/browser';
 
 const _flags = <String>['build', 'web', '--release', '--no-web-resources-cdn'];
@@ -79,23 +83,18 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  final app = Directory('${_workspaceRoot().path}/$_app');
+  final Directory root;
+  try {
+    root = workspaceRoot();
+  } on WorkspaceRootNotFound catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+  final app = Directory('${root.path}/$_app');
   final output = Directory('${app.path}/build/web');
   if (output.existsSync()) output.deleteSync(recursive: true);
 
-  final flutter = await Process.start(
-    'flutter',
-    _flags,
-    workingDirectory: app.path,
-    mode: ProcessStartMode.inheritStdio,
-    // `flutter` is a batch file on Windows, which needs a shell to start.
-    runInShell: Platform.isWindows,
-  );
-  final code = await flutter.exitCode;
-  if (code != 0) {
-    stderr.writeln('flutter ${_flags.join(' ')} failed with exit code $code.');
-    exit(code);
-  }
+  await runFlutter(_flags, workingDirectory: app.path);
 
   for (final name in _tooling) {
     final file = File('${output.path}/$name');
@@ -144,27 +143,6 @@ Future<void> main(List<String> args) async {
 
   final files = entities.whereType<File>().length;
   stdout.writeln('$_app/build/web: $files files, ready to ship.');
-}
-
-/// The workspace root, identified by reading its pubspec rather than by
-/// assuming the working directory, as tool/fetch_web_assets.dart does.
-Directory _workspaceRoot() {
-  var dir = Directory.current;
-  for (var i = 0; i < 8; i++) {
-    final pubspec = File('${dir.path}/pubspec.yaml');
-    if (pubspec.existsSync() &&
-        pubspec.readAsStringSync().contains('\nworkspace:')) {
-      return dir;
-    }
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-  stderr.writeln(
-    'Could not locate the workspace root from ${Directory.current.path}. '
-    'Run this from the repository.',
-  );
-  exit(1);
 }
 
 /// The last segment of [entity]'s path, for directories as well as files.
@@ -223,16 +201,13 @@ Map<String, String>? _stringMap(String json) {
 /// nothing to show why. So the shapes it must sort, and the ones it must
 /// refuse, are pinned here. Run by CI's `build-web` job.
 void _selfTest() {
-  var failures = 0;
+  final selfTest = SelfTest('build_web');
 
-  void expect(String name, String? actual, String? expected) {
-    if (actual == expected) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout.writeln('  FAIL $name:\n    got  $actual\n    want $expected');
-    }
-  }
+  void expect(String name, String? actual, String? expected) => selfTest.record(
+    name,
+    passed: actual == expected,
+    detail: ':\n    got  $actual\n    want $expected',
+  );
 
   // The shape flutter_tools writes, with the loader's own lookup after it.
   String bootstrap(String hashes) =>
@@ -297,9 +272,5 @@ void _selfTest() {
     null,
   );
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('build_web self-test passed.');
+  selfTest.finish();
 }

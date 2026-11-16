@@ -74,10 +74,12 @@ jobs:
       # manifest checks only ever read correct manifests, so the
       # hand-set versions they must catch are pinned the same way. The
       # self-test pins the rewriters, and `tool/test` pins `main`'s exit
-      # codes by running both modes over fixture workspaces (#201).
+      # codes by running both modes over fixture workspaces (#201). It
+      # also holds the tests of the helpers under `tool/src/` that every
+      # script shares (#808).
       - name: Invariant tooling self-test
         run: dart run tool/check_sdk_constraints.dart --self-test
-      - name: Invariant tooling exit codes
+      - name: Tool scripts' tests
         run: dart test tool/test
       - name: Invariants must hold against the root pubspec
         run: dart run tool/check_sdk_constraints.dart

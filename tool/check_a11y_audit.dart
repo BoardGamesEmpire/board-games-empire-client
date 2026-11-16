@@ -53,9 +53,8 @@
 
 import 'dart:io';
 
-/// git's `-z` separator. Written as a code unit rather than an escape so
-/// the byte is unambiguous in source.
-final _nul = String.fromCharCode(0);
+import 'src/git_files.dart';
+import 'src/self_test.dart';
 
 /// Screens exempt for now, by path from the workspace root, with the unit
 /// that owns the rewrite. Empty while no open unit is rewriting a screen.
@@ -115,18 +114,14 @@ void main(List<String> args) {
     return;
   }
 
-  final top = _git(['rev-parse', '--show-toplevel']).trim();
-  // From [top], because `git ls-files` scopes its pathspec to the working
-  // directory: run from inside a package it would list only that package.
-  final paths = _git([
-    'ls-files',
-    '-z',
-    '--cached',
-    '--others',
-    '--exclude-standard',
-    '--',
-    '*.dart',
-  ], workingDirectory: top).split(_nul).where((p) => p.isNotEmpty).toList();
+  final ({String top, List<String> paths}) listing;
+  try {
+    listing = checkoutFiles(['*.dart']);
+  } on GitFailed catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+  final (:top, :paths) = listing;
 
   final result = checkAudit(top, paths, _deferred);
 
@@ -178,20 +173,6 @@ void main(List<String> args) {
     );
   }
   exit(1);
-}
-
-/// Runs git and returns its stdout, exiting with git's error if it fails.
-String _git(List<String> args, {String? workingDirectory}) {
-  final result = Process.runSync(
-    'git',
-    args,
-    workingDirectory: workingDirectory,
-  );
-  if (result.exitCode != 0) {
-    stderr.writeln('git ${args.first} failed:\n${result.stderr}');
-    exit(1);
-  }
-  return result.stdout as String;
 }
 
 /// `server_add_screen.dart` to `ServerAddScreen`.
@@ -280,16 +261,14 @@ AuditResult checkAudit(
 /// must leave alone, are pinned here against a temporary tree. Run by the
 /// `test-files` CI job.
 void _selfTest() {
-  var failures = 0;
+  final selfTest = SelfTest('check_a11y_audit');
 
-  void expect(String name, {required bool condition, String detail = ''}) {
-    if (condition) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout.writeln('  FAIL $name${detail.isEmpty ? '' : ': $detail'}');
-    }
-  }
+  void expect(String name, {required bool condition, String detail = ''}) =>
+      selfTest.record(
+        name,
+        passed: condition,
+        detail: detail.isEmpty ? '' : ': $detail',
+      );
 
   expect(
     'names a one-word screen',
@@ -496,9 +475,5 @@ void _selfTest() {
     root.deleteSync(recursive: true);
   }
 
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('check_a11y_audit self-test passed.');
+  selfTest.finish();
 }

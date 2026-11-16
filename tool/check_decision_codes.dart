@@ -51,9 +51,8 @@
 
 import 'dart:io';
 
-/// git's `-z` separator. Written as a code unit rather than an escape so
-/// the byte is unambiguous in source.
-final _nul = String.fromCharCode(0);
+import 'src/git_files.dart';
+import 'src/self_test.dart';
 
 /// Path prefixes this check never reports on. The files are still listed and
 /// counted as checked.
@@ -85,7 +84,14 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  final (:checked, :hits) = _scan(Directory.current.path);
+  final ({int checked, List<String> hits}) result;
+  try {
+    result = _scan(Directory.current.path);
+  } on GitFailed catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
+  final (:checked, :hits) = result;
 
   if (checked == 0) {
     // Not a pass: nothing was read, so a clean exit would report a tree
@@ -116,29 +122,12 @@ Future<void> main(List<String> args) async {
 /// `checked` counts the files read, exempt ones included. Each of `hits` is
 /// `path:line: text`, with the path relative to the checkout's top level.
 ({int checked, List<String> hits}) _scan(String cwd) {
-  final top = _git([
-    'rev-parse',
-    '--show-toplevel',
-  ], workingDirectory: cwd).trim();
-  // From [top], because `git ls-files` scopes its pathspec to the working
-  // directory: run from inside a package it would list only that package.
-  final paths = _git(
-    [
-      'ls-files',
-      '-z',
-      '--cached',
-      '--others',
-      '--exclude-standard',
-      // A conflicted path is otherwise listed once per merge stage.
-      '--deduplicate',
-      '--',
-      '*.dart',
-      '*.md',
-      '*.yaml',
-      '*.yml',
-    ],
-    workingDirectory: top,
-  ).split(_nul).where((p) => p.isNotEmpty);
+  final (:top, :paths) = checkoutFiles([
+    '*.dart',
+    '*.md',
+    '*.yaml',
+    '*.yml',
+  ], from: Directory(cwd));
 
   final hits = <String>[];
   var checked = 0;
@@ -152,20 +141,6 @@ Future<void> main(List<String> args) async {
     }
   }
   return (checked: checked, hits: hits);
-}
-
-/// Runs git and returns its stdout, exiting with git's error if it fails.
-String _git(List<String> args, {String? workingDirectory}) {
-  final result = Process.runSync(
-    'git',
-    args,
-    workingDirectory: workingDirectory,
-  );
-  if (result.exitCode != 0) {
-    stderr.writeln('git ${args.first} failed:\n${result.stderr}');
-    exit(1);
-  }
-  return result.stdout as String;
 }
 
 /// The lines of [source], read from [path], that cite a decision, each with
@@ -191,16 +166,15 @@ bool _cites(String line) =>
 /// clean. So the shapes it must catch, the ones it must leave alone, and
 /// the files it must read are pinned here. Run before the real check in CI.
 Future<void> _selfTest() async {
-  var failures = 0;
+  final selfTest = SelfTest('check_decision_codes');
 
   void expect(String name, String path, String source, List<int> expected) {
     final got = [for (final (n, _) in _codeLines(path, source)) n];
-    if (got.join(',') == expected.join(',')) {
-      stdout.writeln('  ok   $name');
-    } else {
-      failures++;
-      stdout.writeln('  FAIL $name: expected $expected, got $got');
-    }
+    selfTest.record(
+      name,
+      passed: got.join(',') == expected.join(','),
+      detail: ': expected $expected, got $got',
+    );
   }
 
   expect('flags #NNN Dn', 'p/lib/a.dart', '// per #63 D3 the x\n', [1]);
@@ -331,22 +305,17 @@ Future<void> _selfTest() async {
     [],
   );
 
-  failures += await _selfTestScan();
-
-  if (failures > 0) {
-    stderr.writeln('\n$failures self-test failure(s).');
-    exit(1);
-  }
-  stdout.writeln('check_decision_codes self-test passed.');
+  await _selfTestScan(selfTest);
+  selfTest.finish();
 }
 
-/// Fixture test for [_scan], against a throwaway git repository. Returns the
-/// number of failures.
+/// Fixture test for [_scan], against a throwaway git repository, recorded
+/// in [selfTest].
 ///
 /// The fixture holds a code in every file. The hits it must report are the
 /// files the check reads; every other file shows what the listing leaves
 /// out, and why.
-Future<int> _selfTestScan() async {
+Future<void> _selfTestScan(SelfTest selfTest) async {
   final root = Directory.systemTemp.createTempSync('check_decision_codes_');
   try {
     final dir = root.path;
@@ -355,7 +324,7 @@ Future<int> _selfTestScan() async {
           text,
         );
 
-    _git(['init', '-q'], workingDirectory: dir);
+    git(['init', '-q'], workingDirectory: dir);
     write('a.dart', '// x\n// #1 D1\n');
     write('b.md', 'D2\n');
     write('c.yaml', '# D3\n');
@@ -365,7 +334,7 @@ Future<int> _selfTestScan() async {
     write('gone.md', 'D7\n'); // Tracked, then deleted from disk.
     write('.gitignore', 'ignored.md\n');
     write('ignored.md', 'D8\n'); // Ignored and untracked.
-    _git([
+    git([
       'add',
       'a.dart',
       'b.md',
@@ -381,7 +350,7 @@ Future<int> _selfTestScan() async {
 
     // A path in conflict: in the index at stages 1, 2 and 3.
     write('m.md', 'D10\n');
-    final blob = _git([
+    final blob = git([
       'hash-object',
       '-w',
       'm.md',
@@ -416,27 +385,20 @@ Future<int> _selfTestScan() async {
       'm.md:1: D10',
       'pkg/sub/new.md:1: D9',
     ];
-    var failures = 0;
-    if (got == want.join('\n')) {
-      stdout.writeln(
-        '  ok   lists every type, the whole tree from a package, untracked '
-        'files once, each conflicted path once; skips ignored, deleted, '
-        'exempt and unlisted files',
+    selfTest
+      ..record(
+        'lists every type, the whole tree from a package, untracked files '
+        'once, each conflicted path once; skips ignored, deleted, exempt and '
+        'unlisted files',
+        passed: got == want.join('\n'),
+        detail: ': expected\n${want.join('\n')}\ngot\n$got',
+      )
+      // a, b, c, d, docs/agents/f, m and pkg/sub/new.
+      ..record(
+        'counts each file read once, exempt ones too',
+        passed: checked == 7,
+        detail: ': expected 7, got $checked',
       );
-    } else {
-      failures++;
-      stdout.writeln(
-        '  FAIL scan hits: expected\n${want.join('\n')}\ngot\n$got',
-      );
-    }
-    // a, b, c, d, docs/agents/f, m and pkg/sub/new.
-    if (checked == 7) {
-      stdout.writeln('  ok   counts each file read once, exempt ones too');
-    } else {
-      failures++;
-      stdout.writeln('  FAIL scan checked: expected 7, got $checked');
-    }
-    return failures;
   } finally {
     root.deleteSync(recursive: true);
   }
