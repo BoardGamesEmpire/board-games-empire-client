@@ -363,6 +363,47 @@ void main() {
       expect(tables, isEmpty);
     });
 
+    // close() on the page only posts a disconnect; the shared worker closes
+    // its IndexedDB connection when it reaches that message. A slow query on
+    // another database keeps the worker from reaching it, so the delete
+    // arrives while the worker still holds the database. On a slow CI runner
+    // that happened without the query, and the delete came back blocked.
+    test(
+      'a delete straight after a close waits for the worker to let go',
+      () async {
+        final serverId = _uniqueServerId();
+        final name = WebWasmExecutorFactory.databaseName(serverId);
+        final busyId = _uniqueServerId();
+        final busy = await open(busyId);
+        addTearDown(
+          () => deleteServerDatabases(
+            namePrefix: WebWasmExecutorFactory.databaseName(busyId),
+          ),
+        );
+        addTearDown(busy.close);
+        await busy.customSelect('SELECT 1').get();
+        final db = await open(serverId);
+        await db.customSelect('SELECT 1').get();
+
+        final slow = busy
+            .customSelect(
+              'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c '
+              'WHERE x < 1000000) SELECT count(*) AS n FROM c',
+            )
+            .get();
+        await db.close();
+        final result = await deleteServerDatabases(
+          namePrefix: name,
+          // Room for the query on a slow runner: the test is about waiting.
+          blockedAfter: const Duration(seconds: 20),
+        );
+        await slow;
+
+        expect(result.deleted, [name]);
+        expect(result.blocked, isEmpty);
+      },
+    );
+
     test('deletes only names with the prefix', () async {
       final firstId = _uniqueServerId();
       final secondId = _uniqueServerId();
@@ -384,7 +425,7 @@ void main() {
     });
 
     test(
-      'a delete another connection holds reports it blocked, promptly',
+      'a delete another connection holds reports it blocked at the limit',
       () async {
         final serverId = _uniqueServerId();
         final name = WebWasmExecutorFactory.databaseName(serverId);
@@ -395,6 +436,7 @@ void main() {
 
         final result = await deleteServerDatabases(
           namePrefix: name,
+          blockedAfter: const Duration(milliseconds: 300),
         ).timeout(const Duration(seconds: 5));
 
         expect(result.blocked, [name]);
@@ -412,7 +454,10 @@ void main() {
         await db.close();
         await _holdConnection(name);
 
-        final first = await deleteServerDatabases(namePrefix: name);
+        final first = await deleteServerDatabases(
+          namePrefix: name,
+          blockedAfter: const Duration(milliseconds: 300),
+        );
         expect(first.blocked, [name]);
 
         // The first request is still queued, so this one fires no event.
@@ -438,7 +483,10 @@ void main() {
         await _holdConnection(name);
         names.add(name);
       }
-      final first = await deleteServerDatabases(namePrefix: prefix);
+      final first = await deleteServerDatabases(
+        namePrefix: prefix,
+        blockedAfter: const Duration(milliseconds: 300),
+      );
       expect(first.blocked, unorderedEquals(names));
 
       // Each delete now waits behind a blocked one, so each one runs out
