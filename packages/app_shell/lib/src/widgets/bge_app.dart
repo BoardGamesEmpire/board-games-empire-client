@@ -4,6 +4,7 @@ import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:app_shell/src/admin/admin_section.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_cubit.dart';
 import 'package:app_shell/src/bootstrap/app_bootstrap_state.dart';
+import 'package:app_shell/src/data_export/export_label_resolvers.dart';
 import 'package:app_shell/src/deep_links/deep_link_handler.dart';
 import 'package:app_shell/src/deep_links/pending_deep_link_holder.dart';
 import 'package:app_shell/src/i18n/active_locale.dart';
@@ -18,6 +19,7 @@ import 'package:app_shell/src/screens/home_menu_entry.dart';
 import 'package:app_shell/src/screens/home_screen.dart';
 import 'package:app_shell/src/screens/settings_screen.dart';
 import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/settings/entries/data_export_settings_entry.dart';
 import 'package:app_shell/src/settings/locale_cubit.dart';
 import 'package:app_shell/src/settings/settings_sections_builder.dart';
 import 'package:app_shell/src/settings/theme_mode_cubit.dart';
@@ -31,9 +33,11 @@ import 'package:app_shell/src/widgets/router_back_interceptor.dart';
 import 'package:app_shell/src/widgets/session_rehydrate_trigger.dart';
 import 'package:app_shell/src/widgets/session_sync_waiting.dart';
 import 'package:auth/auth.dart';
+import 'package:data_export/data_export.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
-import 'package:di/di.dart' show DependencyContainerLookups;
+import 'package:di/di.dart'
+    show DependencyContainerLookups, UserDataExportBundler;
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:feedback/feedback.dart';
@@ -49,6 +53,7 @@ import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/portability.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
@@ -70,6 +75,28 @@ import 'package:ui/ui.dart'
         UnverifiedSessionBanner;
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/l10n/user_search_localizations.dart';
+
+/// The feature single delegates (#36 / #37 / #107): app_shell owns the feature
+/// route wiring, so it also registers them, which keeps app entry points thin.
+///
+/// Public so a platform package's test can build the same set [BgeApp] does
+/// and prove its exporters' labels resolve under it (#93).
+const List<LocalizationsDelegate<dynamic>> bgeFeatureLocalizationsDelegates = [
+  ServerOnboardingLocalizations.delegate,
+  AuthLocalizations.delegate,
+  FeedbackLocalizations.delegate,
+  HouseholdLocalizations.delegate,
+  GameCollectionLocalizations.delegate,
+  GameCatalogLocalizations.delegate,
+  GameFiltersLocalizations.delegate,
+  EventsLocalizations.delegate,
+  SyncLocalizations.delegate,
+  DataGatewayLocalizations.delegate,
+  ServerSettingsLocalizations.delegate,
+  ProfileLocalizations.delegate,
+  UserSearchLocalizations.delegate,
+  DataExportLocalizations.delegate,
+];
 
 /// The shared application widget.
 ///
@@ -417,6 +444,7 @@ class _BgeAppState extends State<BgeApp> {
       navigationShellBuilder: _buildNavigationShell,
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
+      dataExportBuilder: _buildDataExportRoute,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       householdInvitesBuilder: _buildHouseholdInvitesRoute,
@@ -2868,21 +2896,71 @@ class _BgeAppState extends State<BgeApp> {
   /// `NotYetAvailableScreen`, matching the feedback guard) until the
   /// controllers exist. Composes the app-level section (theme; language
   /// only when >1 supported locale) and passes the active server's alias
-  /// so the per-server section is shown/omitted correctly — at launch
-  /// there are no per-server entries, so that section is empty and omitted
-  /// by [SettingsScreen].
+  /// so the per-server section is shown/omitted correctly. The per-server
+  /// section holds the export entry (#93) while [_dataExportDeps] answers,
+  /// and is otherwise empty and omitted by [SettingsScreen].
   Widget? _buildSettingsRoute(BuildContext context) {
     final themeModeCubit = _themeModeCubit;
     final localeCubit = _localeCubit;
     if (themeModeCubit == null || localeCubit == null) return null;
+    final export = _dataExportDeps();
     return SettingsScreen(
       sections: buildSettingsSections(
         themeModeCubit: themeModeCubit,
         localeCubit: localeCubit,
         supportedLocales: ShellLocalizations.supportedLocales,
+        perServerEntries: [
+          if (export != null)
+            DataExportSettingsEntry(serverName: export.active.identity.name),
+        ],
       ),
       activeServerAlias:
           widget.bootstrapCubit.activeServerScope?.active?.displayName,
+    );
+  }
+
+  /// What the export screen (#93) needs, or null when it cannot be offered:
+  /// no active server, or the root container lacks the registry, the bundler
+  /// or the sink. One check for the Settings entry and the route, so the
+  /// entry is never offered for a route that would fall back.
+  ({
+    ActiveServer active,
+    UserDataExportRegistry registry,
+    UserDataExportBundler bundler,
+    UserDataExportSink sink,
+  })?
+  _dataExportDeps() {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    final registry = _rootService<UserDataExportRegistry>();
+    final bundler = _rootService<UserDataExportBundler>();
+    final sink = _rootService<UserDataExportSink>();
+    if (active == null || registry == null || bundler == null || sink == null) {
+      return null;
+    }
+    return (active: active, registry: registry, bundler: bundler, sink: sink);
+  }
+
+  /// The export-your-data screen (#93), keyed by the server and the user
+  /// session's lease ([_sessionLease]), so each starts a fresh cubit, which
+  /// holds the server it was built with and the last bundle it assembled.
+  ///
+  /// Both are needed. The server's container is the same object for the
+  /// server's whole life, across every user who signs in to it, so only the
+  /// lease tells their sessions apart. With no session open the lease is a
+  /// `const` one, the same on every server, so only the server tells those
+  /// apart. [ActiveServer]'s equality covers its identity too, so a newer
+  /// snapshot of the same server is a fresh screen rather than a page naming
+  /// one server over a cubit holding another.
+  Widget? _buildDataExportRoute(BuildContext context) {
+    final deps = _dataExportDeps();
+    if (deps == null) return null;
+    return DataExportScreen(
+      key: ValueKey((deps.active, _sessionLease(deps.active.container))),
+      server: deps.active,
+      exporters: deps.registry.exporters,
+      assemble: deps.bundler.assemble,
+      sink: deps.sink,
+      labelResolvers: bgeExportCategoryLabelResolvers,
     );
   }
 
@@ -3252,22 +3330,7 @@ class _BgeAppState extends State<BgeApp> {
       },
       localizationsDelegates: [
         ...ShellLocalizations.localizationsDelegates,
-        // #36 / #37 / #107: app_shell owns the feature route wiring, so it
-        // also registers the feature single delegates — app entry points
-        // stay thin.
-        ServerOnboardingLocalizations.delegate,
-        AuthLocalizations.delegate,
-        FeedbackLocalizations.delegate,
-        HouseholdLocalizations.delegate,
-        GameCollectionLocalizations.delegate,
-        GameCatalogLocalizations.delegate,
-        GameFiltersLocalizations.delegate,
-        EventsLocalizations.delegate,
-        SyncLocalizations.delegate,
-        DataGatewayLocalizations.delegate,
-        ServerSettingsLocalizations.delegate,
-        ProfileLocalizations.delegate,
-        UserSearchLocalizations.delegate,
+        ...bgeFeatureLocalizationsDelegates,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,
