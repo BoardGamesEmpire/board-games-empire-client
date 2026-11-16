@@ -32,6 +32,13 @@ void main() {
       expect(t.motionLong, const Duration(milliseconds: 500));
     });
 
+    test('wideMaxWidth is 1200', () {
+      // Material's large threshold. Two rows to a line get about 590dp
+      // each, and on a 2560 monitor the content still stops short of the
+      // edges (#949).
+      expect(BgeTokens.standard.wideMaxWidth, 1200);
+    });
+
     test('is built from the const scale primitives', () {
       // The primitives exist so `BgeGap`'s const constructors can reference
       // the scale (Dart forbids reading an instance field of a const object
@@ -169,10 +176,12 @@ void main() {
       final tokens = BgeTokens.standard.copyWith(
         contentMaxWidth: 500,
         paneMaxWidth: 900,
+        wideMaxWidth: 1300,
       );
 
       expect(BgePageWidth.form.resolve(tokens), 500);
       expect(BgePageWidth.pane.resolve(tokens), 900);
+      expect(BgePageWidth.wide.resolve(tokens), 1300);
     });
   });
 
@@ -192,6 +201,15 @@ void main() {
       expect(
         BgeTokens.standard.copyWith(spaceMd: 20).focusRingGap,
         BgeTokens.standard.focusRingGap,
+      );
+    });
+    test('carries the wide measure', () {
+      final copy = BgeTokens.standard.copyWith(wideMaxWidth: 1300);
+      expect(copy.wideMaxWidth, 1300);
+      expect(copy.paneMaxWidth, BgeTokens.standard.paneMaxWidth);
+      expect(
+        BgeTokens.standard.copyWith(spaceMd: 20).wideMaxWidth,
+        BgeTokens.standard.wideMaxWidth,
       );
     });
   });
@@ -232,6 +250,7 @@ void main() {
       'contentMaxWidth': (t) =>
           t.copyWith(contentMaxWidth: t.contentMaxWidth + 1),
       'paneMaxWidth': (t) => t.copyWith(paneMaxWidth: t.paneMaxWidth + 1),
+      'wideMaxWidth': (t) => t.copyWith(wideMaxWidth: t.wideMaxWidth + 1),
       'breakpointMedium': (t) =>
           t.copyWith(breakpointMedium: t.breakpointMedium + 1),
       'breakpointExpanded': (t) =>
@@ -285,6 +304,12 @@ void main() {
       final other = BgeTokens.standard.copyWith(focusRingGap: 6);
 
       expect(BgeTokens.standard.lerp(other, 0.5).focusRingGap, 4);
+    });
+
+    test('interpolates the wide measure', () {
+      final other = BgeTokens.standard.copyWith(wideMaxWidth: 1300);
+
+      expect(BgeTokens.standard.lerp(other, 0.5).wideMaxWidth, 1250);
     });
 
     test('returns this when other is null', () {
