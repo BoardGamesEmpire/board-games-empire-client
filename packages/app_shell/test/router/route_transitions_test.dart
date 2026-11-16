@@ -125,6 +125,8 @@ void main() {
     final routes = goRoutes(router.configuration.routes).toList();
     expect(routes, isNotEmpty);
     for (final route in routes) {
+      // A route that only redirects never builds a page.
+      if (route.redirect != null && route.pageBuilder == null) continue;
       expect(route.pageBuilder, isNotNull, reason: route.path);
       expect(route.builder, isNull, reason: route.path);
     }
@@ -164,7 +166,8 @@ void main() {
       AppRoutes.dataGatewayAdd,
       AppRoutes.dataGatewayEditOf('d1'),
       AppRoutes.dataGatewayDetailOf('d1'),
-      '/server/srv-1/event/ev-1',
+      '/server/srv-1/game/game-1',
+      AppRoutes.deepLinkUnknownServer,
     ];
     for (final location in locations) {
       router.go(location);
@@ -172,9 +175,11 @@ void main() {
 
       // The reserved deep links stay top-level, outside both shells. They
       // are told apart by their `/server/` prefix, the one the router
-      // reserves for them: a new deep link under another prefix needs
-      // adding here.
-      final pages = location.startsWith('/server/')
+      // reserves for them, and the unknown-server screen by its own
+      // location: a new deep link under another prefix needs adding here.
+      final pages =
+          location.startsWith('/server/') ||
+              location == AppRoutes.deepLinkUnknownServer
           ? rootPages(router)
           : innermostPages(tester);
       expect(pages.last, isA<MaterialPage<void>>(), reason: location);

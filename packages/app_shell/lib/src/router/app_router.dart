@@ -9,6 +9,7 @@ import 'package:app_shell/src/screens/not_yet_available_screen.dart';
 import 'package:app_shell/src/screens/route_not_found_screen.dart';
 import 'package:app_shell/src/screens/shell_placeholder_screen.dart';
 import 'package:app_shell/src/screens/splash_screen.dart';
+import 'package:app_shell/src/screens/unknown_server_link_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -354,6 +355,11 @@ abstract final class AppRoutes {
 
   static const error = '/error';
 
+  /// Where a deep link for a server this device hasn't added lands (#82).
+  /// Not in [bootstrapLocations]: it is reachable only once the app is
+  /// ready, and a ready app is not bounced off it.
+  static const deepLinkUnknownServer = '/link/unknown-server';
+
   /// The bootstrap-owned locations a ready app is bounced away from.
   /// `settings` is deliberately absent: it is a normal post-ready
   /// destination, not a bootstrap leg, so a ready app is not bounced off
@@ -366,19 +372,36 @@ abstract final class AppRoutes {
   };
 }
 
+/// The reserved event link (#82), which the router redirects to the event's
+/// detail rather than building a page of its own.
+const _eventDeepLinkPathPattern = '/server/:serverId/event/:eventId';
+
 /// Reserved deep-link resource path patterns (#10), declared from day one
 /// so the URL scheme is stable before any UI exists behind it. On native
 /// these arrive via `bge://server/{serverId}/...`; on web they are plain
-/// path URLs. Web is single-server (same-origin), so its `:serverId`
-/// segment is validated rather than used for switching — that logic lands
-/// with #10.
+/// path URLs.
+///
+/// The router never reads the `:serverId` segment. On native,
+/// `DeepLinkConsumer` acts on it before the location is routed (#82): it
+/// switches to a registered server that isn't active, and sends a link for
+/// a server this device hasn't added to [AppRoutes.deepLinkUnknownServer].
+/// Web is single-server (same-origin) and ignores it. The event pattern
+/// redirects to the event's detail; the others resolve to
+/// [NotYetAvailableScreen] until their features land.
 const reservedDeepLinkPathPatterns = <String>[
   '/server/:serverId/household/:householdId/invite/:token',
-  '/server/:serverId/event/:eventId',
+  _eventDeepLinkPathPattern,
   '/server/:serverId/event/:eventId/rsvp/:token',
   '/server/:serverId/game/:gameId',
   '/server/:serverId/collection/:userId',
 ];
+
+/// The reserved patterns that open without a session. Every pattern in
+/// [reservedDeepLinkPathPatterns] that is not here needs one (#82). Nothing
+/// reads this set yet: #83's web gate will read it.
+const publicDeepLinkPathPatterns = <String>{
+  '/server/:serverId/collection/:userId',
+};
 
 /// Builds the real server-add screen subtree (#36) for the
 /// [AppRoutes.serverAdd] route. Always supplied by `BgeApp`; returns null
@@ -813,12 +836,15 @@ void reflectPushedRoutesInUrl() =>
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
-/// bootstrap is unresolved every location is forced to the state's route
-/// (deep links included — queueing them for post-auth resumption is #10's
-/// scope). Once ready, bootstrap-owned locations bounce to home and the
-/// reserved deep-link paths resolve (to [NotYetAvailableScreen] until real
-/// features land). #37 feeds authenticated-session state into this same
-/// seam by emitting [AppBootstrapReady] / [AppBootstrapNeedsAuth].
+/// bootstrap is unresolved every location is forced to the state's route,
+/// deep links included. A native link waits in the pending-link slot
+/// instead, and `DeepLinkConsumer` routes it once the app is ready (#82);
+/// keeping a web cold load's location through bootstrap and sign-in is
+/// #83's. Once ready, bootstrap-owned locations bounce to home and the
+/// reserved deep-link paths resolve (the event link to the event's detail,
+/// the others to [NotYetAvailableScreen] until real features land). #37
+/// feeds authenticated-session state into this same seam by emitting
+/// [AppBootstrapReady] / [AppBootstrapNeedsAuth].
 GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
   required BootstrapStreamListenable refreshListenable,
@@ -1593,12 +1619,30 @@ GoRouter buildAppRouter({
           ),
         ),
       ),
-      for (final pattern in reservedDeepLinkPathPatterns)
-        GoRoute(
-          path: pattern,
-          pageBuilder: (_, state) =>
-              _materialPage(state, const NotYetAvailableScreen()),
+      // The reserved event link opens the event itself (#82), on the tab
+      // the link names, as the detail's own location does (#856). Path
+      // parameters arrive decoded, and eventDetailOf encodes again.
+      GoRoute(
+        path: _eventDeepLinkPathPattern,
+        redirect: (_, state) => AppRoutes.eventDetailOf(
+          state.pathParameters['eventId']!,
+          tab: state.uri.queryParameters[AppRoutes.eventTabParam],
         ),
+      ),
+      for (final pattern in reservedDeepLinkPathPatterns)
+        if (pattern != _eventDeepLinkPathPattern)
+          GoRoute(
+            path: pattern,
+            pageBuilder: (_, state) => _materialPage(
+              state,
+              const NotYetAvailableScreen(showHomeAction: true),
+            ),
+          ),
+      GoRoute(
+        path: AppRoutes.deepLinkUnknownServer,
+        pageBuilder: (_, state) =>
+            _materialPage(state, const UnknownServerLinkScreen()),
+      ),
     ],
   );
 }

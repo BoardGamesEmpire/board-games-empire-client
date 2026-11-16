@@ -60,6 +60,10 @@
   "@shellNotYetAvailableBody": {
     "description": "Body shown when a reserved deep-link route has no UI behind it yet"
   },
+  "shellNotYetAvailableHome": "Go home",
+  "@shellNotYetAvailableHome": {
+    "description": "Button on the not-yet-available screen, shown at a deep link's top-level route with nothing beneath it, that returns to home"
+  },
   "shellRouteNotFoundTitle": "Page not found",
   "@shellRouteNotFoundTitle": {
     "description": "Title of the page shown for an address that matches no screen in the app (#465)"
@@ -71,6 +75,18 @@
   "shellRouteNotFoundHome": "Go to home",
   "@shellRouteNotFoundHome": {
     "description": "Button on the not-found page that leaves for the home screen (#465)"
+  },
+  "shellUnknownServerLinkTitle": "Server not added",
+  "@shellUnknownServerLinkTitle": {
+    "description": "Title of the screen shown when a link names a server this device hasn't added"
+  },
+  "shellUnknownServerLinkBody": "This link is for a Board Games Empire server you haven't added on this device, so it can't be opened here.",
+  "@shellUnknownServerLinkBody": {
+    "description": "Body of the screen shown when a link names a server this device hasn't added"
+  },
+  "shellUnknownServerLinkHome": "Go home",
+  "@shellUnknownServerLinkHome": {
+    "description": "Button on the unknown-server link screen that returns to home"
   },
   "shellPlaceholderServerAddTitle": "Add a server",
   "@shellPlaceholderServerAddTitle": {

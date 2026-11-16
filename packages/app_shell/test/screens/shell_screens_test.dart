@@ -54,6 +54,14 @@ void main() {
       expect(find.textContaining("isn't available yet"), findsOneWidget);
     });
 
+    testWidgets('offers no way home unless asked to (#82)', (tester) async {
+      await tester.pumpWidget(_wrap(const NotYetAvailableScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(NotYetAvailableScreen.homeButtonKey), findsNothing);
+      expect(find.byType(FilledButton), findsNothing);
+    });
+
     testWidgets('titles its app bar, and says the title once (#308)', (
       tester,
     ) async {
@@ -120,6 +128,16 @@ void main() {
                 ),
               );
         },
+      );
+
+      // A reserved deep link's route, top-level with nothing beneath it,
+      // so the screen offers a way home (#82).
+      auditScreen(
+        'ready, with a way home',
+        build: (theme) => _wrap(
+          const NotYetAvailableScreen(showHomeAction: true),
+          theme: theme,
+        ),
       );
     });
   });

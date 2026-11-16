@@ -50,6 +50,7 @@ export 'src/screens/route_not_found_screen.dart';
 export 'src/screens/settings_screen.dart';
 export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';
+export 'src/screens/unknown_server_link_screen.dart';
 export 'src/settings/entries/data_export_settings_entry.dart';
 export 'src/settings/entries/language_settings_entry.dart';
 export 'src/settings/entries/theme_mode_settings_entry.dart';
