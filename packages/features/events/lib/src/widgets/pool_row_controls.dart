@@ -188,6 +188,152 @@ String? alreadyTaken(
   return l10n.eventsNominateAlreadyOrInLineup;
 }
 
+/// What Nominate on a pool row is built with (#517): [NominateButton]'s
+/// [NominateButton.unread], [NominateButton.notGoing],
+/// [NominateButton.already], [NominateButton.enabled] and
+/// [NominateButton.runOver].
+typedef NominateGates = ({
+  String? unread,
+  String? notGoing,
+  String? already,
+  bool enabled,
+  bool runOver,
+});
+
+/// What Take back on a pool row is built with (#516): [TakeBackButton]'s
+/// [TakeBackButton.inert], [TakeBackButton.enabled] and
+/// [TakeBackButton.runOver].
+typedef TakeBackGates = ({bool inert, bool enabled, bool runOver});
+
+/// What a pool row says of its copy and builds its controls with (#957):
+/// who brings it, as its line says it; whether its lines say Nominated
+/// (#947); and Nominate's and Take back's arguments where each is built,
+/// null where it isn't.
+typedef PoolRowGates = ({
+  String who,
+  bool nominatedLine,
+  NominateGates? nominate,
+  TakeBackGates? takeBack,
+});
+
+/// What the row of [game] says and builds (#957), from the detail, the
+/// pool's and the nominations' states, the tab's [controller], the
+/// roster's [names], whether the screen is [acting]
+/// (`eventScreenActing`), and the clock's [now]: one place, so the row and
+/// its quick look build the same controls under the same rules.
+///
+/// Nominate, where the viewer is offered it ([nominateGate]), on an event
+/// with a nominations' state. Disabled, saying why, where the nominations
+/// couldn't be read or aren't shown to the viewer, where a nominate's lost
+/// answer couldn't be checked, where whoever brings the game isn't going, or
+/// where the row is nominated already, or its game in the lineup, for every
+/// choice; and with nothing to say while a detail read runs, the screen is
+/// acting, a nominations write is out, or the nominations aren't known
+/// ([nominationsKnown]).
+///
+/// Take back on the viewer's own row where they may offer games or take
+/// them back ([offerGamesGate]), and on anyone else's where they may take
+/// back anyone's game ([canTakeBackAnyGame], #518). Disabled, as the
+/// roster's controls are (#589), while a detail read runs, the screen is
+/// acting, or another of the pool's writes is out.
+PoolRowGates poolRowGates(
+  EventsLocalizations l10n, {
+  required OfferedGame game,
+  required EventDetailReady detail,
+  required EventGamesState games,
+  required EventNominationsState? nominations,
+  required EventGamesTabController controller,
+  required Map<String, String?> names,
+  required bool acting,
+  required DateTime now,
+}) {
+  final viewerId = detail.detail.attendance?.id;
+  final own = viewerId != null && game.attendeeId == viewerId;
+  final nominated = nominations?.nominations ?? const <EventNomination>[];
+  final nominating =
+      nominations != null && nominateGate(detail) == NominateGate.open;
+  final already = nominating
+      ? alreadyTaken(l10n, [
+          for (final each in nominateScopes(detail.detail, now: now))
+            nominateTaken(game, nominated, scope: each.scope),
+        ])
+      : null;
+  final takesBack = own
+      ? offerGamesGate(detail) != OfferGamesGate.hidden
+      : canTakeBackAnyGame(detail);
+
+  return (
+    who: own
+        ? l10n.eventsGamesYours
+        : l10n.eventsGamesTheirs(
+            names[game.attendeeId] ?? l10n.eventsAttendeeSomeoneStart,
+          ),
+    // Nominate says it where it can't be pressed for any choice; otherwise
+    // the row's lines do (#947).
+    nominatedLine:
+        suppliesLive(game, nominated) && (!nominating || already == null),
+    nominate: nominations == null || !nominating
+        ? null
+        : (
+            unread: _nominateUnread(l10n, nominations, controller),
+            // In the second person on the viewer's own rows, as the row's
+            // line is.
+            notGoing: !supplierNotGoing(detail.detail, game)
+                ? null
+                : own
+                ? l10n.eventsNominateYouNotGoingHint
+                : l10n.eventsNominateSupplierNotGoingHint,
+            already: already,
+            // As the tab's other writes are, and not while another
+            // nominations write is out. Nor before the nominations are
+            // known: none held before a read has answered says nothing of
+            // what a row supplies, and nothing stops a second nomination of
+            // a row for one choice (backend#1214).
+            enabled:
+                !detail.reading &&
+                !acting &&
+                !nominations.busy &&
+                nominationsKnown(nominations, controller),
+            runOver: !nominations.busy,
+          ),
+    takeBack: !takesBack
+        ? null
+        : (
+            inert: games.takingBack == game.id,
+            // As the roster's controls are (#589): not while a detail read
+            // runs, the screen is acting, nor while another of the pool's
+            // writes is out.
+            enabled: !detail.reading && !acting && !games.busy,
+            runOver: !games.busy,
+          ),
+  );
+}
+
+/// Why Nominate waits with no nominations to go on, where the wait won't
+/// end by itself (#517): a first read that failed, nominations this viewer
+/// isn't shown, or a nominate's lost answer whose read failed. A read that
+/// is still out says nothing.
+String? _nominateUnread(
+  EventsLocalizations l10n,
+  EventNominationsState nominations,
+  EventGamesTabController controller,
+) {
+  final drawn = controller.drawnNominationsLoad(nominations);
+  if (nominations.settling) {
+    return switch (drawn) {
+      EventNominationsLoad.failed => l10n.eventsNominateUnsettled,
+      EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
+      _ => null,
+    };
+  }
+  if (nominations.nominations.isNotEmpty) return null;
+  return switch (drawn) {
+    EventNominationsLoad.failed => l10n.eventsNominationsFailedTitle,
+    EventNominationsLoad.hidden => l10n.eventsNominationsHiddenTitle,
+    _ => null,
+  };
+}
+
 /// Nominates [game] (#517): for the whole event, or where there is more
 /// than one choice ([nominateScopes]), for the one chosen in
 /// [showNominateScopeDialog], where a choice the row already supplies a
@@ -326,10 +472,15 @@ class NominateButton extends StatefulWidget {
     required this.enabled,
     required this.runOver,
     required this.onPressed,
+    this.buttonKey,
     super.key,
   });
 
   final OfferedGame game;
+
+  /// Key on the button itself: the row's ([EventDetailScreen.poolNominateKey])
+  /// where null, or the quick look's (#957).
+  final Key? buttonKey;
 
   /// Why there are no nominations to go on, where waiting won't bring them:
   /// a first read that failed, or nominations not shown to the viewer. Null
@@ -445,7 +596,9 @@ class NominateButtonState extends State<NominateButton>
                 ? () => unawaited(holdPress(_press))
                 : null,
             builder: (context, focusNode, onPressed) => TextButton.icon(
-              key: EventDetailScreen.poolNominateKey(widget.game.id),
+              key:
+                  widget.buttonKey ??
+                  EventDetailScreen.poolNominateKey(widget.game.id),
               focusNode: focusNode,
               onPressed: onPressed,
               style: kept ? _unavailableStyle(context) : null,
@@ -507,10 +660,15 @@ class TakeBackButton extends StatefulWidget {
     required this.enabled,
     required this.runOver,
     required this.onPressed,
+    this.buttonKey,
     super.key,
   });
 
   final OfferedGame game;
+
+  /// Key on the button itself: the row's ([EventDetailScreen.poolTakeBackKey])
+  /// where null, or the quick look's (#957).
+  final Key? buttonKey;
 
   /// Holds the button, so a row that leaves can say it held focus.
   final FocusNode area;
@@ -563,7 +721,7 @@ class TakeBackButtonState extends State<TakeBackButton>
               ? () => unawaited(holdPress(widget.onPressed))
               : null,
           builder: (context, focusNode, onPressed) => TextButton.icon(
-            key: EventDetailScreen.poolTakeBackKey(game.id),
+            key: widget.buttonKey ?? EventDetailScreen.poolTakeBackKey(game.id),
             focusNode: focusNode,
             onPressed: onPressed,
             icon: inert

@@ -49,6 +49,11 @@ import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+/// How a Games tab quick look opens a game's page (#957):
+/// [EventDetailScreen.onOpenGame], given the quick look's context and the
+/// game's id.
+typedef OpenEventGame = void Function(BuildContext context, String gameId);
+
 /// One event (#498): its header, its dates and who's coming, read reactively
 /// from the local cache and from the server once per open, and a tab for its
 /// games (#516).
@@ -130,7 +135,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// offered copy, with a search, a filter by person, the shared filter sheet
 /// (#851), and Take back on the viewer's own rows ([EventGamesTab], #516). The
 /// pool isn't cached: the [EventGamesBloc] holds what was read last, and the
-/// tab filters it on the device.
+/// tab filters it on the device. A pool row's cover and lines open its quick
+/// look (#957), a pop-up of the copy's place in this event, with its writes
+/// and, through [onOpenGame], View game.
 ///
 /// It is read the first time the tab shows on a ready event, or, where a read
 /// of the event is running then, once that read ends, and so once; and again
@@ -398,6 +405,7 @@ class EventDetailScreen extends StatelessWidget {
     this.onWhoAnswered,
     this.onAddAttendee,
     this.onOfferGames,
+    this.onOpenGame,
     this.now,
     this.tab,
     this.onTabChanged,
@@ -543,6 +551,32 @@ class EventDetailScreen extends StatelessWidget {
   /// row supplies a live nomination.
   static Key poolNominatedKey(String offeredGameId) =>
       Key('event_detail.pool_nominated_$offeredGameId');
+
+  /// Key on a row's cover and lines, the button that opens its quick look
+  /// (#957), by the offered game's id.
+  static Key poolRowHeadKey(String offeredGameId) =>
+      Key('event_detail.pool_row_head_$offeredGameId');
+
+  /// Key on the quick look's content (#957). One is open at a time.
+  static const Key quickLookKey = Key('event_detail.quick_look');
+
+  /// Key on the quick look's line saying its entry has left (#957).
+  static const Key quickLookGoneKey = Key('event_detail.quick_look_gone');
+
+  /// Key on the quick look's View game (#957).
+  static const Key quickLookOpenGameKey = Key(
+    'event_detail.quick_look_open_game',
+  );
+
+  /// Key on the Nominate in an offered copy's quick look (#957).
+  static const Key quickLookNominateKey = Key(
+    'event_detail.quick_look_nominate',
+  );
+
+  /// Key on the Take back in an offered copy's quick look (#957).
+  static const Key quickLookTakeBackKey = Key(
+    'event_detail.quick_look_take_back',
+  );
 
   /// Key on one choice of the nominate dialog (#517): the date's id, or
   /// null for the whole event.
@@ -862,6 +896,13 @@ class EventDetailScreen extends StatelessWidget {
   )?
   onOfferGames;
 
+  /// Opens a game's page from a Games tab quick look's View game (#957),
+  /// with the quick look's own context, which outlives the row it was
+  /// opened from, and the game's id: the feature package doesn't know the
+  /// route table. The quick look stays until the page has arrived over it
+  /// (`showBgePopup`). Null offers no View game.
+  final OpenEventGame? onOpenGame;
+
   /// The clock that decides whether a date is this year's, whether a
   /// proposed one has passed, and where the event stands as its dates pass,
   /// which picks the menu's status changes (#502, #655). Defaults to the
@@ -1043,6 +1084,7 @@ class _EventDetailBlocsState extends State<_EventDetailBlocs> {
         onWhoAnswered: screen.onWhoAnswered,
         onAddAttendee: screen.onAddAttendee,
         onOfferGames: screen.onOfferGames,
+        onOpenGame: screen.onOpenGame,
         now: screen.now ?? DateTime.now,
         hasActions: provided != null,
         say: _messenger.say,
@@ -1064,6 +1106,7 @@ class _EventDetailView extends StatelessWidget {
     this.onWhoAnswered,
     this.onAddAttendee,
     this.onOfferGames,
+    this.onOpenGame,
     this.onTabChanged,
   });
 
@@ -1072,6 +1115,7 @@ class _EventDetailView extends StatelessWidget {
   final void Function(BuildContext context)? onWhoAnswered;
   final _OpenAddAttendee? onAddAttendee;
   final OpenOfferGames? onOfferGames;
+  final OpenEventGame? onOpenGame;
 
   /// The tab [EventDetailScreen.tab] names (#856).
   final EventScreenTab screenTab;
@@ -1149,6 +1193,9 @@ class _EventDetailView extends StatelessWidget {
       child: EventGamesTabScope(
         onFirstShown: _gamesFirstShown,
         initialSection: screenTab.section ?? EventGamesSection.nominations,
+        // What the tab's quick looks reach the screen by (#957).
+        now: now,
+        onOpenGame: onOpenGame,
         child: _EventTabLocation(
           tab: screenTab,
           onTabChanged: onTabChanged,
@@ -1421,6 +1468,13 @@ class _EventTabLocationState extends State<_EventTabLocation> {
   @override
   Widget build(BuildContext context) => widget.child;
 }
+
+/// Whether the screen is acting, from its actions' [state]: a request on its
+/// way, or a delete done and the screen leaving. Its writes wait meanwhile,
+/// on the page and in a Games tab quick look (#957). Null, with no actions'
+/// bloc, is never acting.
+bool eventScreenActing(EventActionsState? state) =>
+    state != null && (state.busy || _deleted(state));
 
 /// Whether [state] holds a delete the server accepted. The screen is leaving
 /// then, and offers nothing that would start another request.
@@ -1702,15 +1756,27 @@ class _ReadyPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final snapshot = state.detail.snapshot;
 
+    if (!hasActions) {
+      return _ClockedPage(
+        event: snapshot.event,
+        occurrences: snapshot.occurrences,
+        nominations: const [],
+        now: now,
+        builder: _page,
+      );
+    }
+    // Each tick told to the Games tab's quick looks too, which sit on the
+    // root navigator, outside the page (#957).
+    final games = EventGamesTabScope.of(context);
     Widget clocked(List<EventNomination> nominations) => _ClockedPage(
       event: snapshot.event,
       occurrences: snapshot.occurrences,
       nominations: nominations,
       now: now,
+      onTick: games.clockTicked,
       builder: _page,
     );
 
-    if (!hasActions) return clocked(const []);
     // Built again as the nominations change, so the page moves on at the
     // next deadline among them too (#517).
     return BlocSelector<
@@ -1796,9 +1862,7 @@ class _ReadyPage extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final snapshot = state.detail.snapshot;
     final event = snapshot.event;
-    // A request on its way, or a delete done and the screen leaving.
-    final acting =
-        actionsState != null && (actionsState.busy || _deleted(actionsState));
+    final acting = eventScreenActing(actionsState);
     // As the event stands now, which its dates move on (#502).
     final writes = _statusWritesFor(
       eventStatusAt(event, snapshot.occurrences, now: now()),
@@ -2197,6 +2261,10 @@ typedef _OpenAddAttendee = Future<EventAttendeeAddition?> Function(
 /// The timer is set again whenever the event or its dates may have changed,
 /// and each time it fires. It waits a day at most, as the overview's does: a
 /// browser fires a timeout longer than about 24.8 days at once.
+///
+/// Each time it fires it tells [onTick] too, for what reads the clock
+/// outside the page: a Games tab quick look, on the root navigator, moves
+/// on at the page's boundaries, by the page's clock (#957).
 class _ClockedPage extends StatefulWidget {
   const _ClockedPage({
     required this.event,
@@ -2204,6 +2272,7 @@ class _ClockedPage extends StatefulWidget {
     required this.nominations,
     required this.now,
     required this.builder,
+    this.onTick,
   });
 
   final Event event;
@@ -2215,6 +2284,10 @@ class _ClockedPage extends StatefulWidget {
 
   /// The page, built again each time the timer fires.
   final WidgetBuilder builder;
+
+  /// Told each time the timer fires, after it is set again: the Games tab's
+  /// [EventGamesTabController.clockTicked]. Null tells nobody.
+  final VoidCallback? onTick;
 
   @override
   State<_ClockedPage> createState() => _ClockedPageState();
@@ -2267,6 +2340,7 @@ class _ClockedPageState extends State<_ClockedPage> {
     _arm();
     // The page reads the clock again as it builds.
     setState(() {});
+    widget.onTick?.call();
   }
 
   @override

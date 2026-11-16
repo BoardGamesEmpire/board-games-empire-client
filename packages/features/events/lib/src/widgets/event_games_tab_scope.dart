@@ -8,7 +8,9 @@ import 'package:events/src/bloc/event_nominations_bloc.dart';
 import 'package:events/src/bloc/event_nominations_state.dart';
 import 'package:events/src/detail/event_games_pool.dart';
 import 'package:events/src/detail/event_nominations.dart';
+import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_detail_tabs.dart';
+import 'package:events/src/widgets/event_game_quick_look.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart' show CollectionFilter, EventNomination;
@@ -18,8 +20,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
 /// controller (#945), its filter, whether it has been shown, the ids the pool
 /// was last asked with, how the pool's last read ended and how the nominations'
-/// did (#517), the nominations' own filter and order (#517), and the focus
-/// nodes a control that leaves hands focus on to.
+/// did (#517), the nominations' own filter and order (#517), the focus
+/// nodes a control that leaves hands focus on to, and what the tab's quick
+/// looks reach the screen by (#957).
 ///
 /// It notifies its listeners when the chosen sub-tab changes, once for each
 /// change and as the change starts, and when the sub-tabs' controller is
@@ -40,6 +43,28 @@ class EventGamesTabController extends ChangeNotifier {
   EventNominationsLoad? _nominationsSettled;
 
   late TabController _sections;
+
+  /// The screen's clock, which a quick look reads as the tab does (#957).
+  /// For the scope to set.
+  DateTime Function() clock = DateTime.now;
+
+  /// Tells its listeners each time the screen's clock passes one of the
+  /// page's time boundaries (#957): the event's start or end, a proposed
+  /// date passing, a nomination's deadline passing. The page builds itself
+  /// again then; a quick look, on the root navigator outside the page,
+  /// listens here, so it moves on at the same instants by the same clock
+  /// ([clock]) rather than a timer of its own that could disagree.
+  Listenable get clockTicks => _clockTicks;
+  final _ClockTicks _clockTicks = _ClockTicks();
+
+  /// Tells [clockTicks]' listeners the screen's clock passed a boundary.
+  /// For the page's clock to call.
+  void clockTicked() => _clockTicks.tick();
+
+  /// Opens a game's page from a quick look's View game (#957):
+  /// [EventDetailScreen.onOpenGame]. Null offers no View game. For the scope
+  /// to set.
+  OpenEventGame? openGame;
 
   /// The Games tab's sub-tabs' controller (#945), one tab for each
   /// [EventGamesSection]. [EventGamesTabScope] makes it before the first
@@ -206,6 +231,111 @@ class EventGamesTabController extends ChangeNotifier {
   /// Disarms it, for a take-back that sent nothing or left its row.
   void disarmTakeBack(String id) => _armed.remove(id);
 
+  /// Each row's head, the button that opens its quick look (#957), by the
+  /// entry it shows.
+  final Map<EventGameEntry, FocusNode> _rowHeads = {};
+
+  /// The focus of [entry]'s row head (#957), made as it is first built and
+  /// let go once the entry leaves its list, as [takeBackArea]'s are.
+  FocusNode rowHeadFocus(EventGameEntry entry) => _rowHeads.putIfAbsent(
+    entry,
+    () => FocusNode(debugLabel: 'Row head $entry'),
+  );
+
+  /// How many quick looks opened from the tab are open (#957).
+  int _quickLooks = 0;
+
+  /// Where each entry that left its list while a quick look was open left
+  /// from (#957): the entries of the rows that stayed, the one in its place
+  /// first, on to the last, then back from the one before it.
+  final Map<EventGameEntry, List<EventGameEntry>> _leftFrom = {};
+
+  /// Notes a quick look opening over the tab (#957), until [quickLookClosed].
+  /// While one is open, neither list hands focus on as its rows leave: the
+  /// quick look holds the focus, and a hand-off would take it from under
+  /// the quick look's barrier. Each row that leaves notes where it left
+  /// from instead, for [focusAfterQuickLook].
+  void quickLookOpened() => _quickLooks++;
+
+  /// Notes a quick look closing (#957).
+  void quickLookClosed() => _quickLooks--;
+
+  /// Hands focus on as the quick look of [entry] closes (#957), from
+  /// [context], the scope's ([EventGamesTabScope.contextOf]), which outlives
+  /// the row the quick look was opened from. To [entry]'s row head where its
+  /// row is built. Where the row left while the quick look was open, to the
+  /// head of the row now in its place, else of the nearest one before it,
+  /// as [poolChanged] and [nominationsChanged] noted; else to the sub-tab's
+  /// first header control: Filters for a nomination; for an offered copy,
+  /// Offer games where it is built and enabled, else the search field.
+  ///
+  /// Once the frame that closes it has ended, as the lists' own hand-offs
+  /// are, and only while focus is free then ([focusIsFree]): on nothing, on
+  /// the page, or where the close handed it back. The head took focus as it
+  /// opened the quick look, however it was pressed, so while it is built
+  /// the close hands focus back to it. Where it isn't, focus waits on the
+  /// page meanwhile, not on an older control the page's focus history still
+  /// holds, such as the search field, whose keyboard would open. Nothing
+  /// while another page covers the tab's, as one View game opened does: that
+  /// page has the focus.
+  void focusAfterQuickLook(BuildContext context, EventGameEntry entry) {
+    final order = _leftFrom.remove(entry) ?? const <EventGameEntry>[];
+    if (_quickLooks == 0) _leftFrom.clear();
+    if (!context.mounted || !(ModalRoute.isCurrentOf(context) ?? true)) return;
+    final own = _rowHeads[entry];
+    final back = own != null && _built(own) ? own : null;
+    if (back == null) {
+      FocusScope.of(context, createDependency: false).requestScopeFocus();
+    }
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!context.mounted || !focusIsFree(context, untouched: back)) return;
+        for (final each in [entry, ...order]) {
+          final head = _rowHeads[each];
+          if (head != null && _built(head)) {
+            head.requestFocus();
+            return;
+          }
+        }
+        switch (entry) {
+          // Offer games where it is built and enabled, as Take back's own
+          // hand-off has it: the search field's keyboard would open over
+          // the games.
+          case OfferedCopyEntry():
+            final offer = offerArea.traversalDescendants.firstOrNull;
+            if (offer != null) {
+              offer.requestFocus();
+            } else {
+              focusSearch();
+            }
+          // Only where it is built, as the nominations' own hand-off asks.
+          case NominationEntry():
+            if (nominationsFiltersFocus.context?.mounted ?? false) {
+              nominationsFiltersFocus.requestFocus();
+            }
+        }
+      })
+      // A post-frame callback asks for no frame of its own.
+      ..ensureVisualUpdate();
+  }
+
+  /// Whether [node]'s control is built.
+  static bool _built(FocusNode node) => node.context?.mounted ?? false;
+
+  /// [after] from [at]: the one there first, on to the last, then back from
+  /// the one before it.
+  static List<T> _from<T>(List<T> after, int at) => [
+    ...after.skip(at),
+    ...after.take(at).toList().reversed,
+  ];
+
+  /// Lets go the row heads of the entries [left] says have left their list,
+  /// and answers their nodes, to dispose of once their rows have gone.
+  List<FocusNode> _releaseHeads(bool Function(EventGameEntry entry) left) => [
+    for (final entry in [..._rowHeads.keys])
+      if (left(entry)) _rowHeads.remove(entry)!,
+  ];
+
   void setQuery(String query) => _set(_filter.copyWith(query: query));
 
   /// Narrows the pool by [filter]'s facets, as each change in the filter
@@ -339,7 +469,8 @@ class EventGamesTabController extends ChangeNotifier {
   /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
   /// scope's. Only while the Pool sub-tab is chosen (#945): on Nominations
   /// the pool's rows aren't built, so the change disarms what it ends and
-  /// hands nothing on.
+  /// hands nothing on. Nor while a quick look is open (#957), where each row
+  /// that leaves notes where it left from instead ([focusAfterQuickLook]).
   void poolChanged(
     BuildContext context,
     EventGamesState previous,
@@ -360,21 +491,33 @@ class EventGamesTabController extends ChangeNotifier {
     final shownBefore = filterPool(before, _filter);
     final shownAfter = filterPool(after, _filter);
     final stays = {for (final game in shownAfter) game.id};
+    final entriesAfter = [
+      for (final game in shownAfter) OfferedCopyEntry(game.id),
+    ];
 
-    int? left;
+    // Where the row that hands focus on was among those that stay.
+    int? at;
     FocusNode? held;
-    // Keeps the hand-off off a sub-tab that isn't shown (#945): with
-    // Nominations chosen, a take-back that ends hands nothing on, and focus
-    // stays where the user put it.
-    if (section == EventGamesSection.pool) {
-      for (final (index, game) in shownBefore.indexed) {
-        if (stays.contains(game.id)) continue;
-        final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
-        if (!focused && !_armed.contains(game.id)) continue;
-        left = index;
-        held = focused ? FocusManager.instance.primaryFocus : null;
-        break;
+    // The rows before each one that stay.
+    var stayed = 0;
+    for (final game in shownBefore) {
+      if (stays.contains(game.id)) {
+        stayed++;
+        continue;
       }
+      // Every row that leaves while a quick look is open, whichever it
+      // shows (#957).
+      if (_quickLooks > 0) {
+        _leftFrom[OfferedCopyEntry(game.id)] = _from(entriesAfter, stayed);
+      }
+      // Keeps the hand-off off a sub-tab that isn't shown (#945): with
+      // Nominations chosen, a take-back that ends hands nothing on, and
+      // focus stays where the user put it.
+      if (at != null || section != EventGamesSection.pool) continue;
+      final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
+      if (!focused && !_armed.contains(game.id)) continue;
+      at = stayed;
+      held = focused ? FocusManager.instance.primaryFocus : null;
     }
 
     // Disarm and let go what has left the pool, the nodes once their rows
@@ -383,33 +526,27 @@ class EventGamesTabController extends ChangeNotifier {
     final inPool = {for (final game in after) game.id};
     _armed.removeWhere((id) => !inPool.contains(id));
     final gone = [
-      for (final MapEntry(:key, :value) in _takeBackAreas.entries)
-        if (!inPool.contains(key)) (key, value),
+      for (final id in [..._takeBackAreas.keys])
+        if (!inPool.contains(id)) _takeBackAreas.remove(id)!,
+      ..._releaseHeads(
+        (entry) =>
+            entry is OfferedCopyEntry && !inPool.contains(entry.offeredGameId),
+      ),
     ];
-    for (final (id, _) in gone) {
-      _takeBackAreas.remove(id);
-    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      for (final (_, node) in gone) {
+      for (final node in gone) {
         node.dispose();
       }
-      if (left == null || !context.mounted) return;
+      if (at == null || !context.mounted) return;
+      // The quick look holds the focus, and hands it on as it closes.
+      if (_quickLooks > 0) return;
       if (!focusIsFree(context, untouched: held)) return;
-      // Where the row was among those that stay.
-      final at = shownBefore
-          .take(left)
-          .where((game) => stays.contains(game.id))
-          .length;
       // Each row that stays, the next first, then back from the one before:
       // the first whose Take back is built and enabled takes it. Only the
       // viewer's own rows have one, unless they may take back anyone's
       // (#518).
-      final order = [
-        ...shownAfter.skip(at),
-        ...shownAfter.take(at).toList().reversed,
-      ];
-      for (final game in order) {
+      for (final game in _from(shownAfter, at)) {
         final target =
             _takeBackAreas[game.id]?.traversalDescendants.firstOrNull;
         if (target != null) {
@@ -463,7 +600,9 @@ class EventGamesTabController extends ChangeNotifier {
   /// left. A row that stays keeps its own focus, as Withdraw's and a host's
   /// decision's hand it to the row's lines. Only while the Nominations
   /// sub-tab is chosen (#945): on Pool the nominations' rows aren't built,
-  /// so nothing is handed on.
+  /// so nothing is handed on. Nor while a quick look is open (#957), where
+  /// each row that leaves notes where it left from instead
+  /// ([focusAfterQuickLook]).
   void nominationsChanged(
     BuildContext context,
     EventNominationsState previous,
@@ -504,46 +643,56 @@ class EventGamesTabController extends ChangeNotifier {
     final shownBefore = shown(previous.nominations);
     final shownAfter = shown(current.nominations);
     final stays = {for (final nomination in shownAfter) nomination.id};
+    final entriesAfter = [
+      for (final nomination in shownAfter) NominationEntry(nomination.id),
+    ];
 
-    int? left;
+    // Where the row that hands focus on was among those that stay.
+    int? at;
     FocusNode? held;
-    if (section == EventGamesSection.nominations) {
-      for (final (index, nomination) in shownBefore.indexed) {
-        if (stays.contains(nomination.id)) continue;
-        final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
-        if (!focused && nomination.id != written) continue;
-        left = index;
-        held = focused ? FocusManager.instance.primaryFocus : null;
-        break;
+    // The rows before each one that stay.
+    var stayed = 0;
+    for (final nomination in shownBefore) {
+      if (stays.contains(nomination.id)) {
+        stayed++;
+        continue;
       }
+      // Every row that leaves while a quick look is open, whichever it
+      // shows (#957).
+      if (_quickLooks > 0) {
+        _leftFrom[NominationEntry(nomination.id)] = _from(
+          entriesAfter,
+          stayed,
+        );
+      }
+      if (at != null || section != EventGamesSection.nominations) continue;
+      final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
+      if (!focused && nomination.id != written) continue;
+      at = stayed;
+      held = focused ? FocusManager.instance.primaryFocus : null;
     }
 
     // Let go the nodes of nominations no longer held, once their rows have
     // gone too.
     final inSet = {for (final nomination in current.nominations) nomination.id};
     final gone = [
-      for (final MapEntry(:key, :value) in _nominationAreas.entries)
-        if (!inSet.contains(key)) (key, value),
+      for (final id in [..._nominationAreas.keys])
+        if (!inSet.contains(id)) _nominationAreas.remove(id)!,
+      ..._releaseHeads(
+        (entry) =>
+            entry is NominationEntry && !inSet.contains(entry.nominationId),
+      ),
     ];
-    for (final (id, _) in gone) {
-      _nominationAreas.remove(id);
-    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      for (final (_, node) in gone) {
+      for (final node in gone) {
         node.dispose();
       }
-      if (left == null || !context.mounted) return;
+      if (at == null || !context.mounted) return;
+      // The quick look holds the focus, and hands it on as it closes.
+      if (_quickLooks > 0) return;
       if (!focusIsFree(context, untouched: held)) return;
-      // Where the row was among those that stay.
-      final at = shownBefore
-          .take(left)
-          .where((nomination) => stays.contains(nomination.id))
-          .length;
-      for (final nomination in [
-        ...shownAfter.skip(at),
-        ...shownAfter.take(at).toList().reversed,
-      ]) {
+      for (final nomination in _from(shownAfter, at)) {
         final target =
             _nominationAreas[nomination.id]?.traversalDescendants.firstOrNull;
         if (target != null) {
@@ -576,6 +725,10 @@ class EventGamesTabController extends ChangeNotifier {
     for (final node in _takeBackAreas.values) {
       node.dispose();
     }
+    for (final node in _rowHeads.values) {
+      node.dispose();
+    }
+    _clockTicks.dispose();
     super.dispose();
   }
 }
@@ -628,11 +781,28 @@ class EventGamesTabController extends ChangeNotifier {
 /// take-back that ends while Nominations is shown, or a nominations write
 /// that ends while Pool is, hands nothing on, then or when its sub-tab is
 /// chosen again. Focus stays where the user put it, on the sub-tab chosen.
+///
+/// ## Quick looks
+///
+/// A row's quick look (#957) opens on the root navigator, outside the
+/// scope, and reads the controller through [EventGamesTabScope.value]. While
+/// one is open neither list hands focus on: the quick look holds the focus,
+/// a take-back pressed in it arms the pool's hand-off as the row's does, and
+/// a hand-off would take the focus from under the quick look's barrier.
+/// Each row that leaves meanwhile
+/// notes where it left from, and the quick look's close hands focus on from
+/// there ([EventGamesTabController.focusAfterQuickLook]). The scope gives
+/// the controller the screen's clock and its way to a game's page, which
+/// the quick look reads ([now], [onOpenGame]), and the page tells it each
+/// time that clock passes a boundary, so the quick look moves on with the
+/// page ([EventGamesTabController.clockTicks]).
 class EventGamesTabScope extends StatefulWidget {
   const EventGamesTabScope({
     required this.onFirstShown,
     required this.child,
     this.initialSection = EventGamesSection.nominations,
+    this.now = DateTime.now,
+    this.onOpenGame,
     super.key,
   });
 
@@ -653,10 +823,32 @@ class EventGamesTabScope extends StatefulWidget {
   /// controller is made.
   final EventGamesSection initialSection;
 
+  /// The screen's clock, which the tab's quick looks read (#957):
+  /// [EventGamesTabController.clock].
+  final DateTime Function() now;
+
+  /// Opens a game's page from a quick look's View game (#957):
+  /// [EventGamesTabController.openGame].
+  final OpenEventGame? onOpenGame;
+
   /// The controller of the scope above [context].
   static EventGamesTabController of(BuildContext context) => context
       .getInheritedWidgetOfExactType<_EventGamesTabInherited>()!
       .controller;
+
+  /// The scope above [context], as a context of its own (#957): one that
+  /// outlives what [context] belongs to, as a row that leaves while the
+  /// quick look it opened is open.
+  static BuildContext contextOf(BuildContext context) => context
+      .getElementForInheritedWidgetOfExactType<_EventGamesTabInherited>()!;
+
+  /// Provides [controller] to [child] alone, with nothing of the scope's
+  /// own: for a pop-up the tab opens on the root navigator (#957), outside
+  /// the scope, which reads the tab's state from it as the tab does.
+  static Widget value({
+    required EventGamesTabController controller,
+    required Widget child,
+  }) => _EventGamesTabInherited(controller: controller, child: child);
 
   @override
   State<EventGamesTabScope> createState() => _EventGamesTabScopeState();
@@ -680,8 +872,19 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   @override
   void initState() {
     super.initState();
+    _controller
+      ..clock = widget.now
+      ..openGame = widget.onOpenGame;
     // The screen can open on Games (#856), with no tab change to say so.
     WidgetsBinding.instance.addPostFrameCallback((_) => _firstShowing());
+  }
+
+  @override
+  void didUpdateWidget(EventGamesTabScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _controller
+      ..clock = widget.now
+      ..openGame = widget.onOpenGame;
   }
 
   @override
@@ -822,4 +1025,10 @@ class _EventGamesTabInherited extends InheritedWidget {
   @override
   bool updateShouldNotify(_EventGamesTabInherited oldWidget) =>
       controller != oldWidget.controller;
+}
+
+/// [EventGamesTabController.clockTicks]: a notifier the controller alone
+/// tells.
+class _ClockTicks extends ChangeNotifier {
+  void tick() => notifyListeners();
 }

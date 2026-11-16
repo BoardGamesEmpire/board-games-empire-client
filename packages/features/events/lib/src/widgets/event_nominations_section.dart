@@ -921,7 +921,12 @@ class _NominationRowState extends State<_NominationRow>
       viewerId: widget.viewerId,
       names: widget.names,
     );
-    final scope = _scope(context, l10n);
+    final scope = nominationScopeName(
+      context,
+      nomination.occurrenceId,
+      occurrences: widget.occurrences,
+      now: now,
+    );
     final interested = interestedLine(l10n, widget.interestedWeight);
     // A fixed line, not a countdown: passing it closes nothing (#517).
     final closes =
@@ -1155,18 +1160,6 @@ class _NominationRowState extends State<_NominationRow>
       widget.names[by] ??
           personName(username: nomination.nominatedByUsername) ??
           l10n.eventsAttendeeSomeone,
-    );
-  }
-
-  /// What it is for: the whole event, or the date it names. Null for a date
-  /// the event no longer has, rather than name one it doesn't.
-  String? _scope(BuildContext context, EventsLocalizations l10n) {
-    final id = widget.nomination.occurrenceId;
-    if (id == null) return l10n.eventsNominationWholeEvent;
-    final date = widget.occurrences.where((each) => each.id == id).firstOrNull;
-    if (date == null) return null;
-    return l10n.eventsNominationForDate(
-      eventDateName(context, date, now: widget.now),
     );
   }
 }

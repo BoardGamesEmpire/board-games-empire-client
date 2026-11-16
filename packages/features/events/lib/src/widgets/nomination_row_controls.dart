@@ -12,6 +12,7 @@ import 'package:events/src/detail/event_detail_write.dart';
 import 'package:events/src/detail/event_nominations.dart';
 import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/confirm_dialog.dart';
+import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
 import 'package:events/src/widgets/nomination_vote_control.dart';
@@ -571,6 +572,24 @@ NominationSupplier nominationSupplierOf(
     return const ViewerSupplier();
   }
   return NamedSupplier(names[copy.attendeeId] ?? l10n.eventsAttendeeSomeone);
+}
+
+/// What a nomination for the date [occurrenceId] is for, as its row names
+/// it (#517): the whole event where it is null, else the date it names, by
+/// [occurrences] as of [now]. Null for a date the event no longer has,
+/// rather than name one it doesn't. An offered copy's quick look names what
+/// the copy supplies the same way (#957).
+String? nominationScopeName(
+  BuildContext context,
+  String? occurrenceId, {
+  required List<EventOccurrence> occurrences,
+  required DateTime now,
+}) {
+  final l10n = EventsLocalizations.of(context);
+  if (occurrenceId == null) return l10n.eventsNominationWholeEvent;
+  final date = occurrences.where((each) => each.id == occurrenceId).firstOrNull;
+  if (date == null) return null;
+  return l10n.eventsNominationForDate(eventDateName(context, date, now: now));
 }
 
 /// Where a nomination stands, as its row says it. Unlike the event's own

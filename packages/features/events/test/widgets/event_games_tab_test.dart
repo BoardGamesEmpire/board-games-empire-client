@@ -146,6 +146,14 @@ void main() {
   late FutureOr<EventNomination> Function(WithdrawRequest request)
   withdrawAnswer;
 
+  /// What a quick look's View game asked to open (#957): the route it was
+  /// asked from, and the game's id.
+  final openedGames = <(Route<Object?>?, String)>[];
+
+  /// What View game does once it has been recorded: nothing, unless a test
+  /// opens a page.
+  late void Function(BuildContext context, String gameId) openGameAnswer;
+
   /// A detail read held until a test completes it, while set.
   Completer<EventSnapshot>? heldRead;
   late FakeEventRemote remote;
@@ -251,6 +259,8 @@ void main() {
           .copyWith(status: NominationStatus.withdrawn);
     };
     heldRead = null;
+    openedGames.clear();
+    openGameAnswer = (_, _) {};
   });
 
   tearDown(() {
@@ -324,6 +334,10 @@ void main() {
         householdRole: householdRole,
         onBack: (_) {},
         onOfferGames: offers ? recordOffer : null,
+        onOpenGame: (context, gameId) {
+          openedGames.add((ModalRoute.of(context), gameId));
+          openGameAnswer(context, gameId);
+        },
         now: () => clock,
       ),
     );
@@ -1547,7 +1561,9 @@ void main() {
 
   group('rows', () {
     testWidgets("a row says the game, where it's played, and who brings it, "
-        'as one node', (tester) async {
+        'as one node: the button that opens its quick look (#957)', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       await showGames(tester);
       // Under the tab bars and the pool's header.
@@ -1560,6 +1576,10 @@ void main() {
         ),
         matchesSemantics(
           label: 'Catan\nBoard Game Arena, Digital\nAda is bringing this',
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
       );
       expect(
@@ -1575,6 +1595,10 @@ void main() {
         ),
         matchesSemantics(
           label: "Catan\nTabletop, Physical\nYou're bringing this",
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
       );
       // No medium: the platform alone.
@@ -2294,6 +2318,10 @@ void main() {
         tester.getSemantics(name),
         matchesSemantics(
           label: "Catan: Seafarers\nTabletop, Physical\nYou're bringing this",
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
       );
       // A subtitle searched for finds it.
@@ -5436,6 +5464,10 @@ void main() {
         ),
         matchesSemantics(
           label: 'Azul\nTabletop, Physical\nAda is bringing this\nNominated',
+          isButton: true,
+          isFocusable: true,
+          hasFocusAction: true,
+          hasTapAction: true,
         ),
       );
       handle.dispose();
@@ -5723,6 +5755,572 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  group('quick look (#957)', () {
+    Finder head(String id) =>
+        find.byKey(EventDetailScreen.poolRowHeadKey(id), skipOffstage: false);
+    final quickLook = find.byKey(EventDetailScreen.quickLookKey);
+    Finder inQuickLook(Finder finder) =>
+        find.descendant(of: quickLook, matching: finder);
+    final gone = find.byKey(EventDetailScreen.quickLookGoneKey);
+    final nominate = find.byKey(EventDetailScreen.quickLookNominateKey);
+    final takeBackIn = find.byKey(EventDetailScreen.quickLookTakeBackKey);
+    final openGame = find.byKey(EventDetailScreen.quickLookOpenGameKey);
+    final anyButton = find.byWidgetPredicate(
+      (widget) => widget is ButtonStyleButton,
+      description: 'a button',
+    );
+
+    FocusNode headFocus(WidgetTester tester, String id) => tester
+        .widget<InkWell>(
+          find.descendant(
+            of: head(id),
+            matching: find.byType(InkWell, skipOffstage: false),
+            skipOffstage: false,
+          ),
+        )
+        .focusNode!;
+
+    /// Opens [id]'s quick look with a tap on its row's head, brought on
+    /// screen first.
+    Future<void> openQuickLook(WidgetTester tester, String id) async {
+      await press(tester, head(id));
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+    }
+
+    /// Closes the quick look with Escape.
+    Future<void> closeQuickLook(WidgetTester tester) async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      expect(quickLook, findsNothing);
+    }
+
+    /// Starts a detail read that is held, and lets the bloc say it is
+    /// reading before any frame shows it.
+    Future<void> holdDetailRead(WidgetTester tester) async {
+      final detail = blocOf<EventDetailBloc>(tester);
+      heldRead = Completer<EventSnapshot>();
+      detail.add(const EventDetailRetryRequested());
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+      expect((detail.state as EventDetailReady).reading, isTrue);
+    }
+
+    Future<void> endDetailRead(WidgetTester tester) async {
+      heldRead!.complete(detailOf().snapshot);
+      heldRead = null;
+      await animate(tester);
+      await animate(tester);
+    }
+
+    testWidgets("pressing a pool row's cover or title opens its quick look, "
+        'a sheet at compact and a dialog at medium', (tester) async {
+      useViewSize(tester, const Size(400, 800));
+      await showGames(tester);
+
+      // The cover.
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: head(catanMine.id),
+          matching: find.byType(BgeThumbnail),
+        ),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(BottomSheet)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(Dialog)),
+        findsNothing,
+      );
+      await closeQuickLook(tester);
+
+      // The title.
+      useViewSize(tester, const Size(700, 900));
+      await tester.pump();
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(of: head(catanMine.id), matching: find.text('Catan')),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(Dialog)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: quickLook, matching: find.byType(BottomSheet)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the quick look of an offered copy holds its name, platform '
+        'and medium, who brings it, what it supplies, Nominate, Take back and '
+        'View game', (tester) async {
+      final handle = tester.ensureSemantics();
+      final seafarers = _game('o-1', 'att-me', 'Catan', subtitle: 'Seafarers');
+      served = [seafarers, azul];
+      nominationsAnswer = (_) => [nominationOf('n-1', seafarers)];
+      await showGames(tester);
+
+      // The row's head is one button, named by what it shows.
+      await tester.ensureVisible(head(seafarers.id));
+      await tester.pump();
+      expect(
+        tester.getSemantics(head(seafarers.id)),
+        isSemantics(
+          label: "Catan: Seafarers\nTabletop, Physical\nYou're bringing this",
+          isButton: true,
+          isFocusable: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await openQuickLook(tester, seafarers.id);
+
+      // Named for its game as it opens.
+      expect(
+        find.semantics.byPredicate(
+          (node) =>
+              node.label == 'Catan: Seafarers' &&
+              node.getSemanticsData().flagsCollection.namesRoute,
+          describeMatch: (_) => 'a route named "Catan: Seafarers"',
+        ),
+        findsOneWidget,
+      );
+      // The subtitle is in the name.
+      expect(inQuickLook(find.text('Catan: Seafarers')), findsOneWidget);
+      final where = inQuickLook(find.text('Tabletop · Physical'));
+      expect(where, findsOneWidget);
+      expect(
+        tester.getSemantics(where).getSemanticsData().label,
+        contains('Tabletop, Physical'),
+      );
+      expect(inQuickLook(find.text("You're bringing this")), findsOneWidget);
+      expect(
+        inQuickLook(find.text('Supplies a nomination: For the whole event')),
+        findsOneWidget,
+      );
+      expect(inQuickLook(nominate), findsOneWidget);
+      expect(inQuickLook(takeBackIn), findsOneWidget);
+      expect(inQuickLook(openGame), findsOneWidget);
+      expect(
+        tester.getSemantics(openGame),
+        isSemantics(label: 'View game: Catan: Seafarers', isButton: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('it stays current: a read that changes who it supplies '
+        'redraws it while it is open', (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      expect(inQuickLook(find.text('Not nominated yet')), findsOneWidget);
+
+      // Nominated by someone else meanwhile, and read again.
+      nominationsAnswer = (_) => [nominationOf('n-1', catanMine)];
+      blocOf<EventNominationsBloc>(
+        tester,
+      ).add(const EventNominationsRequested('e-1'));
+      await animate(tester);
+
+      expect(quickLook, findsOneWidget);
+      expect(inQuickLook(find.text('Not nominated yet')), findsNothing);
+      expect(
+        inQuickLook(find.text('Supplies a nomination: For the whole event')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a take-back from it leaves it saying the copy has left, with '
+        "nothing to press; closing it puts focus on the next row's head", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      served = [azul, wingspanMine];
+
+      // By keyboard: the focused Take back goes with the copy, and leaves
+      // focus on nothing in that frame.
+      tester.widget<ButtonStyleButton>(takeBackIn).focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await animate(tester);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(1));
+      expect(row(catanMine.id), findsNothing);
+      expect(inQuickLook(gone), findsOneWidget);
+      expect(find.text('This copy is no longer in the pool.'), findsOneWidget);
+      expect(tester.getSemantics(gone), isSemantics(isLiveRegion: true));
+      expect(inQuickLook(anyButton), findsNothing);
+      // The quick look keeps the focus while it is open: the page's own
+      // hand-off takes nothing from under its barrier.
+      expect(takeBackFocus(tester, wingspanMine.id).hasFocus, isFalse);
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, azul.id).hasPrimaryFocus, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets("another user's take-back, read while it is open, does the "
+        'same', (tester) async {
+      served = [catanMine, azul, wingspanMine];
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+
+      // Taken back from another device: the next read comes without it.
+      served = [catanMine, wingspanMine];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+
+      expect(remote.takeBacks, isEmpty);
+      expect(row(azul.id), findsNothing);
+      expect(inQuickLook(gone), findsOneWidget);
+      expect(inQuickLook(anyButton), findsNothing);
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, wingspanMine.id).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('closing one whose copy left from the last row puts focus on '
+        "the row before's head, and from the only row on Offer games, the "
+        "sub-tab's first header control", (tester) async {
+      served = [catanMine, azul];
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+      served = [catanMine];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, catanMine.id).hasPrimaryFocus, isTrue);
+
+      await openQuickLook(tester, catanMine.id);
+      served = [];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(row(catanMine.id), findsNothing);
+      expect(
+        tester
+            .widget<ButtonStyleButton>(offerGames())
+            .focusNode!
+            .hasPrimaryFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('closing one whose copy left from the only row, with no Offer '
+        'games built, puts focus on the search field', (tester) async {
+      served = [catanMine];
+      await showGames(tester, offers: false);
+      await openQuickLook(tester, catanMine.id);
+      served = [];
+      blocOf<EventGamesBloc>(tester).add(
+        const EventGamesRequested('e-1', ['att-me', 'att-ada', 'att-bo']),
+      );
+      await animate(tester);
+      await closeQuickLook(tester);
+
+      expect(offerGames(), findsNothing);
+      expect(searchFocus(tester).hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets("it moves on with the page's clock: a date starting while it "
+        'is open leaves Nominate nothing to offer, with no reopen', (
+      tester,
+    ) async {
+      // The event's first date starts in a minute: one of the page's time
+      // boundaries.
+      final soon = confirmed(
+        'd-1',
+        now.add(const Duration(minutes: 1)),
+      ).copyWith(eventId: 'e-1');
+      final saturday = confirmed(
+        'd-2',
+        DateTime(2026, 11, 7, 19),
+        sortOrder: 1,
+      ).copyWith(eventId: 'e-1');
+      // Nominated for the whole event and for Saturday: the date starting
+      // soon is the one choice left.
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', azul),
+        nominationOf('n-2', azul).copyWith(occurrenceId: 'd-2'),
+      ];
+      await showGames(tester, detail: detailOf(occurrences: [soon, saturday]));
+      await openQuickLook(tester, azul.id);
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominate')),
+        findsOneWidget,
+      );
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNotNull);
+
+      // The date starts, and the page's clock passes it: no read, no write.
+      clock = now.add(const Duration(minutes: 2));
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+
+      expect(quickLook, findsOneWidget);
+      expect(
+        find.descendant(of: nominate, matching: find.text('Nominated')),
+        findsOneWidget,
+      );
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNull);
+    });
+
+    testWidgets('a write from it says its outcome inside the pop-up, once; an '
+        'outcome showing when it opened is not repeated', (tester) async {
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      served = [catanMine, wingspanMine];
+      await showGames(tester);
+      // An outcome in the footer as the quick look opens.
+      await press(tester, takeBack(wingspanMine.id));
+      await animate(tester);
+      expect(outcome(), findsOneWidget);
+
+      await openQuickLook(tester, catanMine.id);
+      expect(inQuickLook(outcome()), findsNothing);
+
+      await tester.tap(takeBackIn);
+      await animate(tester);
+
+      expect(remote.takeBacks, hasLength(2));
+      expect(inQuickLook(outcome()), findsOneWidget);
+      expect(
+        find.descendant(
+          of: inQuickLook(outcome()),
+          matching: find.text(_stillSuppliesCopy),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a nominate from it says its outcome inside the pop-up: the '
+        "nominations' banner", (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, azul.id);
+
+      await tester.tap(nominate);
+      await animate(tester);
+
+      expect(remote.nominates, hasLength(1));
+      final banner = inQuickLook(
+        find.byKey(EventDetailScreen.nominationsOutcomeKey),
+      );
+      expect(banner, findsOneWidget);
+      expect(
+        find.descendant(
+          of: banner,
+          matching: find.text('Azul is nominated. Voting is open.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("closed after a screen reader's tap, focus is back on the row "
+        'head', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showGames(tester);
+      // Keyboard focus left on another control: the reader's tap moves none.
+      peopleFocus(tester).requestFocus();
+      await tester.pump();
+      await tester.ensureVisible(head(catanMine.id));
+      await tester.pump();
+
+      const label = "Catan\nTabletop, Physical\nYou're bringing this";
+      tester.semantics.tap(
+        find.semantics.byPredicate(
+          (node) =>
+              node.getSemanticsData().label == label &&
+              node.getSemanticsData().hasAction(SemanticsAction.tap),
+          describeMatch: (_) => 'the row head "$label"',
+        ),
+      );
+      await animate(tester);
+      expect(quickLook, findsOneWidget);
+
+      await closeQuickLook(tester);
+
+      expect(headFocus(tester, catanMine.id).hasPrimaryFocus, isTrue);
+      expect(
+        tester.getSemantics(head(catanMine.id)),
+        isSemantics(label: label, isFocused: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('offline while open, its writes disable in place and one '
+        'online-only note shows', (tester) async {
+      final handle = tester.ensureSemantics();
+      final offline = ValueNotifier<bool>(false);
+      addTearDown(offline.dispose);
+      await showGames(tester, offline: offline);
+      await openQuickLook(tester, catanMine.id);
+      final nominating = tester.element(nominate);
+      final takingBack = tester.element(takeBackIn);
+      expect(
+        tester.widget<ButtonStyleButton>(nominate).onPressed,
+        isNotNull,
+      );
+      expect(
+        tester.widget<ButtonStyleButton>(takeBackIn).onPressed,
+        isNotNull,
+      );
+      expect(inQuickLook(find.byType(BgeOnlineOnlyNote)), findsNothing);
+
+      offline.value = true;
+      await tester.pump();
+
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(takeBackIn).onPressed, isNull);
+      // The same controls, disabled where they are.
+      expect(tester.element(nominate), same(nominating));
+      expect(tester.element(takeBackIn), same(takingBack));
+      expect(inQuickLook(find.byType(BgeOnlineOnlyNote)), findsOneWidget);
+      expect(
+        tester.getSemantics(takeBackIn),
+        isSemantics(label: 'Take back Catan', hint: _onlineOnlyCopy),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("Nominate and Take back in it keep the row's rules: held "
+        'through their press, sent once a detail read has ended', (
+      tester,
+    ) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+
+      // A read starts, and the press lands before a frame shows it.
+      await holdDetailRead(tester);
+      await tester.tap(nominate);
+      await tester.pump();
+
+      expect(remote.nominates, isEmpty);
+      expect(tester.widget<ButtonStyleButton>(nominate).onPressed, isNotNull);
+      expect(
+        find.descendant(
+          of: nominate,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      await endDetailRead(tester);
+      expect(remote.nominates, hasLength(1));
+
+      await holdDetailRead(tester);
+      await tester.tap(takeBackIn);
+      await tester.pump();
+
+      expect(remote.takeBacks, isEmpty);
+      expect(
+        tester.widget<ButtonStyleButton>(takeBackIn).onPressed,
+        isNotNull,
+      );
+      expect(
+        find.descendant(
+          of: takeBackIn,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      await endDetailRead(tester);
+      expect(remote.takeBacks, hasLength(1));
+    });
+
+    testWidgets("View game opens the game's page, and the quick look goes "
+        'once the page has arrived', (tester) async {
+      const page = Key('game page');
+      openGameAnswer = (context, _) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(key: page, body: Text('The game')),
+        ),
+      );
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+      final popup = ModalRoute.of(tester.element(quickLook));
+
+      await tester.tap(openGame);
+      await tester.pump();
+
+      // Asked from the quick look's own context, for the copy's game.
+      expect(openedGames, [(popup, catanMine.gameId)]);
+      // Still there while the page arrives over it.
+      expect(
+        find.byKey(EventDetailScreen.quickLookKey, skipOffstage: false),
+        findsOneWidget,
+      );
+
+      await animate(tester);
+      await animate(tester);
+
+      expect(find.byKey(page), findsOneWidget);
+      expect(
+        find.byKey(EventDetailScreen.quickLookKey, skipOffstage: false),
+        findsNothing,
+      );
+      // The page has the focus: the tab hands none on under it.
+      expect(headFocus(tester, catanMine.id).hasFocus, isFalse);
+    });
+
+    testWidgets('at 320×640 and 200% text, the quick look and a row head lay '
+        'out with no overflow', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      tester.platformDispatcher.textScaleFactorTestValue =
+          BgeTextScale.maxScaleFactor;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final long = _game('o-1', 'att-me', _longTitle, subtitle: 'Seafarers');
+      served = [long, azul];
+      nominationsAnswer = (_) => [nominationOf('n-1', long)];
+
+      await showGames(tester);
+      await tester.ensureVisible(head(long.id));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(head(long.id)).height,
+        greaterThanOrEqualTo(kMinInteractiveDimension),
+      );
+
+      await openQuickLook(tester, long.id);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(openGame);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: inQuickLook(find.text('$_longTitle: Seafarers')),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse);
     });
   });
 

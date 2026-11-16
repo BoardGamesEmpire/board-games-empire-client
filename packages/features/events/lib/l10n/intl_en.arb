@@ -1188,6 +1188,38 @@
   "@eventsPoolNominated": {
     "description": "Says a game in the games pool on the Games tab of an event's screen, the games people offer to bring, is nominated for the event's lineup, or already in it. It is the label of the game's disabled Nominate button once nothing is left to nominate it for (read as eventsNominatedNamed), and a line of the game's row where the button can't say it: the game is nominated for some date but not all, or the viewer isn't offered Nominate."
   },
+  "eventsQuickLookOpenGame": "View game",
+  "@eventsQuickLookOpenGame": {
+    "description": "Button at the foot of the quick look, the pop-up a game's row opens on the Games tab of an event's screen: it opens the game's own page, about the game rather than its place in this event. Screen readers hear eventsQuickLookOpenGameNamed instead."
+  },
+  "eventsQuickLookOpenGameNamed": "View game: {title}",
+  "@eventsQuickLookOpenGameNamed": {
+    "description": "eventsQuickLookOpenGame as a screen reader reads it, naming the game whose page it opens. It starts with the button's visible text.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "eventsQuickLookCopyGone": "This copy is no longer in the pool.",
+  "@eventsQuickLookCopyGone": {
+    "description": "Line in the quick look of a game in the games pool, the games people offer to bring, once that copy has left the pool while the quick look was open: taken back from the quick look, or by someone else. Nothing in the quick look can be pressed then."
+  },
+  "eventsQuickLookSupplies": "Supplies a nomination: {scopes}",
+  "@eventsQuickLookSupplies": {
+    "description": "Line in the quick look of a game in the games pool, the games people offer to bring: this copy is the one a nomination for the event's lineup was made from, and the nomination is still being voted on, waiting for a host, or paused. {scopes} names what each such nomination is for, as the nominations list names it (eventsNominationWholeEvent, eventsNominationForDate), joined by eventsDetailSpokenSeparator.",
+    "placeholders": {
+      "scopes": {
+        "type": "String",
+        "example": "For the whole event"
+      }
+    }
+  },
+  "eventsQuickLookSuppliesNone": "Not nominated yet",
+  "@eventsQuickLookSuppliesNone": {
+    "description": "Line in the quick look of a game in the games pool, the games people offer to bring, in place of eventsQuickLookSupplies: no nomination for the event's lineup is being voted on, waiting for a host, or paused that was made from this copy."
+  },
   "eventsVoteDone": "Your vote on {title} is in.",
   "@eventsVoteDone": {
     "description": "Banner at the foot of an event's screen once the user's vote on a nominated game (for it, against it, or interested) is recorded. The title is the nominated game's.",
