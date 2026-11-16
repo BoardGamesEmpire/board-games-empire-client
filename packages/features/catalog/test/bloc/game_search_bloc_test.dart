@@ -29,6 +29,14 @@ class _FailingSearchCache extends FakeGamesCache {
   }) async => throw StateError('corrupt');
 }
 
+/// A cache that counts how often it is told to forget the catalog.
+class _CountingForgetCache extends FakeGamesCache {
+  int forgotten = 0;
+
+  @override
+  Future<void> forgetCatalog() async => forgotten++;
+}
+
 const _expansions = GameSearchFilter(contentTypes: {ContentType.expansion});
 
 void main() {
@@ -42,17 +50,25 @@ void main() {
   /// A real games cache, for a test that seeds it once the bloc is built.
   late GameRepositoryImpl lateCache;
 
+  late _CountingForgetCache counting;
+  Completer<GameSearchResults>? retryOf;
+
+  /// The first ask of a search that a newer one supersedes, answered by hand.
+  late Completer<GameSearchResults> superseded;
+
   /// A bloc that searches as soon as typing stops, so a test need not wait
   /// out the real debounce.
   GameSearchBloc build({
     GameRepository? cache,
     Future<Map<String, String>> Function()? sourceNames,
     Stream<String>? gone,
+    DataGatewaySearchReach? reach,
   }) => GameSearchBloc(
     remote: remote,
     cache: cache,
     sourceNames: sourceNames,
     gone: gone,
+    reach: reach,
     debounce: Duration.zero,
   );
 
@@ -569,8 +585,315 @@ void main() {
     },
     skip: 2,
     expect: () => [const GameSearchDenied(query: 'catan', filter: _expansions)],
-    verify: (_) => expect(remote.calls, ['search(catan [expansion])']),
+    verify: (_) => expect(remote.calls, [
+      'search(catan [expansion])',
+      'search(catan [expansion] -external)',
+    ]),
   );
+
+  group('when the DataGateways are refused', () {
+    const refused = GamesForbiddenException('403', apiMessage: 'm');
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a 403 asking the DataGateways retries without them and shows this '
+      "server's results",
+      setUp: () => remote.onSearch = (_, _, includeExternal) async =>
+          includeExternal
+          ? throw refused
+          : GameSearchResults(local: [hit('catan')]),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('catan')],
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+        ),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['search(catan)', 'search(catan -external)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'the next search in the session skips the DataGateways from the start',
+      setUp: () =>
+          remote.onSearch = (_, _, includeExternal) async =>
+              includeExternal ? throw refused : const GameSearchResults(),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        remote.calls.clear();
+        bloc.add(const GameSearchQueryChanged('cata'));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        const GameSearchLoading(query: 'cata'),
+        const GameSearchReady(
+          query: 'cata',
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+        ),
+      ],
+      verify: (_) => expect(remote.calls, ['search(cata -external)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a 403 on the retry too is the catalog refused',
+      setUp: () => remote.onSearch = (_, _, _) async => throw refused,
+      build: () {
+        counting = _CountingForgetCache();
+        return build(cache: counting);
+      },
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        const GameSearchDenied(query: 'catan'),
+      ],
+      verify: (_) {
+        expect(remote.calls, ['search(catan)', 'search(catan -external)']);
+        expect(counting.forgotten, 1);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a signed-out reach never asks the DataGateways',
+      setUp: () =>
+          remote.onSearch = (_, _, _) async =>
+              GameSearchResults(local: [hit('catan')]),
+      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('catan')],
+          dataGatewaysRefused: true,
+        ),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan -external)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a 403 on a search that did not ask the DataGateways is not retried',
+      setUp: () => remote.onSearch = (_, _, _) async => throw refused,
+      build: () => build(reach: DataGatewaySearchReach.signedOut()),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        const GameSearchDenied(query: 'catan'),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan -external)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a retry that fails otherwise searches this device',
+      setUp: () =>
+          remote.onSearch = (_, _, includeExternal) async =>
+              throw includeExternal ? refused : unreachable(),
+      build: () =>
+          build(cache: FakeGamesCache([game('g_catan', title: 'Catan')])),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        isA<GameSearchReady>()
+            .having((s) => s.fromCache, 'fromCache', isTrue)
+            .having((s) => s.dataGatewaysRefused, 'refused', isFalse)
+            .having((s) => s.refusalMessage, 'message', isNull),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['search(catan)', 'search(catan -external)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'names that arrive later keep the refusal on the answer',
+      setUp: () =>
+          remote.onSearch = (_, _, includeExternal) async => includeExternal
+          ? throw refused
+          : GameSearchResults(
+              local: [hit('catan')],
+              byDataGateway: {
+                'dg_bgg': [hit('926')],
+              },
+            ),
+      build: () {
+        lateNames = Completer();
+        return build(sourceNames: () => lateNames.future);
+      },
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        lateNames.complete({'dg_bgg': 'BoardGameGeek'});
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.dataGatewaysRefused, 'refused', isTrue)
+            .having((s) => s.refusalMessage, 'message', 'm')
+            .having(
+              (s) => s.fromSources.single.source.name,
+              'name',
+              'BoardGameGeek',
+            ),
+      ],
+    );
+
+    // No one waits for a search superseded before its 403 lands, but the
+    // 403 may be the catalog's, and only the retry tells (#557).
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a search superseded before its 403 lands still retries, and a 403 '
+      'there too forgets the catalog',
+      setUp: () {
+        superseded = Completer();
+        addTearDown(() {
+          if (!superseded.isCompleted) {
+            superseded.complete(const GameSearchResults());
+          }
+        });
+        remote.onSearch = (query, _, includeExternal) {
+          if (query != 'old') {
+            return Future.value(GameSearchResults(local: [hit('newer')]));
+          }
+          return includeExternal ? superseded.future : Future.error(refused);
+        };
+      },
+      build: () {
+        counting = _CountingForgetCache();
+        return build(cache: counting);
+      },
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('old'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('new'));
+        await settle();
+        superseded.completeError(refused);
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'old'),
+        const GameSearchLoading(query: 'new'),
+        GameSearchReady(query: 'new', onServer: [hit('newer')]),
+      ],
+      verify: (_) {
+        expect(remote.calls, [
+          'search(old)',
+          'search(new)',
+          'search(old -external)',
+        ]);
+        expect(counting.forgotten, 1);
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a search superseded before its 403 lands still learns the refusal, '
+      'and shows nothing',
+      setUp: () {
+        superseded = Completer();
+        addTearDown(() {
+          if (!superseded.isCompleted) {
+            superseded.complete(const GameSearchResults());
+          }
+        });
+        remote.onSearch = (query, _, includeExternal) {
+          if (query != 'old') {
+            return Future.value(GameSearchResults(local: [hit('newer')]));
+          }
+          return includeExternal
+              ? superseded.future
+              : Future.value(GameSearchResults(local: [hit('older')]));
+        };
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('old'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('new'));
+        await settle();
+        superseded.completeError(refused);
+        await settle();
+        remote.calls.clear();
+        bloc.add(const GameSearchQueryChanged('next'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'old'),
+        const GameSearchLoading(query: 'new'),
+        GameSearchReady(query: 'new', onServer: [hit('newer')]),
+        const GameSearchLoading(query: 'next'),
+        GameSearchReady(
+          query: 'next',
+          onServer: [hit('newer')],
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+        ),
+      ],
+      verify: (_) => expect(remote.calls, ['search(next -external)']),
+    );
+
+    // A stale retry still learned the refusal, so the session remembers it,
+    // but nothing it found is shown.
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a stale 403 retry is dropped',
+      setUp: () {
+        final retry = Completer<GameSearchResults>();
+        addTearDown(() {
+          if (!retry.isCompleted) retry.complete(const GameSearchResults());
+        });
+        remote.onSearch = (query, _, includeExternal) {
+          if (query == 'old') {
+            return includeExternal
+                ? Future.error(refused)
+                : (retryOf = retry).future;
+          }
+          return Future.value(GameSearchResults(local: [hit('newer')]));
+        };
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('old'));
+        await settle();
+        bloc.add(const GameSearchQueryChanged('new'));
+        await settle();
+        retryOf!.complete(GameSearchResults(local: [hit('older')]));
+        await settle();
+        remote.calls.clear();
+        bloc.add(const GameSearchQueryChanged('next'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'old'),
+        const GameSearchLoading(query: 'new'),
+        GameSearchReady(query: 'new', onServer: [hit('newer')]),
+        const GameSearchLoading(query: 'next'),
+        GameSearchReady(
+          query: 'next',
+          onServer: [hit('newer')],
+          dataGatewaysRefused: true,
+          refusalMessage: 'm',
+        ),
+      ],
+      verify: (_) => expect(remote.calls, ['search(next -external)']),
+    );
+  });
 
   group('a refusal', () {
     const refused = GamesForbiddenException('403');

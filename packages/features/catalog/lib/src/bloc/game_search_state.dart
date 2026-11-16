@@ -43,6 +43,12 @@ final class GameSearchLoading extends GameSearchState {
 ///
 /// [fromCache] says the server's search failed, so [onServer] is the games
 /// cached on this device that match, and there is nothing from DataGateways.
+///
+/// [dataGatewaysRefused] says the DataGateways were left out of this answer
+/// because the server refused them to this user, or because the session
+/// never asked (#795). [refusalMessage] is the server's own words for it,
+/// null when it gave none or the session never asked. An answer from the
+/// cache is neither.
 final class GameSearchReady extends GameSearchState {
   const GameSearchReady({
     required this.query,
@@ -51,6 +57,8 @@ final class GameSearchReady extends GameSearchState {
     this.missingSources = const [],
     this.unfilterableSources = const [],
     this.fromCache = false,
+    this.dataGatewaysRefused = false,
+    this.refusalMessage,
     super.filter,
   });
 
@@ -60,6 +68,8 @@ final class GameSearchReady extends GameSearchState {
   final List<GameSearchSource> missingSources;
   final List<GameSearchSource> unfilterableSources;
   final bool fromCache;
+  final bool dataGatewaysRefused;
+  final String? refusalMessage;
 
   /// How many results the screen lists.
   int get resultCount => onServer.length + fromSources.length;
@@ -72,6 +82,8 @@ final class GameSearchReady extends GameSearchState {
     missingSources,
     unfilterableSources,
     fromCache,
+    dataGatewaysRefused,
+    refusalMessage,
     filter,
   ];
 }
