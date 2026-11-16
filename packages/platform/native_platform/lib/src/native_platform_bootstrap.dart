@@ -19,6 +19,7 @@ import 'package:key_storage/key_storage.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/src/auth/flutter_web_auth_provider_sign_in_browser.dart';
 import 'package:native_platform/src/deep_links/app_links_deep_link_source.dart';
+import 'package:native_platform/src/deep_links/server_repository_known_server_lookup.dart';
 import 'package:native_platform/src/logging/rotating_file_log_sink.dart';
 import 'package:native_platform/src/native_root_module.dart';
 import 'package:observability/observability.dart';
@@ -415,6 +416,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       return BootstrapResult(
         hasServer: servers.isNotEmpty,
         orchestrator: orchestrator,
+        knownServerLookup: ServerRepositoryKnownServerLookup(
+          serverRepository: serverRepository,
+        ),
         // #37: the platform-neutral auth seam the shell provisions the
         // auth bloc from. A thin read-only adapter over the orchestrator;
         // owns no resources, so it needs no separate teardown.

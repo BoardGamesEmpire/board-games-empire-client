@@ -224,6 +224,23 @@ void main() {
         await bootstrap.dispose();
       });
 
+      test(
+        'a successful initialize publishes a ServerRepositoryKnownServerLookup',
+        () async {
+          when(() => serverRepository.getAllServers())
+              .thenAnswer((_) async => const []);
+          final bootstrap = buildBootstrap();
+
+          final result = await bootstrap.initialize();
+
+          expect(
+            result.knownServerLookup,
+            isA<ServerRepositoryKnownServerLookup>(),
+          );
+          await bootstrap.dispose();
+        },
+      );
+
       test('reports a server when the registry is non-empty', () async {
         when(() => serverRepository.getAllServers())
             .thenAnswer((_) async => [_serverConfig()]);
