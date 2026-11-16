@@ -206,9 +206,10 @@ typedef NominateGates = ({
 typedef TakeBackGates = ({bool inert, bool enabled, bool runOver});
 
 /// What a pool row says of its copy and builds its controls with (#957):
-/// who brings it, as its line says it; whether its lines say Nominated
-/// (#947); and Nominate's and Take back's arguments where each is built,
-/// null where it isn't.
+/// who brings it, as its status line says it; whether that line says
+/// Nominated (#947, #946); and Nominate's and Take back's arguments where
+/// each is offered, null where it isn't. The row builds one of the two
+/// (#946), its quick look both.
 typedef PoolRowGates = ({
   String who,
   bool nominatedLine,
@@ -269,7 +270,7 @@ PoolRowGates poolRowGates(
             names[game.attendeeId] ?? l10n.eventsAttendeeSomeoneStart,
           ),
     // Nominate says it where it can't be pressed for any choice; otherwise
-    // the row's lines do (#947).
+    // the row's status line does (#947).
     nominatedLine:
         suppliesLive(game, nominated) && (!nominating || already == null),
     nominate: nominations == null || !nominating
@@ -655,7 +656,6 @@ class NominateButtonState extends State<NominateButton>
 class TakeBackButton extends StatefulWidget {
   const TakeBackButton({
     required this.game,
-    required this.area,
     required this.inert,
     required this.enabled,
     required this.runOver,
@@ -669,9 +669,6 @@ class TakeBackButton extends StatefulWidget {
   /// Key on the button itself: the row's ([EventDetailScreen.poolTakeBackKey])
   /// where null, or the quick look's (#957).
   final Key? buttonKey;
-
-  /// Holds the button, so a row that leaves can say it held focus.
-  final FocusNode area;
 
   /// Whether this row's take-back is out.
   final bool inert;
@@ -707,28 +704,24 @@ class TakeBackButtonState extends State<TakeBackButton>
         heldInert(available: available, disabled: offline) ||
         (widget.inert && !offline);
 
-    return Focus(
-      focusNode: widget.area,
-      includeSemantics: false,
-      child: BgeOnlineOnly(
-        showNote: false,
-        child: BgeInertButton(
-          inert: inert,
-          label: l10n.eventsGamesTakeBackNamed(
-            gameName(l10n, game.title, game.subtitle),
-          ),
-          onPressed: available || inert
-              ? () => unawaited(holdPress(widget.onPressed))
-              : null,
-          builder: (context, focusNode, onPressed) => TextButton.icon(
-            key: widget.buttonKey ?? EventDetailScreen.poolTakeBackKey(game.id),
-            focusNode: focusNode,
-            onPressed: onPressed,
-            icon: inert
-                ? const HeldSpinner()
-                : const Icon(Icons.remove_circle_outline),
-            label: Text(l10n.eventsGamesTakeBack),
-          ),
+    return BgeOnlineOnly(
+      showNote: false,
+      child: BgeInertButton(
+        inert: inert,
+        label: l10n.eventsGamesTakeBackNamed(
+          gameName(l10n, game.title, game.subtitle),
+        ),
+        onPressed: available || inert
+            ? () => unawaited(holdPress(widget.onPressed))
+            : null,
+        builder: (context, focusNode, onPressed) => TextButton.icon(
+          key: widget.buttonKey ?? EventDetailScreen.poolTakeBackKey(game.id),
+          focusNode: focusNode,
+          onPressed: onPressed,
+          icon: inert
+              ? const HeldSpinner()
+              : const Icon(Icons.remove_circle_outline),
+          label: Text(l10n.eventsGamesTakeBack),
         ),
       ),
     );

@@ -590,11 +590,11 @@
   },
   "eventsGamesSectionNominations": "Nominations",
   "@eventsGamesSectionNominations": {
-    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup, under the heading eventsNominationsHeading. Keep it short: two sub-tabs share the width of a phone."
+    "description": "Label of the first sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Pool sub-tab (eventsGamesSectionPool). The sub-tab lists the games nominated for the event's lineup; it has no heading of its own, so this label names the list. Keep it short: two sub-tabs share the width of a phone."
   },
   "eventsGamesSectionPool": "Pool",
   "@eventsGamesSectionPool": {
-    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring, under the heading eventsGamesPoolHeading. Keep it short: two sub-tabs share the width of a phone."
+    "description": "Label of the second sub-tab in the second row of tabs under the Games tab of an event's screen (eventsDetailGames), beside the Nominations sub-tab (eventsGamesSectionNominations). The sub-tab lists the games pool, the games the people coming offer to bring; it has no heading of its own, so this label names the list. Keep it short: two sub-tabs share the width of a phone."
   },
   "eventsGamesSearchLabel": "Search the games",
   "@eventsGamesSearchLabel": {
@@ -680,11 +680,11 @@
   },
   "eventsGamesYours": "You're bringing this",
   "@eventsGamesYours": {
-    "description": "Last line of a game on the Games tab of an event's screen that the user offered to bring."
+    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: the user offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place."
   },
   "eventsGamesTheirs": "{name} is bringing this",
   "@eventsGamesTheirs": {
-    "description": "Last line of a game on the Games tab of an event's screen that someone else offered to bring. {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none.",
+    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, and a line of its quick look, the pop-up the row opens: someone else offered to bring it. Where the row also says the game is nominated, eventsPoolStatusNominated takes its place. {name} is the person's name, or eventsAttendeeSomeoneStart for someone with none.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -694,7 +694,7 @@
   },
   "eventsGamesWhere": "{platform} · {medium}",
   "@eventsGamesWhere": {
-    "description": "Second line of a game on the Games tab of an event's screen, and on the Offer games page: the platform the owner has it on, then whether their copy is physical or digital (eventsGamesMediumPhysical, eventsGamesMediumDigital), for example 'Tabletop · Physical'. A game whose copy is neither shows the platform alone. Screen readers hear eventsGamesWhereSpoken instead.",
+    "description": "A line of a game's quick look, the pop-up its row opens in the games pool on the Games tab of an event's screen, and of its row on the Offer games page: the platform the owner has it on, then whether their copy is physical or digital (eventsGamesMediumPhysical, eventsGamesMediumDigital), for example 'Tabletop · Physical'. A game whose copy is neither shows the platform alone. Screen readers hear eventsGamesWhereSpoken instead.",
     "placeholders": {
       "platform": {
         "type": "String",
@@ -1186,7 +1186,27 @@
   },
   "eventsPoolNominated": "Nominated",
   "@eventsPoolNominated": {
-    "description": "Says a game in the games pool on the Games tab of an event's screen, the games people offer to bring, is nominated for the event's lineup, or already in it. It is the label of the game's disabled Nominate button once nothing is left to nominate it for (read as eventsNominatedNamed), and a line of the game's row where the button can't say it: the game is nominated for some date but not all, or the viewer isn't offered Nominate."
+    "description": "Says a game in the games pool on the Games tab of an event's screen, the games people offer to bring, is nominated for the event's lineup, or already in it. It is the label of the game's disabled Nominate button once nothing is left to nominate it for (read as eventsNominatedNamed). Where the button can't say it, the row's status line does (eventsPoolStatusNominated)."
+  },
+  "eventsPoolStatusNominated": "{who} · Nominated",
+  "@eventsPoolStatusNominated": {
+    "description": "The status line of a game's row in the games pool on the Games tab of an event's screen, where the game is nominated for the event's lineup, or already in it, and its Nominate button can't say so: the game is nominated for some date but not all, or the user isn't offered Nominate. {who} is eventsGamesYours or eventsGamesTheirs, who brings the game. Screen readers hear eventsPoolStatusNominatedSpoken instead.",
+    "placeholders": {
+      "who": {
+        "type": "String",
+        "example": "Ada is bringing this"
+      }
+    }
+  },
+  "eventsPoolStatusNominatedSpoken": "{who}, nominated",
+  "@eventsPoolStatusNominatedSpoken": {
+    "description": "eventsPoolStatusNominated as a screen reader reads it, without the symbol between the two parts, which would be read out. It should sound like a short pause between them.",
+    "placeholders": {
+      "who": {
+        "type": "String",
+        "example": "Ada is bringing this"
+      }
+    }
   },
   "eventsQuickLookOpenGame": "View game",
   "@eventsQuickLookOpenGame": {
@@ -1286,7 +1306,7 @@
   },
   "eventsWithdraw": "Withdraw",
   "@eventsWithdraw": {
-    "description": "Button under a game the user nominated, in the Nominations section of an event's Games tab, while it is still up for a vote, awaiting a host's approval or paused: it takes the nomination back, and asks first (eventsWithdrawConfirmTitle). Screen readers hear eventsWithdrawNamed instead."
+    "description": "Button in the quick look of a game the user nominated, the pop-up its row opens in the Nominations section of an event's Games tab, while it is still up for a vote, awaiting a host's approval or paused: it takes the nomination back, and asks first (eventsWithdrawConfirmTitle). Screen readers hear eventsWithdrawNamed instead."
   },
   "eventsWithdrawNamed": "Withdraw {title}",
   "@eventsWithdrawNamed": {
@@ -1382,7 +1402,7 @@
   },
   "eventsApprove": "Approve",
   "@eventsApprove": {
-    "description": "Button under a nominated game awaiting a host's approval, in the Nominations section of an event's Games tab, shown to the event's host or co-host: it puts the game into the lineup, the games to be played, and asks first (eventsApproveConfirmTitle). Screen readers hear eventsApproveNamed instead."
+    "description": "Button in the quick look of a nominated game awaiting a host's approval, the pop-up its row opens in the Nominations section of an event's Games tab, shown to the event's host or co-host: it puts the game into the lineup, the games to be played, and asks first (eventsApproveConfirmTitle). Screen readers hear eventsApproveNamed instead."
   },
   "eventsApproveNamed": "Approve {title}",
   "@eventsApproveNamed": {
@@ -1396,7 +1416,7 @@
   },
   "eventsReject": "Reject",
   "@eventsReject": {
-    "description": "Button under a nominated game awaiting a host's approval, in the Nominations section of an event's Games tab, shown to the event's host or co-host: it turns the nomination down, and asks first (eventsRejectConfirmTitle). Screen readers hear eventsRejectNamed instead."
+    "description": "Button in the quick look of a nominated game awaiting a host's approval, the pop-up its row opens in the Nominations section of an event's Games tab, shown to the event's host or co-host: it turns the nomination down, and asks first (eventsRejectConfirmTitle). Screen readers hear eventsRejectNamed instead."
   },
   "eventsRejectNamed": "Reject {title}",
   "@eventsRejectNamed": {
@@ -1410,7 +1430,7 @@
   },
   "eventsCloseVote": "Close vote",
   "@eventsCloseVote": {
-    "description": "Button under a nominated game that is up for a vote, in the Nominations section of an event's Games tab, shown to the event's host, co-host or moderator, or to a household's owner or admin on the household's event: it ends the vote, and the server counts it and settles whether the game goes into the lineup. It asks first (eventsCloseVoteConfirmTitle). Screen readers hear eventsCloseVoteNamed instead."
+    "description": "Button in the quick look of a nominated game that is up for a vote, the pop-up its row opens in the Nominations section of an event's Games tab, shown to the event's host, co-host or moderator, or to a household's owner or admin on the household's event: it ends the vote, and the server counts it and settles whether the game goes into the lineup. It asks first (eventsCloseVoteConfirmTitle). Screen readers hear eventsCloseVoteNamed instead."
   },
   "eventsCloseVoteNamed": "Close the vote on {title}",
   "@eventsCloseVoteNamed": {
@@ -1660,10 +1680,6 @@
   "@eventsNominationsRefreshFailed": {
     "description": "Banner at the foot of the Games tab of an event's screen, with a Try again button (eventsRefreshRetry), when reading the nominations again failed: the nominations shown are the ones read before."
   },
-  "eventsNominationsHeading": "Nominations",
-  "@eventsNominationsHeading": {
-    "description": "Heading of the Nominations sub-tab (eventsGamesSectionNominations) of the Games tab of an event's screen, which lists the games people have nominated for the event's lineup. The games pool, the games people offer to bring, is on the Pool sub-tab beside it."
-  },
   "eventsNominationsCount": "{count, plural, =1{1 nomination} other{{count} nominations}}",
   "@eventsNominationsCount": {
     "description": "Under the Nominations section's Filters and Sort (eventsNominationsFilters, eventsNominationsSort) on the Games tab of an event's screen, while no filter narrows the list: how many nominations there are. While one does, eventsNominationsShown takes its place.",
@@ -1696,11 +1712,11 @@
   },
   "eventsNominationsFilters": "Filters",
   "@eventsNominationsFilters": {
-    "description": "Button under the Nominations heading on the Games tab of an event's screen that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
+    "description": "Button at the top of the Nominations sub-tab (eventsGamesSectionNominations) of an event's Games tab that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
   },
   "eventsNominationsFiltersNamed": "Filters for nominations",
   "@eventsNominationsFiltersNamed": {
-    "description": "What a screen reader calls the Filters button under the Nominations heading on the Games tab of an event's screen (eventsNominationsFilters is its text), so it differs from the games pool's button, eventsGamesFiltersNamed. Starts with the button's text."
+    "description": "What a screen reader calls the Filters button at the top of the Nominations sub-tab of an event's Games tab (eventsNominationsFilters is its text), so it differs from the games pool's button, eventsGamesFiltersNamed. Starts with the button's text."
   },
   "eventsNominationsSort": "Sort: {sort}",
   "@eventsNominationsSort": {
@@ -1784,13 +1800,9 @@
       }
     }
   },
-  "eventsGamesPoolHeading": "Games pool",
-  "@eventsGamesPoolHeading": {
-    "description": "Heading of the games pool on the Pool sub-tab (eventsGamesSectionPool) of the Games tab of an event's screen: the games people offer to bring, one row per copy. The nominations are on the Nominations sub-tab beside it (eventsNominationsHeading)."
-  },
   "eventsNominatedBy": "Nominated by {name}",
   "@eventsNominatedBy": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: who nominated it. {name} is their name, or eventsAttendeeSomeone for someone with none. The user's own nominations say eventsNominatedByYou instead.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: who nominated it. {name} is their name, or eventsAttendeeSomeone for someone with none. The user's own nominations say eventsNominatedByYou instead.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -1800,11 +1812,11 @@
   },
   "eventsNominatedByYou": "Nominated by you",
   "@eventsNominatedByYou": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the user nominated it. Someone else's say eventsNominatedBy."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the user nominated it. Someone else's say eventsNominatedBy."
   },
   "eventsNominationFrom": "From {name}'s games",
   "@eventsNominationFrom": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: whose copy of the game it is, from the games they offer to bring. {name} is that person's name, or eventsAttendeeSomeone for someone with none. The user's own copies say eventsNominationFromYours, and a copy the app can't find the owner of says eventsNominationFromUnknown.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: whose copy of the game it is, from the games they offer to bring. {name} is that person's name, or eventsAttendeeSomeone for someone with none. The user's own copies say eventsNominationFromYours, and a copy the app can't find the owner of says eventsNominationFromUnknown.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -1814,19 +1826,19 @@
   },
   "eventsNominationFromYours": "From your games",
   "@eventsNominationFromYours": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the copy of the game is one the user offers to bring."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the copy of the game is one the user offers to bring."
   },
   "eventsNominationFromUnknown": "From whoever brings it",
   "@eventsNominationFromUnknown": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab, in place of eventsNominationFrom, when the app can't tell whose copy it is: the copy is no longer among the games offered, as when the person bringing it said they aren't coming."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab, in place of eventsNominationFrom, when the app can't tell whose copy it is: the copy is no longer among the games offered, as when the person bringing it said they aren't coming."
   },
   "eventsNominationWholeEvent": "For the whole event",
   "@eventsNominationWholeEvent": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for the event as a whole, not for one of its dates (eventsNominationForDate). Also the first choice in the nominate dialog (eventsNominateTitle), a choice in the nominations' date filter (eventsNominationsDate), and the chip naming it while it narrows the list."
   },
   "eventsNominationForDate": "For {date}",
   "@eventsNominationForDate": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: the game is nominated for one date of the event. Also a choice in the nominate dialog (eventsNominateTitle), one per date still to come, a choice in the nominations' date filter (eventsNominationsDate), one per date, and the chip naming it while it narrows the list. {date} is the date's own label, or when it starts, for example 'Fri, Nov 6 · 7:30 PM'.",
     "placeholders": {
       "date": {
         "type": "String",
@@ -1836,47 +1848,91 @@
   },
   "eventsNominationStatusVoting": "Voting",
   "@eventsNominationStatusVoting": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: people are voting on it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: people are voting on it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusAwaitingApproval": "Awaiting approval",
   "@eventsNominationStatusAwaitingApproval": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: it waits for a host to approve or reject it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: it waits for a host to approve or reject it. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusApproved": "Approved",
   "@eventsNominationStatusApproved": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host approved it, and it is in the event's lineup."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host approved it, and it is in the event's lineup."
   },
   "eventsNominationStatusPassed": "Passed",
   "@eventsNominationStatusPassed": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it succeeded, and it is in the event's lineup."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it succeeded, and it is in the event's lineup."
   },
   "eventsNominationStatusFailed": "Failed",
   "@eventsNominationStatusFailed": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it didn't succeed. Not an error in the app."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the vote on it didn't succeed. Not an error in the app."
   },
   "eventsNominationStatusQuorumNotMet": "Quorum not met",
   "@eventsNominationStatusQuorumNotMet": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: voting ended without enough votes to decide it."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: voting ended without enough votes to decide it."
   },
   "eventsNominationStatusRejected": "Rejected",
   "@eventsNominationStatusRejected": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host rejected it."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: a host rejected it."
   },
   "eventsNominationStatusWithdrawn": "Withdrawn",
   "@eventsNominationStatusWithdrawn": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person who nominated it took it back before it was decided. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person who nominated it took it back before it was decided. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusPaused": "Paused",
   "@eventsNominationStatusPaused": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person bringing it isn't coming, so it is on hold. eventsNominationPaused says more. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the person bringing it isn't coming, so it is on hold. eventsNominationPaused says more. Also a status chip in the nominations' filters (eventsNominationsFilters), and the chip naming it while it narrows the list."
   },
   "eventsNominationStatusUnknown": "Unknown",
   "@eventsNominationStatusUnknown": {
-    "description": "Where a nominated game stands, on its line in the Nominations section of an event's Games tab, and as {status} in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the server gave a status this version of the app doesn't know."
+    "description": "Where a nominated game stands, on a line of its quick look, the pop-up its row opens in the Nominations section of an event's Games tab, and as {status} in its row's status line (eventsNominationStatusLine) and in eventsNominationPaused, eventsNominationPausedYours and eventsNominationPausedUnknown: the server gave a status this version of the app doesn't know."
+  },
+  "eventsNominationStatusLine": "{status} · {forCount} for · {againstCount} against · {interestedCount} interested",
+  "@eventsNominationStatusLine": {
+    "description": "The status line of a nominated game's row in the Nominations section of an event's Games tab: where it stands, then how many of the votes that count are for it, against it, and interested in it, as eventsNominationTally says them. {status} is one of the statuses, such as eventsNominationStatusVoting. Screen readers hear eventsNominationStatusLineSpoken instead.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Voting"
+      },
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsNominationStatusLineSpoken": "{status}, {forCount} for, {againstCount} against, {interestedCount} interested",
+  "@eventsNominationStatusLineSpoken": {
+    "description": "eventsNominationStatusLine as a screen reader reads it, without the symbols between its parts, which would be read out. It should sound like a short pause between them.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "Voting"
+      },
+      "forCount": {
+        "type": "int",
+        "example": "3"
+      },
+      "againstCount": {
+        "type": "int",
+        "example": "1"
+      },
+      "interestedCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "eventsNominationTally": "{forCount} for · {againstCount} against · {interestedCount} interested",
   "@eventsNominationTally": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab: how many of the votes that count are for it, against it, and interested in it. Votes that don't count, such as those of someone who has left, aren't in the numbers. Screen readers hear eventsNominationTallySpoken instead.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab: how many of the votes that count are for it, against it, and interested in it. Votes that don't count, such as those of someone who has left, aren't in the numbers. Screen readers hear eventsNominationTallySpoken instead.",
     "placeholders": {
       "forCount": {
         "type": "int",
@@ -1912,19 +1968,19 @@
   },
   "eventsNominationInterestedAsFor": "Interested counts as For",
   "@eventsNominationInterestedAsFor": {
-    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote for the game."
+    "description": "Under a nominated game's tally (eventsNominationTally) in its quick look, the pop-up its row opens in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote for the game."
   },
   "eventsNominationInterestedAsAgainst": "Interested counts as Against",
   "@eventsNominationInterestedAsAgainst": {
-    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote against the game."
+    "description": "Under a nominated game's tally (eventsNominationTally) in its quick look, the pop-up its row opens in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts as a vote against the game."
   },
   "eventsNominationInterestedNotCounted": "Interested isn't counted",
   "@eventsNominationInterestedNotCounted": {
-    "description": "Under a nominated game's tally (eventsNominationTally) in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts neither for nor against the game."
+    "description": "Under a nominated game's tally (eventsNominationTally) in its quick look, the pop-up its row opens in the Nominations section of an event's Games tab: under this event's rules an Interested vote counts neither for nor against the game."
   },
   "eventsNominationDeadline": "Voting closes {when}",
   "@eventsNominationDeadline": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab that people are voting on: when voting is due to close. {when} is the day and time, for example 'Fri, Nov 6 · 7:30 PM'. A fixed time, not a countdown.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab that people are voting on: when voting is due to close. {when} is the day and time, for example 'Fri, Nov 6 · 7:30 PM'. A fixed time, not a countdown.",
     "placeholders": {
       "when": {
         "type": "String",
@@ -1944,7 +2000,7 @@
   },
   "eventsNominationPaused": "Paused: {name} isn't coming. It goes back to {status} if they come back.",
   "@eventsNominationPaused": {
-    "description": "Line of a nominated game in the Nominations section of an event's Games tab that is paused: the person bringing the game said they aren't coming, so the nomination is on hold, and it goes back to where it stood if they say they're coming after all. {name} is that person's name, or eventsAttendeeSomeone for someone with none. {status} is where it stood, one of the eventsNominationStatus… labels, such as 'Voting'. The user's own games say eventsNominationPausedYours, and a game the app can't find the owner of says eventsNominationPausedUnknown.",
+    "description": "Line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab that is paused: the person bringing the game said they aren't coming, so the nomination is on hold, and it goes back to where it stood if they say they're coming after all. {name} is that person's name, or eventsAttendeeSomeone for someone with none. {status} is where it stood, one of the eventsNominationStatus… labels, such as 'Voting'. The user's own games say eventsNominationPausedYours, and a game the app can't find the owner of says eventsNominationPausedUnknown.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -1986,7 +2042,7 @@
   },
   "eventsVoteInterested": "Interested",
   "@eventsVoteInterested": {
-    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user is interested in the game without backing it outright. How it counts depends on the event's rules, which the row says. Also names an Interested vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteInterestedNamed instead on the control."
+    "description": "One of the three choices of the vote control under a nominated game in the Nominations section of an event's Games tab (see eventsVoteFor): the user is interested in the game without backing it outright. How it counts depends on the event's rules, which the nomination's quick look, the pop-up its row opens, says. Also names an Interested vote in the who-voted list (eventsVoterLine). Screen readers hear eventsVoteInterestedNamed instead on the control."
   },
   "eventsVoteUnknown": "Unknown",
   "@eventsVoteUnknown": {
@@ -1994,7 +2050,7 @@
   },
   "eventsNominationYourVote": "Your vote: {vote}",
   "@eventsNominationYourVote": {
-    "description": "A line on a nominated game's row in the Nominations section of an event's Games tab, where the vote control isn't shown: the nomination is paused or decided, or the user can't vote now. It says how the user voted. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown.",
+    "description": "A line of a nominated game's quick look, the pop-up its row opens in the Nominations section of an event's Games tab, where the vote control isn't shown: the nomination is paused or decided, or the user can't vote now. It says how the user voted. {vote} is eventsVoteFor, eventsVoteAgainst, eventsVoteInterested or eventsVoteUnknown.",
     "placeholders": {
       "vote": {
         "type": "String",
@@ -2120,7 +2176,7 @@
   },
   "eventsVotersOpen": "Who voted ({count})",
   "@eventsVotersOpen": {
-    "description": "Button under a nominated game in the Nominations section of an event's Games tab, once anyone has voted on it. Opens a list of who voted and how (eventsVotersTitle). {count} is how many votes it has, those that don't count included. Screen readers hear eventsVotersOpenNamed instead.",
+    "description": "Button in the quick look of a nominated game, the pop-up its row opens in the Nominations section of an event's Games tab, once anyone has voted on it. Opens a list of who voted and how (eventsVotersTitle). {count} is how many votes it has, those that don't count included. Screen readers hear eventsVotersOpenNamed instead.",
     "placeholders": {
       "count": {
         "type": "int",

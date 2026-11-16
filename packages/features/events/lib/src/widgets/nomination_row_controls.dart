@@ -24,8 +24,8 @@ import 'package:models/domain.dart' hide Visibility;
 import 'package:ui/ui.dart';
 
 /// A host's decision on a nomination (#518), in the order their buttons
-/// take on a row: the write it sends, the action in the role table it needs,
-/// and the status it settles a nomination from.
+/// take in its quick look (#957): the write it sends, the action in the role
+/// table it needs, and the status it settles a nomination from.
 enum NominationDecision {
   approve(
     NominationWrite.approve,
@@ -57,13 +57,6 @@ enum NominationDecision {
 
   /// Its button's icon.
   final IconData icon;
-
-  /// Its button's key on the nomination [id].
-  Key keyOn(String id) => switch (this) {
-    approve => EventDetailScreen.nominationApproveKey(id),
-    reject => EventDetailScreen.nominationRejectKey(id),
-    resolve => EventDetailScreen.nominationCloseVoteKey(id),
-  };
 
   /// Its button's key in a nomination's quick look (#957).
   Key get quickLookKey => switch (this) {
@@ -118,8 +111,9 @@ typedef NominationRowWrites = ({
   bool busy,
 });
 
-/// What a nomination's row is built from, and its quick look (#957): the
-/// viewer's vote where they may vote, else null; the write buttons'
+/// What a nomination's row and its quick look are built from (#957): the
+/// viewer's vote where they may vote, else null, the one control the row
+/// has too (#946); the write buttons'
 /// arguments; the pool row the nominated copy comes from, or null where the
 /// pool doesn't hold it; the event's dates, one of which it may be for; how
 /// the event counts Interested, or null where its policy isn't known; and
@@ -275,8 +269,9 @@ NominationVoteControl? nominationVoteControl(
   );
 }
 
-/// What [nomination]'s lines say, top to bottom, under its title (#517), on
-/// its row and in its quick look (#957): its platform; who nominated it;
+/// What [nomination]'s lines say, top to bottom, under its title (#517), in
+/// its quick look (#957), where its row's status line sends the rest of what
+/// it says (#946): its platform; who nominated it;
 /// whose copy it is; whether it is for the whole event or one date; where it
 /// stands; its tally of the votes that count, with how the event counts
 /// Interested where its policy says; the viewer's vote, and whether it
@@ -400,11 +395,11 @@ List<Widget> nominationLines(
   ];
 }
 
-/// A write button on a nomination's row: Withdraw on one of the viewer's
-/// own live nominations (#517), or a host's Approve, Reject or Close vote
-/// (#518). A direct write, so disabled offline through [BgeOnlineOnly], with
-/// the connection's reason as its hint. Named for its game to a screen
-/// reader ([named]).
+/// A write button in a nomination's quick look (#957): Withdraw on one of
+/// the viewer's own live nominations (#517), or a host's Approve, Reject or
+/// Close vote (#518). A direct write, so disabled offline through
+/// [BgeOnlineOnly], with the connection's reason as its hint. Named for its
+/// game to a screen reader ([named]).
 ///
 /// Its press opens a dialog that asks first, which hands focus back to it as
 /// it closes, just before the write goes out, and a disabled button can't
@@ -437,7 +432,9 @@ class NominationWriteButton extends StatefulWidget {
   final String named;
   final IconData icon;
 
-  /// Holds the button, so its row can tell whether it holds focus.
+  /// Holds the button, so the quick look can tell whether it held focus as
+  /// its write ended, and hand that focus to the lines once the button has
+  /// gone with the write (#957).
   final FocusNode area;
 
   /// Whether it may be pressed now, connection aside: false while a detail
@@ -516,8 +513,8 @@ Future<bool> withdrawNomination(
   BuildContext context,
   EventNomination nomination,
 ) async {
-  // Read before the dialog opens: the row under it can rebuild without
-  // Withdraw, and take this context with it.
+  // Read before the dialog opens: the quick look under it can rebuild
+  // without Withdraw, and take this context with it.
   final l10n = EventsLocalizations.of(context);
   final detail = context.read<EventDetailBloc>();
   final nominations = context.read<EventNominationsBloc>();
@@ -568,10 +565,10 @@ Future<bool> withdrawNomination(
 /// lineup (#520), so each asks first: a rejection as a destructive action,
 /// and a close of the vote with [nomination]'s tally of the votes that count
 /// so far (#517), which is what it settles, and how the event counts
-/// Interested, from [interestedWeight], as the row says it. Then it goes for
-/// the event as the detail shows it then, whose id a reconcile can have
-/// moved (#499), and for the nomination as the nominations' state holds it
-/// then. Nothing is sent if, by then, the event takes no writes (cancelled
+/// Interested, from [interestedWeight], as its quick look says it. Then it
+/// goes for the event as the detail shows it then, whose id a reconcile can
+/// have moved (#499), and for the nomination as the nominations' state holds
+/// it then. Nothing is sent if, by then, the event takes no writes (cancelled
 /// or archived), the viewer's actions no longer hold the decision, or the
 /// nomination is gone or no longer has the status it decides from, or, for a
 /// close of the vote, its tally or how the event counts Interested isn't
@@ -586,8 +583,8 @@ Future<bool> decideNomination(
   NominationDecision decision, {
   required InterestedWeight? interestedWeight,
 }) async {
-  // Read before the dialog opens: the row under it can rebuild without the
-  // button, and take this context with it.
+  // Read before the dialog opens: the quick look under it can rebuild
+  // without the button, and take this context with it.
   final l10n = EventsLocalizations.of(context);
   final detail = context.read<EventDetailBloc>();
   final nominations = context.read<EventNominationsBloc>();
@@ -779,8 +776,8 @@ Future<bool> sendVote(
   return true;
 }
 
-/// *Who voted ({count})* on a row with votes (#517), or in its quick look
-/// (#957): opens [showNominationVoters], and puts focus back on itself once
+/// *Who voted ({count})* in the quick look of a nomination with votes (#517,
+/// #957): opens [showNominationVoters], and puts focus back on itself once
 /// it has closed, however it was opened, since a screen reader's tap moves
 /// no focus. Named for its game to a screen reader.
 class WhoVotedButton extends StatefulWidget {
@@ -789,13 +786,12 @@ class WhoVotedButton extends StatefulWidget {
     required this.names,
     required this.rosterShown,
     required this.viewerId,
-    this.buttonKey,
+    required this.buttonKey,
     super.key,
   });
 
-  /// Key on the button itself: the row's
-  /// ([EventDetailScreen.nominationVotersKey]) where null.
-  final Key? buttonKey;
+  /// Key on the button itself.
+  final Key buttonKey;
 
   final EventNomination nomination;
   final Map<String, String?> names;
@@ -834,9 +830,7 @@ class WhoVotedButtonState extends State<WhoVotedButton> {
     final count = nomination.votes.length;
 
     return TextButton.icon(
-      key:
-          widget.buttonKey ??
-          EventDetailScreen.nominationVotersKey(nomination.id),
+      key: widget.buttonKey,
       focusNode: _focus,
       onPressed: () => unawaited(_open()),
       icon: const Icon(Icons.how_to_vote_outlined),

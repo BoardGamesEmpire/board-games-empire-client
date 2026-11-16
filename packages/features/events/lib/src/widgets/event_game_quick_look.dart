@@ -130,24 +130,27 @@ Future<void> showEventGameQuickLook(
 /// ([nominationScopeName]), or that it supplies none, where the nominations
 /// are known ([nominationsKnown]). What follows the clock, Nominate's
 /// choices and the dates' names, moves on as the page does.
-/// Then Nominate and Take back where the row builds them, under the row's
-/// rules ([poolRowGates]): each disabled offline, saying why, with one
-/// [BgeOnlineOnlyNote] under them, held through its own press, and sent only
-/// once a running detail read has ended ([nominateGame], [takeBackGame]).
+/// Then Nominate where the viewer is offered it and Take back where they
+/// may take it back, both, where the row has room for only one (#946),
+/// under the row's rules ([poolRowGates]): each disabled offline, saying
+/// why, with one [BgeOnlineOnlyNote] under them, held through its own press,
+/// and sent only once a running detail read has ended ([nominateGame],
+/// [takeBackGame]).
 /// Take back arms the tab's hand-off as the row's does
 /// ([EventGamesTabController.armTakeBack]).
 ///
 /// ## A nomination
 ///
-/// The game's name; then, as one node, every line the nomination's row says
-/// under it ([nominationLines]): its platform, who nominated it, whose copy
+/// The game's name; then, as one node, every line a nomination says
+/// ([nominationLines]), where its row says only its status and tally
+/// (#946): its platform, who nominated it, whose copy
 /// it is, whether it is for the whole event or one date, where it stands,
 /// its tally, spoken without the symbols between the counts, how the event
 /// counts Interested, the viewer's vote where no vote control shows it, when
 /// voting closes, and why it is paused. Under them, at full width, the
 /// viewer's vote while it is open ([nominationVoteControl]); then *Who
-/// voted*, Withdraw and a host's decisions, as the row builds them, from the
-/// same inputs ([nominationRowInputs]) and under the same rules: each write
+/// voted*, Withdraw and a host's decisions, which the row doesn't have, from
+/// the inputs its vote is built from ([nominationRowInputs]): each write
 /// disabled offline, saying why, with one [BgeOnlineOnlyNote] under them
 /// where the vote's own doesn't say it, held through its own press, and sent
 /// only once a running detail read has ended ([withdrawNomination],
@@ -159,7 +162,7 @@ Future<void> showEventGameQuickLook(
 /// as Withdrawn or as decided, and the button whose write it was goes with
 /// it. Focus stays in the quick look: once the frame that took the button
 /// away has ended, the lines take it, as one node, which reads the new
-/// status, as the row's head does on the row. They take it only while focus
+/// status. They take it only while focus
 /// is free then, on nothing, on the quick look, or still on the button, and
 /// however the button was pressed, a screen reader's activation included.
 /// They are no stop of their own: Tab goes on from them, and they can't
@@ -219,25 +222,11 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   /// it has gone.
   EventNomination? _nomination;
 
-  /// Holds the quick look's Take back, which the row's own area can't, as
-  /// one node holds one control.
-  final FocusNode _takeBackArea = FocusNode(
-    debugLabel: 'Quick look take back',
-    canRequestFocus: false,
-    skipTraversal: true,
-  );
-
   @override
   void initState() {
     super.initState();
     _poolOpenedWith = context.read<EventGamesBloc>().state.outcome;
     _nominationsOpenedWith = context.read<EventNominationsBloc>().state.outcome;
-  }
-
-  @override
-  void dispose() {
-    _takeBackArea.dispose();
-    super.dispose();
   }
 
   @override
@@ -435,7 +424,6 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
           TakeBackButton(
             buttonKey: EventDetailScreen.quickLookTakeBackKey,
             game: shown,
-            area: _takeBackArea,
             inert: takeBack.inert,
             enabled: takeBack.enabled,
             runOver: takeBack.runOver,
@@ -520,7 +508,7 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
 /// A nomination's quick look (#957): see "A nomination" on
 /// [EventGameQuickLook]. Built again with the nomination as each read or
 /// write leaves it, so it can tell when the write one of its buttons sent
-/// has ended, as the nomination's row does.
+/// has ended.
 class _NominationLook extends StatefulWidget {
   const _NominationLook({
     required this.nomination,
@@ -684,7 +672,7 @@ class _NominationLookState extends State<_NominationLook>
       onPointerDown: notePointerPress,
     );
     final title = nomination.title;
-    // Withdraw, then a host's decisions (#518), as on the row.
+    // Withdraw, then a host's decisions (#518).
     final buttons = [
       if (offersWithdraw(nomination, writes, viewerId: viewerId))
         button(

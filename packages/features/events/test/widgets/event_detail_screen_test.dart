@@ -1201,26 +1201,31 @@ void main() {
             ),
           )
           .controller!;
-      final poolHeading = find.text('Games pool', skipOffstage: false);
+      // The pool's search, in its header over the empty pool: the Pool
+      // sub-tab is shown.
+      final poolShown = find.byKey(
+        EventDetailScreen.poolSearchKey,
+        skipOffstage: false,
+      );
       await showTabbed(tester, hosted());
       await choose(tester, games);
       expect(sections().animationDuration, isNot(Duration.zero));
       await tester.tap(section(EventGamesSection.pool));
       await animate(tester);
-      expect(poolHeading, findsOneWidget);
+      expect(poolShown, findsOneWidget);
 
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
       await tester.pump();
 
-      expect(poolHeading, findsOneWidget);
+      expect(poolShown, findsOneWidget);
       expect(sections().index, EventGamesSection.pool.index);
       expect(sections().animationDuration, Duration.zero);
 
       // One frame, with no time passing: the indicator is already there.
       await tester.tap(section(EventGamesSection.nominations));
       await tester.pump();
-      expect(poolHeading, findsNothing);
+      expect(poolShown, findsNothing);
       expect(sections().indexIsChanging, isFalse);
       expect(sections().animation!.value, EventGamesSection.nominations.index);
       // The old controller, let go after the frame, left nothing behind.
@@ -1742,6 +1747,14 @@ void main() {
       );
       await settle(tester);
       await choose(tester, games);
+      // The deadline is the nomination's quick look's to say (#946, #957),
+      // which moves on with the page's clock.
+      final head = find.byKey(EventDetailScreen.nominationRowHeadKey('n-1'));
+      await tester.ensureVisible(head);
+      await tester.pump();
+      await tester.tap(head);
+      await animate(tester);
+      expect(find.byKey(EventDetailScreen.quickLookKey), findsOneWidget);
       final reads = remote.detailRequests.length;
 
       Future<void> elapse(Duration by) async {
@@ -2331,11 +2344,12 @@ void main() {
       );
       expect(liveRegionSaying(reasons), findsOne);
 
-      // The row itself says only where it stands: no read carries the count.
+      // The row itself says where it stands, and the votes it holds: no
+      // read carries the resolve's counts.
       expect(
         find.descendant(
           of: find.byKey(EventDetailScreen.nominationRowKey('n-1')),
-          matching: find.text('Passed'),
+          matching: find.text('Passed · 0 for · 0 against · 0 interested'),
         ),
         findsOneWidget,
       );
@@ -10812,25 +10826,15 @@ void main() {
       expect(inUse('status_voting'), findsOneWidget);
     }
 
-    // From the Nominations heading down: the header, its chip and count,
-    // then the rows, each with its vote, Who voted and the host's Withdraw.
+    // From the header down: its chip and count, then the rows, each its
+    // cover, title and status line as one button, and its vote (#946).
     auditScreen(
       'nominations rows meet tap target and label guidelines',
       build: screen(remote: nominating),
       arrange: (tester) async {
         await showNominations(tester);
-        // The heading, not the sub-tab of the same words above it (#945).
         await Scrollable.ensureVisible(
-          tester.element(
-            find.ancestor(
-              of: find.text('Nominations', skipOffstage: false),
-              matching: find.byWidgetPredicate(
-                (widget) =>
-                    widget is Semantics && (widget.properties.header ?? false),
-                skipOffstage: false,
-              ),
-            ),
-          ),
+          tester.element(nominationsFilters()),
         );
         await tester.pumpAndSettle();
         expect(
@@ -10883,12 +10887,17 @@ void main() {
           tester,
           find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
         );
+        // In the nomination's quick look (#946, #957).
         await press(
           tester,
           find.byKey(
-            EventDetailScreen.nominationCloseVoteKey('n-1'),
+            EventDetailScreen.nominationRowHeadKey('n-1'),
             skipOffstage: false,
           ),
+        );
+        await press(
+          tester,
+          find.byKey(EventDetailScreen.quickLookCloseVoteKey),
         );
         expect(find.text('Close the vote on Catan?'), findsOneWidget);
         expect(

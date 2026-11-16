@@ -206,19 +206,21 @@ class EventGamesTabController extends ChangeNotifier {
     skipTraversal: true,
   );
 
-  /// Each row's Take back, where it is built, by the offered game's id.
-  final Map<String, FocusNode> _takeBackAreas = {};
+  /// Each pool row, by the offered game's id.
+  final Map<String, FocusNode> _poolRowAreas = {};
 
   /// The games whose Take back was pressed, and whose row leaving hands
   /// focus on.
   final Set<String> _armed = {};
 
-  /// The node that holds offered game [id]'s Take back, made as it is first
-  /// built and let go once the game leaves the pool.
-  FocusNode takeBackArea(String id) => _takeBackAreas.putIfAbsent(
+  /// The node that holds offered game [id]'s whole row (#946), so a row that
+  /// leaves can say it held focus, and the row after or before it can be
+  /// handed it ([poolChanged]). Made as it is first built and let go once
+  /// the game leaves the pool.
+  FocusNode poolRowArea(String id) => _poolRowAreas.putIfAbsent(
     id,
     () => FocusNode(
-      debugLabel: 'Take back $id',
+      debugLabel: 'Pool row $id',
       canRequestFocus: false,
       skipTraversal: true,
     ),
@@ -236,7 +238,7 @@ class EventGamesTabController extends ChangeNotifier {
   final Map<EventGameEntry, FocusNode> _rowHeads = {};
 
   /// The focus of [entry]'s row head (#957), made as it is first built and
-  /// let go once the entry leaves its list, as [takeBackArea]'s are.
+  /// let go once the entry leaves its list, as [poolRowArea]'s are.
   FocusNode rowHeadFocus(EventGameEntry entry) => _rowHeads.putIfAbsent(
     entry,
     () => FocusNode(debugLabel: 'Row head $entry'),
@@ -298,7 +300,7 @@ class EventGamesTabController extends ChangeNotifier {
           }
         }
         switch (entry) {
-          // Offer games where it is built and enabled, as Take back's own
+          // Offer games where it is built and enabled, as a pool row's own
           // hand-off has it: the search field's keyboard would open over
           // the games.
           case OfferedCopyEntry():
@@ -328,6 +330,66 @@ class EventGamesTabController extends ChangeNotifier {
     ...after.skip(at),
     ...after.take(at).toList().reversed,
   ];
+
+  /// The controls of the row [area] holds: the outermost nodes inside it
+  /// that keyboard navigation stops at, or would once enabled, in the order
+  /// of its widgets, as `BgeFocusHandoff` reads an item's. One disabled for
+  /// now keeps its place, as the choices a vote didn't send are while it is
+  /// out, so a choice's place is the same in every row. None while the row
+  /// isn't built.
+  static List<FocusNode> _controlsOf(FocusNode? area) {
+    final context = area?.context;
+    if (area == null || context == null || !context.mounted) return const [];
+    final byElement = <BuildContext, FocusNode>{
+      for (final node in area.descendants)
+        if (!node.skipTraversal) ?node.context: node,
+    };
+    final controls = <FocusNode>[];
+    void visit(Element element) {
+      final node = byElement[element];
+      if (node != null) {
+        controls.add(node);
+      } else {
+        element.visitChildren(visit);
+      }
+    }
+
+    (context as Element).visitChildren(visit);
+    return controls;
+  }
+
+  /// Where among the controls of the row [area] holds the primary focus is,
+  /// as an index: 0, its head, where it is on none of them.
+  static int _placeOfFocus(FocusNode area) {
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null) return 0;
+    final index = _controlsOf(area).indexWhere(
+      (control) => control == focus || focus.ancestors.contains(control),
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  /// The control a row that left hands focus to, among [controls], the
+  /// next row's, else the one before's (#946): the one at [place], where
+  /// focus was among the controls of the row that left, so a head hands it
+  /// to a head and a vote's choice to the same choice; else, where the row
+  /// has none there that can take focus, its first that can, its head.
+  /// Where [place] is null, the row's write ended with focus outside it, as
+  /// a screen reader's activation leaves it: the first of its controls past
+  /// its [head] that can take focus, its main action, else its head. Null
+  /// where none can.
+  static FocusNode? _inPlace(
+    List<FocusNode> controls,
+    int? place,
+    FocusNode? head,
+  ) {
+    final open = controls.where((node) => node.canRequestFocus);
+    if (place == null) {
+      return open.where((node) => node != head).firstOrNull ?? open.firstOrNull;
+    }
+    final there = place < controls.length ? controls[place] : null;
+    return there != null && there.canRequestFocus ? there : open.firstOrNull;
+  }
 
   /// Lets go the row heads of the entries [left] says have left their list,
   /// and answers their nodes, to dispose of once their rows have gone.
@@ -473,12 +535,13 @@ class EventGamesTabController extends ChangeNotifier {
       };
 
   /// Answers the pool going from [previous] to [current], as the bloc
-  /// emits it and before the frame that builds it: Take back's hand-off (see
-  /// "Take back's hand-off" on [EventGamesTabScope]), from [context], the
-  /// scope's. Only while the Pool sub-tab is chosen (#945): on Nominations
-  /// the pool's rows aren't built, so the change disarms what it ends and
-  /// hands nothing on. Nor while a quick look is open (#957), where each row
-  /// that leaves notes where it left from instead ([focusAfterQuickLook]).
+  /// emits it and before the frame that builds it: a pool row's hand-off
+  /// (see "A pool row's hand-off" on [EventGamesTabScope]), from [context],
+  /// the scope's. Only while the Pool sub-tab is chosen (#945): on
+  /// Nominations the pool's rows aren't built, so the change disarms what it
+  /// ends and hands nothing on. Nor while a quick look is open (#957), where
+  /// each row that leaves notes where it left from instead
+  /// ([focusAfterQuickLook]).
   void poolChanged(
     BuildContext context,
     EventGamesState previous,
@@ -503,8 +566,10 @@ class EventGamesTabController extends ChangeNotifier {
       for (final game in shownAfter) OfferedCopyEntry(game.id),
     ];
 
-    // Where the row that hands focus on was among those that stay.
+    // Where the row that hands focus on was among those that stay, and
+    // where focus was among its controls, null where it wasn't in the row.
     int? at;
+    int? place;
     FocusNode? held;
     // The rows before each one that stay.
     var stayed = 0;
@@ -522,9 +587,11 @@ class EventGamesTabController extends ChangeNotifier {
       // Nominations chosen, a take-back that ends hands nothing on, and
       // focus stays where the user put it.
       if (at != null || section != EventGamesSection.pool) continue;
-      final focused = _takeBackAreas[game.id]?.hasFocus ?? false;
+      final area = _poolRowAreas[game.id];
+      final focused = area?.hasFocus ?? false;
       if (!focused && !_armed.contains(game.id)) continue;
       at = stayed;
+      place = focused ? _placeOfFocus(area!) : null;
       held = focused ? FocusManager.instance.primaryFocus : null;
     }
 
@@ -534,8 +601,8 @@ class EventGamesTabController extends ChangeNotifier {
     final inPool = {for (final game in after) game.id};
     _armed.removeWhere((id) => !inPool.contains(id));
     final gone = [
-      for (final id in [..._takeBackAreas.keys])
-        if (!inPool.contains(id)) _takeBackAreas.remove(id)!,
+      for (final id in [..._poolRowAreas.keys])
+        if (!inPool.contains(id)) _poolRowAreas.remove(id)!,
       ..._releaseHeads(
         (entry) =>
             entry is OfferedCopyEntry && !inPool.contains(entry.offeredGameId),
@@ -550,17 +617,21 @@ class EventGamesTabController extends ChangeNotifier {
       // The quick look holds the focus, and hands it on as it closes.
       if (_quickLooks > 0) return;
       if (!focusIsFree(context, untouched: held)) return;
-      // Each row that stays, the next first, then back from the one before:
-      // the first whose Take back is built and enabled takes it. Only the
-      // viewer's own rows have one, unless they may take back anyone's
-      // (#518).
+      // The next row that stays, else the one before: its control in the
+      // place of the one that had focus, its head for a head and its main
+      // action for a main action, Nominate or Take back, as the rows are
+      // worked through one after another (#946); its head where it has no
+      // such control built and enabled. A Take back pressed with focus
+      // elsewhere hands it to the main action.
       for (final game in _from(shownAfter, at)) {
-        final target =
-            _takeBackAreas[game.id]?.traversalDescendants.firstOrNull;
-        if (target != null) {
-          target.requestFocus();
-          return;
-        }
+        final target = _inPlace(
+          _controlsOf(_poolRowAreas[game.id]),
+          place,
+          _rowHeads[OfferedCopyEntry(game.id)],
+        );
+        if (target == null) continue;
+        target.requestFocus();
+        return;
       }
       // Only where it is built and enabled.
       final offer = offerArea.traversalDescendants.firstOrNull;
@@ -595,11 +666,15 @@ class EventGamesTabController extends ChangeNotifier {
   /// A row that leaves the rows shown, filtered and sorted, while it holds
   /// focus, or as the write on it that was out ends, or as the whole list's
   /// read after that write does, where the write's own read of the row
-  /// failed ([_readsWhole]), hands focus on once
-  /// that frame has ended: to the first control of the next row shown past
-  /// its head (#957), as the rows are worked through one after another
-  /// (#946), or its head where it has nothing else; else of the one before
-  /// it; else Filters, where it is built.
+  /// failed ([_readsWhole]), hands focus on once that frame has ended, as a
+  /// pool row does ([poolChanged]): to the next row shown, else the one
+  /// before it, in the same place among its controls (#946), its head from
+  /// a head and the same choice of its vote from a choice, so the rows are
+  /// worked through one after another; its head where it has no control
+  /// there that can take focus. Where the write ended with focus outside
+  /// the row, as a screen reader's activation leaves it, to the first of
+  /// its controls past its head (#957), else its head. Where no row is
+  /// left, to Filters, where it is built.
   /// The writes that can take their row away are a vote, as one voted on
   /// under "Not voted yet" leaves, a withdrawal, and a host's approval,
   /// rejection or close of a vote (#518), each of which changes the row's
@@ -607,12 +682,12 @@ class EventGamesTabController extends ChangeNotifier {
   /// end arms it however it was pressed, so a screen reader's activation,
   /// which moves no input focus, is handed on too. It moves focus only while
   /// focus is free then: on nothing, on the page, or still on the row that
-  /// left. A row that stays keeps its own focus, as Withdraw's and a host's
-  /// decision's hand it to the row's head. Only while the Nominations
+  /// left. A row that stays keeps its own focus. Only while the Nominations
   /// sub-tab is chosen (#945): on Pool the nominations' rows aren't built,
   /// so nothing is handed on. Nor while a quick look is open (#957), where
   /// each row that leaves notes where it left from instead
-  /// ([focusAfterQuickLook]).
+  /// ([focusAfterQuickLook]): a withdrawal and a host's decisions are sent
+  /// from there alone (#946).
   void nominationsChanged(
     BuildContext context,
     EventNominationsState previous,
@@ -657,8 +732,10 @@ class EventGamesTabController extends ChangeNotifier {
       for (final nomination in shownAfter) NominationEntry(nomination.id),
     ];
 
-    // Where the row that hands focus on was among those that stay.
+    // Where the row that hands focus on was among those that stay, and
+    // where focus was among its controls, null where it wasn't in the row.
     int? at;
+    int? place;
     FocusNode? held;
     // The rows before each one that stay.
     var stayed = 0;
@@ -676,9 +753,11 @@ class EventGamesTabController extends ChangeNotifier {
         );
       }
       if (at != null || section != EventGamesSection.nominations) continue;
-      final focused = _nominationAreas[nomination.id]?.hasFocus ?? false;
+      final area = _nominationAreas[nomination.id];
+      final focused = area?.hasFocus ?? false;
       if (!focused && nomination.id != written) continue;
       at = stayed;
+      place = focused ? _placeOfFocus(area!) : null;
       held = focused ? FocusManager.instance.primaryFocus : null;
     }
 
@@ -703,17 +782,18 @@ class EventGamesTabController extends ChangeNotifier {
       if (_quickLooks > 0) return;
       if (!focusIsFree(context, untouched: held)) return;
       for (final nomination in _from(shownAfter, at)) {
-        final controls = [
-          ...?_nominationAreas[nomination.id]?.traversalDescendants,
-        ];
-        if (controls.isEmpty) continue;
-        // Past the row's head, which opens its quick look (#957), so the
-        // next row's vote or decision is a press away as the rows are worked
-        // through one after another (#946); the head where it has nothing
-        // else.
-        final head = _rowHeads[NominationEntry(nomination.id)];
-        (controls.where((node) => node != head).firstOrNull ?? controls.first)
-            .requestFocus();
+        // In the place of the control that had focus, as the pool's rows
+        // hand it on (#946): a head to the head, a vote's choice to the
+        // same choice, so the rows can be worked through one after another;
+        // the head where the row has no control there. A vote sent with
+        // focus elsewhere hands it past the head, to the vote.
+        final target = _inPlace(
+          _controlsOf(_nominationAreas[nomination.id]),
+          place,
+          _rowHeads[NominationEntry(nomination.id)],
+        );
+        if (target == null) continue;
+        target.requestFocus();
         return;
       }
       // Only where it is built: a node asked while it isn't would take focus
@@ -738,7 +818,7 @@ class EventGamesTabController extends ChangeNotifier {
     for (final node in _nominationAreas.values) {
       node.dispose();
     }
-    for (final node in _takeBackAreas.values) {
+    for (final node in _poolRowAreas.values) {
       node.dispose();
     }
     for (final node in _rowHeads.values) {
@@ -770,24 +850,27 @@ class EventGamesTabController extends ChangeNotifier {
 /// the rows the nominations' filter keeps
 /// ([EventGamesTabController.nominationsChanged]).
 ///
-/// ## Take back's hand-off
+/// ## A pool row's hand-off
 ///
 /// It hears each change of the pool before the frame that builds it, while
-/// a row that leaves is still built. When a row whose Take back was
-/// pressed leaves, or one whose Take back holds keyboard focus, focus
-/// goes, once that frame has ended, to the Take back of the next row shown
-/// that has one built and enabled, else of the nearest such row before it,
-/// else Offer games where it is built and enabled, else the search field.
-/// Only the viewer's own rows have Take back, unless they may take back
-/// anyone's game (#518). The press arms it however it came, so a screen
+/// a row that leaves is still built. When a row leaves while focus is
+/// anywhere in it, or after its own Take back was pressed, focus goes, once
+/// that frame has ended, to the next row shown, else the one before it, in
+/// the same place (#946): to its head from a head, and to its main action,
+/// Nominate or Take back, from a main action or a Take back pressed; to its
+/// head where it has no such control built and enabled. Where no row is
+/// left, to Offer games where it is built and enabled, else the search
+/// field. A row leaves by its own take-back, or by a read or another user's
+/// write. The press of Take back arms it however it came, so a screen
 /// reader's activation, which moves no input focus, is handed on too, and
 /// the reader's cursor follows. It moves focus only while focus is free
-/// then: on nothing, on the page, or still on the Take back that left. A
+/// then: on nothing, on the page, or still on the control that left. A
 /// press elsewhere meanwhile keeps its focus. A done take-back takes its
 /// row away in the state that says so, so the row leaves as the take-back
 /// ends, whatever the read after it does. Any take-back's end disarms it:
 /// one that ends with its row still there, refused, failed or dropped,
-/// hands nothing on, and nor does a later read that takes the row away.
+/// hands nothing on, and nor does a later read that takes the row away
+/// while focus is outside it.
 ///
 /// Where the tab has nothing left to take focus, as when the pool turns
 /// hidden and the header goes with the rows, nothing is focused: focus

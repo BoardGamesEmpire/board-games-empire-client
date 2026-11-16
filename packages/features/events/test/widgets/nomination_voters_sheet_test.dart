@@ -145,9 +145,23 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
+  /// Opens `n-1`'s quick look from its row, where *Who voted* is (#946,
+  /// #957).
+  Future<void> openQuickLook(WidgetTester tester) async {
+    final head = find.byKey(EventDetailScreen.nominationRowHeadKey('n-1'));
+    await tester.ensureVisible(head);
+    await tester.pump();
+    await tester.tap(head);
+    await animate(tester);
+    expect(find.byKey(EventDetailScreen.quickLookKey), findsOneWidget);
+  }
+
+  /// The pop-up of who voted: the sheet over the quick look's.
+  final votersSheet = find.byType(BottomSheet).last;
+
   /// Shows [detail] (the viewer's, by default) on the Games tab in a
-  /// phone's window, where the pop-up is a sheet, and opens who voted on
-  /// `n-1`.
+  /// phone's window, where the pop-ups are sheets, and opens who voted on
+  /// `n-1` from its quick look.
   Future<void> openVoters(
     WidgetTester tester, {
     EventDetail? detail,
@@ -163,18 +177,17 @@ void main() {
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
     );
     await animate(tester);
-    final open = find.byKey(EventDetailScreen.nominationVotersKey('n-1'));
+    await openQuickLook(tester);
+    final open = find.byKey(EventDetailScreen.quickLookVotersKey);
     await tester.ensureVisible(open);
     await tester.pump();
     await tester.tap(open);
     await animate(tester);
   }
 
-  /// The pop-up's own text, apart from the row under it.
-  Finder inSheet(String text) => find.descendant(
-    of: find.byType(BottomSheet),
-    matching: find.text(text),
-  );
+  /// The pop-up's own text, apart from the quick look under it.
+  Finder inSheet(String text) =>
+      find.descendant(of: votersSheet, matching: find.text(text));
 
   TextStyle? styleOf(WidgetTester tester, Finder text) =>
       tester.widget<Text>(text).style;
@@ -347,15 +360,13 @@ void main() {
       find.byKey(EventDetailScreen.tabKey(EventDetailTab.games)),
     );
     await animate(tester);
+    await openQuickLook(tester);
 
     expect(
       find.byKey(EventDetailScreen.nominationRowKey('n-1')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(EventDetailScreen.nominationVotersKey('n-1')),
-      findsNothing,
-    );
+    expect(find.byKey(EventDetailScreen.quickLookVotersKey), findsNothing);
   });
 
   group('accessibility audit', () {
@@ -384,7 +395,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       const window = Rect.fromLTWH(0, 0, 320, 640);
-      final sheet = tester.getRect(find.byType(BottomSheet));
+      final sheet = tester.getRect(votersSheet);
       expect(window.intersect(sheet), sheet);
       const struckNote =
           "Struck-through votes don't count: their voter has left, or this "
@@ -406,7 +417,7 @@ void main() {
         // Whole, inside the sheet and on screen, every line of it.
         expect(window.intersect(rect), rect, reason: line);
         expect(
-          tester.getRect(find.byType(BottomSheet)).intersect(rect),
+          tester.getRect(votersSheet).intersect(rect),
           rect,
           reason: line,
         );
@@ -433,9 +444,7 @@ void main() {
       await openVoters(tester);
 
       expect(
-        tester.getSemantics(
-          find.byKey(EventDetailScreen.nominationVotersKey('n-1')),
-        ),
+        tester.getSemantics(find.byKey(EventDetailScreen.quickLookVotersKey)),
         isSemantics(label: 'Who voted on Catan: 1 vote', isButton: true),
       );
       expect(
@@ -446,9 +455,11 @@ void main() {
       await tester.tapAt(const Offset(10, 10));
       await animate(tester);
 
-      expect(find.byType(BottomSheet), findsNothing);
+      // The list has gone, and the quick look under it stays.
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.quickLookKey), findsOneWidget);
       final label = find.descendant(
-        of: find.byKey(EventDetailScreen.nominationVotersKey('n-1')),
+        of: find.byKey(EventDetailScreen.quickLookVotersKey),
         matching: find.byType(Text),
       );
       expect(Focus.of(tester.element(label)).hasPrimaryFocus, isTrue);

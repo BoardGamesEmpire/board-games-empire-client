@@ -547,8 +547,9 @@ class EventDetailScreen extends StatelessWidget {
   static Key poolNominateKey(String offeredGameId) =>
       Key('event_detail.pool_nominate_$offeredGameId');
 
-  /// Key on a row's "Nominated" marker (#517), by the offered game's id: the
-  /// row supplies a live nomination.
+  /// Key on a row's status line while it says "Nominated" (#517, #946), by
+  /// the offered game's id: the row supplies a live nomination that its
+  /// Nominate doesn't say.
   static Key poolNominatedKey(String offeredGameId) =>
       Key('event_detail.pool_nominated_$offeredGameId');
 
@@ -687,36 +688,11 @@ class EventDetailScreen extends StatelessWidget {
     'event_detail.nomination_note_save',
   );
 
-  /// Key on a nomination's *Who voted* button (#517), by the nomination's
-  /// id.
-  static Key nominationVotersKey(String nominationId) =>
-      Key('event_detail.nomination_voters_$nominationId');
-
-  /// Key on Withdraw on one of the viewer's own nominations (#517), by the
-  /// nomination's id.
-  static Key nominationWithdrawKey(String nominationId) =>
-      Key('event_detail.nomination_withdraw_$nominationId');
-
   /// Key on the withdraw dialog's Withdraw button (#517).
   static const Key withdrawConfirmKey = Key('event_detail.withdraw_confirm');
 
   /// Key on the withdraw dialog's Keep it button (#517).
   static const Key withdrawKeepKey = Key('event_detail.withdraw_keep');
-
-  /// Key on a host's Approve on a nomination awaiting approval (#518), by
-  /// the nomination's id.
-  static Key nominationApproveKey(String nominationId) =>
-      Key('event_detail.nomination_approve_$nominationId');
-
-  /// Key on a host's Reject on a nomination awaiting approval (#518), by the
-  /// nomination's id.
-  static Key nominationRejectKey(String nominationId) =>
-      Key('event_detail.nomination_reject_$nominationId');
-
-  /// Key on a host's Close vote on an open nomination (#518), by the
-  /// nomination's id.
-  static Key nominationCloseVoteKey(String nominationId) =>
-      Key('event_detail.nomination_close_vote_$nominationId');
 
   /// Key on the confirming button of the dialog that asks before a host's
   /// approval, rejection or close of a vote (#518): Approve, Reject or Close

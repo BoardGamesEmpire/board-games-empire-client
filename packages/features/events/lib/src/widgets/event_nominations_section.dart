@@ -14,15 +14,13 @@ import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
-import 'package:events/src/widgets/nomination_vote_control.dart';
-import 'package:events/src/widgets/nomination_voters_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:game_filters/game_filters.dart' show InUseChip, InUseChips;
 import 'package:models/domain.dart' hide Visibility;
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the Games tab's Nominations section shows under its heading (#517).
+/// What the Games tab's Nominations section shows (#517).
 enum EventNominationsBody {
   /// The server won't show this viewer the nominations.
   hidden,
@@ -50,10 +48,11 @@ enum EventNominationsBody {
 /// row each, those the filter keeps, in the order chosen, newest first
 /// unless the viewer chose another.
 ///
-/// Its slivers, as one group under the sub-tabs' bar: a heading
-/// ([EventGamesTabHeading]); then the header, while there is something to
-/// narrow or the filter narrows (see "Filters and sort"); then the rows
-/// ([BgeKeyedSliverList], keyed by the nomination's id) or one state. A state
+/// Its slivers, as one group under the sub-tabs' bar, with no heading of
+/// their own, as the sub-tab's label names the list (#946): the header,
+/// while there is something to narrow or the filter narrows (see "Filters
+/// and sort"); then the rows ([BgeKeyedSliverList], keyed by the
+/// nomination's id) or one state. A state
 /// is in a [BgeStateSliver], as the pool's are, which fills the rest of the
 /// page and centres it. The style guide keeps a section's state in a
 /// [SliverToBoxAdapter] only where something follows the section, whose room
@@ -93,30 +92,19 @@ enum EventNominationsBody {
 /// its write was the one that changed it, focus goes on to the next row
 /// shown ([EventGamesTabController.nominationsChanged]).
 ///
-/// A row says, top to bottom: the game and its platform; who nominated it;
-/// whose copy it is; whether it is for the whole event or one date; where
-/// it stands; its tally of the votes that count, with how this event counts
-/// Interested where its policy says; the viewer's vote, and whether it
-/// counts, where no vote control shows it; when voting closes, while it is
-/// open and has a deadline; and why it is paused, while it is
-/// ([nominationLines]). Read as one node, with the picture beside it: one
-/// button, the row's head, which opens the nomination's quick look (#957,
-/// [EventGameRowHead]), where the same lines, the same controls and View
-/// game are.
-/// The row's controls come after that node, outside it, so each is a node of
-/// its own: the viewer's vote ([NominationVoteControl]), *Who voted*,
-/// Withdraw, and a host's decisions. The row and its quick look build them
-/// from the same inputs, under the same rules ([nominationRowInputs]).
-///
-/// Whose copy it is comes from the pool row it was nominated from, and that
-/// row's attendee from the roster. The nomination names no attendee of its
-/// own (backend#1213), so where the pool no longer holds the row, as when
-/// its owner said they aren't coming, it is "whoever brings it". The
-/// viewer's own nominations and games say so, as the pool's rows do.
-///
-/// A deadline is a fixed time, never a countdown (#517). Past it, the row
-/// says it stays open until a host closes the vote, since nothing closes it
-/// on time yet (backend#797).
+/// A row is compact (#946): the game's cover, its title and one status line,
+/// where it stands and its tally of the votes that count, "Voting · 3 for ·
+/// 1 against · 0 interested", spoken with commas. They are read as one node:
+/// one button, the row's head, which opens the nomination's quick look
+/// (#957, [EventGameRowHead]). Under it, a node of its own, the viewer's vote
+/// where they may vote, at the row's full width. The rest is the quick
+/// look's ([EventGameQuickLook]): every line a nomination says
+/// ([nominationLines]), who nominated it, whose copy it is, what it is for,
+/// how the event counts Interested, the viewer's vote where no vote control
+/// shows it, when voting closes and why it is paused; then *Who voted*,
+/// Withdraw and a host's decisions. The row and its quick look build their
+/// controls from the same inputs, under the same rules
+/// ([nominationRowInputs]).
 ///
 /// ## Voting
 ///
@@ -137,75 +125,18 @@ enum EventNominationsBody {
 /// says so. A note goes out with the viewer's vote as that state holds it
 /// then; one unchanged sends nothing.
 ///
-/// *Who voted*, on every row with a vote, counts every vote, those that don't
-/// count included, and opens [showNominationVoters]: counts alone where the
-/// roster was read and withheld, and the votes otherwise. Its focus comes
-/// back to it as the list closes.
+/// ## Withdrawing and a host's decisions
 ///
-/// ## Withdrawing
-///
-/// The viewer's own nominations carry Withdraw while they are live (open,
-/// awaiting approval or paused), where their actions hold
-/// [EventAction.nominateGame], they have a row on the roster and the event
-/// takes writes ([takesDateWrites]). It is a direct write, disabled as a
-/// vote is: offline, saying why once under the row's controls, while a
-/// detail read runs, while the screen's own request is out, and while
-/// another nominations write is out. It asks first, as a destructive action,
-/// since the nomination's votes are lost and nominating the game again
-/// starts from none. Then it waits for any running detail read to end, and
-/// sends only if the event still takes writes, the viewer may still
-/// nominate and the nomination is still theirs and live as the nominations'
-/// state holds it; otherwise nothing is sent, and the footer says so
-/// ([withdrawNomination]). It is held, inert, from its press through its
-/// withdrawal, as Nominate is, so the focus the dialog hands back to it stays
-/// ([NominationWriteButton]).
-///
-/// A withdrawal's answer takes the row's place, so the row stays, as
-/// Withdrawn, or as decided where the server answered that it can't be
-/// withdrawn now, and Withdraw goes with its control. Focus stays on the row:
-/// once the frame that took Withdraw away has ended, the row's head takes
-/// it, its picture and lines as one node, which reads the row's new status.
-/// It takes it only while focus is free then, on nothing, on the page, or
-/// still on Withdraw: a press elsewhere meanwhile keeps its focus.
-/// Withdraw's press arms it however it came, so a screen reader's
-/// activation, which moves no input focus, is handed on too, and the
-/// reader's cursor follows. The head's ring shows for focus a key press
-/// gave, as a button's does, and not for a press of a mouse or a trackpad on
-/// Withdraw: the row shares its pointer state with it ([BgePointerFocus]). A
-/// withdrawal that leaves the row live, refused or failed, leaves focus on
-/// Withdraw. A withdrawal from the quick look hands focus on there instead
-/// (#957).
-///
-/// ## A host's decisions
-///
-/// A nomination awaiting approval carries Approve and Reject, and an open
-/// one Close vote, each where the viewer's actions hold it (#518):
-/// [EventAction.approveGame], [EventAction.rejectGame] and
-/// [EventAction.resolveNomination]. A host or co-host holds all three, and a
-/// moderator, or a household's owner or admin on its event, Close vote alone.
-/// None asks for a row on the roster. Each is left out where the actions
-/// don't hold it, since that is the role table and not a state, on an event
-/// that takes no writes ([takesDateWrites]: cancelled or archived), and on
-/// every other status: a paused nomination can't be settled (#462). They come
-/// after Withdraw, and are disabled as it is: offline, saying why once under
-/// the row's controls, while a detail read runs, while the screen's own
-/// request is out, and while another nominations write is out.
-///
-/// None of the three can be undone while nothing takes a game out of the
-/// lineup (#520), so each asks first ([decideNomination]): Reject as a
-/// destructive action, and Close vote with the row's tally of the votes that
-/// count so far, which is what it settles, and the row's line on how the event
-/// counts Interested. Then each waits for any running detail read to end,
-/// and sends only if the event still takes writes, the viewer's actions
-/// still hold it and the nomination still has the status it decides from,
-/// as the nominations' state holds it; otherwise nothing is sent, and the
-/// footer says so. Each
-/// is held from its press through its decision, as Withdraw is. A decision's
-/// answer takes the row's place, so the row stays, as decided, and its
-/// buttons go: focus goes to the row's head, as after a withdrawal, and
-/// one refused or failed leaves it on the button pressed. How a close of the
-/// vote came out, with the server's counts, is the footer's to say: no read
-/// carries them.
+/// Withdraw, on the viewer's own live nominations ([offersWithdraw]), and a
+/// host's Approve, Reject and Close vote (#518), on the status each settles
+/// ([offeredDecisions]), are in the nomination's quick look alone (#946),
+/// under the rules they had on the row: direct writes, disabled offline,
+/// while a detail read runs, while the screen's own request is out and while
+/// another nominations write is out; each asks first, waits for any running
+/// detail read to end, and sends only if it still may ([withdrawNomination],
+/// [decideNomination]). As the quick look closes, focus goes back to the
+/// row's head, or where the row has left the rows shown, to the head of the
+/// row in its place ([EventGamesTabController.focusAfterQuickLook]).
 class EventNominationsSection extends StatelessWidget {
   const EventNominationsSection({
     required this.body,
@@ -215,7 +146,6 @@ class EventNominationsSection extends StatelessWidget {
     required this.controller,
     required this.pool,
     required this.poolRead,
-    required this.names,
     required this.acting,
     required this.now,
     super.key,
@@ -240,19 +170,11 @@ class EventNominationsSection extends StatelessWidget {
   /// or it holds games read before.
   final bool poolRead;
 
-  /// The roster's names, by row id.
-  final Map<String, String?> names;
-
   /// Whether the screen's own request is out, or the event is deleted.
   final bool acting;
 
-  /// The screen's clock, which decides whether a deadline has passed and
-  /// how a date is named.
+  /// The screen's clock, which names a date in the header's chips.
   final DateTime now;
-
-  /// Key on the heading's sliver, so it keeps its place as what is under it
-  /// changes.
-  static const _headingKey = ValueKey<String>('event_nominations.heading');
 
   /// Key on the header's sliver, so it keeps its state, and its chips their
   /// focus, as what is under it changes.
@@ -274,10 +196,6 @@ class EventNominationsSection extends StatelessWidget {
 
     return SliverMainAxisGroup(
       slivers: [
-        SliverToBoxAdapter(
-          key: _headingKey,
-          child: EventGamesTabHeading(title: l10n.eventsNominationsHeading),
-        ),
         if (header)
           SliverToBoxAdapter(
             key: _headerKey,
@@ -342,45 +260,21 @@ class EventNominationsSection extends StatelessWidget {
               head: controller.rowHeadFocus(NominationEntry(nomination.id)),
               nomination: nomination,
               viewerId: viewerId,
-              names: names,
               // The row's rules, which its quick look builds by too (#957).
-              inputs: nominationRowInputs(
+              voting: nominationRowInputs(
                 nomination: nomination,
                 detail: detail,
                 state: state,
                 pool: pool,
                 poolRead: poolRead,
                 acting: acting,
-              ),
-              now: now,
+              ).voting,
             ),
           ),
         },
       ],
     );
   }
-}
-
-/// A heading on the Games tab (#517): the Nominations section's on the
-/// Nominations sub-tab, and the pool's on Pool (#945), so heading navigation
-/// finds each list. Announced as a heading. Each list's count is its
-/// header's, under its controls.
-class EventGamesTabHeading extends StatelessWidget {
-  const EventGamesTabHeading({required this.title, super.key});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Semantics(
-        header: true,
-        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-      ),
-      const BgeGap.sm(),
-    ],
-  );
 }
 
 /// The Nominations section's header (#517): Filters and Sort, a chip per
@@ -688,23 +582,21 @@ String _sortName(EventsLocalizations l10n, NominationSort sort) =>
       NominationSort.soonestDeadline => l10n.eventsNominationsSortDeadline,
     };
 
-/// One nomination (#517): its picture and its lines, one button that opens
-/// its quick look (#957, [EventGameRowHead]), read as one node, and under
-/// both, outside that node and at the row's full width, the viewer's vote
-/// while it is open, then *Who voted* once it has a vote, Withdraw on the
-/// viewer's own while it is live, and a host's decisions on the status they
-/// settle (#518). Its head takes focus when the button whose write just
-/// ended goes with it (see "Withdrawing" and "A host's decisions" on
-/// [EventNominationsSection]).
-class _NominationRow extends StatefulWidget {
+/// One nomination (#517), compact (#946): its picture, its title and one
+/// status line, where it stands and its tally of the votes that count,
+/// "Voting · 3 for · 1 against · 0 interested", spoken with commas, as one
+/// button, the row's head, which opens its quick look (#957,
+/// [EventGameRowHead]). Under both, outside that node and at the row's full
+/// width, the viewer's vote while it is open and they may vote ([voting],
+/// [nominationVoteControl]); otherwise nothing. The rest of what it says,
+/// *Who voted*, Withdraw and a host's decisions are its quick look's.
+class _NominationRow extends StatelessWidget {
   const _NominationRow({
     required this.area,
     required this.head,
     required this.nomination,
     required this.viewerId,
-    required this.names,
-    required this.inputs,
-    required this.now,
+    required this.voting,
   });
 
   /// Holds the whole row, so a row that leaves the rows shown can say it
@@ -719,207 +611,67 @@ class _NominationRow extends StatefulWidget {
 
   /// The viewer's roster row id, where they have one.
   final String? viewerId;
-  final Map<String, String?> names;
 
-  /// What the row is built from ([nominationRowInputs]).
-  final NominationRowInputs inputs;
-  final DateTime now;
-
-  /// Whether the row carries the button that sends [write]: Withdraw, or one
-  /// of a host's decisions.
-  bool offers(NominationWrite write) => offersNominationWrite(
-    write,
-    nomination,
-    inputs.writes,
-    viewerId: viewerId,
-  );
-
-  @override
-  State<_NominationRow> createState() => _NominationRowState();
-}
-
-class _NominationRowState extends State<_NominationRow>
-    with BgePointerFocus<_NominationRow> {
-  /// Holds each write button, Withdraw and a host's decisions, by the write
-  /// it sends, so the row can tell whether one holds focus.
-  final Map<NominationWrite, FocusNode> _areas = {
-    for (final write in [
-      NominationWrite.withdraw,
-      for (final decision in NominationDecision.values) decision.write,
-    ])
-      write: FocusNode(
-        debugLabel: write.name,
-        canRequestFocus: false,
-        skipTraversal: true,
-      ),
-  };
-
-  /// The write a button's press sent, which hasn't ended yet.
-  NominationWrite? _sent;
-
-  @override
-  void didUpdateWidget(_NominationRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Built again with no nominations write out: the write the press sent
-    // has ended, and its answer, if any, is in this row.
-    final sent = _sent;
-    if (sent == null || widget.inputs.writes.busy) return;
-    _sent = null;
-    // Its button stays, as after a refusal, and keeps its own focus.
-    if (widget.offers(sent)) return;
-    // The button is still built, and goes with this frame, as may the row's
-    // other write buttons.
-    final held = _areas.values.any((area) => area.hasFocus)
-        ? FocusManager.instance.primaryFocus
-        : null;
-    final head = widget.head;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !focusIsFree(context, untouched: held)) return;
-      head.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    for (final area in _areas.values) {
-      area.dispose();
-    }
-    super.dispose();
-  }
-
-  /// The press of the button that sends [write], Withdraw or a host's
-  /// decision: [send] asks, and sends it ([withdrawNomination],
-  /// [decideNomination]). Completes true when the write was sent, which arms
-  /// the hand-off as it ends.
-  Future<bool> _pressed(
-    NominationWrite write,
-    Future<bool> Function() send,
-  ) async {
-    final sent = await send();
-    if (sent && mounted) _sent = write;
-    return sent;
-  }
+  /// The viewer's vote, where they may vote ([nominationRowInputs]).
+  final NominationVoting? voting;
 
   @override
   Widget build(BuildContext context) {
-    final nomination = widget.nomination;
-    final names = widget.names;
+    final nomination = this.nomination;
     final l10n = EventsLocalizations.of(context);
+    final theme = Theme.of(context);
     final tokens = BgeTokens.of(context);
-    final viewerId = widget.viewerId;
-    final inputs = widget.inputs;
-    final writes = inputs.writes;
+    final quiet = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final status = nominationStatusLabel(l10n, nomination.status);
+    final tally = tallyOf(nomination);
     final control = nominationVoteControl(
       context,
       nomination,
-      voting: inputs.voting,
+      voting: voting,
       viewerId: viewerId,
     );
-    // The button that sends [write], labelled [label] and named to a
-    // screen reader [named], on [key].
-    Widget button(
-      NominationWrite write, {
-      required Key key,
-      required String label,
-      required String named,
-      required IconData icon,
-      required Future<bool> Function() send,
-    }) => NominationWriteButton(
-      // Keyed by its write, so each keeps its own state and focus as the
-      // others come and go.
-      key: ValueKey<NominationWrite>(write),
-      buttonKey: key,
-      label: label,
-      named: named,
-      icon: icon,
-      area: _areas[write]!,
-      enabled: writes.enabled,
-      runOver: !writes.busy,
-      onPressed: () => _pressed(write, send),
-      onPointerDown: notePointerPress,
-    );
-    final title = nomination.title;
-    // Withdraw, then a host's decisions (#518).
-    final buttons = [
-      if (offersWithdraw(nomination, writes, viewerId: viewerId))
-        button(
-          NominationWrite.withdraw,
-          key: EventDetailScreen.nominationWithdrawKey(nomination.id),
-          label: l10n.eventsWithdraw,
-          named: l10n.eventsWithdrawNamed(title),
-          icon: Icons.playlist_remove,
-          send: () => withdrawNomination(context, nomination),
-        ),
-      for (final decision in offeredDecisions(nomination, writes))
-        button(
-          decision.write,
-          key: decision.keyOn(nomination.id),
-          label: decision.label(l10n),
-          named: decision.named(l10n, title),
-          icon: decision.icon,
-          send: () => decideNomination(
-            context,
-            nomination,
-            decision,
-            interestedWeight: inputs.interestedWeight,
-          ),
-        ),
-    ];
-    final whoVoted = nomination.votes.isEmpty
-        ? null
-        : WhoVotedButton(
-            nomination: nomination,
-            names: names,
-            rosterShown: inputs.rosterShown,
-            viewerId: viewerId,
-          );
 
     return Focus(
-      focusNode: widget.area,
+      focusNode: area,
       includeSemantics: false,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
-        // The head follows the row's pointer focus: focus a mouse's press on
-        // Withdraw or a decision handed it isn't ringed.
-        child: sharePointerFocus(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              EventGameRowHead(
-                key: EventDetailScreen.nominationRowHeadKey(nomination.id),
-                thumbnail: nomination.thumbnail,
-                title: title,
-                entry: NominationEntry(nomination.id),
-                focusNode: widget.head,
-                lines: nominationLines(
-                  context,
-                  nomination,
-                  inputs: inputs,
-                  viewerId: viewerId,
-                  names: names,
-                  voteShown: control != null,
-                  now: widget.now,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            EventGameRowHead(
+              key: EventDetailScreen.nominationRowHeadKey(nomination.id),
+              thumbnail: nomination.thumbnail,
+              title: nomination.title,
+              entry: NominationEntry(nomination.id),
+              focusNode: head,
+              lines: [
+                Text(
+                  l10n.eventsNominationStatusLine(
+                    status,
+                    tally.forCount,
+                    tally.againstCount,
+                    tally.interestedCount,
+                  ),
+                  // The symbols between its parts would be read out.
+                  semanticsLabel: l10n.eventsNominationStatusLineSpoken(
+                    status,
+                    tally.forCount,
+                    tally.againstCount,
+                    tally.interestedCount,
+                  ),
+                  style: quiet,
                 ),
-              ),
-              // Under the picture and the lines, at the row's full width:
-              // the three choices share it, and beside the picture they would
-              // have so little that a chosen Interested shrinks to half size
-              // at a phone's width and ordinary text.
-              if (control != null) ...[const BgeGap.sm(), control],
-              if (whoVoted != null || buttons.isNotEmpty)
-                Wrap(
-                  spacing: tokens.spaceSm,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [?whoVoted, ...buttons],
-                ),
-              // Once for the row's controls: the vote's says it where it is
-              // built.
-              if (buttons.isNotEmpty &&
-                  control == null &&
-                  BgeConnectivityScope.offlineOf(context))
-                const BgeOnlineOnlyNote(),
-            ],
-          ),
+              ],
+            ),
+            // Under the picture and the line, at the row's full width: the
+            // three choices share it, and beside the picture they would have
+            // so little that a chosen Interested shrinks to half size at a
+            // phone's width and ordinary text.
+            if (control != null) ...[const BgeGap.sm(), control],
+          ],
         ),
       ),
     );
