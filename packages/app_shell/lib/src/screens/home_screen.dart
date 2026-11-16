@@ -5,7 +5,7 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The authenticated landing surface (#129): a real home, replacing the
-/// temporary `HomePlaceholderScreen` (#37).
+/// temporary placeholder screen (#37).
 ///
 /// Presentation-only. The navigation menu is not the page's: the navigation
 /// shell hosts it above every signed-in page (#414). The button that opens

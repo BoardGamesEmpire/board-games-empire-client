@@ -25,7 +25,7 @@ so behaviour is identical across platforms.
   entirely by bootstrap state, plus the reserved deep-link path subtree
   (resolved to `NotYetAvailableScreen` until the features land).
 - **Screens** — splash, bootstrap-error (retry + confirmed reset, a11y-aware),
-  not-yet-available, and the server-add/auth/home placeholders.
+  not-yet-available, and the server-add and auth placeholders.
 - **`ShellObservability`** — attaches the process-wide `BreadcrumbBuffer` so
   startup failures are captured for feedback reports.
 
