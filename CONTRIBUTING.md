@@ -289,6 +289,20 @@ melos run schema:dump
 CI diffs the snapshots against a fresh dump and fails if they are stale.
 `melos run schema:migrations` generates migration scaffolding.
 
+### Analytics catalog snapshot
+
+`packages/core/analytics/test/catalog_snapshot.json` records every analytics
+event's name, property keys, value kinds and token vocabularies. Renaming an
+event, adding a property, or adding a member to an enum that a token draws from
+fails `catalog_governance_test` until the snapshot is refreshed. From
+`packages/core/analytics`:
+
+```bash
+UPDATE_ANALYTICS_CATALOG=1 flutter test --no-pub test/catalog_governance_test.dart
+```
+
+Review the JSON diff and commit it in the same change.
+
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on

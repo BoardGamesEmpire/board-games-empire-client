@@ -23,7 +23,7 @@ A short orientation for anyone (human or LLM) picking this up cold:
   configures. Users opt in. Note the tier split: `/.well-known/bge-identity`
   is anonymous tier-1 and deliberately carries no sink config (backend #47);
   sinks and feature flags moved to authenticated tier-2 discovery,
-  `GET /api/discovery/server` (backend #78, open).
+  `GET /api/discovery/server` (backend #78, shipped 2026-11-16).
 - **Offline-first infrastructure, online-first alpha UX.** Mutations write
   locally + enqueue against a per-server sync queue; reconciliation runs against
   server responses with surgical tombstone purges. The client DB is a *temporary
