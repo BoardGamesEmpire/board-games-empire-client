@@ -210,7 +210,8 @@ jobs:
   # gate's failure mode is a silent pass, which the check itself cannot
   # see on a tree that holds nothing for it to catch. The same job also
   # runs `check:a11y-audit` (#50), which fails when a screen has no
-  # accessibility-audit test group.
+  # accessibility-audit test group, and `check:decision-codes` (#377),
+  # which fails when source cites a decision code instead of the issue.
   test-files:
     name: Test file names
     runs-on: ubuntu-latest
@@ -227,6 +228,10 @@ jobs:
         run: dart run tool/check_a11y_audit.dart --self-test
       - name: Every screen has an accessibility audit
         run: dart run tool/check_a11y_audit.dart
+      - name: Decision-code check self-test
+        run: dart run tool/check_decision_codes.dart --self-test
+      - name: Source cites issues, not decision codes
+        run: dart run tool/check_decision_codes.dart
 
   # ── Codegen (fresh, once) + schema freshness ────────────────────
   # Generated code (.g.dart / .freezed.dart / .config.dart, and the
