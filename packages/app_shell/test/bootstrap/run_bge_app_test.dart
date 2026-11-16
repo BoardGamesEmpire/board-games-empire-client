@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:analytics/analytics.dart';
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/domain.dart';
 import 'package:flutter/foundation.dart';
@@ -54,6 +55,10 @@ import '../support/spy_root_container.dart';
 /// pre-registered reader stays authoritative, mirroring
 /// `FeedbackService`), handed to `BgeApp` with ownership, and holding
 /// the **negotiated** locale once the first frame has rendered.
+///
+/// The analytics group (#17) pins the null object's registration:
+/// resolve-or-default like `FeedbackService`, so it is there on the empty
+/// fallback too, and a service a platform module registered first stays.
 ///
 /// `runBgeApp` mutates process globals (`FlutterError.onError`,
 /// `PlatformDispatcher.onError`, `ErrorWidget.builder`), so every test
@@ -492,6 +497,47 @@ void main() {
     });
   });
 
+  group('runBgeApp — AnalyticsService (#17)', () {
+    testWidgets('registers the disabled service by default', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+
+      await boot(tester, bootstrap);
+
+      expect(
+        bootstrap.lastRootContainer!.get<AnalyticsService>(),
+        isA<DisabledAnalyticsService>(),
+      );
+    });
+
+    testWidgets('is present on the empty fallback container', (tester) async {
+      final bootstrap = FakePlatformBootstrap(
+        rootContainerOutcome: StateError('root container build exploded'),
+      );
+
+      await boot(tester, bootstrap);
+
+      final fallback = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .rootContainer!;
+      expect(fallback.get<AnalyticsService>(), isA<DisabledAnalyticsService>());
+    });
+
+    testWidgets('keeps a service a platform module already registered', (
+      tester,
+    ) async {
+      final own = _RecordingAnalyticsService();
+      final container = SpyRootContainer()
+        ..registerSingleton<AnalyticsService>(own);
+
+      await boot(
+        tester,
+        FakePlatformBootstrap(rootContainerOutcome: container),
+      );
+
+      expect(container.get<AnalyticsService>(), same(own));
+    });
+  });
+
   group('runBgeApp — active locale exposure (#33)', () {
     testWidgets('registers an ActiveLocaleReader into the root container '
         'holding the negotiated locale after the first frame', (tester) async {
@@ -696,4 +742,11 @@ class _FixedLocaleReader implements ActiveLocaleReader {
 
   @override
   final String languageTag;
+}
+
+class _RecordingAnalyticsService implements AnalyticsService {
+  final List<AnalyticsEvent> recorded = [];
+
+  @override
+  void record(AnalyticsEvent event) => recorded.add(event);
 }

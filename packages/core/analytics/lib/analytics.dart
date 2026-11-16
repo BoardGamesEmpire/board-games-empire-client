@@ -4,4 +4,6 @@
 library;
 
 export 'src/analytics_event.dart';
+export 'src/analytics_service.dart';
 export 'src/analytics_value.dart';
+export 'src/disabled_analytics_service.dart';

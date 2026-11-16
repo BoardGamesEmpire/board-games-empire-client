@@ -9,6 +9,8 @@ environment:
 resolution: workspace
 
 dependencies:
+  analytics:
+    path: ../core/analytics
   auth:
     path: ../features/auth
   data_export:
