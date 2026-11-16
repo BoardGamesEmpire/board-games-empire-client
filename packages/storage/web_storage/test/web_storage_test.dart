@@ -404,6 +404,37 @@ void main() {
       },
     );
 
+    // The test above depends on the worker still being busy when the delete
+    // arrives. This one doesn't: a holder that stays open through its
+    // versionchange makes the browser fire blocked, and letting go after that
+    // must still end in a delete.
+    test('a delete waits out a block that lifts before the limit', () async {
+      final serverId = _uniqueServerId();
+      final name = WebWasmExecutorFactory.databaseName(serverId);
+      final db = await open(serverId);
+      await db.customSelect('SELECT 1').get();
+      await db.close();
+      final held = await _holdConnection(name);
+      final versionChange = Completer<void>();
+      held.onversionchange = ((web.Event _) {
+        versionChange.complete();
+      }).toJS;
+
+      final deleting = deleteServerDatabases(
+        namePrefix: name,
+        blockedAfter: const Duration(seconds: 5),
+      );
+      // blocked is queued once versionchange has reached a holder that is
+      // still open; staying open a while longer lets it fire first.
+      await versionChange.future.timeout(const Duration(seconds: 5));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      held.close();
+      final result = await deleting.timeout(const Duration(seconds: 10));
+
+      expect(result.deleted, [name]);
+      expect(result.blocked, isEmpty);
+    });
+
     test('deletes only names with the prefix', () async {
       final firstId = _uniqueServerId();
       final secondId = _uniqueServerId();
