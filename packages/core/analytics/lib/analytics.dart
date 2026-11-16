@@ -3,4 +3,5 @@
 /// there is no storage, consent, device id or transport behind it.
 library;
 
+export 'src/analytics_event.dart';
 export 'src/analytics_value.dart';
