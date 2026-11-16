@@ -12,6 +12,16 @@ enum EventDetailTab {
   games,
 }
 
+/// The Games tab's sub-tabs (#945), in the order its second bar shows them.
+/// Each one's `index` is its place in the sub-tabs' [TabController].
+enum EventGamesSection {
+  /// The nominations for the event's games.
+  nominations,
+
+  /// The games the people coming offer to bring.
+  pool,
+}
+
 /// The event screen's tab bar (#516): Details, then Games.
 ///
 /// Material's [TabBar], not scrollable, so each tab has the tab role, says

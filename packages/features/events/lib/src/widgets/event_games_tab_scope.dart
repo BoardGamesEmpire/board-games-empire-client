@@ -13,12 +13,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart' show CollectionFilter, EventNomination;
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
-/// What the Games tab keeps across the screen's rebuilds (#516): its filter,
-/// whether it has been shown, the ids the pool was last asked with, how the
-/// pool's last read ended and how the nominations' did (#517), the
-/// nominations' own filter and order (#517), and the focus nodes a control
-/// that leaves hands focus on to.
+/// What the Games tab keeps across the screen's rebuilds (#516): its sub-tabs'
+/// controller (#945), its filter, whether it has been shown, the ids the pool
+/// was last asked with, how the pool's last read ended and how the nominations'
+/// did (#517), the nominations' own filter and order (#517), and the focus
+/// nodes a control that leaves hands focus on to.
+///
+/// It notifies its listeners when the chosen sub-tab changes, once for each
+/// change and as the change starts, and when the sub-tabs' controller is
+/// replaced, so the screen's page, which listens to it, builds on the new one.
 ///
 /// One per screen, held by [EventGamesTabScope] above the detail's builder,
 /// beside the tab controller, so no read, write, clock tick or switch to the
@@ -33,6 +38,38 @@ class EventGamesTabController extends ChangeNotifier {
   bool _disposed = false;
   EventGamesLoad? _settled;
   EventNominationsLoad? _nominationsSettled;
+
+  late TabController _sections;
+
+  /// The Games tab's sub-tabs' controller (#945), one tab for each
+  /// [EventGamesSection]. [EventGamesTabScope] makes it before the first
+  /// build and replaces it when the motion duration changes, so read it from
+  /// here each build rather than keeping it.
+  TabController get sections => _sections;
+
+  /// The sub-tab chosen.
+  EventGamesSection get section => EventGamesSection.values[sections.index];
+
+  /// Starts the controller's life with [sections]. For the scope only.
+  // A setter would pair with the `sections` getter and read as anyone's to
+  // set; the scope's verbs, attach and replace, say which one tells the
+  // listeners.
+  // ignore: use_setters_to_change_properties
+  void attachSections(TabController sections) => _sections = sections;
+
+  /// Moves to [sections], which takes the place of the old controller at the
+  /// same index, and tells the listeners once so the page builds on it. For
+  /// the scope only.
+  void replaceSections(TabController sections) {
+    _sections = sections;
+    notifyListeners();
+  }
+
+  /// Tells the listeners the chosen sub-tab changed. For the scope only,
+  /// which calls it once for each change, as the change starts, the way the
+  /// screen's own tab bar tells the page: the page swaps the list under the
+  /// bar at once, not once the indicator has settled.
+  void sectionChanged() => notifyListeners();
 
   /// What the tab narrows the pool to.
   PoolFilter get filter => _filter;
@@ -574,6 +611,7 @@ class EventGamesTabScope extends StatefulWidget {
   const EventGamesTabScope({
     required this.onFirstShown,
     required this.child,
+    this.initialSection = EventGamesSection.nominations,
     super.key,
   });
 
@@ -588,6 +626,9 @@ class EventGamesTabScope extends StatefulWidget {
 
   final Widget child;
 
+  /// The sub-tab the Games tab opens on (#945).
+  final EventGamesSection initialSection;
+
   /// The controller of the scope above [context].
   static EventGamesTabController of(BuildContext context) => context
       .getInheritedWidgetOfExactType<_EventGamesTabInherited>()!
@@ -597,9 +638,12 @@ class EventGamesTabScope extends StatefulWidget {
   State<EventGamesTabScope> createState() => _EventGamesTabScopeState();
 }
 
-class _EventGamesTabScopeState extends State<EventGamesTabScope> {
+class _EventGamesTabScopeState extends State<EventGamesTabScope>
+    with TickerProviderStateMixin {
   final _controller = EventGamesTabController();
   TabController? _tabs;
+  TabController? _sections;
+  int _notifiedSection = 0;
   EventGamesBloc? _bloc;
   StreamSubscription<EventGamesState>? _pool;
   EventGamesState _last = const EventGamesState();
@@ -615,6 +659,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
       _tabs?.removeListener(_tabChanged);
       _tabs = tabs..addListener(_tabChanged);
     }
+    _useSections(
+      BgeMotion.durationOf(context, BgeTokens.of(context).motionMedium),
+    );
     final bloc = context.read<EventGamesBloc>();
     if (bloc != _bloc) {
       unawaited(_pool?.cancel());
@@ -635,6 +682,37 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
       // still built.
       _nominations = nominations.stream.listen(_nominationsChanged);
     }
+  }
+
+  /// Makes the sub-tabs' controller, and when [duration] differs from the
+  /// one it has, replaces it by one at the same index, as
+  /// `DefaultTabController` does, and lets the old one go after the frame.
+  void _useSections(Duration duration) {
+    final old = _sections;
+    if (old != null && old.animationDuration == duration) return;
+    final sections = TabController(
+      length: EventGamesSection.values.length,
+      initialIndex: old?.index ?? widget.initialSection.index,
+      animationDuration: duration,
+      vsync: this,
+    );
+    _sections = sections;
+    _notifiedSection = sections.index;
+    sections.addListener(_sectionChanged);
+    if (old == null) {
+      _controller.attachSections(sections);
+      return;
+    }
+    old.removeListener(_sectionChanged);
+    _controller.replaceSections(sections);
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+  }
+
+  void _sectionChanged() {
+    final index = _sections!.index;
+    if (index == _notifiedSection) return;
+    _notifiedSection = index;
+    _controller.sectionChanged();
   }
 
   void _tabChanged() {
@@ -673,6 +751,7 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope> {
   @override
   void dispose() {
     _tabs?.removeListener(_tabChanged);
+    _sections?.dispose();
     unawaited(_pool?.cancel());
     unawaited(_nominations?.cancel());
     _controller.dispose();
