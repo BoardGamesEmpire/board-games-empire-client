@@ -36,12 +36,14 @@
 // A line is a hit when it holds a `D` followed by one or two digits, with no
 // letter, digit or underscore on either side. That is a text match per line,
 // not a parse: a citation wrapped onto a line of its own is still a code on
-// that line, and is flagged. Colon-separated hex, such as the certificate
-// fingerprint `E0:30:D5:1C` in `tool/build_android.dart`, is deleted from
-// the line first, so its `D5` is not read as a code. The run must stand
-// alone too, so the strip never cuts the end off a longer token. It still
-// hides a colon-joined pair of codes (`Dn:Dn`, written with digits), which
-// would pass. That is accepted: no such text exists.
+// that line, and is flagged. Colon-separated hex of three bytes or more,
+// such as the certificate fingerprint `E0:30:D5:1C` in
+// `tool/build_android.dart`, is deleted from the line first, so its `D5` is
+// not read as a code. Three, not two, so a code before a colon and two hex
+// characters (`D5:1C`, `D4:30`, `D1:D2`) is still read as a code. The run
+// must stand alone too, so the strip never cuts the end off a longer token.
+// It still hides a code inside a run of three or more (`D1:D2:D3`,
+// `D5:1C:00`), which would pass. That is accepted: no such text exists.
 //
 // A line is also a hit when it cites a decision by number in words:
 // "decision" or "decisions", then a digit, as in "design decision 4". It
@@ -57,10 +59,10 @@ final _nul = String.fromCharCode(0);
 /// counted as checked.
 const _exempt = ['docs/agents/', 'tool/check_decision_codes.dart'];
 
-/// Colon-separated hex bytes, such as a certificate fingerprint, standing
-/// alone.
+/// Three or more colon-separated hex bytes, such as a certificate
+/// fingerprint, standing alone.
 final _hexRun = RegExp(
-  '(?<![0-9A-Za-z])[0-9A-F]{2}(?::[0-9A-F]{2})+(?![0-9A-Za-z])',
+  '(?<![0-9A-Za-z])[0-9A-F]{2}(?::[0-9A-F]{2}){2,}(?![0-9A-Za-z])',
 );
 
 /// A decision code: `D` and one or two digits, standing alone.
@@ -269,6 +271,18 @@ Future<void> _selfTest() async {
     'flags a code before a colon and a number',
     'p/lib/a.dart',
     '// D10:00\n',
+    [1],
+  );
+  expect(
+    'flags a code before a colon and one hex byte',
+    'p/lib/a.dart',
+    '// D5:1C\n',
+    [1],
+  );
+  expect(
+    'flags a colon-joined pair of codes',
+    'p/lib/a.dart',
+    '// D1:D2\n',
     [1],
   );
   expect(
