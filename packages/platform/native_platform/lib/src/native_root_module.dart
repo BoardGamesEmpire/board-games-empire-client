@@ -92,4 +92,6 @@ Future<void> registerNativeRootModule(
     ..registerLazySingleton<ServerOnboardingDeps>(
       () => ServerOnboardingDeps.from(container),
     );
+  // #48: after BuildInfo, which the lazy bundler reads.
+  registerUserDataExport(container, exporters: const []);
 }

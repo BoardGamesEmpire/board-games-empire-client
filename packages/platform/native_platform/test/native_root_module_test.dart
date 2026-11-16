@@ -2,6 +2,7 @@ import 'package:di/di.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
@@ -84,6 +85,21 @@ void main() {
     // FileFeedbackSink resolves its directory lazily at first persist.
     expect(container.isRegistered<FeedbackSink>(), isTrue);
     expect(container.get<FeedbackSink>(), isA<FileFeedbackSink>());
+  });
+
+  group('user data export (#48)', () {
+    test('registers the export registry and a resolvable bundler', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.get<UserDataExportRegistry>(), isNotNull);
+      expect(container.get<UserDataExportBundler>(), isNotNull);
+    });
   });
 
   group('DeviceInfoReader registration (#324)', () {

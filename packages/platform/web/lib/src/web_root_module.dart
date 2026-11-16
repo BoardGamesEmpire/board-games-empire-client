@@ -109,4 +109,6 @@ Future<void> registerWebRootModule(
   if (deviceInfoReader != null) {
     container.registerSingleton<DeviceInfoReader>(deviceInfoReader);
   }
+  // #48: after BuildInfo, which the lazy bundler reads.
+  registerUserDataExport(container, exporters: const []);
 }

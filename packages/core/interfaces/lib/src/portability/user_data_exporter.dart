@@ -4,11 +4,11 @@ import 'package:interfaces/src/portability/user_data_export.dart';
 /// A single exportable category of the current user's data (GDPR
 /// Article 20 — right to data portability, #11).
 ///
-/// One exporter per data category, owned and registered by the feature
-/// package that owns the data (the collection feature registers
-/// `GameCollectionExporter` (#48); auth registers `ProfileExporter`
-/// (#91)). Registration happens at composition time via
-/// `UserDataExportRegistry`; the bundled output is assembled by
+/// One exporter per data category, written by the feature package that
+/// owns the data (the collection feature's `GameCollectionExporter`,
+/// #48). Each composition root (the native and the web root module)
+/// passes its exporters to `registerUserDataExport`, which puts them in
+/// the `UserDataExportRegistry`; the bundled output is assembled by
 /// `UserDataExportBundler`.
 ///
 /// ## Payload convention

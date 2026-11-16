@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/portability.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -159,6 +160,21 @@ void main() {
       );
 
       await expectLater(container.dispose(), completes);
+    });
+  });
+
+  group('user data export (#48)', () {
+    test('registers the export registry and a resolvable bundler', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.get<UserDataExportRegistry>(), isNotNull);
+      expect(container.get<UserDataExportBundler>(), isNotNull);
     });
   });
 
