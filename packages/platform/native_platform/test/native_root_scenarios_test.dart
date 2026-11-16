@@ -310,6 +310,36 @@ void main() {
       final active = OrchestratorActiveServerScope(
         orchestrator: harness.orchestrator,
       ).active!;
+      // An entry stored through the signed-in user's repository, so the
+      // bundle can only hold it if the exporter reads that user's rows.
+      final db = harness.container.get<ServerDatabase>();
+      final now = DateTime.utc(2026, 8, 29);
+      await db
+          .into(db.gamesTable)
+          .insert(
+            GamesTableCompanion.insert(
+              id: 'game-export',
+              title: 'Exported Game',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+      await db
+          .into(db.platformGamesTable)
+          .insert(
+            PlatformGamesTableCompanion.insert(
+              id: 'pg-export',
+              gameId: 'game-export',
+              platformId: 'plat-1',
+              platformName: 'Tabletop',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+      await harness.container.get<GameCollectionRepository>().addToCollection(
+        platformGameId: 'pg-export',
+        medium: GameMedium.physical,
+      );
 
       final bundle = await root.get<UserDataExportBundler>().assemble(active);
 
@@ -319,7 +349,15 @@ void main() {
         isA<Map<String, Object?>>().having(
           (category) => category['entries'],
           'entries',
-          isA<List<Object?>>(),
+          [
+            isA<Map<String, Object?>>()
+                .having(
+                  (e) => e['platformGameId'],
+                  'platformGameId',
+                  'pg-export',
+                )
+                .having((e) => e['title'], 'title', 'Exported Game'),
+          ],
         ),
       );
       expect(bundle.json['userId'], NativeRootHarness.userId);
