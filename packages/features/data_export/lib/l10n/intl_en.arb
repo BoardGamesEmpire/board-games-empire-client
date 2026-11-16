@@ -1,0 +1,97 @@
+{
+  "@@locale": "en",
+  "dataExportTitle": "Export your data",
+  "@dataExportTitle": {
+    "description": "Title of the screen where the signed-in user saves a copy of their data on the active server as a file."
+  },
+  "dataExportIntro": "Save a copy of your data on {serverName} as a JSON file.",
+  "@dataExportIntro": {
+    "description": "The first line of the export screen, saying what the export does. JSON is a file format and is not translated.",
+    "placeholders": {
+      "serverName": {
+        "type": "String",
+        "example": "Riverside Game Club"
+      }
+    }
+  },
+  "dataExportIncluded": "Included",
+  "@dataExportIncluded": {
+    "description": "Heading on the export screen above the list of the kinds of data the file holds, such as the game collection."
+  },
+  "dataExportAction": "Export",
+  "@dataExportAction": {
+    "description": "The export screen's main button, which gathers the user's data and saves it as a file."
+  },
+  "dataExportPreparing": "Preparing your export…",
+  "@dataExportPreparing": {
+    "description": "The export screen's main button while the export is being gathered and saved, beside a spinner, and the name of the warning's 'Refresh and export' or 'Save this copy' button while the run it started is out. Read out by screen readers as the button's name."
+  },
+  "dataExportUnconfirmedTitle": "This device's copy",
+  "@dataExportUnconfirmedTitle": {
+    "description": "Title of the warning on the export screen when some of the data could not be checked with the server, so the file would hold what this device has."
+  },
+  "dataExportUnconfirmedMessage": "{categories} couldn't be checked with {serverName}, so it may be missing changes made on other devices.",
+  "@dataExportUnconfirmedMessage": {
+    "description": "The warning on the export screen when some of the data could not be checked with the server. Two buttons under it offer to refresh and export, or to save this device's copy anyway.",
+    "placeholders": {
+      "categories": {
+        "type": "String",
+        "example": "Game collection"
+      },
+      "serverName": {
+        "type": "String",
+        "example": "Riverside Game Club"
+      }
+    }
+  },
+  "dataExportRefreshAndExport": "Refresh and export",
+  "@dataExportRefreshAndExport": {
+    "description": "Button under the export screen's warning: try again to bring the data up to date with the server, then export."
+  },
+  "dataExportSaveAnyway": "Save this copy",
+  "@dataExportSaveAnyway": {
+    "description": "Button under the export screen's warning: save the data this device has, without checking it with the server again."
+  },
+  "dataExportSaved": "Your data was saved.",
+  "@dataExportSaved": {
+    "description": "Success message on the export screen once the file was written where the user chose."
+  },
+  "dataExportDownloaded": "Your download has started.",
+  "@dataExportDownloaded": {
+    "description": "Success message on the export screen in a web browser, once the browser was handed the file as a download. The browser doesn't say whether the user kept it."
+  },
+  "dataExportDismiss": "Dismiss",
+  "@dataExportDismiss": {
+    "description": "Button on the export screen's success message that removes the message."
+  },
+  "dataExportNotAuthenticated": "Sign in again to export your data.",
+  "@dataExportNotAuthenticated": {
+    "description": "Error message above the export screen's main button when the user is no longer signed in to the server."
+  },
+  "dataExportSessionUnavailable": "Your sign-in couldn't be read on this device. Try again.",
+  "@dataExportSessionUnavailable": {
+    "description": "Error message above the export screen's main button when the app could not read the sign-in it keeps on this device (for example, the device's secure storage was locked or unreadable). Not a connection problem: the check doesn't use the network."
+  },
+  "dataExportSaveFailed": "The file couldn't be saved. Try again.",
+  "@dataExportSaveFailed": {
+    "description": "Error message above the export screen's main button when the export was gathered but the file could not be written or downloaded."
+  },
+  "dataExportUnexpected": "Your data couldn't be exported. Try again.",
+  "@dataExportUnexpected": {
+    "description": "Error message above the export screen's main button when gathering the export failed for any other reason."
+  },
+  "dataExportSettingsTitle": "Export your data",
+  "@dataExportSettingsTitle": {
+    "description": "Title of the row in Settings that opens the export screen."
+  },
+  "dataExportSettingsSubtitle": "A copy of your data on {serverName}",
+  "@dataExportSettingsSubtitle": {
+    "description": "Second line of the row in Settings that opens the export screen, naming the server whose data it exports.",
+    "placeholders": {
+      "serverName": {
+        "type": "String",
+        "example": "Riverside Game Club"
+      }
+    }
+  }
+}

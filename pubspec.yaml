@@ -107,6 +107,7 @@ workspace:
   - packages/features/auth
   - packages/features/catalog
   - packages/features/collection
+  - packages/features/data_export
   - packages/features/data_gateway
   - packages/features/events
   - packages/features/feedback
@@ -311,6 +312,7 @@ melos:
         scope:
           - web_storage
           - web_platform
+          - data_export
 
     # ── Golden baselines (#32, #159) ───────────────────────────────
     # Only test/**/goldens/ci/ is committed (Ahem-rendered). The per-host
