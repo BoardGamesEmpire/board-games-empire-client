@@ -262,6 +262,42 @@ class EventGamesTabController extends ChangeNotifier {
   /// Notes a quick look closing (#957).
   void quickLookClosed() => _quickLooks--;
 
+  /// The pool's and the nominations' last outcomes to land while a quick
+  /// look was open (#957), which it said.
+  EventGamesOutcome? _poolSaid;
+  EventNominationsOutcome? _nominationsSaid;
+
+  /// Notes the pool's outcome going from [previous] to [outcome], as the
+  /// pool emits it: one that lands while a quick look is open is said there.
+  /// For the scope only.
+  void poolOutcomeLanded(
+    EventGamesOutcome? previous,
+    EventGamesOutcome? outcome,
+  ) {
+    if (_quickLooks > 0 && outcome != null && !identical(outcome, previous)) {
+      _poolSaid = outcome;
+    }
+  }
+
+  /// Notes the nominations' outcome going from [previous] to [outcome], as
+  /// [poolOutcomeLanded] does the pool's. For the scope only.
+  void nominationsOutcomeLanded(
+    EventNominationsOutcome? previous,
+    EventNominationsOutcome? outcome,
+  ) {
+    if (_quickLooks > 0 && outcome != null && !identical(outcome, previous)) {
+      _nominationsSaid = outcome;
+    }
+  }
+
+  /// Whether [outcome], the pool's or the nominations', landed while a
+  /// quick look was open, which said it (#957). The footer's banner of it
+  /// is no live region, then or after: the pop-up's barrier hides the
+  /// footer from a screen reader, and a live region that comes back into
+  /// the tree as the barrier lifts is read out again.
+  bool saidInQuickLook(Object outcome) =>
+      identical(outcome, _poolSaid) || identical(outcome, _nominationsSaid);
+
   /// Hands focus on as the quick look of [entry] closes (#957), from
   /// [context], the scope's ([EventGamesTabScope.contextOf]), which outlives
   /// the row the quick look was opened from. To [entry]'s row head where its
@@ -1062,7 +1098,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   void _poolChanged(EventGamesState state) {
     final previous = _last;
     _last = state;
-    _controller.poolEmitted(state);
+    _controller
+      ..poolEmitted(state)
+      ..poolOutcomeLanded(previous.outcome, state.outcome);
     if (!mounted) return;
     _controller.poolChanged(context, previous, state);
   }
@@ -1070,7 +1108,9 @@ class _EventGamesTabScopeState extends State<EventGamesTabScope>
   void _nominationsChanged(EventNominationsState state) {
     final previous = _lastNominations;
     _lastNominations = state;
-    _controller.nominationsEmitted(state);
+    _controller
+      ..nominationsEmitted(state)
+      ..nominationsOutcomeLanded(previous.outcome, state.outcome);
     if (!mounted) return;
     final detail = context.read<EventDetailBloc>().state;
     _controller.nominationsChanged(

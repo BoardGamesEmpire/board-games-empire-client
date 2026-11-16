@@ -16,6 +16,7 @@ import 'package:events/src/screens/event_detail_screen.dart';
 import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:events/src/widgets/event_games_tab_scope.dart';
 import 'package:events/src/widgets/game_name.dart';
+import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_row_controls.dart';
 import 'package:events/src/widgets/pool_row_controls.dart';
 import 'package:flutter/material.dart';
@@ -120,16 +121,19 @@ Future<void> showEventGameQuickLook(
 /// the game's page ([EventGamesTabController.openGame]) from the quick
 /// look's own context, as Home's does: the row it was opened from can leave
 /// while it is open. The quick look stays until the page has arrived over it
-/// (`showBgePopup`). Without a way to the page there is no View game.
+/// (`showBgePopup`), so View game opens the page once: a second press while
+/// the page arrives would open it again, and Back would land on the first.
+/// Without a way to the page there is no View game.
 ///
 /// ## An offered copy
 ///
 /// The name with its subtitle ([gameName]), the platform and the medium,
 /// who brings it, and the live nominations it supplies ([suppliesLive]),
-/// named for what each is for as the Nominations list names them
-/// ([nominationScopeName]), or that it supplies none, where the nominations
-/// are known ([nominationsKnown]). What follows the clock, Nominate's
-/// choices and the dates' names, moves on as the page does.
+/// named for what each is for as the Nominations filters name them
+/// ([nominationScopeLabel]): the whole event, then each date, then once for
+/// any the event no longer has. Or that it supplies none, where the
+/// nominations are known ([nominationsKnown]). What follows the clock,
+/// Nominate's choices and the dates' names, moves on as the page does.
 /// Then Nominate where the viewer is offered it and Take back where they
 /// may take it back, both, where the row has room for only one (#946),
 /// under the row's rules ([poolRowGates]): each disabled offline, saying
@@ -180,17 +184,24 @@ Future<void> showEventGameQuickLook(
 /// open. An offered copy's shows the pool's, for Take back, and the
 /// nominations', for Nominate; a nomination's, the nominations', its own
 /// list's. An outcome already showing as it opened isn't said again. The
-/// footer still shows each, under the barrier, so a screen reader hears it
-/// once.
+/// footer still shows each, under the barrier, but not as a live region
+/// ([EventGamesTabController.saidInQuickLook]): one coming back into the
+/// tree as the barrier lifts would be read out again, so a screen reader
+/// hears it once, here. Every outcome that lands is said, whichever write
+/// it ends, a run of offers begun before the quick look opened included:
+/// this is the one place a screen reader can hear it while it is open.
 ///
 /// ## Its entry leaves
 ///
 /// Where the pool no longer holds the copy, taken back from here or by
 /// anyone else, or the nominations no longer hold the nomination, as a read
 /// finds, or the event is no longer shown, it says so in a live region,
-/// under the heading, and offers nothing to press, as Home's does when its
-/// game goes (#707). As it closes, the tab hands focus to the row in the
-/// entry's place ([EventGamesTabController.focusAfterQuickLook]).
+/// under the heading, and offers nothing to press but the outcomes'
+/// Dismiss, as Home's does when its game goes (#707). The outcomes still
+/// show under it: a take-back's, whose copy has gone, or a write's that
+/// failed as a read found the entry gone. As it closes, the tab hands focus
+/// to the row in the entry's place
+/// ([EventGamesTabController.focusAfterQuickLook]).
 class EventGameQuickLook extends StatefulWidget {
   const EventGameQuickLook({
     required this.entry,
@@ -221,6 +232,9 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
   /// The nomination as the nominations last held it, for the heading once
   /// it has gone.
   EventNomination? _nomination;
+
+  /// Whether View game has opened the game's page, which it does once.
+  bool _gameOpened = false;
 
   @override
   void initState() {
@@ -302,6 +316,19 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     return EventNominationsOutcomeBanner(outcome: nominated);
   }
 
+  /// View game's press, for [gameId], or null where there is no way to the
+  /// game's page. Once: the page arrives beneath the quick look, which stays
+  /// over it until then.
+  VoidCallback? _viewGame(EventGamesTabController controller, String gameId) {
+    final openGame = controller.openGame;
+    if (openGame == null) return null;
+    return () {
+      if (_gameOpened) return;
+      _gameOpened = true;
+      openGame(context, gameId);
+    };
+  }
+
   /// The quick look of the offered copy [id].
   Widget _offeredCopy(
     BuildContext context,
@@ -324,17 +351,31 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     final name = copy == null
         ? widget.title
         : gameName(l10n, copy.title, copy.subtitle);
+    final ready = detail is EventDetailReady ? detail : null;
+    final names = ready == null
+        ? const <String, String?>{}
+        : poolNames(ready.detail);
+    final viewerId = ready?.detail.attendance?.id;
+    // The pool's, for Take back, then the nominations', for Nominate.
+    final outcomes = [
+      ?_poolOutcome(
+        games: games,
+        nominations: nominations,
+        viewerId: viewerId,
+        names: names,
+      ),
+      ?_nominationsOutcome(nominations),
+    ];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
         thumbnail: copy?.thumbnail,
         name: name,
         gone: l10n.eventsQuickLookCopyGone,
+        outcomes: outcomes,
       );
     }
 
     final now = controller.clock();
-    final names = poolNames(detail.detail);
-    final viewerId = detail.detail.attendance?.id;
     final gates = poolRowGates(
       l10n,
       game: shown,
@@ -352,28 +393,22 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       null => null,
     };
     // What each live nomination the copy supplies is for ([suppliesLive]),
-    // in the order Nominate offers them: the whole event, then the dates.
+    // in the order Nominate offers them: the whole event, then the dates,
+    // then any date the event no longer has, named once as gone.
     final nominated = nominations.nominations;
     final occurrences = detail.detail.snapshot.occurrences;
-    final scopes = [
-      for (final occurrenceId in [
-        null,
-        for (final date in occurrences) date.id,
+    final scopes = <String>{
+      for (final scope in <NominationScope>[
+        const WholeEventScope(),
+        for (final date in occurrences) DateScope(date.id),
+        for (final each in nominated)
+          if (each.occurrenceId case final id?
+              when !occurrences.any((date) => date.id == id))
+            DateScope(id),
       ])
-        if (suppliesLive(
-          shown,
-          nominated,
-          scope: occurrenceId == null
-              ? const WholeEventScope()
-              : DateScope(occurrenceId),
-        ))
-          ?nominationScopeName(
-            context,
-            occurrenceId,
-            occurrences: occurrences,
-            now: now,
-          ),
-    ];
+        if (suppliesLive(shown, nominated, scope: scope))
+          nominationScopeLabel(context, scope, dates: occurrences, now: now),
+    };
     // None supplied says so only where the nominations say what a copy
     // supplies.
     final supplies = scopes.isNotEmpty
@@ -397,7 +432,6 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
     );
     final nominate = buttons.nominate;
     final takeBack = buttons.takeBack;
-    final openGame = controller.openGame;
 
     return _QuickLookFrame(
       thumbnail: shown.thumbnail,
@@ -423,19 +457,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
       note: gates.nominate?.notGoing,
       // Both are writes.
       offlineNote: nominate != null || takeBack != null,
-      // The pool's, for Take back, then the nominations', for Nominate.
-      outcomes: [
-        ?_poolOutcome(
-          games: games,
-          nominations: nominations,
-          viewerId: viewerId,
-          names: names,
-        ),
-        ?_nominationsOutcome(nominations),
-      ],
-      onOpenGame: openGame == null
-          ? null
-          : () => openGame(this.context, shown.gameId),
+      outcomes: outcomes,
+      onOpenGame: _viewGame(controller, shown.gameId),
     );
   }
 
@@ -454,15 +477,17 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         ? nominations.nominations.where((each) => each.id == id).firstOrNull
         : null;
     final nomination = _nomination = shown ?? _nomination;
+    // Its own list's: every write in it is a nominations write.
+    final outcomes = [?_nominationsOutcome(nominations)];
     if (shown == null || detail is! EventDetailReady) {
       return _QuickLookFrame(
         thumbnail: nomination?.thumbnail,
         name: nomination?.title ?? widget.title,
         gone: l10n.eventsQuickLookNominationGone,
+        outcomes: outcomes,
       );
     }
 
-    final openGame = controller.openGame;
     return _NominationLook(
       nomination: shown,
       viewerId: detail.detail.attendance?.id,
@@ -476,11 +501,8 @@ class _EventGameQuickLookState extends State<EventGameQuickLook> {
         acting: acting,
       ),
       now: controller.clock(),
-      // Its own list's: every write in it is a nominations write.
-      outcomes: [?_nominationsOutcome(nominations)],
-      onOpenGame: openGame == null
-          ? null
-          : () => openGame(this.context, shown.gameId),
+      outcomes: outcomes,
+      onOpenGame: _viewGame(controller, shown.gameId),
     );
   }
 }
@@ -735,7 +757,8 @@ class _NominationLookState extends State<_NominationLook>
 /// [note] under them, drawn only, as their hints say it, and one online-only
 /// note while offline where [offlineNote] asks for it, then [outcomes], then
 /// View game where [onOpenGame] is given. Where the entry has gone, [gone]
-/// in a live region in place of them all, so nothing is left to press.
+/// in a live region in place of all but [outcomes], so nothing is left to
+/// press but their Dismiss.
 class _QuickLookFrame extends StatelessWidget {
   const _QuickLookFrame({
     required this.thumbnail,
@@ -824,13 +847,14 @@ class _QuickLookFrame extends StatelessWidget {
               ),
             ],
           ),
-          if (gone != null)
+          if (gone != null) ...[
             Semantics(
               container: true,
               liveRegion: true,
               child: Text(gone, key: EventDetailScreen.quickLookGoneKey),
-            )
-          else ...[
+            ),
+            ...outcomes,
+          ] else ...[
             if (lines.isNotEmpty)
               MergeSemantics(child: wrapLines?.call(column) ?? column),
             ?vote,

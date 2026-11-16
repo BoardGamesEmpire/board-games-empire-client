@@ -3128,6 +3128,23 @@ void main() {
     FocusNode focusOf(WidgetTester tester, Finder button) =>
         tester.widget<ButtonStyleButton>(button).focusNode!;
 
+    testWidgets("a nomination's quick look names a date the event no longer "
+        'has as gone, as the filters do', (tester) async {
+      final handle = tester.ensureSemantics();
+      nominationsAnswer = (_) => [
+        _nomination('n-1', by: 'att-me', occurrenceId: 'd-gone'),
+      ];
+      await showGames(tester);
+
+      await openQuickLook(tester, 'n-1');
+
+      expect(
+        linesNode(tester).getSemanticsData().label,
+        contains('For a date no longer on the event'),
+      );
+      handle.dispose();
+    });
+
     testWidgets("a nomination's quick look holds who nominated it, whose "
         'copy, its scope, status, tally spoken without symbols, how '
         "Interested counts, the viewer's vote, when voting closes, a pause, "

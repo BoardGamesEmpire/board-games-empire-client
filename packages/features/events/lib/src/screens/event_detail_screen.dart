@@ -1946,6 +1946,7 @@ class _ReadyPage extends StatelessWidget {
               staleFor: tab == EventDetailTab.games
                   ? EventGamesTabScope.of(context).section
                   : null,
+              saidInQuickLook: EventGamesTabScope.of(context).saidInQuickLook,
             ),
       // Above the tabs, and in the semantics tree however far down the page
       // is, so a banner that lands while the user is far down is heard as it

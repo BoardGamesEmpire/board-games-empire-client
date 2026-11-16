@@ -4,6 +4,7 @@ import 'package:bge_test_support/session.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/event_games_footer.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -6498,7 +6499,14 @@ void main() {
       expect(inQuickLook(gone), findsOneWidget);
       expect(find.text('This copy is no longer in the pool.'), findsOneWidget);
       expect(tester.getSemantics(gone), isSemantics(isLiveRegion: true));
-      expect(inQuickLook(anyButton), findsNothing);
+      // The take-back's outcome still shows under it, and its Dismiss is
+      // all there is to press.
+      expect(inQuickLook(outcome()), findsOneWidget);
+      expect(inQuickLook(anyButton), findsOneWidget);
+      expect(
+        find.descendant(of: inQuickLook(outcome()), matching: anyButton),
+        findsOneWidget,
+      );
       // The quick look keeps the focus while it is open: the page's own
       // hand-off takes nothing from under its barrier.
       expect(headFocus(tester, azul.id).hasFocus, isFalse);
@@ -6700,6 +6708,100 @@ void main() {
       );
     });
 
+    testWidgets("the footer's banner of an outcome said in it is no live "
+        'region, while it is open or after it closes', (tester) async {
+      final handle = tester.ensureSemantics();
+      takeBackAnswer = (_) => throw const EventWriteConflictException(
+        'supplies',
+        statusCode: 409,
+      );
+      served = [catanMine, wingspanMine];
+      await showGames(
+        tester,
+        detail: detailOf(policy: policyOf(GameAdditionMode.hostOnly)),
+      );
+      final inFooter = find.descendant(
+        of: find.byType(EventGamesFooter),
+        matching: outcome(),
+      );
+      BgeInlineBanner banner(Finder finder) =>
+          tester.widget<BgeInlineBanner>(finder);
+      // The banner's message, icon and text, whose node the live region is.
+      final message = find.descendant(
+        of: inFooter,
+        matching: find.byType(Icon),
+      );
+      // One that lands with no quick look open is a live region.
+      await press(tester, takeBack(wingspanMine.id));
+      await animate(tester);
+      expect(banner(inFooter).announce, isTrue);
+      expect(tester.getSemantics(message), isSemantics(isLiveRegion: true));
+
+      await openQuickLook(tester, catanMine.id);
+      await tester.tap(takeBackIn);
+      await animate(tester);
+
+      // Said in the quick look, and only there.
+      expect(banner(inQuickLook(outcome())).announce, isTrue);
+      expect(banner(inFooter).announce, isFalse);
+
+      await closeQuickLook(tester);
+
+      // Back in the tree as the barrier lifts, it isn't read out again.
+      expect(banner(inFooter).announce, isFalse);
+      expect(
+        tester.getSemantics(message),
+        isNot(isSemantics(isLiveRegion: true)),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('what it supplies names a date the event no longer has as '
+        'gone, once however many there are', (tester) async {
+      served = [catanMine, azul];
+      nominationsAnswer = (_) => [
+        nominationOf('n-1', catanMine),
+        nominationOf('n-2', catanMine).copyWith(occurrenceId: 'd-gone'),
+        nominationOf('n-3', catanMine).copyWith(occurrenceId: 'd-gone-too'),
+        nominationOf('n-4', azul).copyWith(occurrenceId: 'd-gone'),
+      ];
+      await showGames(tester);
+
+      await openQuickLook(tester, catanMine.id);
+      expect(
+        inQuickLook(
+          find.text(
+            'Supplies a nomination: For the whole event, '
+            'For a date no longer on the event',
+          ),
+        ),
+        findsOneWidget,
+      );
+      await closeQuickLook(tester);
+
+      // Only for a date gone, it still says it is nominated.
+      await openQuickLook(tester, azul.id);
+      expect(
+        inQuickLook(
+          find.text('Supplies a nomination: For a date no longer on the event'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('View game opens the page once, however often it is pressed '
+        'while the page arrives', (tester) async {
+      await showGames(tester);
+      await openQuickLook(tester, catanMine.id);
+
+      await tester.tap(openGame);
+      await tester.pump();
+      await tester.tap(openGame);
+      await tester.pump();
+
+      expect(openedGames, hasLength(1));
+    });
+
     testWidgets('a nominate from it says its outcome inside the pop-up: the '
         "nominations' banner", (tester) async {
       await showGames(tester);
@@ -6713,6 +6815,18 @@ void main() {
         find.byKey(EventDetailScreen.nominationsOutcomeKey),
       );
       expect(banner, findsOneWidget);
+      // The footer's of it is no live region: the quick look said it.
+      expect(
+        tester
+            .widget<BgeInlineBanner>(
+              find.descendant(
+                of: find.byType(EventGamesFooter),
+                matching: find.byKey(EventDetailScreen.nominationsOutcomeKey),
+              ),
+            )
+            .announce,
+        isFalse,
+      );
       expect(
         find.descendant(
           of: banner,

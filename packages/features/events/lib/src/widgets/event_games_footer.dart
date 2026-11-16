@@ -48,7 +48,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// the last said is still heard as it lands. The writes' banners are
 /// [EventPoolOutcomeBanner] and [EventNominationsOutcomeBanner], which a
 /// quick look builds too, for the outcomes that land while it is open
-/// (#957), since its barrier hides the footer from a screen reader.
+/// (#957), since its barrier hides the footer from a screen reader. The
+/// footer's banner of such an outcome ([saidInQuickLook]) is no live
+/// region: the quick look said it, and one coming back into the tree as the
+/// barrier lifts would be read out again.
 ///
 /// A host's close of a vote (#518) says how it came out with the counts the
 /// server gave as it settled it, which it stores nowhere: this banner is the
@@ -78,6 +81,7 @@ class EventGamesFooter extends StatelessWidget {
     required this.names,
     this.nominations,
     this.viewerId,
+    this.saidInQuickLook,
     super.key,
   });
 
@@ -103,6 +107,12 @@ class EventGamesFooter extends StatelessWidget {
   /// [EventGamesSection.nominations], and neither where it is null, as on
   /// the Details tab.
   final EventGamesSection? staleFor;
+
+  /// Whether a quick look said an outcome as it landed (#957), whose banner
+  /// here is then no live region
+  /// ([EventGamesTabController.saidInQuickLook]). Null, as where no quick
+  /// look opens, says none was.
+  final bool Function(Object outcome)? saidInQuickLook;
 
   @override
   Widget build(BuildContext context) {
@@ -137,13 +147,17 @@ class EventGamesFooter extends StatelessWidget {
             nominations: nominations?.nominations ?? const [],
             viewerId: viewerId,
             names: names,
+            announce: !(saidInQuickLook?.call(outcome) ?? false),
           ),
         ],
         // The nominations' own, beside the pool's: nothing holds one bloc's
         // write back for the other's, so both can end. Keyed as the pool's.
         if (nominationsOutcome != null) ...[
           const BgeGap.sm(),
-          EventNominationsOutcomeBanner(outcome: nominationsOutcome),
+          EventNominationsOutcomeBanner(
+            outcome: nominationsOutcome,
+            announce: !(saidInQuickLook?.call(nominationsOutcome) ?? false),
+          ),
         ],
         if (staleFor == EventGamesSection.pool &&
             state.refreshFailed &&
@@ -205,6 +219,7 @@ class EventPoolOutcomeBanner extends StatelessWidget {
     required this.nominations,
     required this.viewerId,
     required this.names,
+    this.announce = true,
   }) : assert(says(outcome), 'Build it only where it says something.'),
        super(key: ObjectKey(outcome));
 
@@ -221,6 +236,10 @@ class EventPoolOutcomeBanner extends StatelessWidget {
   /// The roster's names, by row id, which name whose games a take-back of
   /// someone else's game was about (#518).
   final Map<String, String?> names;
+
+  /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
+  /// quick look said the outcome (#957).
+  final bool announce;
 
   /// Whether [outcome] has words to say: every outcome but a take-back
   /// that names no game.
@@ -245,6 +264,7 @@ class EventPoolOutcomeBanner extends StatelessWidget {
       message: message,
       builder: (context, message) => BgeInlineBanner(
         key: EventDetailScreen.poolOutcomeKey,
+        announce: announce,
         tone: switch (outcome) {
           EventOfferOutcome(:final result) => switch (result) {
             EventOfferResult.done => BgeBannerTone.success,
@@ -392,16 +412,21 @@ class EventPoolOutcomeBanner extends StatelessWidget {
 /// Dismiss clears the outcome from the nominations' bloc, wherever it is
 /// shown.
 class EventNominationsOutcomeBanner extends StatelessWidget {
-  EventNominationsOutcomeBanner({required this.outcome})
+  EventNominationsOutcomeBanner({required this.outcome, this.announce = true})
     : super(key: ObjectKey(outcome));
 
   final EventNominationsOutcome outcome;
+
+  /// Whether it is a live region ([BgeInlineBanner.announce]): not where a
+  /// quick look said the outcome (#957).
+  final bool announce;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     return BgeInlineBanner(
       key: EventDetailScreen.nominationsOutcomeKey,
+      announce: announce,
       tone: _nominationsTone(outcome),
       message: _nominationsMessage(l10n, outcome),
       action: TextButton(

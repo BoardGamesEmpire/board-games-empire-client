@@ -15,6 +15,7 @@ import 'package:events/src/widgets/confirm_dialog.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:events/src/widgets/held_press.dart';
 import 'package:events/src/widgets/held_spinner.dart';
+import 'package:events/src/widgets/nomination_filters_sheet.dart';
 import 'package:events/src/widgets/nomination_vote_control.dart';
 import 'package:events/src/widgets/nomination_voters_sheet.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
@@ -271,8 +272,9 @@ NominationVoteControl? nominationVoteControl(
 
 /// What [nomination]'s lines say, top to bottom, under its title (#517), in
 /// its quick look (#957), where its row's status line sends the rest of what
-/// it says (#946): its platform; who nominated it;
-/// whose copy it is; whether it is for the whole event or one date; where it
+/// it says (#946): its platform; who nominated it; whose copy it is;
+/// whether it is for the whole event or one date, or a date the event no
+/// longer has, as the filters name it ([nominationScopeLabel]); where it
 /// stands; its tally of the votes that count, with how the event counts
 /// Interested where its policy says; the viewer's vote, and whether it
 /// counts, where no vote control shows it ([voteShown]); when voting
@@ -305,10 +307,13 @@ List<Widget> nominationLines(
     viewerId: viewerId,
     names: names,
   );
-  final scope = nominationScopeName(
+  final scope = nominationScopeLabel(
     context,
-    nomination.occurrenceId,
-    occurrences: inputs.occurrences,
+    switch (nomination.occurrenceId) {
+      final id? => DateScope(id),
+      null => const WholeEventScope(),
+    },
+    dates: inputs.occurrences,
     now: now,
   );
   final interested = interestedLine(l10n, inputs.interestedWeight);
@@ -369,7 +374,7 @@ List<Widget> nominationLines(
       ViewerSupplier() => l10n.eventsNominationFromYours,
       NamedSupplier(:final name) => l10n.eventsNominationFrom(name),
     }, style: quiet),
-    if (scope != null) Text(scope, style: quiet),
+    Text(scope, style: quiet),
     Text(
       nominationStatusLabel(l10n, nomination.status),
       style: theme.textTheme.labelLarge,
@@ -879,24 +884,6 @@ NominationSupplier nominationSupplierOf(
     return const ViewerSupplier();
   }
   return NamedSupplier(names[copy.attendeeId] ?? l10n.eventsAttendeeSomeone);
-}
-
-/// What a nomination for the date [occurrenceId] is for, as its row names
-/// it (#517): the whole event where it is null, else the date it names, by
-/// [occurrences] as of [now]. Null for a date the event no longer has,
-/// rather than name one it doesn't. An offered copy's quick look names what
-/// the copy supplies the same way (#957).
-String? nominationScopeName(
-  BuildContext context,
-  String? occurrenceId, {
-  required List<EventOccurrence> occurrences,
-  required DateTime now,
-}) {
-  final l10n = EventsLocalizations.of(context);
-  if (occurrenceId == null) return l10n.eventsNominationWholeEvent;
-  final date = occurrences.where((each) => each.id == occurrenceId).firstOrNull;
-  if (date == null) return null;
-  return l10n.eventsNominationForDate(eventDateName(context, date, now: now));
 }
 
 /// Where a nomination stands, as its row says it. Unlike the event's own

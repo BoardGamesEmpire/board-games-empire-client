@@ -1232,7 +1232,7 @@
   },
   "eventsQuickLookSupplies": "Supplies a nomination: {scopes}",
   "@eventsQuickLookSupplies": {
-    "description": "Line in the quick look of a game in the games pool, the games people offer to bring: this copy is the one a nomination for the event's lineup was made from, and the nomination is still being voted on, waiting for a host, or paused. {scopes} names what each such nomination is for, as the nominations list names it (eventsNominationWholeEvent, eventsNominationForDate), joined by eventsDetailSpokenSeparator.",
+    "description": "Line in the quick look of a game in the games pool, the games people offer to bring: this copy is the one a nomination for the event's lineup was made from, and the nomination is still being voted on, waiting for a host, or paused. {scopes} names what each such nomination is for, as the nominations filters name it (eventsNominationWholeEvent, eventsNominationForDate, and once eventsNominationsDateGone for any date the event no longer has), joined by eventsDetailSpokenSeparator.",
     "placeholders": {
       "scopes": {
         "type": "String",
@@ -1780,7 +1780,7 @@
   },
   "eventsNominationsDateGone": "For a date no longer on the event",
   "@eventsNominationsDateGone": {
-    "description": "Chip naming the date the nominations are narrowed to (eventsNominationsDate), when that date has since been taken off the event, so it can't be named."
+    "description": "Names what a nomination is for when its date has since been taken off the event, so it can't be named: on the chip naming the date the nominations are narrowed to (eventsNominationsDate), among a nomination's lines in its quick look, and in eventsQuickLookSupplies."
   },
   "eventsNominationsMine": "Mine",
   "@eventsNominationsMine": {
