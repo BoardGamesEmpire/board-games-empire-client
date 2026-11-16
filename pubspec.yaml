@@ -121,7 +121,6 @@ workspace:
   - packages/storage/drift_storage
   - packages/storage/key_storage
   - packages/storage/storage_interface
-  - packages/storage/memory_storage
   - packages/storage/web_storage
   - packages/network/dio_network
   - packages/network/network_interface

@@ -39,7 +39,7 @@ dart run tool/check_sdk_constraints.dart --fix
 melos run goldens:update --no-select
 ```
 
-`--fix` propagates the new values to all 28 workspace pubspecs and preserves the
+`--fix` propagates the new values to every workspace pubspec and preserves the
 comments in each `environment:` block. Then `flutter pub get` to re-resolve.
 
 [tool/flutter_sdk.sha256](tool/flutter_sdk.sha256) is one `sha256sum -c` line:
@@ -193,7 +193,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `analyze:dart` | `dart analyze --fatal-infos` on pure-Dart packages |
 | `format` | `dart format` over every tracked `.dart` file |
 | `format:check` | Fail if any tracked Dart source is unformatted. Mirrors CI. |
-| `test` | All non-golden tests, 22 packages. Mirrors CI. |
+| `test` | All non-golden tests in every package with tests. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
 | `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, the client version, the Flutter release digest, that no native app reaches a web implementation, and that every package's `analysis_options.yaml` includes the root one and changes none of its rules |
@@ -233,8 +233,8 @@ loosening the gate.
 
 ## Testing
 
-Tests live in `test/` in each package; 22 of the 28 members have them. CI runs
-one job per package so a failure names the package directly.
+Tests live in each package's `test/` directory. CI runs one job per package so a
+failure names the package directly.
 
 ```bash
 melos run test --no-select               # everything except goldens
