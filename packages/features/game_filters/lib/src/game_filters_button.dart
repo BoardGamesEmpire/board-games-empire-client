@@ -10,6 +10,7 @@ class GameFiltersButton extends StatelessWidget {
     required this.count,
     required this.onPressed,
     this.focusNode,
+    this.semanticsLabel,
     super.key,
   });
 
@@ -20,12 +21,21 @@ class GameFiltersButton extends StatelessWidget {
   /// the last chip of `GameFiltersInUse` goes (#715).
   final FocusNode? focusNode;
 
+  /// What a screen reader calls the button, for a caller whose screen has
+  /// another Filters button and so says what this one filters (#919). It
+  /// starts with the button's text. The text on screen is unchanged. Null
+  /// reads the text.
+  final String? semanticsLabel;
+
   @override
   Widget build(BuildContext context) => OutlinedButton.icon(
     key: GameFilterKeys.button,
     focusNode: focusNode,
     onPressed: onPressed,
     icon: const Icon(Icons.tune),
-    label: Text(GameFiltersLocalizations.of(context).gameFiltersButton(count)),
+    label: Text(
+      GameFiltersLocalizations.of(context).gameFiltersButton(count),
+      semanticsLabel: semanticsLabel,
+    ),
   );
 }

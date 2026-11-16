@@ -1329,6 +1329,7 @@ void main() {
 
     testWidgets('a platform filter from the sheet narrows the list, and its '
         'chip removes it', (tester) async {
+      final handle = tester.ensureSemantics();
       await show(tester, three());
       await openFilters(tester);
       await tapInSheet(
@@ -1341,6 +1342,12 @@ void main() {
       expect(row('e-1'), findsNothing);
       expect(countText(tester), '1 game of 3');
       expect(find.text('Filters (1)'), findsOneWidget);
+      // No other Filters button is on this screen, so it keeps its own text
+      // for its name (#919).
+      expect(
+        tester.getSemantics(find.byKey(GameFilterKeys.button)).label,
+        'Filters (1)',
+      );
       final chip = find.byKey(GameFilterKeys.inUse('platform_pc'));
       expect(chip, findsOneWidget);
 
@@ -1353,6 +1360,7 @@ void main() {
       expect(row('e-3'), findsOneWidget);
       expect(count, findsNothing);
       expect(listBloc(tester).filter, const CollectionFilter());
+      handle.dispose();
     });
 
     // A range field commits what it holds as the sheet closes, from its

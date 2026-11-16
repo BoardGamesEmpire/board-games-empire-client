@@ -606,6 +606,16 @@
       }
     }
   },
+  "eventsGamesFiltersNamed": "{count, plural, =0{Filters for games} other{Filters ({count}) for games}}",
+  "@eventsGamesFiltersNamed": {
+    "description": "What a screen reader calls the Filters button of the games pool on the Games tab of an event's screen, so it differs from the Nominations section's button, eventsNominationsFiltersNamed. Starts with the button's text, Filters with the number of filters in use in brackets once there are any. {count} is how many are in use.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
   "eventsGamesNotMine": "Not mine",
   "@eventsGamesNotMine": {
     "description": "Filter chip on the Games tab of an event's screen that, turned on, leaves out the games the user offers to bring, so only other people's show."
@@ -1633,6 +1643,10 @@
   "eventsNominationsFilters": "Filters",
   "@eventsNominationsFilters": {
     "description": "Button under the Nominations heading on the Games tab of an event's screen that opens the filters for the nominations listed, and the heading of what it opens and its name to a screen reader: a choice of statuses, of a date, and the switches eventsNominationsMine and eventsNominationsNotVoted."
+  },
+  "eventsNominationsFiltersNamed": "Filters for nominations",
+  "@eventsNominationsFiltersNamed": {
+    "description": "What a screen reader calls the Filters button under the Nominations heading on the Games tab of an event's screen (eventsNominationsFilters is its text), so it differs from the games pool's button, eventsGamesFiltersNamed. Starts with the button's text."
   },
   "eventsNominationsSort": "Sort: {sort}",
   "@eventsNominationsSort": {

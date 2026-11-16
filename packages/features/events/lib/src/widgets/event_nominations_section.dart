@@ -504,7 +504,10 @@ class _NominationsHeader extends StatelessWidget {
               focusNode: controller.nominationsFiltersFocus,
               onPressed: () => unawaited(_openFilters(context)),
               icon: const Icon(Icons.tune),
-              label: Text(l10n.eventsNominationsFilters),
+              label: Text(
+                l10n.eventsNominationsFilters,
+                semanticsLabel: l10n.eventsNominationsFiltersNamed,
+              ),
             ),
             _SortMenu(
               sort: controller.nominationSort,

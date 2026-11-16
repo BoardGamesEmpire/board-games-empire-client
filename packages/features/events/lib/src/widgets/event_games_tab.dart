@@ -1010,6 +1010,7 @@ class _PoolHeader extends StatelessWidget {
               ),
             GameFiltersButton(
               count: facets,
+              semanticsLabel: l10n.eventsGamesFiltersNamed(facets),
               focusNode: controller.filtersFocus,
               onPressed: () => unawaited(_openFilters(context)),
             ),

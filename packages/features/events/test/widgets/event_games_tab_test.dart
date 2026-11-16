@@ -1370,6 +1370,56 @@ void main() {
       expect(scrollView(tester).semanticChildCount, 4);
       expect(semanticIndexOf(tester, row(catanMine.id)), 0);
     });
+
+    testWidgets('the two Filters buttons are named for what they filter, and '
+        'differently (#919)', (tester) async {
+      final handle = tester.ensureSemantics();
+      useViewSize(tester, const Size(320, 640));
+      nominationsAnswer = (_) => [nominationOf('n-1', azul)];
+      served = [
+        _game('o-1', 'att-me', 'Catan', platformType: PlatformType.tabletop),
+      ];
+      await showGames(tester);
+      final nominations = find.byKey(EventDetailScreen.nominationsFiltersKey);
+      final pool = find.byKey(GameFilterKeys.button, skipOffstage: false);
+      // The Nominations section is at the top, and the pool below it.
+      expect(nominations, findsOneWidget);
+      final nominationsLabel = tester.getSemantics(nominations).label;
+      expect(nominationsLabel, 'Filters for nominations');
+      await tester.scrollUntilVisible(
+        pool,
+        100,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      final unfiltered = tester.getSemantics(pool).label;
+      expect(unfiltered, 'Filters for games');
+      expect(unfiltered, isNot(nominationsLabel));
+
+      await press(tester, pool);
+      await animate(tester);
+      final tabletop = find.byKey(
+        GameFilterKeys.platformType(PlatformType.tabletop),
+      );
+      await tester.ensureVisible(tabletop);
+      await tester.pump();
+      await tester.tap(tabletop);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await animate(tester);
+      await tester.ensureVisible(pool);
+      await tester.pump();
+
+      expect(find.text('Filters (1)'), findsOneWidget);
+      final filtered = tester.getSemantics(pool).label;
+      expect(filtered, 'Filters (1) for games');
+      expect(filtered, isNot(nominationsLabel));
+      handle.dispose();
+    });
   });
 
   group('rows', () {
